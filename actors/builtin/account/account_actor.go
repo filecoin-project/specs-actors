@@ -2,8 +2,8 @@ package account
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	builtin "github.com/filecoin-project/specs/actors/builtin"
-	vmr "github.com/filecoin-project/specs/actors/runtime"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	cid "github.com/ipfs/go-cid"
 )
 

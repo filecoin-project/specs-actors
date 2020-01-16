@@ -2,11 +2,11 @@ package multisig
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	actor "github.com/filecoin-project/specs/actors"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	builtin "github.com/filecoin-project/specs/actors/builtin"
-	vmr "github.com/filecoin-project/specs/actors/runtime"
-	autil "github.com/filecoin-project/specs/actors/util"
+	actor "github.com/filecoin-project/specs-actors/actors"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
 )
 

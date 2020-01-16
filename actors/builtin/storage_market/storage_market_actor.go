@@ -2,11 +2,11 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	builtin "github.com/filecoin-project/specs/actors/builtin"
-	storage_miner "github.com/filecoin-project/specs/actors/builtin/storage_miner"
-	vmr "github.com/filecoin-project/specs/actors/runtime"
-	actor_util "github.com/filecoin-project/specs/actors/util"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
 )
 

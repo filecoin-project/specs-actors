@@ -1,10 +1,10 @@
 package storage_market
 
 import (
-	actor "github.com/filecoin-project/specs/actors"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	vmr "github.com/filecoin-project/specs/actors/runtime"
-	autil "github.com/filecoin-project/specs/actors/util"
+	actor "github.com/filecoin-project/specs-actors/actors"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 type BalanceTableHAMT = autil.BalanceTableHAMT

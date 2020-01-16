@@ -1,6 +1,6 @@
 package serde
 
-import autil "github.com/filecoin-project/specs/actors/util"
+import autil "github.com/filecoin-project/specs-actors/actors/util"
 
 // Serializes a structure or value to CBOR.
 func Serialize(o interface{}) ([]byte, error) {

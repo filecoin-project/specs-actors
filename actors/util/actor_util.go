@@ -4,7 +4,7 @@ import (
 	"math/big"
 
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 type BalanceTableHAMT map[addr.Address]abi.TokenAmount

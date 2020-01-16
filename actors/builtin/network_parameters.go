@@ -1,6 +1,6 @@
 package builtin
 
-import abi "github.com/filecoin-project/specs/actors/abi"
+import abi "github.com/filecoin-project/specs-actors/actors/abi"
 
 /////////////////////////////////////////////////////////////
 // PoSt

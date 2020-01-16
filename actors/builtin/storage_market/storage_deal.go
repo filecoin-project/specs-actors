@@ -2,8 +2,8 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	acrypto "github.com/filecoin-project/specs/actors/crypto"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 )
 
 // Note: Deal Collateral is only released and returned to clients and miners

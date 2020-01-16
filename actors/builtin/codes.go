@@ -1,7 +1,7 @@
 package builtin
 
 import (
-	"github.com/filecoin-project/specs/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 )

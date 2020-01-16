@@ -3,8 +3,8 @@ package indices
 import (
 	"math/big"
 
-	abi "github.com/filecoin-project/specs/actors/abi"
-	actor_util "github.com/filecoin-project/specs/actors/util"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 var PARAM_FINISH = actor_util.PARAM_FINISH
