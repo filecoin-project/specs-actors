@@ -66,16 +66,20 @@ type ConstructorParams struct {
 }
 
 func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
-
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 	h := rt.AcquireState()
 
 	st := MultiSigActorState{
 		AuthorizedParties:     params.AuthorizedParties,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
-		UnlockDuration:        params.UnlockDuration,
 		PendingTxns:           MultiSigTransactionHAMT_Empty(),
 		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
+	}
+
+	if params.UnlockDuration != 0 {
+		st.UnlockDuration = params.UnlockDuration
+		st.InitialBalance = rt.ValueReceived()
+		st.StartEpoch = rt.CurrEpoch()
 	}
 
 	UpdateRelease_MultiSig(rt, h, st)
