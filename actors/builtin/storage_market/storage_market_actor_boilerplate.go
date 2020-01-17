@@ -27,8 +27,6 @@ type Bytes = abi.Bytes
 
 var Assert = autil.Assert
 var IMPL_FINISH = autil.IMPL_FINISH
-var IMPL_TODO = autil.IMPL_TODO
-var TODO = autil.TODO
 
 func Release(rt Runtime, h vmr.ActorStateHandle, st StorageMarketActorState) {
 	checkCID := actor.ActorSubstateCID(rt.IpldPut(&st))

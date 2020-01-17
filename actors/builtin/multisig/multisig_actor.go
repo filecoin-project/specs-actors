@@ -15,7 +15,6 @@ type Runtime = vmr.Runtime
 
 var AssertMsg = autil.AssertMsg
 var IMPL_FINISH = autil.IMPL_FINISH
-var IMPL_TODO = autil.IMPL_TODO
 var TODO = autil.TODO
 
 type TxnID int64

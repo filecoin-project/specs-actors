@@ -16,8 +16,6 @@ import (
 type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
 
-var IMPL_FINISH = autil.IMPL_FINISH
-var IMPL_TODO = autil.IMPL_TODO
 var TODO = autil.TODO
 
 type VestingFunction int64

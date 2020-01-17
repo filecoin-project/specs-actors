@@ -11,9 +11,6 @@ import (
 
 // TODO: most of this file doesn't need to be part of runtime, just generic actor shared code.
 
-var Assert = autil.Assert
-var IMPL_TODO = autil.IMPL_TODO
-
 // Name should be set per unique filecoin network
 var Name = "mainnet"
 
@@ -65,21 +62,6 @@ func CallerPattern_MakeAcceptAny() CallerPattern {
 	}
 }
 
-func InvocInput_Make(to addr.Address, method abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) InvocInput {
-	return InvocInput{
-		To:     to,
-		Method: method,
-		Params: params,
-		Value:  value,
-	}
-}
-
-func InvocOutput_Make(returnValue []byte) InvocOutput {
-	return InvocOutput{
-		ReturnValue: returnValue,
-	}
-}
-
 func RT_ValidateImmediateCallerIsSignable(rt Runtime) {
 	rt.ValidateImmediateCallerAcceptAnyOfTypes([]abi.ActorCodeID{
 		builtin.AccountActorCodeID,
@@ -89,7 +71,7 @@ func RT_ValidateImmediateCallerIsSignable(rt Runtime) {
 
 func RT_Address_Is_StorageMiner(rt Runtime, minerAddr addr.Address) bool {
 	codeID, ok := rt.GetActorCodeID(minerAddr)
-	Assert(ok)
+	autil.Assert(ok)
 	return codeID == builtin.StorageMinerActorCodeID
 }
 
