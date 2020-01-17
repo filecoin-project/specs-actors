@@ -1,9 +1,11 @@
 package multisig
 
 import (
+	"math/big"
+
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
@@ -57,104 +59,19 @@ func (a *MultiSigActor) State(rt Runtime) (vmr.ActorStateHandle, MultiSigActorSt
 	return h, state
 }
 
-func (a *MultiSigActor) Propose(rt vmr.Runtime, txn MultiSigTransaction) TxnID {
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.ImmediateCaller()
-	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
-
-	h, st := a.State(rt)
-	txnID := st.NextTxnID
-	st.NextTxnID += 1
-	st.PendingTxns[txnID] = txn
-	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
-	UpdateRelease_MultiSig(rt, h, st)
-
-	// Proposal implicitly includes approval of a transaction.
-	a._rtApproveTransactionOrAbort(rt, callerAddr, txnID, txn)
-
-	// Note: this ID may not be stable across chain re-orgs.
-	// https://github.com/filecoin-project/specs-actors/issues/7
-	return txnID
+type ConstructorParams struct {
+	AuthorizedParties     autil.ActorIDSetHAMT
+	NumApprovalsThreshold int64
 }
 
-func (a *MultiSigActor) Approve(rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) {
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.ImmediateCaller()
-	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
-	a._rtApproveTransactionOrAbort(rt, callerAddr, txnID, txn)
-}
-
-func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, actorID abi.ActorID) {
-	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
-
-	h, st := a.State(rt)
-	st.AuthorizedParties[actorID] = true
-	UpdateRelease_MultiSig(rt, h, st)
-}
-
-func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, actorID abi.ActorID) {
-	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
-
-	h, st := a.State(rt)
-
-	if _, found := st.AuthorizedParties[actorID]; !found {
-		rt.AbortStateMsg("Party not found")
-	}
-
-	delete(st.AuthorizedParties, actorID)
-
-	if len(st.AuthorizedParties) < st.NumApprovalsThreshold {
-		rt.AbortStateMsg("Cannot decrease authorized parties below threshold")
-	}
-
-	UpdateRelease_MultiSig(rt, h, st)
-}
-
-func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, oldActorID abi.ActorID, newActorID abi.ActorID) {
-	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
-
-	h, st := a.State(rt)
-
-	if _, found := st.AuthorizedParties[oldActorID]; !found {
-		rt.AbortStateMsg("Party not found")
-	}
-
-	if _, found := st.AuthorizedParties[oldActorID]; !found {
-		rt.AbortStateMsg("Party already present")
-	}
-
-	delete(st.AuthorizedParties, oldActorID)
-	st.AuthorizedParties[newActorID] = true
-
-	UpdateRelease_MultiSig(rt, h, st)
-}
-
-func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, newThreshold int) {
-	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
-
-	h, st := a.State(rt)
-
-	if newThreshold <= 0 || newThreshold > len(st.AuthorizedParties) {
-		rt.AbortStateMsg("New threshold value not supported")
-	}
-
-	st.NumApprovalsThreshold = newThreshold
-
-	UpdateRelease_MultiSig(rt, h, st)
-}
-
-func (a *MultiSigActor) Constructor(rt vmr.Runtime, authorizedParties autil.ActorIDSetHAMT, numApprovalsThreshold int) {
+func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 	h := rt.AcquireState()
 
 	st := MultiSigActorState{
-		AuthorizedParties:     authorizedParties,
-		NumApprovalsThreshold: numApprovalsThreshold,
+		AuthorizedParties:     params.AuthorizedParties,
+		NumApprovalsThreshold: params.NumApprovalsThreshold,
 		PendingTxns:           MultiSigTransactionHAMT_Empty(),
 		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
 	}
@@ -162,9 +79,168 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, authorizedParties autil.Acto
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID, txn MultiSigTransaction) {
+type ProposeParams struct {
+	To     addr.Address
+	Value  big.Int
+	Method abi.MethodNum
+	Params abi.MethodParams
+}
+
+func (a *MultiSigActor) Propose(rt vmr.Runtime, params ProposeParams) TxnID {
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	callerAddr := rt.ImmediateCaller()
+	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 
 	h, st := a.State(rt)
+	txnID := st.NextTxnID
+	st.NextTxnID += 1
+
+	txn := MultiSigTransaction{
+		Proposer:   callerAddr,
+		Expiration: 0, // TODO lotus does not specify this.
+		To:         params.To,
+		Method:     params.Method,
+		Params:     params.Params,
+		Value:      0, // TODO lotus does not specify this.
+	}
+
+	st.PendingTxns[txnID] = txn
+	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
+	UpdateRelease_MultiSig(rt, h, st)
+
+	// Proposal implicitly includes approval of a transaction.
+	a._rtApproveTransactionOrAbort(rt, callerAddr, txnID)
+
+	// Note: this ID may not be stable across chain re-orgs.
+	// https://github.com/filecoin-project/specs-actors/issues/7
+	return txnID
+}
+
+type TxnIDParams struct {
+	ID TxnID
+}
+
+func (a *MultiSigActor) Approve(rt vmr.Runtime, params TxnIDParams) {
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	callerAddr := rt.ImmediateCaller()
+	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
+	a._rtApproveTransactionOrAbort(rt, callerAddr, params.ID)
+}
+
+func (a *MultiSigActor) Cancel(rt vmr.Runtime, params TxnIDParams) {
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	callerAddr := rt.ImmediateCaller()
+	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
+	// TODO implement cancel logic
+}
+
+type ModifyAuthorizedPartyParams struct {
+	AuthorizedParty addr.Address // must be an ID protocol address.
+	ModifyPartySize bool
+}
+
+func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params ModifyAuthorizedPartyParams) {
+	// Can only be called by the multisig wallet itself.
+	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+
+	actorID, err := addr.IDFromAddress(params.AuthorizedParty)
+	if err != nil {
+		// TODO runtime handles this input failure
+		panic(err)
+	}
+
+	h, st := a.State(rt)
+	st.AuthorizedParties[abi.ActorID(actorID)] = true
+	UpdateRelease_MultiSig(rt, h, st)
+}
+
+func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params ModifyAuthorizedPartyParams) {
+	// Can only be called by the multisig wallet itself.
+	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+
+	actorID, err := addr.IDFromAddress(params.AuthorizedParty)
+	if err != nil {
+		// TODO runtime handles this input failure
+		panic(err)
+	}
+
+	h, st := a.State(rt)
+
+	if _, found := st.AuthorizedParties[abi.ActorID(actorID)]; !found {
+		rt.AbortStateMsg("Party not found")
+	}
+
+	delete(st.AuthorizedParties, abi.ActorID(actorID))
+
+	if int64(len(st.AuthorizedParties)) < st.NumApprovalsThreshold {
+		rt.AbortStateMsg("Cannot decrease authorized parties below threshold")
+	}
+
+	UpdateRelease_MultiSig(rt, h, st)
+}
+
+type SwapAuthorizedPartyParams struct {
+	From addr.Address
+	To   addr.Address
+}
+
+func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params SwapAuthorizedPartyParams) {
+	// Can only be called by the multisig wallet itself.
+	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+
+	oldActor, err := addr.IDFromAddress(params.From)
+	if err != nil {
+		// TODO runtime handles this input failure
+		panic(err)
+	}
+
+	newActor, err := addr.IDFromAddress(params.To)
+	if err != nil {
+		// TODO runtime handles this input failure
+		panic(err)
+	}
+
+	h, st := a.State(rt)
+
+	if _, found := st.AuthorizedParties[abi.ActorID(oldActor)]; !found {
+		rt.AbortStateMsg("Party not found")
+	}
+
+	if _, found := st.AuthorizedParties[abi.ActorID(newActor)]; !found {
+		rt.AbortStateMsg("Party already present")
+	}
+
+	delete(st.AuthorizedParties, abi.ActorID(oldActor))
+	st.AuthorizedParties[abi.ActorID(newActor)] = true
+
+	UpdateRelease_MultiSig(rt, h, st)
+}
+
+type ChangeNumApprovalsThresholdParams struct {
+	NewThreshold int64
+}
+
+func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params ChangeNumApprovalsThresholdParams) {
+	// Can only be called by the multisig wallet itself.
+	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+
+	h, st := a.State(rt)
+
+	if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.AuthorizedParties)) {
+		rt.AbortStateMsg("New threshold value not supported")
+	}
+
+	st.NumApprovalsThreshold = params.NewThreshold
+
+	UpdateRelease_MultiSig(rt, h, st)
+}
+
+func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
+
+	h, st := a.State(rt)
+
+	// TODO look up transaction based on its ID from the Multisig actor state
+	txn := MultiSigTransaction{}
 
 	txnCheck, found := st.PendingTxns[txnID]
 	if !found || !txnCheck.Equals(txn) {
@@ -181,7 +257,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 	autil.AssertNoError(err)
 
 	st.PendingApprovals[txnID][abi.ActorID(actorID)] = true
-	thresholdMet := (len(st.PendingApprovals[txnID]) == st.NumApprovalsThreshold)
+	thresholdMet := int64(len(st.PendingApprovals[txnID])) == st.NumApprovalsThreshold
 
 	UpdateRelease_MultiSig(rt, h, st)
 
