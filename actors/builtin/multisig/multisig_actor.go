@@ -89,7 +89,7 @@ type ProposeParams struct {
 	Expiration abi.ChainEpoch
 }
 
-func (a *MultiSigActor) Propose(rt vmr.Runtime, params ProposeParams) TxnID {
+func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
@@ -123,14 +123,14 @@ type TxnIDParams struct {
 	ID TxnID
 }
 
-func (a *MultiSigActor) Approve(rt vmr.Runtime, params TxnIDParams) {
+func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 	a._rtApproveTransactionOrAbort(rt, callerAddr, params.ID)
 }
 
-func (a *MultiSigActor) Cancel(rt vmr.Runtime, params TxnIDParams) {
+func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
@@ -142,7 +142,7 @@ type ModifyAuthorizedPartyParams struct {
 	ModifyPartySize bool
 }
 
-func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params ModifyAuthorizedPartyParams) {
+func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *ModifyAuthorizedPartyParams) {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -156,7 +156,7 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params ModifyAuthoriz
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params ModifyAuthorizedPartyParams) {
+func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *ModifyAuthorizedPartyParams) {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -185,7 +185,7 @@ type SwapAuthorizedPartyParams struct {
 	To   addr.Address
 }
 
-func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params SwapAuthorizedPartyParams) {
+func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthorizedPartyParams) {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -218,7 +218,7 @@ type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold int64
 }
 
-func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params ChangeNumApprovalsThresholdParams) {
+func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
