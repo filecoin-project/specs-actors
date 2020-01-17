@@ -6,8 +6,8 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	autil "github.com/filecoin-project/specs/actors/util"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // Specifies a domain for randomness generation.

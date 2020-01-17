@@ -4,12 +4,12 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	actor "github.com/filecoin-project/specs/actors"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	builtin "github.com/filecoin-project/specs/actors/builtin"
-	vmr "github.com/filecoin-project/specs/actors/runtime"
-	serde "github.com/filecoin-project/specs/actors/serde"
-	autil "github.com/filecoin-project/specs/actors/util"
+	actor "github.com/filecoin-project/specs-actors/actors"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	serde "github.com/filecoin-project/specs-actors/actors/serde"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
 )
 

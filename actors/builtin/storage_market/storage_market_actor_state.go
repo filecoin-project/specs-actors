@@ -2,9 +2,9 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	indices "github.com/filecoin-project/specs/actors/runtime/indices"
-	actor_util "github.com/filecoin-project/specs/actors/util"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
+	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
 )
 

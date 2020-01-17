@@ -4,9 +4,9 @@ import (
 	"bytes"
 
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	builtin "github.com/filecoin-project/specs/actors/builtin"
-	autil "github.com/filecoin-project/specs/actors/util"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // TODO: most of this file doesn't need to be part of runtime, just generic actor shared code.

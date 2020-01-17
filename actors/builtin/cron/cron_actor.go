@@ -2,9 +2,9 @@ package cron
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs/actors/abi"
-	builtin "github.com/filecoin-project/specs/actors/builtin"
-	vmr "github.com/filecoin-project/specs/actors/runtime"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
 type CronActorState struct{}
