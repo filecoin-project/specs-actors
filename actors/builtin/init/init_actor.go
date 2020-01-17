@@ -44,10 +44,6 @@ func (s *InitActorState) MapAddressToNewID(address addr.Address) addr.Address {
 	return idAddr
 }
 
-func (st *InitActorState) CID() cid.Cid {
-	panic("TODO")
-}
-
 type InitActor struct{}
 
 func (a *InitActor) Constructor(rt Runtime) InvocOutput {
@@ -59,7 +55,7 @@ func (a *InitActor) Constructor(rt Runtime) InvocOutput {
 		NetworkName: vmr.NetworkName(),
 	}
 	UpdateRelease(rt, h, st)
-	return rt.ValueReturn(nil)
+	return InvocOutput{}
 }
 
 func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorParams abi.MethodParams) InvocOutput {
@@ -85,20 +81,14 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 	// Create an empty actor.
 	rt.CreateActor(execCodeID, idAddr)
 
-	// Invoke constructor. If construction fails, the error should propagate and cause
-	// Exec to fail too.
-	rt.SendPropagatingErrors(vmr.InvocInput{
-		To:     idAddr,
-		Method: builtin.MethodConstructor,
-		Params: constructorParams,
-		Value:  rt.ValueReceived(),
-	})
+	// Invoke constructor. If construction fails, the error should propagate and cause Exec to fail too.
+	rt.Send(idAddr, builtin.MethodConstructor, constructorParams, rt.ValueReceived())
 
 	var addrBuf bytes.Buffer
 	err := idAddr.MarshalCBOR(&addrBuf)
 	autil.Assert(err == nil)
 
-	return rt.ValueReturn(addrBuf.Bytes())
+	return InvocOutput{addrBuf.Bytes()}
 }
 
 // This method is disabled until proven necessary.

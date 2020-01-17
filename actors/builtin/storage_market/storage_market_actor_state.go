@@ -5,7 +5,6 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 )
 
 const epochUndefined = abi.ChainEpoch(-1)
@@ -37,11 +36,6 @@ type StorageMarketActorState struct {
 	CachedExpirationsPending       CachedExpirationsPendingHAMT
 	CachedExpirationsNextProcEpoch abi.ChainEpoch
 	CurrEpochNumDealsPublished     int
-}
-
-func (st *StorageMarketActorState) CID() cid.Cid {
-	IMPL_FINISH()
-	panic("")
 }
 
 ////////////////////////////////////////////////////////////////////////////////

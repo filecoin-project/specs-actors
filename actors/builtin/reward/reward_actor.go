@@ -58,10 +58,6 @@ type RewardActorState struct {
 	RewardMap RewardBalanceAMT
 }
 
-func (st *RewardActorState) CID() cid.Cid {
-	panic("TODO")
-}
-
 func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Address) abi.TokenAmount {
 	rewards, found := st.RewardMap[ownerAddr]
 	if !found {
@@ -113,7 +109,7 @@ func (a *RewardActor) State(rt Runtime) (vmr.ActorStateHandle, RewardActorState)
 }
 
 func (a *RewardActor) WithdrawReward(rt vmr.Runtime) {
-	vmr.RT_ValidateImmediateCallerIsSignable(rt)
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)

@@ -15,7 +15,6 @@ type Runtime = vmr.Runtime
 
 var AssertMsg = autil.AssertMsg
 var IMPL_FINISH = autil.IMPL_FINISH
-var TODO = autil.TODO
 
 type TxnID int64
 
@@ -60,7 +59,7 @@ func (a *MultiSigActor) State(rt Runtime) (vmr.ActorStateHandle, MultiSigActorSt
 }
 
 func (a *MultiSigActor) Propose(rt vmr.Runtime, txn MultiSigTransaction) TxnID {
-	vmr.RT_ValidateImmediateCallerIsSignable(rt)
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 
@@ -74,12 +73,13 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, txn MultiSigTransaction) TxnID {
 	// Proposal implicitly includes approval of a transaction.
 	a._rtApproveTransactionOrAbort(rt, callerAddr, txnID, txn)
 
-	TODO() // Ensure stability across reorgs (consider having proposer supply ID?)
+	// Note: this ID may not be stable across chain re-orgs.
+	// https://github.com/filecoin-project/specs-actors/issues/7
 	return txnID
 }
 
 func (a *MultiSigActor) Approve(rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) {
-	vmr.RT_ValidateImmediateCallerIsSignable(rt)
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 	a._rtApproveTransactionOrAbort(rt, callerAddr, txnID, txn)
@@ -174,18 +174,12 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 
 	expirationExceeded := (rt.CurrEpoch() > txn.Expiration)
 	if expirationExceeded {
+		// TODO: delete from state? https://github.com/filecoin-project/specs-actors/issues/5
 		rt.AbortStateMsg("Transaction expiration exceeded")
-
-		TODO()
-		// Determine what to do about state accumulation over time.
-		// Cannot rely on proposer to delete unexecuted transactions;
-		// there is no incentive (in fact, this costs gas).
-		// Could potentially amortize cost of cleanup via Cron.
 	}
 
-	AssertMsg(callerAddr.Protocol() == addr.ID, "caller address does not have ID")
 	actorID, err := addr.IDFromAddress(callerAddr)
-	autil.Assert(err == nil)
+	autil.AssertNoError(err)
 
 	st.PendingApprovals[txnID][abi.ActorID(actorID)] = true
 	thresholdMet := (len(st.PendingApprovals[txnID]) == st.NumApprovalsThreshold)

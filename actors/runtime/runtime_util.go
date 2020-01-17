@@ -29,44 +29,8 @@ const (
 // It is merely a method dispatch interface.
 type ActorCode interface {
 	//InvokeMethod(rt Runtime, method actor.MethodNum, params actor.MethodParams) InvocOutput
-	// IMPL_TODO: method dispatch mechanism is deferred to implementations.
+	// TODO: method dispatch mechanism is deferred to implementations.
 	// When the executable actor spec is complete we can re-instantiate something here.
-}
-
-type CallerPattern struct {
-	Matches func(addr.Address) bool
-}
-
-func CallerPattern_MakeSingleton(x addr.Address) CallerPattern {
-	return CallerPattern{
-		Matches: func(y addr.Address) bool { return x == y },
-	}
-}
-
-func CallerPattern_MakeSet(x []addr.Address) CallerPattern {
-	return CallerPattern{
-		Matches: func(y addr.Address) bool {
-			for _, xi := range x {
-				if y == xi {
-					return true
-				}
-			}
-			return false
-		},
-	}
-}
-
-func CallerPattern_MakeAcceptAny() CallerPattern {
-	return CallerPattern{
-		Matches: func(addr.Address) bool { return true },
-	}
-}
-
-func RT_ValidateImmediateCallerIsSignable(rt Runtime) {
-	rt.ValidateImmediateCallerAcceptAnyOfTypes([]abi.ActorCodeID{
-		builtin.AccountActorCodeID,
-		builtin.MultisigActorCodeID,
-	})
 }
 
 func RT_Address_Is_StorageMiner(rt Runtime, minerAddr addr.Address) bool {
@@ -93,14 +57,14 @@ func RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt Runtime, entryAddr a
 	if RT_Address_Is_StorageMiner(rt, entryAddr) {
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
 		ownerAddr, workerAddr := RT_GetMinerAccountsAssert(rt, entryAddr)
-		rt.ValidateImmediateCallerInSet([]addr.Address{ownerAddr, workerAddr})
+		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 		return ownerAddr
 	} else {
 		if entrySpec == MinerEntrySpec_MinerOnly {
 			rt.AbortArgMsg("Only miner entries valid in current context")
 		}
 		// Ordinary account-style actor entry; funds recipient is just the entry address itself.
-		RT_ValidateImmediateCallerIsSignable(rt)
+		rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 		return entryAddr
 	}
 }

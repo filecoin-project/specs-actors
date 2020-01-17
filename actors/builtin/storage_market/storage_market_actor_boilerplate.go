@@ -10,9 +10,6 @@ import (
 type BalanceTableHAMT = autil.BalanceTableHAMT
 type DealIDQueue = autil.DealIDQueue
 
-var RT_MinerEntry_ValidateCaller_DetermineFundsLocation = vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation
-var RT_ValidateImmediateCallerIsSignable = vmr.RT_ValidateImmediateCallerIsSignable
-
 ////////////////////////////////////////////////////////////////////////////////
 // Boilerplate
 //

@@ -33,10 +33,6 @@ type StorageDealProposal struct {
 	ClientCollateral   abi.TokenAmount
 }
 
-func (p *StorageDealProposal) CID() {
-	panic("TODO")
-}
-
 func (p *StorageDealProposal) Duration() abi.ChainEpoch {
 	return (p.EndEpoch - p.StartEpoch)
 }
@@ -57,10 +53,6 @@ func (p *StorageDealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 // Provider's signature is implicit in the message containing this structure.
 type StorageDeal struct {
 	Proposal StorageDealProposal
-}
-
-func (d *StorageDeal) CID() {
-	panic("TODO")
 }
 
 type OnChainDeal struct {

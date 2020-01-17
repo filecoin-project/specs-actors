@@ -45,7 +45,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 		rt.AbortArgMsg("Negative amount.")
 	}
 
-	recipientAddr := RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
+	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
 
 	h, st := a.State(rt)
 	st._rtAbortIfAddressEntryDoesNotExist(rt, entryAddr)
@@ -72,7 +72,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 // Deposits the specified amount into the balance held in escrow.
 // Note: the amount is included implicitly in the message.
 func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) {
-	RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
+	vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
 
 	h, st := a.State(rt)
 	st._rtAbortIfAddressEntryDoesNotExist(rt, entryAddr)
@@ -96,7 +96,7 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
-	RT_ValidateImmediateCallerIsSignable(rt)
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable... )
 	providerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
@@ -150,7 +150,7 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 // Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
 // TODO: replace SectorPreCommitInfo parameter with just the expiration
 func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs abi.DealIDs, sectorInfo storage_miner.SectorPreCommitInfo) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
@@ -167,7 +167,7 @@ func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs ab
 // and update the market's internal state accordingly.
 // TODO: replace SectorProveCommitInfo parameter with just the expiration
 func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorInfo storage_miner.SectorProveCommitInfo) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
@@ -184,7 +184,7 @@ func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs 
 }
 
 func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.DealIDs) abi.PieceInfos {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	ret := []abi.PieceInfo{}
 
@@ -208,7 +208,7 @@ func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.Dea
 // with its duration. This quantity may be an input into the functions specifying block reward,
 // sector power, collateral, and/or other parameters.
 func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs) abi.DealWeight {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
 	IMPL_FINISH() // BigInt arithmetic
@@ -230,7 +230,7 @@ func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs
 }
 
 func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.DealIDs) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)

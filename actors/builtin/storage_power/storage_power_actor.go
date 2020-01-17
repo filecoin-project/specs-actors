@@ -76,7 +76,7 @@ func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, 
 }
 
 func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) addr.Address {
-	vmr.RT_ValidateImmediateCallerIsSignable(rt)
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
 	newMinerAddr, err := addr.NewFromBytes(
@@ -128,20 +128,20 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) {
 	Release(rt, h, st)
 
 	ownerAddr, workerAddr := vmr.RT_GetMinerAccountsAssert(rt, minerAddr)
-	rt.ValidateImmediateCallerInSet([]addr.Address{ownerAddr, workerAddr})
+	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
 	a._rtDeleteMinerActor(rt, minerAddr)
 }
 
 func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, storageWeightDesc SectorStorageWeightDesc) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtAddPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc)
 }
 
 func (a *StoragePowerActor) OnSectorTerminate(
 	rt Runtime, storageWeightDesc SectorStorageWeightDesc, terminationType SectorTerminationType) {
 
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	a._rtDeductClaimedPowerForSectorAssert(rt, minerAddr, storageWeightDesc)
 
@@ -153,25 +153,25 @@ func (a *StoragePowerActor) OnSectorTerminate(
 }
 
 func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, storageWeightDesc SectorStorageWeightDesc) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtDeductClaimedPowerForSectorAssert(rt, rt.ImmediateCaller(), storageWeightDesc)
 }
 
 func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, storageWeightDesc SectorStorageWeightDesc) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtAddPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc)
 }
 
 func (a *StoragePowerActor) OnSectorModifyWeightDesc(
 	rt Runtime, storageWeightDescPrev SectorStorageWeightDesc, storageWeightDescNew SectorStorageWeightDesc) {
 
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtDeductClaimedPowerForSectorAssert(rt, rt.ImmediateCaller(), storageWeightDescPrev)
 	a._rtAddPowerForSector(rt, rt.ImmediateCaller(), storageWeightDescNew)
 }
 
 func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
@@ -181,7 +181,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) {
 }
 
 func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiveFailures int64) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
@@ -204,7 +204,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 }
 
 func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) {
-	rt.ValidateImmediateCallerAcceptAnyOfType(builtin.StorageMinerActorCodeID)
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	minerEvent := autil.MinerEvent{
 		MinerAddr: minerAddr,

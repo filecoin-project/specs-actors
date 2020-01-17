@@ -20,12 +20,9 @@ type Runtime interface {
 	// Not necessarily the actor in the From field of the initial on-chain Message.
 	// Always an ID-address.
 	ImmediateCaller() addr.Address
-	ValidateImmediateCallerIs(caller addr.Address)
-	ValidateImmediateCallerInSet(callers []addr.Address)
-	ValidateImmediateCallerAcceptAnyOfType(type_ abi.ActorCodeID)
-	ValidateImmediateCallerAcceptAnyOfTypes(types []abi.ActorCodeID)
 	ValidateImmediateCallerAcceptAny()
-	ValidateImmediateCallerMatches(CallerPattern)
+	ValidateImmediateCallerIs(addrs ...addr.Address)
+	ValidateImmediateCallerType(types ...abi.ActorCodeID)
 
 	// The address of the actor receiving the message. Always an ID-address.
 	CurrReceiver() addr.Address
@@ -36,31 +33,22 @@ type Runtime interface {
 
 	AcquireState() ActorStateHandle
 
-	SuccessReturn() InvocOutput
-	ValueReturn([]byte) InvocOutput
-
 	// Throw an error indicating a failure condition has occurred, from which the given actor
 	// code is unable to recover.
 	Abort(errExitCode exitcode.ExitCode, msg string)
 
 	// Calls Abort with InvalidArguments_User.
 	AbortArgMsg(msg string)
-	AbortArg()
 
 	// Calls Abort with InconsistentState_User.
 	AbortStateMsg(msg string)
-	AbortState()
 
 	// Calls Abort with InsufficientFunds_User.
 	AbortFundsMsg(msg string)
-	AbortFunds()
 
 	// Calls Abort with RuntimeAPIError.
 	// For internal use only (not in actor code).
 	AbortAPI(msg string)
-
-	// Check that the given condition is true (and call Abort if not).
-	Assert(bool)
 
 	CurrentBalance() abi.TokenAmount
 	ValueReceived() abi.TokenAmount
@@ -78,18 +66,8 @@ type Runtime interface {
 
 	// Sends a message to another actor.
 	// If the invoked method does not return successfully, this caller will be aborted too.
-	SendPropagatingErrors(input InvocInput) InvocOutput
-	Send(
-		toAddr addr.Address,
-		methodNum abi.MethodNum,
-		params abi.MethodParams,
-		value abi.TokenAmount,
-	) InvocOutput
-	SendQuery(
-		toAddr addr.Address,
-		methodNum abi.MethodNum,
-		params abi.MethodParams,
-	) []byte
+	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) InvocOutput
+	SendQuery(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams) []byte
 	SendFunds(toAddr addr.Address, value abi.TokenAmount)
 
 	// Sends a message to another actor, trapping an unsuccessful execution.
@@ -102,13 +80,8 @@ type Runtime interface {
 	// Always an ActorExec address.
 	NewActorAddress() addr.Address
 
-	// Creates an actor in the state tree, with empty state. May only be called by InitActor.
-	CreateActor(
-		// The new actor's code identifier.
-		codeId abi.ActorCodeID,
-		// Address under which the new actor's state will be stored. Must be an ID-address.
-		address addr.Address,
-	)
+	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by InitActor.
+	CreateActor(codeId abi.ActorCodeID, address addr.Address)
 
 	// Deletes an actor in the state tree. May only be called by the actor itself,
 	// or by StoragePowerActor in the case of StorageMinerActors.
@@ -125,11 +98,7 @@ type Runtime interface {
 
 type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
-	VerifySignature(
-		signature crypto.Signature,
-		signer addr.Address,
-		plaintext []byte,
-	) bool
+	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (abi.UnsealedSectorCID, error)
 	// Verifies a sector seal proof.
