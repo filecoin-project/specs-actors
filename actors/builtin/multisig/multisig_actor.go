@@ -63,6 +63,7 @@ func (a *MultiSigActor) State(rt Runtime) (vmr.ActorStateHandle, MultiSigActorSt
 type ConstructorParams struct {
 	AuthorizedParties     autil.ActorIDSetHAMT
 	NumApprovalsThreshold int64
+	UnlockDuration        abi.ChainEpoch
 }
 
 func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
@@ -73,6 +74,7 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 	st := MultiSigActorState{
 		AuthorizedParties:     params.AuthorizedParties,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
+		UnlockDuration:        params.UnlockDuration,
 		PendingTxns:           MultiSigTransactionHAMT_Empty(),
 		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
 	}
