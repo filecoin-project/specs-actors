@@ -189,27 +189,27 @@ func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params SwapAuthorize
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	oldActor, err := addr.IDFromAddress(params.From)
+	oldParty, err := addr.IDFromAddress(params.From)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("from party address is not ID protocol address: %v", err))
 	}
-	newActor, err := addr.IDFromAddress(params.To)
+	newParty, err := addr.IDFromAddress(params.To)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("to party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
 
-	if _, found := st.AuthorizedParties[abi.ActorID(oldActor)]; !found {
+	if _, found := st.AuthorizedParties[abi.ActorID(oldParty)]; !found {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	if _, found := st.AuthorizedParties[abi.ActorID(newActor)]; !found {
+	if _, found := st.AuthorizedParties[abi.ActorID(newParty)]; !found {
 		rt.AbortStateMsg("Party already present")
 	}
 
-	delete(st.AuthorizedParties, abi.ActorID(oldActor))
-	st.AuthorizedParties[abi.ActorID(newActor)] = true
+	delete(st.AuthorizedParties, abi.ActorID(oldParty))
+	st.AuthorizedParties[abi.ActorID(newParty)] = true
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
