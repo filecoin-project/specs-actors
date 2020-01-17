@@ -5,7 +5,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
