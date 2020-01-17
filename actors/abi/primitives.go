@@ -10,13 +10,16 @@ import cid "github.com/ipfs/go-cid"
 // Epoch number of the chain state, which acts as a proxy for time within the VM.
 type ChainEpoch int64
 
-// ActorCodeID identifies an actor's code (either one of the builtin actors,
-// or, in the future, a CID of VM bytecode for a user-defined actor).
+// Identifies an actor's code (either one of the builtin actors, or, in the future, a CID of VM bytecode for a
+// user-defined actor).
 type ActorCodeID cid.Cid
 
-// ActorID is a sequential number assigned to actors in the state tree.
-// ActorIDs are assigned by the InitActor when an actor is created.
+// A sequential number assigned to an actor when created by the InitActor.
+// This ID is embedded in ID-type addresses.
 type ActorID int64
+
+// The CID of an actor's private state.
+type ActorSubstateCID cid.Cid
 
 // MethodNum is an integer that represents a particular method
 // in an actor's function table. These numbers are used to compress
@@ -51,3 +54,4 @@ type RandomnessSeed []byte
 
 // Randomness is a string of random bytes
 type Randomness []byte
+

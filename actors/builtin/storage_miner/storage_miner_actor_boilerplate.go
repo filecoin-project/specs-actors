@@ -1,7 +1,7 @@
 package storage_miner
 
 import (
-	actor "github.com/filecoin-project/specs-actors/actors"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
@@ -27,11 +27,11 @@ var IMPL_FINISH = autil.IMPL_FINISH
 var TODO = autil.TODO
 
 func Release(rt Runtime, h vmr.ActorStateHandle, st StorageMinerActorState) {
-	checkCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.Release(checkCID)
 }
 
 func UpdateRelease(rt Runtime, h vmr.ActorStateHandle, st StorageMinerActorState) {
-	newCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }
