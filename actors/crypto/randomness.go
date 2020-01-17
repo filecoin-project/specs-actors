@@ -56,7 +56,7 @@ func RandomInt(randomness abi.Randomness, nonce int, limit int) int {
 
 func BigEndianBytesFromInt(x int) abi.Bytes {
 	buf := bytes.NewBuffer(make([]byte, 0, 8))
-	err := binary.Write(buf, binary.BigEndian, x)
+	err := binary.Write(buf, binary.BigEndian, x) // nolint: staticcheck
 	autil.AssertNoError(err)
 	return buf.Bytes()
 }
