@@ -2,7 +2,6 @@ package multisig
 
 import (
 	"fmt"
-	"math/big"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -83,10 +82,11 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 }
 
 type ProposeParams struct {
-	To     addr.Address
-	Value  big.Int
-	Method abi.MethodNum
-	Params abi.MethodParams
+	To         addr.Address
+	Value      abi.TokenAmount
+	Method     abi.MethodNum
+	Params     abi.MethodParams
+	Expiration abi.ChainEpoch
 }
 
 func (a *MultiSigActor) Propose(rt vmr.Runtime, params ProposeParams) TxnID {
@@ -100,11 +100,11 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params ProposeParams) TxnID {
 
 	txn := MultiSigTransaction{
 		Proposer:   callerAddr,
-		Expiration: 0, // TODO lotus does not specify this.
+		Expiration: params.Expiration,
 		To:         params.To,
 		Method:     params.Method,
 		Params:     params.Params,
-		Value:      0, // TODO lotus does not specify this.
+		Value:      params.Value,
 	}
 
 	st.PendingTxns[txnID] = txn
