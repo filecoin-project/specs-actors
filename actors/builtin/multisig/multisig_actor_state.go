@@ -3,7 +3,6 @@ package multisig
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 )
 
 type MultiSigActorState struct {
@@ -24,7 +23,6 @@ func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.Toke
 		return abi.TokenAmount(0)
 	}
 
-	TODO() // BigInt
 	lockedProportion := (st.UnlockDuration - elapsedEpoch) / st.UnlockDuration
 	return abi.TokenAmount(uint64(st.InitialBalance) * uint64(lockedProportion))
 }
@@ -40,8 +38,4 @@ func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountT
 	}
 
 	return true
-}
-
-func (st *MultiSigActorState) CID() cid.Cid {
-	panic("TODO")
 }

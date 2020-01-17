@@ -727,7 +727,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 		rt.AbortStateMsg("receiver must be ID address")
 	}
 
-	IMPL_TODO() // Use randomness APIs
+	TODO() // Use randomness APIs
 	var svInfoRandomness abi.Randomness
 	var svInfoInteractiveRandomness abi.Randomness
 
@@ -757,9 +757,7 @@ func getSectorNums(m map[abi.SectorNumber]SectorOnChainInfo) []abi.SectorNumber 
 	return l
 }
 
-func _surprisePoStSampleChallengedSectors(
-	sampleRandomness abi.Randomness, provingSet []abi.SectorNumber) []abi.SectorNumber {
-
-	IMPL_TODO()
+func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet []abi.SectorNumber) []abi.SectorNumber {
+	TODO()
 	panic("")
 }

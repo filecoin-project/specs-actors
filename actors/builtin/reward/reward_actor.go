@@ -15,8 +15,6 @@ import (
 type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
 
-var IMPL_FINISH = autil.IMPL_FINISH
-var IMPL_TODO = autil.IMPL_TODO
 var TODO = autil.TODO
 
 type VestingFunction int64
@@ -57,10 +55,6 @@ type RewardBalanceAMT map[addr.Address][]Reward
 
 type RewardActorState struct {
 	RewardMap RewardBalanceAMT
-}
-
-func (st *RewardActorState) CID() cid.Cid {
-	panic("TODO")
 }
 
 func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Address) abi.TokenAmount {
@@ -114,7 +108,7 @@ func (a *RewardActor) State(rt Runtime) (vmr.ActorStateHandle, RewardActorState)
 }
 
 func (a *RewardActor) WithdrawReward(rt vmr.Runtime) {
-	vmr.RT_ValidateImmediateCallerIsSignable(rt)
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)

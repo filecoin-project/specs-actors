@@ -22,7 +22,7 @@ type CronTableEntry struct {
 func (a *CronActor) Constructor(rt vmr.Runtime) vmr.InvocOutput {
 	// Nothing. intentionally left blank.
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	return rt.SuccessReturn()
+	return vmr.InvocOutput{}
 }
 
 func (a *CronActor) EpochTick(rt vmr.Runtime) vmr.InvocOutput {
@@ -39,5 +39,5 @@ func (a *CronActor) EpochTick(rt vmr.Runtime) vmr.InvocOutput {
 		})
 	}
 
-	return rt.SuccessReturn()
+	return vmr.InvocOutput{}
 }

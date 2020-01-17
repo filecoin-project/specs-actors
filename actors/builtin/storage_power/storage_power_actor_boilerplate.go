@@ -27,7 +27,6 @@ type Runtime = vmr.Runtime
 
 var Assert = autil.Assert
 var IMPL_FINISH = autil.IMPL_FINISH
-var IMPL_TODO = autil.IMPL_TODO
 var TODO = autil.TODO
 
 func Release(rt Runtime, h vmr.ActorStateHandle, st StoragePowerActorState) {

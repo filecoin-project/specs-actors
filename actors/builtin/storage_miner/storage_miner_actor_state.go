@@ -7,7 +7,6 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -114,10 +113,6 @@ type MinerInfo struct {
 	SealPartitions         int64
 	ElectionPoStPartitions int64
 	SurprisePoStPartitions int64
-}
-
-func (st *StorageMinerActorState) CID() cid.Cid {
-	panic("TODO")
 }
 
 func (st *StorageMinerActorState) _getSectorOnChainInfo(sectorNo abi.SectorNumber) (info SectorOnChainInfo, ok bool) {

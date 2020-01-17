@@ -9,7 +9,6 @@ import (
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 )
 
 // TODO: HAMT
@@ -30,10 +29,6 @@ type StoragePowerActorState struct {
 	ClaimedPower             PowerTableHAMT
 	NominalPower             PowerTableHAMT
 	NumMinersMeetingMinPower int
-}
-
-func (st *StoragePowerActorState) CID() cid.Cid {
-	panic("TODO")
 }
 
 func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerPower abi.StoragePower) bool {

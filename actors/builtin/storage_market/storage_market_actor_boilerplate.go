@@ -9,9 +9,6 @@ import (
 type BalanceTableHAMT = autil.BalanceTableHAMT
 type DealIDQueue = autil.DealIDQueue
 
-var RT_MinerEntry_ValidateCaller_DetermineFundsLocation = vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation
-var RT_ValidateImmediateCallerIsSignable = vmr.RT_ValidateImmediateCallerIsSignable
-
 ////////////////////////////////////////////////////////////////////////////////
 // Boilerplate
 //
@@ -26,8 +23,6 @@ type Bytes = abi.Bytes
 
 var Assert = autil.Assert
 var IMPL_FINISH = autil.IMPL_FINISH
-var IMPL_TODO = autil.IMPL_TODO
-var TODO = autil.TODO
 
 func Release(rt Runtime, h vmr.ActorStateHandle, st StorageMarketActorState) {
 	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
