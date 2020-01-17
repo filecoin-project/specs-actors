@@ -1,6 +1,7 @@
 package multisig
 
 import (
+	"fmt"
 	"math/big"
 
 	addr "github.com/filecoin-project/go-address"
@@ -145,8 +146,7 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params ModifyAuthoriz
 
 	actorID, err := addr.IDFromAddress(params.AuthorizedParty)
 	if err != nil {
-		// TODO runtime handles this input failure
-		panic(err)
+		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
@@ -160,8 +160,7 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params ModifyAutho
 
 	actorID, err := addr.IDFromAddress(params.AuthorizedParty)
 	if err != nil {
-		// TODO runtime handles this input failure
-		panic(err)
+		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
@@ -190,14 +189,11 @@ func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params SwapAuthorize
 
 	oldActor, err := addr.IDFromAddress(params.From)
 	if err != nil {
-		// TODO runtime handles this input failure
-		panic(err)
+		rt.AbortStateMsg(fmt.Sprintf("from party address is not ID protocol address: %v", err))
 	}
-
 	newActor, err := addr.IDFromAddress(params.To)
 	if err != nil {
-		// TODO runtime handles this input failure
-		panic(err)
+		rt.AbortStateMsg(fmt.Sprintf("to party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
