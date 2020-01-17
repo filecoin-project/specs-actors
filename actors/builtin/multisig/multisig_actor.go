@@ -236,14 +236,10 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params Chang
 }
 
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
-
 	h, st := a.State(rt)
 
-	// TODO look up transaction based on its ID from the Multisig actor state
-	txn := MultiSigTransaction{}
-
-	txnCheck, found := st.PendingTxns[txnID]
-	if !found || !txnCheck.Equals(txn) {
+	txn, found := st.PendingTxns[txnID]
+	if !found {
 		rt.AbortStateMsg("Requested transcation not found or not matched")
 	}
 
