@@ -4,7 +4,6 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	actor "github.com/filecoin-project/specs-actors/actors"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -178,7 +177,7 @@ func (a *RewardActor) AwardBlockReward(
 }
 
 func UpdateReleaseRewardActorState(rt Runtime, h vmr.ActorStateHandle, st RewardActorState) {
-	newCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }
 

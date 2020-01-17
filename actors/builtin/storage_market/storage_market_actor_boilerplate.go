@@ -1,7 +1,6 @@
 package storage_market
 
 import (
-	actor "github.com/filecoin-project/specs-actors/actors"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
@@ -31,11 +30,11 @@ var IMPL_TODO = autil.IMPL_TODO
 var TODO = autil.TODO
 
 func Release(rt Runtime, h vmr.ActorStateHandle, st StorageMarketActorState) {
-	checkCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.Release(checkCID)
 }
 func UpdateRelease(rt Runtime, h vmr.ActorStateHandle, st StorageMarketActorState) {
-	newCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }
 func DealsAMT_Empty() DealsAMT {

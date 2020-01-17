@@ -1,6 +1,5 @@
 package runtime
 
-import actor "github.com/filecoin-project/specs-actors/actors"
 import abi "github.com/filecoin-project/specs-actors/actors/abi"
 import crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 import exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -150,9 +149,9 @@ type InvocOutput struct {
 }
 
 type ActorStateHandle interface {
-	UpdateRelease(newStateCID actor.ActorSubstateCID)
-	Release(checkStateCID actor.ActorSubstateCID)
-	Take() actor.ActorSubstateCID
+	UpdateRelease(newStateCID abi.ActorSubstateCID)
+	Release(checkStateCID abi.ActorSubstateCID)
+	Take() abi.ActorSubstateCID
 }
 
 type ComputeFunctionID int64

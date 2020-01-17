@@ -2,7 +2,6 @@ package multisig
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	actor "github.com/filecoin-project/specs-actors/actors"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -229,11 +228,11 @@ func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt Runtime, address ad
 }
 
 func Release_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
-	checkCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.Release(checkCID)
 }
 
 func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
-	newCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }

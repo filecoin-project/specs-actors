@@ -4,7 +4,6 @@ import (
 	"bytes"
 
 	addr "github.com/filecoin-project/go-address"
-	actor "github.com/filecoin-project/specs-actors/actors"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -142,11 +141,11 @@ func _loadState(rt Runtime) (vmr.ActorStateHandle, InitActorState) {
 }
 
 func Release(rt Runtime, h vmr.ActorStateHandle, st InitActorState) {
-	checkCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.Release(checkCID)
 }
 
 func UpdateRelease(rt Runtime, h vmr.ActorStateHandle, st InitActorState) {
-	newCID := actor.ActorSubstateCID(rt.IpldPut(&st))
+	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }
