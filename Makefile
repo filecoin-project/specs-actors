@@ -1,10 +1,23 @@
-all: build
+GO_BIN ?= go
+GOLINT ?= golangci-lint
+
+all: build lint test tidy
 .PHONY: all
 
 build:
-	go build ./...
+	$(GO_BIN) build ./...
 .PHONY: build
 
 test:
-	go test ./...
+	$(GO_BIN) test ./...
 .PHONY: test
+
+tidy:
+	$(GO_BIN) mod tidy
+.PHONY:
+
+lint:
+	$(GOLINT) run ./...
+.PHONY: lint
+
+
