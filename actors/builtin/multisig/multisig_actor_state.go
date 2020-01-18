@@ -12,7 +12,7 @@ type MultiSigActorState struct {
 	UnlockDuration abi.ChainEpoch
 
 	AuthorizedParties     autil.ActorIDSetHAMT
-	NumApprovalsThreshold int
+	NumApprovalsThreshold int64
 	NextTxnID             TxnID
 	PendingTxns           MultiSigTransactionHAMT
 	PendingApprovals      MultiSigApprovalSetHAMT
