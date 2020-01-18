@@ -143,7 +143,6 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 
 type ModifyAuthorizedPartyParams struct {
 	AuthorizedParty addr.Address // must be an ID protocol address.
-	ModifyPartySize bool
 }
 
 func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *ModifyAuthorizedPartyParams) {
