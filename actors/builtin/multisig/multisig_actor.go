@@ -60,7 +60,7 @@ func (a *MultiSigActor) State(rt Runtime) (vmr.ActorStateHandle, MultiSigActorSt
 }
 
 type ConstructorParams struct {
-	AuthorizedParties     autil.ActorIDSetHAMT
+	AuthorizedParties     []abi.ActorID
 	NumApprovalsThreshold int64
 	UnlockDuration        abi.ChainEpoch
 }
@@ -149,13 +149,17 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *ModifyAuthori
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	actorID, err := addr.IDFromAddress(params.AuthorizedParty)
+	party, err := addr.IDFromAddress(params.AuthorizedParty)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
-	st.AuthorizedParties[abi.ActorID(actorID)] = true
+	if st.isAuthorizedParty(abi.ActorID(party)) {
+		rt.AbortStateMsg("Party is already authorized")
+	}
+	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(party))
+
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
@@ -163,22 +167,27 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *ModifyAuth
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	actorID, err := addr.IDFromAddress(params.AuthorizedParty)
+	party, err := addr.IDFromAddress(params.AuthorizedParty)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
 
-	if _, found := st.AuthorizedParties[abi.ActorID(actorID)]; !found {
+	if !st.isAuthorizedParty(abi.ActorID(party)) {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	delete(st.AuthorizedParties, abi.ActorID(actorID))
-
+	newAuthorizedParty := make([]abi.ActorID, 0, len(st.AuthorizedParties))
+	for _, s := range st.AuthorizedParties {
+		if s != abi.ActorID(party) {
+			newAuthorizedParty = append(newAuthorizedParty, s)
+		}
+	}
 	if int64(len(st.AuthorizedParties)) < st.NumApprovalsThreshold {
 		rt.AbortStateMsg("Cannot decrease authorized parties below threshold")
 	}
+	st.AuthorizedParties = newAuthorizedParty
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
@@ -203,16 +212,22 @@ func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthoriz
 
 	h, st := a.State(rt)
 
-	if _, found := st.AuthorizedParties[abi.ActorID(oldParty)]; !found {
+	if !st.isAuthorizedParty(abi.ActorID(oldParty)) {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	if _, found := st.AuthorizedParties[abi.ActorID(newParty)]; !found {
+	if !st.isAuthorizedParty(abi.ActorID(newParty)) {
 		rt.AbortStateMsg("Party already present")
 	}
 
-	delete(st.AuthorizedParties, abi.ActorID(oldParty))
-	st.AuthorizedParties[abi.ActorID(newParty)] = true
+	newAuthorizedParty := make([]abi.ActorID, 0, len(st.AuthorizedParties))
+	for _, s := range st.AuthorizedParties {
+		if s != abi.ActorID(oldParty) {
+			newAuthorizedParty = append(newAuthorizedParty, s)
+		}
+	}
+	newAuthorizedParty = append(newAuthorizedParty, abi.ActorID(newParty))
+	st.AuthorizedParties = newAuthorizedParty
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
@@ -287,7 +302,7 @@ func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt Runtime, address ad
 	autil.Assert(err == nil)
 
 	h, st := a.State(rt)
-	if _, found := st.AuthorizedParties[abi.ActorID(actorID)]; !found {
+	if !st.isAuthorizedParty(abi.ActorID(actorID)) {
 		rt.AbortArgMsg("Party not authorized")
 	}
 	Release_MultiSig(rt, h, st)

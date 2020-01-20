@@ -2,7 +2,6 @@ package multisig
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 type MultiSigActorState struct {
@@ -11,11 +10,20 @@ type MultiSigActorState struct {
 	StartEpoch     abi.ChainEpoch
 	UnlockDuration abi.ChainEpoch
 
-	AuthorizedParties     autil.ActorIDSetHAMT
+	AuthorizedParties     []abi.ActorID
 	NumApprovalsThreshold int64
 	NextTxnID             TxnID
 	PendingTxns           MultiSigTransactionHAMT
 	PendingApprovals      MultiSigApprovalSetHAMT
+}
+
+func (st *MultiSigActorState) isAuthorizedParty(party abi.ActorID) bool {
+	for _, ap := range st.AuthorizedParties {
+		if party == ap {
+			return true
+		}
+	}
+	return false
 }
 
 func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
