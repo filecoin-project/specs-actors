@@ -17,15 +17,6 @@ type MultiSigActorState struct {
 	PendingApprovals      MultiSigApprovalSetHAMT
 }
 
-func (st *MultiSigActorState) isAuthorizedParty(party abi.ActorID) bool {
-	for _, ap := range st.AuthorizedParties {
-		if party == ap {
-			return true
-		}
-	}
-	return false
-}
-
 func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	if elapsedEpoch >= st.UnlockDuration {
 		return abi.TokenAmount(0)
@@ -33,6 +24,15 @@ func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.Toke
 
 	lockedProportion := (st.UnlockDuration - elapsedEpoch) / st.UnlockDuration
 	return abi.TokenAmount(uint64(st.InitialBalance) * uint64(lockedProportion))
+}
+
+func (st *MultiSigActorState) isAuthorizedParty(party abi.ActorID) bool {
+	for _, ap := range st.AuthorizedParties {
+		if party == ap {
+			return true
+		}
+	}
+	return false
 }
 
 // return true if MultiSig maintains required locked balance after spending the amount
