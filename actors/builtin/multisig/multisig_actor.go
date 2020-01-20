@@ -159,10 +159,10 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorized
 	if st.isAuthorizedParty(abi.ActorID(party)) {
 		rt.AbortStateMsg("Party is already authorized")
 	}
+	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(party))
 	if params.Increase {
 		st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
 	}
-	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(party))
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
