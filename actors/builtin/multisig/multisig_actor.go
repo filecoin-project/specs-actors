@@ -141,11 +141,12 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 	// TODO implement cancel logic
 }
 
-type ModifyAuthorizedPartyParams struct {
+type AddAuthorizedParty struct {
 	AuthorizedParty addr.Address // must be an ID protocol address.
+	Increase        bool
 }
 
-func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *ModifyAuthorizedPartyParams) {
+func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorizedParty) {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -158,12 +159,20 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *ModifyAuthori
 	if st.isAuthorizedParty(abi.ActorID(party)) {
 		rt.AbortStateMsg("Party is already authorized")
 	}
+	if params.Increase {
+		st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
+	}
 	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(party))
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *ModifyAuthorizedPartyParams) {
+type RemoveAuthorizedParty struct {
+	AuthorizedParty addr.Address // must be an ID protocol address.
+	Decrease        bool
+}
+
+func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuthorizedParty) {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -184,8 +193,8 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *ModifyAuth
 			newAuthorizedParty = append(newAuthorizedParty, s)
 		}
 	}
-	if int64(len(st.AuthorizedParties)) < st.NumApprovalsThreshold {
-		rt.AbortStateMsg("Cannot decrease authorized parties below threshold")
+	if params.Decrease || int64(len(st.AuthorizedParties)-1) < st.NumApprovalsThreshold {
+		st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 	}
 	st.AuthorizedParties = newAuthorizedParty
 
