@@ -9,7 +9,7 @@ import (
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 )
 
-const epochUndefined = abi.ChainEpoch(-1)
+const epochUndefined = abi.ChainEpoch(0)
 
 // TODO AMT
 type DealsAMT map[abi.DealID]OnChainDeal

@@ -19,7 +19,7 @@ import (
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
-const epochUndefined = abi.ChainEpoch(-1)
+const epochUndefined = abi.ChainEpoch(0)
 
 type StorageMinerActor struct{}
 
