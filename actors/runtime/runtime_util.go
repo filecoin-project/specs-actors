@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-hamt-ipld"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -81,17 +82,24 @@ func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi
 	}
 }
 
-type RtCborwrapper struct {
+// AsStore allows Runtime to satisfy the hamt.CborIpldStore interface.
+func AsStore(rt Runtime) hamt.CborIpldStore {
+	return cborStore{rt}
+}
+
+var _ hamt.CborIpldStore = &cborStore{}
+
+type cborStore struct {
 	Runtime
 }
 
-func (r RtCborwrapper) Get(ctx context.Context, c cid.Cid, out interface{}) error {
+func (r cborStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
 	if !r.IpldGet(c, out) {
 		r.AbortStateMsg("not found")
 	}
 	return nil
 }
 
-func (r RtCborwrapper) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
+func (r cborStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
 	return r.IpldPut(v), nil
 }

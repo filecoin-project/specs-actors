@@ -344,7 +344,7 @@ func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActor
 
 func setPendingTxn(ctx context.Context, rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) (cid.Cid, error) {
 	// TODO REVIEW: is there a better place to perform this allocation and are there any varg options required here?
-	nd := hamt.NewNode(vmr.RtCborwrapper{rt})
+	nd := hamt.NewNode(vmr.AsStore(rt))
 
 	if err := nd.Set(ctx, t2k(txnID), &txn); err != nil {
 		return cid.Undef, err
@@ -356,7 +356,7 @@ func setPendingTxn(ctx context.Context, rt vmr.Runtime, txnID TxnID, txn MultiSi
 }
 
 func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) (MultiSigTransaction, error) {
-	nd, err := hamt.LoadNode(ctx, vmr.RtCborwrapper{rt}, rcid)
+	nd, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
 	if err != nil {
 		return MultiSigTransaction{}, err
 	}
@@ -369,7 +369,7 @@ func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnI
 }
 
 func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) error {
-	nd, err := hamt.LoadNode(ctx, vmr.RtCborwrapper{rt}, rcid)
+	nd, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
 	if err != nil {
 		return err
 	}
