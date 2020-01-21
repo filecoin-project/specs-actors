@@ -1,7 +1,6 @@
 package multisig
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 
@@ -97,7 +96,7 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 	txnID := st.NextTxnID
 	st.NextTxnID += 1
 
-	st.PendingTxns = setPendingTxn(rt.Context(), rt, st.PendingTxns, txnID, MultiSigTransaction{
+	st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, MultiSigTransaction{
 		To:       params.To,
 		Value:    params.Value,
 		Method:   params.Method,
@@ -136,13 +135,13 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 	autil.AssertNoError(err)
 
 	h, st := a.State(rt)
-	txn := getPendingTxn(rt.Context(), rt, st.PendingTxns, params.ID)
+	txn := getPendingTxn(rt, st.PendingTxns, params.ID)
 	proposer := txn.Approved[0]
 	if proposer != abi.ActorID(callerID) {
 		rt.AbortStateMsg("Cannot cancel another signers transaction")
 	}
 
-	st.PendingTxns = deletePendingTxn(rt.Context(), rt, st.PendingTxns, params.ID)
+	st.PendingTxns = deletePendingTxn(rt, st.PendingTxns, params.ID)
 	UpdateRelease_MultiSig(rt, h, st)
 	return &vmr.EmptyReturn{}
 }
@@ -276,7 +275,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 	currentApproverID, err := addr.IDFromAddress(rt.ImmediateCaller())
 	autil.AssertNoError(err)
 
-	txn := getPendingTxn(rt.Context(), rt, st.PendingTxns, txnID)
+	txn := getPendingTxn(rt, st.PendingTxns, txnID)
 
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
@@ -286,7 +285,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 	}
 	// update approved on the transaction
 	txn.Approved = append(txn.Approved, abi.ActorID(currentApproverID))
-	st.PendingTxns = setPendingTxn(rt.Context(), rt, st.PendingTxns, txnID, txn)
+	st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, txn)
 	UpdateRelease_MultiSig(rt, h, st)
 
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
@@ -308,7 +307,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 
 func (a *MultiSigActor) _rtDeletePendingTransaction(rt vmr.Runtime, txnID TxnID) {
 	h, st := a.State(rt)
-	st.PendingTxns = deletePendingTxn(rt.Context(), rt, st.PendingTxns, txnID)
+	st.PendingTxns = deletePendingTxn(rt, st.PendingTxns, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
@@ -334,42 +333,42 @@ func UpdateRelease_MultiSig(rt vmr.Runtime, h vmr.ActorStateHandle, st MultiSigA
 	h.UpdateRelease(newCID)
 }
 
-func getPendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) MultiSigTransaction {
-	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
+func getPendingTxn(rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) MultiSigTransaction {
+	root, err := hamt.LoadNode(rt.Context(), vmr.AsStore(rt), rootCID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
 
 	var txn MultiSigTransaction
-	if err := root.Find(ctx, toKey(txnID), &txn); err != nil {
+	if err := root.Find(rt.Context(), toKey(txnID), &txn); err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Requested transaction not found in Pending Transaction HAMT: %v", err))
 	}
 	return txn
 }
 
-func setPendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID, txn MultiSigTransaction) cid.Cid {
-	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
+func setPendingTxn(rt vmr.Runtime, rootCID cid.Cid, txnID TxnID, txn MultiSigTransaction) cid.Cid {
+	root, err := hamt.LoadNode(rt.Context(), vmr.AsStore(rt), rootCID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
-	if err := root.Set(ctx, toKey(txnID), &txn); err != nil {
+	if err := root.Set(rt.Context(), toKey(txnID), &txn); err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to set transaction in HAMT: %v", err))
 	}
-	if err := root.Flush(ctx); err != nil {
+	if err := root.Flush(rt.Context()); err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to flush HAMT node: %v", err))
 	}
 	return rt.IpldPut(root)
 }
 
-func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) cid.Cid {
-	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
+func deletePendingTxn(rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) cid.Cid {
+	root, err := hamt.LoadNode(rt.Context(), vmr.AsStore(rt), rootCID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
-	if err := root.Delete(ctx, toKey(txnID)); err != nil {
+	if err := root.Delete(rt.Context(), toKey(txnID)); err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to remove transation from HAMT: %v", err))
 	}
-	if err := root.Flush(ctx); err != nil {
+	if err := root.Flush(rt.Context()); err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to flush HAMT node: %v", err))
 	}
 	return rt.IpldPut(root)
