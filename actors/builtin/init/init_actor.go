@@ -7,6 +7,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
@@ -65,7 +66,7 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
 	AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
 	if !_codeIDSupportsExec(callerCodeID, execCodeID) {
-		rt.AbortArgMsg("Caller type cannot create an actor of requested type")
+		rt.Abort(exitcode.ErrForbidden, "Caller type %v cannot create an actor of type %v", callerCodeID, execCodeID)
 	}
 
 	// Compute a re-org-stable address.
@@ -116,7 +117,7 @@ func _loadState(rt Runtime) (vmr.ActorStateHandle, InitActorState) {
 	stateCID := cid.Cid(h.Take())
 	var state InitActorState
 	if !rt.IpldGet(stateCID, &state) {
-		rt.AbortAPI("state not found")
+		rt.Abort(exitcode.ErrPlaceholder, "state not found")
 	}
 	return h, state
 }

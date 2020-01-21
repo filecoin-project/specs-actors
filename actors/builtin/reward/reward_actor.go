@@ -7,6 +7,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
@@ -100,7 +101,7 @@ func (a *RewardActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, RewardActorSt
 	stateCID := cid.Cid(h.Take())
 	var state RewardActorState
 	if !rt.IpldGet(stateCID, &state) {
-		rt.AbortAPI("state not found")
+		rt.Abort(exitcode.ErrPlaceholder, "state not found")
 	}
 	return h, state
 }

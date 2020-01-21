@@ -2,7 +2,9 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 )
@@ -297,7 +299,7 @@ func (st *StorageMarketActorState) _slashBalance(addr addr.Address, slashAmount 
 
 func (st *StorageMarketActorState) _rtAbortIfAddressEntryDoesNotExist(rt Runtime, entryAddr addr.Address) {
 	if !st._addressEntryExists(entryAddr) {
-		rt.AbortArgMsg("Address entry does not exist")
+		rt.Abort(exitcode.ErrNotFound, "no entry for %v", entryAddr)
 	}
 }
 
@@ -329,15 +331,13 @@ func (st *StorageMarketActorState) _rtGetOnChainDealOrAbort(rt Runtime, dealID a
 
 func (st *StorageMarketActorState) _rtLockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	if amount < 0 {
-		rt.AbortArgMsg("Negative amount")
+		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amount)
 	}
 
 	st._rtAbortIfAddressEntryDoesNotExist(rt, addr)
 
-	ok := st._lockBalanceMaybe(addr, amount)
-
-	if !ok {
-		rt.AbortFundsMsg("Insufficient funds available to lock.")
+	if !st._lockBalanceMaybe(addr, amount) {
+		rt.Abort(exitcode.ErrInsufficientFunds, "Insufficient funds available to lock")
 	}
 }
 

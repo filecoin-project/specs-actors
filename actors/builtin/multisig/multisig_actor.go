@@ -9,6 +9,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
 	hamt "github.com/ipfs/go-hamt-ipld"
@@ -33,7 +34,7 @@ func (a *MultiSigActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, MultiSigAct
 	stateCID := cid.Cid(h.Take())
 	var state MultiSigActorState
 	if !rt.IpldGet(stateCID, &state) {
-		rt.AbortAPI("state not found")
+		rt.Abort(exitcode.ErrPlaceholder, "state not found")
 	}
 	return h, state
 }
@@ -291,7 +292,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if !st._hasAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()) {
-			rt.AbortArgMsg("insufficient funds unlocked")
+			rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds unlocked")
 		}
 
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
@@ -318,7 +319,7 @@ func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt vmr.Runtime, addres
 
 	h, st := a.State(rt)
 	if !st.isAuthorizedParty(abi.ActorID(actorID)) {
-		rt.AbortArgMsg("Party not authorized")
+		rt.Abort(exitcode.ErrForbidden, "party not authorized")
 	}
 	Release_MultiSig(rt, h, st)
 }
