@@ -1,7 +1,12 @@
 package multisig
 
 import (
+	"context"
 	"fmt"
+
+	dstore "github.com/ipfs/go-datastore"
+	hamt "github.com/ipfs/go-hamt-ipld"
+	bstore "github.com/ipfs/go-ipfs-blockstore"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -10,6 +15,19 @@ import (
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
 )
+
+func init() {
+	bs := bstore.NewBlockstore(dstore.NewMapDatastore())
+	cst := hamt.CSTFromBstore(bs)
+	nd := hamt.NewNode(cst)
+	emptyHAMT, err := cst.Put(context.TODO(), nd)
+	if err != nil {
+		panic(err)
+	}
+	EmptyHAMT = emptyHAMT
+}
+
+var EmptyHAMT cid.Cid
 
 type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
@@ -37,9 +55,8 @@ func (txn *MultiSigTransaction) Equals(MultiSigTransaction) bool {
 type MultiSigTransactionHAMT map[TxnID]MultiSigTransaction
 type MultiSigApprovalSetHAMT map[TxnID]autil.ActorIDSetHAMT
 
-func MultiSigTransactionHAMT_Empty() MultiSigTransactionHAMT {
-	IMPL_FINISH()
-	panic("")
+func MultiSigTransactionHAMT_Empty() cid.Cid {
+	return EmptyHAMT
 }
 
 func MultiSigApprovalSetHAMT_Empty() MultiSigApprovalSetHAMT {
@@ -120,8 +137,14 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 		Value:      params.Value,
 	}
 
-	st.PendingTxns[txnID] = txn
 	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
+
+	pendingTxnCID, err := setPendingTxns(context.TODO(), rt, txnID, txn)
+	if err != nil {
+		rt.AbortStateMsg(err.Error())
+	}
+	st.PendingTxns = pendingTxnCID
+
 	UpdateRelease_MultiSig(rt, h, st)
 
 	// Proposal implicitly includes approval of a transaction.
@@ -272,9 +295,9 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
 	h, st := a.State(rt)
 
-	txn, found := st.PendingTxns[txnID]
-	if !found {
-		rt.AbortStateMsg("Requested transcation not found or not matched")
+	txn, err := getPendingTxns(context.TODO(), rt, st.PendingTxns, txnID)
+	if err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Requested transaction not found or not matched: %v", err))
 	}
 
 	expirationExceeded := (rt.CurrEpoch() > txn.Expiration)
@@ -303,13 +326,16 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 			txn.Params,
 			txn.Value,
 		)
+		// TODO if getPendingTxns returns the hamt node we can save a look up by passing it here can deleting.
 		a._rtDeletePendingTransaction(rt, txnID)
 	}
 }
 
 func (a *MultiSigActor) _rtDeletePendingTransaction(rt Runtime, txnID TxnID) {
 	h, st := a.State(rt)
-	delete(st.PendingTxns, txnID)
+	if err := deletePendingTxns(context.TODO(), rt, st.PendingTxns, txnID); err != nil {
+		rt.AbortStateMsg(err.Error())
+	}
 	delete(st.PendingApprovals, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
@@ -334,4 +360,58 @@ func Release_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState)
 func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
 	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
+}
+
+func deletePendingTxns(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) error {
+	nd, err := hamt.LoadNode(ctx, rtCborStoreWrapper{rt}, rcid)
+	if err != nil {
+		return err
+	}
+	return nd.Delete(ctx, string(txnID))
+}
+
+func getPendingTxns(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) (MultiSigTransaction, error) {
+	nd, err := hamt.LoadNode(ctx, rtCborStoreWrapper{rt}, rcid)
+	if err != nil {
+		return MultiSigTransaction{}, err
+	}
+
+	var txn MultiSigTransaction
+	// FIXME(frrist) pretty sure string(txnID) is wrong, lets go with it for now
+	if err := nd.Find(ctx, string(txnID), &txn); err != nil {
+		return MultiSigTransaction{}, err
+	}
+	return txn, nil
+}
+
+func setPendingTxns(ctx context.Context, rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) (cid.Cid, error) {
+	// TODO is there a better place where we can perform this allocation?
+	nd := hamt.NewNode(rtCborStoreWrapper{rt})
+
+	// FIXME(frrist) pretty sure string(txnID) is wrong, lets go with it for now, maybe use cbor ints here?
+	if err := nd.Set(ctx, string(txnID), &txn); err != nil {
+		return cid.Undef, err
+	}
+
+	if err := nd.Flush(ctx); err != nil {
+		return cid.Undef, err
+	}
+
+	return rt.IpldPut(nd), nil
+}
+
+type rtCborStoreWrapper struct {
+	rt vmr.Runtime
+}
+
+func (r rtCborStoreWrapper) Get(ctx context.Context, c cid.Cid, out interface{}) error {
+	if !r.rt.IpldGet(c, out) {
+		r.rt.AbortStateMsg("not found")
+	}
+	return nil
+}
+
+func (r rtCborStoreWrapper) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
+	c := r.rt.IpldPut(v)
+	return c, nil
 }

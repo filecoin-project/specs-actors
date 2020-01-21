@@ -2,6 +2,7 @@ package multisig
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/ipfs/go-cid"
 )
 
 type MultiSigActorState struct {
@@ -13,7 +14,7 @@ type MultiSigActorState struct {
 	AuthorizedParties     []abi.ActorID
 	NumApprovalsThreshold int64
 	NextTxnID             TxnID
-	PendingTxns           MultiSigTransactionHAMT
+	PendingTxns           cid.Cid
 	PendingApprovals      MultiSigApprovalSetHAMT
 }
 
