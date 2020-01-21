@@ -1,12 +1,13 @@
 package multisig
 
 import (
+	"github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
 )
 
 type MultiSigActorState struct {
-	AuthorizedParties     []abi.ActorID
+	AuthorizedParties     []address.Address
 	NumApprovalsThreshold int64
 	NextTxnID             TxnID
 
@@ -27,7 +28,7 @@ func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.Toke
 	return abi.TokenAmount(uint64(st.InitialBalance) * uint64(lockedProportion))
 }
 
-func (st *MultiSigActorState) isAuthorizedParty(party abi.ActorID) bool {
+func (st *MultiSigActorState) isAuthorizedParty(party address.Address) bool {
 	for _, ap := range st.AuthorizedParties {
 		if party == ap {
 			return true
