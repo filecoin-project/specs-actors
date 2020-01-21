@@ -60,7 +60,7 @@ func (a *MultiSigActor) State(rt Runtime) (vmr.ActorStateHandle, MultiSigActorSt
 }
 
 type ConstructorParams struct {
-	AuthorizedParties     []abi.ActorID
+	AuthorizedParties     []addr.Address
 	NumApprovalsThreshold int64
 	UnlockDuration        abi.ChainEpoch
 }
@@ -69,8 +69,17 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 	h := rt.AcquireState()
 
+	var authPartyIDs []abi.ActorID
+	for _, a := range params.AuthorizedParties {
+		actID, err := addr.IDFromAddress(a)
+		if err != nil {
+			rt.AbortStateMsg(fmt.Sprintf("Address is not ID protocol: %v", err))
+		}
+		authPartyIDs = append(authPartyIDs, abi.ActorID(actID))
+	}
+
 	st := MultiSigActorState{
-		AuthorizedParties:     params.AuthorizedParties,
+		AuthorizedParties:     authPartyIDs,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
 		PendingTxns:           MultiSigTransactionHAMT_Empty(),
 		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
@@ -150,16 +159,16 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorized
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	party, err := addr.IDFromAddress(params.AuthorizedParty)
+	partyToAdd, err := addr.IDFromAddress(params.AuthorizedParty)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
-	if st.isAuthorizedParty(abi.ActorID(party)) {
+	if st.isAuthorizedParty(abi.ActorID(partyToAdd)) {
 		rt.AbortStateMsg("Party is already authorized")
 	}
-	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(party))
+	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(partyToAdd))
 	if params.Increase {
 		st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
 	}
@@ -176,20 +185,20 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuth
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	party, err := addr.IDFromAddress(params.AuthorizedParty)
+	partyToRemove, err := addr.IDFromAddress(params.AuthorizedParty)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
 	}
 
 	h, st := a.State(rt)
 
-	if !st.isAuthorizedParty(abi.ActorID(party)) {
+	if !st.isAuthorizedParty(abi.ActorID(partyToRemove)) {
 		rt.AbortStateMsg("Party not found")
 	}
 
 	newAuthorizedParty := make([]abi.ActorID, 0, len(st.AuthorizedParties))
 	for _, s := range st.AuthorizedParties {
-		if s != abi.ActorID(party) {
+		if s != abi.ActorID(partyToRemove) {
 			newAuthorizedParty = append(newAuthorizedParty, s)
 		}
 	}
