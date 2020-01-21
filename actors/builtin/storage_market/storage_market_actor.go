@@ -4,7 +4,6 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
@@ -148,8 +147,7 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 
 // Verify that a given set of storage deals is valid for a sector currently being PreCommitted.
 // Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
-// TODO: replace SectorPreCommitInfo parameter with just the expiration
-func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs abi.DealIDs, sectorInfo storage_miner.SectorPreCommitInfo) {
+func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -157,7 +155,7 @@ func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs ab
 
 	for _, dealID := range dealIDs.Items {
 		deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
-		_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorInfo.Expiration, deal)
+		_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
 	}
 
 	Release(rt, h, st)
@@ -165,8 +163,7 @@ func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs ab
 
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // and update the market's internal state accordingly.
-// TODO: replace SectorProveCommitInfo parameter with just the expiration
-func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorInfo storage_miner.SectorProveCommitInfo) {
+func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -174,7 +171,7 @@ func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs 
 
 	for _, dealID := range dealIDs.Items {
 		deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
-		_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorInfo.Expiration, deal)
+		_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
 		ocd := st.Deals[dealID]
 		ocd.SectorStartEpoch = rt.CurrEpoch()
 		st.Deals[dealID] = ocd
