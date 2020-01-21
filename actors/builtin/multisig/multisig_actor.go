@@ -150,7 +150,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
-	a._rtDeletePendingTransaction(rt, params.ID)
+	// TODO implement cancel logic
 }
 
 type AddAuthorizedParty struct {
