@@ -196,16 +196,16 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuth
 		rt.AbortStateMsg("Party not found")
 	}
 
-	newAuthorizedParty := make([]abi.ActorID, 0, len(st.AuthorizedParties))
+	newAuthorizedParties := make([]abi.ActorID, 0, len(st.AuthorizedParties))
 	for _, s := range st.AuthorizedParties {
 		if s != abi.ActorID(partyToRemove) {
-			newAuthorizedParty = append(newAuthorizedParty, s)
+			newAuthorizedParties = append(newAuthorizedParties, s)
 		}
 	}
 	if params.Decrease || int64(len(st.AuthorizedParties)-1) < st.NumApprovalsThreshold {
 		st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 	}
-	st.AuthorizedParties = newAuthorizedParty
+	st.AuthorizedParties = newAuthorizedParties
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
@@ -238,14 +238,14 @@ func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthoriz
 		rt.AbortStateMsg("Party already present")
 	}
 
-	newAuthorizedParty := make([]abi.ActorID, 0, len(st.AuthorizedParties))
+	newAuthorizedParties := make([]abi.ActorID, 0, len(st.AuthorizedParties))
 	for _, s := range st.AuthorizedParties {
 		if s != abi.ActorID(oldParty) {
-			newAuthorizedParty = append(newAuthorizedParty, s)
+			newAuthorizedParties = append(newAuthorizedParties, s)
 		}
 	}
-	newAuthorizedParty = append(newAuthorizedParty, abi.ActorID(newParty))
-	st.AuthorizedParties = newAuthorizedParty
+	newAuthorizedParties = append(newAuthorizedParties, abi.ActorID(newParty))
+	st.AuthorizedParties = newAuthorizedParties
 
 	UpdateRelease_MultiSig(rt, h, st)
 }
