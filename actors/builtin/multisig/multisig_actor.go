@@ -263,12 +263,14 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 		}
 
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
-		rt.Send(
+		_, code := rt.Send(
 			txn.To,
 			txn.Method,
 			txn.Params,
 			txn.Value,
 		)
+		// The exit code is explicitly ignored. It's ok for the subcall to fail.
+		_ = code
 		a._rtDeletePendingTransaction(rt, txnID)
 	}
 }

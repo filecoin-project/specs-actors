@@ -84,8 +84,9 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 	// Create an empty actor.
 	rt.CreateActor(execCodeID, idAddr)
 
-	// Invoke constructor. If construction fails, the error should propagate and cause Exec to fail too.
-	rt.Send(idAddr, builtin.MethodConstructor, constructorParams, rt.ValueReceived())
+	// Invoke constructor.
+	_, code := rt.Send(idAddr, builtin.MethodConstructor, constructorParams, rt.ValueReceived())
+	vmr.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{idAddr, uniqueAddress}
 }

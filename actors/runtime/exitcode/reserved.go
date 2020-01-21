@@ -1,5 +1,7 @@
 package exitcode
 
+import "strconv"
+
 type ExitCode int64
 
 func (x ExitCode) IsSuccess() bool {
@@ -8,6 +10,11 @@ func (x ExitCode) IsSuccess() bool {
 
 func (x ExitCode) IsError() bool {
 	return !x.IsSuccess()
+}
+
+// Implement error to trigger Go compiler checking of exit code return values.
+func (x ExitCode) Error() string {
+	return strconv.FormatInt(int64(x), 10)
 }
 
 const (

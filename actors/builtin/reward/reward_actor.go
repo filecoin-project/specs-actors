@@ -116,7 +116,8 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
 	withdrawableReward := st._withdrawReward(rt, ownerAddr)
 	UpdateReleaseRewardActorState(rt, h, st)
 
-	rt.SendFunds(ownerAddr, withdrawableReward)
+	_, code := rt.Send(ownerAddr, builtin.MethodSend, nil, withdrawableReward)
+	vmr.RequireSuccess(rt, code, "failed to send funds to owner")
 	return &vmr.EmptyReturn{}
 }
 
@@ -142,12 +143,13 @@ func (a *RewardActor) AwardBlockReward(
 	actualReward := currReward - abi.TokenAmount(rewardToGarnish)
 	if rewardToGarnish > 0 {
 		// Send fund to SPA for collateral
-		rt.Send(
+		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_AddBalance,
 			serde.MustSerializeParams(miner),
 			abi.TokenAmount(rewardToGarnish),
 		)
+		vmr.RequireSuccess(rt, code, "failed to add balance to power actor")
 	}
 
 	h, st := a.State(rt)
