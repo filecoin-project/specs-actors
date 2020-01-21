@@ -17,8 +17,6 @@ import (
 type Runtime interface {
 	CurrEpoch() abi.ChainEpoch
 
-	Context() context.Context
-
 	// Randomness returns a (pseudo)random string for the given epoch and tag.
 	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
 
@@ -93,6 +91,11 @@ type Runtime interface {
 
 	// Provides the system call interface.
 	Syscalls() Syscalls
+
+	// Provides a Go context for use by HAMT, tracing, and other miscellanea.
+	// The VM is intended to provide an idealised machine abstraction, with infinite storage etc, so this context
+	// should not be used by actor code directly.
+	Context() context.Context
 }
 
 type Syscalls interface {
