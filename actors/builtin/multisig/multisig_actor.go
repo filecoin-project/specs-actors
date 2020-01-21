@@ -22,8 +22,8 @@ type MultiSigTransaction struct {
 	Method abi.MethodNum
 	Params abi.MethodParams
 
-	// This actorID at index 0 is the transaction proposer, order of this slice must be preserved.
-	Approved []abi.ActorID
+	// This address at index 0 is the transaction proposer, order of this slice must be preserved.
+	Approved []addr.Address
 }
 
 type MultiSigActor struct{}
@@ -48,17 +48,13 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 	h := rt.AcquireState()
 
-	var authPartyIDs []abi.ActorID
+	var authPartiesIDs []addr.Address
 	for _, a := range params.AuthorizedParties {
-		actID, err := addr.IDFromAddress(a)
-		if err != nil {
-			rt.AbortStateMsg(fmt.Sprintf("Address is not ID protocol: %v", err))
-		}
-		authPartyIDs = append(authPartyIDs, abi.ActorID(actID))
+		authPartiesIDs = append(authPartiesIDs, a)
 	}
 
 	st := MultiSigActorState{
-		AuthorizedParties:     authPartyIDs,
+		AuthorizedParties:     authPartiesIDs,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
 		PendingTxns:           autil.EmptyHAMT,
 	}
@@ -89,9 +85,6 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 
-	callerID, err := addr.IDFromAddress(callerAddr)
-	autil.AssertNoError(err)
-
 	h, st := a.State(rt)
 	txnID := st.NextTxnID
 	st.NextTxnID += 1
@@ -101,7 +94,7 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 		Value:    params.Value,
 		Method:   params.Method,
 		Params:   params.Params,
-		Approved: []abi.ActorID{abi.ActorID(callerID)},
+		Approved: []addr.Address{callerAddr},
 	})
 
 	UpdateRelease_MultiSig(rt, h, st)
@@ -131,13 +124,10 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 
-	callerID, err := addr.IDFromAddress(callerAddr)
-	autil.AssertNoError(err)
-
 	h, st := a.State(rt)
 	txn := getPendingTxn(rt, st.PendingTxns, params.ID)
 	proposer := txn.Approved[0]
-	if proposer != abi.ActorID(callerID) {
+	if proposer != callerAddr {
 		rt.AbortStateMsg("Cannot cancel another signers transaction")
 	}
 
@@ -155,16 +145,11 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorized
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	partyToAdd, err := addr.IDFromAddress(params.AuthorizedParty)
-	if err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
-	}
-
 	h, st := a.State(rt)
-	if st.isAuthorizedParty(abi.ActorID(partyToAdd)) {
+	if st.isAuthorizedParty(params.AuthorizedParty) {
 		rt.AbortStateMsg("Party is already authorized")
 	}
-	st.AuthorizedParties = append(st.AuthorizedParties, abi.ActorID(partyToAdd))
+	st.AuthorizedParties = append(st.AuthorizedParties, params.AuthorizedParty)
 	if params.Increase {
 		st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
 	}
@@ -182,20 +167,15 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuth
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	partyToRemove, err := addr.IDFromAddress(params.AuthorizedParty)
-	if err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("party address is not ID protocol address: %v", err))
-	}
-
 	h, st := a.State(rt)
 
-	if !st.isAuthorizedParty(abi.ActorID(partyToRemove)) {
+	if !st.isAuthorizedParty(params.AuthorizedParty) {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	newAuthorizedParties := make([]abi.ActorID, 0, len(st.AuthorizedParties))
+	newAuthorizedParties := make([]addr.Address, 0, len(st.AuthorizedParties))
 	for _, s := range st.AuthorizedParties {
-		if s != abi.ActorID(partyToRemove) {
+		if s != params.AuthorizedParty {
 			newAuthorizedParties = append(newAuthorizedParties, s)
 		}
 	}
@@ -217,32 +197,23 @@ func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthoriz
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	oldParty, err := addr.IDFromAddress(params.From)
-	if err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("from party address is not ID protocol address: %v", err))
-	}
-	newParty, err := addr.IDFromAddress(params.To)
-	if err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("to party address is not ID protocol address: %v", err))
-	}
-
 	h, st := a.State(rt)
 
-	if !st.isAuthorizedParty(abi.ActorID(oldParty)) {
+	if !st.isAuthorizedParty(params.From) {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	if !st.isAuthorizedParty(abi.ActorID(newParty)) {
+	if !st.isAuthorizedParty(params.To) {
 		rt.AbortStateMsg("Party already present")
 	}
 
-	newAuthorizedParties := make([]abi.ActorID, 0, len(st.AuthorizedParties))
+	newAuthorizedParties := make([]addr.Address, 0, len(st.AuthorizedParties))
 	for _, s := range st.AuthorizedParties {
-		if s != abi.ActorID(oldParty) {
+		if s != params.From {
 			newAuthorizedParties = append(newAuthorizedParties, s)
 		}
 	}
-	newAuthorizedParties = append(newAuthorizedParties, abi.ActorID(newParty))
+	newAuthorizedParties = append(newAuthorizedParties, params.To)
 	st.AuthorizedParties = newAuthorizedParties
 
 	UpdateRelease_MultiSig(rt, h, st)
@@ -272,19 +243,16 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID) {
 	h, st := a.State(rt)
 
-	currentApproverID, err := addr.IDFromAddress(rt.ImmediateCaller())
-	autil.AssertNoError(err)
-
 	txn := getPendingTxn(rt, st.PendingTxns, txnID)
 
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
-		if previousApprover == abi.ActorID(currentApproverID) {
+		if previousApprover == rt.ImmediateCaller() {
 			rt.AbortStateMsg("already approved this message")
 		}
 	}
 	// update approved on the transaction
-	txn.Approved = append(txn.Approved, abi.ActorID(currentApproverID))
+	txn.Approved = append(txn.Approved, rt.ImmediateCaller())
 	st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, txn)
 	UpdateRelease_MultiSig(rt, h, st)
 
@@ -312,12 +280,8 @@ func (a *MultiSigActor) _rtDeletePendingTransaction(rt vmr.Runtime, txnID TxnID)
 }
 
 func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt vmr.Runtime, address addr.Address) {
-	autil.AssertMsg(address.Protocol() == addr.ID, "caller address does not have ID")
-	actorID, err := addr.IDFromAddress(address)
-	autil.Assert(err == nil)
-
 	h, st := a.State(rt)
-	if !st.isAuthorizedParty(abi.ActorID(actorID)) {
+	if !st.isAuthorizedParty(address) {
 		rt.Abort(exitcode.ErrForbidden, "party not authorized")
 	}
 	Release_MultiSig(rt, h, st)
