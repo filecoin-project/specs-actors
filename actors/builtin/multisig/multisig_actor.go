@@ -17,14 +17,12 @@ import (
 type TxnID int64
 
 type MultiSigTransaction struct {
-	ID TxnID
-
 	To     addr.Address
 	Value  abi.TokenAmount
 	Method abi.MethodNum
 	Params abi.MethodParams
 
-	// This acotorID at index 0 is the transaction proposer, order of this slice must be preserved.
+	// This actorID at index 0 is the transaction proposer, order of this slice must be preserved.
 	Approved []abi.ActorID
 }
 
@@ -94,18 +92,17 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 	st.NextTxnID += 1
 
 	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, MultiSigTransaction{
-		ID:       txnID,
 		To:       params.To,
 		Value:    params.Value,
 		Method:   params.Method,
 		Params:   params.Params,
-		Approved: []abi.ActorID{abi.ActorID(callerID)}, // TODO REVIEW Approved[0] is transaction proposer
+		Approved: []abi.ActorID{abi.ActorID(callerID)},
 	})
 
 	UpdateRelease_MultiSig(rt, h, st)
 
 	// Proposal implicitly includes approval of a transaction.
-	a._rtApproveTransactionOrAbort(rt, callerAddr, txnID)
+	a._rtApproveTransactionOrAbort(rt, txnID)
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
@@ -120,7 +117,7 @@ func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
-	a._rtApproveTransactionOrAbort(rt, callerAddr, params.ID)
+	a._rtApproveTransactionOrAbort(rt, params.ID)
 }
 
 func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
@@ -131,14 +128,15 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 	callerID, err := addr.IDFromAddress(callerAddr)
 	autil.AssertNoError(err)
 
-	_, st := a.State(rt)
+	h, st := a.State(rt)
 	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, params.ID)
 	proposer := txn.Approved[0]
 	if proposer != abi.ActorID(callerID) {
 		rt.AbortStateMsg("Cannot cancel another signers transaction")
 	}
 
-	a._rtApproveTransactionOrAbort(rt, callerAddr, params.ID)
+	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, params.ID)
+	UpdateRelease_MultiSig(rt, h, st)
 }
 
 type AddAuthorizedParty struct {
@@ -260,10 +258,10 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, callerAddr addr.Address, txnID TxnID) {
+func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID) {
 	h, st := a.State(rt)
 
-	currentApproverID, err := addr.IDFromAddress(callerAddr)
+	currentApproverID, err := addr.IDFromAddress(rt.ImmediateCaller())
 	autil.AssertNoError(err)
 
 	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
