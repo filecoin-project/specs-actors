@@ -6,16 +6,16 @@ import (
 )
 
 type MultiSigActorState struct {
+	AuthorizedParties     []abi.ActorID
+	NumApprovalsThreshold int64
+	NextTxnID             TxnID
+
 	// Linear unlock
 	InitialBalance abi.TokenAmount
 	StartEpoch     abi.ChainEpoch
 	UnlockDuration abi.ChainEpoch
 
-	AuthorizedParties     []abi.ActorID
-	NumApprovalsThreshold int64
-	NextTxnID             TxnID
-	PendingTxns           cid.Cid
-	PendingApprovals      MultiSigApprovalSetHAMT
+	PendingTxns cid.Cid
 }
 
 func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {

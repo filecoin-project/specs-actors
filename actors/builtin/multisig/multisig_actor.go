@@ -14,12 +14,6 @@ import (
 	hamt "github.com/ipfs/go-hamt-ipld"
 )
 
-type InvocOutput = vmr.InvocOutput
-type Runtime = vmr.Runtime
-
-var AssertMsg = autil.AssertMsg
-var IMPL_FINISH = autil.IMPL_FINISH
-
 type TxnID int64
 
 type MultiSigTransaction struct {
@@ -30,27 +24,13 @@ type MultiSigTransaction struct {
 	Method abi.MethodNum
 	Params abi.MethodParams
 
-	Approved  []addr.Address // TODO REVIEW: order must be preserved during actor operations
-	Completed bool
-	Canceled  bool
-	RetCode   int64
-}
-
-func (txn *MultiSigTransaction) Equals(MultiSigTransaction) bool {
-	IMPL_FINISH()
-	panic("")
-}
-
-type MultiSigApprovalSetHAMT map[TxnID]autil.ActorIDSetHAMT
-
-func MultiSigApprovalSetHAMT_Empty() MultiSigApprovalSetHAMT {
-	IMPL_FINISH()
-	panic("")
+	// This acotorID at index 0 is the transaction proposer, order of this slice must be preserved.
+	Approved []abi.ActorID
 }
 
 type MultiSigActor struct{}
 
-func (a *MultiSigActor) State(rt Runtime) (vmr.ActorStateHandle, MultiSigActorState) {
+func (a *MultiSigActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, MultiSigActorState) {
 	h := rt.AcquireState()
 	stateCID := cid.Cid(h.Take())
 	var state MultiSigActorState
@@ -83,7 +63,6 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 		AuthorizedParties:     authPartyIDs,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
 		PendingTxns:           autil.EmptyHAMT,
-		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
 	}
 
 	if params.UnlockDuration != 0 {
@@ -107,24 +86,21 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 
+	callerID, err := addr.IDFromAddress(callerAddr)
+	autil.AssertNoError(err)
+
 	h, st := a.State(rt)
 	txnID := st.NextTxnID
 	st.NextTxnID += 1
 
-	txn := MultiSigTransaction{
-		ID:        txnID,
-		To:        params.To,
-		Value:     params.Value,
-		Method:    params.Method,
-		Params:    params.Params,
-		Approved:  []addr.Address{callerAddr}, // TODO REVIEW Approved[0] is transaction proposer
-		Completed: false,
-		Canceled:  false,
-		RetCode:   0,
-	}
-
-	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
-	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, txn)
+	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, MultiSigTransaction{
+		ID:       txnID,
+		To:       params.To,
+		Value:    params.Value,
+		Method:   params.Method,
+		Params:   params.Params,
+		Approved: []abi.ActorID{abi.ActorID(callerID)}, // TODO REVIEW Approved[0] is transaction proposer
+	})
 
 	UpdateRelease_MultiSig(rt, h, st)
 
@@ -151,7 +127,18 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
-	// TODO implement cancel logic
+
+	callerID, err := addr.IDFromAddress(callerAddr)
+	autil.AssertNoError(err)
+
+	_, st := a.State(rt)
+	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, params.ID)
+	proposer := txn.Approved[0]
+	if proposer != abi.ActorID(callerID) {
+		rt.AbortStateMsg("Cannot cancel another signers transaction")
+	}
+
+	a._rtApproveTransactionOrAbort(rt, callerAddr, params.ID)
 }
 
 type AddAuthorizedParty struct {
@@ -273,19 +260,26 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
+func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, callerAddr addr.Address, txnID TxnID) {
 	h, st := a.State(rt)
+
+	currentApproverID, err := addr.IDFromAddress(callerAddr)
+	autil.AssertNoError(err)
 
 	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
 
-	actorID, err := addr.IDFromAddress(callerAddr)
-	autil.AssertNoError(err)
-
-	st.PendingApprovals[txnID][abi.ActorID(actorID)] = true
-	thresholdMet := int64(len(st.PendingApprovals[txnID])) == st.NumApprovalsThreshold
-
+	// abort duplicate approval
+	for _, previousApprover := range txn.Approved {
+		if previousApprover == abi.ActorID(currentApproverID) {
+			rt.AbortStateMsg("already approved this message")
+		}
+	}
+	// update approved on the transaction
+	txn.Approved = append(txn.Approved, abi.ActorID(currentApproverID))
+	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, txn)
 	UpdateRelease_MultiSig(rt, h, st)
 
+	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if !st._hasAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()) {
 			rt.AbortArgMsg("insufficient funds unlocked")
@@ -302,15 +296,14 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 	}
 }
 
-func (a *MultiSigActor) _rtDeletePendingTransaction(rt Runtime, txnID TxnID) {
+func (a *MultiSigActor) _rtDeletePendingTransaction(rt vmr.Runtime, txnID TxnID) {
 	h, st := a.State(rt)
 	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
-	delete(st.PendingApprovals, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt Runtime, address addr.Address) {
-	AssertMsg(address.Protocol() == addr.ID, "caller address does not have ID")
+func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt vmr.Runtime, address addr.Address) {
+	autil.AssertMsg(address.Protocol() == addr.ID, "caller address does not have ID")
 	actorID, err := addr.IDFromAddress(address)
 	autil.Assert(err == nil)
 
@@ -321,12 +314,12 @@ func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt Runtime, address ad
 	Release_MultiSig(rt, h, st)
 }
 
-func Release_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
+func Release_MultiSig(rt vmr.Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
 	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.Release(checkCID)
 }
 
-func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
+func UpdateRelease_MultiSig(rt vmr.Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
 	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }
