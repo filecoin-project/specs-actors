@@ -9,6 +9,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 )
 
@@ -21,7 +22,7 @@ func (a *StorageMarketActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMar
 	var state StorageMarketActorState
 	stateCID := cid.Cid(h.Take())
 	if !rt.IpldGet(stateCID, &state) {
-		rt.AbortAPI("state not found")
+		rt.Abort(exitcode.ErrPlaceholder, "state not found")
 	}
 	return h, state
 }
@@ -45,7 +46,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 	amountSlashedTotal := abi.TokenAmount(0)
 
 	if amountRequested < 0 {
-		rt.AbortArgMsg("Negative amount.")
+		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amountRequested)
 	}
 
 	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
@@ -102,7 +103,6 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	providerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
 
@@ -110,8 +110,8 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 	for _, newDeal := range newStorageDeals {
 		p := newDeal.Proposal
 
-		if p.Provider != providerAddr {
-			rt.AbortArgMsg("Incorrect provider listed in deal")
+		if p.Provider != rt.ImmediateCaller() {
+			rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", p.Provider)
 		}
 
 		_rtAbortIfNewDealInvalid(rt, newDeal)

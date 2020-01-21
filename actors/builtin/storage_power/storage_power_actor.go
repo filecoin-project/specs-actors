@@ -12,6 +12,7 @@ import (
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
@@ -33,7 +34,7 @@ func (a *StoragePowerActor) State(rt Runtime) (vmr.ActorStateHandle, StoragePowe
 	stateCID := cid.Cid(h.Take())
 	var state StoragePowerActorState
 	if !rt.IpldGet(stateCID, &state) {
-		rt.AbortAPI("state not found")
+		rt.Abort(exitcode.ErrPlaceholder, "state not found")
 	}
 	return h, state
 }
@@ -59,7 +60,7 @@ func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) *vmr.
 
 func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
 	if amountRequested < 0 {
-		rt.AbortArgMsg("Amount to withdraw must be nonnegative")
+		rt.Abort(exitcode.ErrIllegalArgument, "negative withdrawal %v", amountRequested)
 	}
 
 	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
@@ -122,7 +123,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) *vmr
 
 	minerPledgeBalance, ok := autil.BalanceTable_GetEntry(st.EscrowTable, minerAddr)
 	if !ok {
-		rt.AbortArgMsg("Miner address not found")
+		rt.Abort(exitcode.ErrNotFound, "no such miner %v", minerAddr)
 	}
 
 	if minerPledgeBalance > abi.TokenAmount(0) {
@@ -157,7 +158,7 @@ func (a *StoragePowerActor) OnSectorTerminate(
 	minerAddr := rt.ImmediateCaller()
 	a._rtDeductClaimedPowerForSectorAssert(rt, minerAddr, storageWeightDesc)
 
-	if terminationType != SectorTerminationType_NormalExpiration {
+	if terminationType != autil.NormalExpiration {
 		cidx := rt.CurrIndices()
 		amountToSlash := cidx.StoragePower_PledgeSlashForSectorTermination(storageWeightDesc, terminationType)
 		a._rtSlashPledgeCollateral(rt, minerAddr, amountToSlash)
@@ -265,20 +266,20 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 
 	claimedPower, powerOk := st.ClaimedPower[slasheeAddr]
 	if !powerOk {
-		rt.AbortArgMsg("spa.ReportConsensusFault: miner to slash has been slashed")
+		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner already slashed")
 	}
 	Assert(claimedPower > 0)
 
 	currPledge, pledgeOk := st._getCurrPledgeForMiner(slasheeAddr)
 	if !pledgeOk {
-		rt.AbortArgMsg("spa.ReportConsensusFault: miner to slash has no pledge")
+		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner has no pledge")
 	}
 	Assert(currPledge > 0)
 
 	// elapsed epoch from the latter block which committed the fault
 	elapsedEpoch := rt.CurrEpoch() - faultEpoch
 	if elapsedEpoch <= 0 {
-		rt.AbortArgMsg("spa.ReportConsensusFault: invalid block")
+		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: invalid block")
 	}
 
 	collateralToSlash := st._getPledgeSlashForConsensusFault(currPledge, faultType)
@@ -401,7 +402,7 @@ func (a *StoragePowerActor) _rtGetPledgeCollateralReqForMinerOrAbort(rt Runtime,
 	h, st := a.State(rt)
 	minerNominalPower, found := st.NominalPower[minerAddr]
 	if !found {
-		rt.AbortArgMsg("Miner not found")
+		rt.Abort(exitcode.ErrNotFound, "no miner %v", minerAddr)
 	}
 	Release(rt, h, st)
 	cidx := rt.CurrIndices()

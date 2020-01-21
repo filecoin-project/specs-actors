@@ -8,6 +8,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
@@ -55,7 +56,7 @@ func RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt Runtime, entryAddr a
 		return ownerAddr
 	} else {
 		if entrySpec == MinerEntrySpec_MinerOnly {
-			rt.AbortArgMsg("Only miner entries valid in current context")
+			rt.Abort(exitcode.ErrPlaceholder, "Only miner entries valid in current context")
 		}
 		// Ordinary account-style actor entry; funds recipient is just the entry address itself.
 		rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -65,7 +66,7 @@ func RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt Runtime, entryAddr a
 
 func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi.TokenAmount) {
 	if rt.ValueReceived() < fundsRequired {
-		rt.AbortFundsMsg("Insufficient funds received accompanying message")
+		rt.Abort(exitcode.ErrInsufficientFunds, "Insufficient funds received accompanying message")
 	}
 
 	if rt.ValueReceived() > fundsRequired {

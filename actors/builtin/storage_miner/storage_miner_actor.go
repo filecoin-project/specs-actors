@@ -13,6 +13,7 @@ import (
 	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
@@ -27,7 +28,7 @@ func (a *StorageMinerActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMine
 	stateCID := cid.Cid(h.Take())
 	var state StorageMinerActorState
 	if !rt.IpldGet(stateCID, &state) {
-		rt.AbortAPI("state not found")
+		rt.Abort(exitcode.ErrPlaceholder, "state not found")
 	}
 	return h, state
 }
@@ -168,7 +169,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 
 	cidx := rt.CurrIndices()
 	depositReq := cidx.StorageMining_PreCommitDeposit(st.Info.SectorSize, info.Expiration)
-	RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
+	vmr.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
 	// Verify deals with StorageMarketActor; abort if this fails.
 	// (Note: committed-capacity sectors contain no deals, so in that case verification will pass trivially.)
@@ -201,7 +202,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	a._rtEnrollCronEvent(rt, expiryBound, []abi.SectorNumber{info.SectorNumber})
 
 	if info.Expiration <= rt.CurrEpoch() {
-		rt.AbortArgMsg("PreCommit sector must have positive lifetime")
+		rt.Abort(exitcode.ErrIllegalArgument, "PreCommit sector must expire (%v) after now (%v)", info.Expiration, rt.CurrEpoch())
 	}
 
 	a._rtEnrollCronEvent(rt, info.Expiration, []abi.SectorNumber{info.SectorNumber})
@@ -214,8 +215,11 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	rt.ValidateImmediateCallerIs(workerAddr)
 
 	preCommitSector, found := st.Sectors[info.SectorNumber]
-	if !found || preCommitSector.State != PreCommit {
-		rt.AbortArgMsg("Sector not valid or not in PreCommit state")
+	if !found {
+		rt.Abort(exitcode.ErrNotFound, "no such sector %v", info.SectorNumber)
+	}
+	if preCommitSector.State != PreCommit {
+		rt.Abort(exitcode.ErrIllegalArgument, "invalid sector state %v", preCommitSector.State)
 	}
 
 	if rt.CurrEpoch() > preCommitSector.PreCommitEpoch+builtin.MAX_PROVE_COMMIT_SECTOR_EPOCH || rt.CurrEpoch() < preCommitSector.PreCommitEpoch+builtin.MIN_PROVE_COMMIT_SECTOR_EPOCH {
@@ -345,14 +349,14 @@ func (a *StorageMinerActor) TerminateSector(rt Runtime, sectorNumber abi.SectorN
 
 func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []abi.SectorNumber, duration abi.ChainEpoch) *vmr.EmptyReturn {
 	if duration <= abi.ChainEpoch(0) {
-		rt.AbortArgMsg("Temporary fault duration must be positive")
+		rt.Abort(exitcode.ErrIllegalArgument, "non-positive fault duration %v", duration)
 	}
 
 	storageWeightDescs := a._rtGetStorageWeightDescsForSectors(rt, sectorNumbers)
 	cidx := rt.CurrIndices()
 	requiredFee := cidx.StorageMining_TemporaryFaultFee(storageWeightDescs, duration)
 
-	RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, requiredFee)
+	vmr.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, requiredFee)
 	rt.SendFunds(builtin.BurntFundsActorAddr, requiredFee)
 
 	effectiveBeginEpoch := rt.CurrEpoch() + indices.StorageMining_DeclaredFaultEffectiveDelay()

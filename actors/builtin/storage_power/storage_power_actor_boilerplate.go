@@ -10,8 +10,6 @@ type BalanceTableHAMT = autil.BalanceTableHAMT
 type SectorStorageWeightDesc = autil.SectorStorageWeightDesc
 type SectorTerminationType = autil.SectorTermination
 
-var SectorTerminationType_NormalExpiration = autil.NormalExpiration
-
 ////////////////////////////////////////////////////////////////////////////////
 // Boilerplate
 //

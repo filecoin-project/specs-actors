@@ -35,22 +35,15 @@ type Runtime interface {
 
 	AcquireState() ActorStateHandle
 
-	// Throw an error indicating a failure condition has occurred, from which the given actor
-	// code is unable to recover.
-	Abort(errExitCode exitcode.ExitCode, msg string)
-
-	// Calls Abort with InvalidArguments_User.
-	AbortArgMsg(msg string)
+	// Halts execution upon an error from which the actor cannot recover. This method does not return.
+	// State changes will be rolled back, including any made by the caller.
+	// The message and args are for diagnostic purposes and do not persist on chain. They should be suitable for
+	// passing to fmt.Errorf(msg, args...).
+	Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{})
 
 	// Calls Abort with InconsistentState_User.
+	// TODO: replace all call sites with Abort(exitcode, msg, ...)
 	AbortStateMsg(msg string)
-
-	// Calls Abort with InsufficientFunds_User.
-	AbortFundsMsg(msg string)
-
-	// Calls Abort with RuntimeAPIError.
-	// For internal use only (not in actor code).
-	AbortAPI(msg string)
 
 	CurrentBalance() abi.TokenAmount
 	ValueReceived() abi.TokenAmount
