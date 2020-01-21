@@ -97,7 +97,7 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 	txnID := st.NextTxnID
 	st.NextTxnID += 1
 
-	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, MultiSigTransaction{
+	st.PendingTxns = setPendingTxn(rt.Context(), rt, st.PendingTxns, txnID, MultiSigTransaction{
 		To:       params.To,
 		Value:    params.Value,
 		Method:   params.Method,
@@ -136,13 +136,13 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 	autil.AssertNoError(err)
 
 	h, st := a.State(rt)
-	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, params.ID)
+	txn := getPendingTxn(rt.Context(), rt, st.PendingTxns, params.ID)
 	proposer := txn.Approved[0]
 	if proposer != abi.ActorID(callerID) {
 		rt.AbortStateMsg("Cannot cancel another signers transaction")
 	}
 
-	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, params.ID)
+	st.PendingTxns = deletePendingTxn(rt.Context(), rt, st.PendingTxns, params.ID)
 	UpdateRelease_MultiSig(rt, h, st)
 	return &vmr.EmptyReturn{}
 }
@@ -152,7 +152,7 @@ type AddAuthorizedParty struct {
 	Increase        bool
 }
 
-func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorizedParty)  *vmr.EmptyReturn {
+func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorizedParty) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -276,7 +276,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 	currentApproverID, err := addr.IDFromAddress(rt.ImmediateCaller())
 	autil.AssertNoError(err)
 
-	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
+	txn := getPendingTxn(rt.Context(), rt, st.PendingTxns, txnID)
 
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
@@ -286,7 +286,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 	}
 	// update approved on the transaction
 	txn.Approved = append(txn.Approved, abi.ActorID(currentApproverID))
-	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, txn)
+	st.PendingTxns = setPendingTxn(rt.Context(), rt, st.PendingTxns, txnID, txn)
 	UpdateRelease_MultiSig(rt, h, st)
 
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
@@ -308,7 +308,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 
 func (a *MultiSigActor) _rtDeletePendingTransaction(rt vmr.Runtime, txnID TxnID) {
 	h, st := a.State(rt)
-	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
+	st.PendingTxns = deletePendingTxn(rt.Context(), rt, st.PendingTxns, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
