@@ -1,17 +1,15 @@
 package init
 
 import (
-	"bytes"
-
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 )
 
-type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
 type Bytes = abi.Bytes
 
@@ -45,7 +43,7 @@ func (s *InitActorState) MapAddressToNewID(address addr.Address) addr.Address {
 
 type InitActor struct{}
 
-func (a *InitActor) Constructor(rt Runtime) InvocOutput {
+func (a *InitActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	h := rt.AcquireState()
 	st := InitActorState{
@@ -54,10 +52,15 @@ func (a *InitActor) Constructor(rt Runtime) InvocOutput {
 		NetworkName: vmr.NetworkName(),
 	}
 	UpdateRelease(rt, h, st)
-	return InvocOutput{}
+	return &vmr.EmptyReturn{}
 }
 
-func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorParams abi.MethodParams) InvocOutput {
+type ExecReturn struct {
+	IDAddress     addr.Address // The canonical ID-based address for the actor.
+	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
+}
+
+func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorParams abi.MethodParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
 	AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
@@ -69,12 +72,12 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 	// This address exists for use by messages coming from outside the system, in order to
 	// stably address the newly created actor even if a chain re-org causes it to end up with
 	// a different ID.
-	newAddr := rt.NewActorAddress()
+	uniqueAddress := rt.NewActorAddress()
 
 	// Allocate an ID for this actor.
 	// Store mapping of pubkey or actor address to actor ID
 	h, st := _loadState(rt)
-	idAddr := st.MapAddressToNewID(newAddr)
+	idAddr := st.MapAddressToNewID(uniqueAddress)
 	UpdateRelease(rt, h, st)
 
 	// Create an empty actor.
@@ -83,20 +86,8 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 	// Invoke constructor. If construction fails, the error should propagate and cause Exec to fail too.
 	rt.Send(idAddr, builtin.MethodConstructor, constructorParams, rt.ValueReceived())
 
-	var addrBuf bytes.Buffer
-	err := idAddr.MarshalCBOR(&addrBuf)
-	autil.Assert(err == nil)
-
-	return InvocOutput{addrBuf.Bytes()}
+	return &ExecReturn{idAddr, uniqueAddress}
 }
-
-// This method is disabled until proven necessary.
-//func (a *InitActorCode_I) GetActorIDForAddress(rt Runtime, address addr.Address) InvocOutput {
-//	h, st := _loadState(rt)
-//	actorID := st.AddressMap[address]
-//	Release(rt, h, st)
-//	return rt.ValueReturn(Bytes(addr.Serialize_ActorID(actorID)))
-//}
 
 func _codeIDSupportsExec(callerCodeID abi.ActorCodeID, execCodeID abi.ActorCodeID) bool {
 	if execCodeID == builtin.AccountActorCodeID {

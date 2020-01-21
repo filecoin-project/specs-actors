@@ -1,12 +1,15 @@
 package storage_market
 
 import (
+	"math/big"
+
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 )
 
 type DealWeight int64
@@ -30,13 +33,14 @@ func (a *StorageMarketActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMar
 // Terminate a set of deals in response to their containing sector being terminated.
 // Slash provider collateral, refund client collateral, and refund partial unpaid escrow
 // amount to client.
-func (a *StorageMarketActor) TerminateDealsOnSlashProviderSector(rt Runtime, dealIDs abi.DealIDs) {
+func (a *StorageMarketActor) TerminateDealsOnSlashProviderSector(rt Runtime, dealIDs abi.DealIDs) *vmr.EmptyReturn {
 	panic("TODO")
+	return &vmr.EmptyReturn{}
 }
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
-func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) {
+func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
 	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.TokenAmount(0)
 
@@ -66,11 +70,12 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 
 	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashedTotal)
 	rt.SendFunds(recipientAddr, amountExtracted)
+	return &vmr.EmptyReturn{}
 }
 
 // Deposits the specified amount into the balance held in escrow.
 // Note: the amount is included implicitly in the message.
-func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) {
+func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *vmr.EmptyReturn {
 	vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
 
 	h, st := a.State(rt)
@@ -86,16 +91,17 @@ func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) {
 	st.EscrowTable = newTable
 
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 // Publish a new set of storage deals (not yet included in a sector).
-func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []StorageDeal) {
+func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []StorageDeal) *vmr.EmptyReturn {
 	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.TokenAmount(0)
 
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable... )
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	providerAddr := rt.ImmediateCaller()
 
 	h, st := a.State(rt)
@@ -143,11 +149,12 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 	UpdateRelease(rt, h, st)
 
 	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashedTotal)
+	return &vmr.EmptyReturn{}
 }
 
 // Verify that a given set of storage deals is valid for a sector currently being PreCommitted.
 // Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
-func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) {
+func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -159,11 +166,12 @@ func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs ab
 	}
 
 	Release(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // and update the market's internal state accordingly.
-func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) {
+func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -178,9 +186,14 @@ func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs 
 	}
 
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.DealIDs) abi.PieceInfos {
+type GetPieceInfosForDealIDsReturn struct {
+	Pieces []abi.PieceInfo
+}
+
+func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.DealIDs) *GetPieceInfosForDealIDsReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	ret := []abi.PieceInfo{}
@@ -197,36 +210,38 @@ func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.Dea
 
 	Release(rt, h, st)
 
-	return abi.PieceInfos{Items: ret}
+	return &GetPieceInfosForDealIDsReturn{Pieces: ret}
+}
+
+type GetWeightForDealSetReturn struct {
+	Weight abi.DealWeight
 }
 
 // Get the weight for a given set of storage deals.
 // The weight is defined as the sum, over all deals in the set, of the product of its size
 // with its duration. This quantity may be an input into the functions specifying block reward,
 // sector power, collateral, and/or other parameters.
-func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs) abi.DealWeight {
+func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs) *GetWeightForDealSetReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-
-	IMPL_FINISH() // BigInt arithmetic
-	ret := 0
+	totalWeight := big.NewInt(0)
 
 	h, st := a.State(rt)
-
 	for _, dealID := range dealIDs.Items {
 		_, dealP := st._getOnChainDealAssert(dealID)
 		Assert(dealP.Provider == minerAddr)
 
-		IMPL_FINISH() // BigInt arithmetic
-		ret += int(dealP.Duration()) * int(dealP.PieceSize.Total())
+		dur := big.NewInt(int64(dealP.Duration()))
+		siz := big.NewInt(dealP.PieceSize.Total())
+		weight := big.NewInt(0).Mul(dur, siz)
+		totalWeight.Add(totalWeight, weight)
 	}
-
 	UpdateRelease(rt, h, st)
 
-	return abi.DealWeight(ret)
+	return &GetWeightForDealSetReturn{abi.DealWeight(totalWeight)}
 }
 
-func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.DealIDs) {
+func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.DealIDs) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -245,9 +260,10 @@ func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.Dea
 	}
 
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) {
+func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	h, st := a.State(rt)
@@ -320,9 +336,10 @@ func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) {
 	UpdateRelease(rt, h, st)
 
 	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashedTotal)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StorageMarketActor) Constructor(rt Runtime) {
+func (a *StorageMarketActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	h := rt.AcquireState()
 
@@ -337,6 +354,7 @@ func (a *StorageMarketActor) Constructor(rt Runtime) {
 	}
 
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

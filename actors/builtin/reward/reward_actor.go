@@ -12,9 +12,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-type InvocOutput = vmr.InvocOutput
-type Runtime = vmr.Runtime
-
 var TODO = autil.TODO
 
 type VestingFunction int64
@@ -91,13 +88,14 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 
 type RewardActor struct{}
 
-func (a *RewardActor) Constructor(rt vmr.Runtime) InvocOutput {
+func (a *RewardActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	// initialize Reward Map with investor accounts
-	panic("TODO")
+	autil.IMPL_FINISH()
+	return &vmr.EmptyReturn{}
 }
 
-func (a *RewardActor) State(rt Runtime) (vmr.ActorStateHandle, RewardActorState) {
+func (a *RewardActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, RewardActorState) {
 	h := rt.AcquireState()
 	stateCID := cid.Cid(h.Take())
 	var state RewardActorState
@@ -107,7 +105,7 @@ func (a *RewardActor) State(rt Runtime) (vmr.ActorStateHandle, RewardActorState)
 	return h, state
 }
 
-func (a *RewardActor) WithdrawReward(rt vmr.Runtime) {
+func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
@@ -118,6 +116,7 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) {
 	UpdateReleaseRewardActorState(rt, h, st)
 
 	rt.SendFunds(ownerAddr, withdrawableReward)
+	return &vmr.EmptyReturn{}
 }
 
 func (a *RewardActor) AwardBlockReward(
@@ -126,7 +125,7 @@ func (a *RewardActor) AwardBlockReward(
 	penalty abi.TokenAmount,
 	minerNominalPower abi.StoragePower,
 	currPledge abi.TokenAmount,
-) {
+) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	inds := rt.CurrIndices()
@@ -168,9 +167,10 @@ func (a *RewardActor) AwardBlockReward(
 		st.RewardMap[miner] = rewards
 	}
 	UpdateReleaseRewardActorState(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
-func UpdateReleaseRewardActorState(rt Runtime, h vmr.ActorStateHandle, st RewardActorState) {
+func UpdateReleaseRewardActorState(rt vmr.Runtime, h vmr.ActorStateHandle, st RewardActorState) {
 	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
 }

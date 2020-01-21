@@ -1,10 +1,9 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
-	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-hamt-ipld"
+	cid "github.com/ipfs/go-cid"
+	hamt "github.com/ipfs/go-hamt-ipld"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -43,16 +42,8 @@ func RT_Address_Is_StorageMiner(rt Runtime, minerAddr addr.Address) bool {
 }
 
 func RT_GetMinerAccountsAssert(rt Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
-	raw := rt.SendQuery(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil)
-	r := bytes.NewReader(raw)
-	err := ownerAddr.UnmarshalCBOR(r)
-	autil.AssertNoError(err)
-
-	raw = rt.SendQuery(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil)
-	r = bytes.NewReader(raw)
-	err = workerAddr.UnmarshalCBOR(r)
-	autil.AssertNoError(err)
-
+	autil.AssertNoError(rt.SendQuery(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil).Into(ownerAddr))
+	autil.AssertNoError(rt.SendQuery(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil).Into(workerAddr))
 	return
 }
 

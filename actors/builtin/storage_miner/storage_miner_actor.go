@@ -5,15 +5,17 @@ import (
 	"math/big"
 
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 const epochUndefined = abi.ChainEpoch(-1)
@@ -35,7 +37,7 @@ func (a *StorageMinerActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMine
 //////////////////
 
 // Called by StoragePowerActor to notify StorageMiner of SurprisePoSt Challenge.
-func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) {
+func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	h, st := a.State(rt)
@@ -44,14 +46,14 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) {
 	// Failed PoSt will automatically reset the state to not-challenged.
 	if st.PoStState.Is_Challenged() {
 		Release(rt, h, st)
-		return
+		return &vmr.EmptyReturn{}
 	}
 
 	// Do not challenge if the last successful PoSt was recent enough.
 	noChallengePeriod := indices.StorageMining_PoStNoChallengePeriod()
 	if st.PoStState.LastSuccessfulPoSt >= rt.CurrEpoch()-noChallengePeriod {
 		Release(rt, h, st)
-		return
+		return &vmr.EmptyReturn{}
 	}
 
 	var curRecBuf bytes.Buffer
@@ -78,10 +80,11 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) {
 	// Request deferred Cron check for SurprisePoSt challenge expiry.
 	provingPeriod := indices.StorageMining_SurprisePoStProvingPeriod()
 	a._rtEnrollCronEvent(rt, rt.CurrEpoch()+provingPeriod, []abi.SectorNumber{})
+	return &vmr.EmptyReturn{}
 }
 
 // Invoked by miner's worker address to submit a response to a pending SurprisePoSt challenge.
-func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo abi.OnChainSurprisePoStVerifyInfo) {
+func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo abi.OnChainSurprisePoStVerifyInfo) *vmr.EmptyReturn {
 	h, st := a.State(rt)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
@@ -107,13 +110,15 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo a
 		nil,
 		abi.TokenAmount(0),
 	)
+	return &vmr.EmptyReturn{}
 }
 
 // Called by StoragePowerActor.
-func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) {
+func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	minerAddr := rt.CurrReceiver()
 	rt.DeleteActor(minerAddr)
+	return &vmr.EmptyReturn{}
 }
 
 //////////////////
@@ -121,7 +126,7 @@ func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) {
 //////////////////
 
 // Called by the VM interpreter once an ElectionPoSt has been verified.
-func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) {
+func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	// The receiver must be the miner who produced the block for which this message is created.
@@ -142,6 +147,7 @@ func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) {
 		}
 		a._rtUpdatePoStState(rt, newPostSt)
 	}
+	return &vmr.EmptyReturn{}
 }
 
 ///////////////////////
@@ -150,7 +156,7 @@ func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) {
 
 // Deals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo) {
+func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo) *vmr.EmptyReturn {
 	h, st := a.State(rt)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
@@ -184,7 +190,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 		PreCommitDeposit: depositReq,
 		PreCommitEpoch:   rt.CurrEpoch(),
 		ActivationEpoch:  epochUndefined,
-		DealWeight:       *big.NewInt(-1),
+		DealWeight:       big.NewInt(-1),
 	}
 	st.Sectors[info.SectorNumber] = *newSectorInfo
 
@@ -199,9 +205,10 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	}
 
 	a._rtEnrollCronEvent(rt, info.Expiration, []abi.SectorNumber{info.SectorNumber})
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) {
+func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) *vmr.EmptyReturn {
 	h, st := a.State(rt)
 	workerAddr := st.Info.Worker
 	rt.ValidateImmediateCallerIs(workerAddr)
@@ -242,17 +249,14 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		abi.TokenAmount(0),
 	)
 
-	res := rt.SendQuery(
+	var ret storage_market.GetWeightForDealSetReturn
+	autil.AssertNoError(rt.SendQuery(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_GetWeightForDealSet,
 		serde.MustSerializeParams(
 			preCommitSector.Info.DealIDs,
 		),
-	)
-	var dealWeight *big.Int
-	err := serde.Deserialize(res, dealWeight)
-	Assert(err == nil)
-
+	).Into(ret))
 	h, st = a.State(rt)
 
 	st.Sectors[info.SectorNumber] = SectorOnChainInfo{
@@ -260,7 +264,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		Info:            preCommitSector.Info,
 		PreCommitEpoch:  preCommitSector.PreCommitEpoch,
 		ActivationEpoch: rt.CurrEpoch(),
-		DealWeight:      *dealWeight,
+		DealWeight:      ret.Weight,
 	}
 
 	st.ProvingSet[info.SectorNumber] = true
@@ -284,13 +288,14 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	rt.SendFunds(workerAddr, preCommitSector.PreCommitDeposit)
+	return &vmr.EmptyReturn{}
 }
 
 /////////////////////////
 // Sector Modification //
 /////////////////////////
 
-func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.SectorNumber, newExpiration abi.ChainEpoch) {
+func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.SectorNumber, newExpiration abi.ChainEpoch) *vmr.EmptyReturn {
 	storageWeightDescPrev := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
 
 	h, st := a.State(rt)
@@ -322,21 +327,23 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 		),
 		abi.TokenAmount(0),
 	)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StorageMinerActor) TerminateSector(rt Runtime, sectorNumber abi.SectorNumber) {
+func (a *StorageMinerActor) TerminateSector(rt Runtime, sectorNumber abi.SectorNumber) *vmr.EmptyReturn {
 	h, st := a.State(rt)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 	Release(rt, h, st)
 
 	a._rtTerminateSector(rt, sectorNumber, autil.UserTermination)
+	return &vmr.EmptyReturn{}
 }
 
 ////////////
 // Faults //
 ////////////
 
-func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []abi.SectorNumber, duration abi.ChainEpoch) {
+func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []abi.SectorNumber, duration abi.ChainEpoch) *vmr.EmptyReturn {
 	if duration <= abi.ChainEpoch(0) {
 		rt.AbortArgMsg("Temporary fault duration must be positive")
 	}
@@ -371,13 +378,14 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 	// Request deferred Cron invocation to update temporary fault state.
 	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, sectorNumbers)
 	a._rtEnrollCronEvent(rt, effectiveEndEpoch, sectorNumbers)
+	return &vmr.EmptyReturn{}
 }
 
 //////////
 // Cron //
 //////////
 
-func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.SectorNumber) {
+func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	for _, sectorNumber := range sectorNumbers {
@@ -386,6 +394,7 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.
 	}
 
 	a._rtCheckSurprisePoStExpiry(rt)
+	return &vmr.EmptyReturn{}
 }
 
 /////////////////
@@ -393,7 +402,7 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.
 /////////////////
 
 func (a *StorageMinerActor) Constructor(
-	rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) {
+	rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *vmr.EmptyReturn {
 
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	h := rt.AcquireState()
@@ -413,6 +422,7 @@ func (a *StorageMinerActor) Constructor(
 	}
 
 	UpdateRelease(rt, h, *st)
+	return &vmr.EmptyReturn{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -698,26 +708,25 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	sectorSize := info.SectorSize
 	Release(rt, h, st)
 
-	var pieceInfos abi.PieceInfos
-	err := serde.Deserialize(rt.SendQuery(
+	var ret storage_market.GetPieceInfosForDealIDsReturn
+	autil.AssertNoError(rt.SendQuery(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_GetPieceInfosForDealIDs,
 		serde.MustSerializeParams(
 			sectorSize,
 			onChainInfo.DealIDs,
 		),
-	), &pieceInfos)
-	Assert(err == nil)
+	).Into(ret))
 
 	// Unless we enforce a minimum padding amount, this totalPieceSize calculation can be removed.
 	// Leaving for now until that decision is entirely finalized.
 	var totalPieceSize int64
-	for _, pieceInfo := range pieceInfos.Items {
+	for _, pieceInfo := range ret.Pieces {
 		pieceSize := pieceInfo.Size
 		totalPieceSize += pieceSize
 	}
 
-	unsealedCID, err := rt.Syscalls().ComputeUnsealedSectorCID(sectorSize, pieceInfos.Items)
+	unsealedCID, err := rt.Syscalls().ComputeUnsealedSectorCID(sectorSize, ret.Pieces)
 	if err != nil {
 		rt.AbortStateMsg("invalid sector piece infos")
 	}

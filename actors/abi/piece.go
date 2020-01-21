@@ -33,7 +33,3 @@ type PieceInfo struct {
 	Size     int64 // Size in nodes. For BLS12-381 (capacity 254 bits), must be >= 16. (16 * 8 = 128)
 	PieceCID PieceCID
 }
-
-type PieceInfos struct {
-	Items []PieceInfo
-}
