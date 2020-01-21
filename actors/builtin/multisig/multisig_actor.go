@@ -118,12 +118,7 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 	}
 
 	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
-
-	pendingTxnCID, err := setPendingTxn(context.TODO(), rt, txnID, txn)
-	if err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("failed to set transaction in HAMT: %v", err))
-	}
-	st.PendingTxns = pendingTxnCID
+	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, txn)
 
 	UpdateRelease_MultiSig(rt, h, st)
 
@@ -275,10 +270,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
 	h, st := a.State(rt)
 
-	txn, err := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
-	if err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("Requested transaction not found or not matched: %v", err))
-	}
+	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
 
 	expirationExceeded := (rt.CurrEpoch() > txn.Expiration)
 	if expirationExceeded {
@@ -306,16 +298,13 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 			txn.Params,
 			txn.Value,
 		)
-		// TODO REVIEW if getPendingTxn returns the hamt node we can save a look up by passing it here can deleting.
 		a._rtDeletePendingTransaction(rt, txnID)
 	}
 }
 
 func (a *MultiSigActor) _rtDeletePendingTransaction(rt Runtime, txnID TxnID) {
 	h, st := a.State(rt)
-	if err := deletePendingTxn(context.TODO(), rt, st.PendingTxns, txnID); err != nil {
-		rt.AbortStateMsg(fmt.Sprintf("failed to remove transation from HAMT: %v", err))
-	}
+	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
 	delete(st.PendingApprovals, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
@@ -342,42 +331,49 @@ func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActor
 	h.UpdateRelease(newCID)
 }
 
-func setPendingTxn(ctx context.Context, rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) (cid.Cid, error) {
-	// TODO REVIEW: is there a better place to perform this allocation and are there any varg options required here?
-	nd := hamt.NewNode(vmr.AsStore(rt))
-
-	if err := nd.Set(ctx, t2k(txnID), &txn); err != nil {
-		return cid.Undef, err
-	}
-	if err := nd.Flush(ctx); err != nil {
-		return cid.Undef, err
-	}
-	return rt.IpldPut(nd), nil
-}
-
-func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) (MultiSigTransaction, error) {
-	nd, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
+func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) MultiSigTransaction {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
 	if err != nil {
-		return MultiSigTransaction{}, err
+		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
 
 	var txn MultiSigTransaction
-	if err := nd.Find(ctx, t2k(txnID), &txn); err != nil {
-		return MultiSigTransaction{}, err
+	if err := root.Find(ctx, toKey(txnID), &txn); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Requested transaction not found in Pending Transaction HAMT: %v", err))
 	}
-	return txn, nil
+	return txn
 }
 
-func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) error {
-	nd, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
+func setPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID, txn MultiSigTransaction) cid.Cid {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
 	if err != nil {
-		return err
+		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
-	return nd.Delete(ctx, t2k(txnID))
+	if err := root.Set(ctx, toKey(txnID), &txn); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to set transaction in HAMT: %v", err))
+	}
+	if err := root.Flush(ctx); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to flush HAMT node: %v", err))
+	}
+	return rt.IpldPut(root)
+}
+
+func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) cid.Cid {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
+	if err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
+	}
+	if err := root.Delete(ctx, toKey(txnID)); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to remove transation from HAMT: %v", err))
+	}
+	if err := root.Flush(ctx); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to flush HAMT node: %v", err))
+	}
+	return rt.IpldPut(root)
 }
 
 // convert a TxnID to a HAMT key.
-func t2k(txnID TxnID) string {
+func toKey(txnID TxnID) string {
 	txnKey := make([]byte, 0, binary.MaxVarintLen64)
 	binary.PutVarint(txnKey, int64(txnID))
 	return string(txnKey)
