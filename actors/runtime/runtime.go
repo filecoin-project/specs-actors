@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"context"
+
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
@@ -89,6 +91,11 @@ type Runtime interface {
 
 	// Provides the system call interface.
 	Syscalls() Syscalls
+
+	// Provides a Go context for use by HAMT, tracing, and other miscellanea.
+	// The VM is intended to provide an idealised machine abstraction, with infinite storage etc, so this context
+	// should not be used by actor code directly.
+	Context() context.Context
 }
 
 type Syscalls interface {
