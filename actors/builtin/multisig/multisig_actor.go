@@ -1,6 +1,8 @@
 package multisig
 
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
@@ -9,6 +11,7 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
+	hamt "github.com/ipfs/go-hamt-ipld"
 )
 
 type InvocOutput = vmr.InvocOutput
@@ -34,13 +37,7 @@ func (txn *MultiSigTransaction) Equals(MultiSigTransaction) bool {
 	panic("")
 }
 
-type MultiSigTransactionHAMT map[TxnID]MultiSigTransaction
 type MultiSigApprovalSetHAMT map[TxnID]autil.ActorIDSetHAMT
-
-func MultiSigTransactionHAMT_Empty() MultiSigTransactionHAMT {
-	IMPL_FINISH()
-	panic("")
-}
 
 func MultiSigApprovalSetHAMT_Empty() MultiSigApprovalSetHAMT {
 	IMPL_FINISH()
@@ -81,7 +78,7 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 	st := MultiSigActorState{
 		AuthorizedParties:     authPartyIDs,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
-		PendingTxns:           MultiSigTransactionHAMT_Empty(),
+		PendingTxns:           autil.EmptyHAMT,
 		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
 	}
 
@@ -120,8 +117,9 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 		Value:      params.Value,
 	}
 
-	st.PendingTxns[txnID] = txn
 	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
+	st.PendingTxns = setPendingTxn(context.TODO(), rt, st.PendingTxns, txnID, txn)
+
 	UpdateRelease_MultiSig(rt, h, st)
 
 	// Proposal implicitly includes approval of a transaction.
@@ -272,10 +270,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
 	h, st := a.State(rt)
 
-	txn, found := st.PendingTxns[txnID]
-	if !found {
-		rt.AbortStateMsg("Requested transcation not found or not matched")
-	}
+	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
 
 	expirationExceeded := (rt.CurrEpoch() > txn.Expiration)
 	if expirationExceeded {
@@ -309,7 +304,7 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 
 func (a *MultiSigActor) _rtDeletePendingTransaction(rt Runtime, txnID TxnID) {
 	h, st := a.State(rt)
-	delete(st.PendingTxns, txnID)
+	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
 	delete(st.PendingApprovals, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
@@ -334,4 +329,52 @@ func Release_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState)
 func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
 	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
 	h.UpdateRelease(newCID)
+}
+
+func getPendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) MultiSigTransaction {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
+	if err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
+	}
+
+	var txn MultiSigTransaction
+	if err := root.Find(ctx, toKey(txnID), &txn); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Requested transaction not found in Pending Transaction HAMT: %v", err))
+	}
+	return txn
+}
+
+func setPendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID, txn MultiSigTransaction) cid.Cid {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
+	if err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
+	}
+	if err := root.Set(ctx, toKey(txnID), &txn); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to set transaction in HAMT: %v", err))
+	}
+	if err := root.Flush(ctx); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to flush HAMT node: %v", err))
+	}
+	return rt.IpldPut(root)
+}
+
+func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) cid.Cid {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
+	if err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
+	}
+	if err := root.Delete(ctx, toKey(txnID)); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to remove transation from HAMT: %v", err))
+	}
+	if err := root.Flush(ctx); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("Failed to flush HAMT node: %v", err))
+	}
+	return rt.IpldPut(root)
+}
+
+// convert a TxnID to a HAMT key.
+func toKey(txnID TxnID) string {
+	txnKey := make([]byte, 0, binary.MaxVarintLen64)
+	binary.PutVarint(txnKey, int64(txnID))
+	return string(txnKey)
 }
