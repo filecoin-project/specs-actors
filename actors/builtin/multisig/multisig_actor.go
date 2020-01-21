@@ -23,13 +23,17 @@ var IMPL_FINISH = autil.IMPL_FINISH
 type TxnID int64
 
 type MultiSigTransaction struct {
-	Proposer   addr.Address
-	Expiration abi.ChainEpoch
+	ID TxnID
 
 	To     addr.Address
+	Value  abi.TokenAmount
 	Method abi.MethodNum
 	Params abi.MethodParams
-	Value  abi.TokenAmount
+
+	Approved  []addr.Address // TODO REVIEW: order must be preserved during actor operations
+	Completed bool
+	Canceled  bool
+	RetCode   int64
 }
 
 func (txn *MultiSigTransaction) Equals(MultiSigTransaction) bool {
@@ -92,11 +96,10 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 }
 
 type ProposeParams struct {
-	To         addr.Address
-	Value      abi.TokenAmount
-	Method     abi.MethodNum
-	Params     abi.MethodParams
-	Expiration abi.ChainEpoch
+	To     addr.Address
+	Value  abi.TokenAmount
+	Method abi.MethodNum
+	Params abi.MethodParams
 }
 
 func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
@@ -109,12 +112,15 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 	st.NextTxnID += 1
 
 	txn := MultiSigTransaction{
-		Proposer:   callerAddr,
-		Expiration: params.Expiration,
-		To:         params.To,
-		Method:     params.Method,
-		Params:     params.Params,
-		Value:      params.Value,
+		ID:        txnID,
+		To:        params.To,
+		Value:     params.Value,
+		Method:    params.Method,
+		Params:    params.Params,
+		Approved:  []addr.Address{callerAddr}, // TODO REVIEW Approved[0] is transaction proposer
+		Completed: false,
+		Canceled:  false,
+		RetCode:   0,
 	}
 
 	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
@@ -271,12 +277,6 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 	h, st := a.State(rt)
 
 	txn := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
-
-	expirationExceeded := (rt.CurrEpoch() > txn.Expiration)
-	if expirationExceeded {
-		// TODO: delete from state? https://github.com/filecoin-project/specs-actors/issues/5
-		rt.AbortStateMsg("Transaction expiration exceeded")
-	}
 
 	actorID, err := addr.IDFromAddress(callerAddr)
 	autil.AssertNoError(err)
