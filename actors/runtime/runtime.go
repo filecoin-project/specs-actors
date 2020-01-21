@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"context"
+
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
@@ -14,6 +16,8 @@ import (
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
 	CurrEpoch() abi.ChainEpoch
+
+	Context() context.Context
 
 	// Randomness returns a (pseudo)random string for the given epoch and tag.
 	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
