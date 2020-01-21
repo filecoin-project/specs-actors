@@ -21,6 +21,13 @@ func NetworkName() string {
 	return Name
 }
 
+// Propagates a failed send by aborting the current method with the same exit code.
+func RequireSuccess(rt Runtime, e exitcode.ExitCode, msg string, args ...interface{}) {
+	if !e.IsSuccess() {
+		rt.Abort(e, msg, args)
+	}
+}
+
 type MinerEntrySpec int64
 
 const (
@@ -43,8 +50,13 @@ func RT_Address_Is_StorageMiner(rt Runtime, minerAddr addr.Address) bool {
 }
 
 func RT_GetMinerAccountsAssert(rt Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
-	autil.AssertNoError(rt.SendQuery(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil).Into(ownerAddr))
-	autil.AssertNoError(rt.SendQuery(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil).Into(workerAddr))
+	ret, code := rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil, abi.TokenAmount(0))
+	RequireSuccess(rt, code, "failed fetching owner addr")
+	autil.AssertNoError(ret.Into(ownerAddr))
+
+	ret, code = rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil, abi.TokenAmount(0))
+	RequireSuccess(rt, code, "failed fetching worker addr")
+	autil.AssertNoError(ret.Into(workerAddr))
 	return
 }
 
@@ -70,7 +82,8 @@ func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi
 	}
 
 	if rt.ValueReceived() > fundsRequired {
-		rt.SendFunds(rt.ImmediateCaller(), rt.ValueReceived()-fundsRequired)
+		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, rt.ValueReceived()-fundsRequired)
+		RequireSuccess(rt, code, "failed to transfer refund")
 	}
 }
 

@@ -76,7 +76,8 @@ func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, 
 	st.EscrowTable = newTable
 	UpdateRelease(rt, h, st)
 
-	rt.SendFunds(recipientAddr, amountExtracted)
+	_, code := rt.Send(recipientAddr, builtin.MethodSend, nil, amountExtracted)
+	vmr.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -89,8 +90,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
-	var ret initact.ExecReturn
-	autil.AssertNoError(rt.Send(
+	ret, code := rt.Send(
 		builtin.InitActorAddr,
 		builtin.Method_InitActor_Exec,
 		serde.MustSerializeParams(
@@ -101,20 +101,23 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 			peerId,
 		),
 		abi.TokenAmount(0),
-	).Into(ret))
+	)
+	vmr.RequireSuccess(rt, code, "failed to init new actor")
+	var addresses initact.ExecReturn
+	autil.AssertNoError(ret.Into(addresses))
 
 	h, st := a.State(rt)
-	newTable, ok := autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, ret.IDAddress, rt.ValueReceived())
+	newTable, ok := autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, addresses.IDAddress, rt.ValueReceived())
 	Assert(ok)
 	st.EscrowTable = newTable
-	st.PowerTable[ret.IDAddress] = abi.StoragePower(0)
-	st.ClaimedPower[ret.IDAddress] = abi.StoragePower(0)
-	st.NominalPower[ret.IDAddress] = abi.StoragePower(0)
+	st.PowerTable[addresses.IDAddress] = abi.StoragePower(0)
+	st.ClaimedPower[addresses.IDAddress] = abi.StoragePower(0)
+	st.NominalPower[addresses.IDAddress] = abi.StoragePower(0)
 	UpdateRelease(rt, h, st)
 
 	return &CreateMinerReturn{
-		IDAddress:     ret.IDAddress,
-		RobustAddress: ret.RobustAddress,
+		IDAddress:     addresses.IDAddress,
+		RobustAddress: addresses.RobustAddress,
 	}
 }
 
@@ -292,7 +295,8 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 	UpdateRelease(rt, h, st)
 
 	// reward slasher
-	rt.SendFunds(slasherAddr, amountToSlasher)
+	_, code := rt.Send(slasherAddr, builtin.MethodSend, nil, amountToSlasher)
+	vmr.RequireSuccess(rt, code, "failed to reward slasher")
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
@@ -360,11 +364,13 @@ func (a *StoragePowerActor) _rtInitiateNewSurprisePoStChallenges(rt Runtime) {
 	UpdateRelease(rt, h, st)
 
 	for _, addr := range surprisedMiners {
-		rt.Send(
+		_, code := rt.Send(
 			addr,
 			builtin.Method_StorageMinerActor_OnSurprisePoStChallenge,
 			nil,
-			abi.TokenAmount(0))
+			abi.TokenAmount(0),
+		)
+		vmr.RequireSuccess(rt, code, "failed to challenge miner")
 	}
 }
 
@@ -387,7 +393,7 @@ func (a *StoragePowerActor) _rtProcessDeferredCronEvents(rt Runtime) {
 	}
 
 	for _, minerEvent := range minerEventsRetain {
-		rt.Send(
+		_, code := rt.Send(
 			minerEvent.MinerAddr,
 			builtin.Method_StorageMinerActor_OnDeferredCronEvent,
 			serde.MustSerializeParams(
@@ -395,6 +401,7 @@ func (a *StoragePowerActor) _rtProcessDeferredCronEvents(rt Runtime) {
 			),
 			abi.TokenAmount(0),
 		)
+		vmr.RequireSuccess(rt, code, "failed to defer cron event")
 	}
 }
 
@@ -414,7 +421,8 @@ func (a *StoragePowerActor) _rtSlashPledgeCollateral(rt Runtime, minerAddr addr.
 	amountSlashed := st._slashPledgeCollateral(minerAddr, amountToSlash)
 	UpdateRelease(rt, h, st)
 
-	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashed)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+	vmr.RequireSuccess(rt, code, "failed to burn funds")
 }
 
 func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Address) {
@@ -433,12 +441,14 @@ func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Addre
 
 	UpdateRelease(rt, h, st)
 
-	rt.Send(
+	_, code := rt.Send(
 		minerAddr,
 		builtin.Method_StorageMinerActor_OnDeleteMiner,
 		serde.MustSerializeParams(),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to delete miner actor")
 
-	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashed)
+	_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+	vmr.RequireSuccess(rt, code, "failed to burn funds")
 }

@@ -69,8 +69,10 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 
 	UpdateRelease(rt, h, st)
 
-	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashedTotal)
-	rt.SendFunds(recipientAddr, amountExtracted)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+	vmr.RequireSuccess(rt, code, "failed to burn slashed funds")
+	_, code = rt.Send(recipientAddr, builtin.MethodSend, nil, amountExtracted)
+	vmr.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -148,7 +150,8 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 
 	UpdateRelease(rt, h, st)
 
-	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashedTotal)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+	vmr.RequireSuccess(rt, code, "failed to burn funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -335,7 +338,8 @@ func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 
 	UpdateRelease(rt, h, st)
 
-	rt.SendFunds(builtin.BurntFundsActorAddr, amountSlashedTotal)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+	vmr.RequireSuccess(rt, code, "failed to burn funds")
 	return &vmr.EmptyReturn{}
 }
 

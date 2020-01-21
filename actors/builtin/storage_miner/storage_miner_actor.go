@@ -105,12 +105,14 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo a
 	}
 	a._rtUpdatePoStState(rt, newPostSt)
 
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerSurprisePoStSuccess,
 		nil,
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to notify storage power actor")
+
 	return &vmr.EmptyReturn{}
 }
 
@@ -173,7 +175,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 
 	// Verify deals with StorageMarketActor; abort if this fails.
 	// (Note: committed-capacity sectors contain no deals, so in that case verification will pass trivially.)
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_OnMinerSectorPreCommit_VerifyDealsOrAbort,
 		serde.MustSerializeParams(
@@ -182,6 +184,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to verify deals")
 
 	h, st = a.State(rt)
 
@@ -243,7 +246,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	UpdateRelease(rt, h, st)
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_OnMinerSectorProveCommit_VerifyDealsOrAbort,
 		serde.MustSerializeParams(
@@ -252,15 +255,19 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to verify deals")
 
-	var ret storage_market.GetWeightForDealSetReturn
-	autil.AssertNoError(rt.SendQuery(
+	var dealset storage_market.GetWeightForDealSetReturn
+	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_GetWeightForDealSet,
 		serde.MustSerializeParams(
 			preCommitSector.Info.DealIDs,
 		),
-	).Into(ret))
+		abi.TokenAmount(0),
+	)
+	vmr.RequireSuccess(rt, code, "failed to get deal set weight")
+	autil.AssertNoError(ret.Into(dealset))
 	h, st = a.State(rt)
 
 	st.Sectors[info.SectorNumber] = SectorOnChainInfo{
@@ -268,7 +275,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		Info:            preCommitSector.Info,
 		PreCommitEpoch:  preCommitSector.PreCommitEpoch,
 		ActivationEpoch: rt.CurrEpoch(),
-		DealWeight:      ret.Weight,
+		DealWeight:      dealset.Weight,
 	}
 
 	st.ProvingSet[info.SectorNumber] = true
@@ -281,7 +288,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 
 	// Notify SPA to update power associated to newly activated sector.
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, info.SectorNumber)
-	rt.Send(
+	_, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorProveCommit,
 		serde.MustSerializeParams(
@@ -289,9 +296,11 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to notify power actor")
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
-	rt.SendFunds(workerAddr, preCommitSector.PreCommitDeposit)
+	_, code = rt.Send(workerAddr, builtin.MethodSend, nil, preCommitSector.PreCommitDeposit)
+	vmr.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -322,7 +331,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 	storageWeightDescNew := storageWeightDescPrev
 	storageWeightDescNew.Duration = storageWeightDescPrev.Duration + extensionLength
 
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorModifyWeightDesc,
 		serde.MustSerializeParams(
@@ -331,6 +340,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to modify sector weight")
 	return &vmr.EmptyReturn{}
 }
 
@@ -357,7 +367,8 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 	requiredFee := cidx.StorageMining_TemporaryFaultFee(storageWeightDescs, duration)
 
 	vmr.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, requiredFee)
-	rt.SendFunds(builtin.BurntFundsActorAddr, requiredFee)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, requiredFee)
+	vmr.RequireSuccess(rt, code, "failed to burn fee")
 
 	effectiveBeginEpoch := rt.CurrEpoch() + indices.StorageMining_DeclaredFaultEffectiveDelay()
 	effectiveEndEpoch := effectiveBeginEpoch + duration
@@ -447,7 +458,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 	if checkSector.State == Active && rt.CurrEpoch() == checkSector.EffectiveFaultBeginEpoch() {
 		checkSector.State = TemporaryFault
 
-		rt.Send(
+		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
 			serde.MustSerializeParams(
@@ -455,6 +466,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 			),
 			abi.TokenAmount(0),
 		)
+		vmr.RequireSuccess(rt, code, "failed to begin fault")
 
 		delete(st.ProvingSet, sectorNumber)
 	}
@@ -464,7 +476,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		checkSector.DeclaredFaultEpoch = epochUndefined
 		checkSector.DeclaredFaultDuration = epochUndefined
 
-		rt.Send(
+		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
 			serde.MustSerializeParams(
@@ -472,6 +484,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 			),
 			abi.TokenAmount(0),
 		)
+		vmr.RequireSuccess(rt, code, "failed to end fault")
 
 		st.ProvingSet[sectorNumber] = true
 	}
@@ -493,7 +506,8 @@ func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.Se
 	if checkSector.State == PreCommit {
 		if rt.CurrEpoch()-checkSector.PreCommitEpoch > builtin.MAX_PROVE_COMMIT_SECTOR_EPOCH {
 			a._rtDeleteSectorEntry(rt, sectorNumber)
-			rt.SendFunds(builtin.BurntFundsActorAddr, checkSector.PreCommitDeposit)
+			_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, checkSector.PreCommitDeposit)
+			vmr.RequireSuccess(rt, code, "failed to burn funds")
 		}
 		return
 	}
@@ -516,7 +530,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 	if checkSector.State == TemporaryFault {
 		// To avoid boundary-case errors in power accounting, make sure we explicitly end
 		// the temporary fault state first, before terminating the sector.
-		rt.Send(
+		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
 			serde.MustSerializeParams(
@@ -524,9 +538,10 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 			),
 			abi.TokenAmount(0),
 		)
+		vmr.RequireSuccess(rt, code, "failed to end fault")
 	}
 
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTerminate,
 		serde.MustSerializeParams(
@@ -535,6 +550,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to terminate sector with power actor")
 
 	a._rtDeleteSectorEntry(rt, sectorNumber)
 	delete(st.ProvingSet, sectorNumber)
@@ -583,19 +599,21 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 		UpdateRelease(rt, h, st)
 	}
 
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerSurprisePoStFailure,
 		serde.MustSerializeParams(
 			numConsecutiveFailures,
 		),
-		abi.TokenAmount(0))
+		abi.TokenAmount(0),
+	)
+	vmr.RequireSuccess(rt, code, "failed to notify power actor")
 }
 
 func (a *StorageMinerActor) _rtEnrollCronEvent(
 	rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) {
 
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerEnrollCronEvent,
 		serde.MustSerializeParams(
@@ -604,6 +622,7 @@ func (a *StorageMinerActor) _rtEnrollCronEvent(
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
 func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, sectorNumber abi.SectorNumber) {
@@ -646,7 +665,7 @@ func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sect
 
 	Release(rt, h, st)
 
-	rt.Send(
+	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_OnMinerSectorsTerminate,
 		serde.MustSerializeParams(
@@ -654,6 +673,7 @@ func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sect
 		),
 		abi.TokenAmount(0),
 	)
+	vmr.RequireSuccess(rt, code, "failed to terminate sectors")
 }
 
 func (a *StorageMinerActor) _rtVerifySurprisePoStOrAbort(rt Runtime, onChainInfo *abi.OnChainSurprisePoStVerifyInfo) {
@@ -712,25 +732,28 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	sectorSize := info.SectorSize
 	Release(rt, h, st)
 
-	var ret storage_market.GetPieceInfosForDealIDsReturn
-	autil.AssertNoError(rt.SendQuery(
+	var infos storage_market.GetPieceInfosForDealIDsReturn
+	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_GetPieceInfosForDealIDs,
 		serde.MustSerializeParams(
 			sectorSize,
 			onChainInfo.DealIDs,
 		),
-	).Into(ret))
+		abi.TokenAmount(0),
+	)
+	vmr.RequireSuccess(rt, code, "failed to fetch piece info")
+	autil.AssertNoError(ret.Into(infos))
 
 	// Unless we enforce a minimum padding amount, this totalPieceSize calculation can be removed.
 	// Leaving for now until that decision is entirely finalized.
 	var totalPieceSize int64
-	for _, pieceInfo := range ret.Pieces {
+	for _, pieceInfo := range infos.Pieces {
 		pieceSize := pieceInfo.Size
 		totalPieceSize += pieceSize
 	}
 
-	unsealedCID, err := rt.Syscalls().ComputeUnsealedSectorCID(sectorSize, ret.Pieces)
+	unsealedCID, err := rt.Syscalls().ComputeUnsealedSectorCID(sectorSize, infos.Pieces)
 	if err != nil {
 		rt.AbortStateMsg("invalid sector piece infos")
 	}

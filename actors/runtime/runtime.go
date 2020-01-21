@@ -61,15 +61,9 @@ type Runtime interface {
 	// functions, and should be used for any function whose computation is expensive.
 	Compute(ComputeFunctionID, args []interface{}) interface{}
 
-	// Sends a message to another actor.
+	// Sends a message to another actor, returning the exit code and return value envelope.
 	// If the invoked method does not return successfully, this caller will be aborted too.
-	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) SendReturn
-	SendQuery(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams) SendReturn
-	SendFunds(toAddr addr.Address, value abi.TokenAmount)
-
-	// Sends a message to another actor, trapping an unsuccessful execution.
-	// This may only be invoked by the singleton Cron actor.
-	SendCatchingErrors(input InvocInput) (ret SendReturn, exitCode exitcode.ExitCode)
+	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) (SendReturn, exitcode.ExitCode)
 
 	// Computes an address for a new actor. The returned address is intended to uniquely refer to
 	// the actor even in the event of a chain re-org (whereas an ID-address might refer to a
@@ -123,13 +117,6 @@ type SendReturn interface {
 type TraceSpan interface {
 	// Ends the span
 	End()
-}
-
-type InvocInput struct {
-	To     addr.Address
-	Method abi.MethodNum
-	Params abi.MethodParams
-	Value  abi.TokenAmount
 }
 
 type ActorStateHandle interface {
