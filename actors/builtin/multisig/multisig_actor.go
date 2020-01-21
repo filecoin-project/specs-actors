@@ -331,8 +331,8 @@ func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActor
 	h.UpdateRelease(newCID)
 }
 
-func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) MultiSigTransaction {
-	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
+func getPendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) MultiSigTransaction {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
@@ -344,8 +344,8 @@ func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnI
 	return txn
 }
 
-func setPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID, txn MultiSigTransaction) cid.Cid {
-	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
+func setPendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID, txn MultiSigTransaction) cid.Cid {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}
@@ -358,8 +358,8 @@ func setPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnI
 	return rt.IpldPut(root)
 }
 
-func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) cid.Cid {
-	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rcid)
+func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) cid.Cid {
+	root, err := hamt.LoadNode(ctx, vmr.AsStore(rt), rootCID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Failed to Load Pending Transaction HAMT from store: %v", err))
 	}

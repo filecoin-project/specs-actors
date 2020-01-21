@@ -13,7 +13,7 @@ import (
 func init() {
 	cst := hamt.NewCborStore()
 	nd := hamt.NewNode(cst)
-	emptyHAMT, err := cst.Put(context.TODO(), nd)
+	emptyHAMT, err := cst.Put(context.Background(), nd)
 	if err != nil {
 		panic(err)
 	}
