@@ -92,10 +92,13 @@ type Runtime interface {
 	// Provides the system call interface.
 	Syscalls() Syscalls
 
-	// Provides a Go context for use by HAMT, tracing, and other miscellanea.
+	// Provides a Go context for use by HAMT, etc.
 	// The VM is intended to provide an idealised machine abstraction, with infinite storage etc, so this context
 	// should not be used by actor code directly.
 	Context() context.Context
+
+	// Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
+	StartSpan(name string) TraceSpan
 }
 
 type Syscalls interface {
@@ -114,6 +117,12 @@ type Syscalls interface {
 // Production code is expected to de/serialize, but test and other code may pass the value straight through.
 type SendReturn interface {
 	Into(interface{}) error
+}
+
+// Provides (minimal) tracing facilities to actor code.
+type TraceSpan interface {
+	// Ends the span
+	End()
 }
 
 type InvocInput struct {
