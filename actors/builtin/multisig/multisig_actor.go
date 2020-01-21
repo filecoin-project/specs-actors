@@ -2,11 +2,8 @@ package multisig
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
-
-	dstore "github.com/ipfs/go-datastore"
-	hamt "github.com/ipfs/go-hamt-ipld"
-	bstore "github.com/ipfs/go-ipfs-blockstore"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -14,20 +11,8 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	cid "github.com/ipfs/go-cid"
+	hamt "github.com/ipfs/go-hamt-ipld"
 )
-
-func init() {
-	bs := bstore.NewBlockstore(dstore.NewMapDatastore())
-	cst := hamt.CSTFromBstore(bs)
-	nd := hamt.NewNode(cst)
-	emptyHAMT, err := cst.Put(context.TODO(), nd)
-	if err != nil {
-		panic(err)
-	}
-	EmptyHAMT = emptyHAMT
-}
-
-var EmptyHAMT cid.Cid
 
 type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
@@ -52,12 +37,7 @@ func (txn *MultiSigTransaction) Equals(MultiSigTransaction) bool {
 	panic("")
 }
 
-type MultiSigTransactionHAMT map[TxnID]MultiSigTransaction
 type MultiSigApprovalSetHAMT map[TxnID]autil.ActorIDSetHAMT
-
-func MultiSigTransactionHAMT_Empty() cid.Cid {
-	return EmptyHAMT
-}
 
 func MultiSigApprovalSetHAMT_Empty() MultiSigApprovalSetHAMT {
 	IMPL_FINISH()
@@ -98,7 +78,7 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 	st := MultiSigActorState{
 		AuthorizedParties:     authPartyIDs,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
-		PendingTxns:           MultiSigTransactionHAMT_Empty(),
+		PendingTxns:           autil.EmptyHAMT,
 		PendingApprovals:      MultiSigApprovalSetHAMT_Empty(),
 	}
 
@@ -139,9 +119,9 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 
 	st.PendingApprovals[txnID] = autil.ActorIDSetHAMT_Empty()
 
-	pendingTxnCID, err := setPendingTxns(context.TODO(), rt, txnID, txn)
+	pendingTxnCID, err := setPendingTxn(context.TODO(), rt, txnID, txn)
 	if err != nil {
-		rt.AbortStateMsg(err.Error())
+		rt.AbortStateMsg(fmt.Sprintf("failed to set transaction in HAMT: %v", err))
 	}
 	st.PendingTxns = pendingTxnCID
 
@@ -170,7 +150,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
-	// TODO implement cancel logic
+	a._rtDeletePendingTransaction(rt, params.ID)
 }
 
 type AddAuthorizedParty struct {
@@ -295,7 +275,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr.Address, txnID TxnID) {
 	h, st := a.State(rt)
 
-	txn, err := getPendingTxns(context.TODO(), rt, st.PendingTxns, txnID)
+	txn, err := getPendingTxn(context.TODO(), rt, st.PendingTxns, txnID)
 	if err != nil {
 		rt.AbortStateMsg(fmt.Sprintf("Requested transaction not found or not matched: %v", err))
 	}
@@ -326,15 +306,15 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt Runtime, callerAddr addr
 			txn.Params,
 			txn.Value,
 		)
-		// TODO if getPendingTxns returns the hamt node we can save a look up by passing it here can deleting.
+		// TODO REVIEW if getPendingTxn returns the hamt node we can save a look up by passing it here can deleting.
 		a._rtDeletePendingTransaction(rt, txnID)
 	}
 }
 
 func (a *MultiSigActor) _rtDeletePendingTransaction(rt Runtime, txnID TxnID) {
 	h, st := a.State(rt)
-	if err := deletePendingTxns(context.TODO(), rt, st.PendingTxns, txnID); err != nil {
-		rt.AbortStateMsg(err.Error())
+	if err := deletePendingTxn(context.TODO(), rt, st.PendingTxns, txnID); err != nil {
+		rt.AbortStateMsg(fmt.Sprintf("failed to remove transation from HAMT: %v", err))
 	}
 	delete(st.PendingApprovals, txnID)
 	UpdateRelease_MultiSig(rt, h, st)
@@ -362,56 +342,43 @@ func UpdateRelease_MultiSig(rt Runtime, h vmr.ActorStateHandle, st MultiSigActor
 	h.UpdateRelease(newCID)
 }
 
-func deletePendingTxns(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) error {
-	nd, err := hamt.LoadNode(ctx, rtCborStoreWrapper{rt}, rcid)
-	if err != nil {
-		return err
+func setPendingTxn(ctx context.Context, rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) (cid.Cid, error) {
+	// TODO REVIEW: is there a better place to perform this allocation and are there any varg options required here?
+	nd := hamt.NewNode(vmr.RtCborwrapper{rt})
+
+	if err := nd.Set(ctx, t2k(txnID), &txn); err != nil {
+		return cid.Undef, err
 	}
-	return nd.Delete(ctx, string(txnID))
+	if err := nd.Flush(ctx); err != nil {
+		return cid.Undef, err
+	}
+	return rt.IpldPut(nd), nil
 }
 
-func getPendingTxns(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) (MultiSigTransaction, error) {
-	nd, err := hamt.LoadNode(ctx, rtCborStoreWrapper{rt}, rcid)
+func getPendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) (MultiSigTransaction, error) {
+	nd, err := hamt.LoadNode(ctx, vmr.RtCborwrapper{rt}, rcid)
 	if err != nil {
 		return MultiSigTransaction{}, err
 	}
 
 	var txn MultiSigTransaction
-	// FIXME(frrist) pretty sure string(txnID) is wrong, lets go with it for now
-	if err := nd.Find(ctx, string(txnID), &txn); err != nil {
+	if err := nd.Find(ctx, t2k(txnID), &txn); err != nil {
 		return MultiSigTransaction{}, err
 	}
 	return txn, nil
 }
 
-func setPendingTxns(ctx context.Context, rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) (cid.Cid, error) {
-	// TODO is there a better place where we can perform this allocation?
-	nd := hamt.NewNode(rtCborStoreWrapper{rt})
-
-	// FIXME(frrist) pretty sure string(txnID) is wrong, lets go with it for now, maybe use cbor ints here?
-	if err := nd.Set(ctx, string(txnID), &txn); err != nil {
-		return cid.Undef, err
+func deletePendingTxn(ctx context.Context, rt vmr.Runtime, rcid cid.Cid, txnID TxnID) error {
+	nd, err := hamt.LoadNode(ctx, vmr.RtCborwrapper{rt}, rcid)
+	if err != nil {
+		return err
 	}
-
-	if err := nd.Flush(ctx); err != nil {
-		return cid.Undef, err
-	}
-
-	return rt.IpldPut(nd), nil
+	return nd.Delete(ctx, t2k(txnID))
 }
 
-type rtCborStoreWrapper struct {
-	rt vmr.Runtime
-}
-
-func (r rtCborStoreWrapper) Get(ctx context.Context, c cid.Cid, out interface{}) error {
-	if !r.rt.IpldGet(c, out) {
-		r.rt.AbortStateMsg("not found")
-	}
-	return nil
-}
-
-func (r rtCborStoreWrapper) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
-	c := r.rt.IpldPut(v)
-	return c, nil
+// convert a TxnID to a HAMT key.
+func t2k(txnID TxnID) string {
+	txnKey := make([]byte, 0, binary.MaxVarintLen64)
+	binary.PutVarint(txnKey, int64(txnID))
+	return string(txnKey)
 }

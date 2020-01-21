@@ -1,11 +1,30 @@
 package util
 
 import (
+	"context"
 	"math/big"
+
+	"github.com/ipfs/go-cid"
+	dstore "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-hamt-ipld"
+	bstore "github.com/ipfs/go-ipfs-blockstore"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 )
+
+func init() {
+	bs := bstore.NewBlockstore(dstore.NewMapDatastore())
+	cst := hamt.CSTFromBstore(bs)
+	nd := hamt.NewNode(cst)
+	emptyHAMT, err := cst.Put(context.TODO(), nd)
+	if err != nil {
+		panic(err)
+	}
+	EmptyHAMT = emptyHAMT
+}
+
+var EmptyHAMT cid.Cid
 
 type BalanceTableHAMT map[addr.Address]abi.TokenAmount
 
