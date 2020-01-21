@@ -6,14 +6,12 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
-type InvocOutput = vmr.InvocOutput
-
 type AccountActor struct{}
 
-func (a *AccountActor) Constructor(rt vmr.Runtime) InvocOutput {
+func (a *AccountActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
 	// TODO: set the pubkey address here from parameters
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	return InvocOutput{}
+	return &vmr.EmptyReturn{}
 }
 
 type AccountActorState struct {

@@ -44,7 +44,7 @@ type ConstructorParams struct {
 	UnlockDuration        abi.ChainEpoch
 }
 
-func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
+func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 	h := rt.AcquireState()
 
@@ -70,6 +70,7 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) {
 	}
 
 	UpdateRelease_MultiSig(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 type ProposeParams struct {
@@ -79,7 +80,11 @@ type ProposeParams struct {
 	Params abi.MethodParams
 }
 
-func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
+type ProposeReturn struct {
+	TxnID TxnID
+}
+
+func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
@@ -106,21 +111,22 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) TxnID {
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
-	return txnID
+	return &ProposeReturn{txnID}
 }
 
 type TxnIDParams struct {
 	ID TxnID
 }
 
-func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) {
+func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
 	a._rtApproveTransactionOrAbort(rt, params.ID)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
+func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
@@ -137,6 +143,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) {
 
 	st.PendingTxns = deletePendingTxn(context.TODO(), rt, st.PendingTxns, params.ID)
 	UpdateRelease_MultiSig(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 type AddAuthorizedParty struct {
@@ -144,7 +151,7 @@ type AddAuthorizedParty struct {
 	Increase        bool
 }
 
-func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorizedParty) {
+func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorizedParty)  *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -163,6 +170,7 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorized
 	}
 
 	UpdateRelease_MultiSig(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 type RemoveAuthorizedParty struct {
@@ -170,7 +178,7 @@ type RemoveAuthorizedParty struct {
 	Decrease        bool
 }
 
-func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuthorizedParty) {
+func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuthorizedParty) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -197,6 +205,7 @@ func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuth
 	st.AuthorizedParties = newAuthorizedParties
 
 	UpdateRelease_MultiSig(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 type SwapAuthorizedPartyParams struct {
@@ -204,7 +213,7 @@ type SwapAuthorizedPartyParams struct {
 	To   addr.Address
 }
 
-func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthorizedPartyParams) {
+func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthorizedPartyParams) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -237,13 +246,14 @@ func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthoriz
 	st.AuthorizedParties = newAuthorizedParties
 
 	UpdateRelease_MultiSig(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold int64
 }
 
-func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) {
+func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -256,6 +266,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 	st.NumApprovalsThreshold = params.NewThreshold
 
 	UpdateRelease_MultiSig(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
 func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID) {

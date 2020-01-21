@@ -2,6 +2,7 @@ package cron
 
 import (
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -19,13 +20,13 @@ type CronTableEntry struct {
 	MethodNum abi.MethodNum
 }
 
-func (a *CronActor) Constructor(rt vmr.Runtime) vmr.InvocOutput {
+func (a *CronActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
 	// Nothing. intentionally left blank.
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	return vmr.InvocOutput{}
+	return &vmr.EmptyReturn{}
 }
 
-func (a *CronActor) EpochTick(rt vmr.Runtime) vmr.InvocOutput {
+func (a *CronActor) EpochTick(rt vmr.Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	// a.Entries is basically a static registry for now, loaded
@@ -39,5 +40,5 @@ func (a *CronActor) EpochTick(rt vmr.Runtime) vmr.InvocOutput {
 		})
 	}
 
-	return vmr.InvocOutput{}
+	return &vmr.EmptyReturn{}
 }

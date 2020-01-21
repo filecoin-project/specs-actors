@@ -4,15 +4,17 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 type ConsensusFaultType int
@@ -40,8 +42,8 @@ func (a *StoragePowerActor) State(rt Runtime) (vmr.ActorStateHandle, StoragePowe
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) {
-	RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
+func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) *vmr.EmptyReturn {
+	vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
 
 	msgValue := rt.ValueReceived()
 
@@ -52,14 +54,15 @@ func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) {
 	}
 	st.EscrowTable = newTable
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, amountRequested abi.TokenAmount) {
+func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
 	if amountRequested < 0 {
 		rt.AbortArgMsg("Amount to withdraw must be nonnegative")
 	}
 
-	recipientAddr := RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
+	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
 
 	minBalanceMaintainRequired := a._rtGetPledgeCollateralReqForMinerOrAbort(rt, minerAddr)
 
@@ -73,41 +76,48 @@ func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, 
 	UpdateRelease(rt, h, st)
 
 	rt.SendFunds(recipientAddr, amountExtracted)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) addr.Address {
+type CreateMinerReturn struct {
+	IDAddress     addr.Address // The canonical ID-based address for the actor.
+	RobustAddress addr.Address // A mre expensive but re-org-safe address for the newly created actor.
+}
+
+func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
-	newMinerAddr, err := addr.NewFromBytes(
-		rt.Send(
-			builtin.InitActorAddr,
-			builtin.Method_InitActor_Exec,
-			serde.MustSerializeParams(
-				builtin.StorageMinerActorCodeID,
-				ownerAddr,
-				workerAddr,
-				sectorSize,
-				peerId,
-			),
-			abi.TokenAmount(0),
-		).ReturnValue,
-	)
-	autil.Assert(err == nil)
+	var ret initact.ExecReturn
+	autil.AssertNoError(rt.Send(
+		builtin.InitActorAddr,
+		builtin.Method_InitActor_Exec,
+		serde.MustSerializeParams(
+			builtin.StorageMinerActorCodeID,
+			ownerAddr,
+			workerAddr,
+			sectorSize,
+			peerId,
+		),
+		abi.TokenAmount(0),
+	).Into(ret))
 
 	h, st := a.State(rt)
-	newTable, ok := autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, newMinerAddr, rt.ValueReceived())
+	newTable, ok := autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, ret.IDAddress, rt.ValueReceived())
 	Assert(ok)
 	st.EscrowTable = newTable
-	st.PowerTable[newMinerAddr] = abi.StoragePower(0)
-	st.ClaimedPower[newMinerAddr] = abi.StoragePower(0)
-	st.NominalPower[newMinerAddr] = abi.StoragePower(0)
+	st.PowerTable[ret.IDAddress] = abi.StoragePower(0)
+	st.ClaimedPower[ret.IDAddress] = abi.StoragePower(0)
+	st.NominalPower[ret.IDAddress] = abi.StoragePower(0)
 	UpdateRelease(rt, h, st)
 
-	return newMinerAddr
+	return &CreateMinerReturn{
+		IDAddress:     ret.IDAddress,
+		RobustAddress: ret.RobustAddress,
+	}
 }
 
-func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) {
+func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) *vmr.EmptyReturn {
 	h, st := a.State(rt)
 
 	minerPledgeBalance, ok := autil.BalanceTable_GetEntry(st.EscrowTable, minerAddr)
@@ -131,15 +141,17 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) {
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
 	a._rtDeleteMinerActor(rt, minerAddr)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, storageWeightDesc SectorStorageWeightDesc) {
+func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, storageWeightDesc SectorStorageWeightDesc) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtAddPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc)
+	return &vmr.EmptyReturn{}
 }
 
 func (a *StoragePowerActor) OnSectorTerminate(
-	rt Runtime, storageWeightDesc SectorStorageWeightDesc, terminationType SectorTerminationType) {
+	rt Runtime, storageWeightDesc SectorStorageWeightDesc, terminationType SectorTerminationType) *vmr.EmptyReturn {
 
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
@@ -150,27 +162,31 @@ func (a *StoragePowerActor) OnSectorTerminate(
 		amountToSlash := cidx.StoragePower_PledgeSlashForSectorTermination(storageWeightDesc, terminationType)
 		a._rtSlashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, storageWeightDesc SectorStorageWeightDesc) {
+func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, storageWeightDesc SectorStorageWeightDesc) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtDeductClaimedPowerForSectorAssert(rt, rt.ImmediateCaller(), storageWeightDesc)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, storageWeightDesc SectorStorageWeightDesc) {
+func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, storageWeightDesc SectorStorageWeightDesc) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtAddPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc)
+	return &vmr.EmptyReturn{}
 }
 
 func (a *StoragePowerActor) OnSectorModifyWeightDesc(
-	rt Runtime, storageWeightDescPrev SectorStorageWeightDesc, storageWeightDescNew SectorStorageWeightDesc) {
+	rt Runtime, storageWeightDescPrev SectorStorageWeightDesc, storageWeightDescNew SectorStorageWeightDesc) *vmr.EmptyReturn {
 
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	a._rtDeductClaimedPowerForSectorAssert(rt, rt.ImmediateCaller(), storageWeightDescPrev)
 	a._rtAddPowerForSector(rt, rt.ImmediateCaller(), storageWeightDescNew)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) {
+func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -178,9 +194,10 @@ func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) {
 	delete(st.PoStDetectedFaultMiners, minerAddr)
 	st._updatePowerEntriesFromClaimedPower(minerAddr)
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiveFailures int64) {
+func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiveFailures int64) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -201,9 +218,10 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 		amountToSlash := cidx.StoragePower_PledgeSlashForSurprisePoStFailure(minerClaimedPower, numConsecutiveFailures)
 		a._rtSlashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) {
+func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	minerEvent := autil.MinerEvent{
@@ -217,9 +235,10 @@ func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.Ch
 	}
 	st.CachedDeferredCronEvents[eventEpoch] = append(st.CachedDeferredCronEvents[eventEpoch], minerEvent)
 	UpdateRelease(rt, h, st)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) {
+func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
 	TODO()
 	panic("")
 	// TODO: The semantics here are quite delicate:
@@ -277,17 +296,19 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 	// burn the rest of pledge collateral
 	// delete miner from power table
 	a._rtDeleteMinerActor(rt, slasheeAddr)
+	return &vmr.EmptyReturn{}
 }
 
 // Called by Cron.
-func (a *StoragePowerActor) OnEpochTickEnd(rt Runtime) {
+func (a *StoragePowerActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	a._rtInitiateNewSurprisePoStChallenges(rt)
 	a._rtProcessDeferredCronEvents(rt)
+	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) Constructor(rt Runtime) {
+func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	h := rt.AcquireState()
 
@@ -303,6 +324,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime) {
 	}
 
 	UpdateRelease(rt, h, *st)
+	return &vmr.EmptyReturn{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -1,7 +1,7 @@
 package storage_power
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
@@ -12,8 +12,6 @@ type SectorTerminationType = autil.SectorTermination
 
 var SectorTerminationType_NormalExpiration = autil.NormalExpiration
 
-var RT_MinerEntry_ValidateCaller_DetermineFundsLocation = vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation
-
 ////////////////////////////////////////////////////////////////////////////////
 // Boilerplate
 //
@@ -22,7 +20,6 @@ var RT_MinerEntry_ValidateCaller_DetermineFundsLocation = vmr.RT_MinerEntry_Vali
 // workaround due to the lack of generics support in Go.
 ////////////////////////////////////////////////////////////////////////////////
 
-type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
 
 var Assert = autil.Assert

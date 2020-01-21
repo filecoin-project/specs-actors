@@ -1,11 +1,14 @@
 package runtime
 
-import abi "github.com/filecoin-project/specs-actors/actors/abi"
-import crypto "github.com/filecoin-project/specs-actors/actors/crypto"
-import exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-import addr "github.com/filecoin-project/go-address"
-import indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
-import cid "github.com/ipfs/go-cid"
+import (
+	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
+)
 
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
@@ -65,13 +68,13 @@ type Runtime interface {
 
 	// Sends a message to another actor.
 	// If the invoked method does not return successfully, this caller will be aborted too.
-	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) InvocOutput
-	SendQuery(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams) []byte
+	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) SendReturn
+	SendQuery(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams) SendReturn
 	SendFunds(toAddr addr.Address, value abi.TokenAmount)
 
 	// Sends a message to another actor, trapping an unsuccessful execution.
 	// This may only be invoked by the singleton Cron actor.
-	SendCatchingErrors(input InvocInput) (output InvocOutput, exitCode exitcode.ExitCode)
+	SendCatchingErrors(input InvocInput) (ret SendReturn, exitCode exitcode.ExitCode)
 
 	// Computes an address for a new actor. The returned address is intended to uniquely refer to
 	// the actor even in the event of a chain re-org (whereas an ID-address might refer to a
@@ -106,15 +109,18 @@ type Syscalls interface {
 	VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool
 }
 
+// The return type from a message send from one actor to another. This abstracts over the internal representation of
+// the return, in particular whether it has been serialized to bytes or just passed through.
+// Production code is expected to de/serialize, but test and other code may pass the value straight through.
+type SendReturn interface {
+	Into(interface{}) error
+}
+
 type InvocInput struct {
 	To     addr.Address
 	Method abi.MethodNum
 	Params abi.MethodParams
 	Value  abi.TokenAmount
-}
-
-type InvocOutput struct {
-	ReturnValue []byte
 }
 
 type ActorStateHandle interface {

@@ -17,7 +17,6 @@ type DealIDQueue = autil.DealIDQueue
 // workaround due to the lack of generics support in Go.
 ////////////////////////////////////////////////////////////////////////////////
 
-type InvocOutput = vmr.InvocOutput
 type Runtime = vmr.Runtime
 type Bytes = abi.Bytes
 

@@ -78,7 +78,7 @@ type MinerEventSetHAMT []MinerEvent
 type SectorStorageWeightDesc struct {
 	SectorSize abi.SectorSize
 	Duration   abi.ChainEpoch
-	DealWeight big.Int
+	DealWeight *big.Int
 }
 
 type SectorTermination int64
