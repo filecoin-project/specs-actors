@@ -39,7 +39,7 @@ func (a *MultiSigActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, MultiSigAct
 }
 
 type ConstructorParams struct {
-	AuthorizedParties     []addr.Address
+	Signers     []addr.Address
 	NumApprovalsThreshold int64
 	UnlockDuration        abi.ChainEpoch
 }
@@ -49,12 +49,12 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 	h := rt.AcquireState()
 
 	var authPartiesIDs []addr.Address
-	for _, a := range params.AuthorizedParties {
+	for _, a := range params.Signers {
 		authPartiesIDs = append(authPartiesIDs, a)
 	}
 
 	st := MultiSigActorState{
-		AuthorizedParties:     authPartiesIDs,
+		Signers:     authPartiesIDs,
 		NumApprovalsThreshold: params.NumApprovalsThreshold,
 		PendingTxns:           autil.EmptyHAMT,
 	}
@@ -83,7 +83,7 @@ type ProposeReturn struct {
 func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
+	a._rtValidateSignerOrAbort(rt, callerAddr)
 
 	h, st := a.State(rt)
 	txnID := st.NextTxnID
@@ -114,7 +114,7 @@ type TxnIDParams struct {
 func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
+	a._rtValidateSignerOrAbort(rt, callerAddr)
 	a._rtApproveTransactionOrAbort(rt, params.ID)
 	return &vmr.EmptyReturn{}
 }
@@ -122,7 +122,7 @@ func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyR
 func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	a._rtValidateAuthorizedPartyOrAbort(rt, callerAddr)
+	a._rtValidateSignerOrAbort(rt, callerAddr)
 
 	h, st := a.State(rt)
 	txn := getPendingTxn(rt, st.PendingTxns, params.ID)
@@ -136,20 +136,20 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 	return &vmr.EmptyReturn{}
 }
 
-type AddAuthorizedParty struct {
-	AuthorizedParty addr.Address // must be an ID protocol address.
+type AddSigner struct {
+	Signer addr.Address // must be an ID protocol address.
 	Increase        bool
 }
 
-func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorizedParty) *vmr.EmptyReturn {
+func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
 	h, st := a.State(rt)
-	if st.isAuthorizedParty(params.AuthorizedParty) {
+	if st.isSigner(params.Signer) {
 		rt.AbortStateMsg("Party is already authorized")
 	}
-	st.AuthorizedParties = append(st.AuthorizedParties, params.AuthorizedParty)
+	st.Signers = append(st.Signers, params.Signer)
 	if params.Increase {
 		st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
 	}
@@ -158,63 +158,63 @@ func (a *MultiSigActor) AddAuthorizedParty(rt vmr.Runtime, params *AddAuthorized
 	return &vmr.EmptyReturn{}
 }
 
-type RemoveAuthorizedParty struct {
-	AuthorizedParty addr.Address // must be an ID protocol address.
+type RemoveSigner struct {
+	Signer addr.Address // must be an ID protocol address.
 	Decrease        bool
 }
 
-func (a *MultiSigActor) RemoveAuthorizedParty(rt vmr.Runtime, params *RemoveAuthorizedParty) *vmr.EmptyReturn {
+func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
 	h, st := a.State(rt)
 
-	if !st.isAuthorizedParty(params.AuthorizedParty) {
+	if !st.isSigner(params.Signer) {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	newAuthorizedParties := make([]addr.Address, 0, len(st.AuthorizedParties))
-	for _, s := range st.AuthorizedParties {
-		if s != params.AuthorizedParty {
-			newAuthorizedParties = append(newAuthorizedParties, s)
+	newSigners := make([]addr.Address, 0, len(st.Signers))
+	for _, s := range st.Signers {
+		if s != params.Signer {
+			newSigners = append(newSigners, s)
 		}
 	}
-	if params.Decrease || int64(len(st.AuthorizedParties)-1) < st.NumApprovalsThreshold {
+	if params.Decrease || int64(len(st.Signers)-1) < st.NumApprovalsThreshold {
 		st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 	}
-	st.AuthorizedParties = newAuthorizedParties
+	st.Signers = newSigners
 
 	UpdateRelease_MultiSig(rt, h, st)
 	return &vmr.EmptyReturn{}
 }
 
-type SwapAuthorizedPartyParams struct {
+type SwapSignerParams struct {
 	From addr.Address
 	To   addr.Address
 }
 
-func (a *MultiSigActor) SwapAuthorizedParty(rt vmr.Runtime, params *SwapAuthorizedPartyParams) *vmr.EmptyReturn {
+func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *vmr.EmptyReturn {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
 	h, st := a.State(rt)
 
-	if !st.isAuthorizedParty(params.From) {
+	if !st.isSigner(params.From) {
 		rt.AbortStateMsg("Party not found")
 	}
 
-	if !st.isAuthorizedParty(params.To) {
+	if !st.isSigner(params.To) {
 		rt.AbortStateMsg("Party already present")
 	}
 
-	newAuthorizedParties := make([]addr.Address, 0, len(st.AuthorizedParties))
-	for _, s := range st.AuthorizedParties {
+	newSigners := make([]addr.Address, 0, len(st.Signers))
+	for _, s := range st.Signers {
 		if s != params.From {
-			newAuthorizedParties = append(newAuthorizedParties, s)
+			newSigners = append(newSigners, s)
 		}
 	}
-	newAuthorizedParties = append(newAuthorizedParties, params.To)
-	st.AuthorizedParties = newAuthorizedParties
+	newSigners = append(newSigners, params.To)
+	st.Signers = newSigners
 
 	UpdateRelease_MultiSig(rt, h, st)
 	return &vmr.EmptyReturn{}
@@ -230,7 +230,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 
 	h, st := a.State(rt)
 
-	if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.AuthorizedParties)) {
+	if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
 		rt.AbortStateMsg("New threshold value not supported")
 	}
 
@@ -281,9 +281,9 @@ func (a *MultiSigActor) _rtDeletePendingTransaction(rt vmr.Runtime, txnID TxnID)
 	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) _rtValidateAuthorizedPartyOrAbort(rt vmr.Runtime, address addr.Address) {
+func (a *MultiSigActor) _rtValidateSignerOrAbort(rt vmr.Runtime, address addr.Address) {
 	h, st := a.State(rt)
-	if !st.isAuthorizedParty(address) {
+	if !st.isSigner(address) {
 		rt.Abort(exitcode.ErrForbidden, "party not authorized")
 	}
 	Release_MultiSig(rt, h, st)
