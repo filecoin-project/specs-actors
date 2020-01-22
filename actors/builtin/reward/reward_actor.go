@@ -50,17 +50,22 @@ func (r *Reward) AmountVested(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 
 // ownerAddr to a collection of Reward
 // TODO: AMT
-type RewardBalanceAMT map[addr.Address][]Reward
+// type RewardBalanceAMT map[addr.Address][]Reward
 
 type RewardActorState struct {
-	RewardMap RewardBalanceAMT
+	// TODO AMT
+	RewardBalanceAMT cid.Cid
 }
 
 func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Address) abi.TokenAmount {
-	rewards, found := st.RewardMap[ownerAddr]
-	if !found {
-		rt.AbortStateMsg("ra._withdrawReward: ownerAddr not found in RewardMap.")
-	}
+	/*
+		rewards, found := st.RewardMap[ownerAddr]
+		if !found {
+			rt.AbortStateMsg("ra._withdrawReward: ownerAddr not found in RewardMap.")
+		}
+	*/
+
+	rewards := make([]Reward, 0) // TEMPORARY
 
 	rewardToWithdrawTotal := abi.NewTokenAmount(0)
 	indicesToRemove := make([]int, len(rewards))
@@ -82,8 +87,8 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 		}
 	}
 
-	updatedRewards := removeIndices(rewards, indicesToRemove)
-	st.RewardMap[ownerAddr] = updatedRewards
+	//updatedRewards := removeIndices(rewards, indicesToRemove)
+	//st.RewardMap[ownerAddr] = updatedRewards
 
 	return rewardToWithdrawTotal
 }
@@ -166,12 +171,16 @@ func (a *RewardActor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardP
 			AmountWithdrawn: abi.NewTokenAmount(0),
 			VestingFunction: None,
 		}
-		rewards, found := st.RewardMap[params.Miner]
-		if !found {
-			rewards = make([]Reward, 0)
-		}
+		/*
+			rewards, found := st.RewardMap[params.Miner]
+			if !found {
+				rewards = make([]Reward, 0)
+			}
+
+		*/
+		rewards := make([]Reward, 0) // TEMPORARY
 		rewards = append(rewards, *newReward)
-		st.RewardMap[params.Miner] = rewards
+		//st.RewardMap[params.Miner] = rewards
 	}
 	UpdateReleaseRewardActorState(rt, h, st)
 	return &vmr.EmptyReturn{}
