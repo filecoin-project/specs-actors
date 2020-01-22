@@ -1,7 +1,7 @@
 GO_BIN ?= go
 GOLINT ?= golangci-lint
 
-all: build lint test tidy
+all: build lint gen test tidy
 .PHONY: all
 
 build:
@@ -20,4 +20,7 @@ lint:
 	$(GOLINT) run ./...
 .PHONY: lint
 
+gen:
+	$(GO_BIN) run ./gen/gen.go
+.PHONY: gen
 

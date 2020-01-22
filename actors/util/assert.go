@@ -15,7 +15,7 @@ func Assert(b bool) {
 }
 
 func AssertNoError(e error) {
-	AssertMsg(e == nil, e.Error())
+	AssertMsg(e == nil, fmt.Sprintf("%v", e))
 }
 
 // Indicating behavior not yet specified, and may require other spec changes.
