@@ -11,7 +11,7 @@ func TestBigIntSerializationRoundTrip(t *testing.T) {
 	}
 
 	for _, v := range testValues {
-		bi, err := BigFromString(v)
+		bi, err := FromString(v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -26,7 +26,7 @@ func TestBigIntSerializationRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if BigCmp(out, bi) != 0 {
+		if Cmp(out, bi) != 0 {
 			t.Fatal("failed to round trip Int through cbor")
 		}
 

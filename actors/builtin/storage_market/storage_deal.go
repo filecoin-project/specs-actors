@@ -39,11 +39,11 @@ func (p *StorageDealProposal) Duration() abi.ChainEpoch {
 }
 
 func (p *StorageDealProposal) TotalStorageFee() abi.TokenAmount {
-	return big.BigMul(p.StoragePricePerEpoch, big.NewInt(int64(p.Duration())))
+	return big.Mul(p.StoragePricePerEpoch, big.NewInt(int64(p.Duration())))
 }
 
 func (p *StorageDealProposal) ClientBalanceRequirement() abi.TokenAmount {
-	return big.BigAdd(p.ClientCollateral, p.TotalStorageFee())
+	return big.Add(p.ClientCollateral, p.TotalStorageFee())
 }
 
 func (p *StorageDealProposal) ProviderBalanceRequirement() abi.TokenAmount {

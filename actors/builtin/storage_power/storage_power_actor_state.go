@@ -62,7 +62,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerP
 func (st *StoragePowerActorState) _slashPledgeCollateral(
 	minerAddr addr.Address, slashAmountRequested abi.TokenAmount) abi.TokenAmount {
 
-	Assert(slashAmountRequested.GreaterThan(abi.NewTokenAmount(0)) || slashAmountRequested.Equals(big.NewInt(0)))
+	Assert(slashAmountRequested.GreaterThanEqual(big.Zero()))
 
 	newTable, amountSlashed, ok := autil.BalanceTable_WithSubtractPreservingNonnegative(
 		st.EscrowTable, minerAddr, slashAmountRequested)

@@ -4,29 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 
-	cbor "github.com/ipfs/go-ipld-cbor"
-	"github.com/polydawn/refmt/obj/atlas"
-
 	cbg "github.com/whyrusleeping/cbor-gen"
-	"golang.org/x/xerrors"
 )
 
-const BigIntMaxSerializedLen = 128 // is this big enough? or too big?
-
-func init() {
-	cbor.RegisterCborType(atlas.BuildEntry(Int{}).Transform().
-		TransformMarshal(atlas.MakeMarshalTransformFunc(
-			func(i Int) ([]byte, error) {
-				return i.cborBytes(), nil
-			})).
-		TransformUnmarshal(atlas.MakeUnmarshalTransformFunc(
-			func(x []byte) (Int, error) {
-				return fromCborBytes(x)
-			})).
-		Complete())
-}
+// BigIntMaxSerializedLen is the max length of a byte slice representing a CBOR serialized bigint.
+const BigIntMaxSerializedLen = 128
 
 type Int struct {
 	*big.Int
@@ -36,12 +21,16 @@ func NewInt(i int64) Int {
 	return Int{big.NewInt(0).SetInt64(i)}
 }
 
-func BigFromBytes(b []byte) Int {
+func Zero() Int {
+	return NewInt(0)
+}
+
+func FromBytes(b []byte) Int {
 	i := big.NewInt(0).SetBytes(b)
 	return Int{i}
 }
 
-func BigFromString(s string) (Int, error) {
+func FromString(s string) (Int, error) {
 	v, ok := big.NewInt(0).SetString(s, 10)
 	if !ok {
 		return Int{}, fmt.Errorf("failed to parse string as a big int")
@@ -50,47 +39,81 @@ func BigFromString(s string) (Int, error) {
 	return Int{v}, nil
 }
 
-func BigMul(a, b Int) Int {
+func Mul(a, b Int) Int {
 	return Int{big.NewInt(0).Mul(a.Int, b.Int)}
 }
 
-func BigDiv(a, b Int) Int {
+func Div(a, b Int) Int {
 	return Int{big.NewInt(0).Div(a.Int, b.Int)}
 }
 
-func BigMod(a, b Int) Int {
+func Mod(a, b Int) Int {
 	return Int{big.NewInt(0).Mod(a.Int, b.Int)}
 }
 
-func BigAdd(a, b Int) Int {
+func Add(a, b Int) Int {
 	return Int{big.NewInt(0).Add(a.Int, b.Int)}
 }
 
-func BigSub(a, b Int) Int {
+func Sub(a, b Int) Int {
 	return Int{big.NewInt(0).Sub(a.Int, b.Int)}
 }
 
-func BigCmp(a, b Int) int {
-	return a.Int.Cmp(b.Int)
+func Max(x, y Int) Int {
+	// taken from max.Max()
+	if x.Equals(Zero()) && x.Equals(y) {
+		if x.Sign() != 0 {
+			return y
+		}
+		return x
+	}
+	if x.GreaterThan(y) {
+		return x
+	}
+	return y
 }
 
-func (bi Int) Nil() bool {
-	return bi.Int == nil
+func Min(x, y Int) Int {
+	// taken from max.Min()
+	if x.Equals(Zero()) && x.Equals(y) {
+		if x.Sign() != 0 {
+			return x
+		}
+		return y
+	}
+	if x.LessThan(y) {
+		return x
+	}
+	return y
+}
+
+func Cmp(a, b Int) int {
+	return a.Int.Cmp(b.Int)
 }
 
 // LessThan returns true if bi < o
 func (bi Int) LessThan(o Int) bool {
-	return BigCmp(bi, o) < 0
+	return Cmp(bi, o) < 0
+}
+
+// LessThanEqual returns true if bi <= o
+func (bi Int) LessThanEqual(o Int) bool {
+	return bi.LessThan(o) || bi.Equals(o)
 }
 
 // GreaterThan returns true if bi > o
 func (bi Int) GreaterThan(o Int) bool {
-	return BigCmp(bi, o) > 0
+	return Cmp(bi, o) > 0
+}
+
+// GreaterThanEqual returns true if bi >= o
+func (bi Int) GreaterThanEqual(o Int) bool {
+	return bi.GreaterThan(o) || bi.Equals(o)
 }
 
 // Equals returns true if bi == o
 func (bi Int) Equals(o Int) bool {
-	return BigCmp(bi, o) == 0
+	return Cmp(bi, o) == 0
 }
 
 func (bi *Int) MarshalJSON() ([]byte, error) {
@@ -105,70 +128,29 @@ func (bi *Int) UnmarshalJSON(b []byte) error {
 
 	i, ok := big.NewInt(0).SetString(s, 10)
 	if !ok {
-		if string(s) == "<nil>" {
-			return nil
-		}
-		return xerrors.Errorf("failed to parse bigint string: '%s'", string(b))
+		return fmt.Errorf("failed to parse bigint string: '%s'", string(b))
 	}
 
 	bi.Int = i
 	return nil
 }
 
-var sizeUnits = []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB"}
-
-func (bi Int) SizeStr() string {
-	r := new(big.Rat).SetInt(bi.Int)
-	den := big.NewRat(1, 1024)
-
-	var i int
-	for f, _ := r.Float64(); f >= 1024 && i+1 < len(sizeUnits); f, _ = r.Float64() {
-		i++
-		r = r.Mul(r, den)
-	}
-
-	f, _ := r.Float64()
-	return fmt.Sprintf("%.3g %s", f, sizeUnits[i])
-}
-
-func (bi *Int) Scan(value interface{}) error {
-	switch value := value.(type) {
-	case string:
-		i, ok := big.NewInt(0).SetString(value, 10)
-		if !ok {
-			if value == "<nil>" {
-				return nil
-			}
-			return xerrors.Errorf("failed to parse bigint string: '%s'", value)
-		}
-
-		bi.Int = i
-
-		return nil
-	case int64:
-		bi.Int = big.NewInt(value)
-		return nil
-	default:
-		return xerrors.Errorf("non-string types unsupported: %T", value)
-	}
-}
-
-func (bi *Int) cborBytes() []byte {
+func (bi *Int) CborBytes() ([]byte, error) {
 	if bi.Int == nil {
-		return []byte{}
+		return []byte{}, fmt.Errorf("failed to convert to bytes, bigint is nil")
 	}
 
 	switch {
 	case bi.Sign() > 0:
-		return append([]byte{0}, bi.Bytes()...)
+		return append([]byte{0}, bi.Bytes()...), nil
 	case bi.Sign() < 0:
-		return append([]byte{1}, bi.Bytes()...)
+		return append([]byte{1}, bi.Bytes()...), nil
 	default: //  bi.Sign() == 0:
 		return []byte{}
 	}
 }
 
-func fromCborBytes(buf []byte) (Int, error) {
+func FromCborBytes(buf []byte) (Int, error) {
 	if len(buf) == 0 {
 		return NewInt(0), nil
 	}
@@ -193,11 +175,13 @@ func fromCborBytes(buf []byte) (Int, error) {
 
 func (bi *Int) MarshalCBOR(w io.Writer) error {
 	if bi.Int == nil {
-		zero := NewInt(0)
-		return zero.MarshalCBOR(w)
+		return fmt.Errorf("failed to Marshal to CBOR, bigint is nil")
 	}
 
-	enc := bi.cborBytes()
+	enc, err := bi.CborBytes()
+	if err != nil {
+		return err
+	}
 
 	header := cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(enc)))
 	if _, err := w.Write(header); err != nil {
@@ -235,7 +219,7 @@ func (bi *Int) UnmarshalCBOR(br io.Reader) error {
 		return err
 	}
 
-	i, err := fromCborBytes(buf)
+	i, err := FromCborBytes(buf)
 	if err != nil {
 		return err
 	}

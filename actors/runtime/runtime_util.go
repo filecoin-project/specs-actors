@@ -83,7 +83,7 @@ func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi
 	}
 
 	if rt.ValueReceived().GreaterThan(fundsRequired) {
-		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, big.BigSub(rt.ValueReceived(), fundsRequired))
+		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, big.Sub(rt.ValueReceived(), fundsRequired))
 		RequireSuccess(rt, code, "failed to transfer refund")
 	}
 }

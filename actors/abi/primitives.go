@@ -50,6 +50,9 @@ type Bytes []byte
 // TokenAmount is an amount of Filecoin tokens. This type is used within
 // the VM in message execution, to account movement of tokens, payment
 // of VM gas, and more.
+//
+// BigInt types are aliases rather than new types because the latter introduce incredible amounts of noise converting to
+// and from types in order to manipulate values. We give up some type safety for ergonomics.
 type TokenAmount = big.Int
 
 func NewTokenAmount(t int64) TokenAmount {

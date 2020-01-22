@@ -42,7 +42,7 @@ func (r *Reward) AmountVested(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	case Linear:
 		TODO() // BigInt
 		vestedProportion := math.Max(1.0, float64(elapsedEpoch)/float64(r.StartEpoch-r.EndEpoch))
-		return big.BigMul(r.Value, big.NewInt(int64(vestedProportion)))
+		return big.Mul(r.Value, big.NewInt(int64(vestedProportion)))
 	default:
 		return abi.NewTokenAmount(0)
 	}
@@ -68,14 +68,14 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 	for i, r := range rewards {
 		elapsedEpoch := rt.CurrEpoch() - r.StartEpoch
 		unlockedReward := r.AmountVested(elapsedEpoch)
-		withdrawableReward := big.BigSub(unlockedReward, r.AmountWithdrawn)
+		withdrawableReward := big.Sub(unlockedReward, r.AmountWithdrawn)
 
 		if withdrawableReward.LessThan(big.NewInt(0)) {
 			rt.AbortStateMsg("ra._withdrawReward: negative withdrawableReward.")
 		}
 
 		r.AmountWithdrawn = unlockedReward // modify rewards in place
-		rewardToWithdrawTotal = big.BigAdd(rewardToWithdrawTotal, withdrawableReward)
+		rewardToWithdrawTotal = big.Add(rewardToWithdrawTotal, withdrawableReward)
 
 		if r.AmountWithdrawn == r.Value {
 			indicesToRemove = append(indicesToRemove, i)
@@ -136,23 +136,14 @@ func (a *RewardActor) AwardBlockReward(
 	currReward := inds.GetCurrBlockRewardForMiner(minerNominalPower, currPledge)
 	TODO() // BigInt
 
-	// WARNING losing type safety
 	// 0 if over collateralized
-	underPledge := abi.NewTokenAmount(0)
-	pledgeDiff := big.BigSub(pledgeReq, currPledge)
-	if underPledge.GreaterThan(pledgeDiff) {
-		underPledge = pledgeDiff
-	}
-
-	rewardToGarnish := currReward
-	if rewardToGarnish.GreaterThan(underPledge) {
-		rewardToGarnish = underPledge
-	}
+	underPledge := big.Max(big.Zero(), big.Sub(pledgeReq, currPledge))
+	rewardToGarnish := big.Min(currReward, underPledge)
 
 	TODO()
 	// handle penalty here
 	// also handle penalty greater than reward
-	actualReward := big.BigSub(currReward, rewardToGarnish)
+	actualReward := big.Sub(currReward, rewardToGarnish)
 	if rewardToGarnish.GreaterThan(big.NewInt(0)) {
 		// Send fund to SPA for collateral
 		_, code := rt.Send(
@@ -193,8 +184,4 @@ func UpdateReleaseRewardActorState(rt vmr.Runtime, h vmr.ActorStateHandle, st Re
 func removeIndices(rewards []Reward, indices []int) []Reward {
 	// remove fully paid out Rewards by indices
 	panic("TODO")
-}
-
-func poop(b big.Int) {
-
 }

@@ -60,7 +60,7 @@ func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) *vmr.
 }
 
 func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
-	if amountRequested.LessThan(big.NewInt(0)) {
+	if amountRequested.LessThan(big.Zero()) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative withdrawal %v", amountRequested)
 	}
 
@@ -278,7 +278,7 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 	if !pledgeOk {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner has no pledge")
 	}
-	Assert(currPledge.GreaterThan(big.NewInt(0)))
+	Assert(currPledge.GreaterThan(big.Zero()))
 
 	// elapsed epoch from the latter block which committed the fault
 	elapsedEpoch := rt.CurrEpoch() - faultEpoch

@@ -58,7 +58,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 	//
 	// Note: as an optimization, implementations may cache efficient data structures indicating
 	// which of the following set of updates are redundant and can be skipped.
-	amountSlashedTotal = big.BigAdd(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, entryAddr))
+	amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, entryAddr))
 
 	minBalance := st._getLockedReqBalanceInternal(entryAddr)
 	newTable, amountExtracted, ok := actor_util.BalanceTable_WithExtractPartial(
@@ -122,8 +122,8 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 		//
 		// Note: as an optimization, implementations may cache efficient data structures indicating
 		// which of the following set of updates are redundant and can be skipped.
-		amountSlashedTotal = big.BigAdd(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Client))
-		amountSlashedTotal = big.BigAdd(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Provider))
+		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Client))
+		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Provider))
 
 		st._rtLockBalanceOrAbort(rt, p.Client, p.ClientBalanceRequirement())
 		st._rtLockBalanceOrAbort(rt, p.Provider, p.ProviderBalanceRequirement())
@@ -235,8 +235,8 @@ func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs
 
 		dur := big.NewInt(int64(dealP.Duration()))
 		siz := big.NewInt(dealP.PieceSize.Total())
-		weight := big.BigMul(dur, siz)
-		totalWeight = big.BigAdd(totalWeight, weight)
+		weight := big.Mul(dur, siz)
+		totalWeight = big.Add(totalWeight, weight)
 	}
 	UpdateRelease(rt, h, st)
 
