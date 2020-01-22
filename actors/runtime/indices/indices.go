@@ -2,7 +2,7 @@ package indices
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 )
 

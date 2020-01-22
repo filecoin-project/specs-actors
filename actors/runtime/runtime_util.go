@@ -7,7 +7,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"

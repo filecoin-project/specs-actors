@@ -2,7 +2,7 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	cid "github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"

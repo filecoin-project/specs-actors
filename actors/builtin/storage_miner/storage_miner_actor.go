@@ -2,7 +2,7 @@ package storage_miner
 
 import (
 	"bytes"
-	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"

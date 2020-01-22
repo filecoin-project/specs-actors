@@ -1,7 +1,7 @@
 package reward
 
 import (
-	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"math"
 
 	addr "github.com/filecoin-project/go-address"

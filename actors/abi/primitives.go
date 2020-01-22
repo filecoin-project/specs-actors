@@ -3,7 +3,7 @@ package abi
 import (
 	cid "github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/actors/abi/bigint"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 // The abi package contains definitions of all types that cross the VM boundary and are used

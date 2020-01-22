@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 
 	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
-// BigIntMaxSerializedLen is the max length of a byte slice representing a CBOR serialized bigint.
+// BigIntMaxSerializedLen is the max length of a byte slice representing a CBOR serialized big.
 const BigIntMaxSerializedLen = 128
 
 type Int struct {
@@ -128,7 +127,7 @@ func (bi *Int) UnmarshalJSON(b []byte) error {
 
 	i, ok := big.NewInt(0).SetString(s, 10)
 	if !ok {
-		return fmt.Errorf("failed to parse bigint string: '%s'", string(b))
+		return fmt.Errorf("failed to parse big string: '%s'", string(b))
 	}
 
 	bi.Int = i
@@ -137,7 +136,7 @@ func (bi *Int) UnmarshalJSON(b []byte) error {
 
 func (bi *Int) CborBytes() ([]byte, error) {
 	if bi.Int == nil {
-		return []byte{}, fmt.Errorf("failed to convert to bytes, bigint is nil")
+		return []byte{}, fmt.Errorf("failed to convert to bytes, big is nil")
 	}
 
 	switch {
@@ -175,7 +174,7 @@ func FromCborBytes(buf []byte) (Int, error) {
 
 func (bi *Int) MarshalCBOR(w io.Writer) error {
 	if bi.Int == nil {
-		return fmt.Errorf("failed to Marshal to CBOR, bigint is nil")
+		return fmt.Errorf("failed to Marshal to CBOR, big is nil")
 	}
 
 	enc, err := bi.CborBytes()

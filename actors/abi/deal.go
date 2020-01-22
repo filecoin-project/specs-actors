@@ -1,6 +1,6 @@
 package abi
 
-import big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
+import big "github.com/filecoin-project/specs-actors/actors/abi/big"
 
 type DealID int64
 type DealIDs struct {
