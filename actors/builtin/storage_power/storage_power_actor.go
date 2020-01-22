@@ -166,6 +166,8 @@ func (a *StoragePowerActor) OnSectorTerminate(
 		cidx := rt.CurrIndices()
 		amountToSlash := cidx.StoragePower_PledgeSlashForSectorTermination(storageWeightDesc, terminationType)
 		a._rtSlashPledgeCollateral(rt, minerAddr, amountToSlash)
+
+		
 	}
 	return &vmr.EmptyReturn{}
 }
@@ -243,7 +245,7 @@ func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.Ch
 	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
+func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeaders []byte, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
 	TODO()
 	panic("")
 	// TODO: The semantics here are quite delicate:
@@ -256,15 +258,19 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 	//
 	// Deferring to followup after these security/mechanism design questions have been resolved.
 	// Previous notes:
-	//
-	// validation checks to be done in runtime before calling this method
+
+	// validation checks
 	// - there should be exactly two block headers in proof
 	// - both blocks are mined by the same miner
+	// - two block headers are different
 	// - first block is of the same or lower block height as the second block
 	//
 	// Use EC's IsValidConsensusFault method to validate the proof
+	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(blockHeaders)
+	if !isValidConsensusFault {
+		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: unverified consensus fault")
+	}
 
-	// this method assumes that ConsensusFault has been checked in runtime
 	slasherAddr := rt.ImmediateCaller()
 	h, st := a.State(rt)
 

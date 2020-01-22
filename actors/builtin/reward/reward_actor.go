@@ -3,6 +3,7 @@ package reward
 import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"math"
+	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -92,8 +93,6 @@ type RewardActor struct{}
 
 func (a *RewardActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	// initialize Reward Map with investor accounts
-	autil.IMPL_FINISH()
 	return &vmr.EmptyReturn{}
 }
 
@@ -183,5 +182,12 @@ func UpdateReleaseRewardActorState(rt vmr.Runtime, h vmr.ActorStateHandle, st Re
 
 func removeIndices(rewards []Reward, indices []int) []Reward {
 	// remove fully paid out Rewards by indices
-	panic("TODO")
+	var newRewards []Reward
+	var lastIndex int = 0
+	sort.Ints(indices)
+	for _, index := range indices {
+		newRewards = append(newRewards, rewards[lastIndex:index]...)
+		lastIndex += 1
+	}
+	return newRewards
 }

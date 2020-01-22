@@ -30,14 +30,6 @@ func (a *StorageMarketActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMar
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-// Terminate a set of deals in response to their containing sector being terminated.
-// Slash provider collateral, refund client collateral, and refund partial unpaid escrow
-// amount to client.
-func (a *StorageMarketActor) TerminateDealsOnSlashProviderSector(rt Runtime, dealIDs abi.DealIDs) *vmr.EmptyReturn {
-	panic("TODO")
-	return &vmr.EmptyReturn{}
-}
-
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
 func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
@@ -243,6 +235,9 @@ func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs
 	return &GetWeightForDealSetReturn{abi.DealWeight(totalWeight)}
 }
 
+// Terminate a set of deals in response to their containing sector being terminated.
+// Slash provider collateral, refund client collateral, and refund partial unpaid escrow
+// amount to client.
 func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.DealIDs) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
