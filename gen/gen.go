@@ -17,7 +17,7 @@ func main() {
 		multisig.ProposeParams{},
 		multisig.TxnIDParams{},
 		multisig.ChangeNumApprovalsThresholdParams{},
-		multisig.SwapAuthorizedPartyParams{},
+		multisig.SwapSignerParams{},
 		// method returns
 		multisig.ProposeReturn{},
 	); err != nil {
