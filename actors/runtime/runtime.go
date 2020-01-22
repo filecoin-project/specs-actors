@@ -15,27 +15,48 @@ import (
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
+	// The current chain epoch number. The genesis block has epoch zero.
 	CurrEpoch() abi.ChainEpoch
-
-	// Randomness returns a (pseudo)random string for the given epoch and tag.
-	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
-
-	// The address of the immediate calling actor.
-	// Not necessarily the actor in the From field of the initial on-chain Message.
-	// Always an ID-address.
-	ImmediateCaller() addr.Address
-	ValidateImmediateCallerAcceptAny()
-	ValidateImmediateCallerIs(addrs ...addr.Address)
-	ValidateImmediateCallerType(types ...abi.ActorCodeID)
 
 	// The address of the actor receiving the message. Always an ID-address.
 	CurrReceiver() addr.Address
 
-	// The actor who mined the block in which the initial on-chain message appears.
+	// The address of the immediate calling actor. Always an ID-address.
+	ImmediateCaller() addr.Address
+
+	// Validates the caller against some predicate.
+	// Exported actor methods must invoke at least one caller validation before returning.
+	ValidateImmediateCallerAcceptAny()
+	ValidateImmediateCallerIs(addrs ...addr.Address)
+	ValidateImmediateCallerType(types ...abi.ActorCodeID)
+
+	// The actor who mined the block in which the current invocation is being evaluated.
 	// Always an ID-address.
 	ToplevelBlockWinner() addr.Address
 
+	// The balance of the receiver.
+	CurrentBalance() abi.TokenAmount
+
+	// The value attached to the message being processed, implicitly added to CurrentBalance() before method invocation.
+	ValueReceived() abi.TokenAmount
+
+	// Look up the code ID at an actor address.
+	GetActorCodeID(addr addr.Address) (ret abi.ActorCodeID, ok bool)
+
+	// Randomness returns a (pseudo)random string for the given epoch and tag.
+	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
+
+	// Acquire the actor's state object for inspection or mutation.
 	AcquireState() ActorStateHandle
+
+	// Retrieves and deserializes an object from the store into o. Returns whether successful.
+	IpldGet(c cid.Cid, o interface{}) bool
+	// Serializes and stores an object, returning its CID.
+	IpldPut(x interface{}) cid.Cid
+
+	// Sends a message to another actor, returning the exit code and return value envelope.
+	// If the invoked method does not return successfully, this caller will be aborted too.
+	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) (SendReturn, exitcode.ExitCode)
 
 	// Halts execution upon an error from which the actor cannot recover. This method does not return.
 	// State changes will be rolled back, including any made by the caller.
@@ -46,24 +67,6 @@ type Runtime interface {
 	// Calls Abort with InconsistentState_User.
 	// TODO: replace all call sites with Abort(exitcode, msg, ...)
 	AbortStateMsg(msg string)
-
-	CurrentBalance() abi.TokenAmount
-	ValueReceived() abi.TokenAmount
-
-	// Look up the current values of several system-wide economic indices.
-	CurrIndices() indices.Indices
-
-	// Look up the code ID of a given actor address.
-	GetActorCodeID(addr addr.Address) (ret abi.ActorCodeID, ok bool)
-
-	// Run a (pure function) computation, consuming the gas cost associated with that function.
-	// This mechanism is intended to capture the notion of an ABI between the VM and native
-	// functions, and should be used for any function whose computation is expensive.
-	Compute(ComputeFunctionID, args []interface{}) interface{}
-
-	// Sends a message to another actor, returning the exit code and return value envelope.
-	// If the invoked method does not return successfully, this caller will be aborted too.
-	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) (SendReturn, exitcode.ExitCode)
 
 	// Computes an address for a new actor. The returned address is intended to uniquely refer to
 	// the actor even in the event of a chain re-org (whereas an ID-address might refer to a
@@ -78,10 +81,8 @@ type Runtime interface {
 	// or by StoragePowerActor in the case of StorageMinerActors.
 	DeleteActor(address addr.Address)
 
-	// Retrieves and deserializes an object from the store into o. Returns whether successful.
-	IpldGet(c cid.Cid, o interface{}) bool
-	// Serializes and stores an object, returning its CID.
-	IpldPut(x interface{}) cid.Cid
+	// Look up the current values of several system-wide economic indices.
+	CurrIndices() indices.Indices
 
 	// Provides the system call interface.
 	Syscalls() Syscalls
@@ -95,6 +96,7 @@ type Runtime interface {
 	StartSpan(name string) TraceSpan
 }
 
+// Pure functions implemented as primitives by the runtime.
 type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
@@ -124,9 +126,3 @@ type ActorStateHandle interface {
 	Release(checkStateCID abi.ActorSubstateCID)
 	Take() abi.ActorSubstateCID
 }
-
-type ComputeFunctionID int64
-
-const (
-	Compute_VerifySignature = ComputeFunctionID(1)
-)
