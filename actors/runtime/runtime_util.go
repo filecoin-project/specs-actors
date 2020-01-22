@@ -77,18 +77,10 @@ func RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt Runtime, entryAddr a
 	}
 }
 
-// Cmp compares x and y and returns:
-//
-//   -1 if x <  y
-//    0 if x == y
-//   +1 if x >  y
-//
-
 func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi.TokenAmount) {
-	if big.BigCmp(big.Int(rt.ValueReceived()), big.Int(fundsRequired)) == -1 {
+	if rt.ValueReceived().LessThan(fundsRequired) {
 		rt.Abort(exitcode.ErrInsufficientFunds, "Insufficient funds received accompanying message")
 	}
-	rt.ValueReceived()
 
 	if rt.ValueReceived().GreaterThan(fundsRequired) {
 		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, big.BigSub(rt.ValueReceived(), fundsRequired))
