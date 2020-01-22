@@ -166,8 +166,6 @@ func (a *StoragePowerActor) OnSectorTerminate(
 		cidx := rt.CurrIndices()
 		amountToSlash := cidx.StoragePower_PledgeSlashForSectorTermination(storageWeightDesc, terminationType)
 		a._rtSlashPledgeCollateral(rt, minerAddr, amountToSlash)
-
-		
 	}
 	return &vmr.EmptyReturn{}
 }
@@ -247,7 +245,6 @@ func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.Ch
 
 func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeaders []byte, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
 	TODO()
-	panic("")
 	// TODO: The semantics here are quite delicate:
 	//
 	// - (proof []block.Block) can't be validated in isolation; we must query the runtime to confirm

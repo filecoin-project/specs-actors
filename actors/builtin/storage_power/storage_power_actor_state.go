@@ -6,7 +6,6 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
@@ -35,7 +34,7 @@ type StoragePowerActorState struct {
 func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerPower abi.StoragePower) bool {
 
 	// if miner is larger than min power requirement, we're set
-	if minerPower >= builtin.MIN_MINER_SIZE_STOR {
+	if minerPower >= indices.StoragePower_MinMinerSizeStor() {
 		return true
 	}
 
@@ -45,7 +44,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerP
 	}
 
 	// else if none do, check whether in MIN_MINER_SIZE_TARG miners
-	if len(st.PowerTable) <= builtin.MIN_MINER_SIZE_TARG {
+	if len(st.PowerTable) <= indices.StoragePower_MinMinerSizeTarg() {
 		// miner should pass
 		return true
 	}
@@ -56,7 +55,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerP
 		minerSizes = append(minerSizes, v)
 	}
 	sort.Slice(minerSizes, func(i, j int) bool { return int(i) > int(j) })
-	return minerPower >= minerSizes[builtin.MIN_MINER_SIZE_TARG-1]
+	return minerPower >= minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]
 }
 
 func (st *StoragePowerActorState) _slashPledgeCollateral(
@@ -197,10 +196,12 @@ func (st *StoragePowerActorState) _setNominalPowerEntryInternal(minerAddr addr.A
 	Assert(ok)
 	st.NominalPower[minerAddr] = updatedMinerNominalPower
 
-	consensusMinPower := indices.StoragePower_ConsensusMinMinerPower()
-	if updatedMinerNominalPower >= consensusMinPower && prevMinerNominalPower < consensusMinPower {
+	wasMinMiner := st._minerNominalPowerMeetsConsensusMinimum(prevMinerNominalPower)
+	isMinMiner := st._minerNominalPowerMeetsConsensusMinimum(updatedMinerNominalPower)
+
+	if isMinMiner && !wasMinMiner {
 		st.NumMinersMeetingMinPower += 1
-	} else if updatedMinerNominalPower < consensusMinPower && prevMinerNominalPower >= consensusMinPower {
+	} else if !isMinMiner && wasMinMiner {
 		st.NumMinersMeetingMinPower -= 1
 	}
 }

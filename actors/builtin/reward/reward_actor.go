@@ -187,7 +187,7 @@ func removeIndices(rewards []Reward, indices []int) []Reward {
 	sort.Ints(indices)
 	for _, index := range indices {
 		newRewards = append(newRewards, rewards[lastIndex:index]...)
-		lastIndex += 1
+		lastIndex = index + 1
 	}
 	return newRewards
 }
