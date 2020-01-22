@@ -23,15 +23,15 @@ func (t *MultiSigActorState) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.AuthorizedParties ([]address.Address) (slice)
-	if len(t.AuthorizedParties) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.AuthorizedParties was too long")
+	// t.Signers ([]address.Address) (slice)
+	if len(t.Signers) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Signers was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.AuthorizedParties)))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Signers)))); err != nil {
 		return err
 	}
-	for _, v := range t.AuthorizedParties {
+	for _, v := range t.Signers {
 		if err := v.MarshalCBOR(w); err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ func (t *MultiSigActorState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.AuthorizedParties ([]address.Address) (slice)
+	// t.Signers ([]address.Address) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -118,14 +118,14 @@ func (t *MultiSigActorState) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.AuthorizedParties: array too large (%d)", extra)
+		return fmt.Errorf("t.Signers: array too large (%d)", extra)
 	}
 
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
 	if extra > 0 {
-		t.AuthorizedParties = make([]address.Address, extra)
+		t.Signers = make([]address.Address, extra)
 	}
 	for i := 0; i < int(extra); i++ {
 
@@ -134,7 +134,7 @@ func (t *MultiSigActorState) UnmarshalCBOR(r io.Reader) error {
 			return err
 		}
 
-		t.AuthorizedParties[i] = v
+		t.Signers[i] = v
 	}
 
 	// t.NumApprovalsThreshold (int64) (int64)
@@ -433,15 +433,15 @@ func (t *ConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.AuthorizedParties ([]address.Address) (slice)
-	if len(t.AuthorizedParties) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.AuthorizedParties was too long")
+	// t.Signers ([]address.Address) (slice)
+	if len(t.Signers) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Signers was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.AuthorizedParties)))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Signers)))); err != nil {
 		return err
 	}
-	for _, v := range t.AuthorizedParties {
+	for _, v := range t.Signers {
 		if err := v.MarshalCBOR(w); err != nil {
 			return err
 		}
@@ -486,7 +486,7 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.AuthorizedParties ([]address.Address) (slice)
+	// t.Signers ([]address.Address) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -494,14 +494,14 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.AuthorizedParties: array too large (%d)", extra)
+		return fmt.Errorf("t.Signers: array too large (%d)", extra)
 	}
 
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
 	if extra > 0 {
-		t.AuthorizedParties = make([]address.Address, extra)
+		t.Signers = make([]address.Address, extra)
 	}
 	for i := 0; i < int(extra); i++ {
 
@@ -510,7 +510,7 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 			return err
 		}
 
-		t.AuthorizedParties[i] = v
+		t.Signers[i] = v
 	}
 
 	// t.NumApprovalsThreshold (int64) (int64)
@@ -818,7 +818,7 @@ func (t *ChangeNumApprovalsThresholdParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *SwapAuthorizedPartyParams) MarshalCBOR(w io.Writer) error {
+func (t *SwapSignerParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -839,7 +839,7 @@ func (t *SwapAuthorizedPartyParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *SwapAuthorizedPartyParams) UnmarshalCBOR(r io.Reader) error {
+func (t *SwapSignerParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

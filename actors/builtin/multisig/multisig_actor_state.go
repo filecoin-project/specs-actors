@@ -8,7 +8,7 @@ import (
 )
 
 type MultiSigActorState struct {
-	AuthorizedParties     []address.Address
+	Signers     []address.Address
 	NumApprovalsThreshold int64
 	NextTxnID             TxnID
 
@@ -30,8 +30,8 @@ func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.Toke
 	return big.Mul(st.InitialBalance, big.NewInt(int64(lockedProportion)))
 }
 
-func (st *MultiSigActorState) isAuthorizedParty(party address.Address) bool {
-	for _, ap := range st.AuthorizedParties {
+func (st *MultiSigActorState) isSigner(party address.Address) bool {
+	for _, ap := range st.Signers {
 		if party == ap {
 			return true
 		}
