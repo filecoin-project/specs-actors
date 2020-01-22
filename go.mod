@@ -8,5 +8,6 @@ require (
 	github.com/ipfs/go-hamt-ipld v0.0.14
 	github.com/libp2p/go-libp2p-core v0.3.0
 	github.com/multiformats/go-multihash v0.0.10
-	github.com/whyrusleeping/cbor-gen v0.0.0-20191216205031-b047b6acb3c0
+	github.com/whyrusleeping/cbor-gen v0.0.0-20200122015334-52eaf73beaf5
+	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 )
