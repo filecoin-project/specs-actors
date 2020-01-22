@@ -44,7 +44,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
-	if amountRequested.LessThan(big.NewInt(0)) {
+	if amountRequested.LessThan(big.Zero()) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amountRequested)
 	}
 
@@ -226,7 +226,7 @@ type GetWeightForDealSetReturn struct {
 func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs) *GetWeightForDealSetReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-	totalWeight := big.NewInt(0)
+	totalWeight := big.Zero()
 
 	h, st := a.State(rt)
 	for _, dealID := range dealIDs.Items {

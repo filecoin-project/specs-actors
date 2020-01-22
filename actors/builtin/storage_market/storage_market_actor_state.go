@@ -330,7 +330,7 @@ func (st *StorageMarketActorState) _rtGetOnChainDealOrAbort(rt Runtime, dealID a
 }
 
 func (st *StorageMarketActorState) _rtLockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
-	if amount.LessThan(big.NewInt(0)) {
+	if amount.LessThan(big.Zero()) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amount)
 	}
 

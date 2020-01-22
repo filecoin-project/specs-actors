@@ -41,7 +41,7 @@ func (st *MultiSigActorState) isAuthorizedParty(party address.Address) bool {
 
 // return true if MultiSig maintains required locked balance after spending the amount
 func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) bool {
-	if amountToSpend.LessThan(big.NewInt(0)) || currBalance.LessThan(amountToSpend) {
+	if amountToSpend.LessThan(big.Zero()) || currBalance.LessThan(amountToSpend) {
 		return false
 	}
 

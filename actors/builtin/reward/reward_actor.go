@@ -70,7 +70,7 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 		unlockedReward := r.AmountVested(elapsedEpoch)
 		withdrawableReward := big.Sub(unlockedReward, r.AmountWithdrawn)
 
-		if withdrawableReward.LessThan(big.NewInt(0)) {
+		if withdrawableReward.LessThan(big.Zero()) {
 			rt.AbortStateMsg("ra._withdrawReward: negative withdrawableReward.")
 		}
 
@@ -144,7 +144,7 @@ func (a *RewardActor) AwardBlockReward(
 	// handle penalty here
 	// also handle penalty greater than reward
 	actualReward := big.Sub(currReward, rewardToGarnish)
-	if rewardToGarnish.GreaterThan(big.NewInt(0)) {
+	if rewardToGarnish.GreaterThan(big.Zero()) {
 		// Send fund to SPA for collateral
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
