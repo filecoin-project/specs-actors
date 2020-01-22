@@ -243,9 +243,8 @@ func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.Ch
 	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
+func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, blockHeader2 []byte, slashee addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
 	TODO()
-	panic("")
 	// TODO: The semantics here are quite delicate:
 	//
 	// - (proof []block.Block) can't be validated in isolation; we must query the runtime to confirm
@@ -256,25 +255,29 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 	//
 	// Deferring to followup after these security/mechanism design questions have been resolved.
 	// Previous notes:
-	//
-	// validation checks to be done in runtime before calling this method
+
+	// validation checks
 	// - there should be exactly two block headers in proof
 	// - both blocks are mined by the same miner
+	// - two block headers are different
 	// - first block is of the same or lower block height as the second block
 	//
 	// Use EC's IsValidConsensusFault method to validate the proof
+	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(blockHeader1, blockHeader2)
+	if !isValidConsensusFault {
+		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: unverified consensus fault")
+	}
 
-	// this method assumes that ConsensusFault has been checked in runtime
 	slasherAddr := rt.ImmediateCaller()
 	h, st := a.State(rt)
 
-	claimedPower, powerOk := st.ClaimedPower[slasheeAddr]
+	claimedPower, powerOk := st.ClaimedPower[slashee]
 	if !powerOk {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner already slashed")
 	}
 	Assert(claimedPower > 0)
 
-	currPledge, pledgeOk := st._getCurrPledgeForMiner(slasheeAddr)
+	currPledge, pledgeOk := st._getCurrPledgeForMiner(slashee)
 	if !pledgeOk {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner has no pledge")
 	}
@@ -301,7 +304,7 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
-	a._rtDeleteMinerActor(rt, slasheeAddr)
+	a._rtDeleteMinerActor(rt, slashee)
 	return &vmr.EmptyReturn{}
 }
 

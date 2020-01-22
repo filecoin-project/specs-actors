@@ -44,7 +44,7 @@ const (
 	Method_StorageMinerActor_DeclareTemporaryFaults
 	Method_StorageMinerActor_RecoverTemporaryFaults
 	Method_StorageMinerActor_ExtendSectorExpiration
-	Method_StorageMinerActor_TerminateSector
+	Method_StorageMinerActor_TerminateSectors
 	Method_StorageMinerActor_SubmitSurprisePoStResponse
 
 	// Internal mechanism events

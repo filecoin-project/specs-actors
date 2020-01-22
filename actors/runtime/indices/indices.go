@@ -236,12 +236,15 @@ func (inds *IndicesImpl) StoragePower_PledgeSlashForSurprisePoStFailure(
 	panic("")
 }
 
+// FIL deposit per sector precommit in Interactive PoRep
+// refunded after ProveCommit but burned if PreCommit expires
 func (inds *IndicesImpl) StorageMining_PreCommitDeposit(
 	sectorSize abi.SectorSize,
 	expirationEpoch abi.ChainEpoch,
 ) abi.TokenAmount {
 	PARAM_FINISH()
-	panic("")
+	PRECOMMIT_DEPOSIT_PER_BYTE := abi.TokenAmount(big.NewInt(0)) // placeholder
+	return abi.TokenAmount(big.Mul(PRECOMMIT_DEPOSIT_PER_BYTE, big.NewInt(int64(sectorSize))))
 }
 
 func (inds *IndicesImpl) StorageMining_TemporaryFaultFee(
@@ -281,27 +284,113 @@ func StorageDeal_ProviderInitTimedOutSlashAmount(providerCollateral abi.TokenAmo
 	return providerCollateral
 }
 
-func StoragePower_ConsensusMinMinerPower() abi.StoragePower {
+func StoragePower_MinMinerSizeStor() abi.StoragePower {
 	PARAM_FINISH()
-	panic("")
+	const MIN_MINER_SIZE_STOR = abi.StoragePower(100 * (1 << 40)) // placeholder, 100 TB
+	return MIN_MINER_SIZE_STOR
 }
 
-func StorageMining_PoStNoChallengePeriod() abi.ChainEpoch {
+func StoragePower_MinMinerSizeTarg() int {
 	PARAM_FINISH()
-	panic("")
+	const MIN_MINER_SIZE_TARG = 3 // placeholder
+	return MIN_MINER_SIZE_TARG
 }
 
+// how long miner has to respond to the challenge before it expires
+func StorageMining_SurprisePoStChallengeDuration() abi.ChainEpoch {
+	PARAM_FINISH()
+	const CHALLENGE_DURATION = abi.ChainEpoch(4) // placeholder, 2 hours
+	return CHALLENGE_DURATION
+}
+
+// sets the average frequency
 func StorageMining_SurprisePoStProvingPeriod() abi.ChainEpoch {
 	PARAM_FINISH()
-	panic("")
+	const PROVING_PERIOD = abi.ChainEpoch(2) // placeholder, 2 days
+	return PROVING_PERIOD
 }
 
+// how long after a POST challenge before a miner can get challenged again
+func StorageMining_PoStNoChallengePeriod() abi.ChainEpoch {
+	PARAM_FINISH()
+	const SURPRISE_NO_CHALLENGE_PERIOD = abi.ChainEpoch(0) // placeholder, 2 hours
+	return SURPRISE_NO_CHALLENGE_PERIOD
+}
+
+// number of detected faults before a miner's sectors are all terminated
 func StoragePower_SurprisePoStMaxConsecutiveFailures() int64 {
 	PARAM_FINISH()
-	panic("")
+	const MAX_CONSECUTIVE_FAULTS = 3 // placeholder
+	return MAX_CONSECUTIVE_FAULTS
 }
 
+// Time between when a temporary sector fault is declared, and when it becomes
+// effective for purposes of reducing the active proving set for PoSts.
 func StorageMining_DeclaredFaultEffectiveDelay() abi.ChainEpoch {
 	PARAM_FINISH()
-	panic("")
+	const DECLARED_FAULT_EFFECTIVE_DELAY = abi.ChainEpoch(20) // placeholder
+	return DECLARED_FAULT_EFFECTIVE_DELAY
+}
+
+// If a sector PreCommit appear at epoch T, then the corresponding ProveCommit
+// must appear between epochs
+//   (T + MIN_PROVE_COMMIT_SECTOR_EPOCH, T + MAX_PROVE_COMMIT_SECTOR_EPOCH)
+// inclusive.
+// TODO: placeholder epoch values -- will be set later
+func StorageMining_MinProveCommitSectorEpoch() abi.ChainEpoch {
+	PARAM_FINISH()
+	const MIN_PROVE_COMMIT_SECTOR_EPOCH = abi.ChainEpoch(5)
+	return MIN_PROVE_COMMIT_SECTOR_EPOCH
+}
+
+func StorageMining_MaxProveCommitSectorEpoch() abi.ChainEpoch {
+	PARAM_FINISH()
+	const MAX_PROVE_COMMIT_SECTOR_EPOCH = abi.ChainEpoch(10)
+	return MAX_PROVE_COMMIT_SECTOR_EPOCH
+}
+
+func StorageMining_SpcLookbackPoSt() abi.ChainEpoch {
+	PARAM_FINISH()
+	const SPC_LOOKBACK_POST = abi.ChainEpoch(1)   // cheap to generate, should be set as close to current TS as possible
+	return SPC_LOOKBACK_POST
+}
+
+func StorageMining_Finality() abi.ChainEpoch {
+	const FINALITY = 500
+	return FINALITY
+}
+
+func StorageMining_SpcLookbackSeal() abi.ChainEpoch {
+	PARAM_FINISH()
+	return StorageMining_Finality() // should be approximately the same as finality
+}
+
+func StorageMining_MaxSealTime32GiBWinStackedSDR() abi.ChainEpoch {
+	PARAM_FINISH()
+	MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR := abi.ChainEpoch(1) // TODO: Change to a dictionary with RegisteredProofs as the key.
+	return MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR
+}
+
+func ConsensusFault_SlasherInitialShareNum() int {
+	PARAM_FINISH()
+	const SLASHER_INITIAL_SHARE_NUM = 1            // placeholder
+	return SLASHER_INITIAL_SHARE_NUM
+}
+
+func ConsensusFault_SlasherInitialShareDenom() int {
+	PARAM_FINISH()
+	const SLASHER_INITIAL_SHARE_DENOM = 1000       // placeholder
+	return SLASHER_INITIAL_SHARE_DENOM
+}
+
+func ConsensusFault_SlasherShareGrowthRateNum() int {
+	PARAM_FINISH()
+	const SLASHER_SHARE_GROWTH_RATE_NUM = 102813   // placeholder
+	return SLASHER_SHARE_GROWTH_RATE_NUM
+}
+
+func ConsensusFault_SlasherShareGrowthRateDenom() int {
+	PARAM_FINISH()
+	const SLASHER_SHARE_GROWTH_RATE_DENOM = 100000 // placeholder
+	return SLASHER_SHARE_GROWTH_RATE_DENOM
 }

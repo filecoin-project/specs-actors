@@ -40,7 +40,7 @@ func (a *StorageMinerActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMine
 // Called by StoragePowerActor to notify StorageMiner of SurprisePoSt Challenge.
 func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-
+	
 	h, st := a.State(rt)
 
 	// If already challenged, do not challenge again.
@@ -61,7 +61,7 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn
 	err := rt.CurrReceiver().MarshalCBOR(&curRecBuf)
 	autil.Assert(err == nil)
 
-	randomnessK := rt.GetRandomness(rt.CurrEpoch() - builtin.SPC_LOOKBACK_POST)
+	randomnessK := rt.GetRandomness(rt.CurrEpoch() - indices.StorageMining_SpcLookbackPoSt())
 	challengedSectorsRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStSampleSectors, randomnessK, rt.CurrReceiver())
 
 	challengedSectors := _surprisePoStSampleChallengedSectors(
@@ -201,7 +201,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	UpdateRelease(rt, h, st)
 
 	// Request deferred Cron check for PreCommit expiry check.
-	expiryBound := rt.CurrEpoch() + builtin.MAX_PROVE_COMMIT_SECTOR_EPOCH + 1
+	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
 	a._rtEnrollCronEvent(rt, expiryBound, []abi.SectorNumber{info.SectorNumber})
 
 	if info.Expiration <= rt.CurrEpoch() {
@@ -225,7 +225,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		rt.Abort(exitcode.ErrIllegalArgument, "invalid sector state %v", preCommitSector.State)
 	}
 
-	if rt.CurrEpoch() > preCommitSector.PreCommitEpoch+builtin.MAX_PROVE_COMMIT_SECTOR_EPOCH || rt.CurrEpoch() < preCommitSector.PreCommitEpoch+builtin.MIN_PROVE_COMMIT_SECTOR_EPOCH {
+	if rt.CurrEpoch() > preCommitSector.PreCommitEpoch+indices.StorageMining_MaxProveCommitSectorEpoch() || rt.CurrEpoch() < preCommitSector.PreCommitEpoch+indices.StorageMining_MinProveCommitSectorEpoch() {
 		rt.AbortStateMsg("Invalid ProveCommitSector epoch")
 	}
 
@@ -344,12 +344,15 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 	return &vmr.EmptyReturn{}
 }
 
-func (a *StorageMinerActor) TerminateSector(rt Runtime, sectorNumber abi.SectorNumber) *vmr.EmptyReturn {
+func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
 	h, st := a.State(rt)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 	Release(rt, h, st)
 
-	a._rtTerminateSector(rt, sectorNumber, autil.UserTermination)
+	for _, sectorNumber := range sectorNumbers {
+		a._rtTerminateSector(rt, sectorNumber, autil.UserTermination)
+	}
+	
 	return &vmr.EmptyReturn{}
 }
 
@@ -504,7 +507,7 @@ func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.Se
 	}
 
 	if checkSector.State == PreCommit {
-		if rt.CurrEpoch()-checkSector.PreCommitEpoch > builtin.MAX_PROVE_COMMIT_SECTOR_EPOCH {
+		if rt.CurrEpoch()-checkSector.PreCommitEpoch > indices.StorageMining_MaxProveCommitSectorEpoch() {
 			a._rtDeleteSectorEntry(rt, sectorNumber)
 			_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, checkSector.PreCommitDeposit)
 			vmr.RequireSuccess(rt, code, "failed to burn funds")
@@ -702,7 +705,7 @@ func (a *StorageMinerActor) _rtVerifySurprisePoStOrAbort(rt Runtime, onChainInfo
 	// 	rt.AbortStateMsg("Invalid Surprise PoSt. Tickets do not meet target.")
 	// }
 
-	randomnessK := rt.GetRandomness(challengeEpoch - builtin.SPC_LOOKBACK_POST)
+	randomnessK := rt.GetRandomness(challengeEpoch - indices.StorageMining_SpcLookbackPoSt())
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
 	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, randomnessK, rt.CurrReceiver())
@@ -734,7 +737,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 
 	// if IsValidAtCommitEpoch(onChainInfo.RegisteredProof, rt.CurrEpoch()) // Ensure proof type is valid at current epoch.
 	// Check randomness.
-	if onChainInfo.SealEpoch < (rt.CurrEpoch() - builtin.FINALITY - builtin.MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR) {
+	if onChainInfo.SealEpoch < (rt.CurrEpoch() - indices.StorageMining_Finality() - indices.StorageMining_MaxSealTime32GiBWinStackedSDR()) {
 		rt.AbortStateMsg("Seal references ticket from invalid epoch")
 	}
 
