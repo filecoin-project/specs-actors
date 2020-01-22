@@ -1,7 +1,7 @@
 GO_BIN ?= go
 GOLINT ?= golangci-lint
 
-all: build lint gen test tidy
+all: build lint test tidy
 .PHONY: all
 
 build:
@@ -21,6 +21,7 @@ lint:
 .PHONY: lint
 
 gen:
+	find ./ -type f -name 'cbor_gen.go' -exec rm {} +
 	$(GO_BIN) run ./gen/gen.go
 .PHONY: gen
 
