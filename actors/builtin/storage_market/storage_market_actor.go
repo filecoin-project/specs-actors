@@ -1,9 +1,8 @@
 package storage_market
 
 import (
-	"math/big"
-
 	addr "github.com/filecoin-project/go-address"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	cid "github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -43,9 +42,9 @@ func (a *StorageMarketActor) TerminateDealsOnSlashProviderSector(rt Runtime, dea
 // If less than the specified amount is available, yields the entire available balance.
 func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
 	IMPL_FINISH() // BigInt arithmetic
-	amountSlashedTotal := abi.TokenAmount(0)
+	amountSlashedTotal := abi.NewTokenAmount(0)
 
-	if amountRequested < 0 {
+	if amountRequested.LessThan(big.Zero()) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amountRequested)
 	}
 
@@ -59,7 +58,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 	//
 	// Note: as an optimization, implementations may cache efficient data structures indicating
 	// which of the following set of updates are redundant and can be skipped.
-	amountSlashedTotal += st._rtUpdatePendingDealStatesForParty(rt, entryAddr)
+	amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, entryAddr))
 
 	minBalance := st._getLockedReqBalanceInternal(entryAddr)
 	newTable, amountExtracted, ok := actor_util.BalanceTable_WithExtractPartial(
@@ -100,7 +99,7 @@ func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *vmr
 // Publish a new set of storage deals (not yet included in a sector).
 func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []StorageDeal) *vmr.EmptyReturn {
 	IMPL_FINISH() // BigInt arithmetic
-	amountSlashedTotal := abi.TokenAmount(0)
+	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
@@ -123,8 +122,8 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 		//
 		// Note: as an optimization, implementations may cache efficient data structures indicating
 		// which of the following set of updates are redundant and can be skipped.
-		amountSlashedTotal += st._rtUpdatePendingDealStatesForParty(rt, p.Client)
-		amountSlashedTotal += st._rtUpdatePendingDealStatesForParty(rt, p.Provider)
+		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Client))
+		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Provider))
 
 		st._rtLockBalanceOrAbort(rt, p.Client, p.ClientBalanceRequirement())
 		st._rtLockBalanceOrAbort(rt, p.Provider, p.ProviderBalanceRequirement())
@@ -227,7 +226,7 @@ type GetWeightForDealSetReturn struct {
 func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs) *GetWeightForDealSetReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-	totalWeight := big.NewInt(0)
+	totalWeight := big.Zero()
 
 	h, st := a.State(rt)
 	for _, dealID := range dealIDs.Items {
@@ -236,8 +235,8 @@ func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs
 
 		dur := big.NewInt(int64(dealP.Duration()))
 		siz := big.NewInt(dealP.PieceSize.Total())
-		weight := big.NewInt(0).Mul(dur, siz)
-		totalWeight.Add(totalWeight, weight)
+		weight := big.Mul(dur, siz)
+		totalWeight = big.Add(totalWeight, weight)
 	}
 	UpdateRelease(rt, h, st)
 
@@ -426,19 +425,19 @@ func _rtAbortIfDealFailsParamBounds(rt Runtime, dealP StorageDealProposal) {
 	}
 
 	minPrice, maxPrice := inds.StorageDeal_StoragePricePerEpochBounds(dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
-	if dealP.StoragePricePerEpoch < minPrice || dealP.StoragePricePerEpoch > maxPrice {
+	if dealP.StoragePricePerEpoch.LessThan(minPrice) || dealP.StoragePricePerEpoch.GreaterThan(maxPrice) {
 		rt.AbortStateMsg("Storage price out of bounds.")
 	}
 
 	minProviderCollateral, maxProviderCollateral := inds.StorageDeal_ProviderCollateralBounds(
 		dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
-	if dealP.ProviderCollateral < minProviderCollateral || dealP.ProviderCollateral > maxProviderCollateral {
+	if dealP.ProviderCollateral.LessThan(minProviderCollateral) || dealP.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.AbortStateMsg("Provider collateral out of bounds.")
 	}
 
 	minClientCollateral, maxClientCollateral := inds.StorageDeal_ClientCollateralBounds(
 		dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
-	if dealP.ClientCollateral < minClientCollateral || dealP.ClientCollateral > maxClientCollateral {
+	if dealP.ClientCollateral.LessThan(minClientCollateral) || dealP.ClientCollateral.GreaterThan(maxClientCollateral) {
 		rt.AbortStateMsg("Client collateral out of bounds.")
 	}
 }

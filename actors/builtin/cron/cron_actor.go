@@ -32,7 +32,7 @@ func (a *CronActor) EpochTick(rt vmr.Runtime) *vmr.EmptyReturn {
 	// a.Entries is basically a static registry for now, loaded
 	// in the interpreter static registry.
 	for _, entry := range a.Entries {
-		_, _ = rt.Send(entry.ToAddr, entry.MethodNum, nil, abi.TokenAmount(0))
+		_, _ = rt.Send(entry.ToAddr, entry.MethodNum, nil, abi.NewTokenAmount(0))
 		// Any error and return value are ignored.
 	}
 

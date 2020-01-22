@@ -3,6 +3,7 @@ package storage_market
 import (
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 )
 
@@ -38,11 +39,11 @@ func (p *StorageDealProposal) Duration() abi.ChainEpoch {
 }
 
 func (p *StorageDealProposal) TotalStorageFee() abi.TokenAmount {
-	return abi.TokenAmount(uint64(p.StoragePricePerEpoch) * uint64(p.Duration()))
+	return big.Mul(p.StoragePricePerEpoch, big.NewInt(int64(p.Duration())))
 }
 
 func (p *StorageDealProposal) ClientBalanceRequirement() abi.TokenAmount {
-	return (p.ClientCollateral + p.TotalStorageFee())
+	return big.Add(p.ClientCollateral, p.TotalStorageFee())
 }
 
 func (p *StorageDealProposal) ProviderBalanceRequirement() abi.TokenAmount {

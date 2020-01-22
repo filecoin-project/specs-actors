@@ -2,6 +2,7 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -48,11 +49,11 @@ func (st *StorageMarketActorState) _updatePendingDealStates(dealIDs []abi.DealID
 	amountSlashedTotal abi.TokenAmount) {
 
 	IMPL_FINISH() // BigInt arithmetic
-	amountSlashedTotal = 0
+	amountSlashedTotal = abi.NewTokenAmount(0)
 
 	for _, dealID := range dealIDs {
 		amountSlashedCurr := st._updatePendingDealState(dealID, epoch)
-		amountSlashedTotal += amountSlashedCurr
+		amountSlashedTotal = big.Add(amountSlashedTotal, amountSlashedCurr)
 	}
 
 	return
@@ -62,7 +63,7 @@ func (st *StorageMarketActorState) _updatePendingDealState(dealID abi.DealID, ep
 	amountSlashed abi.TokenAmount) {
 
 	IMPL_FINISH() // BigInt arithmetic
-	amountSlashed = 0
+	amountSlashed = abi.NewTokenAmount(0)
 
 	deal, dealP := st._getOnChainDealAssert(dealID)
 
@@ -133,7 +134,7 @@ func (st *StorageMarketActorState) _processDealPaymentEpochsElapsed(dealID abi.D
 
 	// Process deal payment for the elapsed epochs.
 	IMPL_FINISH() // BigInt arithmetic
-	totalPayment := int(numEpochsElapsed) * int(dealP.StoragePricePerEpoch)
+	totalPayment := big.Mul(big.NewInt(int64(numEpochsElapsed)), dealP.StoragePricePerEpoch)
 	st._transferBalance(dealP.Client, dealP.Provider, abi.TokenAmount(totalPayment))
 }
 
@@ -147,7 +148,7 @@ func (st *StorageMarketActorState) _processDealSlashed(dealID abi.DealID) (amoun
 	// unlock client collateral and locked storage fee
 	clientCollateral := dealP.ClientCollateral
 	paymentRemaining := _dealGetPaymentRemaining(deal, slashEpoch)
-	st._unlockBalance(dealP.Client, clientCollateral+paymentRemaining)
+	st._unlockBalance(dealP.Client, big.Add(clientCollateral, paymentRemaining))
 
 	// slash provider collateral
 	amountSlashed = dealP.ProviderCollateral
@@ -167,7 +168,7 @@ func (st *StorageMarketActorState) _processDealInitTimedOut(dealID abi.DealID) (
 	st._unlockBalance(dealP.Client, dealP.ClientBalanceRequirement())
 
 	amountSlashed = indices.StorageDeal_ProviderInitTimedOutSlashAmount(deal.Deal.Proposal.ProviderCollateral)
-	amountRemaining := dealP.ProviderBalanceRequirement() - amountSlashed
+	amountRemaining := big.Sub(dealP.ProviderBalanceRequirement(), amountSlashed)
 
 	st._slashBalance(dealP.Provider, amountSlashed)
 	st._unlockBalance(dealP.Provider, amountRemaining)
@@ -223,12 +224,11 @@ func (st *StorageMarketActorState) _getLockedReqBalanceInternal(a addr.Address) 
 
 func (st *StorageMarketActorState) _lockBalanceMaybe(addr addr.Address, amount abi.TokenAmount) (
 	lockBalanceOK bool) {
-
-	Assert(amount >= 0)
+	Assert(amount.GreaterThanEqual(big.Zero()))
 	Assert(st._addressEntryExists(addr))
 
 	prevLocked := st._getLockedReqBalanceInternal(addr)
-	if prevLocked+amount > st._getTotalEscrowBalanceInternal(addr) {
+	if big.Add(prevLocked, amount).GreaterThan(st._getTotalEscrowBalanceInternal(addr)) {
 		lockBalanceOK = false
 		return
 	}
@@ -244,7 +244,7 @@ func (st *StorageMarketActorState) _lockBalanceMaybe(addr addr.Address, amount a
 func (st *StorageMarketActorState) _unlockBalance(
 	addr addr.Address, unlockAmountRequested abi.TokenAmount) {
 
-	Assert(unlockAmountRequested >= 0)
+	Assert(unlockAmountRequested.GreaterThanEqual(big.Zero()))
 	Assert(st._addressEntryExists(addr))
 
 	st.LockedReqTable = st._tableWithDeductBalanceExact(st.LockedReqTable, addr, unlockAmountRequested)
@@ -253,7 +253,7 @@ func (st *StorageMarketActorState) _unlockBalance(
 func (st *StorageMarketActorState) _tableWithAddBalance(
 	table actor_util.BalanceTableHAMT, toAddr addr.Address, amountToAdd abi.TokenAmount) actor_util.BalanceTableHAMT {
 
-	Assert(amountToAdd >= 0)
+	Assert(amountToAdd.GreaterThanEqual(big.Zero()))
 
 	newTable, ok := actor_util.BalanceTable_WithAdd(table, toAddr, amountToAdd)
 	Assert(ok)
@@ -263,7 +263,7 @@ func (st *StorageMarketActorState) _tableWithAddBalance(
 func (st *StorageMarketActorState) _tableWithDeductBalanceExact(
 	table actor_util.BalanceTableHAMT, fromAddr addr.Address, amountRequested abi.TokenAmount) actor_util.BalanceTableHAMT {
 
-	Assert(amountRequested >= 0)
+	Assert(amountRequested.GreaterThanEqual(big.Zero()))
 
 	newTable, amountDeducted, ok := actor_util.BalanceTable_WithSubtractPreservingNonnegative(
 		table, fromAddr, amountRequested)
@@ -276,7 +276,7 @@ func (st *StorageMarketActorState) _tableWithDeductBalanceExact(
 func (st *StorageMarketActorState) _transferBalance(
 	fromAddr addr.Address, toAddr addr.Address, transferAmountRequested abi.TokenAmount) {
 
-	Assert(transferAmountRequested >= 0)
+	Assert(transferAmountRequested.GreaterThanEqual(big.Zero()))
 	Assert(st._addressEntryExists(fromAddr))
 	Assert(st._addressEntryExists(toAddr))
 
@@ -287,7 +287,7 @@ func (st *StorageMarketActorState) _transferBalance(
 
 func (st *StorageMarketActorState) _slashBalance(addr addr.Address, slashAmount abi.TokenAmount) {
 	Assert(st._addressEntryExists(addr))
-	Assert(slashAmount >= 0)
+	Assert(slashAmount.GreaterThanEqual(big.Zero()))
 
 	st.EscrowTable = st._tableWithDeductBalanceExact(st.EscrowTable, addr, slashAmount)
 	st.LockedReqTable = st._tableWithDeductBalanceExact(st.LockedReqTable, addr, slashAmount)
@@ -330,7 +330,7 @@ func (st *StorageMarketActorState) _rtGetOnChainDealOrAbort(rt Runtime, dealID a
 }
 
 func (st *StorageMarketActorState) _rtLockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
-	if amount < 0 {
+	if amount.LessThan(big.Zero()) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amount)
 	}
 
@@ -376,7 +376,7 @@ func _dealGetPaymentRemaining(deal OnChainDeal, epoch abi.ChainEpoch) abi.TokenA
 	Assert(durationRemaining > 0)
 
 	IMPL_FINISH() // BigInt arithmetic
-	return abi.TokenAmount(int(durationRemaining) * int(dealP.StoragePricePerEpoch))
+	return abi.TokenAmount(big.Mul(big.NewInt(int64(durationRemaining)), dealP.StoragePricePerEpoch))
 }
 
 func (st *StorageMarketActorState) _getOnChainDeal(dealID abi.DealID) (

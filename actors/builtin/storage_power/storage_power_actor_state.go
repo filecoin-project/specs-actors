@@ -1,6 +1,7 @@
 package storage_power
 
 import (
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
@@ -61,7 +62,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerP
 func (st *StoragePowerActorState) _slashPledgeCollateral(
 	minerAddr addr.Address, slashAmountRequested abi.TokenAmount) abi.TokenAmount {
 
-	Assert(slashAmountRequested >= abi.TokenAmount(0))
+	Assert(slashAmountRequested.GreaterThanEqual(big.Zero()))
 
 	newTable, amountSlashed, ok := autil.BalanceTable_WithSubtractPreservingNonnegative(
 		st.EscrowTable, minerAddr, slashAmountRequested)
@@ -234,7 +235,7 @@ func _getConsensusFaultSlasherReward(elapsedEpoch abi.ChainEpoch, collateralToSl
 	// var multiplier = growthRate^elapsedEpoch
 	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
 	// return collateralToSlash * slasherProportion
-	return abi.TokenAmount(0)
+	return abi.NewTokenAmount(0)
 }
 
 func PowerTableHAMT_Empty() PowerTableHAMT {

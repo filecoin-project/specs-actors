@@ -1,9 +1,8 @@
 package indices
 
 import (
-	"math/big"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
 )
 

@@ -7,6 +7,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
@@ -50,11 +51,11 @@ func RT_Address_Is_StorageMiner(rt Runtime, minerAddr addr.Address) bool {
 }
 
 func RT_GetMinerAccountsAssert(rt Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
-	ret, code := rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil, abi.TokenAmount(0))
+	ret, code := rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching owner addr")
 	autil.AssertNoError(ret.Into(ownerAddr))
 
-	ret, code = rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil, abi.TokenAmount(0))
+	ret, code = rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching worker addr")
 	autil.AssertNoError(ret.Into(workerAddr))
 	return
@@ -77,12 +78,12 @@ func RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt Runtime, entryAddr a
 }
 
 func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi.TokenAmount) {
-	if rt.ValueReceived() < fundsRequired {
+	if rt.ValueReceived().LessThan(fundsRequired) {
 		rt.Abort(exitcode.ErrInsufficientFunds, "Insufficient funds received accompanying message")
 	}
 
-	if rt.ValueReceived() > fundsRequired {
-		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, rt.ValueReceived()-fundsRequired)
+	if rt.ValueReceived().GreaterThan(fundsRequired) {
+		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, big.Sub(rt.ValueReceived(), fundsRequired))
 		RequireSuccess(rt, code, "failed to transfer refund")
 	}
 }

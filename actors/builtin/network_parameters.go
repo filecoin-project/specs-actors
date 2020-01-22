@@ -47,10 +47,10 @@ const MIN_MINER_SIZE_TARG = 3       // placeholder
 
 // FIL deposit per sector precommit in Interactive PoRep
 // refunded after ProveCommit but burned if PreCommit expires
-const PRECOMMIT_DEPOSIT_PER_BYTE = abi.TokenAmount(0) // placeholder
-const FAULT_SLASH_PERC_DECLARED = 1                   // placeholder
-const FAULT_SLASH_PERC_DETECTED = 10                  // placeholder
-const FAULT_SLASH_PERC_TERMINATED = 100               // placeholder
+var PRECOMMIT_DEPOSIT_PER_BYTE = abi.NewTokenAmount(0) // placeholder
+const FAULT_SLASH_PERC_DECLARED = 1                    // placeholder
+const FAULT_SLASH_PERC_DETECTED = 10                   // placeholder
+const FAULT_SLASH_PERC_TERMINATED = 100                // placeholder
 
 const SLASHER_INITIAL_SHARE_NUM = 1            // placeholder
 const SLASHER_INITIAL_SHARE_DENOM = 1000       // placeholder

@@ -59,15 +59,9 @@ func (t *MultiSigActorState) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.InitialBalance (abi.TokenAmount) (int64)
-	if t.InitialBalance >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.InitialBalance))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.InitialBalance)-1)); err != nil {
-			return err
-		}
+	// t.InitialBalance (big.Int) (struct)
+	if err := t.InitialBalance.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.StartEpoch (abi.ChainEpoch) (int64)
@@ -193,30 +187,14 @@ func (t *MultiSigActorState) UnmarshalCBOR(r io.Reader) error {
 
 		t.NextTxnID = TxnID(extraI)
 	}
-	// t.InitialBalance (abi.TokenAmount) (int64)
+	// t.InitialBalance (big.Int) (struct)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
+
+		if err := t.InitialBalance.UnmarshalCBOR(br); err != nil {
 			return err
 		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
 
-		t.InitialBalance = abi.TokenAmount(extraI)
 	}
 	// t.StartEpoch (abi.ChainEpoch) (int64)
 	{
@@ -297,15 +275,9 @@ func (t *MultiSigTransaction) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Value (abi.TokenAmount) (int64)
-	if t.Value >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Value))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.Value)-1)); err != nil {
-			return err
-		}
+	// t.Value (big.Int) (struct)
+	if err := t.Value.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.Method (abi.MethodNum) (int64)
@@ -371,30 +343,14 @@ func (t *MultiSigTransaction) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.Value (abi.TokenAmount) (int64)
+	// t.Value (big.Int) (struct)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
+
+		if err := t.Value.UnmarshalCBOR(br); err != nil {
 			return err
 		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
 
-		t.Value = abi.TokenAmount(extraI)
 	}
 	// t.Method (abi.MethodNum) (int64)
 	{
@@ -624,15 +580,9 @@ func (t *ProposeParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Value (abi.TokenAmount) (int64)
-	if t.Value >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Value))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.Value)-1)); err != nil {
-			return err
-		}
+	// t.Value (big.Int) (struct)
+	if err := t.Value.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.Method (abi.MethodNum) (int64)
@@ -684,30 +634,14 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.Value (abi.TokenAmount) (int64)
+	// t.Value (big.Int) (struct)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
+
+		if err := t.Value.UnmarshalCBOR(br); err != nil {
 			return err
 		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
 
-		t.Value = abi.TokenAmount(extraI)
 	}
 	// t.Method (abi.MethodNum) (int64)
 	{

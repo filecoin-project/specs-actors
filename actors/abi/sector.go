@@ -25,10 +25,10 @@ type SectorID struct {
 }
 
 // The unit of sector weight (power-epochs)
-type SectorWeight int64 // TODO bigint
+type SectorWeight int64 // TODO big
 
 // The unit of storage power (measured in bytes)
-type StoragePower int64 // TODO bigint
+type StoragePower int64 // TODO big
 
 type UnsealedSectorCID cid.Cid // CommD
 type SealedSectorCID cid.Cid   // CommR
