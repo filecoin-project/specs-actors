@@ -21,7 +21,6 @@ lint:
 .PHONY: lint
 
 gen:
-	find ./ -type f -name 'cbor_gen.go' -exec rm {} +
 	$(GO_BIN) run ./gen/gen.go
 .PHONY: gen
 
