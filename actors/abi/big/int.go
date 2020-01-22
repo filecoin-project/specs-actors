@@ -145,7 +145,7 @@ func (bi *Int) CborBytes() ([]byte, error) {
 	case bi.Sign() < 0:
 		return append([]byte{1}, bi.Bytes()...), nil
 	default: //  bi.Sign() == 0:
-		return []byte{}
+		return []byte{}, nil
 	}
 }
 
