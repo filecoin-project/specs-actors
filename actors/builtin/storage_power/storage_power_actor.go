@@ -1,6 +1,7 @@
 package storage_power
 
 import (
+	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
@@ -59,7 +60,7 @@ func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) *vmr.
 }
 
 func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
-	if amountRequested < 0 {
+	if amountRequested.LessThan(big.NewInt(0)) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative withdrawal %v", amountRequested)
 	}
 
@@ -100,7 +101,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 			sectorSize,
 			peerId,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to init new actor")
 	var addresses initact.ExecReturn
@@ -129,7 +130,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) *vmr
 		rt.Abort(exitcode.ErrNotFound, "no such miner %v", minerAddr)
 	}
 
-	if minerPledgeBalance > abi.TokenAmount(0) {
+	if minerPledgeBalance.GreaterThan(abi.NewTokenAmount(0)) {
 		rt.AbortStateMsg("Deletion requested for miner with pledge balance still remaining")
 	}
 
@@ -277,7 +278,7 @@ func (a *StoragePowerActor) ReportVerifiedConsensusFault(rt Runtime, slasheeAddr
 	if !pledgeOk {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner has no pledge")
 	}
-	Assert(currPledge > 0)
+	Assert(currPledge.GreaterThan(big.NewInt(0)))
 
 	// elapsed epoch from the latter block which committed the fault
 	elapsedEpoch := rt.CurrEpoch() - faultEpoch
@@ -368,7 +369,7 @@ func (a *StoragePowerActor) _rtInitiateNewSurprisePoStChallenges(rt Runtime) {
 			addr,
 			builtin.Method_StorageMinerActor_OnSurprisePoStChallenge,
 			nil,
-			abi.TokenAmount(0),
+			abi.NewTokenAmount(0),
 		)
 		vmr.RequireSuccess(rt, code, "failed to challenge miner")
 	}
@@ -399,7 +400,7 @@ func (a *StoragePowerActor) _rtProcessDeferredCronEvents(rt Runtime) {
 			serde.MustSerializeParams(
 				minerEvent.Sectors,
 			),
-			abi.TokenAmount(0),
+			abi.NewTokenAmount(0),
 		)
 		vmr.RequireSuccess(rt, code, "failed to defer cron event")
 	}
@@ -445,7 +446,7 @@ func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Addre
 		minerAddr,
 		builtin.Method_StorageMinerActor_OnDeleteMiner,
 		serde.MustSerializeParams(),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to delete miner actor")
 

@@ -1,6 +1,7 @@
 package reward
 
 import (
+	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
@@ -41,9 +42,9 @@ func (r *Reward) AmountVested(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	case Linear:
 		TODO() // BigInt
 		vestedProportion := math.Max(1.0, float64(elapsedEpoch)/float64(r.StartEpoch-r.EndEpoch))
-		return abi.TokenAmount(uint64(r.Value) * uint64(vestedProportion))
+		return big.BigMul(r.Value, big.NewInt(int64(vestedProportion)))
 	default:
-		return abi.TokenAmount(0)
+		return abi.NewTokenAmount(0)
 	}
 }
 
@@ -61,20 +62,20 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 		rt.AbortStateMsg("ra._withdrawReward: ownerAddr not found in RewardMap.")
 	}
 
-	rewardToWithdrawTotal := abi.TokenAmount(0)
+	rewardToWithdrawTotal := abi.NewTokenAmount(0)
 	indicesToRemove := make([]int, len(rewards))
 
 	for i, r := range rewards {
 		elapsedEpoch := rt.CurrEpoch() - r.StartEpoch
 		unlockedReward := r.AmountVested(elapsedEpoch)
-		withdrawableReward := unlockedReward - r.AmountWithdrawn
+		withdrawableReward := big.BigSub(unlockedReward, r.AmountWithdrawn)
 
-		if withdrawableReward < 0 {
+		if withdrawableReward.LessThan(big.NewInt(0)) {
 			rt.AbortStateMsg("ra._withdrawReward: negative withdrawableReward.")
 		}
 
 		r.AmountWithdrawn = unlockedReward // modify rewards in place
-		rewardToWithdrawTotal += withdrawableReward
+		rewardToWithdrawTotal = big.BigAdd(rewardToWithdrawTotal, withdrawableReward)
 
 		if r.AmountWithdrawn == r.Value {
 			indicesToRemove = append(indicesToRemove, i)
@@ -133,15 +134,26 @@ func (a *RewardActor) AwardBlockReward(
 	inds := rt.CurrIndices()
 	pledgeReq := inds.PledgeCollateralReq(minerNominalPower)
 	currReward := inds.GetCurrBlockRewardForMiner(minerNominalPower, currPledge)
-	TODO()                                                                              // BigInt
-	underPledge := math.Max(float64(abi.TokenAmount(0)), float64(pledgeReq-currPledge)) // 0 if over collateralized
-	rewardToGarnish := math.Min(float64(currReward), float64(underPledge))
+	TODO() // BigInt
+
+	// WARNING losing type safety
+	// 0 if over collateralized
+	underPledge := abi.NewTokenAmount(0)
+	pledgeDiff := big.BigSub(pledgeReq, currPledge)
+	if underPledge.GreaterThan(pledgeDiff) {
+		underPledge = pledgeDiff
+	}
+
+	rewardToGarnish := currReward
+	if rewardToGarnish.GreaterThan(underPledge) {
+		rewardToGarnish = underPledge
+	}
 
 	TODO()
 	// handle penalty here
 	// also handle penalty greater than reward
-	actualReward := currReward - abi.TokenAmount(rewardToGarnish)
-	if rewardToGarnish > 0 {
+	actualReward := big.BigSub(currReward, rewardToGarnish)
+	if rewardToGarnish.GreaterThan(big.NewInt(0)) {
 		// Send fund to SPA for collateral
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
@@ -153,13 +165,13 @@ func (a *RewardActor) AwardBlockReward(
 	}
 
 	h, st := a.State(rt)
-	if actualReward > 0 {
+	if actualReward.GreaterThan(abi.NewTokenAmount(0)) {
 		// put Reward into RewardMap
 		newReward := &Reward{
 			StartEpoch:      rt.CurrEpoch(),
 			EndEpoch:        rt.CurrEpoch(),
 			Value:           actualReward,
-			AmountWithdrawn: abi.TokenAmount(0),
+			AmountWithdrawn: abi.NewTokenAmount(0),
 			VestingFunction: None,
 		}
 		rewards, found := st.RewardMap[miner]
@@ -181,4 +193,8 @@ func UpdateReleaseRewardActorState(rt vmr.Runtime, h vmr.ActorStateHandle, st Re
 func removeIndices(rewards []Reward, indices []int) []Reward {
 	// remove fully paid out Rewards by indices
 	panic("TODO")
+}
+
+func poop(b big.Int) {
+
 }

@@ -2,7 +2,7 @@ package storage_miner
 
 import (
 	"bytes"
-	"math/big"
+	big "github.com/filecoin-project/specs-actors/actors/abi/bigint"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
@@ -109,7 +109,7 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo a
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerSurprisePoStSuccess,
 		nil,
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to notify storage power actor")
 
@@ -182,7 +182,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 			info.DealIDs,
 			info,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to verify deals")
 
@@ -253,7 +253,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 			preCommitSector.Info.DealIDs,
 			info,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to verify deals")
 
@@ -264,7 +264,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		serde.MustSerializeParams(
 			preCommitSector.Info.DealIDs,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to get deal set weight")
 	autil.AssertNoError(ret.Into(dealset))
@@ -294,7 +294,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 		serde.MustSerializeParams(
 			storageWeightDesc,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to notify power actor")
 
@@ -338,7 +338,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 			storageWeightDescPrev,
 			storageWeightDescNew,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to modify sector weight")
 	return &vmr.EmptyReturn{}
@@ -464,7 +464,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 			serde.MustSerializeParams(
 				storageWeightDesc,
 			),
-			abi.TokenAmount(0),
+			abi.NewTokenAmount(0),
 		)
 		vmr.RequireSuccess(rt, code, "failed to begin fault")
 
@@ -482,7 +482,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 			serde.MustSerializeParams(
 				storageWeightDesc,
 			),
-			abi.TokenAmount(0),
+			abi.NewTokenAmount(0),
 		)
 		vmr.RequireSuccess(rt, code, "failed to end fault")
 
@@ -536,7 +536,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 			serde.MustSerializeParams(
 				storageWeightDesc,
 			),
-			abi.TokenAmount(0),
+			abi.NewTokenAmount(0),
 		)
 		vmr.RequireSuccess(rt, code, "failed to end fault")
 	}
@@ -548,7 +548,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 			storageWeightDesc,
 			terminationType,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to terminate sector with power actor")
 
@@ -605,7 +605,7 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 		serde.MustSerializeParams(
 			numConsecutiveFailures,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to notify power actor")
 }
@@ -620,7 +620,7 @@ func (a *StorageMinerActor) _rtEnrollCronEvent(
 			eventEpoch,
 			sectorNumbers,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to enroll cron event")
 }
@@ -671,7 +671,7 @@ func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sect
 		serde.MustSerializeParams(
 			dealIDs,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to terminate sectors")
 }
@@ -740,7 +740,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 			sectorSize,
 			onChainInfo.DealIDs,
 		),
-		abi.TokenAmount(0),
+		abi.NewTokenAmount(0),
 	)
 	vmr.RequireSuccess(rt, code, "failed to fetch piece info")
 	autil.AssertNoError(ret.Into(infos))

@@ -1,6 +1,10 @@
 package abi
 
-import cid "github.com/ipfs/go-cid"
+import (
+	cid "github.com/ipfs/go-cid"
+
+	"github.com/filecoin-project/specs-actors/actors/abi/bigint"
+)
 
 // The abi package contains definitions of all types that cross the VM boundary and are used
 // within actor code.
@@ -46,7 +50,11 @@ type Bytes []byte
 // TokenAmount is an amount of Filecoin tokens. This type is used within
 // the VM in message execution, to account movement of tokens, payment
 // of VM gas, and more.
-type TokenAmount int64 // TODO bigint
+type TokenAmount = big.Int
+
+func NewTokenAmount(t int64) TokenAmount {
+	return big.NewInt(t)
+}
 
 // The randomness seed is a string of byte, distinguished from Randomness
 // for expressiveness: it hasn't been given the needed entropy
@@ -54,4 +62,3 @@ type RandomnessSeed []byte
 
 // Randomness is a string of random bytes
 type Randomness []byte
-

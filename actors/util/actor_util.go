@@ -2,7 +2,6 @@ package util
 
 import (
 	"context"
-	"math/big"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -78,7 +77,7 @@ type MinerEventSetHAMT []MinerEvent
 type SectorStorageWeightDesc struct {
 	SectorSize abi.SectorSize
 	Duration   abi.ChainEpoch
-	DealWeight *big.Int
+	DealWeight abi.DealWeight
 }
 
 type SectorTermination int64
@@ -126,7 +125,7 @@ func BalanceTable_WithSubtractPreservingNonnegative(
 	table BalanceTableHAMT, address addr.Address, amount abi.TokenAmount) (
 	ret BalanceTableHAMT, amountSubtracted abi.TokenAmount, ok bool) {
 
-	return BalanceTable_WithExtractPartial(table, address, amount, abi.TokenAmount(0))
+	return BalanceTable_WithExtractPartial(table, address, amount, abi.NewTokenAmount(0))
 }
 
 // Extract the given amount from the given address's balance table entry, subject to the requirement

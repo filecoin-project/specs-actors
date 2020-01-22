@@ -1,8 +1,6 @@
 package storage_miner
 
 import (
-	"math/big"
-
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
@@ -67,7 +65,7 @@ type SectorOnChainInfo struct {
 	ActivationEpoch       abi.ChainEpoch // -1 if still in PreCommit state.
 	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
 	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
-	DealWeight            *big.Int        // -1 if not yet validated with StorageMarketActor.
+	DealWeight            abi.DealWeight // -1 if not yet validated with StorageMarketActor.
 }
 
 type SectorPreCommitInfo struct {
