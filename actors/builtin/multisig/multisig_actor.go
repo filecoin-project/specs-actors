@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+	hamt "github.com/ipfs/go-hamt-ipld"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
 )
 
 type TxnID int64
@@ -28,16 +29,6 @@ type MultiSigTransaction struct {
 
 type MultiSigActor struct{}
 
-func (a *MultiSigActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, MultiSigActorState) {
-	h := rt.AcquireState()
-	stateCID := cid.Cid(h.Take())
-	var state MultiSigActorState
-	if !rt.IpldGet(stateCID, &state) {
-		rt.Abort(exitcode.ErrPlaceholder, "state not found")
-	}
-	return h, state
-}
-
 type ConstructorParams struct {
 	Signers     []addr.Address
 	NumApprovalsThreshold int64
@@ -46,26 +37,24 @@ type ConstructorParams struct {
 
 func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
-	h := rt.AcquireState()
 
-	var authPartiesIDs []addr.Address
+	var signers []addr.Address
 	for _, a := range params.Signers {
-		authPartiesIDs = append(authPartiesIDs, a)
+		signers = append(signers, a)
 	}
 
-	st := MultiSigActorState{
-		Signers:     authPartiesIDs,
-		NumApprovalsThreshold: params.NumApprovalsThreshold,
-		PendingTxns:           autil.EmptyHAMT,
-	}
-
-	if params.UnlockDuration != 0 {
-		st.UnlockDuration = params.UnlockDuration
-		st.InitialBalance = rt.ValueReceived()
-		st.StartEpoch = rt.CurrEpoch()
-	}
-
-	UpdateRelease_MultiSig(rt, h, st)
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		st.Signers = signers
+		st.NumApprovalsThreshold = params.NumApprovalsThreshold
+		st.PendingTxns = autil.EmptyHAMT
+		if params.UnlockDuration != 0 {
+			st.UnlockDuration = params.UnlockDuration
+			st.InitialBalance = rt.ValueReceived()
+			st.StartEpoch = rt.CurrEpoch()
+		}
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
@@ -83,24 +72,26 @@ type ProposeReturn struct {
 func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	a._rtValidateSignerOrAbort(rt, callerAddr)
 
-	h, st := a.State(rt)
-	txnID := st.NextTxnID
-	st.NextTxnID += 1
+	var txnID TxnID
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		a.validateSigner(rt, &st, callerAddr)
+		txnID := st.NextTxnID
+		st.NextTxnID += 1
 
-	st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, MultiSigTransaction{
-		To:       params.To,
-		Value:    params.Value,
-		Method:   params.Method,
-		Params:   params.Params,
-		Approved: []addr.Address{callerAddr},
+		st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, MultiSigTransaction{
+			To:       params.To,
+			Value:    params.Value,
+			Method:   params.Method,
+			Params:   params.Params,
+			Approved: []addr.Address{},
+		})
+		return nil
 	})
 
-	UpdateRelease_MultiSig(rt, h, st)
-
 	// Proposal implicitly includes approval of a transaction.
-	a._rtApproveTransactionOrAbort(rt, txnID)
+	a.approveTransaction(rt, txnID)
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
@@ -114,25 +105,31 @@ type TxnIDParams struct {
 func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	a._rtValidateSignerOrAbort(rt, callerAddr)
-	a._rtApproveTransactionOrAbort(rt, params.ID)
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		a.validateSigner(rt, &st, callerAddr)
+		return nil
+	})
+	a.approveTransaction(rt, params.ID)
 	return &vmr.EmptyReturn{}
 }
 
 func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	a._rtValidateSignerOrAbort(rt, callerAddr)
 
-	h, st := a.State(rt)
-	txn := getPendingTxn(rt, st.PendingTxns, params.ID)
-	proposer := txn.Approved[0]
-	if proposer != callerAddr {
-		rt.AbortStateMsg("Cannot cancel another signers transaction")
-	}
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		a.validateSigner(rt, &st, callerAddr)
+		txn := getPendingTxn(rt, st.PendingTxns, params.ID)
+		proposer := txn.Approved[0]
+		if proposer != callerAddr {
+			rt.AbortStateMsg("Cannot cancel another signers transaction")
+		}
 
-	st.PendingTxns = deletePendingTxn(rt, st.PendingTxns, params.ID)
-	UpdateRelease_MultiSig(rt, h, st)
+		st.PendingTxns = deletePendingTxn(rt, st.PendingTxns, params.ID)
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
@@ -145,16 +142,17 @@ func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *vmr.EmptyR
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	h, st := a.State(rt)
-	if st.isSigner(params.Signer) {
-		rt.AbortStateMsg("Party is already authorized")
-	}
-	st.Signers = append(st.Signers, params.Signer)
-	if params.Increase {
-		st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
-	}
-
-	UpdateRelease_MultiSig(rt, h, st)
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if st.isSigner(params.Signer) {
+			rt.AbortStateMsg("party is already a signer")
+		}
+		st.Signers = append(st.Signers, params.Signer)
+		if params.Increase {
+			st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
+		}
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
@@ -167,24 +165,25 @@ func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *vmr.
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	h, st := a.State(rt)
-
-	if !st.isSigner(params.Signer) {
-		rt.AbortStateMsg("Party not found")
-	}
-
-	newSigners := make([]addr.Address, 0, len(st.Signers))
-	for _, s := range st.Signers {
-		if s != params.Signer {
-			newSigners = append(newSigners, s)
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if !st.isSigner(params.Signer) {
+			rt.AbortStateMsg("Party not found")
 		}
-	}
-	if params.Decrease || int64(len(st.Signers)-1) < st.NumApprovalsThreshold {
-		st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
-	}
-	st.Signers = newSigners
 
-	UpdateRelease_MultiSig(rt, h, st)
+		newSigners := make([]addr.Address, 0, len(st.Signers))
+		for _, s := range st.Signers {
+			if s != params.Signer {
+				newSigners = append(newSigners, s)
+			}
+		}
+		if params.Decrease || int64(len(st.Signers)-1) < st.NumApprovalsThreshold {
+			st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
+		}
+		st.Signers = newSigners
+		return nil
+	})
+
 	return &vmr.EmptyReturn{}
 }
 
@@ -197,26 +196,27 @@ func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *vm
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	h, st := a.State(rt)
-
-	if !st.isSigner(params.From) {
-		rt.AbortStateMsg("Party not found")
-	}
-
-	if !st.isSigner(params.To) {
-		rt.AbortStateMsg("Party already present")
-	}
-
-	newSigners := make([]addr.Address, 0, len(st.Signers))
-	for _, s := range st.Signers {
-		if s != params.From {
-			newSigners = append(newSigners, s)
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if !st.isSigner(params.From) {
+			rt.AbortStateMsg("Party not found")
 		}
-	}
-	newSigners = append(newSigners, params.To)
-	st.Signers = newSigners
 
-	UpdateRelease_MultiSig(rt, h, st)
+		if !st.isSigner(params.To) {
+			rt.AbortStateMsg("Party already present")
+		}
+
+		newSigners := make([]addr.Address, 0, len(st.Signers))
+		for _, s := range st.Signers {
+			if s != params.From {
+				newSigners = append(newSigners, s)
+			}
+		}
+		newSigners = append(newSigners, params.To)
+		st.Signers = newSigners
+		return nil
+	})
+
 	return &vmr.EmptyReturn{}
 }
 
@@ -228,33 +228,35 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	h, st := a.State(rt)
+	var st MultiSigActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
+			rt.AbortStateMsg("New threshold value not supported")
+		}
 
-	if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
-		rt.AbortStateMsg("New threshold value not supported")
-	}
-
-	st.NumApprovalsThreshold = params.NewThreshold
-
-	UpdateRelease_MultiSig(rt, h, st)
+		st.NumApprovalsThreshold = params.NewThreshold
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
-func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID) {
-	h, st := a.State(rt)
+func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
+	var st MultiSigActorState
+	var txn MultiSigTransaction
+	rt.State().Transaction(&st, func() interface{} {
+		txn := getPendingTxn(rt, st.PendingTxns, txnID)
 
-	txn := getPendingTxn(rt, st.PendingTxns, txnID)
-
-	// abort duplicate approval
-	for _, previousApprover := range txn.Approved {
-		if previousApprover == rt.ImmediateCaller() {
-			rt.AbortStateMsg("already approved this message")
+		// abort duplicate approval
+		for _, previousApprover := range txn.Approved {
+			if previousApprover == rt.ImmediateCaller() {
+				rt.AbortStateMsg("already approved this message")
+			}
 		}
-	}
-	// update approved on the transaction
-	txn.Approved = append(txn.Approved, rt.ImmediateCaller())
-	st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, txn)
-	UpdateRelease_MultiSig(rt, h, st)
+		// update approved on the transaction
+		txn.Approved = append(txn.Approved, rt.ImmediateCaller())
+		st.PendingTxns = setPendingTxn(rt, st.PendingTxns, txnID, txn)
+		return nil
+	})
 
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
@@ -271,32 +273,23 @@ func (a *MultiSigActor) _rtApproveTransactionOrAbort(rt vmr.Runtime, txnID TxnID
 		)
 		// The exit code is explicitly ignored. It's ok for the subcall to fail.
 		_ = code
-		a._rtDeletePendingTransaction(rt, txnID)
+
+		// This could be rearranged to happen inside the first state transaction, before the send().
+		rt.State().Transaction(&st, func() interface{} {
+			a.deletePendingTransaction(rt, &st, txnID)
+			return nil
+		})
 	}
 }
 
-func (a *MultiSigActor) _rtDeletePendingTransaction(rt vmr.Runtime, txnID TxnID) {
-	h, st := a.State(rt)
+func (a *MultiSigActor) deletePendingTransaction(rt vmr.Runtime, st *MultiSigActorState, txnID TxnID) {
 	st.PendingTxns = deletePendingTxn(rt, st.PendingTxns, txnID)
-	UpdateRelease_MultiSig(rt, h, st)
 }
 
-func (a *MultiSigActor) _rtValidateSignerOrAbort(rt vmr.Runtime, address addr.Address) {
-	h, st := a.State(rt)
+func (a *MultiSigActor) validateSigner(rt vmr.Runtime, st *MultiSigActorState, address addr.Address) {
 	if !st.isSigner(address) {
-		rt.Abort(exitcode.ErrForbidden, "party not authorized")
+		rt.Abort(exitcode.ErrForbidden, "party not a signer")
 	}
-	Release_MultiSig(rt, h, st)
-}
-
-func Release_MultiSig(rt vmr.Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
-	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
-	h.Release(checkCID)
-}
-
-func UpdateRelease_MultiSig(rt vmr.Runtime, h vmr.ActorStateHandle, st MultiSigActorState) {
-	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
-	h.UpdateRelease(newCID)
 }
 
 func getPendingTxn(rt vmr.Runtime, rootCID cid.Cid, txnID TxnID) MultiSigTransaction {

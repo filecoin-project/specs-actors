@@ -1,8 +1,9 @@
 package init
 
 import (
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -46,19 +47,23 @@ type InitActor struct{}
 
 func (a *InitActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	h := rt.AcquireState()
-	st := InitActorState{
-		AddressMap:  map[addr.Address]abi.ActorID{}, // TODO: HAMT
-		NextID:      abi.ActorID(builtin.FirstNonSingletonActorId),
-		NetworkName: vmr.NetworkName(),
-	}
-	UpdateRelease(rt, h, st)
+	var st InitActorState
+	rt.State().Transaction(&st, func() interface{} {
+			st.AddressMap = map[addr.Address]abi.ActorID{} // TODO HAMT
+			st.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
+			st.NetworkName = vmr.NetworkName()
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
 type ExecReturn struct {
 	IDAddress     addr.Address // The canonical ID-based address for the actor.
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
+}
+
+func (e ExecReturn) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
 }
 
 func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorParams abi.MethodParams) *ExecReturn {
@@ -77,9 +82,12 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 
 	// Allocate an ID for this actor.
 	// Store mapping of pubkey or actor address to actor ID
-	h, st := _loadState(rt)
-	idAddr := st.MapAddressToNewID(uniqueAddress)
-	UpdateRelease(rt, h, st)
+	var idAddr addr.Address
+	var st InitActorState
+	rt.State().Transaction(&st, func() interface{} {
+		idAddr = st.MapAddressToNewID(uniqueAddress)
+		return nil
+	})
 
 	// Create an empty actor.
 	rt.CreateActor(execCodeID, idAddr)
@@ -111,24 +119,6 @@ func _codeIDSupportsExec(callerCodeID abi.ActorCodeID, execCodeID abi.ActorCodeI
 	return false
 }
 
-///// Boilerplate /////
-
-func _loadState(rt Runtime) (vmr.ActorStateHandle, InitActorState) {
-	h := rt.AcquireState()
-	stateCID := cid.Cid(h.Take())
-	var state InitActorState
-	if !rt.IpldGet(stateCID, &state) {
-		rt.Abort(exitcode.ErrPlaceholder, "state not found")
-	}
-	return h, state
-}
-
-func Release(rt Runtime, h vmr.ActorStateHandle, st InitActorState) {
-	checkCID := abi.ActorSubstateCID(rt.IpldPut(&st))
-	h.Release(checkCID)
-}
-
-func UpdateRelease(rt Runtime, h vmr.ActorStateHandle, st InitActorState) {
-	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
-	h.UpdateRelease(newCID)
+func (s *InitActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
 }

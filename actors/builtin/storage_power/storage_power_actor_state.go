@@ -1,11 +1,13 @@
 package storage_power
 
 import (
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"io"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
@@ -29,6 +31,10 @@ type StoragePowerActorState struct {
 	ClaimedPower             PowerTableHAMT
 	NominalPower             PowerTableHAMT
 	NumMinersMeetingMinPower int
+}
+
+func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
 }
 
 func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerPower abi.StoragePower) bool {

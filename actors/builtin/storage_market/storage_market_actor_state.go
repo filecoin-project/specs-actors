@@ -1,10 +1,12 @@
 package storage_market
 
 import (
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
@@ -39,6 +41,10 @@ type StorageMarketActorState struct {
 	CachedExpirationsPending       CachedExpirationsPendingHAMT
 	CachedExpirationsNextProcEpoch abi.ChainEpoch
 	CurrEpochNumDealsPublished     int
+}
+
+func (st *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -189,7 +195,7 @@ func (st *StorageMarketActorState) _processDealExpired(dealID abi.DealID) {
 	st._deleteDeal(dealID)
 }
 
-func (st *StorageMarketActorState) _generateStorageDealID(storageDeal StorageDeal) abi.DealID {
+func (st *StorageMarketActorState) _generateStorageDealID() abi.DealID {
 	ret := st.NextID
 	st.NextID = st.NextID + abi.DealID(1)
 	return ret
@@ -400,4 +406,19 @@ func (st *StorageMarketActorState) _getOnChainDealAssert(dealID abi.DealID) (
 	deal, dealP, ok = st._getOnChainDeal(dealID)
 	Assert(ok)
 	return
+}
+
+func DealsAMT_Empty() DealsAMT {
+	IMPL_FINISH()
+	panic("")
+}
+
+func CachedDealIDsByPartyHAMT_Empty() CachedDealIDsByPartyHAMT {
+	IMPL_FINISH()
+	panic("")
+}
+
+func CachedExpirationsPendingHAMT_Empty() CachedExpirationsPendingHAMT {
+	IMPL_FINISH()
+	panic("")
 }
