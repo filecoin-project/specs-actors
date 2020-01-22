@@ -122,34 +122,35 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
 	return &vmr.EmptyReturn{}
 }
 
-func (a *RewardActor) AwardBlockReward(
-	rt vmr.Runtime,
-	miner addr.Address,
-	penalty abi.TokenAmount,
-	minerNominalPower abi.StoragePower,
-	currPledge abi.TokenAmount,
-) *vmr.EmptyReturn {
+type AwardBlockRewardParams struct {
+	Miner             addr.Address
+	Penalty           abi.TokenAmount
+	MinerNominalPower abi.StoragePower
+	CurrPledge        abi.TokenAmount
+}
+
+func (a *RewardActor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	inds := rt.CurrIndices()
-	pledgeReq := inds.PledgeCollateralReq(minerNominalPower)
-	currReward := inds.GetCurrBlockRewardForMiner(minerNominalPower, currPledge)
+	pledgeReq := inds.PledgeCollateralReq(params.MinerNominalPower)
+	currReward := inds.GetCurrBlockRewardForMiner(params.MinerNominalPower, params.CurrPledge)
 	TODO() // BigInt
 
 	// 0 if over collateralized
-	underPledge := big.Max(big.Zero(), big.Sub(pledgeReq, currPledge))
+	underPledge := big.Max(big.Zero(), big.Sub(pledgeReq, params.CurrPledge))
 	rewardToGarnish := big.Min(currReward, underPledge)
 
 	TODO()
-	// handle penalty here
-	// also handle penalty greater than reward
+	// handle Penalty here
+	// also handle Penalty greater than reward
 	actualReward := big.Sub(currReward, rewardToGarnish)
 	if rewardToGarnish.GreaterThan(big.Zero()) {
 		// Send fund to SPA for collateral
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_AddBalance,
-			serde.MustSerializeParams(miner),
+			serde.MustSerializeParams(params.Miner),
 			abi.TokenAmount(rewardToGarnish),
 		)
 		vmr.RequireSuccess(rt, code, "failed to add balance to power actor")
@@ -165,12 +166,12 @@ func (a *RewardActor) AwardBlockReward(
 			AmountWithdrawn: abi.NewTokenAmount(0),
 			VestingFunction: None,
 		}
-		rewards, found := st.RewardMap[miner]
+		rewards, found := st.RewardMap[params.Miner]
 		if !found {
 			rewards = make([]Reward, 0)
 		}
 		rewards = append(rewards, *newReward)
-		st.RewardMap[miner] = rewards
+		st.RewardMap[params.Miner] = rewards
 	}
 	UpdateReleaseRewardActorState(rt, h, st)
 	return &vmr.EmptyReturn{}
