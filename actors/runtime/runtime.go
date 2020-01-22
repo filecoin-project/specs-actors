@@ -107,7 +107,7 @@ type Syscalls interface {
 	// Verifies a proof of spacetime.
 	VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool
 	// Verifies valid consensus fault committed with two block headers
-	VerifyConsensusFault(blockHeaders []byte) bool
+	VerifyConsensusFault(h1, h2 []byte) bool
 }
 
 // The return type from a message send from one actor to another. This abstracts over the internal representation of

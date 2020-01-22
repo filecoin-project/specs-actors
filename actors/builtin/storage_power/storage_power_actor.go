@@ -243,7 +243,7 @@ func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.Ch
 	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeaders []byte, slasheeAddr addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
+func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, blockHeader2 []byte, slashee addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *vmr.EmptyReturn {
 	TODO()
 	// TODO: The semantics here are quite delicate:
 	//
@@ -263,7 +263,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeaders []byte
 	// - first block is of the same or lower block height as the second block
 	//
 	// Use EC's IsValidConsensusFault method to validate the proof
-	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(blockHeaders)
+	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(blockHeader1, blockHeader2)
 	if !isValidConsensusFault {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: unverified consensus fault")
 	}
@@ -271,13 +271,13 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeaders []byte
 	slasherAddr := rt.ImmediateCaller()
 	h, st := a.State(rt)
 
-	claimedPower, powerOk := st.ClaimedPower[slasheeAddr]
+	claimedPower, powerOk := st.ClaimedPower[slashee]
 	if !powerOk {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner already slashed")
 	}
 	Assert(claimedPower > 0)
 
-	currPledge, pledgeOk := st._getCurrPledgeForMiner(slasheeAddr)
+	currPledge, pledgeOk := st._getCurrPledgeForMiner(slashee)
 	if !pledgeOk {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner has no pledge")
 	}
@@ -304,7 +304,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeaders []byte
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
-	a._rtDeleteMinerActor(rt, slasheeAddr)
+	a._rtDeleteMinerActor(rt, slashee)
 	return &vmr.EmptyReturn{}
 }
 
