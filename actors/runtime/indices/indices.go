@@ -352,3 +352,9 @@ func ConsensusFault_SlasherShareGrowthRateDenom() big.Int {
 	SLASHER_SHARE_GROWTH_RATE_DENOM := big.NewInt(100000) // placeholder
 	return SLASHER_SHARE_GROWTH_RATE_DENOM
 }
+
+func PaymentChannel_PaymentChannelClosingDelay() abi.ChainEpoch {
+	PARAM_FINISH()
+	const PAYMENT_CHANNEL_CLOSING_DELAY = abi.ChainEpoch(1) // placeholder
+	return PAYMENT_CHANNEL_CLOSING_DELAY
+}
