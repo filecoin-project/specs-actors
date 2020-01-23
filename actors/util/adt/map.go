@@ -90,3 +90,15 @@ func (h *Map) Delete(k Keyer) error {
 	h.root = newRoot
 	return nil
 }
+
+// ForEach applies fn to each key value in hamt.
+func (h *Map) ForEach(fn func(key string, v interface{}) error) error {
+	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
+	if err != nil {
+		return err
+	}
+	if err := oldRoot.ForEach(h.store.Context(), fn); err != nil {
+		return err
+	}
+	return nil
+}
