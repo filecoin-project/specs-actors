@@ -4,6 +4,7 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -116,7 +117,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 		Assert(ok)
 		st.EscrowTable = newTable
 		st.PowerTable[addresses.IDAddress] = abi.StoragePower(0)
-		st.ClaimedPower[addresses.IDAddress] = abi.StoragePower(0)
+		st.ClaimedPower = putStoragePower(rt, st.ClaimedPower, addresses.IDAddress, abi.StoragePower(0))
 		st.NominalPower[addresses.IDAddress] = abi.StoragePower(0)
 		return nil
 	})
@@ -201,7 +202,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) *vmr.EmptyRet
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		delete(st.PoStDetectedFaultMiners, minerAddr)
-		st._updatePowerEntriesFromClaimedPower(minerAddr)
+		st._updatePowerEntriesFromClaimedPower(rt, minerAddr)
 		return nil
 	})
 	return &vmr.EmptyReturn{}
@@ -215,11 +216,12 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		st.PoStDetectedFaultMiners[minerAddr] = true
-		st._updatePowerEntriesFromClaimedPower(minerAddr)
+		st._updatePowerEntriesFromClaimedPower(rt, minerAddr)
 
 		var ok bool
-		minerClaimedPower, ok = st.ClaimedPower[minerAddr]
+		minerClaimedPower, ok = getStoragePower(rt, st.ClaimedPower, minerAddr)
 		Assert(ok)
+
 		return nil
 	})
 
@@ -281,7 +283,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, block
 	var amountToSlasher abi.TokenAmount
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		claimedPower, powerOk := st.ClaimedPower[slashee]
+		claimedPower, powerOk := getStoragePower(rt, st.ClaimedPower, slashee)
 		if !powerOk {
 			rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner already slashed")
 		}
@@ -336,8 +338,8 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 		st.EscrowTable = autil.BalanceTableHAMT_Empty()
 		st.CachedDeferredCronEvents = MinerEventsHAMT_Empty()
 		st.PoStDetectedFaultMiners = autil.MinerSetHAMT_Empty()
-		st.ClaimedPower = PowerTableHAMT_Empty()
-		st.NominalPower = PowerTableHAMT_Empty()
+		st.ClaimedPower = autil.EmptyHAMT
+		st.NominalPower = autil.EmptyHAMT
 		st.NumMinersMeetingMinPower = 0
 		return nil
 	})
@@ -351,7 +353,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 func (a *StoragePowerActor) _rtAddPowerForSector(rt Runtime, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) {
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		st._addClaimedPowerForSector(minerAddr, storageWeightDesc)
+		st._addClaimedPowerForSector(rt, minerAddr, storageWeightDesc)
 		return nil
 	})
 }
@@ -359,7 +361,7 @@ func (a *StoragePowerActor) _rtAddPowerForSector(rt Runtime, minerAddr addr.Addr
 func (a *StoragePowerActor) _rtDeductClaimedPowerForSectorAssert(rt Runtime, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) {
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		st._deductClaimedPowerForSectorAssert(minerAddr, storageWeightDesc)
+		st._deductClaimedPowerForSectorAssert(rt, minerAddr, storageWeightDesc)
 		return nil
 	})
 }
@@ -443,7 +445,7 @@ func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Addre
 	var st StoragePowerActorState
 	amountSlashed := rt.State().Transaction(&st, func() interface{} {
 		delete(st.PowerTable, minerAddr)
-		delete(st.ClaimedPower, minerAddr)
+		deleteStoragePower(rt, st.ClaimedPower, minerAddr)
 		delete(st.NominalPower, minerAddr)
 		delete(st.PoStDetectedFaultMiners, minerAddr)
 

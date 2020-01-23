@@ -5,12 +5,17 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+	hamt "github.com/ipfs/go-hamt-ipld"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // TODO: HAMT
@@ -28,7 +33,7 @@ type StoragePowerActorState struct {
 	// Metadata cached for efficient processing of sector/challenge events.
 	CachedDeferredCronEvents MinerEventsHAMT
 	PoStDetectedFaultMiners  autil.MinerSetHAMT
-	ClaimedPower             PowerTableHAMT
+	ClaimedPower             cid.Cid
 	NominalPower             PowerTableHAMT
 	NumMinersMeetingMinPower int
 }
@@ -136,7 +141,7 @@ func (st *StoragePowerActorState) _getCurrPledgeForMiner(minerAddr addr.Address)
 	return autil.BalanceTable_GetEntry(st.EscrowTable, minerAddr)
 }
 
-func (st *StoragePowerActorState) _addClaimedPowerForSector(minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) {
+func (st *StoragePowerActorState) _addClaimedPowerForSector(rt vmr.Runtime, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) {
 	// Note: The following computation does not use any of the dynamic information from CurrIndices();
 	// it depends only on storageWeightDesc. This means that the power of a given storageWeightDesc
 	// does not vary over time, so we can avoid continually updating it for each sector every epoch.
@@ -145,13 +150,14 @@ func (st *StoragePowerActorState) _addClaimedPowerForSector(minerAddr addr.Addre
 	// global parameterization functions.
 	sectorPower := indices.ConsensusPowerForStorageWeight(storageWeightDesc)
 
-	currentPower, ok := st.ClaimedPower[minerAddr]
+	currentPower, ok := getStoragePower(rt, st.ClaimedPower, minerAddr)
 	Assert(ok)
-	st._setClaimedPowerEntryInternal(minerAddr, currentPower+sectorPower)
-	st._updatePowerEntriesFromClaimedPower(minerAddr)
+
+	st._setClaimedPowerEntryInternal(rt, minerAddr, currentPower+sectorPower)
+	st._updatePowerEntriesFromClaimedPower(rt, minerAddr)
 }
 
-func (st *StoragePowerActorState) _deductClaimedPowerForSectorAssert(minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) {
+func (st *StoragePowerActorState) _deductClaimedPowerForSectorAssert(rt vmr.Runtime, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) {
 	// Note: The following computation does not use any of the dynamic information from CurrIndices();
 	// it depends only on storageWeightDesc. This means that the power of a given storageWeightDesc
 	// does not vary over time, so we can avoid continually updating it for each sector every epoch.
@@ -160,14 +166,15 @@ func (st *StoragePowerActorState) _deductClaimedPowerForSectorAssert(minerAddr a
 	// global parameterization functions.
 	sectorPower := indices.ConsensusPowerForStorageWeight(storageWeightDesc)
 
-	currentPower, ok := st.ClaimedPower[minerAddr]
+	currentPower, ok := getStoragePower(rt, st.ClaimedPower, minerAddr)
 	Assert(ok)
-	st._setClaimedPowerEntryInternal(minerAddr, currentPower-sectorPower)
-	st._updatePowerEntriesFromClaimedPower(minerAddr)
+
+	st._setClaimedPowerEntryInternal(rt, minerAddr, currentPower-sectorPower)
+	st._updatePowerEntriesFromClaimedPower(rt, minerAddr)
 }
 
-func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(minerAddr addr.Address) {
-	claimedPower, ok := st.ClaimedPower[minerAddr]
+func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(rt vmr.Runtime, minerAddr addr.Address) {
+	claimedPower, ok := getStoragePower(rt, st.ClaimedPower, minerAddr)
 	Assert(ok)
 
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
@@ -191,9 +198,9 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(minerAddr 
 	st._setPowerEntryInternal(minerAddr, power)
 }
 
-func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) {
+func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) {
 	Assert(updatedMinerClaimedPower >= 0)
-	st.ClaimedPower[minerAddr] = updatedMinerClaimedPower
+	putStoragePower(rt, st.ClaimedPower, minerAddr, updatedMinerClaimedPower)
 }
 
 func (st *StoragePowerActorState) _setNominalPowerEntryInternal(minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) {
@@ -232,6 +239,54 @@ func (st *StoragePowerActorState) _getPledgeSlashForConsensusFault(currPledge ab
 		return currPledge
 	default:
 		panic("Unsupported case for pledge collateral consensus fault slashing")
+	}
+}
+
+func asKeyer(a addr.Address) adt.Keyer {
+	return addrKeyWrapper{a}
+}
+
+type addrKeyWrapper struct {
+	addr.Address
+}
+
+func (kw addrKeyWrapper) Key() string {
+	return string(kw.Bytes())
+}
+
+func getStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) (abi.StoragePower, bool) {
+	hm := adt.NewMap(vmr.AsStore(rt), root)
+
+	var out abi.StoragePower
+	err := hm.Get(asKeyer(a), &out)
+	if err == hamt.ErrNotFound {
+		return abi.StoragePower(0), false
+	}
+	requireNoStateErr(rt, err, "failed to get storage power for address %v from claimed power HAMT", a)
+
+	return out, true
+}
+
+func putStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address, pwr abi.StoragePower) cid.Cid {
+	hm := adt.NewMap(vmr.AsStore(rt), root)
+
+	err := hm.Put(asKeyer(a), &pwr)
+	requireNoStateErr(rt, err, "failed to put claimed power for address %v into claimed power HAMT", a)
+	return hm.Root()
+}
+
+func deleteStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) cid.Cid {
+	hm := adt.NewMap(vmr.AsStore(rt), root)
+
+	err := hm.Delete(asKeyer(a))
+	requireNoStateErr(rt, err, "failed to remove claimed power for address %v from claimed power HAMT", a)
+	return hm.Root()
+}
+
+func requireNoStateErr(rt vmr.Runtime, err error, msg string, args ...interface{}) {
+	if err != nil {
+		errMsg := msg + " :" + err.Error()
+		rt.Abort(exitcode.ErrIllegalState, errMsg, args...)
 	}
 }
 
