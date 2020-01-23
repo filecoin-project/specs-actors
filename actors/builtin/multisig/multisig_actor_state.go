@@ -8,7 +8,7 @@ import (
 )
 
 type MultiSigActorState struct {
-	Signers     []address.Address
+	Signers               []address.Address
 	NumApprovalsThreshold int64
 	NextTxnID             TxnID
 

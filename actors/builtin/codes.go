@@ -7,25 +7,25 @@ import (
 )
 
 // The built-in actor code IDs
-var SystemActorCodeID abi.ActorCodeID
-var InitActorCodeID abi.ActorCodeID
-var CronActorCodeID abi.ActorCodeID
-var AccountActorCodeID abi.ActorCodeID
-var StoragePowerActorCodeID abi.ActorCodeID
-var StorageMinerActorCodeID abi.ActorCodeID
-var StorageMarketActorCodeID abi.ActorCodeID
-var PaymentChannelActorCodeID abi.ActorCodeID
-var MultisigActorCodeID abi.ActorCodeID
-var RewardActorCodeID abi.ActorCodeID
+var SystemActorCodeID cid.Cid
+var InitActorCodeID cid.Cid
+var CronActorCodeID cid.Cid
+var AccountActorCodeID cid.Cid
+var StoragePowerActorCodeID cid.Cid
+var StorageMinerActorCodeID cid.Cid
+var StorageMarketActorCodeID cid.Cid
+var PaymentChannelActorCodeID cid.Cid
+var MultisigActorCodeID cid.Cid
+var RewardActorCodeID cid.Cid
 
 func init() {
 	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
-	makeBuiltin := func(s string) abi.ActorCodeID {
+	makeBuiltin := func(s string) cid.Cid {
 		c, err := builder.Sum([]byte(s))
 		if err != nil {
 			panic(err)
 		}
-		id := abi.ActorCodeID(c)
+		id := cid.Cid(c)
 		return id
 	}
 

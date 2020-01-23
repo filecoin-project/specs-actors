@@ -30,7 +30,7 @@ type MultiSigTransaction struct {
 type MultiSigActor struct{}
 
 type ConstructorParams struct {
-	Signers     []addr.Address
+	Signers               []addr.Address
 	NumApprovalsThreshold int64
 	UnlockDuration        abi.ChainEpoch
 }
@@ -134,8 +134,8 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 }
 
 type AddSigner struct {
-	Signer addr.Address // must be an ID protocol address.
-	Increase        bool
+	Signer   addr.Address // must be an ID protocol address.
+	Increase bool
 }
 
 func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *vmr.EmptyReturn {
@@ -157,8 +157,8 @@ func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *vmr.EmptyR
 }
 
 type RemoveSigner struct {
-	Signer addr.Address // must be an ID protocol address.
-	Decrease        bool
+	Signer   addr.Address // must be an ID protocol address.
+	Decrease bool
 }
 
 func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *vmr.EmptyReturn {

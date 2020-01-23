@@ -5,4 +5,4 @@ import (
 )
 
 // Set of actor code types that can represent external signing parties.
-var CallerTypesSignable = []abi.ActorCodeID{AccountActorCodeID, MultisigActorCodeID}
+var CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}

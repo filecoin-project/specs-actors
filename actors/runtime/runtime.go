@@ -29,7 +29,7 @@ type Runtime interface {
 	// Exported actor methods must invoke at least one caller validation before returning.
 	ValidateImmediateCallerAcceptAny()
 	ValidateImmediateCallerIs(addrs ...addr.Address)
-	ValidateImmediateCallerType(types ...abi.ActorCodeID)
+	ValidateImmediateCallerType(types ...cid.Cid)
 
 	// The actor who mined the block in which the current invocation is being evaluated.
 	// Always an ID-address.
@@ -42,7 +42,7 @@ type Runtime interface {
 	ValueReceived() abi.TokenAmount
 
 	// Look up the code ID at an actor address.
-	GetActorCodeID(addr addr.Address) (ret abi.ActorCodeID, ok bool)
+	GetActorCodeID(addr addr.Address) (ret cid.Cid, ok bool)
 
 	// Randomness returns a (pseudo)random string for the given epoch and tag.
 	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
@@ -76,7 +76,7 @@ type Runtime interface {
 	NewActorAddress() addr.Address
 
 	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by InitActor.
-	CreateActor(codeId abi.ActorCodeID, address addr.Address)
+	CreateActor(codeId cid.Cid, address addr.Address)
 
 	// Deletes an actor in the state tree. May only be called by the actor itself,
 	// or by StoragePowerActor in the case of StorageMinerActors.

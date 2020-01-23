@@ -768,7 +768,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 
 func getSectorNums(m map[abi.SectorNumber]SectorOnChainInfo) []abi.SectorNumber {
 	var l []abi.SectorNumber
-	for i, _ := range m {
+	for i := range m {
 		l = append(l, i)
 	}
 	return l
