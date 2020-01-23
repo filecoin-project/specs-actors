@@ -25,9 +25,8 @@ func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.Toke
 		return abi.NewTokenAmount(0)
 	}
 
-	// FIXME: This division is probably incorrect, see issue: https://github.com/filecoin-project/specs-actors/issues/32
-	lockedProportion := (st.UnlockDuration - elapsedEpoch) / st.UnlockDuration
-	return big.Mul(st.InitialBalance, big.NewInt(int64(lockedProportion)))
+	unitLocked := big.Div(st.InitialBalance, big.NewInt(int64(st.UnlockDuration)))
+	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
 }
 
 func (st *MultiSigActorState) isSigner(party address.Address) bool {
