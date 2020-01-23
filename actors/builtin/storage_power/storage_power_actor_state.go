@@ -27,7 +27,8 @@ type MinerEventsHAMT map[abi.ChainEpoch]autil.MinerEventSetHAMT
 type StoragePowerActorState struct {
 	TotalNetworkPower abi.StoragePower
 
-	PowerTable  PowerTableHAMT
+	PowerTable  cid.Cid
+	MinerCount  int64
 	EscrowTable autil.BalanceTableHAMT
 
 	// Metadata cached for efficient processing of sector/challenge events.
@@ -42,7 +43,7 @@ func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }
 
-func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerPower abi.StoragePower) bool {
+func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(rt vmr.Runtime, minerPower abi.StoragePower) bool {
 
 	// if miner is larger than min power requirement, we're set
 	if minerPower >= indices.StoragePower_MinMinerSizeStor() {
@@ -55,16 +56,20 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(minerP
 	}
 
 	// else if none do, check whether in MIN_MINER_SIZE_TARG miners
-	if len(st.PowerTable) <= indices.StoragePower_MinMinerSizeTarg() {
+	if st.MinerCount <= indices.StoragePower_MinMinerSizeTarg() {
 		// miner should pass
 		return true
 	}
 
-	// get size of MIN_MINER_SIZE_TARGth largest miner
-	minerSizes := make([]abi.StoragePower, 0, len(st.PowerTable))
-	for _, v := range st.PowerTable {
-		minerSizes = append(minerSizes, v)
+	var minerSizes []abi.StoragePower
+	if err := adt.NewMap(vmr.AsStore(rt), st.PowerTable).ForEach(func(k string, v interface{}) error {
+		minerSizes = append(minerSizes, v.(abi.StoragePower))
+		return nil
+	}); err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "failed to iterate PowerTable hamt: %v", err)
 	}
+
+	// get size of MIN_MINER_SIZE_TARGth largest miner
 	sort.Slice(minerSizes, func(i, j int) bool { return int(i) > int(j) })
 	return minerPower >= minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]
 }
@@ -96,28 +101,35 @@ func addrInArray(a addr.Address, list []addr.Address) bool {
 }
 
 // _selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
-func (st *StoragePowerActorState) _selectMinersToSurprise(challengeCount int, randomness abi.Randomness) []addr.Address {
+func (st *StoragePowerActorState) _selectMinersToSurprise(rt vmr.Runtime, challengeCount int, randomness abi.Randomness) []addr.Address {
 	// this wont quite work -- a.PowerTable is a HAMT by actor address, doesn't
 	// support enumerating by int index. maybe we need that as an interface too,
 	// or something similar to an iterator (or iterator over the keys)
 	// or even a seeded random call directly in the HAMT: myhamt.GetRandomElement(seed []byte, idx int) using the ticket as a seed
 
-	ptSize := len(st.PowerTable)
-	allMiners := make([]addr.Address, len(st.PowerTable))
-	index := 0
+	// Reply to above comment: for now do the easy thing and use the hamt ForEach method as lotus does
 
-	for address := range st.PowerTable {
-		allMiners[index] = address
+	var index int64
+	var allMiners []addr.Address
+	if err := adt.NewMap(vmr.AsStore(rt), st.PowerTable).ForEach(func(k string, v interface{}) error {
+		maddr, err := addr.NewFromBytes([]byte(k))
+		if err != nil {
+			return err
+		}
+		allMiners[index] = maddr
 		index++
+		return nil
+	}); err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "failed to iterate PowerTable hamt when selecting miners to surprise: %v", err)
 	}
 
 	selectedMiners := make([]addr.Address, 0)
 	for chall := 0; chall < challengeCount; chall++ {
-		minerIndex := crypto.RandomInt(randomness, chall, ptSize)
+		minerIndex := crypto.RandomInt(randomness, chall, st.MinerCount)
 		potentialChallengee := allMiners[minerIndex]
 		// skip dups
 		for addrInArray(potentialChallengee, selectedMiners) {
-			minerIndex := crypto.RandomInt(randomness, chall, ptSize)
+			minerIndex := crypto.RandomInt(randomness, chall, st.MinerCount)
 			potentialChallengee = allMiners[minerIndex]
 		}
 		selectedMiners = append(selectedMiners, potentialChallengee)
@@ -126,10 +138,10 @@ func (st *StoragePowerActorState) _selectMinersToSurprise(challengeCount int, ra
 	return selectedMiners
 }
 
-func (st *StoragePowerActorState) _getPowerTotalForMiner(minerAddr addr.Address) (
+func (st *StoragePowerActorState) _getPowerTotalForMiner(rt vmr.Runtime, minerAddr addr.Address) (
 	power abi.StoragePower, ok bool) {
 
-	minerPower, found := st.PowerTable[minerAddr]
+	minerPower, found := getStoragePower(rt, st.PowerTable, minerAddr)
 	if !found {
 		return abi.StoragePower(0), found
 	}
@@ -189,13 +201,13 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(rt vmr.Run
 
 	// Compute actual (consensus) power, i.e., votes in leader election.
 	power := nominalPower
-	if !st._minerNominalPowerMeetsConsensusMinimum(nominalPower) {
+	if !st._minerNominalPowerMeetsConsensusMinimum(rt, nominalPower) {
 		power = 0
 	}
 
 	TODO() // TODO: Decide effect of undercollateralization on (consensus) power.
 
-	st._setPowerEntryInternal(minerAddr, power)
+	st._setPowerEntryInternal(rt, minerAddr, power)
 }
 
 func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) {
@@ -210,8 +222,8 @@ func (st *StoragePowerActorState) _setNominalPowerEntryInternal(rt vmr.Runtime, 
 	Assert(ok)
 	st.NominalPower = putStoragePower(rt, st.NominalPower, minerAddr, updatedMinerNominalPower)
 
-	wasMinMiner := st._minerNominalPowerMeetsConsensusMinimum(prevMinerNominalPower)
-	isMinMiner := st._minerNominalPowerMeetsConsensusMinimum(updatedMinerNominalPower)
+	wasMinMiner := st._minerNominalPowerMeetsConsensusMinimum(rt, prevMinerNominalPower)
+	isMinMiner := st._minerNominalPowerMeetsConsensusMinimum(rt, updatedMinerNominalPower)
 
 	if isMinMiner && !wasMinMiner {
 		st.NumMinersMeetingMinPower += 1
@@ -220,11 +232,11 @@ func (st *StoragePowerActorState) _setNominalPowerEntryInternal(rt vmr.Runtime, 
 	}
 }
 
-func (st *StoragePowerActorState) _setPowerEntryInternal(minerAddr addr.Address, updatedMinerPower abi.StoragePower) {
+func (st *StoragePowerActorState) _setPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerPower abi.StoragePower) {
 	Assert(updatedMinerPower >= 0)
-	prevMinerPower, ok := st.PowerTable[minerAddr]
+	prevMinerPower, ok := getStoragePower(rt, st.PowerTable, minerAddr)
 	Assert(ok)
-	st.PowerTable[minerAddr] = updatedMinerPower
+	st.PowerTable = putStoragePower(rt, st.PowerTable, minerAddr, updatedMinerPower)
 	st.TotalNetworkPower += (updatedMinerPower - prevMinerPower)
 }
 
