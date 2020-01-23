@@ -291,7 +291,7 @@ func StoragePower_MinMinerSizeStor() abi.StoragePower {
 	return MIN_MINER_SIZE_STOR
 }
 
-func StoragePower_MinMinerSizeTarg() int {
+func StoragePower_MinMinerSizeTarg() int64 {
 	PARAM_FINISH()
 	const MIN_MINER_SIZE_TARG = 3 // placeholder
 	return MIN_MINER_SIZE_TARG
