@@ -4,7 +4,6 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -116,9 +115,9 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 		newTable, ok := autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, addresses.IDAddress, rt.ValueReceived())
 		Assert(ok)
 		st.EscrowTable = newTable
-		st.PowerTable = putStoragePower(rt, st.PowerTable, addresses.IDAddress, abi.StoragePower(0))
-		st.ClaimedPower = putStoragePower(rt, st.ClaimedPower, addresses.IDAddress, abi.StoragePower(0))
-		st.NominalPower = putStoragePower(rt, st.NominalPower, addresses.IDAddress, abi.StoragePower(0))
+		st.PowerTable = putStoragePower(rt, st.PowerTable, addresses.IDAddress, abi.NewStoragePower(0))
+		st.ClaimedPower = putStoragePower(rt, st.ClaimedPower, addresses.IDAddress, abi.NewStoragePower(0))
+		st.NominalPower = putStoragePower(rt, st.NominalPower, addresses.IDAddress, abi.NewStoragePower(0))
 		st.MinerCount += 1
 		return nil
 	})
@@ -143,7 +142,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) *vmr
 
 	minerPower, ok := getStoragePower(rt, st.PowerTable, minerAddr)
 	Assert(ok)
-	if minerPower > 0 {
+	if minerPower.GreaterThan(big.Zero()) {
 		rt.AbortStateMsg("Deletion requested for miner with power still remaining")
 	}
 
@@ -288,7 +287,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, block
 		if !powerOk {
 			rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner already slashed")
 		}
-		Assert(claimedPower > 0)
+		Assert(claimedPower.GreaterThan(big.Zero()))
 
 		currPledge, pledgeOk := st._getCurrPledgeForMiner(slashee)
 		if !pledgeOk {
@@ -334,7 +333,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		st.TotalNetworkPower = abi.StoragePower(0)
+		st.TotalNetworkPower = abi.NewStoragePower(0)
 		st.PowerTable = autil.EmptyHAMT
 		st.EscrowTable = autil.BalanceTableHAMT_Empty()
 		st.CachedDeferredCronEvents = MinerEventsHAMT_Empty()

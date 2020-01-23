@@ -19,9 +19,6 @@ import (
 )
 
 // TODO: HAMT
-type PowerTableHAMT map[addr.Address]abi.StoragePower // TODO: convert address to ActorID
-
-// TODO: HAMT
 type MinerEventsHAMT map[abi.ChainEpoch]autil.MinerEventSetHAMT
 
 type StoragePowerActorState struct {
@@ -43,10 +40,14 @@ func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }
 
+func (t *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
 func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(rt vmr.Runtime, minerPower abi.StoragePower) bool {
 
 	// if miner is larger than min power requirement, we're set
-	if minerPower >= indices.StoragePower_MinMinerSizeStor() {
+	if minerPower.GreaterThanEqual(indices.StoragePower_MinMinerSizeStor()) {
 		return true
 	}
 
@@ -71,7 +72,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(rt vmr
 
 	// get size of MIN_MINER_SIZE_TARGth largest miner
 	sort.Slice(minerSizes, func(i, j int) bool { return int(i) > int(j) })
-	return minerPower >= minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]
+	return minerPower.GreaterThanEqual(minerSizes[indices.StoragePower_MinMinerSizeTarg()-1])
 }
 
 func (st *StoragePowerActorState) _slashPledgeCollateral(
@@ -143,7 +144,7 @@ func (st *StoragePowerActorState) _getPowerTotalForMiner(rt vmr.Runtime, minerAd
 
 	minerPower, found := getStoragePower(rt, st.PowerTable, minerAddr)
 	if !found {
-		return abi.StoragePower(0), found
+		return abi.NewStoragePower(0), found
 	}
 
 	return minerPower, true
@@ -165,7 +166,7 @@ func (st *StoragePowerActorState) _addClaimedPowerForSector(rt vmr.Runtime, mine
 	currentPower, ok := getStoragePower(rt, st.ClaimedPower, minerAddr)
 	Assert(ok)
 
-	st._setClaimedPowerEntryInternal(rt, minerAddr, currentPower+sectorPower)
+	st._setClaimedPowerEntryInternal(rt, minerAddr, big.Add(currentPower, sectorPower))
 	st._updatePowerEntriesFromClaimedPower(rt, minerAddr)
 }
 
@@ -181,7 +182,7 @@ func (st *StoragePowerActorState) _deductClaimedPowerForSectorAssert(rt vmr.Runt
 	currentPower, ok := getStoragePower(rt, st.ClaimedPower, minerAddr)
 	Assert(ok)
 
-	st._setClaimedPowerEntryInternal(rt, minerAddr, currentPower-sectorPower)
+	st._setClaimedPowerEntryInternal(rt, minerAddr, big.Sub(currentPower, sectorPower))
 	st._updatePowerEntriesFromClaimedPower(rt, minerAddr)
 }
 
@@ -195,14 +196,14 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(rt vmr.Run
 	// from a SurprisePoSt challenge.
 	nominalPower := claimedPower
 	if st.PoStDetectedFaultMiners[minerAddr] {
-		nominalPower = 0
+		nominalPower = big.Zero()
 	}
 	st._setNominalPowerEntryInternal(rt, minerAddr, nominalPower)
 
 	// Compute actual (consensus) power, i.e., votes in leader election.
 	power := nominalPower
 	if !st._minerNominalPowerMeetsConsensusMinimum(rt, nominalPower) {
-		power = 0
+		power = big.Zero()
 	}
 
 	TODO() // TODO: Decide effect of undercollateralization on (consensus) power.
@@ -211,12 +212,12 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(rt vmr.Run
 }
 
 func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) {
-	Assert(updatedMinerClaimedPower >= 0)
+	Assert(updatedMinerClaimedPower.GreaterThanEqual(big.Zero()))
 	putStoragePower(rt, st.ClaimedPower, minerAddr, updatedMinerClaimedPower)
 }
 
 func (st *StoragePowerActorState) _setNominalPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) {
-	Assert(updatedMinerNominalPower >= 0)
+	Assert(updatedMinerNominalPower.GreaterThanEqual(big.Zero()))
 
 	prevMinerNominalPower, ok := getStoragePower(rt, st.NominalPower, minerAddr)
 	Assert(ok)
@@ -233,11 +234,11 @@ func (st *StoragePowerActorState) _setNominalPowerEntryInternal(rt vmr.Runtime, 
 }
 
 func (st *StoragePowerActorState) _setPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerPower abi.StoragePower) {
-	Assert(updatedMinerPower >= 0)
+	Assert(updatedMinerPower.GreaterThanEqual(big.Zero()))
 	prevMinerPower, ok := getStoragePower(rt, st.PowerTable, minerAddr)
 	Assert(ok)
 	st.PowerTable = putStoragePower(rt, st.PowerTable, minerAddr, updatedMinerPower)
-	st.TotalNetworkPower += (updatedMinerPower - prevMinerPower)
+	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, big.Sub(updatedMinerPower, prevMinerPower))
 }
 
 func (st *StoragePowerActorState) _getPledgeSlashForConsensusFault(currPledge abi.TokenAmount, faultType ConsensusFaultType) abi.TokenAmount {
@@ -273,7 +274,7 @@ func getStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) (abi.StorageP
 	var out abi.StoragePower
 	err := hm.Get(asKeyer(a), &out)
 	if err == hamt.ErrNotFound {
-		return abi.StoragePower(0), false
+		return abi.NewStoragePower(0), false
 	}
 	requireNoStateErr(rt, err, "failed to get storage power for address %v from claimed power HAMT", a)
 
@@ -311,11 +312,6 @@ func _getConsensusFaultSlasherReward(elapsedEpoch abi.ChainEpoch, collateralToSl
 	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
 	// return collateralToSlash * slasherProportion
 	return abi.NewTokenAmount(0)
-}
-
-func PowerTableHAMT_Empty() PowerTableHAMT {
-	IMPL_FINISH()
-	panic("")
 }
 
 func MinerEventsHAMT_Empty() MinerEventsHAMT {

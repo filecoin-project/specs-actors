@@ -287,7 +287,7 @@ func StorageDeal_ProviderInitTimedOutSlashAmount(providerCollateral abi.TokenAmo
 
 func StoragePower_MinMinerSizeStor() abi.StoragePower {
 	PARAM_FINISH()
-	const MIN_MINER_SIZE_STOR = abi.StoragePower(100 * (1 << 40)) // placeholder, 100 TB
+	var MIN_MINER_SIZE_STOR = abi.NewStoragePower(100 * (1 << 40)) // placeholder, 100 TB
 	return MIN_MINER_SIZE_STOR
 }
 
