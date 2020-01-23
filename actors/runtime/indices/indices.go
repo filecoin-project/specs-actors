@@ -366,6 +366,12 @@ func StorageMining_SpcLookbackSeal() abi.ChainEpoch {
 	return StorageMining_Finality() // should be approximately the same as finality
 }
 
+func StorageMining_SpcLookbackSealLimit() abi.ChainEpoch {
+	PARAM_FINISH()
+	return 0
+}
+
+
 func StorageMining_MaxSealTime32GiBWinStackedSDR() abi.ChainEpoch {
 	PARAM_FINISH()
 	MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR := abi.ChainEpoch(1) // TODO: Change to a dictionary with RegisteredProofs as the key.

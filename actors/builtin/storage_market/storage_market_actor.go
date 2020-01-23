@@ -147,41 +147,45 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 	return &vmr.EmptyReturn{}
 }
 
-// Verify that a given set of storage deals is valid for a sector currently being PreCommitted.
-// Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
-func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) *vmr.EmptyReturn {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+type GetWeightForDealSetReturn struct {
+	Weight abi.DealWeight
+}
 
-	var st StorageMarketActorState
-	rt.State().Transaction(&st, func() interface{} {
-		for _, dealID := range dealIDs.Items {
-			deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
-			_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
-		}
-		return nil
-	})
-	return &vmr.EmptyReturn{}
+func (g GetWeightForDealSetReturn) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
 }
 
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
-// and update the market's internal state accordingly.
-func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) *vmr.EmptyReturn {
+// update the market's internal state accordingly, and return DealWeight of the set of storage deals given.
+// Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
+// The weight is defined as the sum, over all deals in the set, of the product of its size
+// with its duration. This quantity may be an input into the functions specifying block reward,
+// sector power, collateral, and/or other parameters.
+func (a *StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, dealIDs abi.DealIDs, sectorExpiry abi.ChainEpoch) *GetWeightForDealSetReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
+	totalWeight := big.Zero()
 
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
+		// if there are no dealIDs, it is a CommittedCapacity sector
+		// and the totalWeight should be zero
 		for _, dealID := range dealIDs.Items {
-			deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
+			deal, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
 			_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
 			ocd := st.Deals[dealID]
 			ocd.SectorStartEpoch = rt.CurrEpoch()
 			st.Deals[dealID] = ocd
+
+			// Compute deal weight
+			dur := big.NewInt(int64(dealP.Duration()))
+			siz := big.NewInt(dealP.PieceSize.Total())
+			weight := big.Mul(dur, siz)
+			totalWeight = big.Add(totalWeight, weight)
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &GetWeightForDealSetReturn{totalWeight}
 }
 
 type GetPieceInfosForDealIDsReturn struct {
@@ -209,39 +213,6 @@ func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.Dea
 	})
 
 	return &GetPieceInfosForDealIDsReturn{Pieces: ret}
-}
-
-type GetWeightForDealSetReturn struct {
-	Weight abi.DealWeight
-}
-
-func (g GetWeightForDealSetReturn) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
-}
-
-// Get the weight for a given set of storage deals.
-// The weight is defined as the sum, over all deals in the set, of the product of its size
-// with its duration. This quantity may be an input into the functions specifying block reward,
-// sector power, collateral, and/or other parameters.
-func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs) *GetWeightForDealSetReturn {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
-	totalWeight := big.Zero()
-
-	var st StorageMarketActorState
-	rt.State().Transaction(&st, func() interface{} {
-		for _, dealID := range dealIDs.Items {
-			_, dealP := st._getOnChainDealAssert(dealID)
-			Assert(dealP.Provider == minerAddr)
-
-			dur := big.NewInt(int64(dealP.Duration()))
-			siz := big.NewInt(dealP.PieceSize.Total())
-			weight := big.Mul(dur, siz)
-			totalWeight = big.Add(totalWeight, weight)
-		}
-		return nil
-	})
-	return &GetWeightForDealSetReturn{totalWeight}
 }
 
 // Terminate a set of deals in response to their containing sector being terminated.

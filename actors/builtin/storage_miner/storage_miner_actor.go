@@ -3,8 +3,7 @@ package storage_miner
 import (
 	"bytes"
 
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-
+	cid "github.com/ipfs/go-cid"
 	addr "github.com/filecoin-project/go-address"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
@@ -60,9 +59,10 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn
 		randomnessK := rt.GetRandomness(rt.CurrEpoch() - indices.StorageMining_SpcLookbackPoSt())
 		challengedSectorsRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStSampleSectors, randomnessK, rt.CurrReceiver())
 
+		st.ProvingSet = st.GetCurrentProvingSet()
 		challengedSectors := _surprisePoStSampleChallengedSectors(
 			challengedSectorsRandomness,
-			SectorNumberSetHAMT_Items(st.ProvingSet),
+			st.ProvingSet,
 		)
 
 		st.PoStState = MinerPoStState{
@@ -167,27 +167,11 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	depositReq := cidx.StorageMining_PreCommitDeposit(st.Info.SectorSize, info.Expiration)
 	builtin.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
-	// Verify deals with StorageMarketActor; abort if this fails.
-	// (Note: committed-capacity sectors contain no deals, so in that case verification will pass trivially.)
-	_, code := rt.Send(
-		builtin.StorageMarketActorAddr,
-		builtin.Method_StorageMarketActor_OnMinerSectorPreCommit_VerifyDealsOrAbort,
-		serde.MustSerializeParams(
-			info.DealIDs,
-			info,
-		),
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to verify deals")
-
 	rt.State().Transaction(&st, func() interface{} {
-		st.Sectors[info.SectorNumber] = SectorOnChainInfo{
-			State:            PreCommit,
+		st.PreCommittedSectors[info.SectorNumber] = SectorPreCommitOnChainInfo{
 			Info:             info,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
-			ActivationEpoch:  epochUndefined,
-			DealWeight:       big.NewInt(-1),
 		}
 		return nil
 	})
@@ -210,12 +194,9 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	workerAddr := st.Info.Worker
 	rt.ValidateImmediateCallerIs(workerAddr)
 
-	preCommitSector, found := st.Sectors[info.SectorNumber]
+	preCommitSector, found := st.PreCommittedSectors[info.SectorNumber]
 	if !found {
-		rt.Abort(exitcode.ErrNotFound, "no such sector %v", info.SectorNumber)
-	}
-	if preCommitSector.State != PreCommit {
-		rt.Abort(exitcode.ErrIllegalArgument, "invalid sector state %v", preCommitSector.State)
+		rt.Abort(exitcode.ErrNotFound, "no such sector %v precommitted", info.SectorNumber)
 	}
 
 	if rt.CurrEpoch() > preCommitSector.PreCommitEpoch+indices.StorageMining_MaxProveCommitSectorEpoch() || rt.CurrEpoch() < preCommitSector.PreCommitEpoch+indices.StorageMining_MinProveCommitSectorEpoch() {
@@ -229,47 +210,36 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	a._rtVerifySealOrAbort(rt, &abi.OnChainSealVerifyInfo{
 		SealedCID:        preCommitSector.Info.SealedCID,
 		SealEpoch:        preCommitSector.Info.SealEpoch,
-		InteractiveEpoch: info.InteractiveEpoch,
-		RegisteredProof:  info.RegisteredProof,
 		Proof:            info.Proof,
 		DealIDs:          preCommitSector.Info.DealIDs,
 		SectorNumber:     preCommitSector.Info.SectorNumber,
 	})
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
-	_, code := rt.Send(
-		builtin.StorageMarketActorAddr,
-		builtin.Method_StorageMarketActor_OnMinerSectorProveCommit_VerifyDealsOrAbort,
-		serde.MustSerializeParams(
-			preCommitSector.Info.DealIDs,
-			info,
-		),
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to verify deals")
-
+	// return DealWeight for the deal set in the sector
 	var dealset storage_market.GetWeightForDealSetReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.Method_StorageMarketActor_GetWeightForDealSet,
+		builtin.Method_StorageMarketActor_VerifyDealsOnSectorProveCommit,
 		serde.MustSerializeParams(
 			preCommitSector.Info.DealIDs,
+			preCommitSector.Info.Expiration,
 		),
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to get deal set weight")
+
+	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 	autil.AssertNoError(ret.Into(dealset))
 
 	rt.State().Transaction(&st, func() interface{} {
 		st.Sectors[info.SectorNumber] = SectorOnChainInfo{
-			State:           Active,
 			Info:            preCommitSector.Info,
-			PreCommitEpoch:  preCommitSector.PreCommitEpoch,
 			ActivationEpoch: rt.CurrEpoch(),
 			DealWeight:      dealset.Weight,
 		}
 
-		st.ProvingSet[info.SectorNumber] = true
+		delete(st.PreCommittedSectors, info.SectorNumber)
+		st.ProvingSet = st.GetCurrentProvingSet()
 		return nil
 	})
 
@@ -376,11 +346,10 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 
 		for _, sectorNumber := range sectorNumbers {
 			sectorInfo, found := st.Sectors[sectorNumber]
-			if !found || sectorInfo.State != Active {
+			if !found || st.IsSectorInTemporaryFault(sectorNumber) {
 				continue
 			}
 
-			sectorInfo.State = TemporaryFault
 			sectorInfo.DeclaredFaultEpoch = rt.CurrEpoch()
 			sectorInfo.DeclaredFaultDuration = duration
 			st.Sectors[sectorNumber] = sectorInfo
@@ -403,6 +372,7 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.
 
 	for _, sectorNumber := range sectorNumbers {
 		a._rtCheckTemporaryFaultEvents(rt, sectorNumber)
+		a._rtCheckPreCommitExpiry(rt, sectorNumber)
 		a._rtCheckSectorExpiry(rt, sectorNumber)
 	}
 
@@ -425,7 +395,7 @@ func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, work
 			ChallengedSectors:      nil,
 			NumConsecutiveFailures: 0,
 		}
-		st.ProvingSet = SectorNumberSetHAMT_Empty()
+		st.ProvingSet = st.GetCurrentProvingSet()
 		st.Info = MinerInfo_New(ownerAddr, workerAddr, sectorSize, peerId)
 		return nil
 	})
@@ -447,9 +417,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
 
-	if checkSector.State == Active && rt.CurrEpoch() == checkSector.EffectiveFaultBeginEpoch() {
-		checkSector.State = TemporaryFault
-
+	if !st.IsSectorInTemporaryFault(sectorNumber) && rt.CurrEpoch() == checkSector.EffectiveFaultBeginEpoch() {
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
@@ -460,11 +428,13 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		)
 		builtin.RequireSuccess(rt, code, "failed to begin fault")
 
-		delete(st.ProvingSet, sectorNumber) // FIXME state mutation outside of transaction
+		rt.State().Transaction(&st, func() interface{} {
+			st.FaultSet[sectorNumber] = true
+			return nil
+		})
 	}
 
-	if checkSector.Is_TemporaryFault() && rt.CurrEpoch() == checkSector.EffectiveFaultEndEpoch() {
-		checkSector.State = Active
+	if st.IsSectorInTemporaryFault(sectorNumber) && rt.CurrEpoch() == checkSector.EffectiveFaultEndEpoch() {
 		checkSector.DeclaredFaultEpoch = epochUndefined
 		checkSector.DeclaredFaultDuration = epochUndefined
 
@@ -478,13 +448,36 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		)
 		builtin.RequireSuccess(rt, code, "failed to end fault")
 
-		st.ProvingSet[sectorNumber] = true // FIXME state mutation outside of transaction
+		rt.State().Transaction(&st, func() interface{} {
+			st.FaultSet[sectorNumber] = false
+			return nil
+		})
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
 		st.Sectors[sectorNumber] = checkSector
 		return nil
 	})
+}
+
+func (a *StorageMinerActor) _rtCheckPreCommitExpiry(rt Runtime, sectorNumber abi.SectorNumber) {
+	var st StorageMinerActorState
+	rt.State().Readonly(&st)
+	checkSector, found := st.PreCommittedSectors[sectorNumber]
+
+	if !found {
+		return
+	}
+
+	if rt.CurrEpoch()-checkSector.PreCommitEpoch > indices.StorageMining_MaxProveCommitSectorEpoch() {
+		rt.State().Transaction(&st, func() interface{} {
+			delete(st.PreCommittedSectors, sectorNumber)
+			return nil
+		})
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, checkSector.PreCommitDeposit)
+		builtin.RequireSuccess(rt, code, "failed to burn funds")
+	}
+	return
 }
 
 func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.SectorNumber) {
@@ -496,31 +489,23 @@ func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.Se
 		return
 	}
 
-	if checkSector.State == PreCommit {
-		if rt.CurrEpoch()-checkSector.PreCommitEpoch > indices.StorageMining_MaxProveCommitSectorEpoch() {
-			a._rtDeleteSectorEntry(rt, sectorNumber)
-			_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, checkSector.PreCommitDeposit)
-			builtin.RequireSuccess(rt, code, "failed to burn funds")
-		}
-		return
-	}
-
 	// Note: the following test may be false, if sector expiration has been extended by the worker
 	// in the interim after the Cron request was enrolled.
 	if rt.CurrEpoch() >= checkSector.Info.Expiration {
 		a._rtTerminateSector(rt, sectorNumber, autil.NormalExpiration)
 	}
+	return
 }
 
 func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType SectorTerminationType) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	checkSector, found := st.Sectors[sectorNumber]
+	_, found := st.Sectors[sectorNumber]
 	Assert(found)
 
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
 
-	if checkSector.State == TemporaryFault {
+	if st.IsSectorInTemporaryFault(sectorNumber) {
 		// To avoid boundary-case errors in power accounting, make sure we explicitly end
 		// the temporary fault state first, before terminating the sector.
 		_, code := rt.Send(
@@ -546,7 +531,6 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 	builtin.RequireSuccess(rt, code, "failed to terminate sector with power actor")
 
 	a._rtDeleteSectorEntry(rt, sectorNumber)
-	delete(st.ProvingSet, sectorNumber)
 }
 
 func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
@@ -774,7 +758,7 @@ func getSectorNums(m map[abi.SectorNumber]SectorOnChainInfo) []abi.SectorNumber 
 	return l
 }
 
-func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet []abi.SectorNumber) []abi.SectorNumber {
+func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet cid.Cid) []abi.SectorNumber {
 	TODO()
 	panic("")
 }
