@@ -123,3 +123,7 @@ func _codeIDSupportsExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
 func (s *InitActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }
+
+func (s *InitActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}

@@ -20,6 +20,10 @@ type StorageMinerActorState struct {
 	Info       MinerInfo
 }
 
+func (st *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
 func (st *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }

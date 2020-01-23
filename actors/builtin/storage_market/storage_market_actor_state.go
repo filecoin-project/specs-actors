@@ -43,6 +43,10 @@ type StorageMarketActorState struct {
 	CurrEpochNumDealsPublished     int
 }
 
+func (st *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
 func (st *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }

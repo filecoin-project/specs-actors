@@ -7,8 +7,8 @@ import (
 
 type EmptyReturn struct{}
 
-var _ CBORMarshalable = (*EmptyReturn)(nil)
-var _ CBORUnmarshalable = (*EmptyReturn)(nil)
+var _ CBORMarshaler = (*EmptyReturn)(nil)
+var _ CBORUnmarshaler = (*EmptyReturn)(nil)
 
 // 0x80 is empty list (major type 4 with zero length)
 // 0xa0 is empty map (major type 5 with zero length)
