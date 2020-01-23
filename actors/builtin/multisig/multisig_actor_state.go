@@ -1,10 +1,14 @@
 package multisig
 
 import (
-	"github.com/filecoin-project/go-address"
+	address "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/ipfs/go-cid"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type MultiSigActorState struct {
@@ -49,4 +53,40 @@ func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountT
 	}
 
 	return true
+}
+
+func (as *MultiSigActorState) getPendingTransaction(rt vmr.Runtime, txnID TxnID) MultiSigTransaction {
+	hm := adt.NewMap(vmr.AsStore(rt), as.PendingTxns)
+
+	var out MultiSigTransaction
+	err := hm.Get(txnID, &out)
+	requireNoStateErr(rt, err, "failed to get transaction %v from pending transaction HAMT", txnID)
+
+	as.PendingTxns = hm.Root()
+	return out
+}
+
+func (as *MultiSigActorState) putPendingTransaction(rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) {
+	hm := adt.NewMap(vmr.AsStore(rt), as.PendingTxns)
+
+	err := hm.Put(txnID, &txn)
+	requireNoStateErr(rt, err, "failed to put transaction %v into pending transaction HAMT", txnID)
+
+	as.PendingTxns = hm.Root()
+}
+
+func (as *MultiSigActorState) deletePendingTransaction(rt vmr.Runtime, txnID TxnID) {
+	hm := adt.NewMap(vmr.AsStore(rt), as.PendingTxns)
+
+	err := hm.Delete(txnID)
+	requireNoStateErr(rt, err, "failed to remove transaction %v from pending transaction HAMT", txnID)
+
+	as.PendingTxns = hm.Root()
+}
+
+func requireNoStateErr(rt vmr.Runtime, err error, msg string, args ...interface{}) {
+	if err != nil {
+		errMsg := msg + " :" + err.Error()
+		rt.Abort(exitcode.ErrIllegalState, errMsg, args...)
+	}
 }
