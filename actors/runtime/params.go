@@ -2,18 +2,18 @@ package runtime
 
 import (
 	"fmt"
-	cbg "github.com/whyrusleeping/cbor-gen"
 	"io"
 )
 
 type EmptyReturn struct{}
 
-var _ cbg.CBORMarshaler = (*EmptyReturn)(nil)
+var _ CBORMarshalable = (*EmptyReturn)(nil)
+var _ CBORUnmarshalable = (*EmptyReturn)(nil)
+
 // 0x80 is empty list (major type 4 with zero length)
 // 0xa0 is empty map (major type 5 with zero length)
 // This is encoded with empty-list since we use tuple-encoding for everything.
 const emptyListEncoded = 0x80
-
 
 func (EmptyReturn) MarshalCBOR(w io.Writer) error {
 	_, err := w.Write([]byte{emptyListEncoded})

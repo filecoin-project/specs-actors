@@ -1,11 +1,14 @@
 package storage_miner
 
 import (
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 // Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
@@ -15,6 +18,10 @@ type StorageMinerActorState struct {
 	PoStState  MinerPoStState
 	ProvingSet SectorNumberSetHAMT
 	Info       MinerInfo
+}
+
+func (st *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
 }
 
 type MinerPoStState struct {

@@ -53,11 +53,11 @@ func RT_Address_Is_StorageMiner(rt Runtime, minerAddr addr.Address) bool {
 func RT_GetMinerAccountsAssert(rt Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
 	ret, code := rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetOwnerAddr, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching owner addr")
-	autil.AssertNoError(ret.Into(ownerAddr))
+	autil.AssertNoError(ret.Into(&ownerAddr))
 
 	ret, code = rt.Send(minerAddr, builtin.Method_StorageMinerActor_GetWorkerAddr, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching worker addr")
-	autil.AssertNoError(ret.Into(workerAddr))
+	autil.AssertNoError(ret.Into(&workerAddr))
 	return
 }
 
@@ -100,12 +100,12 @@ type cborStore struct {
 }
 
 func (r cborStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
-	if !r.IpldGet(c, out) {
+	if !r.IpldGet(c, out.(CBORUnmarshalable)) {
 		r.AbortStateMsg("not found")
 	}
 	return nil
 }
 
 func (r cborStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
-	return r.IpldPut(v), nil
+	return r.IpldPut(v.(CBORMarshalable)), nil
 }

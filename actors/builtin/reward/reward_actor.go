@@ -1,18 +1,18 @@
 package reward
 
 import (
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"io"
 	"math"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	cid "github.com/ipfs/go-cid"
 )
 
 var TODO = autil.TODO
@@ -96,25 +96,15 @@ func (a *RewardActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
 	return &vmr.EmptyReturn{}
 }
 
-func (a *RewardActor) State(rt vmr.Runtime) (vmr.ActorStateHandle, RewardActorState) {
-	h := rt.AcquireState()
-	stateCID := cid.Cid(h.Take())
-	var state RewardActorState
-	if !rt.IpldGet(stateCID, &state) {
-		rt.Abort(exitcode.ErrPlaceholder, "state not found")
-	}
-	return h, state
-}
-
 func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
-	h, st := a.State(rt)
-
-	// withdraw available funds from RewardMap
-	withdrawableReward := st._withdrawReward(rt, ownerAddr)
-	UpdateReleaseRewardActorState(rt, h, st)
+	var st RewardActorState
+	withdrawableReward := rt.State().Transaction(&st, func() interface{} {
+		// withdraw available funds from RewardMap
+		return st._withdrawReward(rt, ownerAddr)
+	}).(abi.TokenAmount)
 
 	_, code := rt.Send(ownerAddr, builtin.MethodSend, nil, withdrawableReward)
 	vmr.RequireSuccess(rt, code, "failed to send funds to owner")
@@ -154,30 +144,27 @@ func (a *RewardActor) AwardBlockReward(
 		vmr.RequireSuccess(rt, code, "failed to add balance to power actor")
 	}
 
-	h, st := a.State(rt)
-	if actualReward.GreaterThan(abi.NewTokenAmount(0)) {
-		// put Reward into RewardMap
-		newReward := &Reward{
-			StartEpoch:      rt.CurrEpoch(),
-			EndEpoch:        rt.CurrEpoch(),
-			Value:           actualReward,
-			AmountWithdrawn: abi.NewTokenAmount(0),
-			VestingFunction: None,
+	var st RewardActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if actualReward.GreaterThan(abi.NewTokenAmount(0)) {
+			// put Reward into RewardMap
+			newReward := Reward{
+				StartEpoch:      rt.CurrEpoch(),
+				EndEpoch:        rt.CurrEpoch(),
+				Value:           actualReward,
+				AmountWithdrawn: abi.NewTokenAmount(0),
+				VestingFunction: None,
+			}
+			rewards, found := st.RewardMap[miner]
+			if !found {
+				rewards = make([]Reward, 0)
+			}
+			rewards = append(rewards, newReward)
+			st.RewardMap[miner] = rewards
 		}
-		rewards, found := st.RewardMap[miner]
-		if !found {
-			rewards = make([]Reward, 0)
-		}
-		rewards = append(rewards, *newReward)
-		st.RewardMap[miner] = rewards
-	}
-	UpdateReleaseRewardActorState(rt, h, st)
+		return nil
+	})
 	return &vmr.EmptyReturn{}
-}
-
-func UpdateReleaseRewardActorState(rt vmr.Runtime, h vmr.ActorStateHandle, st RewardActorState) {
-	newCID := abi.ActorSubstateCID(rt.IpldPut(&st))
-	h.UpdateRelease(newCID)
 }
 
 func removeIndices(rewards []Reward, indices []int) []Reward {
@@ -190,4 +177,8 @@ func removeIndices(rewards []Reward, indices []int) []Reward {
 		lastIndex = index + 1
 	}
 	return newRewards
+}
+
+func (s *RewardActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
 }

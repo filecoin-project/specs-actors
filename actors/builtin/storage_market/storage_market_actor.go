@@ -1,30 +1,27 @@
 package storage_market
 
 import (
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	cid "github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	actor_util "github.com/filecoin-project/specs-actors/actors/util"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
-
-type DealWeight int64
 
 type StorageMarketActor struct{}
 
-func (a *StorageMarketActor) State(rt Runtime) (vmr.ActorStateHandle, StorageMarketActorState) {
-	h := rt.AcquireState()
-	var state StorageMarketActorState
-	stateCID := cid.Cid(h.Take())
-	if !rt.IpldGet(stateCID, &state) {
-		rt.Abort(exitcode.ErrPlaceholder, "state not found")
-	}
-	return h, state
-}
+type BalanceTableHAMT = autil.BalanceTableHAMT
+type DealIDQueue = autil.DealIDQueue
+type Runtime = vmr.Runtime
+type Bytes = abi.Bytes
+
+var Assert = autil.Assert
+var IMPL_FINISH = autil.IMPL_FINISH
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
@@ -42,23 +39,26 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 
 	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
 
-	h, st := a.State(rt)
-	st._rtAbortIfAddressEntryDoesNotExist(rt, entryAddr)
+	var amountExtracted abi.TokenAmount
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		st._rtAbortIfAddressEntryDoesNotExist(rt, entryAddr)
 
-	// Before any operations that check the balance tables for funds, execute all deferred
-	// deal state updates.
-	//
-	// Note: as an optimization, implementations may cache efficient data structures indicating
-	// which of the following set of updates are redundant and can be skipped.
-	amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, entryAddr))
+		// Before any operations that check the balance tables for funds, execute all deferred
+		// deal state updates.
+		//
+		// Note: as an optimization, implementations may cache efficient data structures indicating
+		// which of the following set of updates are redundant and can be skipped.
+		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, entryAddr))
 
-	minBalance := st._getLockedReqBalanceInternal(entryAddr)
-	newTable, amountExtracted, ok := actor_util.BalanceTable_WithExtractPartial(
-		st.EscrowTable, entryAddr, amountRequested, minBalance)
-	Assert(ok)
-	st.EscrowTable = newTable
-
-	UpdateRelease(rt, h, st)
+		minBalance := st._getLockedReqBalanceInternal(entryAddr)
+		newTable, ex, ok := autil.BalanceTable_WithExtractPartial(
+			st.EscrowTable, entryAddr, amountRequested, minBalance)
+		Assert(ok)
+		st.EscrowTable = newTable
+		amountExtracted = ex
+		return nil
+	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	vmr.RequireSuccess(rt, code, "failed to burn slashed funds")
@@ -72,19 +72,20 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *vmr.EmptyReturn {
 	vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
 
-	h, st := a.State(rt)
-	st._rtAbortIfAddressEntryDoesNotExist(rt, entryAddr)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		st._rtAbortIfAddressEntryDoesNotExist(rt, entryAddr)
 
-	msgValue := rt.ValueReceived()
-	newTable, ok := actor_util.BalanceTable_WithAdd(st.EscrowTable, entryAddr, msgValue)
-	if !ok {
-		// Entry not found; create implicitly.
-		newTable, ok = actor_util.BalanceTable_WithNewAddressEntry(st.EscrowTable, entryAddr, msgValue)
-		Assert(ok)
-	}
-	st.EscrowTable = newTable
-
-	UpdateRelease(rt, h, st)
+		msgValue := rt.ValueReceived()
+		newTable, ok := autil.BalanceTable_WithAdd(st.EscrowTable, entryAddr, msgValue)
+		if !ok {
+			// Entry not found; create implicitly.
+			newTable, ok = autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, entryAddr, msgValue)
+			Assert(ok)
+		}
+		st.EscrowTable = newTable
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
@@ -97,49 +98,49 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
-	h, st := a.State(rt)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
+		for _, newDeal := range newStorageDeals {
+			p := newDeal.Proposal
 
-	// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
-	for _, newDeal := range newStorageDeals {
-		p := newDeal.Proposal
+			if p.Provider != rt.ImmediateCaller() {
+				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", p.Provider)
+			}
 
-		if p.Provider != rt.ImmediateCaller() {
-			rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", p.Provider)
+			_rtAbortIfNewDealInvalid(rt, newDeal)
+
+			// Before any operations that check the balance tables for funds, execute all deferred
+			// deal state updates.
+			//
+			// Note: as an optimization, implementations may cache efficient data structures indicating
+			// which of the following set of updates are redundant and can be skipped.
+			amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Client))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Provider))
+
+			st._rtLockBalanceOrAbort(rt, p.Client, p.ClientBalanceRequirement())
+			st._rtLockBalanceOrAbort(rt, p.Provider, p.ProviderBalanceRequirement())
+
+			id := st._generateStorageDealID()
+
+			onchainDeal := OnChainDeal{
+				ID:               id,
+				Deal:             newDeal,
+				SectorStartEpoch: epochUndefined,
+			}
+
+			st.Deals[id] = onchainDeal
+
+			if _, found := st.CachedExpirationsPending[p.EndEpoch]; !found {
+				st.CachedExpirationsPending[p.EndEpoch] = autil.DealIDQueue_Empty()
+			}
+			cep := st.CachedExpirationsPending[p.EndEpoch]
+			cep.Enqueue(id)
 		}
 
-		_rtAbortIfNewDealInvalid(rt, newDeal)
-
-		// Before any operations that check the balance tables for funds, execute all deferred
-		// deal state updates.
-		//
-		// Note: as an optimization, implementations may cache efficient data structures indicating
-		// which of the following set of updates are redundant and can be skipped.
-		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Client))
-		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Provider))
-
-		st._rtLockBalanceOrAbort(rt, p.Client, p.ClientBalanceRequirement())
-		st._rtLockBalanceOrAbort(rt, p.Provider, p.ProviderBalanceRequirement())
-
-		id := st._generateStorageDealID(newDeal)
-
-		onchainDeal := OnChainDeal{
-			ID:               id,
-			Deal:             newDeal,
-			SectorStartEpoch: epochUndefined,
-		}
-
-		st.Deals[id] = onchainDeal
-
-		if _, found := st.CachedExpirationsPending[p.EndEpoch]; !found {
-			st.CachedExpirationsPending[p.EndEpoch] = actor_util.DealIDQueue_Empty()
-		}
-		cep := st.CachedExpirationsPending[p.EndEpoch]
-		cep.Enqueue(id)
-	}
-
-	st.CurrEpochNumDealsPublished += len(newStorageDeals)
-
-	UpdateRelease(rt, h, st)
+		st.CurrEpochNumDealsPublished += len(newStorageDeals)
+		return nil
+	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	vmr.RequireSuccess(rt, code, "failed to burn funds")
@@ -152,14 +153,14 @@ func (a *StorageMarketActor) VerifyDealsOnSectorPreCommit(rt Runtime, dealIDs ab
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
-	h, st := a.State(rt)
-
-	for _, dealID := range dealIDs.Items {
-		deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
-		_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
-	}
-
-	Release(rt, h, st)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		for _, dealID := range dealIDs.Items {
+			deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
+			_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
+		}
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
@@ -169,17 +170,17 @@ func (a *StorageMarketActor) UpdateDealsOnSectorProveCommit(rt Runtime, dealIDs 
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
-	h, st := a.State(rt)
-
-	for _, dealID := range dealIDs.Items {
-		deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
-		_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
-		ocd := st.Deals[dealID]
-		ocd.SectorStartEpoch = rt.CurrEpoch()
-		st.Deals[dealID] = ocd
-	}
-
-	UpdateRelease(rt, h, st)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		for _, dealID := range dealIDs.Items {
+			deal, _ := st._rtGetOnChainDealOrAbort(rt, dealID)
+			_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, sectorExpiry, deal)
+			ocd := st.Deals[dealID]
+			ocd.SectorStartEpoch = rt.CurrEpoch()
+			st.Deals[dealID] = ocd
+		}
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
@@ -187,28 +188,35 @@ type GetPieceInfosForDealIDsReturn struct {
 	Pieces []abi.PieceInfo
 }
 
+func (g GetPieceInfosForDealIDsReturn) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
 func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.DealIDs) *GetPieceInfosForDealIDsReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	ret := []abi.PieceInfo{}
-
-	h, st := a.State(rt)
-
-	for _, dealID := range dealIDs.Items {
-		_, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
-		ret = append(ret, abi.PieceInfo{
-			PieceCID: dealP.PieceCID,
-			Size:     dealP.PieceSize.Total(),
-		})
-	}
-
-	Release(rt, h, st)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		for _, dealID := range dealIDs.Items {
+			_, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
+			ret = append(ret, abi.PieceInfo{
+				PieceCID: dealP.PieceCID,
+				Size:     dealP.PieceSize.Total(),
+			})
+		}
+		return nil
+	})
 
 	return &GetPieceInfosForDealIDsReturn{Pieces: ret}
 }
 
 type GetWeightForDealSetReturn struct {
 	Weight abi.DealWeight
+}
+
+func (g GetWeightForDealSetReturn) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
 }
 
 // Get the weight for a given set of storage deals.
@@ -220,19 +228,20 @@ func (a *StorageMarketActor) GetWeightForDealSet(rt Runtime, dealIDs abi.DealIDs
 	minerAddr := rt.ImmediateCaller()
 	totalWeight := big.Zero()
 
-	h, st := a.State(rt)
-	for _, dealID := range dealIDs.Items {
-		_, dealP := st._getOnChainDealAssert(dealID)
-		Assert(dealP.Provider == minerAddr)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		for _, dealID := range dealIDs.Items {
+			_, dealP := st._getOnChainDealAssert(dealID)
+			Assert(dealP.Provider == minerAddr)
 
-		dur := big.NewInt(int64(dealP.Duration()))
-		siz := big.NewInt(dealP.PieceSize.Total())
-		weight := big.Mul(dur, siz)
-		totalWeight = big.Add(totalWeight, weight)
-	}
-	UpdateRelease(rt, h, st)
-
-	return &GetWeightForDealSetReturn{abi.DealWeight(totalWeight)}
+			dur := big.NewInt(int64(dealP.Duration()))
+			siz := big.NewInt(dealP.PieceSize.Total())
+			weight := big.Mul(dur, siz)
+			totalWeight = big.Add(totalWeight, weight)
+		}
+		return nil
+	})
+	return &GetWeightForDealSetReturn{totalWeight}
 }
 
 // Terminate a set of deals in response to their containing sector being terminated.
@@ -242,95 +251,95 @@ func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.Dea
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
-	h, st := a.State(rt)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		for _, dealID := range dealIDs.Items {
+			_, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
+			Assert(dealP.Provider == minerAddr)
 
-	for _, dealID := range dealIDs.Items {
-		_, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
-		Assert(dealP.Provider == minerAddr)
-
-		// Note: we do not perform the balance transfers here, but rather simply record the flag
-		// to indicate that _processDealSlashed should be called when the deferred state computation
-		// is performed.
-		ocd := st.Deals[dealID]
-		ocd.SlashEpoch = rt.CurrEpoch()
-		st.Deals[dealID] = ocd
-	}
-
-	UpdateRelease(rt, h, st)
+			// Note: we do not perform the balance transfers here, but rather simply record the flag
+			// to indicate that _processDealSlashed should be called when the deferred state computation
+			// is performed.
+			ocd := st.Deals[dealID]
+			ocd.SlashEpoch = rt.CurrEpoch()
+			st.Deals[dealID] = ocd
+		}
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 
 func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
+	var amountSlashedTotal abi.TokenAmount
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		// Some deals may never be affected by the normal calls to _rtUpdatePendingDealStatesForParty
+		// (notably, if the relevant party never checks its balance).
+		// Without some cleanup mechanism, these deals may gradually accumulate and cause
+		// the StorageMarketActor state to grow without bound.
+		// To prevent this, we amortize the cost of this cleanup by processing a relatively
+		// small number of deals every epoch, independent of the calls above.
+		//
+		// More specifically, we process deals:
+		//   (a) In priority order of expiration epoch, up until the current epoch
+		//   (b) Within a given expiration epoch, in order of original publishing.
+		//
+		// We stop once we have exhausted this valid set, or when we have hit a certain target
+		// (DEAL_PROC_AMORTIZED_SCALE_FACTOR times the number of deals freshly published in the
+		// current epoch) of deals dequeued, whichever comes first.
 
-	h, st := a.State(rt)
+		const DEAL_PROC_AMORTIZED_SCALE_FACTOR = 2
+		numDequeuedTarget := st.CurrEpochNumDealsPublished * DEAL_PROC_AMORTIZED_SCALE_FACTOR
 
-	// Some deals may never be affected by the normal calls to _rtUpdatePendingDealStatesForParty
-	// (notably, if the relevant party never checks its balance).
-	// Without some cleanup mechanism, these deals may gradually accumulate and cause
-	// the StorageMarketActor state to grow without bound.
-	// To prevent this, we amortize the cost of this cleanup by processing a relatively
-	// small number of deals every epoch, independent of the calls above.
-	//
-	// More specifically, we process deals:
-	//   (a) In priority order of expiration epoch, up until the current epoch
-	//   (b) Within a given expiration epoch, in order of original publishing.
-	//
-	// We stop once we have exhausted this valid set, or when we have hit a certain target
-	// (DEAL_PROC_AMORTIZED_SCALE_FACTOR times the number of deals freshly published in the
-	// current epoch) of deals dequeued, whichever comes first.
+		numDequeued := 0
+		extractedDealIDs := []abi.DealID{}
 
-	const DEAL_PROC_AMORTIZED_SCALE_FACTOR = 2
-	numDequeuedTarget := st.CurrEpochNumDealsPublished * DEAL_PROC_AMORTIZED_SCALE_FACTOR
-
-	numDequeued := 0
-	extractedDealIDs := []abi.DealID{}
-
-	for {
-		if st.CachedExpirationsNextProcEpoch > rt.CurrEpoch() {
-			break
-		}
-
-		if numDequeued >= numDequeuedTarget {
-			break
-		}
-
-		queue, found := st.CachedExpirationsPending[st.CachedExpirationsNextProcEpoch]
-		if !found {
-			st.CachedExpirationsNextProcEpoch += 1
-			continue
-		}
-
-		queueDepleted := false
 		for {
-			dealID, ok := queue.Dequeue()
-			if !ok {
-				queueDepleted = true
+			if st.CachedExpirationsNextProcEpoch > rt.CurrEpoch() {
 				break
 			}
-			numDequeued += 1
-			if _, found := st.Deals[dealID]; found {
-				// May have already processed expiration, independently, via _rtUpdatePendingDealStatesForParty.
-				// If not, add it to the list to be processed.
-				extractedDealIDs = append(extractedDealIDs, dealID)
+
+			if numDequeued >= numDequeuedTarget {
+				break
 			}
+
+			queue, found := st.CachedExpirationsPending[st.CachedExpirationsNextProcEpoch]
+			if !found {
+				st.CachedExpirationsNextProcEpoch += 1
+				continue
+			}
+
+			queueDepleted := false
+			for {
+				dealID, ok := queue.Dequeue()
+				if !ok {
+					queueDepleted = true
+					break
+				}
+				numDequeued += 1
+				if _, found := st.Deals[dealID]; found {
+					// May have already processed expiration, independently, via _rtUpdatePendingDealStatesForParty.
+					// If not, add it to the list to be processed.
+					extractedDealIDs = append(extractedDealIDs, dealID)
+				}
+			}
+
+			if !queueDepleted {
+				Assert(numDequeued >= numDequeuedTarget)
+				break
+			}
+
+			delete(st.CachedExpirationsPending, st.CachedExpirationsNextProcEpoch)
+			st.CachedExpirationsNextProcEpoch += 1
 		}
 
-		if !queueDepleted {
-			Assert(numDequeued >= numDequeuedTarget)
-			break
-		}
+		amountSlashedTotal = st._updatePendingDealStates(extractedDealIDs, rt.CurrEpoch())
 
-		delete(st.CachedExpirationsPending, st.CachedExpirationsNextProcEpoch)
-		st.CachedExpirationsNextProcEpoch += 1
-	}
-
-	amountSlashedTotal := st._updatePendingDealStates(extractedDealIDs, rt.CurrEpoch())
-
-	// Reset for next epoch.
-	st.CurrEpochNumDealsPublished = 0
-
-	UpdateRelease(rt, h, st)
+		// Reset for next epoch.
+		st.CurrEpochNumDealsPublished = 0
+		return nil
+	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	vmr.RequireSuccess(rt, code, "failed to burn funds")
@@ -339,19 +348,17 @@ func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 
 func (a *StorageMarketActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	h := rt.AcquireState()
-
-	st := StorageMarketActorState{
-		Deals:                          DealsAMT_Empty(),
-		EscrowTable:                    actor_util.BalanceTableHAMT_Empty(),
-		LockedReqTable:                 actor_util.BalanceTableHAMT_Empty(),
-		NextID:                         abi.DealID(0),
-		CachedDealIDsByParty:           CachedDealIDsByPartyHAMT_Empty(),
-		CachedExpirationsPending:       CachedExpirationsPendingHAMT_Empty(),
-		CachedExpirationsNextProcEpoch: abi.ChainEpoch(0),
-	}
-
-	UpdateRelease(rt, h, st)
+	var st StorageMarketActorState
+	rt.State().Transaction(&st, func() interface{} {
+		st.Deals = DealsAMT_Empty()
+		st.EscrowTable = autil.BalanceTableHAMT_Empty()
+		st.LockedReqTable = autil.BalanceTableHAMT_Empty()
+		st.NextID = abi.DealID(0)
+		st.CachedDealIDsByParty = CachedDealIDsByPartyHAMT_Empty()
+		st.CachedExpirationsPending = CachedExpirationsPendingHAMT_Empty()
+		st.CachedExpirationsNextProcEpoch = abi.ChainEpoch(0)
+		return nil
+	})
 	return &vmr.EmptyReturn{}
 }
 

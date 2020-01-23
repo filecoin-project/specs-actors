@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"io"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
@@ -46,13 +47,13 @@ type Runtime interface {
 	// Randomness returns a (pseudo)random string for the given epoch and tag.
 	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
 
-	// Acquire the actor's state object for inspection or mutation.
-	AcquireState() ActorStateHandle
+	// Provides a handle for the actor's state object.
+	State() StateHandle
 
 	// Retrieves and deserializes an object from the store into o. Returns whether successful.
-	IpldGet(c cid.Cid, o interface{}) bool
+	IpldGet(c cid.Cid, o CBORUnmarshalable) bool
 	// Serializes and stores an object, returning its CID.
-	IpldPut(x interface{}) cid.Cid
+	IpldPut(x CBORMarshalable) cid.Cid
 
 	// Sends a message to another actor, returning the exit code and return value envelope.
 	// If the invoked method does not return successfully, this caller will be aborted too.
@@ -114,7 +115,7 @@ type Syscalls interface {
 // the return, in particular whether it has been serialized to bytes or just passed through.
 // Production code is expected to de/serialize, but test and other code may pass the value straight through.
 type SendReturn interface {
-	Into(interface{}) error
+	Into(CBORUnmarshalable) error
 }
 
 // Provides (minimal) tracing facilities to actor code.
@@ -123,8 +124,49 @@ type TraceSpan interface {
 	End()
 }
 
-type ActorStateHandle interface {
-	UpdateRelease(newStateCID abi.ActorSubstateCID)
-	Release(checkStateCID abi.ActorSubstateCID)
-	Take() abi.ActorSubstateCID
+// ReadonlyStateHandle provides read-only access to an actor's state object.
+type ReadonlyStateHandle interface {
+	// Readonly loads a readonly copy of the state into the argument.
+	//
+	// Any modification to the state is illegal and will result in an abort.
+	Readonly(obj CBORMarshalable)
+}
+
+// StateHandle provides mutable, exclusive access to actor state.
+type StateHandle interface {
+	ReadonlyStateHandle
+
+	// Transaction loads a mutable version of the state into the `obj` argument and protects
+	// the execution from side effects (including message send).
+	//
+	// The second argument is a function which allows the caller to mutate the state.
+	// The return value from that function will be returned from the call to Transaction().
+	//
+	// If the state is modified after this function returns, execution will abort.
+	//
+	// The gas cost of this method is that of an IpldPut of the mutated state object.
+	//
+	// Note: the Go signature is not ideal due to lack of type system power.
+	//
+	// # Usage
+	// ```go
+	// var state SomeState
+	// ret := rt.State().Transaction(&state, func() (interface{}) {
+	//   // make some changes
+	//	 st.ImLoaded = True
+	//   return st.Thing, nil
+	// })
+	// // state.ImLoaded = False // BAD!! state is readonly outside the lambda, it will panic
+	// ```
+	Transaction(obj CBORMarshalable, f func() interface{}) interface{}
+}
+
+// These interfaces are intended to match those from whyrusleeping/cbor-gen, such that code generated from that
+// system is automatically usable here (but not mandatory).
+type CBORMarshalable interface {
+	MarshalCBOR(w io.Writer) error
+}
+
+type CBORUnmarshalable interface {
+	UnmarshalCBOR(r io.Reader) error
 }
