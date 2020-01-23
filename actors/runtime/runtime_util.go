@@ -2,15 +2,16 @@ package runtime
 
 import (
 	"context"
-	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
 
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // TODO: most of this file doesn't need to be part of runtime, just generic actor shared code.
@@ -88,24 +89,28 @@ func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt Runtime, fundsRequired abi
 	}
 }
 
-// AsStore allows Runtime to satisfy the hamt.CborIpldStore interface.
-func AsStore(rt Runtime) hamt.CborIpldStore {
-	return cborStore{rt}
+// AsStore allows Runtime to satisfy the adt.Store interface.
+func AsStore(rt Runtime) adt.Store {
+	return rtStore{rt}
 }
 
-var _ hamt.CborIpldStore = &cborStore{}
+var _ adt.Store = &rtStore{}
 
-type cborStore struct {
+type rtStore struct {
 	Runtime
 }
 
-func (r cborStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
+func (r rtStore) Context() context.Context {
+	return r.Runtime.Context()
+}
+
+func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
 	if !r.IpldGet(c, out.(CBORUnmarshalable)) {
 		r.AbortStateMsg("not found")
 	}
 	return nil
 }
 
-func (r cborStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
+func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
 	return r.IpldPut(v.(CBORMarshalable)), nil
 }
