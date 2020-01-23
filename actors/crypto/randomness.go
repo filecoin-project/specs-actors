@@ -44,7 +44,7 @@ func _deriveRandInternal(tag DomainSeparationTag, randSeed abi.RandomnessSeed, i
 	return abi.Randomness(SHA256(buffer))
 }
 
-func RandomInt(randomness abi.Randomness, nonce int, limit int) int {
+func RandomInt(randomness abi.Randomness, nonce int, limit int64) int {
 	nonceBytes := BigEndianBytesFromInt(nonce)
 	input := randomness
 	input = append(input, nonceBytes...)
