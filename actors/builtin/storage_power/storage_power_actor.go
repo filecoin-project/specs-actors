@@ -118,7 +118,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 		st.EscrowTable = newTable
 		st.PowerTable[addresses.IDAddress] = abi.StoragePower(0)
 		st.ClaimedPower = putStoragePower(rt, st.ClaimedPower, addresses.IDAddress, abi.StoragePower(0))
-		st.NominalPower[addresses.IDAddress] = abi.StoragePower(0)
+		st.NominalPower = putStoragePower(rt, st.NominalPower, addresses.IDAddress, abi.StoragePower(0))
 		return nil
 	})
 	return &CreateMinerReturn{
@@ -424,7 +424,7 @@ func (a *StoragePowerActor) _rtProcessDeferredCronEvents(rt Runtime) {
 }
 
 func (a *StoragePowerActor) _rtGetPledgeCollateralReqForMinerOrAbort(rt Runtime, st *StoragePowerActorState, minerAddr addr.Address) abi.TokenAmount {
-	minerNominalPower, found := st.NominalPower[minerAddr]
+	minerNominalPower, found := getStoragePower(rt, st.NominalPower, minerAddr)
 	if !found {
 		rt.Abort(exitcode.ErrNotFound, "no miner %v", minerAddr)
 	}
@@ -446,7 +446,7 @@ func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Addre
 	amountSlashed := rt.State().Transaction(&st, func() interface{} {
 		delete(st.PowerTable, minerAddr)
 		deleteStoragePower(rt, st.ClaimedPower, minerAddr)
-		delete(st.NominalPower, minerAddr)
+		deleteStoragePower(rt, st.NominalPower, minerAddr)
 		delete(st.PoStDetectedFaultMiners, minerAddr)
 
 		newTable, amountSlashed, ok := autil.BalanceTable_WithExtractAll(st.EscrowTable, minerAddr)

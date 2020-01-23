@@ -34,7 +34,7 @@ type StoragePowerActorState struct {
 	CachedDeferredCronEvents MinerEventsHAMT
 	PoStDetectedFaultMiners  autil.MinerSetHAMT
 	ClaimedPower             cid.Cid
-	NominalPower             PowerTableHAMT
+	NominalPower             cid.Cid
 	NumMinersMeetingMinPower int
 }
 
@@ -185,7 +185,7 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(rt vmr.Run
 	if st.PoStDetectedFaultMiners[minerAddr] {
 		nominalPower = 0
 	}
-	st._setNominalPowerEntryInternal(minerAddr, nominalPower)
+	st._setNominalPowerEntryInternal(rt, minerAddr, nominalPower)
 
 	// Compute actual (consensus) power, i.e., votes in leader election.
 	power := nominalPower
@@ -203,11 +203,12 @@ func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(rt vmr.Runtime, 
 	putStoragePower(rt, st.ClaimedPower, minerAddr, updatedMinerClaimedPower)
 }
 
-func (st *StoragePowerActorState) _setNominalPowerEntryInternal(minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) {
+func (st *StoragePowerActorState) _setNominalPowerEntryInternal(rt vmr.Runtime, minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) {
 	Assert(updatedMinerNominalPower >= 0)
-	prevMinerNominalPower, ok := st.NominalPower[minerAddr]
+
+	prevMinerNominalPower, ok := getStoragePower(rt, st.NominalPower, minerAddr)
 	Assert(ok)
-	st.NominalPower[minerAddr] = updatedMinerNominalPower
+	st.NominalPower = putStoragePower(rt, st.NominalPower, minerAddr, updatedMinerNominalPower)
 
 	wasMinMiner := st._minerNominalPowerMeetsConsensusMinimum(prevMinerNominalPower)
 	isMinMiner := st._minerNominalPowerMeetsConsensusMinimum(updatedMinerNominalPower)
