@@ -1,7 +1,6 @@
 package builtin
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 )
@@ -25,8 +24,7 @@ func init() {
 		if err != nil {
 			panic(err)
 		}
-		id := cid.Cid(c)
-		return id
+		return c
 	}
 
 	SystemActorCodeID = makeBuiltin("fil/1/system")

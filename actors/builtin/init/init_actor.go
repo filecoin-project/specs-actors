@@ -4,6 +4,7 @@ import (
 	"io"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"

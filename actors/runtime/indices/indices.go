@@ -4,6 +4,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
+	"github.com/ipfs/go-cid"
 )
 
 var PARAM_FINISH = actor_util.PARAM_FINISH
