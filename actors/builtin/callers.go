@@ -1,8 +1,6 @@
 package builtin
 
-import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-)
+import "github.com/ipfs/go-cid"
 
 // Set of actor code types that can represent external signing parties.
-var CallerTypesSignable = []abi.ActorCodeID{AccountActorCodeID, MultisigActorCodeID}
+var CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}

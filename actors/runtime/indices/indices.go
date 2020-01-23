@@ -4,6 +4,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
+	"github.com/ipfs/go-cid"
 )
 
 var PARAM_FINISH = actor_util.PARAM_FINISH
@@ -84,7 +85,7 @@ type Indices interface {
 		duration abi.ChainEpoch,
 	) abi.TokenAmount
 	NetworkTransactionFee(
-		toActorCodeID abi.ActorCodeID,
+		toActorCodeID cid.Cid,
 		methodNum abi.MethodNum,
 	) abi.TokenAmount
 	GetCurrBlockRewardForMiner(
@@ -256,7 +257,7 @@ func (inds *IndicesImpl) StorageMining_TemporaryFaultFee(
 }
 
 func (inds *IndicesImpl) NetworkTransactionFee(
-	toActorCodeID abi.ActorCodeID,
+	toActorCodeID cid.Cid,
 	methodNum abi.MethodNum,
 ) abi.TokenAmount {
 	PARAM_FINISH()
@@ -351,7 +352,7 @@ func StorageMining_MaxProveCommitSectorEpoch() abi.ChainEpoch {
 
 func StorageMining_SpcLookbackPoSt() abi.ChainEpoch {
 	PARAM_FINISH()
-	const SPC_LOOKBACK_POST = abi.ChainEpoch(1)   // cheap to generate, should be set as close to current TS as possible
+	const SPC_LOOKBACK_POST = abi.ChainEpoch(1) // cheap to generate, should be set as close to current TS as possible
 	return SPC_LOOKBACK_POST
 }
 
@@ -373,19 +374,19 @@ func StorageMining_MaxSealTime32GiBWinStackedSDR() abi.ChainEpoch {
 
 func ConsensusFault_SlasherInitialShareNum() int {
 	PARAM_FINISH()
-	const SLASHER_INITIAL_SHARE_NUM = 1            // placeholder
+	const SLASHER_INITIAL_SHARE_NUM = 1 // placeholder
 	return SLASHER_INITIAL_SHARE_NUM
 }
 
 func ConsensusFault_SlasherInitialShareDenom() int {
 	PARAM_FINISH()
-	const SLASHER_INITIAL_SHARE_DENOM = 1000       // placeholder
+	const SLASHER_INITIAL_SHARE_DENOM = 1000 // placeholder
 	return SLASHER_INITIAL_SHARE_DENOM
 }
 
 func ConsensusFault_SlasherShareGrowthRateNum() int {
 	PARAM_FINISH()
-	const SLASHER_SHARE_GROWTH_RATE_NUM = 102813   // placeholder
+	const SLASHER_SHARE_GROWTH_RATE_NUM = 102813 // placeholder
 	return SLASHER_SHARE_GROWTH_RATE_NUM
 }
 

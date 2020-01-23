@@ -101,7 +101,7 @@ func (st *StoragePowerActorState) _selectMinersToSurprise(challengeCount int, ra
 	allMiners := make([]addr.Address, len(st.PowerTable))
 	index := 0
 
-	for address, _ := range st.PowerTable {
+	for address := range st.PowerTable {
 		allMiners[index] = address
 		index++
 	}

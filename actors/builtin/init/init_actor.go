@@ -4,6 +4,7 @@ import (
 	"io"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -49,9 +50,9 @@ func (a *InitActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	var st InitActorState
 	rt.State().Transaction(&st, func() interface{} {
-			st.AddressMap = map[addr.Address]abi.ActorID{} // TODO HAMT
-			st.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
-			st.NetworkName = vmr.NetworkName()
+		st.AddressMap = map[addr.Address]abi.ActorID{} // TODO HAMT
+		st.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
+		st.NetworkName = vmr.NetworkName()
 		return nil
 	})
 	return &vmr.EmptyReturn{}
@@ -66,7 +67,7 @@ func (e ExecReturn) UnmarshalCBOR(r io.Reader) error {
 	panic("replace with cbor-gen")
 }
 
-func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorParams abi.MethodParams) *ExecReturn {
+func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.MethodParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
 	AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
@@ -99,7 +100,7 @@ func (a *InitActor) Exec(rt Runtime, execCodeID abi.ActorCodeID, constructorPara
 	return &ExecReturn{idAddr, uniqueAddress}
 }
 
-func _codeIDSupportsExec(callerCodeID abi.ActorCodeID, execCodeID abi.ActorCodeID) bool {
+func _codeIDSupportsExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
 	if execCodeID == builtin.AccountActorCodeID {
 		// Special case: account actors must be created implicitly by sending value;
 		// cannot be created via exec.

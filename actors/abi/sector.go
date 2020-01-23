@@ -66,7 +66,7 @@ type SealVerifyInfo struct {
 // data stored on the state tree for each sector.
 type OnChainSealVerifyInfo struct {
 	SealedCID        SealedSectorCID // CommR
-	InteractiveEpoch ChainEpoch // Used to derive the interactive PoRep challenge.
+	InteractiveEpoch ChainEpoch      // Used to derive the interactive PoRep challenge.
 	RegisteredProof
 	Proof   SealProof
 	DealIDs DealIDs
