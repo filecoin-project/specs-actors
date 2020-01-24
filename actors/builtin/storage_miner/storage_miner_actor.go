@@ -3,8 +3,8 @@ package storage_miner
 import (
 	"bytes"
 
-	cid "github.com/ipfs/go-cid"
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -30,6 +30,58 @@ var TODO = autil.TODO
 const epochUndefined = abi.ChainEpoch(-1)
 
 type StorageMinerActor struct{}
+
+///////////////////////
+// Worker Key Change //
+///////////////////////
+
+func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, key abi.PrivateKey) *vmr.EmptyReturn {
+	var st StorageMinerActorState
+	rt.State().Readonly(&st)
+	rt.ValidateImmediateCallerIs(st.Info.Owner)
+
+	// must be BLS since the worker key will be used alongside a BLS-VRF
+	keyAddr, err := addr.NewBLSAddress(key)
+	if err != nil {
+		rt.Abort(1, "Cannot make new address from key.")
+	}
+
+	keyChange := WorkerKeyChange{
+		NewWorker:   keyAddr,
+		EffectiveAt: rt.CurrEpoch() + indices.StorageMining_WorkerKeyChangeFreeze(),
+	}
+
+	rt.State().Transaction(&st, func() interface{} {
+		// note that this may replace another pending key change
+		st.Info.PendingKeyChange = keyChange
+		return nil
+	})
+
+	a._rtEnrollCronEvent(rt, rt.CurrEpoch()+keyChange.EffectiveAt, abi.CronEventType_Miner_WorkerKeyChange, []abi.SectorNumber{})
+
+	return &vmr.EmptyReturn{}
+}
+
+func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *vmr.EmptyReturn {
+	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
+
+	var st StorageMinerActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if (st.Info.PendingKeyChange == WorkerKeyChange{}) {
+			rt.Abort(1, "No pending key change.")
+		}
+
+		if st.Info.PendingKeyChange.EffectiveAt > rt.CurrEpoch() {
+			rt.Abort(2, "Too early for key change.")
+		}
+
+		st.Info.Worker = st.Info.PendingKeyChange.NewWorker
+		st.Info.PendingKeyChange = WorkerKeyChange{}
+
+		return nil
+	})
+	return &vmr.EmptyReturn{}
+}
 
 //////////////////
 // SurprisePoSt //
@@ -76,8 +128,8 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn
 
 	if challenged {
 		// Request deferred Cron check for SurprisePoSt challenge expiry.
-		provingPeriod := indices.StorageMining_SurprisePoStProvingPeriod()
-		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+provingPeriod, []abi.SectorNumber{})
+		surpriseDuration := indices.StorageMining_SurprisePoStChallengeDuration()
+		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, abi.CronEventType_Miner_SurpriseExpiration, []abi.SectorNumber{})
 	}
 	return &vmr.EmptyReturn{}
 }
@@ -178,23 +230,23 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 		return nil
 	})
 
-	// Request deferred Cron check for PreCommit expiry check.
-	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
-	a._rtEnrollCronEvent(rt, expiryBound, []abi.SectorNumber{info.SectorNumber})
-
 	if info.Expiration <= rt.CurrEpoch() {
 		rt.Abort(exitcode.ErrIllegalArgument, "PreCommit sector must expire (%v) after now (%v)", info.Expiration, rt.CurrEpoch())
 	}
 
-	a._rtEnrollCronEvent(rt, info.Expiration, []abi.SectorNumber{info.SectorNumber})
+	// Request deferred Cron check for PreCommit expiry check.
+	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
+	a._rtEnrollCronEvent(rt, expiryBound, abi.CronEventType_Miner_StateCleanup, []abi.SectorNumber{info.SectorNumber})
+
+	// HS: what is this???
+	a._rtEnrollCronEvent(rt, info.Expiration, abi.CronEventType_Miner_StateCleanup, []abi.SectorNumber{info.SectorNumber})
 	return &vmr.EmptyReturn{}
 }
 
 func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) *vmr.EmptyReturn {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	workerAddr := st.Info.Worker
-	rt.ValidateImmediateCallerIs(workerAddr)
+	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	preCommitSector, found := st.PreCommittedSectors[info.SectorNumber]
 	if !found {
@@ -210,11 +262,11 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
 	a._rtVerifySealOrAbort(rt, &abi.OnChainSealVerifyInfo{
-		SealedCID:        preCommitSector.Info.SealedCID,
-		SealEpoch:        preCommitSector.Info.SealEpoch,
-		Proof:            info.Proof,
-		DealIDs:          preCommitSector.Info.DealIDs,
-		SectorNumber:     preCommitSector.Info.SectorNumber,
+		SealedCID:    preCommitSector.Info.SealedCID,
+		SealEpoch:    preCommitSector.Info.SealEpoch,
+		Proof:        info.Proof,
+		DealIDs:      preCommitSector.Info.DealIDs,
+		SectorNumber: preCommitSector.Info.SectorNumber,
 	})
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
@@ -247,7 +299,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 
 	// Request deferred Cron check for sector expiry.
 	a._rtEnrollCronEvent(
-		rt, preCommitSector.Info.Expiration, []abi.SectorNumber{info.SectorNumber})
+		rt, preCommitSector.Info.Expiration, abi.CronEventType_Miner_StateCleanup, []abi.SectorNumber{info.SectorNumber})
 
 	// Notify SPA to update power associated to newly activated sector.
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, info.SectorNumber)
@@ -262,8 +314,8 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
-	_, code = rt.Send(workerAddr, builtin.MethodSend, nil, preCommitSector.PreCommitDeposit)
-	builtin.RequireSuccess(rt, code, "failed to send funds")
+	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, preCommitSector.PreCommitDeposit)
+	vmr.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -360,8 +412,8 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 	})
 
 	// Request deferred Cron invocation to update temporary fault state.
-	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, sectorNumbers)
-	a._rtEnrollCronEvent(rt, effectiveEndEpoch, sectorNumbers)
+	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, abi.CronEventType_Miner_StateCleanup, sectorNumbers)
+	a._rtEnrollCronEvent(rt, effectiveEndEpoch, abi.CronEventType_Miner_StateCleanup, sectorNumbers)
 	return &vmr.EmptyReturn{}
 }
 
@@ -369,16 +421,25 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 // Cron //
 //////////
 
-func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
+func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, eventType abi.CronEventType, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
-	for _, sectorNumber := range sectorNumbers {
-		a._rtCheckTemporaryFaultEvents(rt, sectorNumber)
-		a._rtCheckPreCommitExpiry(rt, sectorNumber)
-		a._rtCheckSectorExpiry(rt, sectorNumber)
+	if eventType == abi.CronEventType_Miner_StateCleanup {
+		for _, sectorNumber := range sectorNumbers {
+			a._rtCheckTemporaryFaultEvents(rt, sectorNumber)
+			a._rtCheckPreCommitExpiry(rt, sectorNumber)
+			a._rtCheckSectorExpiry(rt, sectorNumber)
+		}
 	}
 
-	a._rtCheckSurprisePoStExpiry(rt)
+	if eventType == abi.CronEventType_Miner_SurpriseExpiration {
+		a._rtCheckSurprisePoStExpiry(rt)
+	}
+
+	if eventType == abi.CronEventType_Miner_WorkerKeyChange {
+		a._rtCommitWorkerKeyChange(rt)
+	}
+
 	return &vmr.EmptyReturn{}
 }
 
@@ -587,13 +648,14 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 }
 
 func (a *StorageMinerActor) _rtEnrollCronEvent(
-	rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) {
+	rt Runtime, eventEpoch abi.ChainEpoch, eventType abi.CronEventType, sectorNumbers []abi.SectorNumber) {
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerEnrollCronEvent,
 		serde.MustSerializeParams(
 			eventEpoch,
+			eventType,
 			sectorNumbers,
 		),
 		abi.NewTokenAmount(0),

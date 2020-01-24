@@ -98,6 +98,11 @@ type PreCommittedSectorsAMT map[abi.SectorNumber]SectorPreCommitOnChainInfo
 // TODO HAMT
 type SectorNumberSetHAMT map[abi.SectorNumber]bool
 
+type WorkerKeyChange struct {
+	NewWorker   addr.Address
+	EffectiveAt abi.ChainEpoch
+}
+
 type MinerInfo struct {
 	// Account that owns this miner.
 	// - Income and returned collateral are paid to this address.
@@ -108,8 +113,10 @@ type MinerInfo struct {
 	// This will be the key that is used to sign blocks created by this miner, and
 	// sign messages sent on behalf of this miner to commit sectors, submit PoSts, and
 	// other day to day miner activities.
-	Worker       addr.Address // Must be an ID-address.
-	WorkerVRFKey addr.Address // Must be a SECP or BLS address
+	// It must be a BLS key
+	Worker addr.Address // Must be an ID-address.
+
+	PendingKeyChange WorkerKeyChange
 
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
@@ -207,10 +214,11 @@ func MinerInfo_New(
 	ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) MinerInfo {
 
 	ret := &MinerInfo{
-		Owner:      ownerAddr,
-		Worker:     workerAddr,
-		PeerId:     peerId,
-		SectorSize: sectorSize,
+		Owner:            ownerAddr,
+		Worker:           workerAddr,
+		PeerId:           peerId,
+		SectorSize:       sectorSize,
+		PendingKeyChange: WorkerKeyChange{},
 	}
 
 	TODO() // TODO: determine how to generate/validate VRF key and initialize other fields

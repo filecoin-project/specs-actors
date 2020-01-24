@@ -52,6 +52,7 @@ type MinerSetHAMT map[addr.Address]bool
 type ActorIDSetHAMT map[abi.ActorID]bool
 
 type MinerEvent struct {
+	EventType abi.CronEventType
 	MinerAddr addr.Address
 	Sectors   []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
 }

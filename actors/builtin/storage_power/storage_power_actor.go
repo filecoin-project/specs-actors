@@ -280,7 +280,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
+func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, eventType abi.CronEventType, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	minerEvent := autil.MinerEvent{
@@ -497,6 +497,7 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 			minerEvent.MinerAddr,
 			builtin.Method_StorageMinerActor_OnDeferredCronEvent,
 			serde.MustSerializeParams(
+				minerEvent.EventType,
 				minerEvent.Sectors,
 			),
 			abi.NewTokenAmount(0),

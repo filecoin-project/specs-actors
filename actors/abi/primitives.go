@@ -38,6 +38,8 @@ type MethodParams []byte
 // TODO: remove this alias after actor types are realized from .id files.
 type Bytes []byte
 
+type PrivateKey []byte
+
 // TokenAmount is an amount of Filecoin tokens. This type is used within
 // the VM in message execution, to account movement of tokens, payment
 // of VM gas, and more.
