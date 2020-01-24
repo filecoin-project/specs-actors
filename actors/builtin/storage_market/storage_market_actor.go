@@ -37,7 +37,7 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amountRequested)
 	}
 
-	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
+	recipientAddr := builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, builtin.MinerEntrySpec_MinerOrSignable)
 
 	var amountExtracted abi.TokenAmount
 	var st StorageMarketActorState
@@ -61,16 +61,16 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	vmr.RequireSuccess(rt, code, "failed to burn slashed funds")
+	builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
 	_, code = rt.Send(recipientAddr, builtin.MethodSend, nil, amountExtracted)
-	vmr.RequireSuccess(rt, code, "failed to send funds")
+	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
 
 // Deposits the specified amount into the balance held in escrow.
 // Note: the amount is included implicitly in the message.
 func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *vmr.EmptyReturn {
-	vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, vmr.MinerEntrySpec_MinerOrSignable)
+	builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, builtin.MinerEntrySpec_MinerOrSignable)
 
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -143,7 +143,7 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	vmr.RequireSuccess(rt, code, "failed to burn funds")
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -342,7 +342,7 @@ func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	vmr.RequireSuccess(rt, code, "failed to burn funds")
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &vmr.EmptyReturn{}
 }
 

@@ -16,6 +16,9 @@ import (
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
+	// The network name, e.g. "mainnet".
+	NetworkName() string
+
 	// The current chain epoch number. The genesis block has epoch zero.
 	CurrEpoch() abi.ChainEpoch
 

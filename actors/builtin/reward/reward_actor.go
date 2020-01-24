@@ -107,7 +107,7 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
 	}).(abi.TokenAmount)
 
 	_, code := rt.Send(ownerAddr, builtin.MethodSend, nil, withdrawableReward)
-	vmr.RequireSuccess(rt, code, "failed to send funds to owner")
+	builtin.RequireSuccess(rt, code, "failed to send funds to owner")
 	return &vmr.EmptyReturn{}
 }
 
@@ -141,7 +141,7 @@ func (a *RewardActor) AwardBlockReward(
 			serde.MustSerializeParams(miner),
 			abi.TokenAmount(rewardToGarnish),
 		)
-		vmr.RequireSuccess(rt, code, "failed to add balance to power actor")
+		builtin.RequireSuccess(rt, code, "failed to add balance to power actor")
 	}
 
 	var st RewardActorState
