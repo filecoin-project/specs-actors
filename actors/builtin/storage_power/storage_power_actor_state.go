@@ -63,7 +63,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(rt vmr
 	}
 
 	var minerSizes []abi.StoragePower
-	if err := adt.NewMap(vmr.AsStore(rt), st.PowerTable).ForEach(func(k string, v interface{}) error {
+	if err := adt.NewMap(adt.AsStore(rt), st.PowerTable).ForEach(func(k string, v interface{}) error {
 		minerSizes = append(minerSizes, v.(abi.StoragePower))
 		return nil
 	}); err != nil {
@@ -103,22 +103,13 @@ func addrInArray(a addr.Address, list []addr.Address) bool {
 
 // _selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
 func (st *StoragePowerActorState) _selectMinersToSurprise(rt vmr.Runtime, challengeCount int, randomness abi.Randomness) []addr.Address {
-	// this wont quite work -- a.PowerTable is a HAMT by actor address, doesn't
-	// support enumerating by int index. maybe we need that as an interface too,
-	// or something similar to an iterator (or iterator over the keys)
-	// or even a seeded random call directly in the HAMT: myhamt.GetRandomElement(seed []byte, idx int) using the ticket as a seed
-
-	// Reply to above comment: for now do the easy thing and use the hamt ForEach method as lotus does
-
-	var index int64
 	var allMiners []addr.Address
-	if err := adt.NewMap(vmr.AsStore(rt), st.PowerTable).ForEach(func(k string, v interface{}) error {
+	if err := adt.NewMap(adt.AsStore(rt), st.PowerTable).ForEach(func(k string, v interface{}) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
 		if err != nil {
 			return err
 		}
-		allMiners[index] = maddr
-		index++
+		allMiners = append(allMiners, maddr)
 		return nil
 	}); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "failed to iterate PowerTable hamt when selecting miners to surprise: %v", err)
@@ -256,23 +247,23 @@ func (st *StoragePowerActorState) _getPledgeSlashForConsensusFault(currPledge ab
 	}
 }
 
-func asKeyer(a addr.Address) adt.Keyer {
-	return addrKeyWrapper{a}
+func asKey(a addr.Address) adt.Keyer {
+	return addrKey{a}
 }
 
-type addrKeyWrapper struct {
+type addrKey struct {
 	addr.Address
 }
 
-func (kw addrKeyWrapper) Key() string {
+func (kw addrKey) Key() string {
 	return string(kw.Bytes())
 }
 
 func getStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) (abi.StoragePower, bool) {
-	hm := adt.NewMap(vmr.AsStore(rt), root)
+	hm := adt.NewMap(adt.AsStore(rt), root)
 
 	var out abi.StoragePower
-	err := hm.Get(asKeyer(a), &out)
+	err := hm.Get(asKey(a), &out)
 	if err == hamt.ErrNotFound {
 		return abi.NewStoragePower(0), false
 	}
@@ -282,17 +273,17 @@ func getStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) (abi.StorageP
 }
 
 func putStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address, pwr abi.StoragePower) cid.Cid {
-	hm := adt.NewMap(vmr.AsStore(rt), root)
+	hm := adt.NewMap(adt.AsStore(rt), root)
 
-	err := hm.Put(asKeyer(a), &pwr)
+	err := hm.Put(asKey(a), &pwr)
 	requireNoStateErr(rt, err, "failed to put claimed power for address %v into claimed power HAMT", a)
 	return hm.Root()
 }
 
 func deleteStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) cid.Cid {
-	hm := adt.NewMap(vmr.AsStore(rt), root)
+	hm := adt.NewMap(adt.AsStore(rt), root)
 
-	err := hm.Delete(asKeyer(a))
+	err := hm.Delete(asKey(a))
 	requireNoStateErr(rt, err, "failed to remove claimed power for address %v from claimed power HAMT", a)
 	return hm.Root()
 }
