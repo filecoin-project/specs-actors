@@ -40,7 +40,7 @@ type Runtime struct {
 	inTransaction bool
 
 	// Expectations
-	t                        *testing.T
+	t                        testing.TB
 	expectValidateCallerAny  bool
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
@@ -56,6 +56,10 @@ var cidBuilder = cid.V1Builder{
 }
 
 ///// Implementation of the runtime API /////
+
+func (rt *Runtime) NetworkName() string {
+	return "mock"
+}
 
 func (rt *Runtime) CurrEpoch() abi.ChainEpoch {
 	return rt.epoch
@@ -77,6 +81,7 @@ func (rt *Runtime) ValidateImmediateCallerAcceptAny() {
 }
 
 func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
+	rt.checkArgument(len(addrs) > 0, "addrs must be non-empty")
 	// Check and clear expectations.
 	if len(rt.expectValidateCallerAddr) == 0 {
 		rt.t.Errorf("unexpected validate caller addrs")
@@ -87,7 +92,7 @@ func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
 		return
 	}
 	defer func() {
-		rt.expectValidateCallerAddr = []addr.Address{}
+		rt.expectValidateCallerAddr = nil
 	}()
 
 	// Implement method.
@@ -100,6 +105,8 @@ func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
 }
 
 func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
+	rt.checkArgument(len(types) > 0, "types must be non-empty")
+
 	// Check and clear expectations.
 	if len(rt.expectValidateCallerType) == 0 {
 		rt.t.Errorf("unexpected validate caller code")
@@ -108,7 +115,7 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 		rt.t.Errorf("unexpected validate caller code %v, expected %v", types, rt.expectValidateCallerType)
 	}
 	defer func() {
-		rt.expectValidateCallerType = []cid.Cid{}
+		rt.expectValidateCallerType = nil
 	}()
 
 	// Implement method.
@@ -219,6 +226,12 @@ func (rt *Runtime) StartSpan(name string) runtime.TraceSpan {
 	return &TraceSpan{}
 }
 
+func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}) {
+	if !predicate {
+		rt.Abort(exitcode.SysErrorIllegalArgument, msg, args...)
+	}
+}
+
 ///// State handle implementation /////
 
 func (rt *Runtime) Construct(f func() runtime.CBORMarshaler) {
@@ -268,10 +281,6 @@ func (rt *Runtime) StateRoot() cid.Cid {
 	return rt.state
 }
 
-func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
-	rt.IpldGet(rt.state, o)
-}
-
 func (rt *Runtime) Store() adt.Store {
 	return adt.AsStore(rt)
 }
@@ -283,10 +292,12 @@ func (rt *Runtime) ExpectValidateCallerAny() {
 }
 
 func (rt *Runtime) ExpectValidateCallerAddr(addrs ...addr.Address) {
+	rt.require(len(addrs) > 0, "addrs must be non-empty")
 	rt.expectValidateCallerAddr = addrs[:]
 }
 
 func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
+	rt.require(len(types) > 0, "types must be non-empty")
 	rt.expectValidateCallerType = types[:]
 }
 
@@ -326,4 +337,10 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 	}()
 	f()
 	rt.t.Errorf("expected abort with code %v but call succeeded", expected)
+}
+
+func (rt *Runtime) require(predicate bool, msg string, args ...interface{}) {
+	if !predicate {
+		rt.t.Fatalf(msg, args...)
+	}
 }

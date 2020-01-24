@@ -38,7 +38,7 @@ func TestConstruction(t *testing.T) {
 		rt.Verify()
 
 		var st multisig.MultiSigActorState
-		rt.GetState(&st)
+		rt.Readonly(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
@@ -61,7 +61,7 @@ func TestConstruction(t *testing.T) {
 		rt.Verify()
 
 		var st multisig.MultiSigActorState
-		rt.GetState(&st)
+		rt.Readonly(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
