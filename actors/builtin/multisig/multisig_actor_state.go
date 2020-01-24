@@ -61,7 +61,7 @@ func (as *MultiSigActorState) getPendingTransaction(rt vmr.Runtime, txnID TxnID)
 	var out MultiSigTransaction
 	found, err := hm.Get(txnID, &out)
 	if err != nil {
-		return MultiSigTransaction{}, errors.Wrapf(err, "failed to read transaction %v from HAMT %s", txnID, as.PendingTxns)
+		return MultiSigTransaction{}, errors.Wrapf(err, "failed to read transaction")
 	}
 	if !found {
 		return MultiSigTransaction{}, errors.Errorf("failed to find transaction %v in HAMT %s", txnID, as.PendingTxns)
@@ -75,7 +75,7 @@ func (as *MultiSigActorState) putPendingTransaction(rt vmr.Runtime, txnID TxnID,
 	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
 
 	if err := hm.Put(txnID, &txn); err != nil {
-		return errors.Wrapf(err, "failed to write transaction %v to HAMT %s", txnID, as.PendingTxns)
+		return errors.Wrapf(err, "failed to write transaction")
 	}
 
 	as.PendingTxns = hm.Root()
@@ -86,7 +86,7 @@ func (as *MultiSigActorState) deletePendingTransaction(rt vmr.Runtime, txnID Txn
 	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
 
 	if err := hm.Delete(txnID); err != nil {
-		return errors.Wrapf(err, "failed to delete transaction %v from HAMT %s", txnID, as.PendingTxns)
+		return errors.Wrapf(err, "failed to delete transaction")
 	}
 
 	as.PendingTxns = hm.Root()

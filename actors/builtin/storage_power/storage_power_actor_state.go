@@ -227,13 +227,13 @@ func (st *StoragePowerActorState) _setNominalPowerEntryInternal(s adt.Store, min
 
 	prevMinerNominalPower, ok, err := getStoragePower(s, st.NominalPower, minerAddr)
 	if err != nil {
-		return errors.Wrap(err, " failed to get previous nominal miner power while setting nominal power table entry")
+		return errors.Wrap(err, "failed to get previous nominal miner power while setting nominal power table entry")
 	}
 	Assert(ok)
 
 	st.NominalPower, err = putStoragePower(s, st.NominalPower, minerAddr, updatedMinerNominalPower)
 	if err != nil {
-		return errors.Wrap(err, " failed to put updated nominal miner power while setting nominal power table entry")
+		return errors.Wrap(err, "failed to put updated nominal miner power while setting nominal power table entry")
 	}
 
 	wasMinMiner, _ := st._minerNominalPowerMeetsConsensusMinimum(s, prevMinerNominalPower)
@@ -251,12 +251,12 @@ func (st *StoragePowerActorState) _setPowerEntryInternal(s adt.Store, minerAddr 
 	Assert(updatedMinerPower.GreaterThanEqual(big.Zero()))
 	prevMinerPower, ok, err := getStoragePower(s, st.PowerTable, minerAddr)
 	if err != nil {
-		return errors.Wrap(err, " failed to get previous miner power while setting power table entry")
+		return errors.Wrap(err, "failed to get previous miner power while setting power table entry")
 	}
 	Assert(ok)
 	st.PowerTable, err = putStoragePower(s, st.PowerTable, minerAddr, updatedMinerPower)
 	if err != nil {
-		return errors.Wrap(err, " failed to put new miner power while setting power table entry")
+		return errors.Wrap(err, "failed to put new miner power while setting power table entry")
 	}
 	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, big.Sub(updatedMinerPower, prevMinerPower))
 	return nil
