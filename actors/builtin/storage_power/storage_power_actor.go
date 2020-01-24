@@ -43,7 +43,7 @@ type StoragePowerActor struct{}
 ////////////////////////////////////////////////////////////////////////////////
 
 func (a *StoragePowerActor) AddBalance(rt Runtime, minerAddr addr.Address) *vmr.EmptyReturn {
-	vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
+	builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, builtin.MinerEntrySpec_MinerOnly)
 
 	msgValue := rt.ValueReceived()
 
@@ -64,7 +64,7 @@ func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, 
 		rt.Abort(exitcode.ErrIllegalArgument, "negative withdrawal %v", amountRequested)
 	}
 
-	recipientAddr := vmr.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, vmr.MinerEntrySpec_MinerOnly)
+	recipientAddr := builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, minerAddr, builtin.MinerEntrySpec_MinerOnly)
 
 	var amountExtracted abi.TokenAmount
 	var st StoragePowerActorState
@@ -81,7 +81,7 @@ func (a *StoragePowerActor) WithdrawBalance(rt Runtime, minerAddr addr.Address, 
 	})
 
 	_, code := rt.Send(recipientAddr, builtin.MethodSend, nil, amountExtracted)
-	vmr.RequireSuccess(rt, code, "failed to send funds")
+	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
 
@@ -106,7 +106,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, workerAddr addr.Address, sec
 		),
 		abi.NewTokenAmount(0),
 	)
-	vmr.RequireSuccess(rt, code, "failed to init new actor")
+	builtin.RequireSuccess(rt, code, "failed to init new actor")
 	var addresses initact.ExecReturn
 	autil.AssertNoError(ret.Into(addresses))
 
@@ -146,7 +146,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) *vmr
 		rt.AbortStateMsg("Deletion requested for miner with power still remaining")
 	}
 
-	ownerAddr, workerAddr := vmr.RT_GetMinerAccountsAssert(rt, minerAddr)
+	ownerAddr, workerAddr := builtin.RT_GetMinerAccountsAssert(rt, minerAddr)
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
 	a._rtDeleteMinerActor(rt, minerAddr)
@@ -312,7 +312,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, block
 
 	// reward slasher
 	_, code := rt.Send(slasherAddr, builtin.MethodSend, nil, amountToSlasher)
-	vmr.RequireSuccess(rt, code, "failed to reward slasher")
+	builtin.RequireSuccess(rt, code, "failed to reward slasher")
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
@@ -388,7 +388,7 @@ func (a *StoragePowerActor) _rtInitiateNewSurprisePoStChallenges(rt Runtime) {
 			nil,
 			abi.NewTokenAmount(0),
 		)
-		vmr.RequireSuccess(rt, code, "failed to challenge miner")
+		builtin.RequireSuccess(rt, code, "failed to challenge miner")
 	}
 }
 
@@ -419,7 +419,7 @@ func (a *StoragePowerActor) _rtProcessDeferredCronEvents(rt Runtime) {
 			),
 			abi.NewTokenAmount(0),
 		)
-		vmr.RequireSuccess(rt, code, "failed to defer cron event")
+		builtin.RequireSuccess(rt, code, "failed to defer cron event")
 	}
 }
 
@@ -438,7 +438,7 @@ func (a *StoragePowerActor) _rtSlashPledgeCollateral(rt Runtime, minerAddr addr.
 	}).(abi.TokenAmount)
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
-	vmr.RequireSuccess(rt, code, "failed to burn funds")
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
 }
 
 func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Address) {
@@ -464,8 +464,8 @@ func (a *StoragePowerActor) _rtDeleteMinerActor(rt Runtime, minerAddr addr.Addre
 		serde.MustSerializeParams(),
 		abi.NewTokenAmount(0),
 	)
-	vmr.RequireSuccess(rt, code, "failed to delete miner actor")
+	builtin.RequireSuccess(rt, code, "failed to delete miner actor")
 
 	_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
-	vmr.RequireSuccess(rt, code, "failed to burn funds")
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
 }

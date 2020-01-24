@@ -52,7 +52,7 @@ func (a *InitActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.State().Transaction(&st, func() interface{} {
 		st.AddressMap = map[addr.Address]abi.ActorID{} // TODO HAMT
 		st.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
-		st.NetworkName = vmr.NetworkName()
+		st.NetworkName = rt.NetworkName()
 		return nil
 	})
 	return &vmr.EmptyReturn{}
@@ -95,7 +95,7 @@ func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.M
 
 	// Invoke constructor.
 	_, code := rt.Send(idAddr, builtin.MethodConstructor, constructorParams, rt.ValueReceived())
-	vmr.RequireSuccess(rt, code, "constructor failed")
+	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{idAddr, uniqueAddress}
 }
