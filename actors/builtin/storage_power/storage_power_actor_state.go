@@ -24,15 +24,15 @@ type MinerEventsHAMT map[abi.ChainEpoch]autil.MinerEventSetHAMT
 type StoragePowerActorState struct {
 	TotalNetworkPower abi.StoragePower
 
-	PowerTable  cid.Cid
+	PowerTable  cid.Cid // HAMT[address]StoragePower
 	MinerCount  int64
 	EscrowTable autil.BalanceTableHAMT
 
 	// Metadata cached for efficient processing of sector/challenge events.
 	CachedDeferredCronEvents MinerEventsHAMT
 	PoStDetectedFaultMiners  autil.MinerSetHAMT
-	ClaimedPower             cid.Cid
-	NominalPower             cid.Cid
+	ClaimedPower             cid.Cid // HAMT[address]StoragePower
+	NominalPower             cid.Cid // HAMT[address]StoragePower
 	NumMinersMeetingMinPower int
 }
 
@@ -259,6 +259,7 @@ func (kw addrKey) Key() string {
 	return string(kw.Bytes())
 }
 
+// TODO return errors and take a store instead of entire runtime. https://github.com/filecoin-project/specs-actors/issues/48
 func getStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) (abi.StoragePower, bool) {
 	hm := adt.NewMap(adt.AsStore(rt), root)
 
