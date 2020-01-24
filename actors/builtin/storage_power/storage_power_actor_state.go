@@ -264,7 +264,7 @@ func getStoragePower(rt vmr.Runtime, root cid.Cid, a addr.Address) (abi.StorageP
 	hm := adt.NewMap(adt.AsStore(rt), root)
 
 	var out abi.StoragePower
-	err := hm.Get(asKey(a), &out)
+	_, err := hm.Get(asKey(a), &out)
 	if err == hamt.ErrNotFound {
 		return abi.NewStoragePower(0), false
 	}

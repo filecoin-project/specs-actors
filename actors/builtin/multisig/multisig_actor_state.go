@@ -3,11 +3,11 @@ package multisig
 import (
 	address "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	errors "github.com/pkg/errors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -55,38 +55,40 @@ func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountT
 	return true
 }
 
-func (as *MultiSigActorState) getPendingTransaction(rt vmr.Runtime, txnID TxnID) MultiSigTransaction {
+func (as *MultiSigActorState) getPendingTransaction(rt vmr.Runtime, txnID TxnID) (MultiSigTransaction, error) {
 	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
 
 	var out MultiSigTransaction
-	err := hm.Get(txnID, &out)
-	requireNoStateErr(rt, err, "failed to get transaction %v from pending transaction HAMT", txnID)
-
-	as.PendingTxns = hm.Root()
-	return out
-}
-
-func (as *MultiSigActorState) putPendingTransaction(rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) {
-	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
-
-	err := hm.Put(txnID, &txn)
-	requireNoStateErr(rt, err, "failed to put transaction %v into pending transaction HAMT", txnID)
-
-	as.PendingTxns = hm.Root()
-}
-
-func (as *MultiSigActorState) deletePendingTransaction(rt vmr.Runtime, txnID TxnID) {
-	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
-
-	err := hm.Delete(txnID)
-	requireNoStateErr(rt, err, "failed to remove transaction %v from pending transaction HAMT", txnID)
-
-	as.PendingTxns = hm.Root()
-}
-
-func requireNoStateErr(rt vmr.Runtime, err error, msg string, args ...interface{}) {
+	found, err := hm.Get(txnID, &out)
 	if err != nil {
-		errMsg := msg + " :" + err.Error()
-		rt.Abort(exitcode.ErrIllegalState, errMsg, args...)
+		return MultiSigTransaction{}, errors.Wrapf(err, "failed to read transaction %v from HAMT %s", txnID, as.PendingTxns)
 	}
+	if !found {
+		return MultiSigTransaction{}, errors.Errorf("failed to find transaction %v in HAMT %s", txnID, as.PendingTxns)
+	}
+
+	as.PendingTxns = hm.Root()
+	return out, nil
+}
+
+func (as *MultiSigActorState) putPendingTransaction(rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) error {
+	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
+
+	if err := hm.Put(txnID, &txn); err != nil {
+		return errors.Wrapf(err, "failed to write transaction %v to HAMT %s", txnID, as.PendingTxns)
+	}
+
+	as.PendingTxns = hm.Root()
+	return nil
+}
+
+func (as *MultiSigActorState) deletePendingTransaction(rt vmr.Runtime, txnID TxnID) error {
+	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
+
+	if err := hm.Delete(txnID); err != nil {
+		return errors.Wrapf(err, "failed to delete transaction %v from HAMT %s", txnID, as.PendingTxns)
+	}
+
+	as.PendingTxns = hm.Root()
+	return nil
 }

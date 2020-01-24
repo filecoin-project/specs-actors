@@ -62,12 +62,18 @@ func (h *Map) Put(k Keyer, v vmr.CBORMarshaler) error {
 }
 
 // Get puts the value at `k` into `out`.
-func (h *Map) Get(k Keyer, out vmr.CBORUnmarshaler) error {
+func (h *Map) Get(k Keyer, out vmr.CBORUnmarshaler) (bool, error) {
 	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return oldRoot.Find(h.store.Context(), k.Key(), out)
+	if err := oldRoot.Find(h.store.Context(), k.Key(), out); err != nil {
+		if err == hamt.ErrNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // Delete removes the value at `k` from the hamt store.
