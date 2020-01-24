@@ -43,7 +43,7 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, key abi.PrivateKey)
 	// must be BLS since the worker key will be used alongside a BLS-VRF
 	keyAddr, err := addr.NewBLSAddress(key)
 	if err != nil {
-		rt.Abort(1, "Cannot make new address from key.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Cannot make new address from key.")
 	}
 
 	keyChange := WorkerKeyChange{
@@ -68,11 +68,11 @@ func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *vmr.EmptyRetur
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if (st.Info.PendingKeyChange == WorkerKeyChange{}) {
-			rt.Abort(1, "No pending key change.")
+			rt.Abort(exitcode.ErrIllegalState, "No pending key change.")
 		}
 
 		if st.Info.PendingKeyChange.EffectiveAt > rt.CurrEpoch() {
-			rt.Abort(2, "Too early for key change.")
+			rt.Abort(exitcode.ErrIllegalState, "Too early for key change.")
 		}
 
 		st.Info.Worker = st.Info.PendingKeyChange.NewWorker
