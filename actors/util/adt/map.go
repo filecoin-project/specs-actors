@@ -5,7 +5,8 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	hamt "github.com/ipfs/go-hamt-ipld"
-	cbg "github.com/whyrusleeping/cbor-gen"
+
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
 // Store defines an interface required to back Map.
@@ -39,7 +40,7 @@ func (h *Map) Root() cid.Cid {
 }
 
 // Put adds value `v` with key `k` to the hamt store.
-func (h *Map) Put(k Keyer, v cbg.CBORMarshaler) error {
+func (h *Map) Put(k Keyer, v vmr.CBORMarshalable) error {
 	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
 	if err != nil {
 		return err
@@ -61,7 +62,7 @@ func (h *Map) Put(k Keyer, v cbg.CBORMarshaler) error {
 }
 
 // Get puts the value at `k` into `out`.
-func (h *Map) Get(k Keyer, out cbg.CBORUnmarshaler) error {
+func (h *Map) Get(k Keyer, out vmr.CBORUnmarshalable) error {
 	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
 	if err != nil {
 		return err
@@ -89,4 +90,42 @@ func (h *Map) Delete(k Keyer) error {
 	}
 	h.root = newRoot
 	return nil
+}
+
+// ForEach applies fn to each key value in hamt.
+func (h *Map) ForEach(fn func(key string, v interface{}) error) error {
+	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
+	if err != nil {
+		return err
+	}
+	if err := oldRoot.ForEach(h.store.Context(), fn); err != nil {
+		return err
+	}
+	return nil
+}
+
+// AsStore allows Runtime to satisfy the adt.Store interface.
+func AsStore(rt vmr.Runtime) Store {
+	return rtStore{rt}
+}
+
+var _ Store = &rtStore{}
+
+type rtStore struct {
+	vmr.Runtime
+}
+
+func (r rtStore) Context() context.Context {
+	return r.Runtime.Context()
+}
+
+func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
+	if !r.IpldGet(c, out.(vmr.CBORUnmarshalable)) {
+		r.AbortStateMsg("not found")
+	}
+	return nil
+}
+
+func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
+	return r.IpldPut(v.(vmr.CBORMarshalable)), nil
 }

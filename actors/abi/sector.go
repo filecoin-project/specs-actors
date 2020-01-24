@@ -2,6 +2,8 @@ package abi
 
 import (
 	cid "github.com/ipfs/go-cid"
+
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 // SectorNumber is a numeric identifier for a sector. It is usually relative to a miner.
@@ -28,7 +30,11 @@ type SectorID struct {
 type SectorWeight int64 // TODO big
 
 // The unit of storage power (measured in bytes)
-type StoragePower int64 // TODO big
+type StoragePower = big.Int
+
+func NewStoragePower(n int64) StoragePower {
+	return StoragePower(big.NewInt(n))
+}
 
 type UnsealedSectorCID cid.Cid // CommD
 type SealedSectorCID cid.Cid   // CommR
