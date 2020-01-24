@@ -15,7 +15,9 @@ func Assert(b bool) {
 }
 
 func AssertNoError(e error) {
-	AssertMsg(e == nil, fmt.Sprintf("%v", e))
+	if e != nil {
+		panic(e.Error())
+	}
 }
 
 // Indicating behavior not yet specified, and may require other spec changes.
