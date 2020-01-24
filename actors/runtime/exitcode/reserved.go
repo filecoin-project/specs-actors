@@ -55,16 +55,16 @@ const (
 	// Indicates an invalid argument passed to a runtime method.
 	SysErrorIllegalArgument = ExitCode(10)
 
-	// MethodSubcallError is returned when an actor method's Send call has
-	// returned with a failure error code (and the Send call did not specify
-	// to ignore errors).
-	SysErrorSubcallAbort = ExitCode(11)
+	// Indicates  an object failed to de/serialize for storage.
+	SysErrSerialization = ExitCode(11)
 
 	// Reserved exit codes, do not use.
 	SysErrorReserved1 = ExitCode(12)
 	SysErrorReserved2 = ExitCode(13)
 	SysErrorReserved3 = ExitCode(14)
-	SysErrorReserved4 = ExitCode(15)
+
+	// Indicates something broken within the VM.
+	SysErrInternal = ExitCode(15)
 )
 
 // The initial range of exit codes is reserved for system errors.

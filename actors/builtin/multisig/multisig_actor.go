@@ -47,17 +47,18 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 		signers = append(signers, a)
 	}
 
-	var st MultiSigActorState
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Construct(func() vmr.CBORMarshaler {
+		var st MultiSigActorState
 		st.Signers = signers
 		st.NumApprovalsThreshold = params.NumApprovalsThreshold
 		st.PendingTxns = autil.EmptyHAMT
+		st.InitialBalance = abi.NewTokenAmount(0)
 		if params.UnlockDuration != 0 {
-			st.UnlockDuration = params.UnlockDuration
 			st.InitialBalance = rt.ValueReceived()
+			st.UnlockDuration = params.UnlockDuration
 			st.StartEpoch = rt.CurrEpoch()
 		}
-		return nil
+		return &st
 	})
 	return &vmr.EmptyReturn{}
 }

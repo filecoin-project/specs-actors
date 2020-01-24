@@ -127,17 +127,16 @@ type TraceSpan interface {
 	End()
 }
 
-// ReadonlyStateHandle provides read-only access to an actor's state object.
-type ReadonlyStateHandle interface {
+// StateHandle provides mutable, exclusive access to actor state.
+type StateHandle interface {
+	// Construct initializes the state object.
+	// This is only valid in a constructor function and when the state has not yet been initialized.
+	Construct(f func() CBORMarshaler)
+
 	// Readonly loads a readonly copy of the state into the argument.
 	//
 	// Any modification to the state is illegal and will result in an abort.
 	Readonly(obj CBORUnmarshaler)
-}
-
-// StateHandle provides mutable, exclusive access to actor state.
-type StateHandle interface {
-	ReadonlyStateHandle
 
 	// Transaction loads a mutable version of the state into the `obj` argument and protects
 	// the execution from side effects (including message send).
