@@ -182,3 +182,7 @@ func removeIndices(rewards []Reward, indices []int) []Reward {
 func (s *RewardActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }
+
+func (s *RewardActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}

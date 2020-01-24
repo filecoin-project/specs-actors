@@ -51,9 +51,9 @@ type Runtime interface {
 	State() StateHandle
 
 	// Retrieves and deserializes an object from the store into o. Returns whether successful.
-	IpldGet(c cid.Cid, o CBORUnmarshalable) bool
+	IpldGet(c cid.Cid, o CBORUnmarshaler) bool
 	// Serializes and stores an object, returning its CID.
-	IpldPut(x CBORMarshalable) cid.Cid
+	IpldPut(x CBORMarshaler) cid.Cid
 
 	// Sends a message to another actor, returning the exit code and return value envelope.
 	// If the invoked method does not return successfully, this caller will be aborted too.
@@ -115,7 +115,7 @@ type Syscalls interface {
 // the return, in particular whether it has been serialized to bytes or just passed through.
 // Production code is expected to de/serialize, but test and other code may pass the value straight through.
 type SendReturn interface {
-	Into(CBORUnmarshalable) error
+	Into(CBORUnmarshaler) error
 }
 
 // Provides (minimal) tracing facilities to actor code.
@@ -129,7 +129,7 @@ type ReadonlyStateHandle interface {
 	// Readonly loads a readonly copy of the state into the argument.
 	//
 	// Any modification to the state is illegal and will result in an abort.
-	Readonly(obj CBORMarshalable)
+	Readonly(obj CBORUnmarshaler)
 }
 
 // StateHandle provides mutable, exclusive access to actor state.
@@ -158,15 +158,20 @@ type StateHandle interface {
 	// })
 	// // state.ImLoaded = False // BAD!! state is readonly outside the lambda, it will panic
 	// ```
-	Transaction(obj CBORMarshalable, f func() interface{}) interface{}
+	Transaction(obj CBORer, f func() interface{}) interface{}
 }
 
 // These interfaces are intended to match those from whyrusleeping/cbor-gen, such that code generated from that
 // system is automatically usable here (but not mandatory).
-type CBORMarshalable interface {
+type CBORMarshaler interface {
 	MarshalCBOR(w io.Writer) error
 }
 
-type CBORUnmarshalable interface {
+type CBORUnmarshaler interface {
 	UnmarshalCBOR(r io.Reader) error
+}
+
+type CBORer interface {
+	CBORMarshaler
+	CBORUnmarshaler
 }

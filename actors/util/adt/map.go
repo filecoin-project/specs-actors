@@ -40,7 +40,7 @@ func (h *Map) Root() cid.Cid {
 }
 
 // Put adds value `v` with key `k` to the hamt store.
-func (h *Map) Put(k Keyer, v vmr.CBORMarshalable) error {
+func (h *Map) Put(k Keyer, v vmr.CBORMarshaler) error {
 	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func (h *Map) Put(k Keyer, v vmr.CBORMarshalable) error {
 }
 
 // Get puts the value at `k` into `out`.
-func (h *Map) Get(k Keyer, out vmr.CBORUnmarshalable) error {
+func (h *Map) Get(k Keyer, out vmr.CBORUnmarshaler) error {
 	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
 	if err != nil {
 		return err
@@ -120,12 +120,12 @@ func (r rtStore) Context() context.Context {
 }
 
 func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
-	if !r.IpldGet(c, out.(vmr.CBORUnmarshalable)) {
+	if !r.IpldGet(c, out.(vmr.CBORUnmarshaler)) {
 		r.AbortStateMsg("not found")
 	}
 	return nil
 }
 
 func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
-	return r.IpldPut(v.(vmr.CBORMarshalable)), nil
+	return r.IpldPut(v.(vmr.CBORMarshaler)), nil
 }
