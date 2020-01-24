@@ -23,17 +23,17 @@ import (
 // the storage interface, and mocks out side-effect-inducing calls.
 type Runtime struct {
 	// Execution context
-	ctx        context.Context
-	epoch      abi.ChainEpoch
-	receiver   addr.Address
-	caller     addr.Address
-	callerType cid.Cid
-	miner      addr.Address
+	ctx           context.Context
+	epoch         abi.ChainEpoch
+	receiver      addr.Address
+	caller        addr.Address
+	callerType    cid.Cid
+	miner         addr.Address
 	valueReceived abi.TokenAmount
 
 	// Actor state
-	state         cid.Cid
-	balance       abi.TokenAmount
+	state   cid.Cid
+	balance abi.TokenAmount
 
 	// VM implementation
 	store         map[cid.Cid][]byte
@@ -163,6 +163,9 @@ func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
 	}
 	data := r.Bytes()
 	key, err := cidBuilder.Sum(data)
+	if err != nil {
+		rt.Abort(exitcode.SysErrSerialization, err.Error())
+	}
 	rt.store[key] = data
 	return key
 }
