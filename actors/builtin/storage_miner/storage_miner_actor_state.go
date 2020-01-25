@@ -3,6 +3,7 @@ package storage_miner
 import (
 	"io"
 
+	cid "github.com/ipfs/go-cid"
 	addr "github.com/filecoin-project/go-address"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
@@ -14,9 +15,12 @@ import (
 // Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
 // that are not yet returned or burned.
 type StorageMinerActorState struct {
-	Sectors    SectorsAMT
+	PreCommittedSectors PreCommittedSectorsAMT // PreCommitted Sectors
+	Sectors    SectorsAMT // Proven Sectors can be Active or in TemporaryFault
+	FaultSet SectorNumberSetHAMT // TODO bitfield of Sectors in TemporaryFault
+	ProvingSet cid.Cid // cid of SectorsAMT - sectors in FaultSet
+
 	PoStState  MinerPoStState
-	ProvingSet SectorNumberSetHAMT
 	Info       MinerInfo
 }
 
@@ -60,23 +64,18 @@ func (mps *MinerPoStState) Is_DetectedFault() bool {
 	return mps.NumConsecutiveFailures > 0
 }
 
-type SectorState int64
-
-const (
-	PreCommit SectorState = iota
-	Active
-	TemporaryFault
-)
+type SectorPreCommitOnChainInfo struct {
+	Info SectorPreCommitInfo
+	PreCommitDeposit abi.TokenAmount
+	PreCommitEpoch abi.ChainEpoch
+}
 
 type SectorOnChainInfo struct {
-	State                 SectorState
-	Info                  SectorPreCommitInfo // Also contains Expiration field.
-	PreCommitDeposit      abi.TokenAmount
-	PreCommitEpoch        abi.ChainEpoch
-	ActivationEpoch       abi.ChainEpoch // -1 if still in PreCommit state.
+	Info                  SectorPreCommitInfo
+	ActivationEpoch       abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
 	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
 	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
-	DealWeight            abi.DealWeight // -1 if not yet validated with StorageMarketActor.
+	DealWeight            abi.DealWeight // integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 }
 
 type SectorPreCommitInfo struct {
@@ -84,19 +83,17 @@ type SectorPreCommitInfo struct {
 	SealedCID    abi.SealedSectorCID // CommR
 	SealEpoch    abi.ChainEpoch
 	DealIDs      abi.DealIDs
-	Expiration   abi.ChainEpoch
+	Expiration   abi.ChainEpoch // Sector Expiration
 }
 
 type SectorProveCommitInfo struct {
 	SectorNumber     abi.SectorNumber
-	RegisteredProof  abi.RegisteredProof
 	Proof            abi.SealProof
-	InteractiveEpoch abi.ChainEpoch
-	Expiration       abi.ChainEpoch
 }
 
 // TODO AMT
 type SectorsAMT map[abi.SectorNumber]SectorOnChainInfo
+type PreCommittedSectorsAMT map[abi.SectorNumber]SectorPreCommitOnChainInfo
 
 // TODO HAMT
 type SectorNumberSetHAMT map[abi.SectorNumber]bool
@@ -179,24 +176,30 @@ func (st *StorageMinerActorState) _getStorageWeightDescsForSectors(sectorNumbers
 	return ret
 }
 
-func (x *SectorOnChainInfo) Is_TemporaryFault() bool {
-	ret := (x.State == TemporaryFault)
-	if ret {
-		Assert(x.DeclaredFaultEpoch != epochUndefined)
-		Assert(x.DeclaredFaultDuration != epochUndefined)
+func (st *StorageMinerActorState) IsSectorInTemporaryFault(sectorNumber abi.SectorNumber) bool {
+	checkSector, found := st.Sectors[sectorNumber]
+	if !found {
+		return false
 	}
+	_, ret := st.FaultSet[sectorNumber]
+	Assert(checkSector.DeclaredFaultEpoch != epochUndefined)
+	Assert(checkSector.DeclaredFaultDuration != epochUndefined)
+	return ret
+}
+
+func (st *StorageMinerActorState) GetCurrentProvingSet() cid.Cid {
+	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
+	var ret cid.Cid
 	return ret
 }
 
 // Must be significantly larger than DeclaredFaultEpoch, since otherwise it may be possible
 // to declare faults adaptively in order to exempt challenged sectors.
 func (x *SectorOnChainInfo) EffectiveFaultBeginEpoch() abi.ChainEpoch {
-	Assert(x.Is_TemporaryFault())
 	return x.DeclaredFaultEpoch + indices.StorageMining_DeclaredFaultEffectiveDelay()
 }
 
 func (x *SectorOnChainInfo) EffectiveFaultEndEpoch() abi.ChainEpoch {
-	Assert(x.Is_TemporaryFault())
 	return x.EffectiveFaultBeginEpoch() + x.DeclaredFaultDuration
 }
 

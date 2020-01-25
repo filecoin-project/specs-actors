@@ -69,8 +69,7 @@ const (
 	Method_StorageMarketActor_PublishStorageDeals
 
 	// Internal mechanism events
-	Method_StorageMarketActor_OnMinerSectorPreCommit_VerifyDealsOrAbort
-	Method_StorageMarketActor_OnMinerSectorProveCommit_VerifyDealsOrAbort
+	Method_StorageMarketActor_VerifyDealsOnSectorProveCommit
 	Method_StorageMarketActor_OnMinerSectorsTerminate
 
 	// State queries
