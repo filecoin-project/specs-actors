@@ -235,7 +235,9 @@ func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) *vmr.EmptyRet
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		delete(st.PoStDetectedFaultMiners, minerAddr)
+		if err := st.deleteFault(adt.AsStore(rt), minerAddr); err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "Failed to delete miner fault: %v", err)
+		}
 		if err := st._updatePowerEntriesFromClaimedPower(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to update miners claimed power table on surprise PoSt success: %v", err)
 		}
@@ -251,7 +253,9 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 	var minerClaimedPower abi.StoragePower
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		st.PoStDetectedFaultMiners[minerAddr] = true
+		if err := st.putFault(adt.AsStore(rt), minerAddr); err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "Failed to put miner fault: %v", err)
+		}
 		if err := st._updatePowerEntriesFromClaimedPower(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to update power entries for claimed power: %v", err)
 		}
@@ -397,7 +401,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 		st.PowerTable = emptyMap.Root()
 		st.EscrowTable = autil.BalanceTableHAMT_Empty()
 		st.CachedDeferredCronEvents = MinerCallbackEventsHAMT_Empty()
-		st.PoStDetectedFaultMiners = autil.MinerSetHAMT_Empty()
+		st.PoStDetectedFaultMiners = emptyMap.Root()
 		st.ClaimedPower = emptyMap.Root()
 		st.NominalPower = emptyMap.Root()
 		st.NumMinersMeetingMinPower = 0
@@ -547,7 +551,9 @@ func (a *StoragePowerActor) deleteMinerActor(rt Runtime, minerAddr addr.Address)
 			return abi.NewTokenAmount(0)
 		}
 		st.MinerCount -= 1
-		delete(st.PoStDetectedFaultMiners, minerAddr)
+		if err := st.deleteFault(adt.AsStore(rt), minerAddr); err != nil {
+			return err
+		}
 
 		newTable, amountSlashed, ok := autil.BalanceTable_WithExtractAll(st.EscrowTable, minerAddr)
 		Assert(ok)

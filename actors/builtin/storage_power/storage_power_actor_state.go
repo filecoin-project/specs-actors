@@ -28,7 +28,7 @@ type StoragePowerActorState struct {
 
 	// Metadata cached for efficient processing of sector/challenge events.
 	CachedDeferredCronEvents MinerCallbackEventsHAMT
-	PoStDetectedFaultMiners  autil.MinerSetHAMT
+	PoStDetectedFaultMiners  cid.Cid // HAMT[addr.Address]bool
 	ClaimedPower             cid.Cid // HAMT[address]StoragePower
 	NominalPower             cid.Cid // HAMT[address]StoragePower
 	NumMinersMeetingMinPower int
@@ -192,7 +192,9 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(s adt.Stor
 	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
 	// from a SurprisePoSt challenge.
 	nominalPower := claimedPower
-	if st.PoStDetectedFaultMiners[minerAddr] {
+	if found, err := st.hasFault(s, minerAddr); err != nil {
+		return err
+	} else if !found {
 		nominalPower = big.Zero()
 	}
 	if err := st._setNominalPowerEntryInternal(s, minerAddr, nominalPower); err != nil {
@@ -278,6 +280,36 @@ func (st *StoragePowerActorState) _getPledgeSlashForConsensusFault(currPledge ab
 	}
 }
 
+func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, error) {
+	hm := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	found, err := hm.Has(asKey(a))
+	if err != nil {
+		return false, errors.Wrapf(err, "failed to get detected faults for address %v from set %s", a, st.PoStDetectedFaultMiners)
+	}
+	if !found {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (st *StoragePowerActorState) putFault(s adt.Store, a addr.Address) error {
+	hm := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err := hm.Put(asKey(a)); err != nil {
+		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
+	}
+	st.PoStDetectedFaultMiners = hm.Root()
+	return nil
+}
+
+func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error {
+	hm := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err := hm.Delete(asKey(a)); err != nil {
+		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
+	}
+	st.PoStDetectedFaultMiners = hm.Root()
+	return nil
+}
+
 func asKey(a addr.Address) adt.Keyer {
 	return addrKey{a}
 }
@@ -290,7 +322,6 @@ func (kw addrKey) Key() string {
 	return string(kw.Bytes())
 }
 
-// TODO return errors and take a store instead of entire runtime. https://github.com/filecoin-project/specs-actors/issues/48
 func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePower, bool, error) {
 	hm := adt.AsMap(s, root)
 
