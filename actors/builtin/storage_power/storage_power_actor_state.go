@@ -61,8 +61,9 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(s adt.
 	}
 
 	var minerSizes []abi.StoragePower
-	if err := adt.NewMap(s, st.PowerTable).ForEach(func(k string, v interface{}) error {
-		minerSizes = append(minerSizes, v.(abi.StoragePower))
+	var pwr abi.StoragePower
+	if err := adt.AsMap(s, st.PowerTable).ForEach(&pwr, func(k string) error {
+		minerSizes = append(minerSizes, pwr.Copy())
 		return nil
 	}); err != nil {
 		return false, errors.Wrap(err, "failed to iterate power table")
@@ -102,7 +103,7 @@ func addrInArray(a addr.Address, list []addr.Address) bool {
 // _selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
 func (st *StoragePowerActorState) _selectMinersToSurprise(s adt.Store, challengeCount int, randomness abi.Randomness) ([]addr.Address, error) {
 	var allMiners []addr.Address
-	if err := adt.NewMap(s, st.PowerTable).ForEach(func(k string, v interface{}) error {
+	if err := adt.AsMap(s, st.PowerTable).ForEach(nil, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
 		if err != nil {
 			return err
@@ -291,7 +292,7 @@ func (kw addrKey) Key() string {
 
 // TODO return errors and take a store instead of entire runtime. https://github.com/filecoin-project/specs-actors/issues/48
 func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePower, bool, error) {
-	hm := adt.NewMap(s, root)
+	hm := adt.AsMap(s, root)
 
 	var out abi.StoragePower
 	found, err := hm.Get(asKey(a), &out)
@@ -305,7 +306,7 @@ func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePowe
 }
 
 func putStoragePower(s adt.Store, root cid.Cid, a addr.Address, pwr abi.StoragePower) (cid.Cid, error) {
-	hm := adt.NewMap(s, root)
+	hm := adt.AsMap(s, root)
 
 	if err := hm.Put(asKey(a), &pwr); err != nil {
 		return cid.Undef, errors.Wrapf(err, "failed to put storage power with address %s power %v in store %s", a, pwr, root)
@@ -314,7 +315,7 @@ func putStoragePower(s adt.Store, root cid.Cid, a addr.Address, pwr abi.StorageP
 }
 
 func deleteStoragePower(s adt.Store, root cid.Cid, a addr.Address) (cid.Cid, error) {
-	hm := adt.NewMap(s, root)
+	hm := adt.AsMap(s, root)
 
 	if err := hm.Delete(asKey(a)); err != nil {
 		return cid.Undef, errors.Wrapf(err, "failed to delete storage power at address %s from store %s", a, root)

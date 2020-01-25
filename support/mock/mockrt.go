@@ -163,6 +163,10 @@ func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 }
 
 func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
+	if !rt.inTransaction {
+		rt.Abort(exitcode.SysErrorIllegalActor, "store put outside transaction")
+	}
+
 	r := bytes.Buffer{}
 	err := o.MarshalCBOR(&r)
 	if err != nil {
@@ -238,8 +242,10 @@ func (rt *Runtime) Construct(f func() runtime.CBORMarshaler) {
 	if rt.state.Defined() {
 		rt.Abort(exitcode.SysErrorIllegalActor, "state already constructed")
 	}
+	rt.inTransaction = true
 	st := f()
 	rt.state = rt.IpldPut(st)
+	rt.inTransaction = false
 }
 
 func (rt *Runtime) Readonly(st runtime.CBORUnmarshaler) {
@@ -273,6 +279,10 @@ func (t TraceSpan) End() {
 type abort struct {
 	code exitcode.ExitCode
 	msg  string
+}
+
+func (a abort) String() string {
+	return fmt.Sprintf("abort(%v): %s", a.code, a.msg)
 }
 
 ///// Inspection facilities /////

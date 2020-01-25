@@ -9,7 +9,6 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -48,11 +47,17 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 		signers = append(signers, sa)
 	}
 
+
 	rt.State().Construct(func() vmr.CBORMarshaler {
+		pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
+		}
+
 		var st MultiSigActorState
 		st.Signers = signers
 		st.NumApprovalsThreshold = params.NumApprovalsThreshold
-		st.PendingTxns = autil.EmptyHAMT
+		st.PendingTxns = pending.Root()
 		st.InitialBalance = abi.NewTokenAmount(0)
 		if params.UnlockDuration != 0 {
 			st.InitialBalance = rt.ValueReceived()

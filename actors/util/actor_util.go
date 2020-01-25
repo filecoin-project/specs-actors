@@ -1,25 +1,10 @@
 package util
 
 import (
-	"context"
-
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
 )
-
-func init() {
-	cst := hamt.NewCborStore()
-	nd := hamt.NewNode(cst)
-	emptyHAMT, err := cst.Put(context.Background(), nd)
-	if err != nil {
-		panic(err)
-	}
-	EmptyHAMT = emptyHAMT
-}
-
-var EmptyHAMT cid.Cid
 
 type BalanceTableHAMT map[addr.Address]abi.TokenAmount
 
@@ -185,17 +170,7 @@ func IntToDealIDHAMT_Empty() IntToDealIDHAMT {
 	panic("")
 }
 
-func DealIDSetHAMT_Empty() DealIDSetHAMT {
-	IMPL_FINISH()
-	panic("")
-}
-
 func MinerSetHAMT_Empty() MinerSetHAMT {
-	IMPL_FINISH()
-	panic("")
-}
-
-func ActorIDSetHAMT_Empty() ActorIDSetHAMT {
 	IMPL_FINISH()
 	panic("")
 }
