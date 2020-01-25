@@ -7,7 +7,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -55,8 +54,8 @@ func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountT
 	return true
 }
 
-func (as *MultiSigActorState) getPendingTransaction(rt vmr.Runtime, txnID TxnID) (MultiSigTransaction, error) {
-	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
+func (as *MultiSigActorState) getPendingTransaction(s adt.Store, txnID TxnID) (MultiSigTransaction, error) {
+	hm := adt.NewMap(s, as.PendingTxns)
 
 	var out MultiSigTransaction
 	found, err := hm.Get(txnID, &out)
@@ -71,8 +70,8 @@ func (as *MultiSigActorState) getPendingTransaction(rt vmr.Runtime, txnID TxnID)
 	return out, nil
 }
 
-func (as *MultiSigActorState) putPendingTransaction(rt vmr.Runtime, txnID TxnID, txn MultiSigTransaction) error {
-	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
+func (as *MultiSigActorState) putPendingTransaction(s adt.Store, txnID TxnID, txn MultiSigTransaction) error {
+	hm := adt.NewMap(s, as.PendingTxns)
 
 	if err := hm.Put(txnID, &txn); err != nil {
 		return errors.Wrapf(err, "failed to write transaction")
@@ -82,8 +81,8 @@ func (as *MultiSigActorState) putPendingTransaction(rt vmr.Runtime, txnID TxnID,
 	return nil
 }
 
-func (as *MultiSigActorState) deletePendingTransaction(rt vmr.Runtime, txnID TxnID) error {
-	hm := adt.NewMap(adt.AsStore(rt), as.PendingTxns)
+func (as *MultiSigActorState) deletePendingTransaction(s adt.Store, txnID TxnID) error {
+	hm := adt.NewMap(s, as.PendingTxns)
 
 	if err := hm.Delete(txnID); err != nil {
 		return errors.Wrapf(err, "failed to delete transaction")

@@ -10,6 +10,7 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type TxnID int64
@@ -85,7 +86,7 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 		txnID := st.NextTxnID
 		st.NextTxnID += 1
 
-		if err := st.putPendingTransaction(rt, txnID, MultiSigTransaction{
+		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, MultiSigTransaction{
 			To:       params.To,
 			Value:    params.Value,
 			Method:   params.Method,
@@ -128,7 +129,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		a.validateSigner(rt, &st, callerAddr)
-		txn, err := st.getPendingTransaction(rt, params.ID)
+		txn, err := st.getPendingTransaction(adt.AsStore(rt), params.ID)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to get transaction for cancel: %v", err)
 		}
@@ -137,7 +138,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 			rt.AbortStateMsg("Cannot cancel another signers transaction")
 		}
 
-		if err := st.deletePendingTransaction(rt, params.ID); err != nil {
+		if err := st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
 		}
 		return nil
@@ -256,7 +257,7 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	var st MultiSigActorState
 	var txn MultiSigTransaction
 	rt.State().Transaction(&st, func() interface{} {
-		txn, err := st.getPendingTransaction(rt, txnID)
+		txn, err := st.getPendingTransaction(adt.AsStore(rt), txnID)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to get transaction for approval: %v", err)
 		}
@@ -269,7 +270,7 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		}
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.ImmediateCaller())
-		if err := st.putPendingTransaction(rt, txnID, txn); err != nil {
+		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
 		}
 		return nil
@@ -293,7 +294,7 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {
-			if err := st.deletePendingTransaction(rt, txnID); err != nil {
+			if err := st.deletePendingTransaction(adt.AsStore(rt), txnID); err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
 			return nil
