@@ -38,7 +38,7 @@ func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }
 
-func (t *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
+func (st *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
 	panic("replace with cbor-gen")
 }
 
@@ -69,7 +69,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(s adt.
 	}
 
 	// get size of MIN_MINER_SIZE_TARGth largest miner
-	sort.Slice(minerSizes, func(i, j int) bool { return int(i) > int(j) })
+	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
 	return minerPower.GreaterThanEqual(minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]), nil
 }
 
