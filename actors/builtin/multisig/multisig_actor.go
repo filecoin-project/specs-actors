@@ -10,7 +10,7 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type TxnID int64
