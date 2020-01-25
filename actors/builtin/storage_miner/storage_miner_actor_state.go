@@ -15,10 +15,10 @@ import (
 // Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
 // that are not yet returned or burned.
 type StorageMinerActorState struct {
-	PreCommittedSectors PreCommittedSectorsAMT 
-	Sectors    SectorsAMT
-	FaultSet SectorNumberSetHAMT // TODO bitfield
-	ProvingSet cid.Cid
+	PreCommittedSectors PreCommittedSectorsAMT // PreCommitted Sectors
+	Sectors    SectorsAMT // Proven Sectors can be Active or in TemporaryFault
+	FaultSet SectorNumberSetHAMT // TODO bitfield of Sectors in TemporaryFault
+	ProvingSet cid.Cid // cid of SectorsAMT - sectors in FaultSet
 
 	PoStState  MinerPoStState
 	Info       MinerInfo
@@ -71,11 +71,11 @@ type SectorPreCommitOnChainInfo struct {
 }
 
 type SectorOnChainInfo struct {
-	Info                  SectorPreCommitInfo // Also contains Expiration field.
-	ActivationEpoch       abi.ChainEpoch
+	Info                  SectorPreCommitInfo
+	ActivationEpoch       abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
 	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
 	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
-	DealWeight            abi.DealWeight
+	DealWeight            abi.DealWeight // integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 }
 
 type SectorPreCommitInfo struct {
@@ -83,7 +83,7 @@ type SectorPreCommitInfo struct {
 	SealedCID    abi.SealedSectorCID // CommR
 	SealEpoch    abi.ChainEpoch
 	DealIDs      abi.DealIDs
-	Expiration   abi.ChainEpoch
+	Expiration   abi.ChainEpoch // Sector Expiration
 }
 
 type SectorProveCommitInfo struct {

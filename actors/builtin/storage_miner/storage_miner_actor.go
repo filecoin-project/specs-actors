@@ -167,6 +167,8 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	depositReq := cidx.StorageMining_PreCommitDeposit(st.Info.SectorSize, info.Expiration)
 	builtin.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
+	// TODO Check on valid SealEpoch
+
 	rt.State().Transaction(&st, func() interface{} {
 		st.PreCommittedSectors[info.SectorNumber] = SectorPreCommitOnChainInfo{
 			Info:             info,
@@ -417,7 +419,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
 
-	if !st.IsSectorInTemporaryFault(sectorNumber) && rt.CurrEpoch() == checkSector.EffectiveFaultBeginEpoch() {
+	if !st.IsSectorInTemporaryFault(sectorNumber) && rt.CurrEpoch() >= checkSector.EffectiveFaultBeginEpoch() {
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
@@ -434,7 +436,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		})
 	}
 
-	if st.IsSectorInTemporaryFault(sectorNumber) && rt.CurrEpoch() == checkSector.EffectiveFaultEndEpoch() {
+	if st.IsSectorInTemporaryFault(sectorNumber) && rt.CurrEpoch() >= checkSector.EffectiveFaultEndEpoch() {
 		checkSector.DeclaredFaultEpoch = epochUndefined
 		checkSector.DeclaredFaultDuration = epochUndefined
 
