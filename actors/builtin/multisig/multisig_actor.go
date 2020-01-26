@@ -44,8 +44,8 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	var signers []addr.Address
-	for _, a := range params.Signers {
-		signers = append(signers, a)
+	for _, sa := range params.Signers {
+		signers = append(signers, sa)
 	}
 
 	rt.State().Construct(func() vmr.CBORMarshaler {
@@ -83,7 +83,7 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		a.validateSigner(rt, &st, callerAddr)
-		txnID := st.NextTxnID
+		txnID = st.NextTxnID
 		st.NextTxnID += 1
 
 		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, MultiSigTransaction{
@@ -138,7 +138,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 			rt.AbortStateMsg("Cannot cancel another signers transaction")
 		}
 
-		if err := st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
+		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
 		}
 		return nil
@@ -257,11 +257,11 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	var st MultiSigActorState
 	var txn MultiSigTransaction
 	rt.State().Transaction(&st, func() interface{} {
-		txn, err := st.getPendingTransaction(adt.AsStore(rt), txnID)
+		var err error
+		txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to get transaction for approval: %v", err)
 		}
-
 		// abort duplicate approval
 		for _, previousApprover := range txn.Approved {
 			if previousApprover == rt.ImmediateCaller() {
@@ -270,7 +270,7 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		}
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.ImmediateCaller())
-		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
+		if err = st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
 		}
 		return nil
