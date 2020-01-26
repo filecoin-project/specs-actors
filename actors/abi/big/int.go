@@ -38,6 +38,12 @@ func FromString(s string) (Int, error) {
 	return Int{v}, nil
 }
 
+func (bi Int) Copy() Int {
+	cpy := Int{}
+	cpy.Int.Set(bi.Int)
+	return cpy
+}
+
 func Mul(a, b Int) Int {
 	return Int{big.NewInt(0).Mul(a.Int, b.Int)}
 }

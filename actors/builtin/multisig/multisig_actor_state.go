@@ -55,7 +55,7 @@ func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountT
 }
 
 func (as *MultiSigActorState) getPendingTransaction(s adt.Store, txnID TxnID) (MultiSigTransaction, error) {
-	hm := adt.NewMap(s, as.PendingTxns)
+	hm := adt.AsMap(s, as.PendingTxns)
 
 	var out MultiSigTransaction
 	found, err := hm.Get(txnID, &out)
@@ -71,7 +71,7 @@ func (as *MultiSigActorState) getPendingTransaction(s adt.Store, txnID TxnID) (M
 }
 
 func (as *MultiSigActorState) putPendingTransaction(s adt.Store, txnID TxnID, txn MultiSigTransaction) error {
-	hm := adt.NewMap(s, as.PendingTxns)
+	hm := adt.AsMap(s, as.PendingTxns)
 
 	if err := hm.Put(txnID, &txn); err != nil {
 		return errors.Wrapf(err, "failed to write transaction")
@@ -82,7 +82,7 @@ func (as *MultiSigActorState) putPendingTransaction(s adt.Store, txnID TxnID, tx
 }
 
 func (as *MultiSigActorState) deletePendingTransaction(s adt.Store, txnID TxnID) error {
-	hm := adt.NewMap(s, as.PendingTxns)
+	hm := adt.AsMap(s, as.PendingTxns)
 
 	if err := hm.Delete(txnID); err != nil {
 		return errors.Wrapf(err, "failed to delete transaction")

@@ -385,17 +385,24 @@ func (a *StoragePowerActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 
 func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	var st StoragePowerActorState
-	rt.State().Transaction(&st, func() interface{} {
+
+
+	rt.State().Construct(func() vmr.CBORMarshaler {
+		emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
+		}
+
+		var st StoragePowerActorState
 		st.TotalNetworkPower = abi.NewStoragePower(0)
-		st.PowerTable = autil.EmptyHAMT
+		st.PowerTable = emptyMap.Root()
 		st.EscrowTable = autil.BalanceTableHAMT_Empty()
 		st.CachedDeferredCronEvents = MinerEventsHAMT_Empty()
 		st.PoStDetectedFaultMiners = autil.MinerSetHAMT_Empty()
-		st.ClaimedPower = autil.EmptyHAMT
-		st.NominalPower = autil.EmptyHAMT
+		st.ClaimedPower = emptyMap.Root()
+		st.NominalPower = emptyMap.Root()
 		st.NumMinersMeetingMinPower = 0
-		return nil
+		return &st
 	})
 	return &vmr.EmptyReturn{}
 }
