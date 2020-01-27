@@ -79,7 +79,7 @@ func TestConstruction(t *testing.T) {
 }
 
 func TestPropose(t *testing.T) {
-	actor := multisig.MultiSigActor{}
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
 	receiver := newIDAddr(t, 100)
 	anne := newSecpAddr(t, 101)
@@ -91,16 +91,10 @@ func TestPropose(t *testing.T) {
 
 	t.Run("simple propose", func(t *testing.T) {
 		rt := builder.Build()
-		constructParams := multisig.ConstructorParams{
-			Signers:               []addr.Address{anne, bob},
-			NumApprovalsThreshold: 2,
-			UnlockDuration:        0,
-		}
-
-		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		constructRet := actor.Constructor(rt, &constructParams)
-		assert.Equal(t, runtime.EmptyReturn{}, *constructRet)
-		rt.Verify()
+		const numApprovals = int64(2)
+		const unlockDuration = int64(0)
+		var signers = []addr.Address{anne, bob}
+		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
 
 		// going to assume the state is correct, a method that constructs and verifies would be nice.
 		proposeParams := &multisig.ProposeParams{
@@ -119,8 +113,8 @@ func TestPropose(t *testing.T) {
 		// validate the actor state and transaction exist
 		var st multisig.MultiSigActorState
 		rt.Readonly(&st)
-		assert.Equal(t, constructParams.Signers, st.Signers)
-		assert.Equal(t, constructParams.NumApprovalsThreshold, st.NumApprovalsThreshold)
+		assert.Equal(t, signers, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
 		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
 		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
@@ -147,16 +141,10 @@ func TestPropose(t *testing.T) {
 
 	t.Run("propose with threshold met", func(t *testing.T) {
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build()
-		constructParams := multisig.ConstructorParams{
-			Signers:               []addr.Address{anne, bob},
-			NumApprovalsThreshold: 1,
-			UnlockDuration:        0,
-		}
-
-		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		constructRet := actor.Constructor(rt, &constructParams)
-		assert.Equal(t, runtime.EmptyReturn{}, *constructRet)
-		rt.Verify()
+		const numApprovals = int64(1)
+		const unlockDuration = int64(0)
+		var signers = []addr.Address{anne, bob}
+		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
 
 		// going to assume the state is correct, a method that constructs and verifies would be nice.
 		proposeParams := &multisig.ProposeParams{
@@ -182,16 +170,10 @@ func TestPropose(t *testing.T) {
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
 		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build()
-		constructParams := multisig.ConstructorParams{
-			Signers:               []addr.Address{anne, bob},
-			NumApprovalsThreshold: 1,
-			UnlockDuration:        0,
-		}
-
-		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		constructRet := actor.Constructor(rt, &constructParams)
-		assert.Equal(t, runtime.EmptyReturn{}, *constructRet)
-		rt.Verify()
+		const numApprovals = int64(1)
+		const unlockDuration = int64(0)
+		var signers = []addr.Address{anne, bob}
+		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
 
 		// going to assume the state is correct, a method that constructs and verifies would be nice.
 		proposeParams := &multisig.ProposeParams{
@@ -233,17 +215,10 @@ func TestPropose(t *testing.T) {
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
 		rt := builder.Build()
-		constructParams := multisig.ConstructorParams{
-			Signers:               []addr.Address{anne, bob},
-			NumApprovalsThreshold: 2,
-			UnlockDuration:        0,
-		}
-
-		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		constructRet := actor.Constructor(rt, &constructParams)
-		assert.Equal(t, runtime.EmptyReturn{}, *constructRet)
-		rt.Verify()
-
+		const numApprovals = int64(2)
+		const unlockDuration = int64(0)
+		var signers = []addr.Address{anne, bob}
+		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
 		// going to assume the state is correct, a method that constructs and verifies would be nice.
 		proposeParams := &multisig.ProposeParams{
 			To:     chuck,
@@ -266,6 +241,24 @@ func TestPropose(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, keys)
 	})
+}
+
+type msActorHarness struct {
+	multisig.MultiSigActor
+	t testing.TB
+}
+
+func (h *msActorHarness) mustConstructMultisigActor(rt *mock.Runtime, numApprovalsThresh, unlockDuration int64, signers ...addr.Address) {
+	constructParams := multisig.ConstructorParams{
+		Signers:               signers,
+		NumApprovalsThreshold: numApprovalsThresh,
+		UnlockDuration:        abi.ChainEpoch(unlockDuration),
+	}
+
+	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+	constructRet := h.MultiSigActor.Constructor(rt, &constructParams)
+	require.Equal(h.t, runtime.EmptyReturn{}, *constructRet)
+	rt.Verify()
 }
 
 func newIDAddr(t *testing.T, id uint64) addr.Address {
