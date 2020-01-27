@@ -2,11 +2,9 @@ package multisig_test
 
 import (
 	"context"
-	"math/rand"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	crypto "github.com/filecoin-project/go-crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -82,9 +80,9 @@ func TestPropose(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
 	receiver := newIDAddr(t, 100)
-	anne := newSecpAddr(t, 101)
-	bob := newSecpAddr(t, 102)
-	chuck := newSecpAddr(t, 103)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
 
 	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
@@ -164,7 +162,7 @@ func TestPropose(t *testing.T) {
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
 		// non-signer address
-		richard := newSecpAddr(t, 105)
+		richard := newIDAddr(t, 105)
 		const unlockDuration = int64(0)
 		const numApprovals = int64(2)
 		const method = int64(0)
@@ -268,18 +266,4 @@ func newIDAddr(t *testing.T, id uint64) addr.Address {
 		t.Fatal(err)
 	}
 	return address
-}
-
-func newSecpAddr(t *testing.T, seed int64) addr.Address {
-	randSrc := rand.New(rand.NewSource(seed))
-	prv, err := crypto.GenerateKeyFromSeed(randSrc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pk := crypto.PublicKey(prv)
-	newAddr, err := addr.NewSecp256k1Address(pk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return newAddr
 }

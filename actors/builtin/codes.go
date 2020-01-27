@@ -39,7 +39,6 @@ func init() {
 	MultisigActorCodeID = makeBuiltin("fil/1/multisig")
 	RewardActorCodeID = makeBuiltin("fil/1/reward")
 
-	// FIXME(frrist) this needs to happen here else it is initalized with cid.Undef.
 	// Set of actor code types that can represent external signing parties.
 	CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}
 }
