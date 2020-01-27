@@ -17,7 +17,7 @@ import (
 )
 
 // TODO: HAMT
-type MinerEventsHAMT map[abi.ChainEpoch]autil.MinerEventSetHAMT
+type MinerCallbackEventsHAMT map[abi.ChainEpoch]autil.MinerCallbackEventSetHAMT
 
 type StoragePowerActorState struct {
 	TotalNetworkPower abi.StoragePower
@@ -27,7 +27,7 @@ type StoragePowerActorState struct {
 	EscrowTable autil.BalanceTableHAMT
 
 	// Metadata cached for efficient processing of sector/challenge events.
-	CachedDeferredCronEvents MinerEventsHAMT
+	CachedDeferredCronEvents MinerCallbackEventsHAMT
 	PoStDetectedFaultMiners  autil.MinerSetHAMT
 	ClaimedPower             cid.Cid // HAMT[address]StoragePower
 	NominalPower             cid.Cid // HAMT[address]StoragePower
@@ -334,7 +334,7 @@ func _getConsensusFaultSlasherReward(elapsedEpoch abi.ChainEpoch, collateralToSl
 	return abi.NewTokenAmount(0)
 }
 
-func MinerEventsHAMT_Empty() MinerEventsHAMT {
+func MinerCallbackEventsHAMT_Empty() MinerCallbackEventsHAMT {
 	IMPL_FINISH()
 	panic("")
 }

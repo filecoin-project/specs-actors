@@ -3,8 +3,8 @@ package storage_miner
 import (
 	"io"
 
-	cid "github.com/ipfs/go-cid"
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -16,12 +16,12 @@ import (
 // that are not yet returned or burned.
 type StorageMinerActorState struct {
 	PreCommittedSectors PreCommittedSectorsAMT // PreCommitted Sectors
-	Sectors    SectorsAMT // Proven Sectors can be Active or in TemporaryFault
-	FaultSet SectorNumberSetHAMT // TODO bitfield of Sectors in TemporaryFault
-	ProvingSet cid.Cid // cid of SectorsAMT - sectors in FaultSet
+	Sectors             SectorsAMT             // Proven Sectors can be Active or in TemporaryFault
+	FaultSet            SectorNumberSetHAMT    // TODO bitfield of Sectors in TemporaryFault
+	ProvingSet          cid.Cid                // cid of SectorsAMT - sectors in FaultSet
 
-	PoStState  MinerPoStState
-	Info       MinerInfo
+	PoStState MinerPoStState
+	Info      MinerInfo
 }
 
 func (st *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
@@ -65,9 +65,9 @@ func (mps *MinerPoStState) Is_DetectedFault() bool {
 }
 
 type SectorPreCommitOnChainInfo struct {
-	Info SectorPreCommitInfo
+	Info             SectorPreCommitInfo
 	PreCommitDeposit abi.TokenAmount
-	PreCommitEpoch abi.ChainEpoch
+	PreCommitEpoch   abi.ChainEpoch
 }
 
 type SectorOnChainInfo struct {
@@ -87,8 +87,8 @@ type SectorPreCommitInfo struct {
 }
 
 type SectorProveCommitInfo struct {
-	SectorNumber     abi.SectorNumber
-	Proof            abi.SealProof
+	SectorNumber abi.SectorNumber
+	Proof        abi.SealProof
 }
 
 // TODO AMT
@@ -113,10 +113,13 @@ type MinerInfo struct {
 	// This will be the key that is used to sign blocks created by this miner, and
 	// sign messages sent on behalf of this miner to commit sectors, submit PoSts, and
 	// other day to day miner activities.
-	// It must be a BLS key
+
+	// TODO: All addresses appearing on chain anywhere except the account actor are ID addresses
+	// We want to enforce that the account actor referenced by this address carries a BLS key in its state.
+	// This id -> pubkey lookup could be implemented now by asking the account actor for its pubkey address.
 	Worker addr.Address // Must be an ID-address.
 
-	PendingKeyChange WorkerKeyChange
+	PendingWorkerKey WorkerKeyChange
 
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
@@ -218,7 +221,7 @@ func MinerInfo_New(
 		Worker:           workerAddr,
 		PeerId:           peerId,
 		SectorSize:       sectorSize,
-		PendingKeyChange: WorkerKeyChange{},
+		PendingWorkerKey: WorkerKeyChange{},
 	}
 
 	TODO() // TODO: determine how to generate/validate VRF key and initialize other fields
