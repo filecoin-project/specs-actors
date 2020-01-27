@@ -44,6 +44,8 @@ type Runtime struct {
 	expectValidateCallerAny  bool
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
+
+	sendingMessage *message
 }
 
 var _ runtime.Runtime = &Runtime{}
@@ -185,7 +187,22 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	panic("implement me")
+	sentMsg := &message{
+		to:     toAddr,
+		method: methodNum,
+		params: params,
+		value:  value,
+	}
+	if rt.sendingMessage == nil {
+		rt.t.Fatalf("unexpected message send: %v", sentMsg.Key())
+	}
+	if sentMsg.Key() != rt.sendingMessage.Key() {
+		rt.t.Errorf("message being sent does not match expectation. Message: %v, Expected: %v", sentMsg.Key(), rt.sendingMessage.Key())
+	}
+	defer func() {
+		rt.sendingMessage = nil
+	}()
+	return rt.sendingMessage.sendReturn, rt.sendingMessage.exitCode
 }
 
 func (rt *Runtime) NewActorAddress() addr.Address {
@@ -297,6 +314,36 @@ func (rt *Runtime) Store() adt.Store {
 }
 
 ///// Mocking facilities /////
+
+type message struct {
+	// message values
+	to     addr.Address
+	method abi.MethodNum
+	params abi.MethodParams
+	value  abi.TokenAmount
+
+	// returns from applying message
+	sendReturn runtime.SendReturn
+	exitCode   exitcode.ExitCode
+}
+
+func (m *message) Key() string {
+	return fmt.Sprintf("to: %v from: %v params: %v value: %v", m.to.String(), m.method, m.params, m.value)
+}
+
+func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
+	if rt.sendingMessage != nil {
+		rt.t.Errorf("previous unsent message %v", rt.sendingMessage.Key())
+	}
+	rt.sendingMessage = &message{
+		to:         toAddr,
+		method:     methodNum,
+		params:     params,
+		value:      value,
+		sendReturn: sendReturn,
+		exitCode:   exitCode,
+	}
+}
 
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.caller = address

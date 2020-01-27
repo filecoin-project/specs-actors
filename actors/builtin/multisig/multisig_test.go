@@ -146,8 +146,6 @@ func TestPropose(t *testing.T) {
 	})
 
 	t.Run("propose with threshold met", func(t *testing.T) {
-		// TODO implement mockrt message send
-		t.SkipNow()
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build()
 		constructParams := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob},
@@ -168,10 +166,18 @@ func TestPropose(t *testing.T) {
 			Params: nil,
 		}
 
+		rt.ExpectSend(chuck, 0, nil, abi.NewTokenAmount(10), nil, 0)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.Propose(rt, proposeParams)
 		rt.Verify()
+
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		txns := adt.AsMap(rt.Store(), st.PendingTxns)
+		keys, err := txns.CollectKeys()
+		require.NoError(t, err)
+		assert.Empty(t, keys)
 	})
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
@@ -201,6 +207,28 @@ func TestPropose(t *testing.T) {
 			actor.Propose(rt, proposeParams)
 		})
 		rt.Verify()
+
+		// even though propose aborts there should still be a transaction.
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		txns := adt.AsMap(rt.Store(), st.PendingTxns)
+		keys, err := txns.CollectKeys()
+		require.NoError(t, err)
+		// there is exactly one transaction
+		assert.Equal(t, 1, len(keys))
+
+		var txn multisig.MultiSigTransaction
+		found, err := txns.Get(keys[0], &txn)
+		assert.True(t, found)
+
+		// containing these values
+		assert.Equal(t, multisig.MultiSigTransaction{
+			To:       chuck,
+			Value:    abi.NewTokenAmount(10),
+			Method:   0,
+			Params:   abi.MethodParams{},
+			Approved: []addr.Address{anne},
+		}, txn)
 	})
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
@@ -230,6 +258,13 @@ func TestPropose(t *testing.T) {
 			actor.Propose(rt, proposeParams)
 		})
 		rt.Verify()
+
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		txns := adt.AsMap(rt.Store(), st.PendingTxns)
+		keys, err := txns.CollectKeys()
+		require.NoError(t, err)
+		assert.Empty(t, keys)
 	})
 }
 
