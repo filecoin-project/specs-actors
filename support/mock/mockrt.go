@@ -120,7 +120,7 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 
 	// Implement method.
 	for _, expected := range types {
-		if rt.callerType == expected {
+		if rt.callerType.Equals(expected) {
 			return
 		}
 	}
@@ -211,6 +211,7 @@ func (rt *Runtime) CurrIndices() indices.Indices {
 }
 
 func (rt *Runtime) Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
+	rt.t.Logf("Mock Runtime Abort ExitCode: %v Reason: %s", errExitCode, fmt.Sprintf(msg, args...))
 	panic(abort{errExitCode, fmt.Sprintf(msg, args...)})
 }
 
@@ -296,6 +297,11 @@ func (rt *Runtime) Store() adt.Store {
 }
 
 ///// Mocking facilities /////
+
+func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
+	rt.caller = address
+	rt.callerType = actorType
+}
 
 func (rt *Runtime) ExpectValidateCallerAny() {
 	rt.expectValidateCallerAny = true

@@ -16,9 +16,9 @@ type TxnID int64
 
 func (t TxnID) Key() string {
 	// convert a TxnID to a HAMT key.
-	txnKey := make([]byte, 0, binary.MaxVarintLen64)
-	binary.PutVarint(txnKey, int64(t))
-	return string(txnKey)
+	txnKey := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutVarint(txnKey, int64(t))
+	return string(txnKey[:n])
 }
 
 type MultiSigTransaction struct {

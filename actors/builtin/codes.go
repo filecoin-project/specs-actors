@@ -16,6 +16,7 @@ var StorageMarketActorCodeID cid.Cid
 var PaymentChannelActorCodeID cid.Cid
 var MultisigActorCodeID cid.Cid
 var RewardActorCodeID cid.Cid
+var CallerTypesSignable []cid.Cid
 
 func init() {
 	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
@@ -37,4 +38,8 @@ func init() {
 	PaymentChannelActorCodeID = makeBuiltin("fil/1/paymentchannel")
 	MultisigActorCodeID = makeBuiltin("fil/1/multisig")
 	RewardActorCodeID = makeBuiltin("fil/1/reward")
+
+	// FIXME(frrist) this needs to happen here else it is initalized with cid.Undef.
+	// Set of actor code types that can represent external signing parties.
+	CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}
 }
