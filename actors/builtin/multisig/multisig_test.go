@@ -127,7 +127,7 @@ func TestPropose(t *testing.T) {
 
 		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
 
-		rt.ExpectSend(chuck, 0, nil, abi.NewTokenAmount(10), nil, 0)
+		rt.ExpectSend(chuck, abi.MethodNum(method), nilParams, abi.NewTokenAmount(value), nil, 0)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -165,7 +165,6 @@ func TestPropose(t *testing.T) {
 	t.Run("fail propose from non-signer", func(t *testing.T) {
 		// non-signer address
 		richard := newSecpAddr(t, 105)
-
 		const unlockDuration = int64(0)
 		const numApprovals = int64(2)
 		const method = int64(0)
