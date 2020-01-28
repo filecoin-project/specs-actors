@@ -12,9 +12,13 @@ test:
 	$(GO_BIN) test ./...
 .PHONY: test
 
+test-coverage:
+	$(GO_BIN) test -coverprofile=coverage.out ./...
+.PHONY: test-coverage
+
 tidy:
 	$(GO_BIN) mod tidy
-.PHONY:
+.PHONY: tidy
 
 lint:
 	$(GOLINT) run ./...
@@ -23,4 +27,3 @@ lint:
 gen:
 	$(GO_BIN) run ./gen/gen.go
 .PHONY: gen
-

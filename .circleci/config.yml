@@ -1,6 +1,7 @@
 version: 2.1
 orbs:
   go: gotest/tools@0.0.9
+  codecov: codecov/codecov@1.0.2
 
 executors:
   golang:
@@ -65,9 +66,12 @@ jobs:
           name: restore go mod cache
           key: v1-go-deps-{{ arch }}-{{ checksum "/home/circleci/project/go.mod" }}
       - run:
-          command: make test
-      - store_artifacts:
-          path: specs-actors
+          command: |
+            make test-coverage
+            mkdir -p /tmp/artifacts
+            mv coverage.out /tmp/artifacts/coverage.out
+      - codecov/upload:
+          file: /tmp/artifacts/coverage.out
       - store_artifacts:
           path: specs-actors
 
