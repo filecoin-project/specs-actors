@@ -5,7 +5,6 @@ import (
 	"io"
 
 	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
 
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
@@ -51,10 +50,11 @@ func AsSet(s Store, r cid.Cid) *Set {
 
 // NewSet creates a new HAMT with root `r` and store `s`.
 func MakeEmptySet(s Store) (*Set, error) {
-	nd := hamt.NewNode(s)
-	newSet := AsSet(s, cid.Undef)
-	err := newSet.write(nd)
-	return newSet, err
+	m, err := MakeEmptyMap(s)
+	if err != nil {
+		return nil, err
+	}
+	return &Set{m}, nil
 }
 
 // Root return the root cid of HAMT.
@@ -80,9 +80,4 @@ func (h *Set) Delete(k Keyer) error {
 // Collects all the keys from the set into a slice of strings.
 func (h *Set) CollectKeys() (out []string, err error) {
 	return h.m.CollectKeys()
-}
-
-// Writes the root node to storage and sets the new root CID.
-func (h *Set) write(root *hamt.Node) error {
-	return h.m.write(root)
 }
