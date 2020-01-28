@@ -7,6 +7,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -309,4 +310,14 @@ func (a *MultiSigActor) validateSigner(rt vmr.Runtime, st *MultiSigActorState, a
 	if !st.isSigner(address) {
 		rt.Abort(exitcode.ErrForbidden, "party not a signer")
 	}
+}
+
+func (a *MultiSigActor) SpendableBalance(rt vmr.Runtime, _ *struct{}) *abi.TokenAmount {
+	var mst MultiSigActorState
+	rt.State().Readonly(&mst)
+
+	locked := mst.AmountLocked(rt.CurrEpoch())
+
+	spendable := big.Sub(rt.CurrentBalance(), locked)
+	return &spendable
 }
