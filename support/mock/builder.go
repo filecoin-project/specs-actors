@@ -36,7 +36,7 @@ func NewBuilder(ctx context.Context, t *testing.T, receiver addr.Address) *Runti
 		expectValidateCallerAddr: nil,
 		expectValidateCallerType: nil,
 
-		sendingMessage: nil,
+		sendingMessage: make([]*expectedMessage, 0),
 	}
 	return &RuntimeBuilder{m}
 }

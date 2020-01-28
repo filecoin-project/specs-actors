@@ -45,7 +45,7 @@ type Runtime struct {
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
 
-	sendingMessage *message
+	sendingMessage []*expectedMessage
 }
 
 var _ runtime.Runtime = &Runtime{}
@@ -187,22 +187,20 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	sentMsg := &message{
-		to:     toAddr,
-		method: methodNum,
-		params: params,
-		value:  value,
+	if len(rt.sendingMessage) == 0 {
+		rt.t.Errorf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
 	}
-	if rt.sendingMessage == nil {
-		rt.t.Fatalf("unexpected message send: %v", sentMsg.Key())
+
+	expectedMsg := rt.sendingMessage[0]
+
+	if expectedMsg.Equal(toAddr, methodNum, params, value) {
+		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr, methodNum, value, params, rt.sendingMessage[0].String())
 	}
-	if sentMsg.Key() != rt.sendingMessage.Key() {
-		rt.t.Errorf("message being sent does not match expectation. Message: %v, Expected: %v", sentMsg.Key(), rt.sendingMessage.Key())
-	}
+	// pop the expectedMessage from the queue
 	defer func() {
-		rt.sendingMessage = nil
+		rt.sendingMessage = rt.sendingMessage[1:]
 	}()
-	return rt.sendingMessage.sendReturn, rt.sendingMessage.exitCode
+	return expectedMsg.sendReturn, expectedMsg.exitCode
 }
 
 func (rt *Runtime) NewActorAddress() addr.Address {
@@ -315,34 +313,24 @@ func (rt *Runtime) Store() adt.Store {
 
 ///// Mocking facilities /////
 
-type message struct {
-	// message values
+type expectedMessage struct {
+	// expectedMessage values
 	to     addr.Address
 	method abi.MethodNum
 	params abi.MethodParams
 	value  abi.TokenAmount
 
-	// returns from applying message
+	// returns from applying expectedMessage
 	sendReturn runtime.SendReturn
 	exitCode   exitcode.ExitCode
 }
 
-func (m *message) Key() string {
-	return fmt.Sprintf("to: %v from: %v params: %v value: %v", m.to.String(), m.method, m.params, m.value)
+func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) bool {
+	return m.to == to && m.method == method && m.value == value && bytes.Equal(m.params[:], params[:])
 }
 
-func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
-	if rt.sendingMessage != nil {
-		rt.t.Errorf("previous unsent message %v", rt.sendingMessage.Key())
-	}
-	rt.sendingMessage = &message{
-		to:         toAddr,
-		method:     methodNum,
-		params:     params,
-		value:      value,
-		sendReturn: sendReturn,
-		exitCode:   exitCode,
-	}
+func (m *expectedMessage) String() string {
+	return fmt.Sprintf("to: %v from: %v params: %v value: %v sendReturn: %v exitCode: %v", m.to.String(), m.method, m.params, m.value, m.sendReturn, m.exitCode)
 }
 
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
@@ -362,6 +350,18 @@ func (rt *Runtime) ExpectValidateCallerAddr(addrs ...addr.Address) {
 func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
 	rt.require(len(types) > 0, "types must be non-empty")
 	rt.expectValidateCallerType = types[:]
+}
+
+func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
+	// append to the send queue
+	rt.sendingMessage = append(rt.sendingMessage, &expectedMessage{
+		to:         toAddr,
+		method:     methodNum,
+		params:     params,
+		value:      value,
+		sendReturn: sendReturn,
+		exitCode:   exitCode,
+	})
 }
 
 // Verifies that expected calls were received, and resets all expectations.
