@@ -8,7 +8,7 @@ const (
 	MethodSend        = abi.MethodNum(0)
 	MethodConstructor = abi.MethodNum(1)
 
-	// TODO: remove this once canonical method numbers are finalized
+	// TODO fin: remove this once canonical method numbers are finalized
 	MethodPlaceholder = abi.MethodNum(1 << 30)
 )
 

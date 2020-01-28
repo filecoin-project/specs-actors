@@ -10,7 +10,7 @@ import (
 type AccountActor struct{}
 
 func (a *AccountActor) Constructor(rt vmr.Runtime) *adt.EmptyValue {
-	// TODO: set the pubkey address here from parameters
+	// TODO anorth/hs: set the pubkey address here from parameters
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	return &adt.EmptyValue{}
 }

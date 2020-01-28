@@ -39,7 +39,7 @@ func _deriveRandInternal(tag DomainSeparationTag, randSeed abi.RandomnessSeed, i
 	buffer := []byte{}
 	buffer = append(buffer, BigEndianBytesFromInt(int(tag))...)
 	buffer = append(buffer, BigEndianBytesFromInt(int(index))...)
-	buffer = append(buffer, abi.Bytes(randSeed)...)
+	buffer = append(buffer, randSeed...)
 	buffer = append(buffer, s...)
 	return abi.Randomness(SHA256(buffer))
 }
@@ -48,25 +48,25 @@ func RandomInt(randomness abi.Randomness, nonce int, limit int64) int {
 	nonceBytes := BigEndianBytesFromInt(nonce)
 	input := randomness
 	input = append(input, nonceBytes...)
-	ranHash := SHA256(abi.Bytes(input[:]))
+	ranHash := SHA256(input)
 	hashInt := IntFromBigEndianBytes(ranHash)
 	num := int(math.Mod(float64(hashInt), float64(limit)))
 	return num
 }
 
-func BigEndianBytesFromInt(x int) abi.Bytes {
+func BigEndianBytesFromInt(x int) []byte {
 	buf := bytes.NewBuffer(make([]byte, 0, 8))
 	err := binary.Write(buf, binary.BigEndian, x) // nolint: staticcheck
 	autil.AssertNoError(err)
 	return buf.Bytes()
 }
 
-func SHA256(abi.Bytes) abi.Bytes {
+func SHA256(data []byte) []byte {
 	autil.IMPL_FINISH()
 	return []byte{}
 }
 
-func IntFromBigEndianBytes(bytes []byte) int {
+func IntFromBigEndianBytes(data []byte) int {
 	autil.IMPL_FINISH()
 	return -1
 }

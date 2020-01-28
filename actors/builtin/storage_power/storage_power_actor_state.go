@@ -48,14 +48,14 @@ func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
 		return nil, err
 	}
 
-	return &StoragePowerActorState {
-		TotalNetworkPower: abi.NewStoragePower(0),
-		PowerTable: emptyMap.Root(),
-		EscrowTable: emptyMap.Root(),
-		CronEventQueue: make(CronEventQueue),
-		PoStDetectedFaultMiners: emptyMap.Root(),
-		ClaimedPower: emptyMap.Root(),
-		NominalPower: emptyMap.Root(),
+	return &StoragePowerActorState{
+		TotalNetworkPower:        abi.NewStoragePower(0),
+		PowerTable:               emptyMap.Root(),
+		EscrowTable:              emptyMap.Root(),
+		CronEventQueue:           make(CronEventQueue),
+		PoStDetectedFaultMiners:  emptyMap.Root(),
+		ClaimedPower:             emptyMap.Root(),
+		NominalPower:             emptyMap.Root(),
 		NumMinersMeetingMinPower: 0,
 	}, nil
 }
@@ -231,7 +231,7 @@ func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, min
 		power = big.Zero()
 	}
 
-	autil.TODO() // TODO: Decide effect of undercollateralization on (consensus) power.
+	autil.TODO() // TODO ZX: Decide effect of undercollateralization on (consensus) power.
 
 	return st.setPowerEntry(s, minerAddr, power)
 }

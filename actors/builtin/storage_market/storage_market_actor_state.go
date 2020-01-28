@@ -335,7 +335,7 @@ func (st *StorageMarketActorState) _rtGetOnChainDealOrAbort(rt Runtime, dealID a
 	var found bool
 	deal, dealP, found = st._getOnChainDeal(dealID)
 	if !found {
-		rt.AbortStateMsg("dealID not found in Deals.")
+		rt.Abort(exitcode.ErrIllegalState, "dealID not found in Deals.")
 	}
 	return
 }

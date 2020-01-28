@@ -22,9 +22,11 @@ import (
 )
 
 type Runtime = vmr.Runtime
+
 var Assert = autil.Assert
 
 type ConsensusFaultType int
+
 const (
 	//UncommittedPowerFault ConsensusFaultType = 0
 	DoubleForkMiningFault ConsensusFaultType = 1
@@ -159,7 +161,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, miner addr.Address) *adt.Emp
 		rt.Abort(exitcode.ErrIllegalState, "Failed to find miner power in power table for deletion request")
 	}
 	if minerPower.GreaterThan(big.Zero()) {
-		rt.AbortStateMsg("Deletion requested for miner with power still remaining")
+		rt.Abort(exitcode.ErrIllegalState, "Deletion requested for miner with power still remaining")
 	}
 
 	ownerAddr, workerAddr := builtin.RT_GetMinerAccountsAssert(rt, miner)
@@ -296,7 +298,7 @@ func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.Ch
 }
 
 func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, blockHeader2 []byte, target addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *adt.EmptyValue {
-	// TODO: determine how to reward multiple reporters of the same fault within a single epoch.
+	// TODO: jz, zx determine how to reward multiple reporters of the same fault within a single epoch.
 
 	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(blockHeader1, blockHeader2)
 	if !isValidConsensusFault {
@@ -428,7 +430,6 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 	var epochEvents []CronEvent
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		// TODO should we be checking the second return here?
 		epochEvents, _ = st.CronEventQueue[epoch]
 		delete(st.CronEventQueue, epoch)
 		return nil
@@ -536,7 +537,7 @@ func (a *StoragePowerActor) deleteMinerActor(rt Runtime, miner addr.Address) err
 func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {
 	if err != nil {
 		code := exitcode.ErrIllegalState
-		if _, ok  := err.(adt.ErrNotFound); ok {
+		if _, ok := err.(adt.ErrNotFound); ok {
 			code = exitcode.ErrNotFound
 		}
 		fmtmst := fmt.Sprintf(msg, args...)

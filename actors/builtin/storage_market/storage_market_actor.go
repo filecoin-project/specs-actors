@@ -18,7 +18,6 @@ type StorageMarketActor struct{}
 
 type BalanceTableHAMT = autil.BalanceTableHAMT
 type Runtime = vmr.Runtime
-type Bytes = abi.Bytes
 
 var Assert = autil.Assert
 var IMPL_FINISH = autil.IMPL_FINISH
@@ -339,31 +338,31 @@ func (a *StorageMarketActor) Constructor(rt Runtime) *adt.EmptyValue {
 
 func _rtAbortIfDealAlreadyProven(rt Runtime, deal OnChainDeal) {
 	if deal.SectorStartEpoch != epochUndefined {
-		rt.AbortStateMsg("Deal has already appeared in proven sector.")
+		rt.Abort(exitcode.ErrIllegalState, "Deal has already appeared in proven sector.")
 	}
 }
 
 func _rtAbortIfDealNotFromProvider(rt Runtime, dealP StorageDealProposal, minerAddr addr.Address) {
 	if dealP.Provider != minerAddr {
-		rt.AbortStateMsg("Deal has incorrect miner as its provider.")
+		rt.Abort(exitcode.ErrIllegalState, "Deal has incorrect miner as its provider.")
 	}
 }
 
 func _rtAbortIfDealStartElapsed(rt Runtime, dealP StorageDealProposal) {
 	if rt.CurrEpoch() > dealP.StartEpoch {
-		rt.AbortStateMsg("Deal start epoch has already elapsed.")
+		rt.Abort(exitcode.ErrIllegalState, "Deal start epoch has already elapsed.")
 	}
 }
 
 func _rtAbortIfDealEndElapsed(rt Runtime, dealP StorageDealProposal) {
 	if dealP.EndEpoch > rt.CurrEpoch() {
-		rt.AbortStateMsg("Deal end epoch has already elapsed.")
+		rt.Abort(exitcode.ErrIllegalState, "Deal end epoch has already elapsed.")
 	}
 }
 
 func _rtAbortIfDealExceedsSectorLifetime(rt Runtime, dealP StorageDealProposal, sectorExpiration abi.ChainEpoch) {
 	if dealP.EndEpoch > sectorExpiration {
-		rt.AbortStateMsg("Deal would outlive its containing sector.")
+		rt.Abort(exitcode.ErrIllegalState, "Deal would outlive its containing sector.")
 	}
 }
 
@@ -382,7 +381,7 @@ func _rtAbortIfNewDealInvalid(rt Runtime, deal StorageDeal) {
 	dealP := deal.Proposal
 
 	if !_rtDealProposalIsInternallyValid(rt, dealP) {
-		rt.AbortStateMsg("Invalid deal proposal.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
 	}
 
 	_rtAbortIfDealStartElapsed(rt, dealP)
@@ -394,23 +393,23 @@ func _rtAbortIfDealFailsParamBounds(rt Runtime, dealP StorageDealProposal) {
 
 	minDuration, maxDuration := inds.StorageDeal_DurationBounds(dealP.PieceSize, dealP.StartEpoch)
 	if dealP.Duration() < minDuration || dealP.Duration() > maxDuration {
-		rt.AbortStateMsg("Deal duration out of bounds.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
 	}
 
 	minPrice, maxPrice := inds.StorageDeal_StoragePricePerEpochBounds(dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
 	if dealP.StoragePricePerEpoch.LessThan(minPrice) || dealP.StoragePricePerEpoch.GreaterThan(maxPrice) {
-		rt.AbortStateMsg("Storage price out of bounds.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
 	minProviderCollateral, maxProviderCollateral := inds.StorageDeal_ProviderCollateralBounds(
 		dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
 	if dealP.ProviderCollateral.LessThan(minProviderCollateral) || dealP.ProviderCollateral.GreaterThan(maxProviderCollateral) {
-		rt.AbortStateMsg("Provider collateral out of bounds.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
 	minClientCollateral, maxClientCollateral := inds.StorageDeal_ClientCollateralBounds(
 		dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
 	if dealP.ClientCollateral.LessThan(minClientCollateral) || dealP.ClientCollateral.GreaterThan(maxClientCollateral) {
-		rt.AbortStateMsg("Client collateral out of bounds.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}
 }

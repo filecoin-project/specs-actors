@@ -11,6 +11,7 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -23,7 +24,7 @@ type VestingFunction int64
 const (
 	None VestingFunction = iota
 	Linear
-	// TODO: potential options
+	// TODO zx: potential options
 	// PieceWise
 	// Quadratic
 	// Exponential
@@ -42,7 +43,7 @@ func (r *Reward) AmountVested(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	case None:
 		return r.Value
 	case Linear:
-		TODO() // BigInt
+		TODO() // zx BigInt
 		vestedProportion := math.Max(1.0, float64(elapsedEpoch)/float64(r.StartEpoch-r.EndEpoch))
 		return big.Mul(r.Value, big.NewInt(int64(vestedProportion)))
 	default:
@@ -61,7 +62,7 @@ type RewardActorState struct {
 func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Address) abi.TokenAmount {
 	rewards, found := st.RewardMap[ownerAddr]
 	if !found {
-		rt.AbortStateMsg("ra._withdrawReward: ownerAddr not found in RewardMap.")
+		rt.Abort(exitcode.ErrIllegalState, "ra._withdrawReward: ownerAddr not found in RewardMap.")
 	}
 
 	rewardToWithdrawTotal := abi.NewTokenAmount(0)
@@ -73,7 +74,7 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 		withdrawableReward := big.Sub(unlockedReward, r.AmountWithdrawn)
 
 		if withdrawableReward.LessThan(big.Zero()) {
-			rt.AbortStateMsg("ra._withdrawReward: negative withdrawableReward.")
+			rt.Abort(exitcode.ErrIllegalState, "ra._withdrawReward: negative withdrawableReward.")
 		}
 
 		r.AmountWithdrawn = unlockedReward // modify rewards in place
@@ -132,7 +133,7 @@ func (a *RewardActor) AwardBlockReward(
 	// BlockReward + GasReward <= penalty
 	if totalReward.LessThanEqual(penalty) {
 		penalty = totalReward
-	} 
+	}
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
 	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
 

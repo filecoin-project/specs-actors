@@ -134,11 +134,11 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyVa
 		a.validateSigner(rt, &st, callerAddr)
 		txn, err := st.getPendingTransaction(adt.AsStore(rt), params.ID)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to get transaction for cancel: %v", err)
+			rt.Abort(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
 		}
 		proposer := txn.Approved[0]
 		if proposer != callerAddr {
-			rt.AbortStateMsg("Cannot cancel another signers transaction")
+			rt.Abort(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
 		}
 
 		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
@@ -161,7 +161,7 @@ func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *adt.EmptyV
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if st.isSigner(params.Signer) {
-			rt.AbortStateMsg("party is already a signer")
+			rt.Abort(exitcode.ErrIllegalState, "party is already a signer")
 		}
 		st.Signers = append(st.Signers, params.Signer)
 		if params.Increase {
@@ -184,7 +184,7 @@ func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *adt.
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.Signer) {
-			rt.AbortStateMsg("Party not found")
+			rt.Abort(exitcode.ErrNotFound, "Party not found")
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))
@@ -215,11 +215,11 @@ func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *ad
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.From) {
-			rt.AbortStateMsg("Party not found")
+			rt.Abort(exitcode.ErrNotFound, "Party not found")
 		}
 
 		if !st.isSigner(params.To) {
-			rt.AbortStateMsg("Party already present")
+			rt.Abort(exitcode.ErrIllegalState, "Party already present")
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))
@@ -247,7 +247,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
-			rt.AbortStateMsg("New threshold value not supported")
+			rt.Abort(exitcode.ErrIllegalArgument, "New threshold value not supported")
 		}
 
 		st.NumApprovalsThreshold = params.NewThreshold
@@ -263,12 +263,12 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		var err error
 		txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to get transaction for approval: %v", err)
+			rt.Abort(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
 		}
 		// abort duplicate approval
 		for _, previousApprover := range txn.Approved {
 			if previousApprover == rt.ImmediateCaller() {
-				rt.AbortStateMsg("already approved this message")
+				rt.Abort(exitcode.ErrIllegalState, "already approved this message")
 			}
 		}
 		// update approved on the transaction
