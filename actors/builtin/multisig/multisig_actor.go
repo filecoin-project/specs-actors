@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -16,9 +17,9 @@ type TxnID int64
 
 func (t TxnID) Key() string {
 	// convert a TxnID to a HAMT key.
-	txnKey := make([]byte, 0, binary.MaxVarintLen64)
-	binary.PutVarint(txnKey, int64(t))
-	return string(txnKey)
+	txnKey := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutVarint(txnKey, int64(t))
+	return string(txnKey[:n])
 }
 
 type MultiSigTransaction struct {
@@ -46,7 +47,6 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 	for _, sa := range params.Signers {
 		signers = append(signers, sa)
 	}
-
 
 	rt.State().Construct(func() vmr.CBORMarshaler {
 		pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
@@ -76,11 +76,7 @@ type ProposeParams struct {
 	Params abi.MethodParams
 }
 
-type ProposeReturn struct {
-	TxnID TxnID
-}
-
-func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
+func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
@@ -108,7 +104,9 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
-	return &ProposeReturn{txnID}
+
+	v := cbg.CborInt(txnID)
+	return &v
 }
 
 type TxnIDParams struct {
