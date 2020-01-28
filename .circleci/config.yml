@@ -1,6 +1,7 @@
 version: 2.1
 orbs:
   go: gotest/tools@0.0.9
+  codecov: codecov/codecov@1.0.2
 
 executors:
   golang:
@@ -67,9 +68,12 @@ jobs:
       - run:
           command: |
             make test-coverage
-            mv coverage.html /tmp/artifacts
+            mkdir -p /tmp/artifacts
+            mv coverage.html /tmp/artifacts/coverage.out
+      - codecov/upload:
+          file: /tmp/artifacts/coverage.out
       - store_artifacts:
-          path: /tmp/artifacts
+          path: specs-actors
 
   lint: &lint
     description: |
