@@ -99,7 +99,7 @@ type PreCommittedSectorsAMT map[abi.SectorNumber]SectorPreCommitOnChainInfo
 type SectorNumberSetHAMT map[abi.SectorNumber]bool
 
 type WorkerKeyChange struct {
-	NewWorker   addr.Address
+	NewWorker   addr.Address // Must be an ID address
 	EffectiveAt abi.ChainEpoch
 }
 

@@ -56,6 +56,8 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address
 		rt.ValidateImmediateCallerIs(st.Info.Owner)
 
 		// must be BLS since the worker key will be used alongside a BLS-VRF
+		// Specifically, this check isn't quite right
+		// TODO: check that the account actor at the other end of this address has a BLS key.
 		if newKey.Protocol() != addr.BLS {
 			rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 		}
@@ -67,7 +69,7 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address
 
 		// note that this may replace another pending key change
 		st.Info.PendingWorkerKey = keyChange
-		cronPayload := serde.MustSerializeParams(CronEventType_Miner_WorkerKeyChange, []abi.SectorNumber{})
+		cronPayload := serde.MustSerializeParams(CronEventType_Miner_WorkerKeyChange)
 		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+keyChange.EffectiveAt, cronPayload)
 
 		return nil
@@ -141,7 +143,7 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn
 
 	if challenged {
 		// Request deferred Cron check for SurprisePoSt challenge expiry.
-		cronPayload := serde.MustSerializeParams(CronEventType_Miner_SurpriseExpiration, []abi.SectorNumber{})
+		cronPayload := serde.MustSerializeParams(CronEventType_Miner_SurpriseExpiration)
 		surpriseDuration := indices.StorageMining_SurprisePoStChallengeDuration()
 		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, cronPayload)
 	}
@@ -480,6 +482,7 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []by
 func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
+	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
 	if workerAddr.Protocol() != addr.BLS {
 		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 	}
