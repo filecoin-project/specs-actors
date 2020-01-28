@@ -12,7 +12,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/serde"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 )
@@ -176,6 +175,8 @@ func TestApprove(t *testing.T) {
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
 	const txnID = int64(0)
+	const fakeMethod = abi.MethodNum(42)
+	var fakeParams = abi.MethodParams{1, 2, 3, 4, 5}
 	var sendValue = abi.NewTokenAmount(10)
 	var nilParams = abi.MethodParams{}
 	var signers = []addr.Address{anne, bob}
@@ -189,15 +190,14 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		serParams := serde.MustSerialize(&multisig.ChangeNumApprovalsThresholdParams{NewThreshold: 1000})
-		actor.propose(rt, chuck, sendValue, builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold, serParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
-			Method:   builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold,
-			Params:   serParams,
+			Method:   fakeMethod,
+			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
 
@@ -313,8 +313,9 @@ func TestCancel(t *testing.T) {
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
 	const txnID = int64(0)
+	const fakeMethod = abi.MethodNum(42)
+	var fakeParams = abi.MethodParams{1, 2, 3, 4, 5}
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = abi.MethodParams{}
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -324,15 +325,15 @@ func TestCancel(t *testing.T) {
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
+		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		serParams := serde.MustSerialize(&multisig.ChangeNumApprovalsThresholdParams{NewThreshold: 1000})
-		actor.propose(rt, chuck, sendValue, builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold, serParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
+		// anne cancels their transaction
 		rt.SetBalance(sendValue)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectSend(chuck, builtin.MethodSend, nilParams, sendValue, nil, 0)
 		actor.cancel(rt, txnID)
 		rt.Verify()
 
@@ -345,13 +346,13 @@ func TestCancel(t *testing.T) {
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
+		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		serParams := serde.MustSerialize(&multisig.ChangeNumApprovalsThresholdParams{NewThreshold: 1000})
-		actor.propose(rt, chuck, sendValue, builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold, serParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
-		rt.SetBalance(sendValue)
+		// bob (a signer) fails to cancel anne's transaction because bob didn't create it, nice try bob.
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
@@ -363,8 +364,8 @@ func TestCancel(t *testing.T) {
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
-			Method:   builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold,
-			Params:   serParams,
+			Method:   fakeMethod,
+			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
 	})
@@ -374,13 +375,13 @@ func TestCancel(t *testing.T) {
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
+		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		serParams := serde.MustSerialize(&multisig.ChangeNumApprovalsThresholdParams{NewThreshold: 1000})
-		actor.propose(rt, chuck, sendValue, builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold, serParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
-		rt.SetBalance(sendValue)
+		// richard (not a signer) fails to cancel anne's transaction because richard isn't a signer, go away richard.
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
@@ -392,8 +393,8 @@ func TestCancel(t *testing.T) {
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
-			Method:   builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold,
-			Params:   serParams,
+			Method:   fakeMethod,
+			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
 	})
@@ -404,13 +405,13 @@ func TestCancel(t *testing.T) {
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
+		// anne proposes a transaction ID: 0
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		serParams := serde.MustSerialize(&multisig.ChangeNumApprovalsThresholdParams{NewThreshold: 1000})
-		actor.propose(rt, chuck, sendValue, builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold, serParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
-		rt.SetBalance(sendValue)
+		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			actor.cancel(rt, dneTxnID)
@@ -421,8 +422,8 @@ func TestCancel(t *testing.T) {
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
-			Method:   builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold,
-			Params:   serParams,
+			Method:   fakeMethod,
+			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
 	})
