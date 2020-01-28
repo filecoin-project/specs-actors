@@ -24,14 +24,6 @@ type StorageMinerActorState struct {
 	Info      MinerInfo
 }
 
-func (st *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
-}
-
-func (st *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
-}
-
 type MinerPoStState struct {
 	// Epoch of the last succesful PoSt, either election post or surprise post.
 	LastSuccessfulPoSt abi.ChainEpoch
@@ -150,12 +142,7 @@ func SectorsAMT_Empty() SectorsAMT {
 	panic("")
 }
 
-func SectorNumberSetHAMT_Empty() SectorNumberSetHAMT {
-	IMPL_FINISH()
-	panic("")
-}
-
-func (st *StorageMinerActorState) GetStorageWeightDescForSectorMaybe(sectorNumber abi.SectorNumber) (ret SectorStorageWeightDesc, ok bool) {
+func (st *StorageMinerActorState) GetStorageWeightDescForSectorMaybe(sectorNumber abi.SectorNumber) (ret autil.SectorStorageWeightDesc, ok bool) {
 	sectorInfo, found := st.Sectors[sectorNumber]
 	if !found {
 		ret = autil.SectorStorageWeightDesc{}
@@ -172,14 +159,14 @@ func (st *StorageMinerActorState) GetStorageWeightDescForSectorMaybe(sectorNumbe
 	return
 }
 
-func (st *StorageMinerActorState) _getStorageWeightDescForSector(sectorNumber abi.SectorNumber) SectorStorageWeightDesc {
+func (st *StorageMinerActorState) _getStorageWeightDescForSector(sectorNumber abi.SectorNumber) autil.SectorStorageWeightDesc {
 	ret, found := st.GetStorageWeightDescForSectorMaybe(sectorNumber)
 	Assert(found)
 	return ret
 }
 
-func (st *StorageMinerActorState) _getStorageWeightDescsForSectors(sectorNumbers []abi.SectorNumber) []SectorStorageWeightDesc {
-	ret := []SectorStorageWeightDesc{}
+func (st *StorageMinerActorState) _getStorageWeightDescsForSectors(sectorNumbers []abi.SectorNumber) []autil.SectorStorageWeightDesc {
+	ret := []autil.SectorStorageWeightDesc{}
 	for _, sectorNumber := range sectorNumbers {
 		ret = append(ret, st._getStorageWeightDescForSector(sectorNumber))
 	}
@@ -235,7 +222,10 @@ func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi
 	panic("")
 }
 
-func SectorNumberSetHAMT_Items(x SectorNumberSetHAMT) []abi.SectorNumber {
-	IMPL_FINISH()
-	panic("")
+func (st *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
+func (st *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
 }

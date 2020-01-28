@@ -16,9 +16,6 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-// TODO: HAMT
-type MinerCallbackEventsHAMT map[abi.ChainEpoch]autil.MinerCallbackEventSetHAMT
-
 type StoragePowerActorState struct {
 	TotalNetworkPower abi.StoragePower
 
@@ -27,22 +24,23 @@ type StoragePowerActorState struct {
 	EscrowTable autil.BalanceTableHAMT
 
 	// Metadata cached for efficient processing of sector/challenge events.
-	CachedDeferredCronEvents MinerCallbackEventsHAMT
-	PoStDetectedFaultMiners  cid.Cid // HAMT[addr.Address]bool
+	CronEventQueue           CronEventQueue
+	PoStDetectedFaultMiners  cid.Cid // HAMT[addr.Address]struct{}
 	ClaimedPower             cid.Cid // HAMT[address]StoragePower
 	NominalPower             cid.Cid // HAMT[address]StoragePower
 	NumMinersMeetingMinPower int
 }
 
-func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
+// A queue of events to be triggered by cron, indexed by epoch.
+// TODO: HAMT/AMTs.
+type CronEventQueue map[abi.ChainEpoch][]CronEvent
+
+type CronEvent struct {
+	MinerAddr       addr.Address
+	CallbackPayload []byte
 }
 
-func (st *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
-}
-
-func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
+func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
 
 	// if miner is larger than min power requirement, we're set
 	if minerPower.GreaterThanEqual(indices.StoragePower_MinMinerSizeStor()) {
@@ -74,7 +72,7 @@ func (st *StoragePowerActorState) _minerNominalPowerMeetsConsensusMinimum(s adt.
 	return minerPower.GreaterThanEqual(minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]), nil
 }
 
-func (st *StoragePowerActorState) _slashPledgeCollateral(
+func (st *StoragePowerActorState) slashPledgeCollateral(
 	minerAddr addr.Address, slashAmountRequested abi.TokenAmount) abi.TokenAmount {
 
 	Assert(slashAmountRequested.GreaterThanEqual(big.Zero()))
@@ -84,24 +82,15 @@ func (st *StoragePowerActorState) _slashPledgeCollateral(
 	Assert(ok)
 	st.EscrowTable = newTable
 
-	TODO()
+	autil.TODO()
 	// Decide whether we can take any additional action if there is not enough
 	// pledge collateral to be slashed.
 
 	return amountSlashed
 }
 
-func addrInArray(a addr.Address, list []addr.Address) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
-
-// _selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
-func (st *StoragePowerActorState) _selectMinersToSurprise(s adt.Store, challengeCount int, randomness abi.Randomness) ([]addr.Address, error) {
+// selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
+func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeCount int, randomness abi.Randomness) ([]addr.Address, error) {
 	var allMiners []addr.Address
 	if err := adt.AsMap(s, st.PowerTable).ForEach(nil, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
@@ -129,63 +118,63 @@ func (st *StoragePowerActorState) _selectMinersToSurprise(s adt.Store, challenge
 	return selectedMiners, nil
 }
 
-func (st *StoragePowerActorState) _getPowerTotalForMiner(s adt.Store, minerAddr addr.Address) (
+func (st *StoragePowerActorState) getMinerPower(s adt.Store, minerAddr addr.Address) (
 	power abi.StoragePower, ok bool, err error) {
 	return getStoragePower(s, st.PowerTable, minerAddr)
 }
 
-func (st *StoragePowerActorState) _getCurrPledgeForMiner(minerAddr addr.Address) (currPledge abi.TokenAmount, ok bool) {
+func (st *StoragePowerActorState) getMinerPledge(minerAddr addr.Address) (currPledge abi.TokenAmount, ok bool) {
 	return autil.BalanceTable_GetEntry(st.EscrowTable, minerAddr)
 }
 
-func (st *StoragePowerActorState) _addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) error {
+func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
 	// Note: The following computation does not use any of the dynamic information from CurrIndices();
-	// it depends only on storageWeightDesc. This means that the power of a given storageWeightDesc
+	// it depends only on weight. This means that the power of a given weight
 	// does not vary over time, so we can avoid continually updating it for each sector every epoch.
 	//
 	// The function is located in the indices module temporarily, until we find a better place for
 	// global parameterization functions.
-	sectorPower := indices.ConsensusPowerForStorageWeight(storageWeightDesc)
+	sectorPower := indices.ConsensusPowerForStorageWeight(weight)
 
 	currentPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
 	if err != nil {
 		return err
 	}
-	Assert(ok)
+	if !ok {
+		return errors.Errorf("no power for actor %v", minerAddr)
+	}
 
-	if err := st._setClaimedPowerEntryInternal(s, minerAddr, big.Add(currentPower, sectorPower)); err != nil {
+	if err = st.setClaimedPower(s, minerAddr, big.Add(currentPower, sectorPower)); err != nil {
 		return err
 	}
-	return st._updatePowerEntriesFromClaimedPower(s, minerAddr)
+	return st.updatePowerEntriesFromClaimed(s, minerAddr)
 }
 
-func (st *StoragePowerActorState) _deductClaimedPowerForSectorAssert(s adt.Store, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) error {
-	// Note: The following computation does not use any of the dynamic information from CurrIndices();
-	// it depends only on storageWeightDesc. This means that the power of a given storageWeightDesc
-	// does not vary over time, so we can avoid continually updating it for each sector every epoch.
-	//
-	// The function is located in the indices module temporarily, until we find a better place for
-	// global parameterization functions.
-	sectorPower := indices.ConsensusPowerForStorageWeight(storageWeightDesc)
+func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
+	sectorPower := indices.ConsensusPowerForStorageWeight(weight)
 
 	currentPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
 	if err != nil {
 		return errors.Wrap(err, "failed to get claimed miner power")
 	}
-	Assert(ok)
+	if !ok {
+		return errors.Errorf("no power for actor %v", minerAddr)
+	}
 
-	if err := st._setClaimedPowerEntryInternal(s, minerAddr, big.Sub(currentPower, sectorPower)); err != nil {
+	if err = st.setClaimedPower(s, minerAddr, big.Sub(currentPower, sectorPower)); err != nil {
 		return err
 	}
-	return st._updatePowerEntriesFromClaimedPower(s, minerAddr)
+	return st.updatePowerEntriesFromClaimed(s, minerAddr)
 }
 
-func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(s adt.Store, minerAddr addr.Address) error {
+func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, minerAddr addr.Address) error {
 	claimedPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
 	if err != nil {
 		return errors.Wrap(err, "failed to get claimed miner power while setting claimed power table entry")
 	}
-	Assert(ok)
+	if !ok {
+		return errors.Errorf("no power for actor %v", minerAddr)
+	}
 
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
@@ -197,25 +186,25 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(s adt.Stor
 	} else if found {
 		nominalPower = big.Zero()
 	}
-	if err := st._setNominalPowerEntryInternal(s, minerAddr, nominalPower); err != nil {
+	if err = st.setNominalPower(s, minerAddr, nominalPower); err != nil {
 		return errors.Wrap(err, "failed to set nominal power while setting claimed power table entry")
 	}
 
 	// Compute actual (consensus) power, i.e., votes in leader election.
 	power := nominalPower
-	if found, err := st._minerNominalPowerMeetsConsensusMinimum(s, nominalPower); err != nil {
+	if found, err := st.minerNominalPowerMeetsConsensusMinimum(s, nominalPower); err != nil {
 		return errors.Wrap(err, "failed to check miners nominal power against consensus minimum")
 
 	} else if !found {
 		power = big.Zero()
 	}
 
-	TODO() // TODO: Decide effect of undercollateralization on (consensus) power.
+	autil.TODO() // TODO: Decide effect of undercollateralization on (consensus) power.
 
-	return st._setPowerEntryInternal(s, minerAddr, power)
+	return st.setPowerEntry(s, minerAddr, power)
 }
 
-func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(s adt.Store, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) error {
+func (st *StoragePowerActorState) setClaimedPower(s adt.Store, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) error {
 	Assert(updatedMinerClaimedPower.GreaterThanEqual(big.Zero()))
 	var err error
 	st.ClaimedPower, err = putStoragePower(s, st.ClaimedPower, minerAddr, updatedMinerClaimedPower)
@@ -225,22 +214,24 @@ func (st *StoragePowerActorState) _setClaimedPowerEntryInternal(s adt.Store, min
 	return nil
 }
 
-func (st *StoragePowerActorState) _setNominalPowerEntryInternal(s adt.Store, minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) error {
+func (st *StoragePowerActorState) setNominalPower(s adt.Store, minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) error {
 	Assert(updatedMinerNominalPower.GreaterThanEqual(big.Zero()))
 
 	prevMinerNominalPower, ok, err := getStoragePower(s, st.NominalPower, minerAddr)
 	if err != nil {
 		return errors.Wrap(err, "failed to get previous nominal miner power while setting nominal power table entry")
 	}
-	Assert(ok)
+	if !ok {
+		return errors.Errorf("no power for actor %v", minerAddr)
+	}
 
 	st.NominalPower, err = putStoragePower(s, st.NominalPower, minerAddr, updatedMinerNominalPower)
 	if err != nil {
 		return errors.Wrap(err, "failed to put updated nominal miner power while setting nominal power table entry")
 	}
 
-	wasMinMiner, _ := st._minerNominalPowerMeetsConsensusMinimum(s, prevMinerNominalPower)
-	isMinMiner, _ := st._minerNominalPowerMeetsConsensusMinimum(s, updatedMinerNominalPower)
+	wasMinMiner, _ := st.minerNominalPowerMeetsConsensusMinimum(s, prevMinerNominalPower)
+	isMinMiner, _ := st.minerNominalPowerMeetsConsensusMinimum(s, updatedMinerNominalPower)
 
 	if isMinMiner && !wasMinMiner {
 		st.NumMinersMeetingMinPower += 1
@@ -250,34 +241,21 @@ func (st *StoragePowerActorState) _setNominalPowerEntryInternal(s adt.Store, min
 	return nil
 }
 
-func (st *StoragePowerActorState) _setPowerEntryInternal(s adt.Store, minerAddr addr.Address, updatedMinerPower abi.StoragePower) error {
+func (st *StoragePowerActorState) setPowerEntry(s adt.Store, minerAddr addr.Address, updatedMinerPower abi.StoragePower) error {
 	Assert(updatedMinerPower.GreaterThanEqual(big.Zero()))
 	prevMinerPower, ok, err := getStoragePower(s, st.PowerTable, minerAddr)
 	if err != nil {
 		return errors.Wrap(err, "failed to get previous miner power while setting power table entry")
 	}
-	Assert(ok)
+	if !ok {
+		return errors.Errorf("no power for actor %v", minerAddr)
+	}
 	st.PowerTable, err = putStoragePower(s, st.PowerTable, minerAddr, updatedMinerPower)
 	if err != nil {
 		return errors.Wrap(err, "failed to put new miner power while setting power table entry")
 	}
 	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, big.Sub(updatedMinerPower, prevMinerPower))
 	return nil
-}
-
-func (st *StoragePowerActorState) _getPledgeSlashForConsensusFault(currPledge abi.TokenAmount, faultType ConsensusFaultType) abi.TokenAmount {
-	// default is to slash all pledge collateral for all consensus fault
-	TODO()
-	switch faultType {
-	case DoubleForkMiningFault:
-		return currPledge
-	case ParentGrindingFault:
-		return currPledge
-	case TimeOffsetMiningFault:
-		return currPledge
-	default:
-		panic("Unsupported case for pledge collateral consensus fault slashing")
-	}
 }
 
 func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, error) {
@@ -305,18 +283,6 @@ func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
 	return nil
-}
-
-func asKey(a addr.Address) adt.Keyer {
-	return addrKey{a}
-}
-
-type addrKey struct {
-	addr.Address
-}
-
-func (kw addrKey) Key() string {
-	return string(kw.Bytes())
 }
 
 func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePower, bool, error) {
@@ -352,17 +318,25 @@ func deleteStoragePower(s adt.Store, root cid.Cid, a addr.Address) (cid.Cid, err
 	return hm.Root(), nil
 }
 
-func _getConsensusFaultSlasherReward(elapsedEpoch abi.ChainEpoch, collateralToSlash abi.TokenAmount) abi.TokenAmount {
-	TODO()
-	// BigInt Operation
-	// var growthRate = builtin.SLASHER_SHARE_GROWTH_RATE_NUM / builtin.SLASHER_SHARE_GROWTH_RATE_DENOM
-	// var multiplier = growthRate^elapsedEpoch
-	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
-	// return collateralToSlash * slasherProportion
-	return abi.NewTokenAmount(0)
+func addrInArray(a addr.Address, list []addr.Address) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
 
-func MinerCallbackEventsHAMT_Empty() MinerCallbackEventsHAMT {
-	IMPL_FINISH()
-	panic("")
+type asKey addr.Address
+
+func (kw asKey) Key() string {
+	return string(addr.Address(kw).Bytes())
+}
+
+func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
+}
+
+func (st *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
 }

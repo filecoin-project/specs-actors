@@ -110,7 +110,11 @@ type Syscalls interface {
 	VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) bool
 	// Verifies a proof of spacetime.
 	VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool
-	// Verifies valid consensus fault committed with two block headers
+	// Verifies valid consensus fault committed with two block headers:
+	// - both headers mined by the same actor
+	// - headers are different
+	// - first header is of the same or lower epoch as the second
+	// - at least one of the headers appears in the current chain.
 	VerifyConsensusFault(h1, h2 []byte) bool
 }
 

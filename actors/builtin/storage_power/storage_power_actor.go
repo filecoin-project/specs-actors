@@ -20,19 +20,12 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type BalanceTableHAMT = autil.BalanceTableHAMT
-type SectorStorageWeightDesc = autil.SectorStorageWeightDesc
-type SectorTerminationType = autil.SectorTermination
 type Runtime = vmr.Runtime
-
 var Assert = autil.Assert
-var IMPL_FINISH = autil.IMPL_FINISH
-var TODO = autil.TODO
 
 type ConsensusFaultType int
-
 const (
-	UncommittedPowerFault ConsensusFaultType = 0
+	//UncommittedPowerFault ConsensusFaultType = 0
 	DoubleForkMiningFault ConsensusFaultType = 1
 	ParentGrindingFault   ConsensusFaultType = 2
 	TimeOffsetMiningFault ConsensusFaultType = 3
@@ -169,61 +162,60 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, minerAddr addr.Address) *adt
 	ownerAddr, workerAddr := builtin.RT_GetMinerAccountsAssert(rt, minerAddr)
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
-	if err := a.deleteMinerActor(rt, minerAddr); err != nil {
+	if err = a.deleteMinerActor(rt, minerAddr); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to delete miner actor: %v", err)
 	}
 	return &adt.EmptyValue{}
 }
 
-func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, storageWeightDesc SectorStorageWeightDesc) *adt.EmptyValue {
+func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, weight autil.SectorStorageWeightDesc) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc); err != nil {
+	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), weight); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 	}
 	return &adt.EmptyValue{}
 }
 
 func (a *StoragePowerActor) OnSectorTerminate(
-	rt Runtime, storageWeightDesc SectorStorageWeightDesc, terminationType SectorTerminationType) *adt.EmptyValue {
+	rt Runtime, weight autil.SectorStorageWeightDesc, terminationType builtin.SectorTermination) *adt.EmptyValue {
 
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-	if err := a.deductClaimedPowerForSector(rt, minerAddr, storageWeightDesc); err != nil {
+	if err := a.deductClaimedPowerForSector(rt, minerAddr, weight); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
 	}
 
-	if terminationType != autil.NormalExpiration {
-		cidx := rt.CurrIndices()
-		amountToSlash := cidx.StoragePower_PledgeSlashForSectorTermination(storageWeightDesc, terminationType)
+	if terminationType != builtin.NormalExpiration {
+		amountToSlash := pledgePenaltyForSectorTermination(weight, terminationType)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
 	return &adt.EmptyValue{}
 }
 
-func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, storageWeightDesc SectorStorageWeightDesc) *adt.EmptyValue {
+func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, weight autil.SectorStorageWeightDesc) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.deductClaimedPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc); err != nil {
+	if err := a.deductClaimedPowerForSector(rt, rt.ImmediateCaller(), weight); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
 	}
 	return &adt.EmptyValue{}
 }
 
-func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, storageWeightDesc SectorStorageWeightDesc) *adt.EmptyValue {
+func (a *StoragePowerActor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, weight autil.SectorStorageWeightDesc) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), storageWeightDesc); err != nil {
+	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), weight); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 	}
 	return &adt.EmptyValue{}
 }
 
 func (a *StoragePowerActor) OnSectorModifyWeightDesc(
-	rt Runtime, storageWeightDescPrev SectorStorageWeightDesc, storageWeightDescNew SectorStorageWeightDesc) *adt.EmptyValue {
+	rt Runtime, prevWeight autil.SectorStorageWeightDesc, newWeight autil.SectorStorageWeightDesc) *adt.EmptyValue {
 
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.deductClaimedPowerForSector(rt, rt.ImmediateCaller(), storageWeightDescPrev); err != nil {
+	if err := a.deductClaimedPowerForSector(rt, rt.ImmediateCaller(), prevWeight); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
 	}
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), storageWeightDescNew); err != nil {
+	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), newWeight); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 	}
 	return &adt.EmptyValue{}
@@ -238,7 +230,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime) *adt.EmptyVal
 		if err := st.deleteFault(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to delete miner fault: %v", err)
 		}
-		if err := st._updatePowerEntriesFromClaimedPower(adt.AsStore(rt), minerAddr); err != nil {
+		if err := st.updatePowerEntriesFromClaimed(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to update miners claimed power table on surprise PoSt success: %v", err)
 		}
 		return nil
@@ -256,7 +248,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 		if err := st.putFault(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to put miner fault: %v", err)
 		}
-		if err := st._updatePowerEntriesFromClaimedPower(adt.AsStore(rt), minerAddr); err != nil {
+		if err := st.updatePowerEntriesFromClaimed(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to update power entries for claimed power: %v", err)
 		}
 
@@ -277,8 +269,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 			rt.Abort(exitcode.ErrIllegalState, "Failed to delete miner actor: %v", err)
 		}
 	} else {
-		cidx := rt.CurrIndices()
-		amountToSlash := cidx.StoragePower_PledgeSlashForSurprisePoStFailure(minerClaimedPower, numConsecutiveFailures)
+		amountToSlash := pledgePenaltyForSurprisePoStFailure(minerClaimedPower, numConsecutiveFailures)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
 	return &adt.EmptyValue{}
@@ -287,42 +278,25 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, payload []byte) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-	minerEvent := autil.MinerCallbackEvent{
+	minerEvent := CronEvent{
 		MinerAddr:       minerAddr,
 		CallbackPayload: payload,
 	}
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		if _, found := st.CachedDeferredCronEvents[eventEpoch]; !found {
-			st.CachedDeferredCronEvents[eventEpoch] = autil.MinerCallbackEventSetHAMT_Empty()
+		if _, found := st.CronEventQueue[eventEpoch]; !found {
+			st.CronEventQueue[eventEpoch] = []CronEvent{}
 		}
-		st.CachedDeferredCronEvents[eventEpoch] = append(st.CachedDeferredCronEvents[eventEpoch], minerEvent)
+		st.CronEventQueue[eventEpoch] = append(st.CronEventQueue[eventEpoch], minerEvent)
 		return nil
 	})
 	return &adt.EmptyValue{}
 }
 
 func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, blockHeader2 []byte, slashee addr.Address, faultEpoch abi.ChainEpoch, faultType ConsensusFaultType) *adt.EmptyValue {
-	TODO()
-	// TODO: The semantics here are quite delicate:
-	//
-	// - (proof []block.Block) can't be validated in isolation; we must query the runtime to confirm
-	//   that at least one of the blocks provided actually appeared in the current chain.
-	// - We must prevent duplicate slashes on the same offense, taking into account that the blocks
-	//   may appear in different orders.
-	// - We must determine how to reward multiple reporters of the same fault within a single epoch.
-	//
-	// Deferring to followup after these security/mechanism design questions have been resolved.
-	// Previous notes:
+	// TODO: determine how to reward multiple reporters of the same fault within a single epoch.
 
-	// validation checks
-	// - there should be exactly two block headers in proof
-	// - both blocks are mined by the same miner
-	// - two block headers are different
-	// - first block is of the same or lower block height as the second block
-	//
-	// Use EC's IsValidConsensusFault method to validate the proof
 	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(blockHeader1, blockHeader2)
 	if !isValidConsensusFault {
 		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: unverified consensus fault")
@@ -341,7 +315,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, block
 		}
 		Assert(claimedPower.GreaterThan(big.Zero()))
 
-		currPledge, pledgeOk := st._getCurrPledgeForMiner(slashee)
+		currPledge, pledgeOk := st.getMinerPledge(slashee)
 		if !pledgeOk {
 			rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner has no pledge")
 		}
@@ -353,11 +327,11 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, blockHeader1, block
 			rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: invalid block")
 		}
 
-		collateralToSlash := st._getPledgeSlashForConsensusFault(currPledge, faultType)
-		slasherReward := _getConsensusFaultSlasherReward(elapsedEpoch, collateralToSlash)
+		collateralToSlash := pledgePenaltyForConsensusFault(currPledge, faultType)
+		slasherReward := rewardForConsensusSlashReport(elapsedEpoch, collateralToSlash)
 
 		// request slasherReward to be deducted from EscrowTable
-		amountToSlasher = st._slashPledgeCollateral(slasherAddr, slasherReward)
+		amountToSlasher = st.slashPledgeCollateral(slasherAddr, slasherReward)
 		Assert(slasherReward == amountToSlasher)
 		return nil
 	})
@@ -400,7 +374,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *adt.EmptyValue {
 		st.TotalNetworkPower = abi.NewStoragePower(0)
 		st.PowerTable = emptyMap.Root()
 		st.EscrowTable = autil.BalanceTableHAMT_Empty()
-		st.CachedDeferredCronEvents = MinerCallbackEventsHAMT_Empty()
+		st.CronEventQueue = make(CronEventQueue)
 		st.PoStDetectedFaultMiners = emptyMap.Root()
 		st.ClaimedPower = emptyMap.Root()
 		st.NominalPower = emptyMap.Root()
@@ -414,11 +388,11 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *adt.EmptyValue {
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a *StoragePowerActor) addPowerForSector(rt Runtime, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) error {
+func (a *StoragePowerActor) addPowerForSector(rt Runtime, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
 	var st StoragePowerActorState
 	var txErr error
 	rt.State().Transaction(&st, func() interface{} {
-		if err := st._addClaimedPowerForSector(adt.AsStore(rt), minerAddr, storageWeightDesc); err != nil {
+		if err := st.addClaimedPowerForSector(adt.AsStore(rt), minerAddr, weight); err != nil {
 			txErr = errors.Wrap(err, "failed to add power power for sector")
 		}
 		return nil
@@ -426,11 +400,11 @@ func (a *StoragePowerActor) addPowerForSector(rt Runtime, minerAddr addr.Address
 	return txErr
 }
 
-func (a *StoragePowerActor) deductClaimedPowerForSector(rt Runtime, minerAddr addr.Address, storageWeightDesc SectorStorageWeightDesc) error {
+func (a *StoragePowerActor) deductClaimedPowerForSector(rt Runtime, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
 	var st StoragePowerActorState
 	var txErr error
 	rt.State().Transaction(&st, func() interface{} {
-		if err := st._deductClaimedPowerForSectorAssert(adt.AsStore(rt), minerAddr, storageWeightDesc); err != nil {
+		if err := st.deductClaimedPowerForSector(adt.AsStore(rt), minerAddr, weight); err != nil {
 			txErr = errors.Wrap(err, "failed to deducted claimed power for sector")
 		}
 		return nil
@@ -449,9 +423,9 @@ func (a *StoragePowerActor) initiateNewSurprisePoStChallenges(rt Runtime) error 
 		minerSelectionSeed := rt.GetRandomness(rt.CurrEpoch())
 		randomness := crypto.DeriveRandWithEpoch(crypto.DomainSeparationTag_SurprisePoStSelectMiners, minerSelectionSeed, int(rt.CurrEpoch()))
 
-		IMPL_FINISH() // BigInt arithmetic (not floating-point)
+		autil.IMPL_FINISH() // BigInt arithmetic (not floating-point)
 		challengeCount := math.Ceil(float64(st.MinerCount) / float64(provingPeriod))
-		surprisedMiners, err = st._selectMinersToSurprise(adt.AsStore(rt), int(challengeCount), randomness)
+		surprisedMiners, err = st.selectMinersToSurprise(adt.AsStore(rt), int(challengeCount), randomness)
 		if err != nil {
 			txErr = errors.Wrap(err, "failed to select miner to surprise")
 		}
@@ -477,30 +451,30 @@ func (a *StoragePowerActor) initiateNewSurprisePoStChallenges(rt Runtime) error 
 func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 	epoch := rt.CurrEpoch()
 
-	var minerEvents []autil.MinerCallbackEvent
+	var epochEvents []CronEvent
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		// TODO should we be checking the second return here?
-		minerEvents, _ = st.CachedDeferredCronEvents[epoch]
-		delete(st.CachedDeferredCronEvents, epoch)
+		epochEvents, _ = st.CronEventQueue[epoch]
+		delete(st.CronEventQueue, epoch)
 		return nil
 	})
 
-	minerEventsRetain := []autil.MinerCallbackEvent{}
-	for _, minerEvent := range minerEvents {
+	validEvents := []CronEvent{}
+	for _, minerEvent := range epochEvents {
 		if _, found, err := getStoragePower(adt.AsStore(rt), st.PowerTable, minerEvent.MinerAddr); err != nil {
 			return errors.Wrap(err, "Failed to get miner power from power table while processing cron events")
 		} else if found {
-			minerEventsRetain = append(minerEventsRetain, minerEvent)
+			validEvents = append(validEvents, minerEvent)
 		}
 	}
 
-	for _, minerEvent := range minerEventsRetain {
+	for _, event := range validEvents {
 		_, code := rt.Send(
-			minerEvent.MinerAddr,
+			event.MinerAddr,
 			builtin.Method_StorageMinerActor_OnDeferredCronEvent,
 			serde.MustSerializeParams(
-				minerEvent.CallbackPayload,
+				event.CallbackPayload,
 			),
 			abi.NewTokenAmount(0),
 		)
@@ -523,7 +497,7 @@ func (a *StoragePowerActor) getPledgeCollateralReqForMiner(rt Runtime, st *Stora
 func (a *StoragePowerActor) slashPledgeCollateral(rt Runtime, minerAddr addr.Address, amountToSlash abi.TokenAmount) {
 	var st StoragePowerActorState
 	amountSlashed := rt.State().Transaction(&st, func() interface{} {
-		return st._slashPledgeCollateral(minerAddr, amountToSlash)
+		return st.slashPledgeCollateral(minerAddr, amountToSlash)
 	}).(abi.TokenAmount)
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)

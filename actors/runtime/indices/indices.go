@@ -1,10 +1,11 @@
 package indices
 
 import (
+	"github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	actor_util "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/ipfs/go-cid"
 )
 
 var PARAM_FINISH = actor_util.PARAM_FINISH
@@ -67,14 +68,6 @@ type Indices interface {
 		minerStoragePower abi.StoragePower,
 		minerPledgeCollateral abi.TokenAmount,
 		// TODO extend or eliminate
-	) abi.TokenAmount
-	StoragePower_PledgeSlashForSectorTermination(
-		storageWeightDesc actor_util.SectorStorageWeightDesc,
-		terminationType actor_util.SectorTermination,
-	) abi.TokenAmount
-	StoragePower_PledgeSlashForSurprisePoStFailure(
-		minerClaimedPower abi.StoragePower,
-		numConsecutiveFailures int64,
 	) abi.TokenAmount
 	StorageMining_PreCommitDeposit(
 		sectorSize abi.SectorSize,
@@ -214,24 +207,6 @@ func (inds *IndicesImpl) GetCurrBlockRewardRewardForMiner(
 	minerStoragePower abi.StoragePower,
 	minerPledgeCollateral abi.TokenAmount,
 	// TODO extend or eliminate
-) abi.TokenAmount {
-	PARAM_FINISH()
-	panic("")
-}
-
-// TerminationFault
-func (inds *IndicesImpl) StoragePower_PledgeSlashForSectorTermination(
-	storageWeightDesc actor_util.SectorStorageWeightDesc,
-	terminationType actor_util.SectorTermination,
-) abi.TokenAmount {
-	PARAM_FINISH()
-	panic("")
-}
-
-// DetectedFault
-func (inds *IndicesImpl) StoragePower_PledgeSlashForSurprisePoStFailure(
-	minerClaimedPower abi.StoragePower,
-	numConsecutiveFailures int64,
 ) abi.TokenAmount {
 	PARAM_FINISH()
 	panic("")
