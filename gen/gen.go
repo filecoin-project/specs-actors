@@ -15,6 +15,8 @@ func main() {
 		// method params
 		multisig.ConstructorParams{},
 		multisig.ProposeParams{},
+		multisig.AddSignerParams{},
+		multisig.RemoveSignerParams{},
 		multisig.TxnIDParams{},
 		multisig.ChangeNumApprovalsThresholdParams{},
 		multisig.SwapSignerParams{},

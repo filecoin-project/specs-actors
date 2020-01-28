@@ -303,12 +303,11 @@ func TestApprove(t *testing.T) {
 func TestCancel(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
+	richard := newIDAddr(t, 104)
 	receiver := newIDAddr(t, 100)
 	anne := newIDAddr(t, 101)
 	bob := newIDAddr(t, 102)
 	chuck := newIDAddr(t, 103)
-
-	richard := newIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
@@ -429,6 +428,183 @@ func TestCancel(t *testing.T) {
 	})
 }
 
+func TestAddSigner(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	receiver := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+
+	const noUnlockDuration = int64(0)
+	const numApprovals = int64(3)
+	var initialSigner = []addr.Address{anne, bob}
+	var addedSigner = chuck
+
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+	t.Run("simple add signer", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.addSigner(rt, addedSigner, false)
+		rt.Verify()
+
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, append(initialSigner, addedSigner), st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("simple add signer and increase threshold", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.addSigner(rt, addedSigner, true)
+		rt.Verify()
+
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, append(initialSigner, addedSigner), st.Signers)
+		assert.Equal(t, numApprovals+1, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("fail to add a signer that is already a signer", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			actor.addSigner(rt, initialSigner[0], true)
+		})
+		rt.Verify()
+
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+}
+
+func TestRemoveSigner(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	receiver := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+
+	const noUnlockDuration = int64(0)
+	const numApprovals = int64(1)
+	var initialSigner = []addr.Address{anne, bob, chuck}
+
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+	t.Run("simple remove signer", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.removeSigner(rt, initialSigner[2], false)
+		rt.Verify()
+
+		// the number of signers has decreased, specifically chuck is out.
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner[:2], st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("remove signer with manual threshold decrease", func(t *testing.T) {
+		const numApprovals = int64(2)
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.removeSigner(rt, initialSigner[2], true)
+		rt.Verify()
+
+		// the number of approvals in additions to the number of signers has decreased, chuck is gone, sorry chuck.
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner[:2], st.Signers)
+		assert.Equal(t, numApprovals-1, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("remove signer with automatic threshold decrease to avoid lockout", func(t *testing.T) {
+		const numApprovals = int64(3)
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.removeSigner(rt, initialSigner[2], false)
+		rt.Verify()
+
+		// the number of approvals in additions to the number of signers has decreased, chuck is gone, sorry chuck.
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner[:2], st.Signers)
+		assert.Equal(t, numApprovals-1, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("unauthorized signer fails to remove signer", func(t *testing.T) {
+		richard := newIDAddr(t, 104)
+
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			actor.removeSigner(rt, richard, false)
+		})
+		rt.Verify()
+
+		// the signers remain unchanged after a failed attempt to remove.
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+}
+
 //
 // Helper methods for calling multisig actor methods
 //
@@ -471,6 +647,22 @@ func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
 	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
 	rt.Call(h.MultiSigActor.Cancel, cancelParams)
+}
+
+func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increase bool) {
+	addSignerParams := &multisig.AddSignerParams{
+		Signer:   signer,
+		Increase: increase,
+	}
+	rt.Call(h.MultiSigActor.AddSigner, addSignerParams)
+}
+
+func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, decrease bool) {
+	rmSignerParams := &multisig.RemoveSignerParams{
+		Signer:   signer,
+		Decrease: decrease,
+	}
+	rt.Call(h.MultiSigActor.RemoveSigner, rmSignerParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {

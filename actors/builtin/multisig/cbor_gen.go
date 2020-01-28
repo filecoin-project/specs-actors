@@ -688,6 +688,136 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+func (t *AddSignerParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.Signer (address.Address) (struct)
+	if err := t.Signer.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Increase (bool) (bool)
+	if err := cbg.WriteBool(w, t.Increase); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *AddSignerParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Signer (address.Address) (struct)
+
+	{
+
+		if err := t.Signer.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.Increase (bool) (bool)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.Increase = false
+	case 21:
+		t.Increase = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	return nil
+}
+
+func (t *RemoveSignerParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.Signer (address.Address) (struct)
+	if err := t.Signer.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Decrease (bool) (bool)
+	if err := cbg.WriteBool(w, t.Decrease); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *RemoveSignerParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Signer (address.Address) (struct)
+
+	{
+
+		if err := t.Signer.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.Decrease (bool) (bool)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.Decrease = false
+	case 21:
+		t.Decrease = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	return nil
+}
+
 func (t *TxnIDParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
