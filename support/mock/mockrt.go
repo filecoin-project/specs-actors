@@ -45,7 +45,7 @@ type Runtime struct {
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
 
-	sendingMessage []*expectedMessage
+	expectSends []*expectedMessage
 }
 
 var _ runtime.Runtime = &Runtime{}
@@ -187,18 +187,18 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	if len(rt.sendingMessage) == 0 {
+	if len(rt.expectSends) == 0 {
 		rt.t.Errorf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
 	}
 
-	expectedMsg := rt.sendingMessage[0]
+	expectedMsg := rt.expectSends[0]
 
 	if expectedMsg.Equal(toAddr, methodNum, params, value) {
-		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr, methodNum, value, params, rt.sendingMessage[0].String())
+		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr, methodNum, value, params, rt.expectSends[0].String())
 	}
 	// pop the expectedMessage from the queue
 	defer func() {
-		rt.sendingMessage = rt.sendingMessage[1:]
+		rt.expectSends = rt.expectSends[1:]
 	}()
 	return expectedMsg.sendReturn, expectedMsg.exitCode
 }
@@ -354,7 +354,7 @@ func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
 
 func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
 	// append to the send queue
-	rt.sendingMessage = append(rt.sendingMessage, &expectedMessage{
+	rt.expectSends = append(rt.expectSends, &expectedMessage{
 		to:         toAddr,
 		method:     methodNum,
 		params:     params,

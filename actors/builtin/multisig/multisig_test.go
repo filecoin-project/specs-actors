@@ -96,12 +96,13 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
+		// the transaction remains awaiting second approval
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
@@ -116,14 +117,15 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.ExpectSend(chuck, builtin.MethodSend, nilParams, sendValue, nil, 0)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
+		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
 	})
 
@@ -132,14 +134,15 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+			actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 		})
 
+		// the final approval was ignored until the balance is sufficient
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
@@ -156,14 +159,15 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+			actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 		})
 
+		// the transaction is not persisted
 		actor.assertTransactions(rt)
 	})
 }
@@ -177,7 +181,7 @@ type msActorHarness struct {
 	t testing.TB
 }
 
-func (h *msActorHarness) verifyConstruct(rt *mock.Runtime, numApprovalsThresh, unlockDuration int64, signers ...addr.Address) {
+func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh, unlockDuration int64, signers ...addr.Address) {
 	constructParams := multisig.ConstructorParams{
 		Signers:               signers,
 		NumApprovalsThreshold: numApprovalsThresh,
@@ -190,7 +194,7 @@ func (h *msActorHarness) verifyConstruct(rt *mock.Runtime, numApprovalsThresh, u
 	rt.Verify()
 }
 
-func (h *msActorHarness) verifyPropose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params abi.MethodParams) {
+func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params abi.MethodParams) {
 	proposeParams := &multisig.ProposeParams{
 		To:     to,
 		Value:  value,
@@ -198,7 +202,6 @@ func (h *msActorHarness) verifyPropose(rt *mock.Runtime, to addr.Address, value 
 		Params: params,
 	}
 	h.MultiSigActor.Propose(rt, proposeParams)
-	rt.Verify()
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
@@ -219,16 +222,14 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 	}
 }
 
-type strKeyWrapper struct {
-	string
-}
+type key string
 
-func (s strKeyWrapper) Key() string {
-	return s.string
+func (s key) Key() string {
+	return string(s)
 }
 
 func asKey(in string) adt.Keyer {
-	return strKeyWrapper{in}
+	return key(in)
 }
 
 //
