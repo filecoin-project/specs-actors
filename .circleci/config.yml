@@ -69,7 +69,7 @@ jobs:
           command: |
             make test-coverage
             mkdir -p /tmp/artifacts
-            mv coverage.html /tmp/artifacts/coverage.out
+            mv coverage.out /tmp/artifacts/coverage.out
       - codecov/upload:
           file: /tmp/artifacts/coverage.out
       - store_artifacts:
