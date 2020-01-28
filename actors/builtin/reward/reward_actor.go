@@ -112,11 +112,12 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *adt.EmptyValue {
 	return &adt.EmptyValue{}
 }
 
+// gasReward is expected to be transferred to this actor by the runtime before invocation
 func (a *RewardActor) AwardBlockReward(
 	rt vmr.Runtime,
 	miner addr.Address,
-	penalty abi.TokenAmount,
-	gasReward abi.TokenAmount,
+	penalty abi.TokenAmount, // gas penalty for including bad messages
+	gasReward abi.TokenAmount, // gas reward from all gas fees in a block
 	minerNominalPower abi.StoragePower,
 	currPledge abi.TokenAmount,
 ) *adt.EmptyValue {
