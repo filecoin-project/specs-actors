@@ -117,18 +117,10 @@ func (h *Map) ForEach(out vmr.CBORUnmarshaler, fn func(key string) error) error 
 	})
 }
 
-type keyWrapper struct {
-	string
-}
-
-func (kw *keyWrapper) Key() string {
-	return kw.string
-}
-
 // Collects all the keys from the map into a slice of strings.
-func (h *Map) CollectKeys() (out []Keyer, err error) {
+func (h *Map) CollectKeys() (out []string, err error) {
 	err = h.ForEach(nil, func(key string) error {
-		out = append(out, &keyWrapper{key})
+		out = append(out, key)
 		return nil
 	})
 	return

@@ -84,77 +84,66 @@ func TestPropose(t *testing.T) {
 	bob := newIDAddr(t, 102)
 	chuck := newIDAddr(t, 103)
 
+	const noUnlockDuration = int64(0)
+	var sendValue = abi.NewTokenAmount(10)
+	var nilParams = abi.MethodParams{}
+	var signers = []addr.Address{anne, bob}
+
 	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple propose", func(t *testing.T) {
-		const unlockDuration = int64(0)
 		const numApprovals = int64(2)
-		const method = int64(0)
-		const value = int64(10)
-
-		var nilParams = abi.MethodParams{}
-		var signers = []addr.Address{anne, bob}
 
 		rt := builder.Build()
 
-		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
+		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.mustPropose(rt, chuck, value, method, nilParams)
+		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
-		actor.mustContainTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
-			Value:    abi.NewTokenAmount(value),
-			Method:   abi.MethodNum(method),
+			Value:    sendValue,
+			Method:   builtin.MethodSend,
 			Params:   nilParams,
 			Approved: []addr.Address{anne},
 		})
 	})
 
 	t.Run("propose with threshold met", func(t *testing.T) {
-		const unlockDuration = int64(0)
 		const numApprovals = int64(1)
-		const method = int64(0)
-		const value = int64(10)
-
-		var nilParams = abi.MethodParams{}
-		var signers = []addr.Address{anne, bob}
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build()
 
-		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
+		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
 
-		rt.ExpectSend(chuck, abi.MethodNum(method), nilParams, abi.NewTokenAmount(value), nil, 0)
+		rt.ExpectSend(chuck, builtin.MethodSend, nilParams, sendValue, nil, 0)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.mustPropose(rt, chuck, value, method, nilParams)
+		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
-		actor.mustContainTransactions(rt)
+		actor.assertTransactions(rt)
 	})
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
-		const unlockDuration = int64(0)
 		const numApprovals = int64(1)
-		const method = int64(0)
-		const value = int64(10)
-
-		var signers = []addr.Address{anne, bob}
-		var nilParams = abi.MethodParams{}
 
 		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build()
 
-		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
+		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.mustProposeWithExitCode(rt, chuck, value, method, nilParams, exitcode.ErrInsufficientFunds)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		})
 
-		actor.mustContainTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
-			Value:    abi.NewTokenAmount(value),
-			Method:   abi.MethodNum(method),
+			Value:    sendValue,
+			Method:   builtin.MethodSend,
 			Params:   nilParams,
 			Approved: []addr.Address{anne},
 		})
@@ -163,23 +152,19 @@ func TestPropose(t *testing.T) {
 	t.Run("fail propose from non-signer", func(t *testing.T) {
 		// non-signer address
 		richard := newIDAddr(t, 105)
-		const unlockDuration = int64(0)
 		const numApprovals = int64(2)
-		const method = int64(0)
-		const value = int64(10)
-
-		var signers = []addr.Address{anne, bob}
-		var nilParams = abi.MethodParams{}
 
 		rt := builder.Build()
 
-		actor.mustConstructMultisigActor(rt, numApprovals, unlockDuration, signers...)
+		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.mustProposeWithExitCode(rt, chuck, value, method, nilParams, exitcode.ErrForbidden)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		})
 
-		actor.mustContainTransactions(rt)
+		actor.assertTransactions(rt)
 	})
 }
 
@@ -192,7 +177,7 @@ type msActorHarness struct {
 	t testing.TB
 }
 
-func (h *msActorHarness) mustConstructMultisigActor(rt *mock.Runtime, numApprovalsThresh, unlockDuration int64, signers ...addr.Address) {
+func (h *msActorHarness) verifyConstruct(rt *mock.Runtime, numApprovalsThresh, unlockDuration int64, signers ...addr.Address) {
 	constructParams := multisig.ConstructorParams{
 		Signers:               signers,
 		NumApprovalsThreshold: numApprovalsThresh,
@@ -201,59 +186,49 @@ func (h *msActorHarness) mustConstructMultisigActor(rt *mock.Runtime, numApprova
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 	constructRet := h.MultiSigActor.Constructor(rt, &constructParams)
-	require.Equal(h.t, runtime.EmptyReturn{}, *constructRet)
+	assert.Equal(h.t, runtime.EmptyReturn{}, *constructRet)
 	rt.Verify()
 }
 
-func (h *msActorHarness) mustPropose(rt *mock.Runtime, to addr.Address, value, method int64, params abi.MethodParams) {
+func (h *msActorHarness) verifyPropose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params abi.MethodParams) {
 	proposeParams := &multisig.ProposeParams{
 		To:     to,
-		Value:  abi.NewTokenAmount(value),
-		Method: abi.MethodNum(method),
+		Value:  value,
+		Method: method,
 		Params: params,
 	}
 	h.MultiSigActor.Propose(rt, proposeParams)
 	rt.Verify()
 }
 
-func (h *msActorHarness) mustProposeWithExitCode(rt *mock.Runtime, to addr.Address, value, method int64, params abi.MethodParams, exitCode exitcode.ExitCode) {
-	proposeParams := &multisig.ProposeParams{
-		To:     to,
-		Value:  abi.NewTokenAmount(value),
-		Method: abi.MethodNum(method),
-		Params: params,
-	}
-
-	rt.ExpectAbort(exitCode, func() {
-		h.MultiSigActor.Propose(rt, proposeParams)
-	})
-
-	rt.Verify()
-}
-
-func (h *msActorHarness) mustContainTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
+func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
 	var st multisig.MultiSigActorState
 	rt.Readonly(&st)
 
 	txns := adt.AsMap(rt.Store(), st.PendingTxns)
 	keys, err := txns.CollectKeys()
-	require.NoError(h.t, err)
+	assert.NoError(h.t, err)
 
-	if len(expected) == 0 {
-		require.Empty(h.t, keys)
-		return
-	}
-
-	require.Equal(h.t, len(expected), len(keys))
-
+	assert.Equal(h.t, len(expected), len(keys))
 	for i, k := range keys {
 		var actual multisig.MultiSigTransaction
-		found, err := txns.Get(k, &actual)
+		found, err := txns.Get(asKey(k), &actual)
 		require.NoError(h.t, err)
-		require.True(h.t, found)
-		require.Equal(h.t, expected[i], actual)
+		assert.True(h.t, found)
+		assert.Equal(h.t, expected[i], actual)
 	}
+}
 
+type strKeyWrapper struct {
+	string
+}
+
+func (s strKeyWrapper) Key() string {
+	return s.string
+}
+
+func asKey(in string) adt.Keyer {
+	return strKeyWrapper{in}
 }
 
 //

@@ -4,7 +4,6 @@ go 1.13
 
 require (
 	github.com/filecoin-project/go-address v0.0.0-20200107215422-da8eea2842b5
-	github.com/filecoin-project/go-crypto v0.0.0-20191218222705-effae4ea9f03
 	github.com/ipfs/go-cid v0.0.4
 	github.com/ipfs/go-hamt-ipld v0.0.14
 	github.com/libp2p/go-libp2p-core v0.3.0
