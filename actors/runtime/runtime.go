@@ -102,6 +102,8 @@ type Runtime interface {
 type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
+	// Hashes input data using SHA256.
+	Hash_SHA256(data []byte) []byte
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (abi.UnsealedSectorCID, error)
 	// Verifies a sector seal proof.
