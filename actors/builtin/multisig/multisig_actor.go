@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -75,11 +76,7 @@ type ProposeParams struct {
 	Params abi.MethodParams
 }
 
-type ProposeReturn struct {
-	TxnID TxnID
-}
-
-func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
+func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
@@ -107,7 +104,9 @@ func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeR
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
-	return &ProposeReturn{txnID}
+
+	v := cbg.CborInt(txnID)
+	return &v
 }
 
 type TxnIDParams struct {

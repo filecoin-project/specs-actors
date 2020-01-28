@@ -10,6 +10,6 @@ require (
 	github.com/multiformats/go-multihash v0.0.10
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
-	github.com/whyrusleeping/cbor-gen v0.0.0-20200122015334-52eaf73beaf5
+	github.com/whyrusleeping/cbor-gen v0.0.0-20200123233031-1cdf64d27158
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 )
