@@ -19,7 +19,9 @@ comment:
   branches: []             # branch names that can post comment
 
 ignore:
-  - "cbor_gen.go"
+  - "**/*cbor_gen.go"
+  - "support/**/*"
+  - "gen/**/*"
 
 codecov:
   notify:
