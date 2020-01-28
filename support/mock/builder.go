@@ -7,7 +7,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 // Build for fluent initialization of a mock runtime.
@@ -18,23 +18,25 @@ type RuntimeBuilder struct {
 // Initializes a new builder with a receiving actor address.
 func NewBuilder(ctx context.Context, t *testing.T, receiver addr.Address) *RuntimeBuilder {
 	m := &Runtime{
-		ctx:                      ctx,
-		epoch:                    0,
-		receiver:                 receiver,
-		caller:                   addr.Address{},
-		callerType:               cid.Undef,
-		miner:                    addr.Address{},
+		ctx:        ctx,
+		epoch:      0,
+		receiver:   receiver,
+		caller:     addr.Address{},
+		callerType: cid.Undef,
+		miner:      addr.Address{},
 
-		state:                    cid.Undef,
-		store:                    make(map[cid.Cid][]byte),
+		state: cid.Undef,
+		store: make(map[cid.Cid][]byte),
 
-		balance:                  abi.NewTokenAmount(0),
-		valueReceived:            abi.NewTokenAmount(0),
+		balance:       abi.NewTokenAmount(0),
+		valueReceived: abi.NewTokenAmount(0),
 
 		t:                        t,
 		expectValidateCallerAny:  false,
 		expectValidateCallerAddr: nil,
 		expectValidateCallerType: nil,
+
+		expectSends: make([]*expectedMessage, 0),
 	}
 	return &RuntimeBuilder{m}
 }
