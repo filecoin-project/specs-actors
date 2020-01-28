@@ -195,11 +195,11 @@ func TestApprove(t *testing.T) {
 	t.Run("simple propose and approval", func(t *testing.T) {
 		rt := builder.Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
@@ -226,11 +226,11 @@ func TestApprove(t *testing.T) {
 
 		rt := builder.Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
 		// anne is going to approve it twice and fail, poor anne.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -255,11 +255,11 @@ func TestApprove(t *testing.T) {
 
 		rt := builder.Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
@@ -291,11 +291,11 @@ func TestApprove(t *testing.T) {
 
 		rt := builder.Build()
 
-		actor.verifyConstruct(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
