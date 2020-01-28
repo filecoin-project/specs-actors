@@ -11,6 +11,7 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type Runtime = vmr.Runtime
@@ -46,7 +47,7 @@ func (s *InitActorState) MapAddressToNewID(address addr.Address) addr.Address {
 
 type InitActor struct{}
 
-func (a *InitActor) Constructor(rt Runtime) *vmr.EmptyReturn {
+func (a *InitActor) Constructor(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	var st InitActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -55,7 +56,7 @@ func (a *InitActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 		st.NetworkName = rt.NetworkName()
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type ExecReturn struct {

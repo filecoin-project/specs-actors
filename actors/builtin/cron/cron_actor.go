@@ -6,6 +6,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type CronActorState struct{}
@@ -20,13 +21,13 @@ type CronTableEntry struct {
 	MethodNum abi.MethodNum
 }
 
-func (a *CronActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
+func (a *CronActor) Constructor(rt vmr.Runtime) *adt.EmptyValue {
 	// Nothing. intentionally left blank.
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *CronActor) EpochTick(rt vmr.Runtime) *vmr.EmptyReturn {
+func (a *CronActor) EpochTick(rt vmr.Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	// a.Entries is basically a static registry for now, loaded
@@ -36,5 +37,5 @@ func (a *CronActor) EpochTick(rt vmr.Runtime) *vmr.EmptyReturn {
 		// Any error and return value are ignored.
 	}
 
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }

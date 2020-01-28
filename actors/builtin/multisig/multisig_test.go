@@ -11,7 +11,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/serde"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -38,7 +37,7 @@ func TestConstruction(t *testing.T) {
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		ret := actor.Constructor(rt, &params)
-		assert.Equal(t, runtime.EmptyReturn{}, *ret)
+		assert.Equal(t, adt.EmptyValue{}, *ret)
 		rt.Verify()
 
 		var st multisig.MultiSigActorState
@@ -63,7 +62,7 @@ func TestConstruction(t *testing.T) {
 		}
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		ret := actor.Constructor(rt, &params)
-		assert.Equal(t, runtime.EmptyReturn{}, *ret)
+		assert.Equal(t, adt.EmptyValue{}, *ret)
 		rt.Verify()
 
 		var st multisig.MultiSigActorState
@@ -330,7 +329,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 	constructRet := h.MultiSigActor.Constructor(rt, &constructParams)
-	assert.Equal(h.t, runtime.EmptyReturn{}, *constructRet)
+	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 }
 

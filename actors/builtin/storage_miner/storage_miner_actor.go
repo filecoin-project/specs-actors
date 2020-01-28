@@ -16,6 +16,7 @@ import (
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type SectorStorageWeightDesc = autil.SectorStorageWeightDesc
@@ -50,7 +51,7 @@ type CronEventPayload struct {
 // Worker Key Change //
 ///////////////////////
 
-func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address) *vmr.EmptyReturn {
+func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Owner)
@@ -74,10 +75,10 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address
 
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *vmr.EmptyReturn {
+func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	var st StorageMinerActorState
@@ -95,7 +96,7 @@ func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *vmr.EmptyRetur
 
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 //////////////////
@@ -103,7 +104,7 @@ func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *vmr.EmptyRetur
 //////////////////
 
 // Called by StoragePowerActor to notify StorageMiner of SurprisePoSt Challenge.
-func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn {
+func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var st StorageMinerActorState
@@ -147,11 +148,11 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn
 		surpriseDuration := indices.StorageMining_SurprisePoStChallengeDuration()
 		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, cronPayload)
 	}
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 // Invoked by miner's worker address to submit a response to a pending SurprisePoSt challenge.
-func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo abi.OnChainSurprisePoStVerifyInfo) *vmr.EmptyReturn {
+func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo abi.OnChainSurprisePoStVerifyInfo) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
@@ -176,15 +177,15 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo a
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify storage power actor")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 // Called by StoragePowerActor.
-func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) *vmr.EmptyReturn {
+func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	minerAddr := rt.CurrReceiver()
 	rt.DeleteActor(minerAddr)
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 //////////////////
@@ -192,7 +193,7 @@ func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) *vmr.EmptyReturn {
 //////////////////
 
 // Called by the VM interpreter once an ElectionPoSt has been verified.
-func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *vmr.EmptyReturn {
+func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	if rt.ToplevelBlockWinner() != rt.CurrReceiver() {
 		rt.Abort(exitcode.ErrForbidden, "receiver must be miner of this block")
@@ -214,7 +215,7 @@ func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *vmr.EmptyReturn 
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 ///////////////////////
@@ -223,7 +224,7 @@ func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *vmr.EmptyReturn 
 
 // Deals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo) *vmr.EmptyReturn {
+func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
@@ -255,10 +256,10 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
 	a._rtEnrollCronEvent(rt, expiryBound, cronPayload)
 
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) *vmr.EmptyReturn {
+func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
@@ -332,14 +333,14 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, preCommitSector.PreCommitDeposit)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 /////////////////////////
 // Sector Modification //
 /////////////////////////
 
-func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.SectorNumber, newExpiration abi.ChainEpoch) *vmr.EmptyReturn {
+func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.SectorNumber, newExpiration abi.ChainEpoch) *adt.EmptyValue {
 	storageWeightDescPrev := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
 
 	var extensionLength abi.ChainEpoch
@@ -375,10 +376,10 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
+func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.SectorNumber) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
@@ -387,14 +388,14 @@ func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.Sec
 		a._rtTerminateSector(rt, sectorNumber, autil.UserTermination)
 	}
 
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 ////////////
 // Faults //
 ////////////
 
-func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []abi.SectorNumber, duration abi.ChainEpoch) *vmr.EmptyReturn {
+func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []abi.SectorNumber, duration abi.ChainEpoch) *adt.EmptyValue {
 	if duration <= abi.ChainEpoch(0) {
 		rt.Abort(exitcode.ErrIllegalArgument, "non-positive fault duration %v", duration)
 	}
@@ -433,14 +434,14 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, cronPayload)
 	// schedule cron event to end marking temp fault at EndEpoch
 	a._rtEnrollCronEvent(rt, effectiveEndEpoch, cronPayload)
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 //////////
 // Cron //
 //////////
 
-func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []byte) *vmr.EmptyReturn {
+func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []byte) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var payload CronEventPayload
@@ -472,14 +473,14 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []by
 		a._rtCommitWorkerKeyChange(rt)
 	}
 
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 /////////////////
 // Constructor //
 /////////////////
 
-func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *vmr.EmptyReturn {
+func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
@@ -500,7 +501,7 @@ func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, work
 		st.Info = MinerInfo_New(ownerAddr, workerAddr, sectorSize, peerId)
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
