@@ -65,11 +65,11 @@ jobs:
           name: restore go mod cache
           key: v1-go-deps-{{ arch }}-{{ checksum "/home/circleci/project/go.mod" }}
       - run:
-          command: make test
+          command: |
+            make test-coverage
+            mv coverage.html /tmp/artifacts
       - store_artifacts:
-          path: specs-actors
-      - store_artifacts:
-          path: specs-actors
+          path: /tmp/artifacts
 
   lint: &lint
     description: |
