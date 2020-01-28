@@ -236,7 +236,6 @@ func TestApprove(t *testing.T) {
 		rt.Verify()
 
 		// anne is going to approve it twice and fail, poor anne.
-		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		// TODO replace with correct exit code when multisig actor breaks the AbortStateMsg pattern.
 		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
@@ -345,6 +344,8 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 	h.MultiSigActor.Propose(rt, proposeParams)
 }
 
+// TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
+// exercise both un/successful sends.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
 	h.MultiSigActor.Approve(rt, approveParams)
