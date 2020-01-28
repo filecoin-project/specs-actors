@@ -686,6 +686,130 @@ func TestSwapSigners(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
 
 	})
+}
+
+func TestChangeThreshold(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	receiver := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+
+	const noUnlockDuration = int64(0)
+	const numApprovals = int64(2)
+	var initialSigner = []addr.Address{anne, bob, chuck}
+
+	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+	t.Run("simple decrease threshold", func(t *testing.T) {
+		rt := builder.Build()
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.changeNumApprovalsThreshold(rt, numApprovals-1)
+		rt.Verify()
+
+		// threshold decreases
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals-1, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("simple increase threshold", func(t *testing.T) {
+		rt := builder.Build()
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.changeNumApprovalsThreshold(rt, numApprovals+1)
+		rt.Verify()
+
+		// threshold increases
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals+1, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("fail to set threshold == 0", func(t *testing.T) {
+		rt := builder.Build()
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		// set it to zero
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			actor.changeNumApprovalsThreshold(rt, 0)
+		})
+		rt.Verify()
+
+		// state remains unchanged
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("fail to set threshold < 0", func(t *testing.T) {
+		rt := builder.Build()
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		// set it to less than zero
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			actor.changeNumApprovalsThreshold(rt, -1)
+		})
+		rt.Verify()
+
+		// state remains unchanged
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("fail to set threshold above number of signers", func(t *testing.T) {
+		rt := builder.Build()
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			actor.changeNumApprovalsThreshold(rt, int64(len(initialSigner)+1))
+		})
+		rt.Verify()
+
+		// state remains unchanged
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+
+	})
 
 }
 
@@ -755,6 +879,11 @@ func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr
 		To:   newSigner,
 	}
 	rt.Call(h.MultiSigActor.SwapSigner, swpParams)
+}
+
+func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold int64) {
+	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
+	h.MultiSigActor.ChangeNumApprovalsThreshold(rt, thrshParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
