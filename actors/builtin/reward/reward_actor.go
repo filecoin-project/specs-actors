@@ -112,10 +112,12 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *adt.EmptyValue {
 	return &adt.EmptyValue{}
 }
 
+// gasReward is expected to be transferred to this actor by the runtime before invocation
 func (a *RewardActor) AwardBlockReward(
 	rt vmr.Runtime,
 	miner addr.Address,
-	penalty abi.TokenAmount,
+	penalty abi.TokenAmount, // gas penalty for including bad messages
+	gasReward abi.TokenAmount, // gas reward from all gas fees in a block
 	minerNominalPower abi.StoragePower,
 	currPledge abi.TokenAmount,
 ) *adt.EmptyValue {
@@ -124,16 +126,24 @@ func (a *RewardActor) AwardBlockReward(
 	inds := rt.CurrIndices()
 	pledgeReq := inds.PledgeCollateralReq(minerNominalPower)
 	currReward := inds.GetCurrBlockRewardForMiner(minerNominalPower, currPledge)
-	TODO() // BigInt
+
+	totalReward := big.Add(currReward, gasReward)
+
+	// BlockReward + GasReward <= penalty
+	if totalReward.LessThanEqual(penalty) {
+		penalty = totalReward
+	} 
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
+	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
+
+	// 0 if totalReward <= penalty
+	rewardAfterPenalty := big.Sub(totalReward, penalty)
 
 	// 0 if over collateralized
 	underPledge := big.Max(big.Zero(), big.Sub(pledgeReq, currPledge))
-	rewardToGarnish := big.Min(currReward, underPledge)
+	rewardToGarnish := big.Min(rewardAfterPenalty, underPledge)
 
-	TODO()
-	// handle penalty here
-	// also handle penalty greater than reward
-	actualReward := big.Sub(currReward, rewardToGarnish)
+	actualReward := big.Sub(rewardAfterPenalty, rewardToGarnish)
 	if rewardToGarnish.GreaterThan(big.Zero()) {
 		// Send fund to SPA for collateral
 		_, code := rt.Send(
