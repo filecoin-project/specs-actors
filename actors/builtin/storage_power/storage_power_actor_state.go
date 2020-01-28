@@ -194,7 +194,7 @@ func (st *StoragePowerActorState) _updatePowerEntriesFromClaimedPower(s adt.Stor
 	nominalPower := claimedPower
 	if found, err := st.hasFault(s, minerAddr); err != nil {
 		return err
-	} else if !found {
+	} else if found {
 		nominalPower = big.Zero()
 	}
 	if err := st._setNominalPowerEntryInternal(s, minerAddr, nominalPower); err != nil {
@@ -281,32 +281,29 @@ func (st *StoragePowerActorState) _getPledgeSlashForConsensusFault(currPledge ab
 }
 
 func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, error) {
-	hm := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	found, err := hm.Has(asKey(a))
+	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	found, err := faultyMiners.Has(asKey(a))
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to get detected faults for address %v from set %s", a, st.PoStDetectedFaultMiners)
 	}
-	if !found {
-		return false, nil
-	}
-	return true, nil
+	return found, nil
 }
 
 func (st *StoragePowerActorState) putFault(s adt.Store, a addr.Address) error {
-	hm := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err := hm.Put(asKey(a)); err != nil {
+	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err := faultyMiners.Put(asKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
 	}
-	st.PoStDetectedFaultMiners = hm.Root()
+	st.PoStDetectedFaultMiners = faultyMiners.Root()
 	return nil
 }
 
 func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error {
-	hm := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err := hm.Delete(asKey(a)); err != nil {
+	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err := faultyMiners.Delete(asKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
 	}
-	st.PoStDetectedFaultMiners = hm.Root()
+	st.PoStDetectedFaultMiners = faultyMiners.Root()
 	return nil
 }
 

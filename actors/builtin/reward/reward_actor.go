@@ -13,6 +13,7 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 var TODO = autil.TODO
@@ -91,12 +92,12 @@ func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Addre
 
 type RewardActor struct{}
 
-func (a *RewardActor) Constructor(rt vmr.Runtime) *vmr.EmptyReturn {
+func (a *RewardActor) Constructor(rt vmr.Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
+func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	ownerAddr := rt.ImmediateCaller()
 
@@ -108,7 +109,7 @@ func (a *RewardActor) WithdrawReward(rt vmr.Runtime) *vmr.EmptyReturn {
 
 	_, code := rt.Send(ownerAddr, builtin.MethodSend, nil, withdrawableReward)
 	builtin.RequireSuccess(rt, code, "failed to send funds to owner")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 func (a *RewardActor) AwardBlockReward(
@@ -117,7 +118,7 @@ func (a *RewardActor) AwardBlockReward(
 	penalty abi.TokenAmount,
 	minerNominalPower abi.StoragePower,
 	currPledge abi.TokenAmount,
-) *vmr.EmptyReturn {
+) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	inds := rt.CurrIndices()
@@ -164,7 +165,7 @@ func (a *RewardActor) AwardBlockReward(
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 func removeIndices(rewards []Reward, indices []int) []Reward {

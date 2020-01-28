@@ -11,6 +11,7 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type StorageMarketActor struct{}
@@ -29,7 +30,7 @@ var IMPL_FINISH = autil.IMPL_FINISH
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
-func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) *vmr.EmptyReturn {
+func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) *adt.EmptyValue {
 	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
@@ -64,12 +65,12 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address,
 	builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
 	_, code = rt.Send(recipientAddr, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 // Deposits the specified amount into the balance held in escrow.
 // Note: the amount is included implicitly in the message.
-func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *vmr.EmptyReturn {
+func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *adt.EmptyValue {
 	builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, entryAddr, builtin.MinerEntrySpec_MinerOrSignable)
 
 	var st StorageMarketActorState
@@ -86,11 +87,11 @@ func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *vmr
 		st.EscrowTable = newTable
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 // Publish a new set of storage deals (not yet included in a sector).
-func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []StorageDeal) *vmr.EmptyReturn {
+func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []StorageDeal) *adt.EmptyValue {
 	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
@@ -144,7 +145,7 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type GetWeightForDealSetReturn struct {
@@ -218,7 +219,7 @@ func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, dealIDs abi.Dea
 // Terminate a set of deals in response to their containing sector being terminated.
 // Slash provider collateral, refund client collateral, and refund partial unpaid escrow
 // amount to client.
-func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.DealIDs) *vmr.EmptyReturn {
+func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.DealIDs) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
@@ -237,10 +238,10 @@ func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, dealIDs abi.Dea
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
+func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 	var amountSlashedTotal abi.TokenAmount
 	var st StorageMarketActorState
@@ -314,10 +315,10 @@ func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *StorageMarketActor) Constructor(rt Runtime) *vmr.EmptyReturn {
+func (a *StorageMarketActor) Constructor(rt Runtime) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -330,7 +331,7 @@ func (a *StorageMarketActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 		st.CachedExpirationsNextProcEpoch = abi.ChainEpoch(0)
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

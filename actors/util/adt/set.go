@@ -1,24 +1,38 @@
 package adt
 
 import (
+	"fmt"
 	"io"
 
 	cid "github.com/ipfs/go-cid"
 	hamt "github.com/ipfs/go-hamt-ipld"
-	cbg "github.com/whyrusleeping/cbor-gen"
+
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
-var setValue hamtSetValue
+type EmptyValue struct{}
 
-func init() {
-	setValue = hamtSetValue(1)
+var _ runtime.CBORMarshaler = (*EmptyValue)(nil)
+var _ runtime.CBORUnmarshaler = (*EmptyValue)(nil)
+
+// 0x80 is empty list (major type 4 with zero length)
+// 0xa0 is empty map (major type 5 with zero length)
+// This is encoded with empty-list since we use tuple-encoding for everything.
+const emptyListEncoded = 0x80
+
+func (EmptyValue) MarshalCBOR(w io.Writer) error {
+	_, err := w.Write([]byte{emptyListEncoded})
+	return err
 }
 
-type hamtSetValue uint64
-
-func (s hamtSetValue) MarshalCBOR(w io.Writer) error {
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(s))); err != nil {
+func (EmptyValue) UnmarshalCBOR(r io.Reader) error {
+	buf := make([]byte, 1)
+	_, err := r.Read(buf)
+	if err != nil {
 		return err
+	}
+	if buf[0] != emptyListEncoded {
+		return fmt.Errorf("invalid empty return %x", buf[0])
 	}
 	return nil
 }
@@ -50,7 +64,7 @@ func (h *Set) Root() cid.Cid {
 
 // Put adds `k` to the set.
 func (h *Set) Put(k Keyer) error {
-	return h.m.Put(k, setValue)
+	return h.m.Put(k, EmptyValue{})
 }
 
 // Has returns true iff `k` is in the set.
