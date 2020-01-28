@@ -338,6 +338,10 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.callerType = actorType
 }
 
+func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
+	rt.balance = amt
+}
+
 func (rt *Runtime) ExpectValidateCallerAny() {
 	rt.expectValidateCallerAny = true
 }
