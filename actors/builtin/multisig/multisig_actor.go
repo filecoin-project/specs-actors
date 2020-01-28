@@ -40,7 +40,7 @@ type ConstructorParams struct {
 	UnlockDuration        abi.ChainEpoch
 }
 
-func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *vmr.EmptyReturn {
+func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	var signers []addr.Address
@@ -66,7 +66,7 @@ func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *
 		}
 		return &st
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type ProposeParams struct {
@@ -113,7 +113,7 @@ type TxnIDParams struct {
 	ID TxnID
 }
 
-func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
+func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	var st MultiSigActorState
@@ -122,10 +122,10 @@ func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyR
 		return nil
 	})
 	a.approveTransaction(rt, params.ID)
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyReturn {
+func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
@@ -146,7 +146,7 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *vmr.EmptyRe
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type AddSigner struct {
@@ -154,7 +154,7 @@ type AddSigner struct {
 	Increase bool
 }
 
-func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *vmr.EmptyReturn {
+func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -169,7 +169,7 @@ func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *vmr.EmptyR
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type RemoveSigner struct {
@@ -177,7 +177,7 @@ type RemoveSigner struct {
 	Decrease bool
 }
 
-func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *vmr.EmptyReturn {
+func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -200,7 +200,7 @@ func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *vmr.
 		return nil
 	})
 
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type SwapSignerParams struct {
@@ -208,7 +208,7 @@ type SwapSignerParams struct {
 	To   addr.Address
 }
 
-func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *vmr.EmptyReturn {
+func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -233,14 +233,14 @@ func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *vm
 		return nil
 	})
 
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold int64
 }
 
-func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *vmr.EmptyReturn {
+func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -253,7 +253,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 		st.NumApprovalsThreshold = params.NewThreshold
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {

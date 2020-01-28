@@ -51,13 +51,13 @@ type MinerSetHAMT map[addr.Address]bool
 
 type ActorIDSetHAMT map[abi.ActorID]bool
 
-type MinerEvent struct {
-	MinerAddr addr.Address
-	Sectors   []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
+type MinerCallbackEvent struct {
+	MinerAddr       addr.Address
+	CallbackPayload []byte
 }
 
 // TODO HAMT
-type MinerEventSetHAMT []MinerEvent
+type MinerCallbackEventSetHAMT []MinerCallbackEvent
 
 type SectorStorageWeightDesc struct {
 	SectorSize abi.SectorSize
@@ -175,7 +175,7 @@ func MinerSetHAMT_Empty() MinerSetHAMT {
 	panic("")
 }
 
-func MinerEventSetHAMT_Empty() MinerEventSetHAMT {
+func MinerCallbackEventSetHAMT_Empty() MinerCallbackEventSetHAMT {
 	IMPL_FINISH()
 	panic("")
 }
