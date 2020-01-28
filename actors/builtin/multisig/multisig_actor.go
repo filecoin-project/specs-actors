@@ -218,7 +218,7 @@ func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *ad
 			rt.Abort(exitcode.ErrNotFound, "Party not found")
 		}
 
-		if !st.isSigner(params.To) {
+		if st.isSigner(params.To) {
 			rt.Abort(exitcode.ErrIllegalArgument, "Party already present")
 		}
 

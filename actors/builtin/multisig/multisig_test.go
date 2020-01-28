@@ -488,7 +488,7 @@ func TestAddSigner(t *testing.T) {
 
 		rt.SetCaller(receiver, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(receiver)
-		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.addSigner(rt, initialSigner[0], true)
 		})
 		rt.Verify()
@@ -588,7 +588,7 @@ func TestRemoveSigner(t *testing.T) {
 
 		rt.SetCaller(receiver, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(receiver)
-		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.removeSigner(rt, richard, false)
 		})
 		rt.Verify()
@@ -601,6 +601,90 @@ func TestRemoveSigner(t *testing.T) {
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
 		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
 		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+}
+
+func TestSwapSigners(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	receiver := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+
+	const noUnlockDuration = int64(0)
+	const numApprovals = int64(1)
+	var initialSigner = []addr.Address{anne, bob}
+	var oldSigner = bob
+	var newSigner = chuck
+
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+	t.Run("simple swap signer", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.swapSigners(rt, oldSigner, newSigner)
+		rt.Verify()
+
+		// the signer bob has been replaced with chuck.
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, []addr.Address{anne, chuck}, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+	})
+
+	t.Run("fail to swap signer when old party not found", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
+			actor.swapSigners(rt, newSigner, newSigner)
+		})
+		rt.Verify()
+
+		// anne and bob still remain the signers
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+
+	})
+
+	t.Run("fail to swap signer when new party already present", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+		// anne and bob still remain the signers
+		rt.SetCaller(receiver, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.swapSigners(rt, oldSigner, oldSigner)
+		})
+		rt.Verify()
+
+		// anne and bob still remain the signers
+		var st multisig.MultiSigActorState
+		rt.Readonly(&st)
+		assert.Equal(t, initialSigner, st.Signers)
+		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+
 	})
 
 }
@@ -663,6 +747,14 @@ func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, dec
 		Decrease: decrease,
 	}
 	rt.Call(h.MultiSigActor.RemoveSigner, rmSignerParams)
+}
+
+func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr.Address) {
+	swpParams := &multisig.SwapSignerParams{
+		From: oldSigner,
+		To:   newSigner,
+	}
+	rt.Call(h.MultiSigActor.SwapSigner, swpParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
