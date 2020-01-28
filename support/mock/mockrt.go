@@ -134,9 +134,6 @@ func (rt *Runtime) ToplevelBlockWinner() addr.Address {
 }
 
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
-	defer func() {
-		rt.balance = abi.NewTokenAmount(0)
-	}()
 	return rt.balance
 }
 
@@ -341,7 +338,7 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.callerType = actorType
 }
 
-func (rt *Runtime) SetCurrentBalance(amt abi.TokenAmount) {
+func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
 }
 

@@ -127,6 +127,7 @@ func TestPropose(t *testing.T) {
 
 		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
+		rt.Verify()
 	})
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
@@ -150,6 +151,7 @@ func TestPropose(t *testing.T) {
 			Params:   nilParams,
 			Approved: []addr.Address{anne},
 		})
+		rt.Verify()
 	})
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
@@ -169,6 +171,7 @@ func TestPropose(t *testing.T) {
 
 		// the transaction is not persisted
 		actor.assertTransactions(rt)
+		rt.Verify()
 	})
 }
 
@@ -206,7 +209,7 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		rt.SetCurrentBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(chuck, builtin.MethodSend, nilParams, sendValue, nil, 0)
@@ -214,6 +217,7 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+		rt.Verify()
 	})
 
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
@@ -227,14 +231,6 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.verifyPropose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
-
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
-			To:       chuck,
-			Value:    sendValue,
-			Method:   builtin.MethodSend,
-			Params:   nilParams,
-			Approved: []addr.Address{anne},
-		})
 
 		// anne is going to approve it twice and fail, poor anne.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -251,7 +247,7 @@ func TestApprove(t *testing.T) {
 			Params:   nilParams,
 			Approved: []addr.Address{anne},
 		})
-
+		rt.Verify()
 	})
 
 	t.Run("fail approve transaction that does not exist", func(t *testing.T) {
@@ -286,6 +282,7 @@ func TestApprove(t *testing.T) {
 			Params:   nilParams,
 			Approved: []addr.Address{anne},
 		})
+		rt.Verify()
 	})
 
 	t.Run("fail to approve transaction by non-signer", func(t *testing.T) {
@@ -321,7 +318,7 @@ func TestApprove(t *testing.T) {
 			Params:   nilParams,
 			Approved: []addr.Address{anne},
 		})
-
+		rt.Verify()
 	})
 }
 
