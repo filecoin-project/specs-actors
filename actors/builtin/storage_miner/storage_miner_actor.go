@@ -3,8 +3,8 @@ package storage_miner
 import (
 	"bytes"
 
-	cid "github.com/ipfs/go-cid"
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -30,6 +30,73 @@ var TODO = autil.TODO
 const epochUndefined = abi.ChainEpoch(-1)
 
 type StorageMinerActor struct{}
+
+type CronEventType int64
+
+const (
+	CronEventType_Miner_SurpriseExpiration = CronEventType(1)
+	CronEventType_Miner_WorkerKeyChange    = CronEventType(2)
+	CronEventType_Miner_PreCommitExpiry    = CronEventType(3)
+	CronEventType_Miner_SectorExpiry       = CronEventType(4)
+	CronEventType_Miner_TempFault          = CronEventType(5)
+)
+
+type CronEventPayload struct {
+	EventType CronEventType
+	Sectors   []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
+}
+
+///////////////////////
+// Worker Key Change //
+///////////////////////
+
+func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address) *vmr.EmptyReturn {
+	var st StorageMinerActorState
+	rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Owner)
+
+		// must be BLS since the worker key will be used alongside a BLS-VRF
+		// Specifically, this check isn't quite right
+		// TODO: check that the account actor at the other end of this address has a BLS key.
+		if newKey.Protocol() != addr.BLS {
+			rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
+		}
+
+		keyChange := WorkerKeyChange{
+			NewWorker:   newKey,
+			EffectiveAt: rt.CurrEpoch() + indices.StorageMining_WorkerKeyChangeFreeze(),
+		}
+
+		// note that this may replace another pending key change
+		st.Info.PendingWorkerKey = keyChange
+		cronPayload := serde.MustSerializeParams(CronEventType_Miner_WorkerKeyChange)
+		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+keyChange.EffectiveAt, cronPayload)
+
+		return nil
+	})
+	return &vmr.EmptyReturn{}
+}
+
+func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *vmr.EmptyReturn {
+	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
+
+	var st StorageMinerActorState
+	rt.State().Transaction(&st, func() interface{} {
+		if (st.Info.PendingWorkerKey == WorkerKeyChange{}) {
+			rt.Abort(exitcode.ErrIllegalState, "No pending key change.")
+		}
+
+		if st.Info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
+			rt.Abort(exitcode.ErrIllegalState, "Too early for key change. Current: %v, Change: %v)", rt.CurrEpoch(), st.Info.PendingWorkerKey.EffectiveAt)
+		}
+
+		st.Info.Worker = st.Info.PendingWorkerKey.NewWorker
+		st.Info.PendingWorkerKey = WorkerKeyChange{}
+
+		return nil
+	})
+	return &vmr.EmptyReturn{}
+}
 
 //////////////////
 // SurprisePoSt //
@@ -76,8 +143,9 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *vmr.EmptyReturn
 
 	if challenged {
 		// Request deferred Cron check for SurprisePoSt challenge expiry.
-		provingPeriod := indices.StorageMining_SurprisePoStProvingPeriod()
-		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+provingPeriod, []abi.SectorNumber{})
+		cronPayload := serde.MustSerializeParams(CronEventType_Miner_SurpriseExpiration)
+		surpriseDuration := indices.StorageMining_SurprisePoStChallengeDuration()
+		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, cronPayload)
 	}
 	return &vmr.EmptyReturn{}
 }
@@ -178,23 +246,22 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 		return nil
 	})
 
-	// Request deferred Cron check for PreCommit expiry check.
-	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
-	a._rtEnrollCronEvent(rt, expiryBound, []abi.SectorNumber{info.SectorNumber})
-
 	if info.Expiration <= rt.CurrEpoch() {
 		rt.Abort(exitcode.ErrIllegalArgument, "PreCommit sector must expire (%v) after now (%v)", info.Expiration, rt.CurrEpoch())
 	}
 
-	a._rtEnrollCronEvent(rt, info.Expiration, []abi.SectorNumber{info.SectorNumber})
+	// Request deferred Cron check for PreCommit expiry check.
+	cronPayload := serde.MustSerializeParams(CronEventType_Miner_PreCommitExpiry, []abi.SectorNumber{info.SectorNumber})
+	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
+	a._rtEnrollCronEvent(rt, expiryBound, cronPayload)
+
 	return &vmr.EmptyReturn{}
 }
 
 func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) *vmr.EmptyReturn {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	workerAddr := st.Info.Worker
-	rt.ValidateImmediateCallerIs(workerAddr)
+	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	preCommitSector, found := st.PreCommittedSectors[info.SectorNumber]
 	if !found {
@@ -210,11 +277,11 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
 	a._rtVerifySealOrAbort(rt, &abi.OnChainSealVerifyInfo{
-		SealedCID:        preCommitSector.Info.SealedCID,
-		SealEpoch:        preCommitSector.Info.SealEpoch,
-		Proof:            info.Proof,
-		DealIDs:          preCommitSector.Info.DealIDs,
-		SectorNumber:     preCommitSector.Info.SectorNumber,
+		SealedCID:    preCommitSector.Info.SealedCID,
+		SealEpoch:    preCommitSector.Info.SealEpoch,
+		Proof:        info.Proof,
+		DealIDs:      preCommitSector.Info.DealIDs,
+		SectorNumber: preCommitSector.Info.SectorNumber,
 	})
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
@@ -246,8 +313,9 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	})
 
 	// Request deferred Cron check for sector expiry.
+	cronPayload := serde.MustSerializeParams(CronEventType_Miner_SectorExpiry, []abi.SectorNumber{info.SectorNumber})
 	a._rtEnrollCronEvent(
-		rt, preCommitSector.Info.Expiration, []abi.SectorNumber{info.SectorNumber})
+		rt, preCommitSector.Info.Expiration, cronPayload)
 
 	// Notify SPA to update power associated to newly activated sector.
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, info.SectorNumber)
@@ -262,7 +330,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
-	_, code = rt.Send(workerAddr, builtin.MethodSend, nil, preCommitSector.PreCommitDeposit)
+	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, preCommitSector.PreCommitDeposit)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return &vmr.EmptyReturn{}
 }
@@ -360,8 +428,11 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 	})
 
 	// Request deferred Cron invocation to update temporary fault state.
-	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, sectorNumbers)
-	a._rtEnrollCronEvent(rt, effectiveEndEpoch, sectorNumbers)
+	cronPayload := serde.MustSerializeParams(CronEventType_Miner_TempFault, sectorNumbers)
+	// schedule cron event to start marking temp fault at BeginEpoch
+	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, cronPayload)
+	// schedule cron event to end marking temp fault at EndEpoch
+	a._rtEnrollCronEvent(rt, effectiveEndEpoch, cronPayload)
 	return &vmr.EmptyReturn{}
 }
 
@@ -369,16 +440,38 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 // Cron //
 //////////
 
-func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
+func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []byte) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
-	for _, sectorNumber := range sectorNumbers {
-		a._rtCheckTemporaryFaultEvents(rt, sectorNumber)
-		a._rtCheckPreCommitExpiry(rt, sectorNumber)
-		a._rtCheckSectorExpiry(rt, sectorNumber)
+	var payload CronEventPayload
+	serde.MustDeserialize(callbackPayload, payload)
+
+	if payload.EventType == CronEventType_Miner_TempFault {
+		for _, sectorNumber := range payload.Sectors {
+			a._rtCheckTemporaryFaultEvents(rt, sectorNumber)
+		}
 	}
 
-	a._rtCheckSurprisePoStExpiry(rt)
+	if payload.EventType == CronEventType_Miner_PreCommitExpiry {
+		for _, sectorNumber := range payload.Sectors {
+			a._rtCheckPreCommitExpiry(rt, sectorNumber)
+		}
+	}
+
+	if payload.EventType == CronEventType_Miner_SectorExpiry {
+		for _, sectorNumber := range payload.Sectors {
+			a._rtCheckSectorExpiry(rt, sectorNumber)
+		}
+	}
+
+	if payload.EventType == CronEventType_Miner_SurpriseExpiration {
+		a._rtCheckSurprisePoStExpiry(rt)
+	}
+
+	if payload.EventType == CronEventType_Miner_WorkerKeyChange {
+		a._rtCommitWorkerKeyChange(rt)
+	}
+
 	return &vmr.EmptyReturn{}
 }
 
@@ -388,6 +481,12 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, sectorNumbers []abi.
 
 func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
+	if workerAddr.Protocol() != addr.BLS {
+		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
+	}
+
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		st.Sectors = SectorsAMT_Empty()
@@ -587,14 +686,14 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 }
 
 func (a *StorageMinerActor) _rtEnrollCronEvent(
-	rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) {
+	rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload []byte) {
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerEnrollCronEvent,
 		serde.MustSerializeParams(
 			eventEpoch,
-			sectorNumbers,
+			callbackPayload,
 		),
 		abi.NewTokenAmount(0),
 	)

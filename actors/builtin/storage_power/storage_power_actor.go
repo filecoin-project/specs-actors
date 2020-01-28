@@ -280,18 +280,18 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, numConsecutiv
 	return &vmr.EmptyReturn{}
 }
 
-func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, sectorNumbers []abi.SectorNumber) *vmr.EmptyReturn {
+func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, payload []byte) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-	minerEvent := autil.MinerEvent{
-		MinerAddr: minerAddr,
-		Sectors:   sectorNumbers,
+	minerEvent := autil.MinerCallbackEvent{
+		MinerAddr:       minerAddr,
+		CallbackPayload: payload,
 	}
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if _, found := st.CachedDeferredCronEvents[eventEpoch]; !found {
-			st.CachedDeferredCronEvents[eventEpoch] = autil.MinerEventSetHAMT_Empty()
+			st.CachedDeferredCronEvents[eventEpoch] = autil.MinerCallbackEventSetHAMT_Empty()
 		}
 		st.CachedDeferredCronEvents[eventEpoch] = append(st.CachedDeferredCronEvents[eventEpoch], minerEvent)
 		return nil
@@ -386,7 +386,6 @@ func (a *StoragePowerActor) OnEpochTickEnd(rt Runtime) *vmr.EmptyReturn {
 func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-
 	rt.State().Construct(func() vmr.CBORMarshaler {
 		emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
 		if err != nil {
@@ -397,7 +396,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime) *vmr.EmptyReturn {
 		st.TotalNetworkPower = abi.NewStoragePower(0)
 		st.PowerTable = emptyMap.Root()
 		st.EscrowTable = autil.BalanceTableHAMT_Empty()
-		st.CachedDeferredCronEvents = MinerEventsHAMT_Empty()
+		st.CachedDeferredCronEvents = MinerCallbackEventsHAMT_Empty()
 		st.PoStDetectedFaultMiners = autil.MinerSetHAMT_Empty()
 		st.ClaimedPower = emptyMap.Root()
 		st.NominalPower = emptyMap.Root()
@@ -474,7 +473,7 @@ func (a *StoragePowerActor) initiateNewSurprisePoStChallenges(rt Runtime) error 
 func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 	epoch := rt.CurrEpoch()
 
-	var minerEvents []autil.MinerEvent
+	var minerEvents []autil.MinerCallbackEvent
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		// TODO should we be checking the second return here?
@@ -483,7 +482,7 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 		return nil
 	})
 
-	minerEventsRetain := []autil.MinerEvent{}
+	minerEventsRetain := []autil.MinerCallbackEvent{}
 	for _, minerEvent := range minerEvents {
 		if _, found, err := getStoragePower(adt.AsStore(rt), st.PowerTable, minerEvent.MinerAddr); err != nil {
 			return errors.Wrap(err, "Failed to get miner power from power table while processing cron events")
@@ -497,7 +496,7 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 			minerEvent.MinerAddr,
 			builtin.Method_StorageMinerActor_OnDeferredCronEvent,
 			serde.MustSerializeParams(
-				minerEvent.Sectors,
+				minerEvent.CallbackPayload,
 			),
 			abi.NewTokenAmount(0),
 		)

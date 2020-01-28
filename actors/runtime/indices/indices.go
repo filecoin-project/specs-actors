@@ -357,8 +357,22 @@ func StorageMining_SpcLookbackPoSt() abi.ChainEpoch {
 }
 
 func StorageMining_Finality() abi.ChainEpoch {
+	PARAM_FINISH()
 	const FINALITY = 500
 	return FINALITY
+}
+
+func StorageMining_SpcLookbackElection() abi.ChainEpoch {
+	PARAM_FINISH()
+	// same as the post lookback given EPoSt
+	spcLookbackElection := StorageMining_SpcLookbackPoSt()
+	return spcLookbackElection
+}
+
+func StorageMining_WorkerKeyChangeFreeze() abi.ChainEpoch {
+	PARAM_FINISH()
+	workerKeyChangeFreeze := 2 * StorageMining_SpcLookbackElection()
+	return workerKeyChangeFreeze
 }
 
 func StorageMining_SpcLookbackSeal() abi.ChainEpoch {
