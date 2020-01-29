@@ -21,7 +21,7 @@ type StoragePowerActorState struct {
 
 	PowerTable  cid.Cid // HAMT[address]StoragePower
 	MinerCount  int64
-	EscrowTable autil.BalanceTableHAMT
+	EscrowTable cid.Cid // BalanceTable (HAMT[address]TokenAmount)
 
 	// Metadata cached for efficient processing of sector/challenge events.
 	CronEventQueue           CronEventQueue
@@ -38,6 +38,26 @@ type CronEventQueue map[abi.ChainEpoch][]CronEvent
 type CronEvent struct {
 	MinerAddr       addr.Address
 	CallbackPayload []byte
+}
+
+type AddrKey = adt.AddrKey
+
+func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
+	emptyMap, err := adt.MakeEmptyMap(store)
+	if err != nil {
+		return nil, err
+	}
+
+	return &StoragePowerActorState {
+		TotalNetworkPower: abi.NewStoragePower(0),
+		PowerTable: emptyMap.Root(),
+		EscrowTable: emptyMap.Root(),
+		CronEventQueue: make(CronEventQueue),
+		PoStDetectedFaultMiners: emptyMap.Root(),
+		ClaimedPower: emptyMap.Root(),
+		NominalPower: emptyMap.Root(),
+		NumMinersMeetingMinPower: 0,
+	}, nil
 }
 
 func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
@@ -72,23 +92,6 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 	return minerPower.GreaterThanEqual(minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]), nil
 }
 
-func (st *StoragePowerActorState) slashPledgeCollateral(
-	minerAddr addr.Address, slashAmountRequested abi.TokenAmount) abi.TokenAmount {
-
-	Assert(slashAmountRequested.GreaterThanEqual(big.Zero()))
-
-	newTable, amountSlashed, ok := autil.BalanceTable_WithSubtractPreservingNonnegative(
-		st.EscrowTable, minerAddr, slashAmountRequested)
-	Assert(ok)
-	st.EscrowTable = newTable
-
-	autil.TODO()
-	// Decide whether we can take any additional action if there is not enough
-	// pledge collateral to be slashed.
-
-	return amountSlashed
-}
-
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
 func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeCount int, randomness abi.Randomness) ([]addr.Address, error) {
 	var allMiners []addr.Address
@@ -118,13 +121,42 @@ func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeC
 	return selectedMiners, nil
 }
 
-func (st *StoragePowerActorState) getMinerPower(s adt.Store, minerAddr addr.Address) (
+func (st *StoragePowerActorState) getMinerPower(s adt.Store, miner addr.Address) (
 	power abi.StoragePower, ok bool, err error) {
-	return getStoragePower(s, st.PowerTable, minerAddr)
+	return getStoragePower(s, st.PowerTable, miner)
 }
 
-func (st *StoragePowerActorState) getMinerPledge(minerAddr addr.Address) (currPledge abi.TokenAmount, ok bool) {
-	return autil.BalanceTable_GetEntry(st.EscrowTable, minerAddr)
+func (st *StoragePowerActorState) getMinerPledge(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
+	table := adt.AsBalanceTable(store, st.EscrowTable)
+	return table.Get(miner)
+}
+
+func (st *StoragePowerActorState) setMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
+	table := adt.AsBalanceTable(store, st.EscrowTable)
+	if table.Set(miner, amount) == nil {
+		st.EscrowTable = table.Root()
+	}
+	return nil
+}
+
+func (st *StoragePowerActorState) addMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
+	Assert(amount.GreaterThanEqual(big.Zero()))
+	table := adt.AsBalanceTable(store, st.EscrowTable)
+	if table.Add(miner, amount) == nil {
+		st.EscrowTable = table.Root()
+	}
+	return table.Add(miner, amount)
+}
+
+func (st *StoragePowerActorState) subtractMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount,
+	balanceFloor abi.TokenAmount) (abi.TokenAmount, error) {
+	Assert(amount.GreaterThanEqual(big.Zero()))
+	table := adt.AsBalanceTable(store, st.EscrowTable)
+	subtracted, err := table.SubtractWithMininum(miner, amount, balanceFloor)
+	if err == nil {
+		st.EscrowTable = table.Root()
+	}
+	return subtracted, err
 }
 
 func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
@@ -260,7 +292,7 @@ func (st *StoragePowerActorState) setPowerEntry(s adt.Store, minerAddr addr.Addr
 
 func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, error) {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	found, err := faultyMiners.Has(asKey(a))
+	found, err := faultyMiners.Has(AddrKey(a))
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to get detected faults for address %v from set %s", a, st.PoStDetectedFaultMiners)
 	}
@@ -269,7 +301,7 @@ func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, e
 
 func (st *StoragePowerActorState) putFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err := faultyMiners.Put(asKey(a)); err != nil {
+	if err := faultyMiners.Put(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
@@ -278,7 +310,7 @@ func (st *StoragePowerActorState) putFault(s adt.Store, a addr.Address) error {
 
 func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err := faultyMiners.Delete(asKey(a)); err != nil {
+	if err := faultyMiners.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
@@ -289,7 +321,7 @@ func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePowe
 	hm := adt.AsMap(s, root)
 
 	var out abi.StoragePower
-	found, err := hm.Get(asKey(a), &out)
+	found, err := hm.Get(AddrKey(a), &out)
 	if err != nil {
 		return abi.NewStoragePower(0), false, errors.Wrapf(err, "failed to get storage power for address %v from store %s", a, root)
 	}
@@ -302,7 +334,7 @@ func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePowe
 func putStoragePower(s adt.Store, root cid.Cid, a addr.Address, pwr abi.StoragePower) (cid.Cid, error) {
 	hm := adt.AsMap(s, root)
 
-	if err := hm.Put(asKey(a), &pwr); err != nil {
+	if err := hm.Put(AddrKey(a), &pwr); err != nil {
 		return cid.Undef, errors.Wrapf(err, "failed to put storage power with address %s power %v in store %s", a, pwr, root)
 	}
 	return hm.Root(), nil
@@ -311,7 +343,7 @@ func putStoragePower(s adt.Store, root cid.Cid, a addr.Address, pwr abi.StorageP
 func deleteStoragePower(s adt.Store, root cid.Cid, a addr.Address) (cid.Cid, error) {
 	hm := adt.AsMap(s, root)
 
-	if err := hm.Delete(asKey(a)); err != nil {
+	if err := hm.Delete(AddrKey(a)); err != nil {
 		return cid.Undef, errors.Wrapf(err, "failed to delete storage power at address %s from store %s", a, root)
 	}
 
@@ -325,12 +357,6 @@ func addrInArray(a addr.Address, list []addr.Address) bool {
 		}
 	}
 	return false
-}
-
-type asKey addr.Address
-
-func (kw asKey) Key() string {
-	return string(addr.Address(kw).Bytes())
 }
 
 func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
