@@ -2,7 +2,7 @@ package main
 
 import (
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 
 	gen "github.com/whyrusleeping/cbor-gen"
 )
