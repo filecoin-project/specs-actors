@@ -85,7 +85,7 @@ func TestPropose(t *testing.T) {
 
 	const noUnlockDuration = int64(0)
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = abi.MethodParams{}
+	var nilParams = []byte{}
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -176,9 +176,9 @@ func TestApprove(t *testing.T) {
 	const numApprovals = int64(2)
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
-	var fakeParams = abi.MethodParams{1, 2, 3, 4, 5}
+	var fakeParams = []byte{1, 2, 3, 4, 5}
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = abi.MethodParams{}
+	var nilParams = []byte{}
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -314,7 +314,7 @@ func TestCancel(t *testing.T) {
 	const numApprovals = int64(2)
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
-	var fakeParams = abi.MethodParams{1, 2, 3, 4, 5}
+	var fakeParams = []byte{1, 2, 3, 4, 5}
 	var sendValue = abi.NewTokenAmount(10)
 	var signers = []addr.Address{anne, bob}
 
