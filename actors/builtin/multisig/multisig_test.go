@@ -428,6 +428,20 @@ func TestCancel(t *testing.T) {
 	})
 }
 
+type addSignerTestCase struct {
+	desc string
+
+	initialSigners   []addr.Address
+	initialApprovals int64
+
+	addSigner addr.Address
+	increase  bool
+
+	expectSigners   []addr.Address
+	expectApprovals int64
+	code            exitcode.ExitCode
+}
+
 func TestAddSigner(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
@@ -435,68 +449,87 @@ func TestAddSigner(t *testing.T) {
 	anne := newIDAddr(t, 101)
 	bob := newIDAddr(t, 102)
 	chuck := newIDAddr(t, 103)
-
 	const noUnlockDuration = int64(0)
-	const numApprovals = int64(3)
-	var initialSigner = []addr.Address{anne, bob}
-	var addedSigner = chuck
+
+	testCases := []addSignerTestCase{
+		{
+			desc: "happy path add signer",
+
+			initialSigners:   []addr.Address{anne, bob},
+			initialApprovals: int64(2),
+
+			addSigner: chuck,
+			increase:  false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(2),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "add signer and increase threshold",
+
+			initialSigners:   []addr.Address{anne, bob},
+			initialApprovals: int64(2),
+
+			addSigner: chuck,
+			increase:  true,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(3),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "fail to add signer than already exists",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(3),
+
+			addSigner: chuck,
+			increase:  false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(3),
+			code:            exitcode.ErrIllegalArgument,
+		},
+	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
 
-	t.Run("simple add signer", func(t *testing.T) {
-		rt := builder.Build(t)
+			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// calls to add signer can only be called by the multisig wallet itself.
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		actor.addSigner(rt, addedSigner, false)
-		rt.Verify()
-
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		// the initial signers and the added signer should both be in the state.
-		assert.Equal(t, append(initialSigner, addedSigner), st.Signers)
-		// the number of approvals required should not have changed.
-		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
-	})
-
-	t.Run("simple add signer and increase threshold", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// calls to add signer can only be called by the multisig wallet itself.
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		// when adding the singer increase the threshold
-		actor.addSigner(rt, addedSigner, true)
-		rt.Verify()
-
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		// the initial signers and the added signer should both be in the state.
-		assert.Equal(t, append(initialSigner, addedSigner), st.Signers)
-		// the threshold should have increased by one.
-		assert.Equal(t, numApprovals+1, st.NumApprovalsThreshold)
-		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
-		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
-		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
-	})
-
-	t.Run("fail to add a signer that is already a signer", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.addSigner(rt, initialSigner[0], true)
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.addSigner(rt, tc.addSigner, tc.increase)
+				})
+			} else {
+				actor.addSigner(rt, tc.addSigner, tc.increase)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.expectSigners, st.Signers)
+				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
+			}
+			rt.Verify()
 		})
-		rt.Verify()
-	})
+	}
+}
+
+type removeSignerTestCase struct {
+	desc string
+
+	initialSigners   []addr.Address
+	initialApprovals int64
+
+	removeSigner addr.Address
+	decrease     bool
+
+	expectSigners   []addr.Address
+	expectApprovals int64
+	code            exitcode.ExitCode
 }
 
 func TestRemoveSigner(t *testing.T) {
@@ -506,84 +539,109 @@ func TestRemoveSigner(t *testing.T) {
 	anne := newIDAddr(t, 101)
 	bob := newIDAddr(t, 102)
 	chuck := newIDAddr(t, 103)
+	richard := newIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
-	const numApprovals = int64(1)
-	var initialSigner = []addr.Address{anne, bob, chuck}
+
+	testCases := []removeSignerTestCase{
+		{
+			desc: "happy path remove signer",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(2),
+
+			removeSigner: chuck,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(2),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove signer and decrease threshold",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(2),
+
+			removeSigner: chuck,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove signer with automatic threshold decrease",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(3),
+
+			removeSigner: chuck,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(2),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove signer from single singer list",
+
+			initialSigners:   []addr.Address{anne},
+			initialApprovals: int64(2),
+
+			removeSigner: anne,
+			decrease:     false,
+
+			expectSigners:   nil,
+			expectApprovals: int64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "fail to remove non-signer",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(2),
+
+			removeSigner: richard,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(2),
+			code:            exitcode.ErrNotFound,
+		},
+	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
 
-	t.Run("simple remove signer", func(t *testing.T) {
-		rt := builder.Build(t)
+			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// calls to add signer can only be called by the multisig wallet itself.
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		actor.removeSigner(rt, initialSigner[2], false)
-		rt.Verify()
-
-		// the number of signers has decreased, specifically chuck is out.
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		// there should be one less signer but the threshold should remain the same
-		assert.Equal(t, initialSigner[:2], st.Signers)
-		assert.Equal(t, numApprovals, st.NumApprovalsThreshold)
-	})
-
-	t.Run("remove signer with manual threshold decrease", func(t *testing.T) {
-		const numApprovals = int64(2)
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		// specify true to decrease the threshold.
-		actor.removeSigner(rt, initialSigner[2], true)
-		rt.Verify()
-
-		// the number of approvals in additions to the number of signers has decreased, chuck is gone, sorry chuck.
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		// there should be one less signer but the threshold shoud have decreased by one.
-		assert.Equal(t, initialSigner[:2], st.Signers)
-		assert.Equal(t, numApprovals-1, st.NumApprovalsThreshold)
-	})
-
-	t.Run("remove signer with automatic threshold decrease to avoid lockout", func(t *testing.T) {
-		const numApprovals = int64(3)
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		actor.removeSigner(rt, initialSigner[2], false)
-		rt.Verify()
-
-		// the number of approvals in additions to the number of signers has decreased, chuck is gone, sorry chuck.
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		assert.Equal(t, initialSigner[:2], st.Signers)
-		assert.Equal(t, numApprovals-1, st.NumApprovalsThreshold)
-	})
-
-	t.Run("unauthorized signer fails to remove signer", func(t *testing.T) {
-		richard := newIDAddr(t, 104)
-
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			actor.removeSigner(rt, richard, false)
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.removeSigner(rt, tc.removeSigner, tc.decrease)
+				})
+			} else {
+				actor.removeSigner(rt, tc.removeSigner, tc.decrease)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.expectSigners, st.Signers)
+				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
+			}
+			rt.Verify()
 		})
-		rt.Verify()
-	})
+	}
+}
+
+type swapTestCase struct {
+	desc   string
+	to     addr.Address
+	from   addr.Address
+	expect []addr.Address
+	code   exitcode.ExitCode
 }
 
 func TestSwapSigners(t *testing.T) {
@@ -593,70 +651,65 @@ func TestSwapSigners(t *testing.T) {
 	anne := newIDAddr(t, 101)
 	bob := newIDAddr(t, 102)
 	chuck := newIDAddr(t, 103)
+	darlene := newIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(1)
 	var initialSigner = []addr.Address{anne, bob}
-	var oldSigner = bob
-	var newSigner = chuck
+
+	testCases := []swapTestCase{
+		{
+			desc:   "happy path signer swap",
+			to:     chuck,
+			from:   bob,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.Ok,
+		},
+		{
+			desc:   "fail to swap when from signer not found",
+			to:     chuck,
+			from:   darlene,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.ErrNotFound,
+		},
+		{
+			desc:   "fail to swap when to signer already present",
+			to:     bob,
+			from:   anne,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.ErrIllegalArgument,
+		},
+	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
 
-	t.Run("simple swap signer", func(t *testing.T) {
-		rt := builder.Build(t)
+			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// calls to add signer can only be called by the multisig wallet itself.
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		actor.swapSigners(rt, oldSigner, newSigner)
-		rt.Verify()
-
-		// the signer bob has been replaced with chuck.
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		assert.Equal(t, []addr.Address{anne, chuck}, st.Signers)
-	})
-
-	t.Run("fail to swap signer when old party not found", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			actor.swapSigners(rt, newSigner, newSigner)
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.swapSigners(rt, tc.from, tc.to)
+				})
+			} else {
+				actor.swapSigners(rt, tc.from, tc.to)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.expect, st.Signers)
+			}
+			rt.Verify()
 		})
-		rt.Verify()
+	}
+}
 
-		// anne and bob still remain the signers
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		assert.Equal(t, initialSigner, st.Signers)
-
-	})
-
-	t.Run("fail to swap signer when new party already present", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// anne and bob still remain the signers
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.swapSigners(rt, oldSigner, oldSigner)
-		})
-		rt.Verify()
-
-		// anne and bob still remain the signers
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		assert.Equal(t, initialSigner, st.Signers)
-
-	})
+type thresholdTestCase struct {
+	desc             string
+	initialThreshold int64
+	setThreshold     int64
+	code             exitcode.ExitCode
 }
 
 func TestChangeThreshold(t *testing.T) {
@@ -668,84 +721,63 @@ func TestChangeThreshold(t *testing.T) {
 	chuck := newIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
-	const numApprovals = int64(2)
 	var initialSigner = []addr.Address{anne, bob, chuck}
 
+	testCases := []thresholdTestCase{
+		{
+			desc:             "happy path decrease threshold",
+			initialThreshold: 2,
+			setThreshold:     1,
+			code:             exitcode.Ok,
+		},
+		{
+			desc:             "happy path simple increase threshold",
+			initialThreshold: 2,
+			setThreshold:     3,
+			code:             exitcode.Ok,
+		},
+		{
+			desc:             "fail to set threshold to zero",
+			initialThreshold: 2,
+			setThreshold:     0,
+			code:             exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:             "fail to set threshold less than zero",
+			initialThreshold: 2,
+			setThreshold:     -1,
+			code:             exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:             "fail to set threshold above number of signers",
+			initialThreshold: 2,
+			setThreshold:     int64(len(initialSigner) + 1),
+			code:             exitcode.ErrIllegalArgument,
+		},
+	}
+
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
 
-	t.Run("simple decrease threshold", func(t *testing.T) {
-		rt := builder.Build(t)
+			actor.constructAndVerify(rt, tc.initialThreshold, noUnlockDuration, initialSigner...)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		actor.changeNumApprovalsThreshold(rt, numApprovals-1)
-		rt.Verify()
-
-		// threshold decreases
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		assert.Equal(t, numApprovals-1, st.NumApprovalsThreshold)
-	})
-
-	t.Run("simple increase threshold", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		actor.changeNumApprovalsThreshold(rt, numApprovals+1)
-		rt.Verify()
-
-		// threshold increases
-		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
-		assert.Equal(t, numApprovals+1, st.NumApprovalsThreshold)
-	})
-
-	t.Run("fail to set threshold == 0", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// set it to zero
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeNumApprovalsThreshold(rt, 0)
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
+				})
+			} else {
+				actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
+			}
+			rt.Verify()
 		})
-		rt.Verify()
-	})
-
-	t.Run("fail to set threshold < 0", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		// set it to less than zero
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeNumApprovalsThreshold(rt, -1)
-		})
-		rt.Verify()
-	})
-
-	t.Run("fail to set threshold above number of signers", func(t *testing.T) {
-		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
-
-		rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(multisigWalletAdd)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeNumApprovalsThreshold(rt, int64(len(initialSigner)+1))
-		})
-		rt.Verify()
-	})
-
+	}
 }
 
 //
