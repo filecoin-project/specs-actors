@@ -158,7 +158,7 @@ func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, miner
 		return errors.Wrap(err, "failed to get claimed miner power")
 	}
 	if !ok {
-		return errors.Errorf("no power for actor %v", minerAddr)
+		return errors.Errorf("no claimed power for actor %v", minerAddr)
 	}
 
 	if err = st.setClaimedPower(s, minerAddr, big.Sub(currentPower, sectorPower)); err != nil {
@@ -173,7 +173,7 @@ func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, min
 		return errors.Wrap(err, "failed to get claimed miner power while setting claimed power table entry")
 	}
 	if !ok {
-		return errors.Errorf("no power for actor %v", minerAddr)
+		return errors.Errorf("no claimed power for actor %v", minerAddr)
 	}
 
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's

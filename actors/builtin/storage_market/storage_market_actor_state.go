@@ -14,14 +14,14 @@ import (
 
 const epochUndefined = abi.ChainEpoch(-1)
 
-// TODO AMT
+// TODO H/AMT, depending on sparseness and mutation pattern.
 type DealsById map[abi.DealID]OnChainDeal
 
-// TODO AMT
+// TODO HAMT
 type DealsByParty map[addr.Address]DealIDSet
 type DealIDSet map[abi.DealID]bool // TODO: HAMT or bitfield, depending how often it mutates
 
-// TODO AMT
+// TODO HAMT (probably of AMTs, i.e. a multimap).
 type DealExpirationQueue map[abi.ChainEpoch]DealIDQueue
 
 type StorageMarketActorState struct {

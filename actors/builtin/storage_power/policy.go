@@ -1,13 +1,13 @@
 package storage_power
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // TerminationFault
-func pledgePenaltyForSectorTermination(weight autil.SectorStorageWeightDesc, ttype builtin.SectorTermination) abi.TokenAmount {
+func pledgePenaltyForSectorTermination(weight autil.SectorStorageWeightDesc, termType builtin.SectorTermination) abi.TokenAmount {
 	autil.PARAM_FINISH()
 	return abi.NewTokenAmount(0)
 }
