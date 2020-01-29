@@ -48,6 +48,8 @@ func (msa MultiSigActor) Exports() []interface{} {
 	}
 }
 
+var _ abi.Invokee = MultiSigActor{}
+
 type ConstructorParams struct {
 	Signers               []addr.Address
 	NumApprovalsThreshold int64
