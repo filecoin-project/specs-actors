@@ -40,7 +40,7 @@ type StoragePowerActor struct{}
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a *StoragePowerActor) Constructor(rt Runtime) *adt.EmptyValue {
+func (a *StoragePowerActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	rt.State().Construct(func() vmr.CBORMarshaler {
@@ -208,8 +208,7 @@ type OnSectorTerminateParams struct {
 	weight          autil.SectorStorageWeightDesc
 }
 
-func (a *StoragePowerActor) OnSectorTerminate(
-	rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
+func (a *StoragePowerActor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
 
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
@@ -405,7 +404,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, params *ReportConse
 }
 
 // Called by Cron.
-func (a *StoragePowerActor) OnEpochTickEnd(rt Runtime) *adt.EmptyValue {
+func (a *StoragePowerActor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	if err := a.initiateNewSurprisePoStChallenges(rt); err != nil {
