@@ -207,7 +207,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	if len(rt.expectSends) == 0 {
-		rt.t.Errorf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
+		rt.t.Fatalf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
 	}
 
 	expectedMsg := rt.expectSends[0]
@@ -379,6 +379,10 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
+}
+
+func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
+	rt.epoch = epoch
 }
 
 func (rt *Runtime) ExpectValidateCallerAny() {

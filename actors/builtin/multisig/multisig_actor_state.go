@@ -42,16 +42,21 @@ func (st *MultiSigActorState) isSigner(party address.Address) bool {
 }
 
 // return true if MultiSig maintains required locked balance after spending the amount
-func (st *MultiSigActorState) _hasAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) bool {
-	if amountToSpend.LessThan(big.Zero()) || currBalance.LessThan(amountToSpend) {
-		return false
+func (st *MultiSigActorState) hasAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
+	if amountToSpend.LessThan(big.Zero()) {
+		return errors.Errorf("amount to spend %s less than zero", amountToSpend.String())
+	}
+	if currBalance.LessThan(amountToSpend) {
+		return errors.Errorf("current balance %s less than amount to spend %s", currBalance.String(), amountToSpend.String())
 	}
 
-	if big.Sub(currBalance, amountToSpend).LessThan(st.AmountLocked(currEpoch - st.StartEpoch)) {
-		return false
+	remainingBalance := big.Sub(currBalance, amountToSpend)
+	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
+	if remainingBalance.LessThan(amountLocked) {
+		return errors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
 	}
 
-	return true
+	return nil
 }
 
 func (as *MultiSigActorState) getPendingTransaction(s adt.Store, txnID TxnID) (MultiSigTransaction, error) {

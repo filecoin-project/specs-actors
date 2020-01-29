@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	mock "github.com/filecoin-project/specs-actors/support/mock"
 )
 
 func TestConstruction(t *testing.T) {
@@ -73,6 +73,104 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(1234), st.StartEpoch)
 		// assert no transactions
 	})
+}
+
+func TestVesting(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	receiver := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	charlie := newIDAddr(t, 103)
+	darlene := newIDAddr(t, 103)
+
+	const unlockDuration = 10
+	const multisigInitialBalance = 100
+	var nilParams = abi.MethodParams{}
+
+	builder := mock.NewBuilder(context.Background(), receiver).
+		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+		WithEpoch(0).
+		//          balance                                    received
+		WithBalance(abi.NewTokenAmount(multisigInitialBalance), abi.NewTokenAmount(multisigInitialBalance))
+
+	t.Run("happy path full vesting", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, 2, unlockDuration, []addr.Address{anne, bob, charlie}...)
+
+		// anne proposes that darlene receives `multisgiInitialBalance` FIL.
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, darlene, abi.NewTokenAmount(multisigInitialBalance), builtin.MethodSend, nilParams)
+		rt.Verify()
+
+		// Advance the epoch s.t. all funds are unlocked.
+		rt.SetEpoch(0 + unlockDuration)
+		// bob approves annes transaction
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		// expect darlene to receive the transaction proposed by anne.
+		rt.ExpectSend(darlene, builtin.MethodSend, nilParams, abi.NewTokenAmount(multisigInitialBalance), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.approve(rt, 0)
+		rt.Verify()
+
+	})
+
+	t.Run("partial vesting", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, 2, 10, []addr.Address{anne, bob, charlie}...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, darlene, abi.NewTokenAmount(multisigInitialBalance/2), builtin.MethodSend, nilParams)
+		rt.Verify()
+
+		rt.SetEpoch(0 + unlockDuration/2)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectSend(darlene, builtin.MethodSend, nilParams, abi.NewTokenAmount(multisigInitialBalance/2), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.approve(rt, 0)
+		rt.Verify()
+
+	})
+
+	t.Run("fail to propose a transaction greater than locked amount", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, 1, unlockDuration, []addr.Address{anne, bob, charlie}...)
+
+		// this propose will fail since it would send more than the required locked balance and num approvals == 1
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.propose(rt, darlene, abi.NewTokenAmount(multisigInitialBalance), builtin.MethodSend, nilParams)
+		})
+		rt.Verify()
+
+	})
+
+	t.Run("fail to vest more than locked amount", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, 2, unlockDuration, []addr.Address{anne, bob, charlie}...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, darlene, abi.NewTokenAmount(multisigInitialBalance/2), builtin.MethodSend, nilParams)
+		rt.Verify()
+
+		rt.SetEpoch(1)
+		rt.SetBalance(abi.NewTokenAmount(multisigInitialBalance))
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.approve(rt, 0)
+		})
+		rt.Verify()
+	})
+
 }
 
 func TestPropose(t *testing.T) {
