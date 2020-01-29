@@ -44,11 +44,50 @@ type CronEventPayload struct {
 	Sectors   []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
 }
 
+/////////////////
+// Constructor //
+/////////////////
+
+type ConstructorParams struct {
+	ownerAddr  addr.Address
+	workerAddr addr.Address
+	sectorSize abi.SectorSize
+	peerId     peer.ID
+}
+
+func (a *StorageMinerActor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
+	if params.workerAddr.Protocol() != addr.BLS {
+		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
+	}
+
+	var st StorageMinerActorState
+	rt.State().Transaction(&st, func() interface{} {
+		st.Sectors = SectorsAMT_Empty()
+		st.PoStState = MinerPoStState{
+			LastSuccessfulPoSt:     epochUndefined,
+			SurpriseChallengeEpoch: epochUndefined,
+			ChallengedSectors:      nil,
+			NumConsecutiveFailures: 0,
+		}
+		st.ProvingSet = st.GetCurrentProvingSet()
+		st.Info = MinerInfo_New(params.ownerAddr, params.workerAddr, params.sectorSize, params.peerId)
+		return nil
+	})
+	return &adt.EmptyValue{}
+}
+
 ///////////////////////
 // Worker Key Change //
 ///////////////////////
 
-func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address) *adt.EmptyValue {
+type StageWorkerKeyChangeParams struct {
+	newKey addr.Address
+}
+
+func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, params *StageWorkerKeyChangeParams) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Owner)
@@ -56,12 +95,12 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, newKey addr.Address
 		// must be BLS since the worker key will be used alongside a BLS-VRF
 		// Specifically, this check isn't quite right
 		// TODO: check that the account actor at the other end of this address has a BLS key.
-		if newKey.Protocol() != addr.BLS {
+		if params.newKey.Protocol() != addr.BLS {
 			rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 		}
 
 		keyChange := WorkerKeyChange{
-			NewWorker:   newKey,
+			NewWorker:   params.newKey,
 			EffectiveAt: rt.CurrEpoch() + indices.StorageMining_WorkerKeyChangeFreeze(),
 		}
 
@@ -101,7 +140,7 @@ func (a *StorageMinerActor) _rtCommitWorkerKeyChange(rt Runtime) *adt.EmptyValue
 //////////////////
 
 // Called by StoragePowerActor to notify StorageMiner of SurprisePoSt Challenge.
-func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *adt.EmptyValue {
+func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var st StorageMinerActorState
@@ -148,15 +187,19 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime) *adt.EmptyValue 
 	return &adt.EmptyValue{}
 }
 
+type SubmitSurprisePoStResponseParams struct {
+	onChainInfo abi.OnChainSurprisePoStVerifyInfo
+}
+
 // Invoked by miner's worker address to submit a response to a pending SurprisePoSt challenge.
-func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo abi.OnChainSurprisePoStVerifyInfo) *adt.EmptyValue {
+func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoStResponseParams) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 		if !st.PoStState.Is_Challenged() {
 			rt.Abort(exitcode.ErrIllegalState, "Not currently challenged")
 		}
-		a.verifySurprisePost(rt, &st, &onChainInfo)
+		a.verifySurprisePost(rt, &st, &params.onChainInfo)
 
 		st.PoStState = MinerPoStState{
 			LastSuccessfulPoSt:     rt.CurrEpoch(),
@@ -178,7 +221,7 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo a
 }
 
 // Called by StoragePowerActor.
-func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) *adt.EmptyValue {
+func (a *StorageMinerActor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	minerAddr := rt.CurrReceiver()
 	rt.DeleteActor(minerAddr)
@@ -190,7 +233,7 @@ func (a *StorageMinerActor) OnDeleteMiner(rt Runtime) *adt.EmptyValue {
 //////////////////
 
 // Called by the VM interpreter once an ElectionPoSt has been verified.
-func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *adt.EmptyValue {
+func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	if rt.ToplevelBlockWinner() != rt.CurrReceiver() {
 		rt.Abort(exitcode.ErrForbidden, "receiver must be miner of this block")
@@ -219,51 +262,59 @@ func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime) *adt.EmptyValue {
 // Sector Commitment //
 ///////////////////////
 
+type PreCommitSectorParams struct {
+	info SectorPreCommitInfo
+}
+
 // Deals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo) *adt.EmptyValue {
+func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
-	if _, found := st.Sectors[info.SectorNumber]; found {
+	if _, found := st.Sectors[params.info.SectorNumber]; found {
 		rt.Abort(exitcode.ErrIllegalArgument, "Sector number already exists in table")
 	}
 
 	cidx := rt.CurrIndices()
-	depositReq := cidx.StorageMining_PreCommitDeposit(st.Info.SectorSize, info.Expiration)
+	depositReq := cidx.StorageMining_PreCommitDeposit(st.Info.SectorSize, params.info.Expiration)
 	builtin.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
-		st.PreCommittedSectors[info.SectorNumber] = SectorPreCommitOnChainInfo{
-			Info:             info,
+		st.PreCommittedSectors[params.info.SectorNumber] = SectorPreCommitOnChainInfo{
+			Info:             params.info,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
 		}
 		return nil
 	})
 
-	if info.Expiration <= rt.CurrEpoch() {
-		rt.Abort(exitcode.ErrIllegalArgument, "PreCommit sector must expire (%v) after now (%v)", info.Expiration, rt.CurrEpoch())
+	if params.info.Expiration <= rt.CurrEpoch() {
+		rt.Abort(exitcode.ErrIllegalArgument, "PreCommit sector must expire (%v) after now (%v)", params.info.Expiration, rt.CurrEpoch())
 	}
 
 	// Request deferred Cron check for PreCommit expiry check.
-	cronPayload := serde.MustSerializeParams(CronEventType_Miner_PreCommitExpiry, []abi.SectorNumber{info.SectorNumber})
+	cronPayload := serde.MustSerializeParams(CronEventType_Miner_PreCommitExpiry, []abi.SectorNumber{params.info.SectorNumber})
 	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
 	a._rtEnrollCronEvent(rt, expiryBound, cronPayload)
 
 	return &adt.EmptyValue{}
 }
 
-func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommitInfo) *adt.EmptyValue {
+type ProveCommitSectorParams struct {
+	info SectorProveCommitInfo
+}
+
+func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	preCommitSector, found := st.PreCommittedSectors[info.SectorNumber]
+	preCommitSector, found := st.PreCommittedSectors[params.info.SectorNumber]
 	if !found {
-		rt.Abort(exitcode.ErrNotFound, "no such sector %v precommitted", info.SectorNumber)
+		rt.Abort(exitcode.ErrNotFound, "no such sector %v precommitted", params.info.SectorNumber)
 	}
 
 	if rt.CurrEpoch() > preCommitSector.PreCommitEpoch+indices.StorageMining_MaxProveCommitSectorEpoch() || rt.CurrEpoch() < preCommitSector.PreCommitEpoch+indices.StorageMining_MinProveCommitSectorEpoch() {
@@ -277,7 +328,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	a._rtVerifySealOrAbort(rt, &abi.OnChainSealVerifyInfo{
 		SealedCID:    preCommitSector.Info.SealedCID,
 		SealEpoch:    preCommitSector.Info.SealEpoch,
-		Proof:        info.Proof,
+		Proof:        params.info.Proof,
 		DealIDs:      preCommitSector.Info.DealIDs,
 		SectorNumber: preCommitSector.Info.SectorNumber,
 	})
@@ -299,24 +350,24 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	autil.AssertNoError(ret.Into(dealset))
 
 	rt.State().Transaction(&st, func() interface{} {
-		st.Sectors[info.SectorNumber] = SectorOnChainInfo{
+		st.Sectors[params.info.SectorNumber] = SectorOnChainInfo{
 			Info:            preCommitSector.Info,
 			ActivationEpoch: rt.CurrEpoch(),
 			DealWeight:      dealset.Weight,
 		}
 
-		delete(st.PreCommittedSectors, info.SectorNumber)
+		delete(st.PreCommittedSectors, params.info.SectorNumber)
 		st.ProvingSet = st.GetCurrentProvingSet()
 		return nil
 	})
 
 	// Request deferred Cron check for sector expiry.
-	cronPayload := serde.MustSerializeParams(CronEventType_Miner_SectorExpiry, []abi.SectorNumber{info.SectorNumber})
+	cronPayload := serde.MustSerializeParams(CronEventType_Miner_SectorExpiry, []abi.SectorNumber{params.info.SectorNumber})
 	a._rtEnrollCronEvent(
 		rt, preCommitSector.Info.Expiration, cronPayload)
 
 	// Notify SPA to update power associated to newly activated sector.
-	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, info.SectorNumber)
+	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, params.info.SectorNumber)
 	_, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorProveCommit,
@@ -337,26 +388,31 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 // Sector Modification //
 /////////////////////////
 
-func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.SectorNumber, newExpiration abi.ChainEpoch) *adt.EmptyValue {
-	storageWeightDescPrev := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
+type ExtendSectorExpirationParams struct {
+	sectorNumber  abi.SectorNumber
+	newExpiration abi.ChainEpoch
+}
+
+func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
+	storageWeightDescPrev := a._rtGetStorageWeightDescForSector(rt, params.sectorNumber)
 
 	var extensionLength abi.ChainEpoch
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		sectorInfo, found := st.Sectors[sectorNumber]
+		sectorInfo, found := st.Sectors[params.sectorNumber]
 		if !found {
 			rt.Abort(exitcode.ErrNotFound, "Sector not found")
 		}
 
-		extensionLength = newExpiration - sectorInfo.Info.Expiration
+		extensionLength = params.newExpiration - sectorInfo.Info.Expiration
 		if extensionLength < 0 {
 			rt.Abort(exitcode.ErrIllegalArgument, "Cannot reduce sector expiration")
 		}
 
-		sectorInfo.Info.Expiration = newExpiration
-		st.Sectors[sectorNumber] = sectorInfo
+		sectorInfo.Info.Expiration = params.newExpiration
+		st.Sectors[params.sectorNumber] = sectorInfo
 		return nil
 	})
 
@@ -376,12 +432,16 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 	return &adt.EmptyValue{}
 }
 
-func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.SectorNumber) *adt.EmptyValue {
+type TerminateSectorsParams struct {
+	sectorNumbers []abi.SectorNumber
+}
+
+func (a *StorageMinerActor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	for _, sectorNumber := range sectorNumbers {
+	for _, sectorNumber := range params.sectorNumbers {
 		a._rtTerminateSector(rt, sectorNumber, builtin.UserTermination)
 	}
 
@@ -392,41 +452,46 @@ func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.Sec
 // Faults //
 ////////////
 
-func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []abi.SectorNumber, duration abi.ChainEpoch) *adt.EmptyValue {
-	if duration <= abi.ChainEpoch(0) {
-		rt.Abort(exitcode.ErrIllegalArgument, "non-positive fault duration %v", duration)
+type DeclareTemporaryFaultsParams struct {
+	sectorNumbers []abi.SectorNumber
+	duration      abi.ChainEpoch
+}
+
+func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsParams) *adt.EmptyValue {
+	if params.duration <= abi.ChainEpoch(0) {
+		rt.Abort(exitcode.ErrIllegalArgument, "non-positive fault duration %v", params.duration)
 	}
 
-	storageWeightDescs := a._rtGetStorageWeightDescsForSectors(rt, sectorNumbers)
+	storageWeightDescs := a._rtGetStorageWeightDescsForSectors(rt, params.sectorNumbers)
 	cidx := rt.CurrIndices()
-	requiredFee := cidx.StorageMining_TemporaryFaultFee(storageWeightDescs, duration)
+	requiredFee := cidx.StorageMining_TemporaryFaultFee(storageWeightDescs, params.duration)
 
 	builtin.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, requiredFee)
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, requiredFee)
 	builtin.RequireSuccess(rt, code, "failed to burn fee")
 
 	effectiveBeginEpoch := rt.CurrEpoch() + indices.StorageMining_DeclaredFaultEffectiveDelay()
-	effectiveEndEpoch := effectiveBeginEpoch + duration
+	effectiveEndEpoch := effectiveBeginEpoch + params.duration
 
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		for _, sectorNumber := range sectorNumbers {
+		for _, sectorNumber := range params.sectorNumbers {
 			sectorInfo, found := st.Sectors[sectorNumber]
 			if !found || st.IsSectorInTemporaryFault(sectorNumber) {
 				continue
 			}
 
 			sectorInfo.DeclaredFaultEpoch = rt.CurrEpoch()
-			sectorInfo.DeclaredFaultDuration = duration
+			sectorInfo.DeclaredFaultDuration = params.duration
 			st.Sectors[sectorNumber] = sectorInfo
 		}
 		return nil
 	})
 
 	// Request deferred Cron invocation to update temporary fault state.
-	cronPayload := serde.MustSerializeParams(CronEventType_Miner_TempFault, sectorNumbers)
+	cronPayload := serde.MustSerializeParams(CronEventType_Miner_TempFault, params.sectorNumbers)
 	// schedule cron event to start marking temp fault at BeginEpoch
 	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, cronPayload)
 	// schedule cron event to end marking temp fault at EndEpoch
@@ -438,11 +503,15 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, sectorNumbers []a
 // Cron //
 //////////
 
-func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []byte) *adt.EmptyValue {
+type OnDeferredCronEventParams struct {
+	callbackPayload []byte
+}
+
+func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var payload CronEventPayload
-	serde.MustDeserialize(callbackPayload, payload)
+	serde.MustDeserialize(params.callbackPayload, payload)
 
 	if payload.EventType == CronEventType_Miner_TempFault {
 		for _, sectorNumber := range payload.Sectors {
@@ -470,34 +539,6 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, callbackPayload []by
 		a._rtCommitWorkerKeyChange(rt)
 	}
 
-	return &adt.EmptyValue{}
-}
-
-/////////////////
-// Constructor //
-/////////////////
-
-func (a *StorageMinerActor) Constructor(rt Runtime, ownerAddr addr.Address, workerAddr addr.Address, sectorSize abi.SectorSize, peerId peer.ID) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-
-	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
-	if workerAddr.Protocol() != addr.BLS {
-		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
-	}
-
-	var st StorageMinerActorState
-	rt.State().Transaction(&st, func() interface{} {
-		st.Sectors = SectorsAMT_Empty()
-		st.PoStState = MinerPoStState{
-			LastSuccessfulPoSt:     epochUndefined,
-			SurpriseChallengeEpoch: epochUndefined,
-			ChallengedSectors:      nil,
-			NumConsecutiveFailures: 0,
-		}
-		st.ProvingSet = st.GetCurrentProvingSet()
-		st.Info = MinerInfo_New(ownerAddr, workerAddr, sectorSize, peerId)
-		return nil
-	})
 	return &adt.EmptyValue{}
 }
 
