@@ -583,6 +583,7 @@ func TestRemoveSigner(t *testing.T) {
 			expectApprovals: int64(2),
 			code:            exitcode.Ok,
 		},
+		// TODO this is behaviour is poorly defined: https://github.com/filecoin-project/specs-actors/issues/72
 		{
 			desc: "remove signer from single singer list",
 
@@ -754,6 +755,8 @@ func TestChangeThreshold(t *testing.T) {
 			setThreshold:     int64(len(initialSigner) + 1),
 			code:             exitcode.ErrIllegalArgument,
 		},
+		// TODO missing test case that needs definition: https://github.com/filecoin-project/specs-actors/issues/71
+		// what happens when threshold is reduced below the number of approvers an existing transaction already ha
 	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
