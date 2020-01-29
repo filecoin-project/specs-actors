@@ -34,20 +34,6 @@ type MultiSigTransaction struct {
 
 type MultiSigActor struct{}
 
-type musigMethods struct {
-	Constructor                 int64
-	Propose                     int64
-	Approve                     int64
-	Cancel                      int64
-	ClearCompleted              int64
-	AddSigner                   int64
-	RemoveSigner                int64
-	SwapSigner                  int64
-	ChangeNumApprovalsThreshold int64
-}
-
-var Methods = musigMethods{1, 2, 3, 4, 5, 6, 7, 8, 9}
-
 func (msa MultiSigActor) Exports() []interface{} {
 	return []interface{}{
 		1: msa.Constructor,
