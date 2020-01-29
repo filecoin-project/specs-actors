@@ -17,7 +17,6 @@ import (
 type StorageMarketActor struct{}
 
 type BalanceTableHAMT = autil.BalanceTableHAMT
-type DealIDQueue = autil.DealIDQueue
 type Runtime = vmr.Runtime
 type Bytes = abi.Bytes
 
@@ -133,7 +132,7 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []S
 			st.Deals[id] = onchainDeal
 
 			if _, found := st.CachedExpirationsPending[p.EndEpoch]; !found {
-				st.CachedExpirationsPending[p.EndEpoch] = autil.DealIDQueue_Empty()
+				st.CachedExpirationsPending[p.EndEpoch] = NewDealIDQueue()
 			}
 			cep := st.CachedExpirationsPending[p.EndEpoch]
 			cep.Enqueue(id)

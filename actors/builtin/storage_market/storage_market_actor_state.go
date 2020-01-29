@@ -14,17 +14,18 @@ import (
 
 const epochUndefined = abi.ChainEpoch(-1)
 
-// TODO AMT
-type DealsAMT map[abi.DealID]OnChainDeal
+// TODO H/AMT, depending on sparseness and mutation pattern.
+type DealsById map[abi.DealID]OnChainDeal
 
-// TODO AMT
-type CachedDealIDsByPartyHAMT map[addr.Address]actor_util.DealIDSetHAMT
+// TODO HAMT
+type DealsByParty map[addr.Address]DealIDSet
+type DealIDSet map[abi.DealID]bool // TODO: HAMT or bitfield, depending how often it mutates
 
-// TODO AMT
-type CachedExpirationsPendingHAMT map[abi.ChainEpoch]DealIDQueue
+// TODO HAMT (probably of AMTs, i.e. a multimap).
+type DealExpirationQueue map[abi.ChainEpoch]DealIDQueue
 
 type StorageMarketActorState struct {
-	Deals DealsAMT
+	Deals DealsById
 
 	// Total amount held in escrow, indexed by actor address (including both locked and unlocked amounts).
 	EscrowTable actor_util.BalanceTableHAMT
@@ -37,8 +38,8 @@ type StorageMarketActorState struct {
 	NextID abi.DealID
 
 	// Metadata cached for efficient iteration over deals.
-	CachedDealIDsByParty           CachedDealIDsByPartyHAMT
-	CachedExpirationsPending       CachedExpirationsPendingHAMT
+	CachedDealIDsByParty           DealsByParty
+	CachedExpirationsPending       DealExpirationQueue
 	CachedExpirationsNextProcEpoch abi.ChainEpoch
 	CurrEpochNumDealsPublished     int
 }
@@ -412,17 +413,57 @@ func (st *StorageMarketActorState) _getOnChainDealAssert(dealID abi.DealID) (
 	return
 }
 
-func DealsAMT_Empty() DealsAMT {
+///// DealIDQueue /////
+// TODO: replace with an AMT
+type DealIDQueue struct {
+	Values     IndexedDealIDs
+	StartIndex int64
+	EndIndex   int64
+}
+
+type IndexedDealIDs map[int64]abi.DealID
+
+func (x *DealIDQueue) Enqueue(dealID abi.DealID) {
+	nextIndex := x.EndIndex
+	x.Values[nextIndex] = dealID
+	x.EndIndex = nextIndex + 1
+}
+
+func (x *DealIDQueue) Dequeue() (dealID abi.DealID, ok bool) {
+	actor_util.AssertMsg(x.StartIndex <= x.EndIndex, "index %d > end %d", x.StartIndex, x.EndIndex)
+
+	if x.StartIndex == x.EndIndex {
+		dealID = abi.DealID(-1)
+		ok = false
+		return
+	} else {
+		dealID = x.Values[x.StartIndex]
+		delete(x.Values, x.StartIndex)
+		x.StartIndex += 1
+		ok = true
+		return
+	}
+}
+
+func NewDealIDQueue() DealIDQueue {
+	return DealIDQueue{
+		Values:     make(IndexedDealIDs),
+		StartIndex: 0,
+		EndIndex:   0,
+	}
+}
+
+func DealsAMT_Empty() DealsById {
 	IMPL_FINISH()
 	panic("")
 }
 
-func CachedDealIDsByPartyHAMT_Empty() CachedDealIDsByPartyHAMT {
+func CachedDealIDsByPartyHAMT_Empty() DealsByParty {
 	IMPL_FINISH()
 	panic("")
 }
 
-func CachedExpirationsPendingHAMT_Empty() CachedExpirationsPendingHAMT {
+func CachedExpirationsPendingHAMT_Empty() DealExpirationQueue {
 	IMPL_FINISH()
 	panic("")
 }

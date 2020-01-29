@@ -19,6 +19,16 @@ func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ..
 	}
 }
 
+type SectorTermination int64
+
+// Note: Detected fault termination (due to exceeding the limit of consecutive
+// SurprisePoSt failures) is not listed here, since this does not terminate all
+// sectors individually, but rather the miner as a whole.
+const (
+	NormalExpiration SectorTermination = iota
+	UserTermination
+)
+
 type MinerEntrySpec int64
 
 const (
@@ -30,7 +40,7 @@ const (
 // It is merely a method dispatch interface.
 type ActorCode interface {
 	//InvokeMethod(rt Runtime, method actor.MethodNum, params actor.MethodParams) InvocOutput
-	// TODO: method dispatch mechanism is deferred to implementations.
+	// Method dispatch mechanism is deferred to implementations.
 	// When the executable actor spec is complete we can re-instantiate something here.
 }
 

@@ -19,9 +19,6 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type SectorStorageWeightDesc = autil.SectorStorageWeightDesc
-type SectorTerminationType = autil.SectorTermination
-
 type Runtime = vmr.Runtime
 
 var Assert = autil.Assert
@@ -385,7 +382,7 @@ func (a *StorageMinerActor) TerminateSectors(rt Runtime, sectorNumbers []abi.Sec
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	for _, sectorNumber := range sectorNumbers {
-		a._rtTerminateSector(rt, sectorNumber, autil.UserTermination)
+		a._rtTerminateSector(rt, sectorNumber, builtin.UserTermination)
 	}
 
 	return &adt.EmptyValue{}
@@ -594,12 +591,12 @@ func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.Se
 	// Note: the following test may be false, if sector expiration has been extended by the worker
 	// in the interim after the Cron request was enrolled.
 	if rt.CurrEpoch() >= checkSector.Info.Expiration {
-		a._rtTerminateSector(rt, sectorNumber, autil.NormalExpiration)
+		a._rtTerminateSector(rt, sectorNumber, builtin.NormalExpiration)
 	}
 	return
 }
 
-func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType SectorTerminationType) {
+func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType builtin.SectorTermination) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	_, found := st.Sectors[sectorNumber]

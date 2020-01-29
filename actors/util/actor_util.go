@@ -8,72 +8,11 @@ import (
 
 type BalanceTableHAMT map[addr.Address]abi.TokenAmount
 
-type DealIDSetHAMT map[abi.DealID]bool
-type IntToDealIDHAMT map[int64]abi.DealID
-
-type DealIDQueue struct {
-	Values     IntToDealIDHAMT
-	StartIndex int64
-	EndIndex   int64
-}
-
-func (x *DealIDQueue) Enqueue(dealID abi.DealID) {
-	nextIndex := x.EndIndex
-	x.Values[nextIndex] = dealID
-	x.EndIndex = nextIndex + 1
-}
-
-func (x *DealIDQueue) Dequeue() (dealID abi.DealID, ok bool) {
-	AssertMsg(x.StartIndex <= x.EndIndex, "index %d > end %d", x.StartIndex, x.EndIndex)
-
-	if x.StartIndex == x.EndIndex {
-		dealID = abi.DealID(-1)
-		ok = false
-		return
-	} else {
-		dealID = x.Values[x.StartIndex]
-		delete(x.Values, x.StartIndex)
-		x.StartIndex += 1
-		ok = true
-		return
-	}
-}
-
-func DealIDQueue_Empty() DealIDQueue {
-	return DealIDQueue{
-		Values:     IntToDealIDHAMT_Empty(),
-		StartIndex: 0,
-		EndIndex:   0,
-	}
-}
-
-type MinerSetHAMT map[addr.Address]bool
-
-type ActorIDSetHAMT map[abi.ActorID]bool
-
-type MinerCallbackEvent struct {
-	MinerAddr       addr.Address
-	CallbackPayload []byte
-}
-
-// TODO HAMT
-type MinerCallbackEventSetHAMT []MinerCallbackEvent
-
 type SectorStorageWeightDesc struct {
 	SectorSize abi.SectorSize
 	Duration   abi.ChainEpoch
 	DealWeight abi.DealWeight
 }
-
-type SectorTermination int64
-
-// Note: Detected fault termination (due to exceeding the limit of consecutive
-// SurprisePoSt failures) is not listed here, since this does not terminate all
-// sectors individually, but rather the miner as a whole.
-const (
-	NormalExpiration SectorTermination = iota
-	UserTermination
-)
 
 // Create a new entry in the balance table, with the specified initial balance.
 // May fail if the specified address already exists in the table.
@@ -113,17 +52,6 @@ func BalanceTable_WithSubtractPreservingNonnegative(
 	return BalanceTable_WithExtractPartial(table, address, amount, abi.NewTokenAmount(0))
 }
 
-// Extract the given amount from the given address's balance table entry, subject to the requirement
-// of a minimum balance `minBalanceMaintain`. If not possible to withdraw the entire amount
-// requested, then the balance will remain unchanged.
-func BalanceTable_WithExtract(
-	table BalanceTableHAMT, address addr.Address, amount abi.TokenAmount, minBalanceMaintain abi.TokenAmount) (
-	ret BalanceTableHAMT, ok bool) {
-
-	IMPL_FINISH()
-	panic("")
-}
-
 // Extract as much as possible (may be zero) up to the specified amount from the given address's
 // balance table entry, subject to the requirement of a minimum balance `minBalanceMaintain`.
 func BalanceTable_WithExtractPartial(
@@ -142,15 +70,6 @@ func BalanceTable_WithExtractAll(table BalanceTableHAMT, address addr.Address) (
 	panic("")
 }
 
-// Determine whether the given address's entry in the balance table meets the required minimum
-// `minBalanceMaintain`.
-func BalanceTable_IsEntrySufficient(
-	table BalanceTableHAMT, address addr.Address, minBalanceMaintain abi.TokenAmount) (ret bool, ok bool) {
-
-	IMPL_FINISH()
-	panic("")
-}
-
 // Retrieve the balance table entry corresponding to the given address.
 func BalanceTable_GetEntry(
 	table BalanceTableHAMT, address addr.Address) (
@@ -161,21 +80,6 @@ func BalanceTable_GetEntry(
 }
 
 func BalanceTableHAMT_Empty() BalanceTableHAMT {
-	IMPL_FINISH()
-	panic("")
-}
-
-func IntToDealIDHAMT_Empty() IntToDealIDHAMT {
-	IMPL_FINISH()
-	panic("")
-}
-
-func MinerSetHAMT_Empty() MinerSetHAMT {
-	IMPL_FINISH()
-	panic("")
-}
-
-func MinerCallbackEventSetHAMT_Empty() MinerCallbackEventSetHAMT {
 	IMPL_FINISH()
 	panic("")
 }
