@@ -25,10 +25,10 @@ func TestConstruction(t *testing.T) {
 	bob := newIDAddr(t, 102)
 	charlie := newIDAddr(t, 103)
 
-	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple construction", func(t *testing.T) {
-		rt := builder.Build()
+		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
 			NumApprovalsThreshold: 2,
@@ -36,12 +36,12 @@ func TestConstruction(t *testing.T) {
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		ret := actor.Constructor(rt, &params)
+		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
 		assert.Equal(t, adt.EmptyValue{}, *ret)
 		rt.Verify()
 
 		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
+		rt.GetState(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
@@ -54,19 +54,19 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("construction with vesting", func(t *testing.T) {
-		rt := builder.WithEpoch(1234).Build()
+		rt := builder.WithEpoch(1234).Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
 			NumApprovalsThreshold: 3,
 			UnlockDuration:        100,
 		}
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		ret := actor.Constructor(rt, &params)
+		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
 		assert.Equal(t, adt.EmptyValue{}, *ret)
 		rt.Verify()
 
 		var st multisig.MultiSigActorState
-		rt.Readonly(&st)
+		rt.GetState(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
@@ -89,15 +89,13 @@ func TestPropose(t *testing.T) {
 	var nilParams = abi.MethodParams{}
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple propose", func(t *testing.T) {
 		const numApprovals = int64(2)
-
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
-
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
@@ -115,7 +113,7 @@ func TestPropose(t *testing.T) {
 	t.Run("propose with threshold met", func(t *testing.T) {
 		const numApprovals = int64(1)
 
-		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build()
+		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -132,9 +130,7 @@ func TestPropose(t *testing.T) {
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
 		const numApprovals = int64(1)
-
-		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build()
-
+		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build(t)
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -143,14 +139,8 @@ func TestPropose(t *testing.T) {
 			actor.propose(rt, chuck, sendValue, builtin.MethodSend, nilParams)
 		})
 
-		// the final approval was ignored until the balance is sufficient
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
-			To:       chuck,
-			Value:    sendValue,
-			Method:   builtin.MethodSend,
-			Params:   nilParams,
-			Approved: []addr.Address{anne},
-		})
+		// proposal failed since it should have but failed to immediately execute.
+		actor.assertTransactions(rt)
 		rt.Verify()
 	})
 
@@ -159,7 +149,7 @@ func TestPropose(t *testing.T) {
 		richard := newIDAddr(t, 105)
 		const numApprovals = int64(2)
 
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -190,10 +180,10 @@ func TestApprove(t *testing.T) {
 	var nilParams = abi.MethodParams{}
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple propose and approval", func(t *testing.T) {
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -225,7 +215,7 @@ func TestApprove(t *testing.T) {
 
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
 		const numApprovals = int64(2)
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -254,7 +244,7 @@ func TestApprove(t *testing.T) {
 
 	t.Run("fail approve transaction that does not exist", func(t *testing.T) {
 		const dneTxnID = int64(1)
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -284,7 +274,7 @@ func TestApprove(t *testing.T) {
 	t.Run("fail to approve transaction by non-signer", func(t *testing.T) {
 		// non-signer address
 		richard := newIDAddr(t, 105)
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -328,7 +318,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-	constructRet := h.MultiSigActor.Constructor(rt, &constructParams)
+	constructRet := rt.Call(h.MultiSigActor.Constructor, &constructParams).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 }
@@ -340,19 +330,19 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Method: method,
 		Params: params,
 	}
-	h.MultiSigActor.Propose(rt, proposeParams)
+	rt.Call(h.MultiSigActor.Propose, proposeParams)
 }
 
 // TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
 // exercise both un/successful sends.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	h.MultiSigActor.Approve(rt, approveParams)
+	rt.Call(h.MultiSigActor.Approve, approveParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
 	var st multisig.MultiSigActorState
-	rt.Readonly(&st)
+	rt.GetState(&st)
 
 	txns := adt.AsMap(rt.Store(), st.PendingTxns)
 	keys, err := txns.CollectKeys()

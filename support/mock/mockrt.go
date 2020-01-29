@@ -36,6 +36,7 @@ type Runtime struct {
 	balance abi.TokenAmount
 
 	// VM implementation
+	inCall        bool
 	store         map[cid.Cid][]byte
 	inTransaction bool
 
@@ -44,12 +45,14 @@ type Runtime struct {
 	expectValidateCallerAny  bool
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
-
-	expectSends []*expectedMessage
+	expectSends              []*expectedMessage
 }
 
 var _ runtime.Runtime = &Runtime{}
 var _ runtime.StateHandle = &Runtime{}
+var typeOfRuntimeInterface = reflect.TypeOf((*runtime.Runtime)(nil)).Elem()
+var typeOfCborUnmarshaler = reflect.TypeOf((*runtime.CBORUnmarshaler)(nil)).Elem()
+var typeOfCborMarshaler = reflect.TypeOf((*runtime.CBORMarshaler)(nil)).Elem()
 
 var cidBuilder = cid.V1Builder{
 	Codec:    cid.DagCBOR,
@@ -60,22 +63,27 @@ var cidBuilder = cid.V1Builder{
 ///// Implementation of the runtime API /////
 
 func (rt *Runtime) NetworkName() string {
+	rt.requireInCall()
 	return "mock"
 }
 
 func (rt *Runtime) CurrEpoch() abi.ChainEpoch {
+	rt.requireInCall()
 	return rt.epoch
 }
 
 func (rt *Runtime) CurrReceiver() addr.Address {
+	rt.requireInCall()
 	return rt.receiver
 }
 
 func (rt *Runtime) ImmediateCaller() addr.Address {
+	rt.requireInCall()
 	return rt.caller
 }
 
 func (rt *Runtime) ValidateImmediateCallerAcceptAny() {
+	rt.requireInCall()
 	if !rt.expectValidateCallerAny {
 		rt.t.Fatalf("unexpected validate-caller-any")
 	}
@@ -83,6 +91,7 @@ func (rt *Runtime) ValidateImmediateCallerAcceptAny() {
 }
 
 func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
+	rt.requireInCall()
 	rt.checkArgument(len(addrs) > 0, "addrs must be non-empty")
 	// Check and clear expectations.
 	if len(rt.expectValidateCallerAddr) == 0 {
@@ -107,6 +116,7 @@ func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
 }
 
 func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
+	rt.requireInCall()
 	rt.checkArgument(len(types) > 0, "types must be non-empty")
 
 	// Check and clear expectations.
@@ -130,30 +140,37 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 }
 
 func (rt *Runtime) ToplevelBlockWinner() addr.Address {
+	rt.requireInCall()
 	return rt.miner
 }
 
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
+	rt.requireInCall()
 	return rt.balance
 }
 
 func (rt *Runtime) ValueReceived() abi.TokenAmount {
+	rt.requireInCall()
 	return rt.valueReceived
 }
 
 func (rt *Runtime) GetActorCodeID(addr addr.Address) (ret cid.Cid, ok bool) {
+	rt.requireInCall()
 	panic("implement me")
 }
 
 func (rt *Runtime) GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed {
+	rt.requireInCall()
 	panic("implement me")
 }
 
 func (rt *Runtime) State() runtime.StateHandle {
+	rt.requireInCall()
 	return rt
 }
 
 func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
+	// requireInCall omitted because it makes using this mock runtime as a store awkward.
 	data, found := rt.store[c]
 	if found {
 		err := o.UnmarshalCBOR(bytes.NewReader(data))
@@ -165,6 +182,7 @@ func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 }
 
 func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
+	// requireInCall omitted because it makes using this mock runtime as a store awkward.
 	if !rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "store put outside transaction")
 	}
@@ -184,6 +202,7 @@ func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
 }
 
 func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) (runtime.SendReturn, exitcode.ExitCode) {
+	rt.requireInCall()
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
@@ -204,10 +223,12 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi
 }
 
 func (rt *Runtime) NewActorAddress() addr.Address {
+	rt.requireInCall()
 	panic("implement me")
 }
 
 func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
+	rt.requireInCall()
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
@@ -215,6 +236,7 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 }
 
 func (rt *Runtime) DeleteActor(address addr.Address) {
+	rt.requireInCall()
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
@@ -222,27 +244,33 @@ func (rt *Runtime) DeleteActor(address addr.Address) {
 }
 
 func (rt *Runtime) CurrIndices() indices.Indices {
+	rt.requireInCall()
 	panic("implement me")
 }
 
 func (rt *Runtime) Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
+	rt.requireInCall()
 	rt.t.Logf("Mock Runtime Abort ExitCode: %v Reason: %s", errExitCode, fmt.Sprintf(msg, args...))
 	panic(abort{errExitCode, fmt.Sprintf(msg, args...)})
 }
 
 func (rt *Runtime) AbortStateMsg(msg string) {
+	rt.requireInCall()
 	rt.Abort(exitcode.ErrPlaceholder, msg)
 }
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
+	rt.requireInCall()
 	panic("implement me")
 }
 
 func (rt *Runtime) Context() context.Context {
+	// requireInCall omitted because it makes using this mock runtime as a store awkward.
 	return rt.ctx
 }
 
 func (rt *Runtime) StartSpan(name string) runtime.TraceSpan {
+	rt.requireInCall()
 	return &TraceSpan{}
 }
 
@@ -305,6 +333,17 @@ func (a abort) String() string {
 
 func (rt *Runtime) StateRoot() cid.Cid {
 	return rt.state
+}
+
+func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
+	data, found := rt.store[rt.state]
+	if !found {
+		rt.t.Fatalf("can't find state at root %v", rt.state) // something internal is messed up
+	}
+	err := o.UnmarshalCBOR(bytes.NewReader(data))
+	if err != nil {
+		rt.t.Fatalf("error loading state: %v", err)
+	}
 }
 
 func (rt *Runtime) Store() adt.Store {
@@ -392,8 +431,14 @@ func (rt *Runtime) Reset() {
 
 // Calls f() expecting it to invoke Runtime.Abort() with a specified exit code.
 func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
+	prevState := rt.state
+
 	defer func() {
 		r := recover()
+		if r == nil {
+			rt.t.Errorf("expected abort with code %v but call succeeded", expected)
+			return
+		}
 		a, ok := r.(abort)
 		if !ok {
 			panic(r)
@@ -401,9 +446,38 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 		if a.code != expected {
 			rt.t.Errorf("abort expected code %v, got %v %s", expected, a.code, a.msg)
 		}
+		// Roll back state change.
+		rt.state = prevState
 	}()
 	f()
-	rt.t.Errorf("expected abort with code %v but call succeeded", expected)
+}
+
+func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
+	meth := reflect.ValueOf(method)
+	rt.verifyExportedMethodType(meth)
+
+	// There's no panic recovery here. If an abort is expected, this call will be inside an ExpectAbort block.
+	// If not expected, the panic will escape and cause the test to fail.
+
+	rt.inCall = true
+	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), reflect.ValueOf(params)})
+	rt.inCall = false
+	return ret[0].Interface()
+}
+
+func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
+	t := meth.Type()
+	rt.require(t.Kind() == reflect.Func, "%v is not a function", meth)
+	rt.require(t.NumIn() == 2, "exported method %v must have two parameters, got %v", meth, t.NumIn())
+	rt.require(t.In(0) == typeOfRuntimeInterface, "exported method first parameter must be runtime, got %v", t.In(0))
+	rt.require(t.In(1).Kind() == reflect.Ptr, "exported method second parameter must be pointer to params, got %v", t.In(1))
+	rt.require(t.In(1).Implements(typeOfCborUnmarshaler), "exported method second parameter must be CBOR-unmarshalable params, got %v", t.In(1))
+	rt.require(t.NumOut() == 1, "exported method must return a single value")
+	rt.require(t.Out(0).Implements(typeOfCborMarshaler), "exported method must return CBOR-marshalable value")
+}
+
+func (rt *Runtime) requireInCall() {
+	rt.require(rt.inCall, "invalid runtime invocation outside of method call")
 }
 
 func (rt *Runtime) require(predicate bool, msg string, args ...interface{}) {
