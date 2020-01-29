@@ -26,15 +26,15 @@ const (
 )
 
 type msMethods struct {
-	Constructor                 int64
-	Propose                     int64
-	Approve                     int64
-	Cancel                      int64
-	ClearCompleted              int64
-	AddSigner                   int64
-	RemoveSigner                int64
-	SwapSigner                  int64
-	ChangeNumApprovalsThreshold int64
+	Constructor                 abi.MethodNum
+	Propose                     abi.MethodNum
+	Approve                     abi.MethodNum
+	Cancel                      abi.MethodNum
+	ClearCompleted              abi.MethodNum
+	AddSigner                   abi.MethodNum
+	RemoveSigner                abi.MethodNum
+	SwapSigner                  abi.MethodNum
+	ChangeNumApprovalsThreshold abi.MethodNum
 }
 
 var MethodsMultisig = msMethods{1, 2, 3, 4, 5, 6, 7, 8, 9}
