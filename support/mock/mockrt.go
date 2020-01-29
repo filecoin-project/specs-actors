@@ -418,6 +418,9 @@ func (rt *Runtime) Verify() {
 	if len(rt.expectValidateCallerType) > 0 {
 		rt.t.Errorf("expected ValidateCallerType %v, not received", rt.expectValidateCallerType)
 	}
+	if len(rt.expectSends) > 0 {
+		rt.t.Errorf("expected all message to be send, unsent messages %v", rt.expectSends)
+	}
 
 	rt.Reset()
 }
