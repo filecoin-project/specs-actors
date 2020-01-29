@@ -338,31 +338,31 @@ func (a *StorageMarketActor) Constructor(rt Runtime) *adt.EmptyValue {
 
 func _rtAbortIfDealAlreadyProven(rt Runtime, deal OnChainDeal) {
 	if deal.SectorStartEpoch != epochUndefined {
-		rt.Abort(exitcode.ErrIllegalState, "Deal has already appeared in proven sector.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
 	}
 }
 
 func _rtAbortIfDealNotFromProvider(rt Runtime, dealP StorageDealProposal, minerAddr addr.Address) {
 	if dealP.Provider != minerAddr {
-		rt.Abort(exitcode.ErrIllegalState, "Deal has incorrect miner as its provider.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
 	}
 }
 
 func _rtAbortIfDealStartElapsed(rt Runtime, dealP StorageDealProposal) {
 	if rt.CurrEpoch() > dealP.StartEpoch {
-		rt.Abort(exitcode.ErrIllegalState, "Deal start epoch has already elapsed.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 }
 
 func _rtAbortIfDealEndElapsed(rt Runtime, dealP StorageDealProposal) {
 	if dealP.EndEpoch > rt.CurrEpoch() {
-		rt.Abort(exitcode.ErrIllegalState, "Deal end epoch has already elapsed.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal end epoch has already elapsed.")
 	}
 }
 
 func _rtAbortIfDealExceedsSectorLifetime(rt Runtime, dealP StorageDealProposal, sectorExpiration abi.ChainEpoch) {
 	if dealP.EndEpoch > sectorExpiration {
-		rt.Abort(exitcode.ErrIllegalState, "Deal would outlive its containing sector.")
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal would outlive its containing sector.")
 	}
 }
 

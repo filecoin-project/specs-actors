@@ -352,7 +352,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 
 		extensionLength = newExpiration - sectorInfo.Info.Expiration
 		if extensionLength < 0 {
-			rt.Abort(exitcode.ErrForbidden, "Cannot reduce sector expiration")
+			rt.Abort(exitcode.ErrIllegalArgument, "Cannot reduce sector expiration")
 		}
 
 		sectorInfo.Info.Expiration = newExpiration

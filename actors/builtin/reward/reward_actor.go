@@ -62,7 +62,7 @@ type RewardActorState struct {
 func (st *RewardActorState) _withdrawReward(rt vmr.Runtime, ownerAddr addr.Address) abi.TokenAmount {
 	rewards, found := st.RewardMap[ownerAddr]
 	if !found {
-		rt.Abort(exitcode.ErrIllegalState, "ra._withdrawReward: ownerAddr not found in RewardMap.")
+		rt.Abort(exitcode.ErrNotFound, "ra._withdrawReward: ownerAddr not found in RewardMap.")
 	}
 
 	rewardToWithdrawTotal := abi.NewTokenAmount(0)
