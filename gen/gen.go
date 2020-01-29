@@ -2,6 +2,7 @@ package main
 
 import (
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 
 	gen "github.com/whyrusleeping/cbor-gen"
@@ -45,4 +46,19 @@ func main() {
 	); err != nil {
 		panic(err)
 	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_miner/cbor_gen.go", "storage_miner",
+		storage_miner.ConstructorParams{},
+		storage_miner.PreCommitSectorParams{},
+		storage_miner.TerminateSectorsParams{},
+		storage_miner.ProveCommitSectorParams{},
+		storage_miner.OnDeferredCronEventParams{},
+		storage_miner.StageWorkerKeyChangeParams{},
+		storage_miner.ExtendSectorExpirationParams{},
+		storage_miner.SubmitSurprisePoStResponseParams{},
+		storage_miner.DeclareTemporaryFaultsParams{},
+	); err != nil {
+		panic(err)
+	}
+
 }
