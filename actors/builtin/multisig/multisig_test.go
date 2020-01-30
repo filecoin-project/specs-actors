@@ -12,7 +12,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/serde"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 )
@@ -86,7 +85,7 @@ func TestPropose(t *testing.T) {
 
 	const noUnlockDuration = int64(0)
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = abi.MethodParams{}
+	var nilParams = []byte{}
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -176,8 +175,10 @@ func TestApprove(t *testing.T) {
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
 	const txnID = int64(0)
+	const fakeMethod = abi.MethodNum(42)
+	var fakeParams = []byte{1, 2, 3, 4, 5}
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = abi.MethodParams{}
+	var nilParams = []byte{}
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -189,15 +190,14 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		serParams := serde.MustSerialize(&multisig.ChangeNumApprovalsThresholdParams{NewThreshold: 1000})
-		actor.propose(rt, chuck, sendValue, builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold, serParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
 		actor.assertTransactions(rt, multisig.MultiSigTransaction{
 			To:       chuck,
 			Value:    sendValue,
-			Method:   builtin.Method_MultiSigActor_ChangeNumApprovalsThreshold,
-			Params:   serParams,
+			Method:   fakeMethod,
+			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
 
@@ -210,7 +210,6 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
-		rt.Verify()
 	})
 
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
@@ -301,6 +300,135 @@ func TestApprove(t *testing.T) {
 	})
 }
 
+func TestCancel(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	receiver := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+
+	richard := newIDAddr(t, 104)
+
+	const noUnlockDuration = int64(0)
+	const numApprovals = int64(2)
+	const txnID = int64(0)
+	const fakeMethod = abi.MethodNum(42)
+	var fakeParams = []byte{1, 2, 3, 4, 5}
+	var sendValue = abi.NewTokenAmount(10)
+	var signers = []addr.Address{anne, bob}
+
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+	t.Run("simple propose and cancel", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		// anne cancels their transaction
+		rt.SetBalance(sendValue)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.cancel(rt, txnID)
+		rt.Verify()
+
+		// Transaction should be removed from actor state after cancel
+		actor.assertTransactions(rt)
+	})
+
+	t.Run("signer fails to cancel transaction from another signer", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		// bob (a signer) fails to cancel anne's transaction because bob didn't create it, nice try bob.
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			actor.cancel(rt, txnID)
+		})
+		rt.Verify()
+
+		// Transaction should remain after invalid cancel
+		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+	})
+
+	t.Run("fail to cancel transaction when not signer", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		// richard (not a signer) fails to cancel anne's transaction because richard isn't a signer, go away richard.
+		rt.SetCaller(richard, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.cancel(rt, txnID)
+		})
+		rt.Verify()
+
+		// Transaction should remain after invalid cancel
+		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+	})
+
+	t.Run("fail to cancel a transaction that does not exist", func(t *testing.T) {
+		rt := builder.Build(t)
+		const dneTxnID = int64(1)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction ID: 0
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			actor.cancel(rt, dneTxnID)
+		})
+		rt.Verify()
+
+		// Transaction should remain after invalid cancel
+		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+	})
+}
+
 //
 // Helper methods for calling multisig actor methods
 //
@@ -340,6 +468,11 @@ func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 	rt.Call(h.MultiSigActor.Approve, approveParams)
 }
 
+func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
+	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
+	rt.Call(h.MultiSigActor.Cancel, cancelParams)
+}
+
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
 	var st multisig.MultiSigActorState
 	rt.GetState(&st)
@@ -348,7 +481,7 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 	keys, err := txns.CollectKeys()
 	assert.NoError(h.t, err)
 
-	assert.Equal(h.t, len(expected), len(keys))
+	require.Equal(h.t, len(expected), len(keys))
 	for i, k := range keys {
 		var actual multisig.MultiSigTransaction
 		found, err := txns.Get(asKey(k), &actual)
