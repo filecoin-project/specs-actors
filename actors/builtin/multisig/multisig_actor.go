@@ -149,12 +149,12 @@ func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyVa
 	return &adt.EmptyValue{}
 }
 
-type AddSigner struct {
+type AddSignerParams struct {
 	Signer   addr.Address // must be an ID protocol address.
 	Increase bool
 }
 
-func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *adt.EmptyValue {
+func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -172,12 +172,12 @@ func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *adt.EmptyV
 	return &adt.EmptyValue{}
 }
 
-type RemoveSigner struct {
+type RemoveSignerParams struct {
 	Signer   addr.Address // must be an ID protocol address.
 	Decrease bool
 }
 
-func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSigner) *adt.EmptyValue {
+func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -218,7 +218,7 @@ func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *ad
 			rt.Abort(exitcode.ErrNotFound, "Party not found")
 		}
 
-		if !st.isSigner(params.To) {
+		if st.isSigner(params.To) {
 			rt.Abort(exitcode.ErrIllegalArgument, "Party already present")
 		}
 

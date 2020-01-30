@@ -303,12 +303,11 @@ func TestApprove(t *testing.T) {
 func TestCancel(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
+	richard := newIDAddr(t, 104)
 	receiver := newIDAddr(t, 100)
 	anne := newIDAddr(t, 101)
 	bob := newIDAddr(t, 102)
 	chuck := newIDAddr(t, 103)
-
-	richard := newIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
@@ -429,6 +428,361 @@ func TestCancel(t *testing.T) {
 	})
 }
 
+type addSignerTestCase struct {
+	desc string
+
+	initialSigners   []addr.Address
+	initialApprovals int64
+
+	addSigner addr.Address
+	increase  bool
+
+	expectSigners   []addr.Address
+	expectApprovals int64
+	code            exitcode.ExitCode
+}
+
+func TestAddSigner(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	multisigWalletAdd := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+	const noUnlockDuration = int64(0)
+
+	testCases := []addSignerTestCase{
+		{
+			desc: "happy path add signer",
+
+			initialSigners:   []addr.Address{anne, bob},
+			initialApprovals: int64(2),
+
+			addSigner: chuck,
+			increase:  false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(2),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "add signer and increase threshold",
+
+			initialSigners:   []addr.Address{anne, bob},
+			initialApprovals: int64(2),
+
+			addSigner: chuck,
+			increase:  true,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(3),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "fail to add signer than already exists",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(3),
+
+			addSigner: chuck,
+			increase:  false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(3),
+			code:            exitcode.ErrIllegalArgument,
+		},
+	}
+
+	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
+
+			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
+
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.addSigner(rt, tc.addSigner, tc.increase)
+				})
+			} else {
+				actor.addSigner(rt, tc.addSigner, tc.increase)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.expectSigners, st.Signers)
+				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
+			}
+			rt.Verify()
+		})
+	}
+}
+
+type removeSignerTestCase struct {
+	desc string
+
+	initialSigners   []addr.Address
+	initialApprovals int64
+
+	removeSigner addr.Address
+	decrease     bool
+
+	expectSigners   []addr.Address
+	expectApprovals int64
+	code            exitcode.ExitCode
+}
+
+func TestRemoveSigner(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	multisigWalletAdd := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+	richard := newIDAddr(t, 104)
+
+	const noUnlockDuration = int64(0)
+
+	testCases := []removeSignerTestCase{
+		{
+			desc: "happy path remove signer",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(2),
+
+			removeSigner: chuck,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(2),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove signer and decrease threshold",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(2),
+
+			removeSigner: chuck,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove signer with automatic threshold decrease",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(3),
+
+			removeSigner: chuck,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(2),
+			code:            exitcode.Ok,
+		},
+		// TODO this is behaviour is poorly defined: https://github.com/filecoin-project/specs-actors/issues/72
+		{
+			desc: "remove signer from single singer list",
+
+			initialSigners:   []addr.Address{anne},
+			initialApprovals: int64(2),
+
+			removeSigner: anne,
+			decrease:     false,
+
+			expectSigners:   nil,
+			expectApprovals: int64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "fail to remove non-signer",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(2),
+
+			removeSigner: richard,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: int64(2),
+			code:            exitcode.ErrNotFound,
+		},
+	}
+
+	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
+
+			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
+
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.removeSigner(rt, tc.removeSigner, tc.decrease)
+				})
+			} else {
+				actor.removeSigner(rt, tc.removeSigner, tc.decrease)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.expectSigners, st.Signers)
+				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
+			}
+			rt.Verify()
+		})
+	}
+}
+
+type swapTestCase struct {
+	desc   string
+	to     addr.Address
+	from   addr.Address
+	expect []addr.Address
+	code   exitcode.ExitCode
+}
+
+func TestSwapSigners(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	multisigWalletAdd := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+	darlene := newIDAddr(t, 104)
+
+	const noUnlockDuration = int64(0)
+	const numApprovals = int64(1)
+	var initialSigner = []addr.Address{anne, bob}
+
+	testCases := []swapTestCase{
+		{
+			desc:   "happy path signer swap",
+			to:     chuck,
+			from:   bob,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.Ok,
+		},
+		{
+			desc:   "fail to swap when from signer not found",
+			to:     chuck,
+			from:   darlene,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.ErrNotFound,
+		},
+		{
+			desc:   "fail to swap when to signer already present",
+			to:     bob,
+			from:   anne,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.ErrIllegalArgument,
+		},
+	}
+
+	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
+
+			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.swapSigners(rt, tc.from, tc.to)
+				})
+			} else {
+				actor.swapSigners(rt, tc.from, tc.to)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.expect, st.Signers)
+			}
+			rt.Verify()
+		})
+	}
+}
+
+type thresholdTestCase struct {
+	desc             string
+	initialThreshold int64
+	setThreshold     int64
+	code             exitcode.ExitCode
+}
+
+func TestChangeThreshold(t *testing.T) {
+	actor := msActorHarness{multisig.MultiSigActor{}, t}
+
+	multisigWalletAdd := newIDAddr(t, 100)
+	anne := newIDAddr(t, 101)
+	bob := newIDAddr(t, 102)
+	chuck := newIDAddr(t, 103)
+
+	const noUnlockDuration = int64(0)
+	var initialSigner = []addr.Address{anne, bob, chuck}
+
+	testCases := []thresholdTestCase{
+		{
+			desc:             "happy path decrease threshold",
+			initialThreshold: 2,
+			setThreshold:     1,
+			code:             exitcode.Ok,
+		},
+		{
+			desc:             "happy path simple increase threshold",
+			initialThreshold: 2,
+			setThreshold:     3,
+			code:             exitcode.Ok,
+		},
+		{
+			desc:             "fail to set threshold to zero",
+			initialThreshold: 2,
+			setThreshold:     0,
+			code:             exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:             "fail to set threshold less than zero",
+			initialThreshold: 2,
+			setThreshold:     -1,
+			code:             exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:             "fail to set threshold above number of signers",
+			initialThreshold: 2,
+			setThreshold:     int64(len(initialSigner) + 1),
+			code:             exitcode.ErrIllegalArgument,
+		},
+		// TODO missing test case that needs definition: https://github.com/filecoin-project/specs-actors/issues/71
+		// what happens when threshold is reduced below the number of approvers an existing transaction already ha
+	}
+
+	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			rt := builder.Build(t)
+
+			actor.constructAndVerify(rt, tc.initialThreshold, noUnlockDuration, initialSigner...)
+
+			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			if tc.code != exitcode.Ok {
+				rt.ExpectAbort(tc.code, func() {
+					actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
+				})
+			} else {
+				actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
+				var st multisig.MultiSigActorState
+				rt.Readonly(&st)
+				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
+			}
+			rt.Verify()
+		})
+	}
+}
+
 //
 // Helper methods for calling multisig actor methods
 //
@@ -471,6 +825,35 @@ func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
 	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
 	rt.Call(h.MultiSigActor.Cancel, cancelParams)
+}
+
+func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increase bool) {
+	addSignerParams := &multisig.AddSignerParams{
+		Signer:   signer,
+		Increase: increase,
+	}
+	rt.Call(h.MultiSigActor.AddSigner, addSignerParams)
+}
+
+func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, decrease bool) {
+	rmSignerParams := &multisig.RemoveSignerParams{
+		Signer:   signer,
+		Decrease: decrease,
+	}
+	rt.Call(h.MultiSigActor.RemoveSigner, rmSignerParams)
+}
+
+func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr.Address) {
+	swpParams := &multisig.SwapSignerParams{
+		From: oldSigner,
+		To:   newSigner,
+	}
+	rt.Call(h.MultiSigActor.SwapSigner, swpParams)
+}
+
+func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold int64) {
+	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
+	rt.Call(h.MultiSigActor.ChangeNumApprovalsThreshold, thrshParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
