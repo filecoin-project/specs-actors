@@ -8,6 +8,7 @@ import (
 	hamt "github.com/ipfs/go-hamt-ipld"
 
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
 
 // Store defines an interface required to back the ADTs in this package.
@@ -38,7 +39,7 @@ func (r rtStore) Context() context.Context {
 
 func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
 	if !r.IpldGet(c, out.(vmr.CBORUnmarshaler)) {
-		r.AbortStateMsg("not found")
+		r.Abort(exitcode.ErrNotFound, "not found")
 	}
 	return nil
 }

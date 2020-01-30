@@ -67,7 +67,7 @@ type Indices interface {
 	GetCurrBlockRewardRewardForMiner(
 		minerStoragePower abi.StoragePower,
 		minerPledgeCollateral abi.TokenAmount,
-		// TODO extend or eliminate
+		// TODO ZX/JZ extend or eliminate
 	) abi.TokenAmount
 	StorageMining_PreCommitDeposit(
 		sectorSize abi.SectorSize,
@@ -206,7 +206,7 @@ func (inds *IndicesImpl) CurrEpochBlockReward() abi.TokenAmount {
 func (inds *IndicesImpl) GetCurrBlockRewardRewardForMiner(
 	minerStoragePower abi.StoragePower,
 	minerPledgeCollateral abi.TokenAmount,
-	// TODO extend or eliminate
+	// TODO ZX/JZ extend or eliminate
 ) abi.TokenAmount {
 	PARAM_FINISH()
 	panic("")
@@ -312,7 +312,6 @@ func StorageMining_DeclaredFaultEffectiveDelay() abi.ChainEpoch {
 // must appear between epochs
 //   (T + MIN_PROVE_COMMIT_SECTOR_EPOCH, T + MAX_PROVE_COMMIT_SECTOR_EPOCH)
 // inclusive.
-// TODO: placeholder epoch values -- will be set later
 func StorageMining_MinProveCommitSectorEpoch() abi.ChainEpoch {
 	PARAM_FINISH()
 	const MIN_PROVE_COMMIT_SECTOR_EPOCH = abi.ChainEpoch(5)
@@ -357,7 +356,8 @@ func StorageMining_SpcLookbackSeal() abi.ChainEpoch {
 
 func StorageMining_MaxSealTime32GiBWinStackedSDR() abi.ChainEpoch {
 	PARAM_FINISH()
-	MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR := abi.ChainEpoch(1) // TODO: Change to a dictionary with RegisteredProofs as the key.
+
+	MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR := abi.ChainEpoch(1) // TODO HS: Change to a dictionary with RegisteredProofs as the key.
 	return MAX_SEAL_TIME_32GIB_WIN_STACKED_SDR
 }
 

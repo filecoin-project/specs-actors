@@ -15,7 +15,6 @@ import (
 )
 
 type Runtime = vmr.Runtime
-type Bytes = abi.Bytes
 
 var AssertMsg = autil.AssertMsg
 

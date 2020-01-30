@@ -20,14 +20,13 @@ type SectorNumber int64
 // }
 type SectorSize int64
 
-// TODO make sure this is globally unique
 type SectorID struct {
 	Miner  ActorID
 	Number SectorNumber
 }
 
 // The unit of sector weight (power-epochs)
-type SectorWeight int64 // TODO big
+type SectorWeight big.Int
 
 // The unit of storage power (measured in bytes)
 type StoragePower = big.Int
@@ -53,8 +52,8 @@ const (
 /// Sealing
 ///
 
-type SealRandomness Bytes
-type InteractiveSealRandomness Bytes
+type SealRandomness []byte
+type InteractiveSealRandomness []byte
 
 // SealVerifyInfo is the structure of all the information a verifier
 // needs to verify a Seal.
@@ -81,18 +80,18 @@ type OnChainSealVerifyInfo struct {
 }
 
 type SealProof struct { //<curve, system> {
-	ProofBytes Bytes
+	ProofBytes []byte
 }
 
 ///
 /// PoSting
 ///
 
-type ChallengeTicketsCommitment Bytes
-type PoStRandomness Bytes
+type ChallengeTicketsCommitment []byte
+type PoStRandomness []byte
 type PartialTicket []byte // 32 bytes
 
-// TODO: refactor these types to get rid of the squishy optional fields.
+// TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
 	CommR           SealedSectorCID
@@ -125,10 +124,10 @@ type PoStCandidate struct {
 }
 
 type PoStProof struct { //<curve, system> {
-	ProofBytes Bytes
+	ProofBytes []byte
 }
 
 type PrivatePoStCandidateProof struct {
 	RegisteredProof
-	Externalized Bytes
+	Externalized []byte
 }

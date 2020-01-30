@@ -154,7 +154,7 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, onChainInfo a
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 		if !st.PoStState.Is_Challenged() {
-			rt.AbortStateMsg("Not currently challenged")
+			rt.Abort(exitcode.ErrIllegalState, "Not currently challenged")
 		}
 		a.verifySurprisePost(rt, &st, &onChainInfo)
 
@@ -226,14 +226,14 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, info SectorPreCommitInfo
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 	if _, found := st.Sectors[info.SectorNumber]; found {
-		rt.AbortStateMsg("Sector number already exists in table")
+		rt.Abort(exitcode.ErrIllegalArgument, "Sector number already exists in table")
 	}
 
 	cidx := rt.CurrIndices()
 	depositReq := cidx.StorageMining_PreCommitDeposit(st.Info.SectorSize, info.Expiration)
 	builtin.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
-	// TODO Check on valid SealEpoch
+	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
 		st.PreCommittedSectors[info.SectorNumber] = SectorPreCommitOnChainInfo{
@@ -267,11 +267,11 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, info SectorProveCommit
 	}
 
 	if rt.CurrEpoch() > preCommitSector.PreCommitEpoch+indices.StorageMining_MaxProveCommitSectorEpoch() || rt.CurrEpoch() < preCommitSector.PreCommitEpoch+indices.StorageMining_MinProveCommitSectorEpoch() {
-		rt.AbortStateMsg("Invalid ProveCommitSector epoch")
+		rt.Abort(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
 	}
 
 	TODO()
-	// TODO: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
+	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
 	a._rtVerifySealOrAbort(rt, &abi.OnChainSealVerifyInfo{
@@ -347,12 +347,12 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, sectorNumber abi.
 
 		sectorInfo, found := st.Sectors[sectorNumber]
 		if !found {
-			rt.AbortStateMsg("Sector not found")
+			rt.Abort(exitcode.ErrNotFound, "Sector not found")
 		}
 
 		extensionLength = newExpiration - sectorInfo.Info.Expiration
 		if extensionLength < 0 {
-			rt.AbortStateMsg("Cannot reduce sector expiration")
+			rt.Abort(exitcode.ErrIllegalArgument, "Cannot reduce sector expiration")
 		}
 
 		sectorInfo.Info.Expiration = newExpiration
@@ -748,13 +748,13 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 	challengeIndices := make(map[int64]bool)
 	for _, tix := range onChainInfo.Candidates {
 		if _, ok := challengeIndices[tix.ChallengeIndex]; ok {
-			rt.AbortStateMsg("Invalid Surprise PoSt. Duplicate ticket included.")
+			rt.Abort(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Duplicate ticket included.")
 		}
 		challengeIndices[tix.ChallengeIndex] = true
 	}
 
 	TODO(challengedSectors)
-	// TODO: Determine what should be the acceptance criterion for sector numbers
+	// TODO HS: Determine what should be the acceptance criterion for sector numbers
 	// proven in SurprisePoSt proofs.
 	//
 	// Previous note:
@@ -781,7 +781,7 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 	isVerified := rt.Syscalls().VerifyPoSt(sectorSize, pvInfo)
 
 	if !isVerified {
-		rt.AbortStateMsg("Surprise PoSt failed to verify")
+		rt.Abort(exitcode.ErrIllegalArgument, "Surprise PoSt failed to verify")
 	}
 }
 
@@ -794,7 +794,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	// if IsValidAtCommitEpoch(onChainInfo.RegisteredProof, rt.CurrEpoch()) // Ensure proof type is valid at current epoch.
 	// Check randomness.
 	if onChainInfo.SealEpoch < (rt.CurrEpoch() - indices.StorageMining_Finality() - indices.StorageMining_MaxSealTime32GiBWinStackedSDR()) {
-		rt.AbortStateMsg("Seal references ticket from invalid epoch")
+		rt.Abort(exitcode.ErrIllegalArgument, "Seal references ticket from invalid epoch")
 	}
 
 	var infos storage_market.GetPieceInfosForDealIDsReturn
@@ -820,12 +820,12 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 
 	unsealedCID, err := rt.Syscalls().ComputeUnsealedSectorCID(sectorSize, infos.Pieces)
 	if err != nil {
-		rt.AbortStateMsg("invalid sector piece infos")
+		rt.Abort(exitcode.ErrIllegalState, "invalid sector piece infos")
 	}
 
 	minerActorID, err := addr.IDFromAddress(rt.CurrReceiver())
 	if err != nil {
-		rt.AbortStateMsg("receiver must be ID address")
+		rt.Abort(exitcode.ErrIllegalState, "receiver must be ID address")
 	}
 
 	svInfoRandomness := rt.GetRandomness(onChainInfo.SealEpoch)
@@ -845,7 +845,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	isVerified := rt.Syscalls().VerifySeal(sectorSize, svInfo)
 
 	if !isVerified {
-		rt.AbortStateMsg("Sector seal failed to verify")
+		rt.Abort(exitcode.ErrIllegalState, "Sector seal failed to verify")
 	}
 }
 
@@ -858,6 +858,7 @@ func getSectorNums(m map[abi.SectorNumber]SectorOnChainInfo) []abi.SectorNumber 
 }
 
 func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet cid.Cid) []abi.SectorNumber {
+	// TODO: HS
 	TODO()
 	panic("")
 }

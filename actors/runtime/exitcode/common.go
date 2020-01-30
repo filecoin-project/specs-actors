@@ -12,7 +12,7 @@ const (
 	ErrForbidden
 	// Indicates a balance of funds is insufficient.
 	ErrInsufficientFunds
-	// Indicates an actors internal state is invalid.
+	// Indicates an actor's internal state is invalid.
 	ErrIllegalState
 	// An error code intended to be replaced by different code structure or a more descriptive error.
 	ErrPlaceholder = ExitCode(1000)

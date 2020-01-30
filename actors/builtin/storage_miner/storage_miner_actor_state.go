@@ -17,7 +17,7 @@ import (
 type StorageMinerActorState struct {
 	PreCommittedSectors PreCommittedSectorsAMT // PreCommitted Sectors
 	Sectors             SectorsAMT             // Proven Sectors can be Active or in TemporaryFault
-	FaultSet            SectorNumberSetHAMT    // TODO bitfield of Sectors in TemporaryFault
+	FaultSet            SectorNumberSetHAMT    // TODO zx bitfield of Sectors in TemporaryFault
 	ProvingSet          cid.Cid                // cid of SectorsAMT - sectors in FaultSet
 
 	PoStState MinerPoStState
@@ -211,13 +211,13 @@ func MinerInfo_New(
 		PendingWorkerKey: WorkerKeyChange{},
 	}
 
-	TODO() // TODO: determine how to generate/validate VRF key and initialize other fields
+	TODO() // TODO anorth: determine how to generate/validate VRF key and initialize other fields
 
 	return *ret
 }
 
 func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
-	// TODO: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
+	// TODO hs: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
 	TODO()
 	panic("")
 }
