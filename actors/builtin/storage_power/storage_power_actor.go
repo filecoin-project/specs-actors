@@ -336,10 +336,10 @@ func (a *StoragePowerActor) EnrollCronEvent(rt Runtime, params *EnrollCronEventP
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		if _, found := st.CronEventQueue[params.EventEpoch]; !found {
-			st.CronEventQueue[params.EventEpoch] = []CronEvent{}
+		err := st.appendCronEvent(adt.AsStore(rt), params.EventEpoch, &minerEvent)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to enroll cron event")
 		}
-		st.CronEventQueue[params.EventEpoch] = append(st.CronEventQueue[params.EventEpoch], minerEvent)
 		return nil
 	})
 	return &adt.EmptyValue{}
@@ -486,21 +486,21 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 	var epochEvents []CronEvent
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		epochEvents, _ = st.CronEventQueue[epoch]
-		delete(st.CronEventQueue, epoch)
+		store := adt.AsStore(rt)
+		var err error
+		epochEvents, err = st.loadCronEvents(store, epoch)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to load cron events")
+		}
+
+		err = st.clearCronEvents(store, epoch)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to clear cron events")
+		}
 		return nil
 	})
 
-	validEvents := []CronEvent{}
-	for _, minerEvent := range epochEvents {
-		if _, found, err := getStoragePower(adt.AsStore(rt), st.PowerTable, minerEvent.MinerAddr); err != nil {
-			return errors.Wrap(err, "Failed to get miner power from power table while processing cron events")
-		} else if found {
-			validEvents = append(validEvents, minerEvent)
-		}
-	}
-
-	for _, event := range validEvents {
+	for _, event := range epochEvents {
 		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.Method_StorageMinerActor_OnDeferredCronEvent,

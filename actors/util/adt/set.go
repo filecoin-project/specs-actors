@@ -4,7 +4,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-// Set stores data in a HAMT.
+// Set interprets a Map as a set, storing keys (with empty values) in a HAMT.
 type Set struct {
 	m *Map
 }
