@@ -41,8 +41,8 @@ func (st *MultiSigActorState) isSigner(party address.Address) bool {
 	return false
 }
 
-// return true if MultiSig maintains required locked balance after spending the amount
-func (st *MultiSigActorState) hasAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
+// return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
+func (st *MultiSigActorState) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
 	if amountToSpend.LessThan(big.Zero()) {
 		return errors.Errorf("amount to spend %s less than zero", amountToSpend.String())
 	}
@@ -52,6 +52,10 @@ func (st *MultiSigActorState) hasAvailable(currBalance abi.TokenAmount, amountTo
 
 	remainingBalance := big.Sub(currBalance, amountToSpend)
 	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
+	thing := amountLocked.Int64()
+	thong := remainingBalance.Int64()
+	_ = thing
+	_ = thong
 	if remainingBalance.LessThan(amountLocked) {
 		return errors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
 	}

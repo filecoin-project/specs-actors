@@ -281,7 +281,7 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
-		if err := st.hasAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
+		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
 			rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
