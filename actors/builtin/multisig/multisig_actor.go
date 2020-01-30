@@ -161,7 +161,7 @@ func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSigner) *adt.EmptyV
 	var st MultiSigActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if st.isSigner(params.Signer) {
-			rt.Abort(exitcode.ErrIllegalState, "party is already a signer")
+			rt.Abort(exitcode.ErrIllegalArgument, "party is already a signer")
 		}
 		st.Signers = append(st.Signers, params.Signer)
 		if params.Increase {
@@ -219,7 +219,7 @@ func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *ad
 		}
 
 		if !st.isSigner(params.To) {
-			rt.Abort(exitcode.ErrIllegalState, "Party already present")
+			rt.Abort(exitcode.ErrIllegalArgument, "Party already present")
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))
