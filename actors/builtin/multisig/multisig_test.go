@@ -226,7 +226,7 @@ func TestApprove(t *testing.T) {
 		// anne is going to approve it twice and fail, poor anne.
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		// TODO replace with correct exit code when multisig actor breaks the AbortStateMsg pattern.
-		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			actor.approve(rt, txnID)
 		})
 		rt.Verify()
@@ -255,7 +255,7 @@ func TestApprove(t *testing.T) {
 		// bob is going to approve a transaction that doesn't exist.
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.approve(rt, dneTxnID)
 		})
 		rt.Verify()
@@ -355,7 +355,7 @@ func TestCancel(t *testing.T) {
 		// bob (a signer) fails to cancel anne's transaction because bob didn't create it, nice try bob.
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.cancel(rt, txnID)
 		})
 		rt.Verify()
@@ -413,7 +413,7 @@ func TestCancel(t *testing.T) {
 
 		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.cancel(rt, dneTxnID)
 		})
 		rt.Verify()
