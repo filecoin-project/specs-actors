@@ -16,7 +16,7 @@ type RuntimeBuilder struct {
 }
 
 // Initializes a new builder with a receiving actor address.
-func NewBuilder(ctx context.Context, t *testing.T, receiver addr.Address) *RuntimeBuilder {
+func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 	m := &Runtime{
 		ctx:        ctx,
 		epoch:      0,
@@ -31,7 +31,7 @@ func NewBuilder(ctx context.Context, t *testing.T, receiver addr.Address) *Runti
 		balance:       abi.NewTokenAmount(0),
 		valueReceived: abi.NewTokenAmount(0),
 
-		t:                        t,
+		t:                        nil, // Initialized at Build()
 		expectValidateCallerAny:  false,
 		expectValidateCallerAddr: nil,
 		expectValidateCallerType: nil,
@@ -42,7 +42,7 @@ func NewBuilder(ctx context.Context, t *testing.T, receiver addr.Address) *Runti
 }
 
 // Builds a new runtime object with the configured values.
-func (b *RuntimeBuilder) Build() *Runtime {
+func (b *RuntimeBuilder) Build(t testing.TB) *Runtime {
 	cpy := *b.rt
 
 	// Deep copy the mutable values.
@@ -50,6 +50,8 @@ func (b *RuntimeBuilder) Build() *Runtime {
 	for k, v := range b.rt.store {
 		cpy.store[k] = v
 	}
+
+	cpy.t = t
 	return &cpy
 }
 
