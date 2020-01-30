@@ -318,10 +318,10 @@ func TestCancel(t *testing.T) {
 	var sendValue = abi.NewTokenAmount(10)
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), t, receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple propose and cancel", func(t *testing.T) {
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -342,7 +342,7 @@ func TestCancel(t *testing.T) {
 	})
 
 	t.Run("signer fails to cancel transaction from another signer", func(t *testing.T) {
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -371,7 +371,7 @@ func TestCancel(t *testing.T) {
 	})
 
 	t.Run("fail to cancel transaction when not signer", func(t *testing.T) {
-		rt := builder.Build()
+		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -400,7 +400,7 @@ func TestCancel(t *testing.T) {
 	})
 
 	t.Run("fail to cancel a transaction that does not exist", func(t *testing.T) {
-		rt := builder.Build()
+		rt := builder.Build(t)
 		const dneTxnID = int64(1)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
@@ -470,7 +470,7 @@ func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
 	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	h.MultiSigActor.Cancel(rt, cancelParams)
+	rt.Call(h.MultiSigActor.Cancel, cancelParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
