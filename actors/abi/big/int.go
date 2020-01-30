@@ -116,6 +116,11 @@ func (bi Int) GreaterThanEqual(o Int) bool {
 	return bi.GreaterThan(o) || bi.Equals(o)
 }
 
+// Neg returns the negative of bi.
+func (bi Int) Neg() Int {
+	return Int{big.NewInt(0).Neg(bi.Int)}
+}
+
 // Equals returns true if bi == o
 func (bi Int) Equals(o Int) bool {
 	return Cmp(bi, o) == 0

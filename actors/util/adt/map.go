@@ -2,7 +2,6 @@ package adt
 
 import (
 	"bytes"
-	"context"
 
 	cid "github.com/ipfs/go-cid"
 	hamt "github.com/ipfs/go-hamt-ipld"
@@ -11,17 +10,6 @@ import (
 
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 )
-
-// Store defines an interface required to back Map.
-type Store interface {
-	Context() context.Context
-	hamt.CborIpldStore
-}
-
-// Keyer defines an interface required to put values in Map.
-type Keyer interface {
-	Key() string
-}
 
 // Map stores data in a HAMT.
 type Map struct {
@@ -72,7 +60,7 @@ func (h *Map) Get(k Keyer, out vmr.CBORUnmarshaler) (bool, error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "Map Get failed to load node %v", h.root)
 	}
-	if err := root.Find(h.store.Context(), k.Key(), out); err != nil {
+	if err = root.Find(h.store.Context(), k.Key(), out); err != nil {
 		if err == hamt.ErrNotFound {
 			return false, nil
 		}
@@ -134,30 +122,4 @@ func (h *Map) write(root *hamt.Node) error {
 	}
 	h.root = newCid
 	return nil
-}
-
-// AsStore allows Runtime to satisfy the adt.Store interface.
-func AsStore(rt vmr.Runtime) Store {
-	return rtStore{rt}
-}
-
-var _ Store = &rtStore{}
-
-type rtStore struct {
-	vmr.Runtime
-}
-
-func (r rtStore) Context() context.Context {
-	return r.Runtime.Context()
-}
-
-func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
-	if !r.IpldGet(c, out.(vmr.CBORUnmarshaler)) {
-		r.AbortStateMsg("not found")
-	}
-	return nil
-}
-
-func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
-	return r.IpldPut(v.(vmr.CBORMarshaler)), nil
 }

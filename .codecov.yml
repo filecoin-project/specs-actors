@@ -1,14 +1,5 @@
 # "documentation": https://gist.github.com/stevepeak/53bee7b2c326b24a9b4a
-coverage:
-  range: 50..100
-  round: down
-  precision: 0
-
-  status:
-    project: false
-    patch: false
-    changes: false
-
+#
 # https://docs.codecov.io/docs/pull-request-comments
 comment:
   layout: "diff"           # "diff, flags, files"
