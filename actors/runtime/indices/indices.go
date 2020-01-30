@@ -56,19 +56,13 @@ type Indices interface {
 	SectorWeightProportion(minerActiveSectorWeight abi.SectorWeight) big.Int
 	PledgeCollateralProportion(minerPledgeCollateral abi.TokenAmount) big.Int
 	StoragePower(
-		minerActiveSectorWeight abi.SectorWeight,
-		minerInactiveSectorWeight abi.SectorWeight,
+		minerNominalPower abi.StoragePower,
 		minerPledgeCollateral abi.TokenAmount,
 	) abi.StoragePower
 	StoragePowerProportion(
 		minerStoragePower abi.StoragePower,
 	) big.Int
 	CurrEpochBlockReward() abi.TokenAmount
-	GetCurrBlockRewardRewardForMiner(
-		minerStoragePower abi.StoragePower,
-		minerPledgeCollateral abi.TokenAmount,
-		// TODO ZX/JZ extend or eliminate
-	) abi.TokenAmount
 	StorageMining_PreCommitDeposit(
 		sectorSize abi.SectorSize,
 		expirationEpoch abi.ChainEpoch,
@@ -178,14 +172,20 @@ func (inds *IndicesImpl) PledgeCollateralProportion(minerPledgeCollateral abi.To
 }
 
 func (inds *IndicesImpl) StoragePower(
-	minerActiveSectorWeight abi.SectorWeight,
-	minerInactiveSectorWeight abi.SectorWeight,
+	minerNominalPower abi.StoragePower,
 	minerPledgeCollateral abi.TokenAmount,
 ) abi.StoragePower {
 	// return StoragePower based on inputs
-	// StoragePower for miner = func(ActiveSectorWeight for miner, PledgeCollateral for miner, global indices)
-	PARAM_FINISH()
-	panic("")
+	// StoragePower for miner = func(NominalPower for miner, PledgeCollateral for miner, global indices)
+	// Tentatively, miners dont get ConsensusPower for the share of power that they dont have collateral for
+	requiredPledge := inds.PledgeCollateralReq(minerNominalPower)
+	if minerPledgeCollateral.GreaterThanEqual(requiredPledge){
+		return minerNominalPower
+	}
+	
+	// this is likely to change
+	unitPledgePower := big.Div(minerNominalPower, requiredPledge)
+	return big.Mul(unitPledgePower, minerPledgeCollateral)
 }
 
 func (inds *IndicesImpl) StoragePowerProportion(
@@ -198,16 +198,7 @@ func (inds *IndicesImpl) StoragePowerProportion(
 func (inds *IndicesImpl) CurrEpochBlockReward() abi.TokenAmount {
 	// total block reward allocated for CurrEpoch
 	// each expected winner get an equal share of this reward
-	// computed as a function of NetworkKPI, LastEpochReward, TotalUnmminedFIL, etc
-	PARAM_FINISH()
-	panic("")
-}
-
-func (inds *IndicesImpl) GetCurrBlockRewardRewardForMiner(
-	minerStoragePower abi.StoragePower,
-	minerPledgeCollateral abi.TokenAmount,
-	// TODO ZX/JZ extend or eliminate
-) abi.TokenAmount {
+	// computed as a function of NetworkKPI, NetworkTarget, LastEpochReward, TotalUnmminedFIL, etc
 	PARAM_FINISH()
 	panic("")
 }

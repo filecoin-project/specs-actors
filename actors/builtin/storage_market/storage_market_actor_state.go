@@ -59,7 +59,6 @@ func (st *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
 func (st *StorageMarketActorState) _updatePendingDealStates(dealIDs []abi.DealID, epoch abi.ChainEpoch) (
 	amountSlashedTotal abi.TokenAmount) {
 
-	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal = abi.NewTokenAmount(0)
 
 	for _, dealID := range dealIDs {
@@ -73,7 +72,6 @@ func (st *StorageMarketActorState) _updatePendingDealStates(dealIDs []abi.DealID
 func (st *StorageMarketActorState) _updatePendingDealState(dealID abi.DealID, epoch abi.ChainEpoch) (
 	amountSlashed abi.TokenAmount) {
 
-	IMPL_FINISH() // BigInt arithmetic
 	amountSlashed = abi.NewTokenAmount(0)
 
 	deal, dealP := st._getOnChainDealAssert(dealID)
@@ -144,7 +142,6 @@ func (st *StorageMarketActorState) _processDealPaymentEpochsElapsed(dealID abi.D
 	Assert(deal.SectorStartEpoch != epochUndefined)
 
 	// Process deal payment for the elapsed epochs.
-	IMPL_FINISH() // BigInt arithmetic
 	totalPayment := big.Mul(big.NewInt(int64(numEpochsElapsed)), dealP.StoragePricePerEpoch)
 	st._transferBalance(dealP.Client, dealP.Provider, abi.TokenAmount(totalPayment))
 }
@@ -386,7 +383,6 @@ func _dealGetPaymentRemaining(deal OnChainDeal, epoch abi.ChainEpoch) abi.TokenA
 	durationRemaining := dealP.EndEpoch - (epoch - 1)
 	Assert(durationRemaining > 0)
 
-	IMPL_FINISH() // BigInt arithmetic
 	return abi.TokenAmount(big.Mul(big.NewInt(int64(durationRemaining)), dealP.StoragePricePerEpoch))
 }
 
