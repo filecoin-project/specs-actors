@@ -36,6 +36,10 @@ func (st *PaymentChannelActorState) MarshalCBOR(w io.Writer) error {
 	panic("replace with cbor-gen")
 }
 
+func (st *PaymentChannelActorState) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
 // The Lane state tracks the latest (highest) voucher nonce used to merge the lane
 // as well as the amount it has already redeemed.
 type LaneState struct {

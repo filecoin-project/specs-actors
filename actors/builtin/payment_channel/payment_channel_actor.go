@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	"github.com/filecoin-project/specs-actors/actors/serde"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type PaymentChannelActor struct{}
@@ -23,7 +24,7 @@ type PCAConstructorParams struct {
 	To addr.Address
 }
 
-func (pca *PaymentChannelActor) Constructor(rt vmr.Runtime, params *PCAConstructorParams) *vmr.EmptyReturn {
+func (pca *PaymentChannelActor) Constructor(rt vmr.Runtime, params *PCAConstructorParams) *adt.EmptyValue {
 
 	var st PaymentChannelActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -32,7 +33,7 @@ func (pca *PaymentChannelActor) Constructor(rt vmr.Runtime, params *PCAConstruct
 		st.LaneStates = make(map[int64]*LaneState)
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,7 +51,7 @@ type PaymentVerifyParams struct {
 	Proof []byte
 }
 
-func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUpdateChannelStateParams) *vmr.EmptyReturn {
+func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUpdateChannelStateParams) *adt.EmptyValue {
 
 	var st PaymentChannelActorState
 	rt.State().Readonly(&st)
@@ -89,7 +90,7 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 			),
 			abi.NewTokenAmount(0),
 		)
-		vmr.RequireSuccess(rt, code, "spend voucher verification failed")
+		builtin.RequireSuccess(rt, code, "spend voucher verification failed")
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
@@ -157,10 +158,10 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 		}
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (pca *PaymentChannelActor) Close(rt vmr.Runtime) *vmr.EmptyReturn {
+func (pca *PaymentChannelActor) Close(rt vmr.Runtime) *adt.EmptyValue {
 
 	var st PaymentChannelActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -178,10 +179,10 @@ func (pca *PaymentChannelActor) Close(rt vmr.Runtime) *vmr.EmptyReturn {
 
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
 
-func (pca *PaymentChannelActor) Collect(rt vmr.Runtime) *vmr.EmptyReturn {
+func (pca *PaymentChannelActor) Collect(rt vmr.Runtime) *adt.EmptyValue {
 
 	var st PaymentChannelActorState
 	rt.State().Readonly(&st)
@@ -202,7 +203,7 @@ func (pca *PaymentChannelActor) Collect(rt vmr.Runtime) *vmr.EmptyReturn {
 		nil,
 		abi.NewTokenAmount(big.Sub(rt.CurrentBalance(), st.ToSend).Int64()),
 	)
-	vmr.RequireSuccess(rt, code, "Failed to send balance to `From`")
+	builtin.RequireSuccess(rt, code, "Failed to send balance to `From`")
 
 	// send ToSend to "To"
 
@@ -212,11 +213,11 @@ func (pca *PaymentChannelActor) Collect(rt vmr.Runtime) *vmr.EmptyReturn {
 		nil,
 		abi.NewTokenAmount(st.ToSend.Int64()),
 	)
-	vmr.RequireSuccess(rt, code2, "Failed to send funds to `To`")
+	builtin.RequireSuccess(rt, code2, "Failed to send funds to `To`")
 
 	rt.State().Transaction(&st, func() interface{} {
 		st.ToSend = big.Zero()
 		return nil
 	})
-	return &vmr.EmptyReturn{}
+	return &adt.EmptyValue{}
 }
