@@ -32,9 +32,6 @@ type ActorID int64
 // associated with methods in Filecoin VM Actors.
 type MethodNum int64
 
-// Method params are the CBOR-serialization of a heterogenous array of values.
-type MethodParams []byte
-
 // TokenAmount is an amount of Filecoin tokens. This type is used within
 // the VM in message execution, to account movement of tokens, payment
 // of VM gas, and more.

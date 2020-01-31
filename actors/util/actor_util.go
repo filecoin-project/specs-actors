@@ -8,12 +8,6 @@ import (
 
 type BalanceTableHAMT map[addr.Address]abi.TokenAmount
 
-type SectorStorageWeightDesc struct {
-	SectorSize abi.SectorSize
-	Duration   abi.ChainEpoch
-	DealWeight abi.DealWeight
-}
-
 // Create a new entry in the balance table, with the specified initial balance.
 // May fail if the specified address already exists in the table.
 func BalanceTable_WithNewAddressEntry(table BalanceTableHAMT, address addr.Address, initBalance abi.TokenAmount) (

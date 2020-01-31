@@ -67,10 +67,6 @@ type Indices interface {
 		sectorSize abi.SectorSize,
 		expirationEpoch abi.ChainEpoch,
 	) abi.TokenAmount
-	StorageMining_TemporaryFaultFee(
-		storageWeightDescs []actor_util.SectorStorageWeightDesc,
-		duration abi.ChainEpoch,
-	) abi.TokenAmount
 	NetworkTransactionFee(
 		toActorCodeID cid.Cid,
 		methodNum abi.MethodNum,
@@ -214,14 +210,6 @@ func (inds *IndicesImpl) StorageMining_PreCommitDeposit(
 	return abi.TokenAmount(big.Mul(PRECOMMIT_DEPOSIT_PER_BYTE, big.NewInt(int64(sectorSize))))
 }
 
-func (inds *IndicesImpl) StorageMining_TemporaryFaultFee(
-	storageWeightDescs []actor_util.SectorStorageWeightDesc,
-	duration abi.ChainEpoch,
-) abi.TokenAmount {
-	PARAM_FINISH()
-	panic("")
-}
-
 func (inds *IndicesImpl) NetworkTransactionFee(
 	toActorCodeID cid.Cid,
 	methodNum abi.MethodNum,
@@ -234,13 +222,6 @@ func (inds *IndicesImpl) GetCurrBlockRewardForMiner(
 	minerStoragePower abi.StoragePower,
 	minerPledgeCollateral abi.TokenAmount,
 ) abi.TokenAmount {
-	PARAM_FINISH()
-	panic("")
-}
-
-func ConsensusPowerForStorageWeight(
-	storageWeightDesc actor_util.SectorStorageWeightDesc,
-) abi.StoragePower {
 	PARAM_FINISH()
 	panic("")
 }

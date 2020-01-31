@@ -293,7 +293,7 @@ func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.
 					break
 				}
 				numDequeued += 1
-				if _, found := st.Deals[dealID]; found {
+				if _, found = st.Deals[dealID]; found {
 					// May have already processed expiration, independently, via _rtUpdatePendingDealStatesForParty.
 					// If not, add it to the list to be processed.
 					extractedDealIDs = append(extractedDealIDs, dealID)

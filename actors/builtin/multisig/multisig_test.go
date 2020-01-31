@@ -9,9 +9,10 @@ import (
 	require "github.com/stretchr/testify/require"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
@@ -87,7 +88,7 @@ func TestVesting(t *testing.T) {
 
 	const unlockDuration = 10
 	var multisigInitialBalance = abi.NewTokenAmount(100)
-	var nilParams = abi.MethodParams{}
+	var nilParams = runtime.CBORBytes([]byte{})
 
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
@@ -197,7 +198,7 @@ func TestPropose(t *testing.T) {
 
 	const noUnlockDuration = int64(0)
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = []byte{}
+	var nilParams = runtime.CBORBytes([]byte{})
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -290,7 +291,7 @@ func TestApprove(t *testing.T) {
 	const fakeMethod = abi.MethodNum(42)
 	var fakeParams = []byte{1, 2, 3, 4, 5}
 	var sendValue = abi.NewTokenAmount(10)
-	var nilParams = []byte{}
+	var nilParams = runtime.CBORBytes([]byte{})
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -917,7 +918,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	rt.Verify()
 }
 
-func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params abi.MethodParams) {
+func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte) {
 	proposeParams := &multisig.ProposeParams{
 		To:     to,
 		Value:  value,
@@ -979,8 +980,8 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 	require.Equal(h.t, len(expected), len(keys))
 	for i, k := range keys {
 		var actual multisig.MultiSigTransaction
-		found, err := txns.Get(asKey(k), &actual)
-		require.NoError(h.t, err)
+		found, err_ := txns.Get(asKey(k), &actual)
+		require.NoError(h.t, err_)
 		assert.True(h.t, found)
 		assert.Equal(h.t, expected[i], actual)
 	}

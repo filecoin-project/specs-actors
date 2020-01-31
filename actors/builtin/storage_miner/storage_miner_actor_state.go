@@ -8,8 +8,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
@@ -142,15 +142,15 @@ func SectorsAMT_Empty() SectorsAMT {
 	panic("")
 }
 
-func (st *StorageMinerActorState) GetStorageWeightDescForSectorMaybe(sectorNumber abi.SectorNumber) (ret autil.SectorStorageWeightDesc, ok bool) {
+func (st *StorageMinerActorState) GetStorageWeightDescForSectorMaybe(sectorNumber abi.SectorNumber) (ret storage_power.SectorStorageWeightDesc, ok bool) {
 	sectorInfo, found := st.Sectors[sectorNumber]
 	if !found {
-		ret = autil.SectorStorageWeightDesc{}
+		ret = storage_power.SectorStorageWeightDesc{}
 		ok = false
 		return
 	}
 
-	ret = autil.SectorStorageWeightDesc{
+	ret = storage_power.SectorStorageWeightDesc{
 		SectorSize: st.Info.SectorSize,
 		DealWeight: sectorInfo.DealWeight,
 		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
@@ -159,14 +159,14 @@ func (st *StorageMinerActorState) GetStorageWeightDescForSectorMaybe(sectorNumbe
 	return
 }
 
-func (st *StorageMinerActorState) _getStorageWeightDescForSector(sectorNumber abi.SectorNumber) autil.SectorStorageWeightDesc {
+func (st *StorageMinerActorState) _getStorageWeightDescForSector(sectorNumber abi.SectorNumber) storage_power.SectorStorageWeightDesc {
 	ret, found := st.GetStorageWeightDescForSectorMaybe(sectorNumber)
 	Assert(found)
 	return ret
 }
 
-func (st *StorageMinerActorState) _getStorageWeightDescsForSectors(sectorNumbers []abi.SectorNumber) []autil.SectorStorageWeightDesc {
-	ret := []autil.SectorStorageWeightDesc{}
+func (st *StorageMinerActorState) _getStorageWeightDescsForSectors(sectorNumbers []abi.SectorNumber) []storage_power.SectorStorageWeightDesc {
+	ret := []storage_power.SectorStorageWeightDesc{}
 	for _, sectorNumber := range sectorNumbers {
 		ret = append(ret, st._getStorageWeightDescForSector(sectorNumber))
 	}

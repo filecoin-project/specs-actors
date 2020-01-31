@@ -201,7 +201,7 @@ func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
 	return key
 }
 
-func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) (runtime.SendReturn, exitcode.ExitCode) {
+func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) (runtime.SendReturn, exitcode.ExitCode) {
 	rt.requireInCall()
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
@@ -356,7 +356,7 @@ type expectedMessage struct {
 	// expectedMessage values
 	to     addr.Address
 	method abi.MethodNum
-	params abi.MethodParams
+	params runtime.CBORMarshaler
 	value  abi.TokenAmount
 
 	// returns from applying expectedMessage
@@ -364,8 +364,8 @@ type expectedMessage struct {
 	exitCode   exitcode.ExitCode
 }
 
-func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) bool {
-	return m.to == to && m.method == method && m.value == value && bytes.Equal(m.params[:], params[:])
+func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
+	return m.to == to && m.method == method && m.value == value && reflect.DeepEqual(m.params, params)
 }
 
 func (m *expectedMessage) String() string {
@@ -403,7 +403,7 @@ func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
 	rt.expectValidateCallerType = types[:]
 }
 
-func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
+func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
 	// append to the send queue
 	rt.expectSends = append(rt.expectSends, &expectedMessage{
 		to:         toAddr,

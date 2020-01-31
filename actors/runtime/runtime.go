@@ -59,11 +59,13 @@ type Runtime interface {
 	IpldPut(x CBORMarshaler) cid.Cid
 
 	// Sends a message to another actor, returning the exit code and return value envelope.
-	// If the invoked method does not return successfully, this caller will be aborted too.
-	Send(toAddr addr.Address, methodNum abi.MethodNum, params abi.MethodParams, value abi.TokenAmount) (SendReturn, exitcode.ExitCode)
+	// If the invoked method does not return successfully, its state changes (and that of any messages it sent in turn)
+	// will be rolled back.
+	Send(toAddr addr.Address, methodNum abi.MethodNum, params CBORMarshaler, value abi.TokenAmount) (SendReturn, exitcode.ExitCode)
 
-	// Halts execution upon an error from which the actor cannot recover. This method does not return.
-	// State changes will be rolled back, including any made by the caller.
+	// Halts execution upon an error from which the receiver cannot recover. The caller will receive the exitcode and
+	// an empty return value. State changes made within this call will be rolled back.
+	// This method does not return.
 	// The message and args are for diagnostic purposes and do not persist on chain. They should be suitable for
 	// passing to fmt.Errorf(msg, args...).
 	Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{})
@@ -176,4 +178,12 @@ type CBORUnmarshaler interface {
 type CBORer interface {
 	CBORMarshaler
 	CBORUnmarshaler
+}
+
+// Wraps already-serialized bytes as CBOR-marshalable.
+type CBORBytes []byte
+
+func (b CBORBytes) MarshalCBOR(w io.Writer) error {
+	_, err := w.Write(b)
+	return err
 }

@@ -5,7 +5,6 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -15,7 +14,6 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
-	serde "github.com/filecoin-project/specs-actors/actors/serde"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -49,18 +47,16 @@ type CronEventPayload struct {
 // Constructor //
 /////////////////
 
-type ConstructorParams struct {
-	ownerAddr  addr.Address
-	workerAddr addr.Address
-	sectorSize abi.SectorSize
-	peerId     peer.ID
-}
+
+// Storage miner actors are created exclusively by the storage power actor. In order to break a circular dependency
+// between the two, the construction parameters are defined in the power actor.
+type ConstructorParams = storage_power.MinerConstructorParams
 
 func (a *StorageMinerActor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
-	if params.workerAddr.Protocol() != addr.BLS {
+	if params.WorkerAddr.Protocol() != addr.BLS {
 		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 	}
 
@@ -74,7 +70,7 @@ func (a *StorageMinerActor) Constructor(rt Runtime, params *ConstructorParams) *
 			NumConsecutiveFailures: 0,
 		}
 		st.ProvingSet = st.GetCurrentProvingSet()
-		st.Info = MinerInfo_New(params.ownerAddr, params.workerAddr, params.sectorSize, params.peerId)
+		st.Info = MinerInfo_New(params.OwnerAddr, params.WorkerAddr, params.SectorSize, params.PeerId)
 		return nil
 	})
 	return &adt.EmptyValue{}
@@ -221,7 +217,7 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, params *Submi
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerSurprisePoStSuccess,
-		nil,
+		&adt.EmptyValue{},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify storage power actor")
@@ -350,10 +346,10 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_VerifyDealsOnSectorProveCommit,
-		serde.MustSerializeParams(
-			preCommitSector.Info.DealIDs,
-			preCommitSector.Info.Expiration,
-		),
+		&storage_market.VerifyDealsOnSectorProveCommitParams{
+			DealIDs:      preCommitSector.Info.DealIDs,
+			SectorExpiry: preCommitSector.Info.Expiration,
+		},
 		abi.NewTokenAmount(0),
 	)
 
@@ -384,9 +380,9 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	_, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorProveCommit,
-		serde.MustSerializeParams(
-			storageWeightDesc,
-		),
+		&storage_power.OnSectorProveCommitParams{
+			Weight: storageWeightDesc,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
@@ -435,10 +431,10 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, params *ExtendSec
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorModifyWeightDesc,
-		serde.MustSerializeParams(
-			storageWeightDescPrev,
-			storageWeightDescNew,
-		),
+		&storage_power.OnSectorModifyWeightDescParams{
+			PrevWeight: storageWeightDescPrev,
+			NewWeight:  storageWeightDescNew,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
@@ -476,8 +472,7 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTem
 	}
 
 	storageWeightDescs := a._rtGetStorageWeightDescsForSectors(rt, params.sectorNumbers)
-	cidx := rt.CurrIndices()
-	requiredFee := cidx.StorageMining_TemporaryFaultFee(storageWeightDescs, params.duration)
+	requiredFee := temporaryFaultFee(storageWeightDescs, params.duration)
 
 	builtin.RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt, requiredFee)
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, requiredFee)
@@ -579,9 +574,9 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
-			serde.MustSerializeParams(
-				storageWeightDesc,
-			),
+			&storage_power.OnSectorTemporaryFaultEffectiveBeginParams{
+				Weight: storageWeightDesc,
+			},
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "failed to begin fault")
@@ -599,9 +594,9 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
-			serde.MustSerializeParams(
-				storageWeightDesc,
-			),
+			&storage_power.OnSectorTemporaryFaultEffectiveEndParams{
+				Weight: storageWeightDesc,
+			},
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "failed to end fault")
@@ -669,9 +664,9 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
-			serde.MustSerializeParams(
-				storageWeightDesc,
-			),
+			&storage_power.OnSectorTemporaryFaultEffectiveEndParams{
+				Weight: storageWeightDesc,
+			},
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "failed to end fault")
@@ -680,10 +675,10 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTerminate,
-		serde.MustSerializeParams(
-			storageWeightDesc,
-			terminationType,
-		),
+		&storage_power.OnSectorTerminateParams{
+			TerminationType: terminationType,
+			Weight:          storageWeightDesc,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to terminate sector with power actor")
@@ -734,9 +729,9 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerSurprisePoStFailure,
-		serde.MustSerializeParams(
-			numConsecutiveFailures,
-		),
+		&storage_power.OnMinerSurprisePoStFailureParams{
+			NumConsecutiveFailures: numConsecutiveFailures,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
@@ -748,19 +743,13 @@ func (a *StorageMinerActor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoc
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize payload: %v", err)
 	}
-	sendParams := storage_power.EnrollCronEventParams{
-		EventEpoch: eventEpoch,
-		Payload:    payload,
-	}
-	var sendParamsBytes []byte
-	err = sendParams.MarshalCBOR(bytes.NewBuffer(payload))
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize params: %v", err)
-	}
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerEnrollCronEvent,
-		sendParamsBytes,
+		&storage_power.EnrollCronEventParams{
+			EventEpoch: eventEpoch,
+			Payload:    payload,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
@@ -774,13 +763,13 @@ func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, sectorNumber abi.Se
 	})
 }
 
-func (a *StorageMinerActor) _rtGetStorageWeightDescForSector(rt Runtime, sectorNumber abi.SectorNumber) autil.SectorStorageWeightDesc {
+func (a *StorageMinerActor) _rtGetStorageWeightDescForSector(rt Runtime, sectorNumber abi.SectorNumber) storage_power.SectorStorageWeightDesc {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	return st._getStorageWeightDescForSector(sectorNumber)
 }
 
-func (a *StorageMinerActor) _rtGetStorageWeightDescsForSectors(rt Runtime, sectorNumbers []abi.SectorNumber) []autil.SectorStorageWeightDesc {
+func (a *StorageMinerActor) _rtGetStorageWeightDescsForSectors(rt Runtime, sectorNumbers []abi.SectorNumber) []storage_power.SectorStorageWeightDesc {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	return st._getStorageWeightDescsForSectors(sectorNumbers)
@@ -797,9 +786,9 @@ func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sect
 	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_OnMinerSectorsTerminate,
-		serde.MustSerializeParams(
-			dealIds,
-		),
+		&storage_market.OnMinerSectorsTerminateParams{
+			DealIDs: dealIds,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to terminate sectors")
@@ -868,10 +857,9 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_GetPieceInfosForDealIDs,
-		serde.MustSerializeParams(
-			sectorSize,
-			onChainInfo.DealIDs,
-		),
+		&storage_market.GetPieceInfosForDealIDsParams{
+			DealIDs: onChainInfo.DealIDs,
+		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to fetch piece info")
@@ -914,14 +902,6 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	if !isVerified {
 		rt.Abort(exitcode.ErrIllegalState, "Sector seal failed to verify")
 	}
-}
-
-func getSectorNums(m map[abi.SectorNumber]SectorOnChainInfo) []abi.SectorNumber {
-	var l []abi.SectorNumber
-	for i := range m {
-		l = append(l, i)
-	}
-	return l
 }
 
 func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet cid.Cid) []abi.SectorNumber {
