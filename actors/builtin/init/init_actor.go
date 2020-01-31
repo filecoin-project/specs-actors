@@ -4,7 +4,6 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -30,17 +29,22 @@ func (a *InitActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return &adt.EmptyValue{}
 }
 
+type ExecParams struct {
+	CodeID cid.Cid
+	ConstructorParams []byte
+}
+
 type ExecReturn struct {
 	IDAddress     addr.Address // The canonical ID-based address for the actor.
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 }
 
-func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.MethodParams) *ExecReturn {
+func (a *InitActor) Exec(rt Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
 	autil.AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
-	if !canExec(callerCodeID, execCodeID) {
-		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeID, execCodeID)
+	if !canExec(callerCodeID, params.CodeID) {
+		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeID, params.CodeID)
 	}
 
 	// Compute a re-org-stable address.
@@ -61,10 +65,10 @@ func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.M
 	}).(addr.Address)
 
 	// Create an empty actor.
-	rt.CreateActor(execCodeID, idAddr)
+	rt.CreateActor(params.CodeID, idAddr)
 
 	// Invoke constructor.
-	_, code := rt.Send(idAddr, builtin.MethodConstructor, constructorParams, rt.ValueReceived())
+	_, code := rt.Send(idAddr, builtin.MethodConstructor, vmr.CBORBytes(params.ConstructorParams), rt.ValueReceived())
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{idAddr, uniqueAddress}

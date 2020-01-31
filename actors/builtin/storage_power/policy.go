@@ -7,7 +7,7 @@ import (
 )
 
 // TerminationFault
-func pledgePenaltyForSectorTermination(weight autil.SectorStorageWeightDesc, termType builtin.SectorTermination) abi.TokenAmount {
+func pledgePenaltyForSectorTermination(weight SectorStorageWeightDesc, termType builtin.SectorTermination) abi.TokenAmount {
 	autil.PARAM_FINISH()
 	return abi.NewTokenAmount(0)
 }
@@ -41,4 +41,9 @@ func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateralToSlas
 	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
 	// return collateralToSlash * slasherProportion
 	return abi.NewTokenAmount(0)
+}
+
+func consensusPowerForWeight(weight SectorStorageWeightDesc) abi.StoragePower {
+	autil.PARAM_FINISH()
+	panic("")
 }

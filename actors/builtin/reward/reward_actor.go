@@ -9,9 +9,9 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	serde "github.com/filecoin-project/specs-actors/actors/serde"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -146,10 +146,10 @@ func (a *RewardActor) AwardBlockReward(
 	actualReward := big.Sub(rewardAfterPenalty, rewardToGarnish)
 	if rewardToGarnish.GreaterThan(big.Zero()) {
 		// Send fund to SPA for collateral
-		_, code := rt.Send(
+		_, code = rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_AddBalance,
-			serde.MustSerializeParams(miner),
+			&storage_power.AddBalanceParams{Miner:miner},
 			abi.TokenAmount(rewardToGarnish),
 		)
 		builtin.RequireSuccess(rt, code, "failed to add balance to power actor")

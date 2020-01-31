@@ -26,7 +26,7 @@ type MultiSigTransaction struct {
 	To     addr.Address
 	Value  abi.TokenAmount
 	Method abi.MethodNum
-	Params abi.MethodParams
+	Params []byte
 
 	// This address at index 0 is the transaction proposer, order of this slice must be preserved.
 	Approved []addr.Address
@@ -89,7 +89,7 @@ type ProposeParams struct {
 	To     addr.Address
 	Value  abi.TokenAmount
 	Method abi.MethodNum
-	Params abi.MethodParams
+	Params []byte
 }
 
 func (a MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
@@ -305,7 +305,7 @@ func (a MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		_, code := rt.Send(
 			txn.To,
 			txn.Method,
-			txn.Params,
+			vmr.CBORBytes(txn.Params),
 			txn.Value,
 		)
 		// The exit code is explicitly ignored. It's ok for the subcall to fail.

@@ -12,7 +12,6 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -158,14 +157,14 @@ func (st *StoragePowerActorState) subtractMinerPledge(store adt.Store, miner add
 	return subtracted, err
 }
 
-func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
+func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
 	// Note: The following computation does not use any of the dynamic information from CurrIndices();
 	// it depends only on weight. This means that the power of a given weight
 	// does not vary over time, so we can avoid continually updating it for each sector every epoch.
 	//
 	// The function is located in the indices module temporarily, until we find a better place for
 	// global parameterization functions.
-	sectorPower := indices.ConsensusPowerForStorageWeight(weight)
+	sectorPower := consensusPowerForWeight(weight)
 
 	currentPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
 	if err != nil {
@@ -181,8 +180,8 @@ func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAdd
 	return st.updatePowerEntriesFromClaimed(s, minerAddr)
 }
 
-func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight autil.SectorStorageWeightDesc) error {
-	sectorPower := indices.ConsensusPowerForStorageWeight(weight)
+func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
+	sectorPower := consensusPowerForWeight(weight)
 
 	currentPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
 	if err != nil {

@@ -32,6 +32,7 @@ func main() {
 		// actor state
 		init_.InitActorState{},
 		// method params
+		init_.ExecParams{},
 		init_.ExecReturn{},
 	); err != nil {
 		panic(err)
@@ -61,14 +62,17 @@ func main() {
 		storage_power.WithdrawBalanceParams{},
 		storage_power.EnrollCronEventParams{},
 		storage_power.OnSectorTerminateParams{},
-		storage_power.OnSectorModifyWeightDesc{},
+		storage_power.OnSectorModifyWeightDescParams{},
 		storage_power.OnSectorProveCommitParams{},
 		storage_power.ReportConsensusFaultParams{},
-		storage_power.OnMinerSurprisePoStFailure{},
-		storage_power.OnSectorTemporaryFaultEffectiveEnd{},
-		storage_power.OnSectorTemporaryFaultEffectiveBegin{},
+		storage_power.OnMinerSurprisePoStFailureParams{},
+		storage_power.OnSectorTemporaryFaultEffectiveEndParams{},
+		storage_power.OnSectorTemporaryFaultEffectiveBeginParams{},
 		// method returns
 		storage_power.CreateMinerReturn{},
+		// other types
+		storage_power.MinerConstructorParams{},
+		storage_power.SectorStorageWeightDesc{},
 	); err != nil {
 		panic(err)
 	}
@@ -91,7 +95,8 @@ func main() {
 	}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_miner/cbor_gen.go", "storage_miner",
-		storage_miner.ConstructorParams{},
+		// method params
+		//storage_miner.ConstructorParams{},
 		storage_miner.PreCommitSectorParams{},
 		storage_miner.TerminateSectorsParams{},
 		storage_miner.ProveCommitSectorParams{},
@@ -100,6 +105,7 @@ func main() {
 		storage_miner.ExtendSectorExpirationParams{},
 		storage_miner.SubmitSurprisePoStResponseParams{},
 		storage_miner.DeclareTemporaryFaultsParams{},
+		// other types
 		storage_miner.CronEventPayload{},
 	); err != nil {
 		panic(err)

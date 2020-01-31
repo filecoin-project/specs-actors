@@ -291,7 +291,7 @@ func (t *MultiSigTransaction) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Params (abi.MethodParams) (slice)
+	// t.Params ([]uint8) (slice)
 	if len(t.Params) > cbg.ByteArrayMaxLen {
 		return xerrors.Errorf("Byte array in field t.Params was too long")
 	}
@@ -377,7 +377,7 @@ func (t *MultiSigTransaction) UnmarshalCBOR(r io.Reader) error {
 
 		t.Method = abi.MethodNum(extraI)
 	}
-	// t.Params (abi.MethodParams) (slice)
+	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -596,7 +596,7 @@ func (t *ProposeParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Params (abi.MethodParams) (slice)
+	// t.Params ([]uint8) (slice)
 	if len(t.Params) > cbg.ByteArrayMaxLen {
 		return xerrors.Errorf("Byte array in field t.Params was too long")
 	}
@@ -668,7 +668,7 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.Method = abi.MethodNum(extraI)
 	}
-	// t.Params (abi.MethodParams) (slice)
+	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
