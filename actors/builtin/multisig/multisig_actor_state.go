@@ -52,10 +52,6 @@ func (st *MultiSigActorState) assertAvailable(currBalance abi.TokenAmount, amoun
 
 	remainingBalance := big.Sub(currBalance, amountToSpend)
 	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
-	thing := amountLocked.Int64()
-	thong := remainingBalance.Int64()
-	_ = thing
-	_ = thong
 	if remainingBalance.LessThan(amountLocked) {
 		return errors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
 	}
