@@ -2,6 +2,7 @@ package main
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
@@ -29,6 +30,13 @@ func main() {
 	}
 
 	// Actors
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/account/cbor_gen.go", "account",
+		// actor state
+		account.AccountActorState{},
+	); err != nil {
+		panic(err)
+	}
+
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/init/cbor_gen.go", "init",
 		// actor state
 		init_.InitActorState{},
