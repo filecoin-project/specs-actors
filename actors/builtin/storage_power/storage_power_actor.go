@@ -321,25 +321,25 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMin
 	return &adt.EmptyValue{}
 }
 
-type OnMinerEnrollCronEvent struct {
-	eventEpoch abi.ChainEpoch
-	payload    []byte
+type EnrollCronEventParams struct {
+	EventEpoch abi.ChainEpoch
+	Payload    []byte
 }
 
-func (a *StoragePowerActor) OnMinerEnrollCronEvent(rt Runtime, params *OnMinerEnrollCronEvent) *adt.EmptyValue {
+func (a *StoragePowerActor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	minerEvent := CronEvent{
 		MinerAddr:       minerAddr,
-		CallbackPayload: params.payload,
+		CallbackPayload: params.Payload,
 	}
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		if _, found := st.CronEventQueue[params.eventEpoch]; !found {
-			st.CronEventQueue[params.eventEpoch] = []CronEvent{}
+		if _, found := st.CronEventQueue[params.EventEpoch]; !found {
+			st.CronEventQueue[params.EventEpoch] = []CronEvent{}
 		}
-		st.CronEventQueue[params.eventEpoch] = append(st.CronEventQueue[params.eventEpoch], minerEvent)
+		st.CronEventQueue[params.EventEpoch] = append(st.CronEventQueue[params.EventEpoch], minerEvent)
 		return nil
 	})
 	return &adt.EmptyValue{}

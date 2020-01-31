@@ -2,6 +2,8 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
@@ -16,7 +18,7 @@ import (
 // Note: ClientCollateralPerEpoch may not be needed and removed pending future confirmation.
 // There will be a Minimum value for both client and provider deal collateral.
 type StorageDealProposal struct {
-	PieceCID        abi.PieceCID // CommP
+	PieceCID        cid.Cid // CommP
 	PieceSize       abi.PieceSize
 	Client          addr.Address
 	Provider        addr.Address

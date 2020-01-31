@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -128,18 +129,41 @@ func (t *WithdrawBalanceParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnMinerEnrollCronEvent) MarshalCBOR(w io.Writer) error {
+func (t *EnrollCronEventParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.EventEpoch (abi.ChainEpoch) (int64)
+	if t.EventEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.EventEpoch))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.EventEpoch)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.Payload ([]uint8) (slice)
+	if len(t.Payload) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Payload was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Payload)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.Payload); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *OnMinerEnrollCronEvent) UnmarshalCBOR(r io.Reader) error {
+func (t *EnrollCronEventParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -150,10 +174,52 @@ func (t *OnMinerEnrollCronEvent) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.EventEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.EventEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.Payload ([]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Payload: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Payload = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Payload); err != nil {
+		return err
+	}
 	return nil
 }
 
