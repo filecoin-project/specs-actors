@@ -1,10 +1,8 @@
 package init
 
 import (
-	"io"
-
 	addr "github.com/filecoin-project/go-address"
-	"github.com/ipfs/go-cid"
+	cid "github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -16,44 +14,18 @@ import (
 
 type Runtime = vmr.Runtime
 
-var AssertMsg = autil.AssertMsg
-
-type InitActorState struct {
-	// responsible for create new actors
-	AddressMap  map[addr.Address]abi.ActorID
-	NextID      abi.ActorID
-	NetworkName string
-}
-
-func (s *InitActorState) ResolveAddress(address addr.Address) addr.Address {
-	actorID, ok := s.AddressMap[address]
-	if ok {
-		idAddr, err := addr.NewIDAddress(uint64(actorID))
-		autil.Assert(err == nil)
-		return idAddr
-	}
-	return address
-}
-
-func (s *InitActorState) MapAddressToNewID(address addr.Address) addr.Address {
-	actorID := s.NextID
-	s.NextID++
-	s.AddressMap[address] = actorID
-	idAddr, err := addr.NewIDAddress(uint64(actorID))
-	autil.Assert(err == nil)
-	return idAddr
-}
-
+// The init actor uniquely has the power to create new actors.
+// It maintains a table resolving pubkey and temporary actor addresses to the canonical ID-addresses.
 type InitActor struct{}
 
-func (a *InitActor) Constructor(rt Runtime) *adt.EmptyValue {
+func (a *InitActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	var st InitActorState
-	rt.State().Transaction(&st, func() interface{} {
-		st.AddressMap = map[addr.Address]abi.ActorID{} // TODO HAMT
-		st.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
-		st.NetworkName = rt.NetworkName()
-		return nil
+	rt.State().Construct(func() vmr.CBORMarshaler {
+		state, err := ConstructState(adt.AsStore(rt), rt.NetworkName())
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to construct state: %v", err)
+		}
+		return state
 	})
 	return &adt.EmptyValue{}
 }
@@ -63,16 +35,12 @@ type ExecReturn struct {
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 }
 
-func (e ExecReturn) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
-}
-
 func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.MethodParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
-	AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
-	if !_codeIDSupportsExec(callerCodeID, execCodeID) {
-		rt.Abort(exitcode.ErrForbidden, "Caller type %v cannot create an actor of type %v", callerCodeID, execCodeID)
+	autil.AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
+	if !canExec(callerCodeID, execCodeID) {
+		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeID, execCodeID)
 	}
 
 	// Compute a re-org-stable address.
@@ -83,12 +51,14 @@ func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.M
 
 	// Allocate an ID for this actor.
 	// Store mapping of pubkey or actor address to actor ID
-	var idAddr addr.Address
 	var st InitActorState
-	rt.State().Transaction(&st, func() interface{} {
-		idAddr = st.MapAddressToNewID(uniqueAddress)
-		return nil
-	})
+	idAddr := rt.State().Transaction(&st, func() interface{} {
+		idAddr, err := st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "exec failed: %v", err)
+		}
+		return idAddr
+	}).(addr.Address)
 
 	// Create an empty actor.
 	rt.CreateActor(execCodeID, idAddr)
@@ -100,30 +70,25 @@ func (a *InitActor) Exec(rt Runtime, execCodeID cid.Cid, constructorParams abi.M
 	return &ExecReturn{idAddr, uniqueAddress}
 }
 
-func _codeIDSupportsExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
+func canExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
 	if execCodeID == builtin.AccountActorCodeID {
 		// Special case: account actors must be created implicitly by sending value;
 		// cannot be created via exec.
 		return false
 	}
 
+	// Anyone can create payment channels.
 	if execCodeID == builtin.PaymentChannelActorCodeID {
 		return true
 	}
 
+	// Only the power actor may create miners
 	if execCodeID == builtin.StorageMinerActorCodeID {
 		if callerCodeID == builtin.StoragePowerActorCodeID {
 			return true
 		}
 	}
 
+	// No other actors may be created dynamically.
 	return false
-}
-
-func (s *InitActorState) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
-}
-
-func (s *InitActorState) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
 }

@@ -129,7 +129,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, params *CreateMinerParams) *
 	)
 	builtin.RequireSuccess(rt, code, "failed to init new actor")
 	var addresses initact.ExecReturn
-	autil.AssertNoError(ret.Into(addresses))
+	autil.AssertNoError(ret.Into(&addresses))
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
