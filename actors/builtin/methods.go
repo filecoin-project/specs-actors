@@ -25,14 +25,19 @@ const (
 	Method_RewardActor_AwardBlockReward = MethodPlaceholder + iota
 )
 
-const (
-	Method_MultiSigActor_Propose = MethodPlaceholder + iota
-	Method_MultiSigActor_Approve
-	Method_MultiSigActor_AddAuthorizedParty
-	Method_MultiSigActor_RemoveAuthorizedParty
-	Method_MultiSigActor_SwapAuthorizedParty
-	Method_MultiSigActor_ChangeNumApprovalsThreshold
-)
+type msMethods struct {
+	Constructor                 abi.MethodNum
+	Propose                     abi.MethodNum
+	Approve                     abi.MethodNum
+	Cancel                      abi.MethodNum
+	ClearCompleted              abi.MethodNum
+	AddSigner                   abi.MethodNum
+	RemoveSigner                abi.MethodNum
+	SwapSigner                  abi.MethodNum
+	ChangeNumApprovalsThreshold abi.MethodNum
+}
+
+var MethodsMultisig = msMethods{1, 2, 3, 4, 5, 6, 7, 8, 9}
 
 const (
 	// Proxy cron tick method (via StoragePowerActor)

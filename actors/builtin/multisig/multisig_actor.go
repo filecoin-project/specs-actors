@@ -34,13 +34,29 @@ type MultiSigTransaction struct {
 
 type MultiSigActor struct{}
 
+func (msa MultiSigActor) Exports() []interface{} {
+	return []interface{}{
+		1: msa.Constructor,
+		2: msa.Propose,
+		3: msa.Approve,
+		4: msa.Cancel,
+		//5: msa.ClearCompleted, //TODO: sync with spec
+		6: msa.AddSigner,
+		7: msa.RemoveSigner,
+		8: msa.SwapSigner,
+		9: msa.ChangeNumApprovalsThreshold,
+	}
+}
+
+var _ abi.Invokee = MultiSigActor{}
+
 type ConstructorParams struct {
 	Signers               []addr.Address
 	NumApprovalsThreshold int64
 	UnlockDuration        abi.ChainEpoch
 }
 
-func (a *MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	var signers []addr.Address
@@ -76,7 +92,7 @@ type ProposeParams struct {
 	Params abi.MethodParams
 }
 
-func (a *MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
+func (a MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
@@ -113,7 +129,7 @@ type TxnIDParams struct {
 	ID TxnID
 }
 
-func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 	var st MultiSigActorState
@@ -125,7 +141,7 @@ func (a *MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyV
 	return &adt.EmptyValue{}
 }
 
-func (a *MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
@@ -154,7 +170,7 @@ type AddSignerParams struct {
 	Increase bool
 }
 
-func (a *MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
+func (a MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -177,7 +193,7 @@ type RemoveSignerParams struct {
 	Decrease bool
 }
 
-func (a *MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
+func (a MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -208,7 +224,7 @@ type SwapSignerParams struct {
 	To   addr.Address
 }
 
-func (a *MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
+func (a MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -240,7 +256,7 @@ type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold int64
 }
 
-func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
+func (a MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
@@ -256,7 +272,7 @@ func (a *MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chan
 	return &adt.EmptyValue{}
 }
 
-func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
+func (a MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	var st MultiSigActorState
 	var txn MultiSigTransaction
 	rt.State().Transaction(&st, func() interface{} {
@@ -305,7 +321,7 @@ func (a *MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	}
 }
 
-func (a *MultiSigActor) validateSigner(rt vmr.Runtime, st *MultiSigActorState, address addr.Address) {
+func (a MultiSigActor) validateSigner(rt vmr.Runtime, st *MultiSigActorState, address addr.Address) {
 	if !st.isSigner(address) {
 		rt.Abort(exitcode.ErrForbidden, "party not a signer")
 	}
