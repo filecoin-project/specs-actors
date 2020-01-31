@@ -63,6 +63,7 @@ func (a *StorageMinerActor) Constructor(rt Runtime, params *ConstructorParams) *
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		st.Sectors = SectorsAMT_Empty()
+		st.FaultSet = abi.NewBitField()
 		st.PoStState = MinerPoStState{
 			LastSuccessfulPoSt:     epochUndefined,
 			SurpriseChallengeEpoch: epochUndefined,
@@ -582,7 +583,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		builtin.RequireSuccess(rt, code, "failed to begin fault")
 
 		rt.State().Transaction(&st, func() interface{} {
-			st.FaultSet[sectorNumber] = true
+			st.FaultSet.Set(uint64(sectorNumber))
 			return nil
 		})
 	}
@@ -602,7 +603,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		builtin.RequireSuccess(rt, code, "failed to end fault")
 
 		rt.State().Transaction(&st, func() interface{} {
-			st.FaultSet[sectorNumber] = false
+			st.FaultSet.Unset(uint64(sectorNumber))
 			return nil
 		})
 	}

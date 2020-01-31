@@ -17,8 +17,8 @@ import (
 type StorageMinerActorState struct {
 	PreCommittedSectors PreCommittedSectorsAMT // PreCommitted Sectors
 	Sectors             SectorsAMT             // Proven Sectors can be Active or in TemporaryFault
-	FaultSet            SectorNumberSetHAMT    // TODO zx bitfield of Sectors in TemporaryFault
-	ProvingSet          cid.Cid                // cid of SectorsAMT - sectors in FaultSet
+	FaultSet            abi.BitField
+	ProvingSet          cid.Cid // cid of SectorsAMT - sectors in FaultSet
 
 	PoStState MinerPoStState
 	Info      MinerInfo
@@ -178,7 +178,7 @@ func (st *StorageMinerActorState) IsSectorInTemporaryFault(sectorNumber abi.Sect
 	if !found {
 		return false
 	}
-	_, ret := st.FaultSet[sectorNumber]
+	ret := st.FaultSet.Has(uint64(sectorNumber))
 	Assert(checkSector.DeclaredFaultEpoch != epochUndefined)
 	Assert(checkSector.DeclaredFaultDuration != epochUndefined)
 	return ret
