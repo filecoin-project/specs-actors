@@ -1,12 +1,11 @@
 package abi
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
+	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
-	"golang.org/x/xerrors"
 
 	rlepluslazy "github.com/filecoin-project/specs-actors/actors/util/rleplus"
 )
@@ -31,7 +30,7 @@ func NewBitFieldFromBytes(rle []byte) (BitField, error) {
 	bf := BitField{}
 	rlep, err := rlepluslazy.FromBuf(rle)
 	if err != nil {
-		return BitField{}, xerrors.Errorf("could not decode rle+: %w", err)
+		return BitField{}, errors.Wrap(err, "could not decode rle+")
 	}
 	bf.rle = rlep
 	bf.bits = make(map[uint64]struct{})
@@ -110,6 +109,17 @@ func (bf BitField) Set(bit uint64) {
 	bf.bits[bit] = struct{}{}
 }
 
+// Unset removes bit from the BitField
+func (bf BitField) Unset(bit uint64) {
+	delete(bf.bits, bit)
+}
+
+// Has returns true iff bif is set in the BitField.
+func (bf BitField) Has(bit uint64) bool {
+	_, ok := bf.bits[bit]
+	return ok
+}
+
 func (bf BitField) Count() (uint64, error) {
 	s, err := bf.sum()
 	if err != nil {
@@ -122,10 +132,10 @@ func (bf BitField) Count() (uint64, error) {
 func (bf BitField) All(max uint64) ([]uint64, error) {
 	c, err := bf.Count()
 	if err != nil {
-		return nil, xerrors.Errorf("count errror: %w", err)
+		return nil, errors.Wrap(err, "count error")
 	}
 	if c > max {
-		return nil, xerrors.Errorf("expected %d, got %d: %w", max, c, ErrBitFieldTooMany)
+		return nil, errors.Errorf("expected %d, got %d: %w", max, c, ErrBitFieldTooMany)
 	}
 
 	runs, err := bf.sum()
@@ -144,10 +154,10 @@ func (bf BitField) All(max uint64) ([]uint64, error) {
 func (bf BitField) AllMap(max uint64) (map[uint64]bool, error) {
 	c, err := bf.Count()
 	if err != nil {
-		return nil, xerrors.Errorf("count errror: %w", err)
+		return nil, errors.Wrap(err, "count error")
 	}
 	if c > max {
-		return nil, xerrors.Errorf("expected %d, got %d: %w", max, c, ErrBitFieldTooMany)
+		return nil, errors.Errorf("expected %d, got %d: %w", max, c, ErrBitFieldTooMany)
 	}
 
 	runs, err := bf.sum()
@@ -168,11 +178,6 @@ func (bf BitField) AllMap(max uint64) (map[uint64]bool, error) {
 }
 
 func (bf BitField) MarshalCBOR(w io.Writer) error {
-	ints := make([]uint64, 0, len(bf.bits))
-	for i := range bf.bits {
-		ints = append(ints, i)
-	}
-
 	s, err := bf.sum()
 	if err != nil {
 		return err
@@ -184,14 +189,14 @@ func (bf BitField) MarshalCBOR(w io.Writer) error {
 	}
 
 	if len(rle) > 8192 {
-		return xerrors.Errorf("encoded bitfield was too large (%d)", len(rle))
+		return errors.Errorf("encoded bitfield was too large (%d)", len(rle))
 	}
 
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(rle)))); err != nil {
 		return err
 	}
 	if _, err = w.Write(rle); err != nil {
-		return xerrors.Errorf("writing rle: %w", err)
+		return errors.Wrap(err, "writing rle")
 	}
 	return nil
 }
@@ -218,7 +223,7 @@ func (bf *BitField) UnmarshalCBOR(r io.Reader) error {
 
 	rle, err := rlepluslazy.FromBuf(buf)
 	if err != nil {
-		return xerrors.Errorf("could not decode rle+: %w", err)
+		return errors.Wrap(err, "could not decode rle+")
 	}
 	bf.rle = rle
 	bf.bits = make(map[uint64]struct{})
