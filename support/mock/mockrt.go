@@ -381,6 +381,10 @@ func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
 }
 
+func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
+	rt.valueReceived = amt
+}
+
 func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
 	rt.epoch = epoch
 }

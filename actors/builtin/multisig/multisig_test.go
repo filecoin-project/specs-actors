@@ -93,7 +93,7 @@ func TestVesting(t *testing.T) {
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithEpoch(0).
 		// balance 0: current balance of the actor. receive: 100 the amount the multisig actor will be initalized with -- InitialBalance
-		WithBalance(abi.NewTokenAmount(0), multisigInitialBalance)
+		WithBalance(multisigInitialBalance, multisigInitialBalance)
 
 	t.Run("happy path full vesting", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -102,12 +102,11 @@ func TestVesting(t *testing.T) {
 
 		// anne proposes that darlene receives `multisgiInitialBalance` FIL.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.SetReceived(big.Zero())
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.propose(rt, darlene, multisigInitialBalance, builtin.MethodSend, nilParams)
 		rt.Verify()
 
-		// set the current balance of the multisig actor to its InitialBalance amount
-		rt.SetBalance(multisigInitialBalance)
 		// Advance the epoch s.t. all funds are unlocked.
 		rt.SetEpoch(0 + unlockDuration)
 		// bob approves annes transaction
@@ -120,18 +119,18 @@ func TestVesting(t *testing.T) {
 
 	})
 
-	t.Run("partial vesting", func(t *testing.T) {
+	t.Run("partial vesting propose to send half the actor balance when the epoch is hald the unlock duration", func(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, 2, 10, []addr.Address{anne, bob, charlie}...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.SetReceived(big.Zero())
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, nilParams)
 		rt.Verify()
 
 		// set the current balance of the multisig actor to its InitialBalance amount
-		rt.SetBalance(multisigInitialBalance)
 		rt.SetEpoch(0 + unlockDuration/2)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(darlene, builtin.MethodSend, nilParams, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
@@ -141,19 +140,26 @@ func TestVesting(t *testing.T) {
 
 	})
 
-	t.Run("fail to propose a transaction greater than locked amount", func(t *testing.T) {
+	t.Run("propose and autoapprove transaction above locked amount fails", func(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, 1, unlockDuration, []addr.Address{anne, bob, charlie}...)
 
-		// set the current balance of the multisig actor to its InitialBalance amount
-		rt.SetBalance(multisigInitialBalance)
+		rt.SetReceived(big.Zero())
 		// this propose will fail since it would send more than the required locked balance and num approvals == 1
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.propose(rt, darlene, abi.NewTokenAmount(100), builtin.MethodSend, nilParams)
 		})
+		rt.Verify()
+
+		// this will pass since sending below the locked amount is permitted
+		rt.SetEpoch(1)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(darlene, builtin.MethodSend, nilParams, abi.NewTokenAmount(10), nil, 0)
+		actor.propose(rt, darlene, abi.NewTokenAmount(10), builtin.MethodSend, nilParams)
 		rt.Verify()
 
 	})
@@ -163,13 +169,13 @@ func TestVesting(t *testing.T) {
 
 		actor.constructAndVerify(rt, 2, unlockDuration, []addr.Address{anne, bob, charlie}...)
 
+		rt.SetReceived(big.Zero())
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, nilParams)
 		rt.Verify()
 
-		rt.SetBalance(multisigInitialBalance)
-		// this propose will fail since it would send more than the required locked balance and num approvals == 1
+		// this propose will fail since it would send more than the required locked balance.
 		rt.SetEpoch(1)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
