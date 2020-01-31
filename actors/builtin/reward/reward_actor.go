@@ -39,8 +39,12 @@ func (r *Reward) AmountVested(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 		return r.Value
 	case Linear:
 		vestDuration := big.Sub(big.NewInt(int64(r.EndEpoch)), big.NewInt(int64(r.StartEpoch)))
-		unitVest := big.Div(r.Value, vestDuration)
-		return big.Mul(big.NewInt(int64(elapsedEpoch)), unitVest)
+		if big.NewInt(int64(elapsedEpoch)).GreaterThanEqual(vestDuration) {
+			return r.Value
+		}
+
+		// totalReward * elapsedEpoch / vestDuration
+		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsedEpoch))), vestDuration)
 	default:
 		return abi.NewTokenAmount(0)
 	}

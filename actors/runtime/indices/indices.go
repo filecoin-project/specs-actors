@@ -183,9 +183,9 @@ func (inds *IndicesImpl) StoragePower(
 		return minerNominalPower
 	}
 	
+	// minerNominalPower * minerPledgeCollateral / requiredPledge
 	// this is likely to change
-	unitPledgePower := big.Div(minerNominalPower, requiredPledge)
-	return big.Mul(unitPledgePower, minerPledgeCollateral)
+	return big.Div(big.Mul(minerNominalPower, minerPledgeCollateral), requiredPledge)
 }
 
 func (inds *IndicesImpl) StoragePowerProportion(
