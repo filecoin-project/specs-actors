@@ -29,7 +29,6 @@ var IMPL_FINISH = autil.IMPL_FINISH
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
 func (a *StorageMarketActor) WithdrawBalance(rt Runtime, entryAddr addr.Address, amountRequested abi.TokenAmount) *adt.EmptyValue {
-	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	if amountRequested.LessThan(big.Zero()) {
@@ -90,7 +89,6 @@ func (a *StorageMarketActor) AddBalance(rt Runtime, entryAddr addr.Address) *adt
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, newStorageDeals []StorageDeal) *adt.EmptyValue {
-	IMPL_FINISH() // BigInt arithmetic
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	// Deal message must have a From field identical to the provider of all the deals.

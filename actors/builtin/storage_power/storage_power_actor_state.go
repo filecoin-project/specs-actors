@@ -211,7 +211,7 @@ func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, min
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
 	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
-	// from a SurprisePoSt challenge.
+	// from a SurprisePoSt challenge. TODO: hs update this
 	nominalPower := claimedPower
 	if found, err := st.hasFault(s, minerAddr); err != nil {
 		return err
@@ -222,7 +222,7 @@ func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, min
 		return errors.Wrap(err, "failed to set nominal power while setting claimed power table entry")
 	}
 
-	// Compute actual (consensus) power, i.e., votes in leader election.
+	// Compute nominal power, storage power that meets consensus minimum
 	power := nominalPower
 	if found, err := st.minerNominalPowerMeetsConsensusMinimum(s, nominalPower); err != nil {
 		return errors.Wrap(err, "failed to check miners nominal power against consensus minimum")
@@ -230,8 +230,6 @@ func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, min
 	} else if !found {
 		power = big.Zero()
 	}
-
-	autil.TODO() // TODO ZX: Decide effect of undercollateralization on (consensus) power.
 
 	return st.setPowerEntry(s, minerAddr, power)
 }

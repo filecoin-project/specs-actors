@@ -2,7 +2,6 @@ package reward
 
 import (
 	"io"
-	"math"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
@@ -24,10 +23,6 @@ type VestingFunction int64
 const (
 	None VestingFunction = iota
 	Linear
-	// TODO zx: potential options
-	// PieceWise
-	// Quadratic
-	// Exponential
 )
 
 type Reward struct {
@@ -43,9 +38,13 @@ func (r *Reward) AmountVested(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	case None:
 		return r.Value
 	case Linear:
-		TODO() // zx BigInt
-		vestedProportion := math.Max(1.0, float64(elapsedEpoch)/float64(r.StartEpoch-r.EndEpoch))
-		return big.Mul(r.Value, big.NewInt(int64(vestedProportion)))
+		vestDuration := big.Sub(big.NewInt(int64(r.EndEpoch)), big.NewInt(int64(r.StartEpoch)))
+		if big.NewInt(int64(elapsedEpoch)).GreaterThanEqual(vestDuration) {
+			return r.Value
+		}
+
+		// totalReward * elapsedEpoch / vestDuration
+		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsedEpoch))), vestDuration)
 	default:
 		return abi.NewTokenAmount(0)
 	}
