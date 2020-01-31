@@ -53,7 +53,7 @@ func (mm *Multimap) Add(key Keyer, value runtime.CBORMarshaler) error {
 	newArrayRoot := cbg.CborCid(array.root)
 	err = mm.mp.Put(key, &newArrayRoot)
 	if err != nil {
-		return errors.Wrapf(err, "failed to store multimap value under root %v, key %v")
+		return errors.Wrapf(err, "failed to store multimap values")
 	}
 	return nil
 }

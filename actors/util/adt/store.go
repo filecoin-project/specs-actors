@@ -6,7 +6,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
+	cbor "github.com/ipfs/go-ipld-cbor"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -16,7 +16,7 @@ import (
 // Store defines an interface required to back the ADTs in this package.
 type Store interface {
 	Context() context.Context
-	hamt.CborIpldStore
+	cbor.IpldStore
 }
 
 // Keyer defines an interface required to put values in mapping.
