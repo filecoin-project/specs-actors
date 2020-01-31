@@ -1,4 +1,4 @@
-package lazy
+package rleplus
 
 import (
 	"math"

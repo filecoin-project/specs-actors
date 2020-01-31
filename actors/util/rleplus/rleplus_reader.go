@@ -1,4 +1,4 @@
-package lazy
+package rleplus
 
 import (
 	"github.com/multiformats/go-varint"

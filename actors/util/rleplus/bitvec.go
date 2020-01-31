@@ -1,4 +1,4 @@
-package lazy
+package rleplus
 
 type rbitvec struct {
 	index int

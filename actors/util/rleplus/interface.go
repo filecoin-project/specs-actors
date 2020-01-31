@@ -1,4 +1,4 @@
-package lazy
+package rleplus
 
 type Run struct {
 	Val bool
