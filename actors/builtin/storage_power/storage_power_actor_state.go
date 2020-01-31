@@ -19,21 +19,19 @@ import (
 type StoragePowerActorState struct {
 	TotalNetworkPower abi.StoragePower
 
-	PowerTable  cid.Cid // HAMT[address]StoragePower
+	PowerTable  cid.Cid // Map, HAMT[address]StoragePower
 	MinerCount  int64
 	EscrowTable cid.Cid // BalanceTable (HAMT[address]TokenAmount)
 
 	// Metadata cached for efficient processing of sector/challenge events.
-	CronEventQueue           CronEventQueue
-	PoStDetectedFaultMiners  cid.Cid // HAMT[addr.Address]struct{}
-	ClaimedPower             cid.Cid // HAMT[address]StoragePower
-	NominalPower             cid.Cid // HAMT[address]StoragePower
+
+	// A queue of events to be triggered by cron, indexed by epoch.
+	CronEventQueue           cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
+	PoStDetectedFaultMiners  cid.Cid // Set, HAMT[addr.Address]struct{}
+	ClaimedPower             cid.Cid // Map, HAMT[address]StoragePower
+	NominalPower             cid.Cid // Map, HAMT[address]StoragePower
 	NumMinersMeetingMinPower int
 }
-
-// A queue of events to be triggered by cron, indexed by epoch.
-// TODO: HAMT/AMTs.
-type CronEventQueue map[abi.ChainEpoch][]CronEvent
 
 type CronEvent struct {
 	MinerAddr       addr.Address
@@ -41,6 +39,7 @@ type CronEvent struct {
 }
 
 type AddrKey = adt.AddrKey
+type EpochKey = adt.EpochKey
 
 func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
 	emptyMap, err := adt.MakeEmptyMap(store)
@@ -52,7 +51,7 @@ func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
 		TotalNetworkPower:        abi.NewStoragePower(0),
 		PowerTable:               emptyMap.Root(),
 		EscrowTable:              emptyMap.Root(),
-		CronEventQueue:           make(CronEventQueue),
+		CronEventQueue:           emptyMap.Root(),
 		PoStDetectedFaultMiners:  emptyMap.Root(),
 		ClaimedPower:             emptyMap.Root(),
 		NominalPower:             emptyMap.Root(),
@@ -315,6 +314,42 @@ func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error
 	return nil
 }
 
+func (st *StoragePowerActorState) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
+	mmap := adt.AsMultimap(store, st.CronEventQueue)
+	err := mmap.Add(EpochKey(epoch), event)
+	if err != nil {
+		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
+	}
+	st.CronEventQueue = mmap.Root()
+	return nil
+}
+
+func (st *StoragePowerActorState) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEvent, error) {
+	mmap := adt.AsMultimap(store, st.CronEventQueue)
+	var events []CronEvent
+	var ev CronEvent
+	err := mmap.ForEach(EpochKey(epoch), &ev, func(i int64) error {
+		// Ignore events for defunct miners.
+		if _, found, err := getStoragePower(store, st.PowerTable, ev.MinerAddr); err != nil {
+			return errors.Wrapf(err, "failed to find power for %v for cron event", ev.MinerAddr)
+		} else if found {
+			events = append(events, ev)
+		}
+		return nil
+	})
+	return events, err
+}
+
+func (st *StoragePowerActorState) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
+	mmap := adt.AsMultimap(store, st.CronEventQueue)
+	err := mmap.RemoveAll(EpochKey(epoch))
+	if err != nil {
+		return errors.Wrapf(err, "failed to clear cron events")
+	}
+	st.CronEventQueue = mmap.Root()
+	return nil
+}
+
 func getStoragePower(s adt.Store, root cid.Cid, a addr.Address) (abi.StoragePower, bool, error) {
 	hm := adt.AsMap(s, root)
 
@@ -363,4 +398,12 @@ func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
 
 func (st *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
 	panic("replace with cbor-gen")
+}
+
+func (c *CronEvent) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
+}
+
+func (c *CronEvent) UnmarshalCBOR(r io.Reader) error {
+	panic("implement me")
 }

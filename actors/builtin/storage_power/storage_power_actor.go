@@ -336,10 +336,10 @@ func (a *StoragePowerActor) EnrollCronEvent(rt Runtime, params *EnrollCronEventP
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		if _, found := st.CronEventQueue[params.EventEpoch]; !found {
-			st.CronEventQueue[params.EventEpoch] = []CronEvent{}
+		err := st.appendCronEvent(adt.AsStore(rt), params.EventEpoch, &minerEvent)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to enroll cron event: %v", err)
 		}
-		st.CronEventQueue[params.EventEpoch] = append(st.CronEventQueue[params.EventEpoch], minerEvent)
 		return nil
 	})
 	return &adt.EmptyValue{}
@@ -358,7 +358,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, params *ReportConse
 
 	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(params.blockHeader1, params.blockHeader2)
 	if !isValidConsensusFault {
-		rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: unverified consensus fault")
+		rt.Abort(exitcode.ErrIllegalArgument, "reported consensus fault failed verification")
 	}
 
 	reporter := rt.ImmediateCaller()
@@ -367,10 +367,10 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, params *ReportConse
 		store := adt.AsStore(rt)
 		claimedPower, powerOk, err := getStoragePower(store, st.ClaimedPower, params.target)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "spa.ReportConsensusFault failed to read claimed power for fault: %v", err)
+			rt.Abort(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
 		if !powerOk {
-			rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: miner already slashed")
+			rt.Abort(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", params.target)
 		}
 		Assert(claimedPower.GreaterThanEqual(big.Zero()))
 
@@ -381,7 +381,7 @@ func (a *StoragePowerActor) ReportConsensusFault(rt Runtime, params *ReportConse
 		// elapsed epoch from the latter block which committed the fault
 		elapsedEpoch := rt.CurrEpoch() - params.faultEpoch
 		if elapsedEpoch <= 0 {
-			rt.Abort(exitcode.ErrIllegalArgument, "spa.ReportConsensusFault: invalid block")
+			rt.Abort(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", params.faultEpoch, rt.CurrEpoch())
 		}
 
 		collateralToSlash := pledgePenaltyForConsensusFault(currPledge, params.faultType)
@@ -486,21 +486,21 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 	var epochEvents []CronEvent
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		epochEvents, _ = st.CronEventQueue[epoch]
-		delete(st.CronEventQueue, epoch)
+		store := adt.AsStore(rt)
+		var err error
+		epochEvents, err = st.loadCronEvents(store, epoch)
+		if err != nil {
+			return errors.Wrapf(err, "failed to load cron events at %v", epoch)
+		}
+
+		err = st.clearCronEvents(store, epoch)
+		if err != nil {
+			return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
+		}
 		return nil
 	})
 
-	validEvents := []CronEvent{}
-	for _, minerEvent := range epochEvents {
-		if _, found, err := getStoragePower(adt.AsStore(rt), st.PowerTable, minerEvent.MinerAddr); err != nil {
-			return errors.Wrap(err, "Failed to get miner power from power table while processing cron events")
-		} else if found {
-			validEvents = append(validEvents, minerEvent)
-		}
-	}
-
-	for _, event := range validEvents {
+	for _, event := range epochEvents {
 		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.Method_StorageMinerActor_OnDeferredCronEvent,

@@ -8,10 +8,10 @@ import (
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
-// Map stores data in a HAMT.
+// Map stores key-value pairs in a HAMT.
 type Map struct {
 	root  cid.Cid
 	store Store
@@ -33,67 +33,68 @@ func MakeEmptyMap(s Store) (*Map, error) {
 	return newMap, err
 }
 
-// Root return the root cid of HAMT.
-func (h *Map) Root() cid.Cid {
-	return h.root
+// Returns the root cid of underlying HAMT.
+func (m *Map) Root() cid.Cid {
+	return m.root
 }
 
 // Put adds value `v` with key `k` to the hamt store.
-func (h *Map) Put(k Keyer, v vmr.CBORMarshaler) error {
-	root, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
+func (m *Map) Put(k Keyer, v runtime.CBORMarshaler) error {
+	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
 	if err != nil {
-		return errors.Wrapf(err, "Map Put failed to load node %v", h.root)
+		return errors.Wrapf(err, "map put failed to load node %v", m.root)
 	}
-	if err = root.Set(h.store.Context(), k.Key(), v); err != nil {
-		return errors.Wrapf(err, "Map Put failed set in node %v with key %v value %v", h.root, k.Key(), v)
+	if err = root.Set(m.store.Context(), k.Key(), v); err != nil {
+		return errors.Wrapf(err, "map put failed set in node %v with key %v value %v", m.root, k.Key(), v)
 	}
-	if err = root.Flush(h.store.Context()); err != nil {
-		return errors.Wrapf(err, "Map Put failed to flush node %v : %v", h.root, err)
+	if err = root.Flush(m.store.Context()); err != nil {
+		return errors.Wrapf(err, "map put failed to flush node %v : %v", m.root, err)
 	}
 
-	return h.write(root)
+	return m.write(root)
 }
 
 // Get puts the value at `k` into `out`.
-func (h *Map) Get(k Keyer, out vmr.CBORUnmarshaler) (bool, error) {
-	root, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
+func (m *Map) Get(k Keyer, out runtime.CBORUnmarshaler) (bool, error) {
+	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
 	if err != nil {
-		return false, errors.Wrapf(err, "Map Get failed to load node %v", h.root)
+		return false, errors.Wrapf(err, "map get failed to load node %v", m.root)
 	}
-	if err = root.Find(h.store.Context(), k.Key(), out); err != nil {
+	if err = root.Find(m.store.Context(), k.Key(), out); err != nil {
 		if err == hamt.ErrNotFound {
 			return false, nil
 		}
-		return false, errors.Wrapf(err, "Map Get failed find in node %v with key %v", h.root, k.Key())
+		return false, errors.Wrapf(err, "map get failed find in node %v with key %v", m.root, k.Key())
 	}
 	return true, nil
 }
 
 // Delete removes the value at `k` from the hamt store.
-func (h *Map) Delete(k Keyer) error {
-	root, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
+func (m *Map) Delete(k Keyer) error {
+	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
 	if err != nil {
-		return errors.Wrapf(err, "Map Delete failed to load node %v", h.root)
+		return errors.Wrapf(err, "map delete failed to load node %v", m.root)
 	}
-	if err = root.Delete(h.store.Context(), k.Key()); err != nil {
-		return errors.Wrapf(err, "Map Delete failed in node %v key %v", h.root, k.Key())
+	if err = root.Delete(m.store.Context(), k.Key()); err != nil {
+		return errors.Wrapf(err, "map delete failed in node %v key %v", m.root, k.Key())
 	}
-	if err = root.Flush(h.store.Context()); err != nil {
-		return errors.Wrapf(err, "Map Delete failed to flush node %v : %v", h.root, err)
+	if err = root.Flush(m.store.Context()); err != nil {
+		return errors.Wrapf(err, "map delete failed to flush node %v : %v", m.root, err)
 	}
 
-	return h.write(root)
+	return m.write(root)
 }
 
-// ForEach iterates all entries in the map, deserializing each value in turn into `out` and then
+// Iterates all entries in the map, deserializing each value in turn into `out` and then
 // calling a function with the corresponding key.
+// Iteration halts if the function returns an error.
 // If the output parameter is nil, deserialization is skipped.
-func (h *Map) ForEach(out vmr.CBORUnmarshaler, fn func(key string) error) error {
-	oldRoot, err := hamt.LoadNode(h.store.Context(), h.store, h.root)
+func (m *Map) ForEach(out runtime.CBORUnmarshaler, fn func(key string) error) error {
+	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
 	if err != nil {
-		return errors.Wrapf(err, "Map Delete failed to persist changes to store %s", h.root)
+		return errors.Wrapf(err, "map foreach failed to load root %s", m.root)
 	}
-	return oldRoot.ForEach(h.store.Context(), func(k string, val interface{}) error {
+	return root.ForEach(m.store.Context(), func(k string, val interface{}) error {
 		if out != nil {
 			// Why doesn't hamt.ForEach() just return the value as bytes?
 			err = out.UnmarshalCBOR(bytes.NewReader(val.(*cbg.Deferred).Raw))
@@ -106,8 +107,8 @@ func (h *Map) ForEach(out vmr.CBORUnmarshaler, fn func(key string) error) error 
 }
 
 // Collects all the keys from the map into a slice of strings.
-func (h *Map) CollectKeys() (out []string, err error) {
-	err = h.ForEach(nil, func(key string) error {
+func (m *Map) CollectKeys() (out []string, err error) {
+	err = m.ForEach(nil, func(key string) error {
 		out = append(out, key)
 		return nil
 	})
@@ -115,11 +116,11 @@ func (h *Map) CollectKeys() (out []string, err error) {
 }
 
 // Writes the root node to storage and sets the new root CID.
-func (h *Map) write(root *hamt.Node) error {
-	newCid, err := h.store.Put(h.store.Context(), root)
+func (m *Map) write(root *hamt.Node) error {
+	newCid, err := m.store.Put(m.store.Context(), root)
 	if err != nil {
-		return errors.Wrapf(err, "Map ForEach failed to load node %v", h.root)
+		return errors.Wrapf(err, "map failed to write node %v", root)
 	}
-	h.root = newCid
+	m.root = newCid
 	return nil
 }

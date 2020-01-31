@@ -2,19 +2,21 @@ package adt
 
 import (
 	"context"
+	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
+	cbor "github.com/ipfs/go-ipld-cbor"
 
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
 
 // Store defines an interface required to back the ADTs in this package.
 type Store interface {
 	Context() context.Context
-	hamt.CborIpldStore
+	cbor.IpldStore
 }
 
 // Keyer defines an interface required to put values in mapping.
@@ -51,6 +53,15 @@ func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
 // Adapts an address as a mapping key.
 type AddrKey addr.Address
 
-func (kw AddrKey) Key() string {
-	return string(addr.Address(kw).Bytes())
+func (k AddrKey) Key() string {
+	return string(addr.Address(k).Bytes())
+}
+
+// Adapts an epoch as a mapping key.
+type EpochKey abi.ChainEpoch
+
+func (k EpochKey) Key() string {
+	var buf []byte
+	n := binary.PutVarint(buf, int64(k))
+	return string(buf[:n])
 }
