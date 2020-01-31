@@ -297,8 +297,8 @@ func (a MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
-		if !st._hasAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()) {
-			rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds unlocked")
+		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
+			rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
