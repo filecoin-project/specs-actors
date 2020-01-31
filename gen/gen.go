@@ -1,6 +1,7 @@
 package main
 
 import (
+	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
@@ -10,7 +11,16 @@ import (
 
 func main() {
 
-	// General Types
+	// Actors
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/init/cbor_gen.go", "init",
+		// actor state
+		init_.InitActorState{},
+		// method params
+		init_.ExecReturn{},
+	); err != nil {
+		panic(err)
+	}
+
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/multisig/cbor_gen.go", "multisig",
 		// actor state
 		multisig.MultiSigActorState{},
