@@ -74,7 +74,7 @@ type OnChainSealVerifyInfo struct {
 	InteractiveEpoch ChainEpoch      // Used to derive the interactive PoRep challenge.
 	RegisteredProof
 	Proof   SealProof
-	DealIDs DealIDs
+	DealIDs []DealID
 	SectorNumber
 	SealEpoch ChainEpoch // Used to tie the seal to a chain.
 }

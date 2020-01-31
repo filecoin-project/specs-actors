@@ -1,15 +1,31 @@
 package main
 
 import (
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
 	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 
 	gen "github.com/whyrusleeping/cbor-gen"
 )
 
 func main() {
+	// Common types
+	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
+		abi.PieceSize{},
+		abi.PieceInfo{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/crypto/cbor_gen.go", "crypto",
+		crypto.Signature{},
+	); err != nil {
+		panic(err)
+	}
 
 	// Actors
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/init/cbor_gen.go", "init",
@@ -43,7 +59,7 @@ func main() {
 		storage_power.CreateMinerParams{},
 		storage_power.DeleteMinerParams{},
 		storage_power.WithdrawBalanceParams{},
-		storage_power.OnMinerEnrollCronEvent{},
+		storage_power.EnrollCronEventParams{},
 		storage_power.OnSectorTerminateParams{},
 		storage_power.OnSectorModifyWeightDesc{},
 		storage_power.OnSectorProveCommitParams{},
@@ -53,6 +69,23 @@ func main() {
 		storage_power.OnSectorTemporaryFaultEffectiveBegin{},
 		// method returns
 		storage_power.CreateMinerReturn{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_market/cbor_gen.go", "storage_market",
+		// method params
+		storage_market.WithdrawBalanceParams{},
+		storage_market.PublishStorageDealsParams{},
+		storage_market.VerifyDealsOnSectorProveCommitParams{},
+		storage_market.GetPieceInfosForDealIDsParams{},
+		storage_market.OnMinerSectorsTerminateParams{},
+		// method returns
+		storage_market.GetPieceInfosForDealIDsReturn{},
+		// other types
+		storage_market.StorageDealProposal{},
+		storage_market.StorageDeal{},
+		storage_market.OnChainDeal{},
 	); err != nil {
 		panic(err)
 	}
@@ -67,6 +100,7 @@ func main() {
 		storage_miner.ExtendSectorExpirationParams{},
 		storage_miner.SubmitSurprisePoStResponseParams{},
 		storage_miner.DeclareTemporaryFaultsParams{},
+		storage_miner.CronEventPayload{},
 	); err != nil {
 		panic(err)
 	}

@@ -74,7 +74,7 @@ type SectorPreCommitInfo struct {
 	SectorNumber abi.SectorNumber
 	SealedCID    abi.SealedSectorCID // CommR
 	SealEpoch    abi.ChainEpoch
-	DealIDs      abi.DealIDs
+	DealIDs      []abi.DealID
 	Expiration   abi.ChainEpoch // Sector Expiration
 }
 
@@ -131,7 +131,7 @@ func (st *StorageMinerActorState) _getSectorOnChainInfo(sectorNo abi.SectorNumbe
 	return sectorInfo, true
 }
 
-func (st *StorageMinerActorState) _getSectorDealIDsAssert(sectorNo abi.SectorNumber) abi.DealIDs {
+func (st *StorageMinerActorState) _getSectorDealIDsAssert(sectorNo abi.SectorNumber) []abi.DealID {
 	sectorInfo, found := st._getSectorOnChainInfo(sectorNo)
 	Assert(found)
 	return sectorInfo.Info.DealIDs

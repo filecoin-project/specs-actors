@@ -10,6 +10,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -106,8 +107,12 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, params *StageWorker
 
 		// note that this may replace another pending key change
 		st.Info.PendingWorkerKey = keyChange
-		cronPayload := serde.MustSerializeParams(CronEventType_Miner_WorkerKeyChange)
-		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+keyChange.EffectiveAt, cronPayload)
+
+		cronPayload := CronEventPayload{
+			EventType: CronEventType_Miner_WorkerKeyChange,
+			Sectors:   nil,
+		}
+		a.enrollCronEvent(rt, rt.CurrEpoch()+keyChange.EffectiveAt, &cronPayload)
 
 		return nil
 	})
@@ -180,9 +185,12 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValu
 
 	if challenged {
 		// Request deferred Cron check for SurprisePoSt challenge expiry.
-		cronPayload := serde.MustSerializeParams(CronEventType_Miner_SurpriseExpiration)
+		cronPayload := CronEventPayload{
+			EventType: CronEventType_Miner_SurpriseExpiration,
+			Sectors:   nil,
+		}
 		surpriseDuration := indices.StorageMining_SurprisePoStChallengeDuration()
-		a._rtEnrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, cronPayload)
+		a.enrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, &cronPayload)
 	}
 	return &adt.EmptyValue{}
 }
@@ -296,9 +304,12 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 	}
 
 	// Request deferred Cron check for PreCommit expiry check.
-	cronPayload := serde.MustSerializeParams(CronEventType_Miner_PreCommitExpiry, []abi.SectorNumber{params.info.SectorNumber})
+	cronPayload := CronEventPayload{
+		EventType: CronEventType_Miner_PreCommitExpiry,
+		Sectors:   []abi.SectorNumber{params.info.SectorNumber},
+	}
 	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
-	a._rtEnrollCronEvent(rt, expiryBound, cronPayload)
+	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
 }
@@ -335,7 +346,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
 	// return DealWeight for the deal set in the sector
-	var dealset storage_market.GetWeightForDealSetReturn
+	var dealWeight abi.DealWeight
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_VerifyDealsOnSectorProveCommit,
@@ -347,13 +358,13 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	)
 
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-	autil.AssertNoError(ret.Into(dealset))
+	autil.AssertNoError(ret.Into(&dealWeight))
 
 	rt.State().Transaction(&st, func() interface{} {
 		st.Sectors[params.info.SectorNumber] = SectorOnChainInfo{
 			Info:            preCommitSector.Info,
 			ActivationEpoch: rt.CurrEpoch(),
-			DealWeight:      dealset.Weight,
+			DealWeight:      dealWeight,
 		}
 
 		delete(st.PreCommittedSectors, params.info.SectorNumber)
@@ -362,9 +373,11 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	})
 
 	// Request deferred Cron check for sector expiry.
-	cronPayload := serde.MustSerializeParams(CronEventType_Miner_SectorExpiry, []abi.SectorNumber{params.info.SectorNumber})
-	a._rtEnrollCronEvent(
-		rt, preCommitSector.Info.Expiration, cronPayload)
+	cronPayload := CronEventPayload{
+		EventType: CronEventType_Miner_SectorExpiry,
+		Sectors:   []abi.SectorNumber{params.info.SectorNumber},
+	}
+	a.enrollCronEvent(rt, preCommitSector.Info.Expiration, &cronPayload)
 
 	// Notify SPA to update power associated to newly activated sector.
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, params.info.SectorNumber)
@@ -491,11 +504,14 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTem
 	})
 
 	// Request deferred Cron invocation to update temporary fault state.
-	cronPayload := serde.MustSerializeParams(CronEventType_Miner_TempFault, params.sectorNumbers)
+	cronPayload := CronEventPayload{
+		EventType: CronEventType_Miner_TempFault,
+		Sectors:   params.sectorNumbers,
+	}
 	// schedule cron event to start marking temp fault at BeginEpoch
-	a._rtEnrollCronEvent(rt, effectiveBeginEpoch, cronPayload)
+	a.enrollCronEvent(rt, effectiveBeginEpoch, &cronPayload)
 	// schedule cron event to end marking temp fault at EndEpoch
-	a._rtEnrollCronEvent(rt, effectiveEndEpoch, cronPayload)
+	a.enrollCronEvent(rt, effectiveEndEpoch, &cronPayload)
 	return &adt.EmptyValue{}
 }
 
@@ -511,7 +527,9 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCr
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var payload CronEventPayload
-	serde.MustDeserialize(params.callbackPayload, payload)
+	if err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload)); err != nil {
+		rt.Abort(exitcode.ErrIllegalArgument, "failed to deserialize event payload: %v", err)
+	}
 
 	if payload.EventType == CronEventType_Miner_TempFault {
 		for _, sectorNumber := range payload.Sectors {
@@ -724,16 +742,25 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 }
 
-func (a *StorageMinerActor) _rtEnrollCronEvent(
-	rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload []byte) {
-
+func (a *StorageMinerActor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
+	var payload []byte
+	err := callbackPayload.MarshalCBOR(bytes.NewBuffer(payload))
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize payload: %v", err)
+	}
+	sendParams := storage_power.EnrollCronEventParams{
+		EventEpoch: eventEpoch,
+		Payload:    payload,
+	}
+	var sendParamsBytes []byte
+	err = sendParams.MarshalCBOR(bytes.NewBuffer(payload))
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize params: %v", err)
+	}
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerEnrollCronEvent,
-		serde.MustSerializeParams(
-			eventEpoch,
-			callbackPayload,
-		),
+		sendParamsBytes,
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
@@ -762,17 +789,16 @@ func (a *StorageMinerActor) _rtGetStorageWeightDescsForSectors(rt Runtime, secto
 func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sectorNumbers []abi.SectorNumber) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	dealIDItems := []abi.DealID{}
+	dealIds := []abi.DealID{}
 	for _, sectorNo := range sectorNumbers {
-		dealIDItems = append(dealIDItems, st._getSectorDealIDsAssert(sectorNo).Items...)
+		dealIds = append(dealIds, st._getSectorDealIDsAssert(sectorNo)...)
 	}
-	dealIDs := &abi.DealIDs{Items: dealIDItems}
 
 	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.Method_StorageMarketActor_OnMinerSectorsTerminate,
 		serde.MustSerializeParams(
-			dealIDs,
+			dealIds,
 		),
 		abi.NewTokenAmount(0),
 	)
@@ -849,7 +875,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to fetch piece info")
-	autil.AssertNoError(ret.Into(infos))
+	autil.AssertNoError(ret.Into(&infos))
 
 	// Unless we enforce a minimum padding amount, this totalPieceSize calculation can be removed.
 	// Leaving for now until that decision is entirely finalized.
