@@ -4,6 +4,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
 	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
@@ -34,6 +35,17 @@ func main() {
 		// method params
 		init_.ExecParams{},
 		init_.ExecReturn{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/reward/cbor_gen.go", "reward",
+		// actor state
+		reward.RewardActorState{},
+		// method params
+		reward.AwardBlockRewardParams{},
+		// other types
+		reward.Reward{},
 	); err != nil {
 		panic(err)
 	}

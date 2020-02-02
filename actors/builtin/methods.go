@@ -21,9 +21,13 @@ const (
 	Method_CronActor_EpochTick = MethodPlaceholder + iota
 )
 
-const (
-	Method_RewardActor_AwardBlockReward = MethodPlaceholder + iota
-)
+type rewardMethods struct {
+	Constructor      abi.MethodNum
+	AwardBlockReward abi.MethodNum
+	WithdrawReward   abi.MethodNum
+}
+
+var MethodsReward = rewardMethods{MethodConstructor, 2, 3}
 
 type msMethods struct {
 	Constructor                 abi.MethodNum
