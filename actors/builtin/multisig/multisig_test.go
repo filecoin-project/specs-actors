@@ -141,6 +141,37 @@ func TestVesting(t *testing.T) {
 
 	})
 
+	t.Run("send 150% vesting after 50% of lock period in 3 txs", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, 1, 10, []addr.Address{anne, bob, charlie}...)
+
+		rt.SetEpoch(0 + unlockDuration/2)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectSend(darlene, builtin.MethodSend, nilParams, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, nilParams)
+		rt.Verify()
+
+		// Should be thrown funds locked
+		// set the current balance of the multisig actor to its InitialBalance amount
+		rt.SetEpoch(0 + unlockDuration/2)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectSend(charlie, builtin.MethodSend, nilParams, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, charlie, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, nilParams)
+		rt.Verify()
+
+		// Should be thrown funds locked either
+		// set the current balance of the multisig actor to its InitialBalance amount
+		rt.SetEpoch(0 + unlockDuration/2)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nilParams, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, bob, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, nilParams)
+		rt.Verify()
+	})
+
 	t.Run("propose and autoapprove transaction above locked amount fails", func(t *testing.T) {
 		rt := builder.Build(t)
 
