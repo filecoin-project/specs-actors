@@ -143,7 +143,7 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, params *CreateMinerParams) *
 	}
 	ret, code := rt.Send(
 		builtin.InitActorAddr,
-		builtin.Method_InitActor_Exec,
+		builtin.MethodsInit.Exec,
 		&initact.ExecParams{
 			CodeID:            builtin.StorageMinerActorCodeID,
 			ConstructorParams: ctorParamBytes,

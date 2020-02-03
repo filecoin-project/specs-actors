@@ -4,22 +4,30 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type Runtime = vmr.Runtime
-
 // The init actor uniquely has the power to create new actors.
 // It maintains a table resolving pubkey and temporary actor addresses to the canonical ID-addresses.
 type InitActor struct{}
 
-func (a *InitActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a InitActor) Exports() []interface{} {
+	return []interface{}{
+		builtin.MethodConstructor: a.Constructor,
+		2: a.Exec,
+	}
+}
+
+var _ abi.Invokee = InitActor{}
+
+func (a InitActor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	rt.State().Construct(func() vmr.CBORMarshaler {
+	rt.State().Construct(func() runtime.CBORMarshaler {
 		state, err := ConstructState(adt.AsStore(rt), rt.NetworkName())
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to construct state: %v", err)
@@ -39,7 +47,7 @@ type ExecReturn struct {
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 }
 
-func (a *InitActor) Exec(rt Runtime, params *ExecParams) *ExecReturn {
+func (a InitActor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
 	autil.AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
@@ -68,7 +76,7 @@ func (a *InitActor) Exec(rt Runtime, params *ExecParams) *ExecReturn {
 	rt.CreateActor(params.CodeID, idAddr)
 
 	// Invoke constructor.
-	_, code := rt.Send(idAddr, builtin.MethodConstructor, vmr.CBORBytes(params.ConstructorParams), rt.ValueReceived())
+	_, code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.ValueReceived())
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{idAddr, uniqueAddress}
