@@ -11,11 +11,12 @@ import (
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/runtime/indices"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // A mock runtime for unit testing of actors in isolation.
@@ -209,15 +210,20 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	if len(rt.expectSends) == 0 {
 		rt.t.Fatalf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
 	}
-
 	expectedMsg := rt.expectSends[0]
 
 	if expectedMsg.Equal(toAddr, methodNum, params, value) {
 		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr, methodNum, value, params, rt.expectSends[0].String())
 	}
-	// pop the expectedMessage from the queue
+
+	if value.GreaterThan(rt.balance) {
+		rt.Abort(exitcode.SysErrInsufficientFunds, "cannot send value: %v exceeds balance: %v", value, rt.balance)
+	}
+
+	// pop the expectedMessage from the queue and modify the mockrt balance to reflect the send.
 	defer func() {
 		rt.expectSends = rt.expectSends[1:]
+		rt.balance = big.Sub(rt.balance, value)
 	}()
 	return expectedMsg.sendReturn, expectedMsg.exitCode
 }
