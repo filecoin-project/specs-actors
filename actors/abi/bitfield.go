@@ -15,6 +15,7 @@ var ErrBitFieldTooMany = errors.New("to many items in RLE")
 type BitField struct {
 	rle rlepluslazy.RLE
 
+	// not preserved across marshal calls.
 	bits map[uint64]struct{}
 }
 
@@ -110,14 +111,38 @@ func (bf BitField) Set(bit uint64) {
 }
 
 // Unset removes bit from the BitField
-func (bf BitField) Unset(bit uint64) {
-	delete(bf.bits, bit)
+// TODO could potentially be replace with something more performant buy using a rle RunIterator()
+func (bf *BitField) Unset(bit uint64) error {
+	count, err := bf.Count()
+	if err != nil {
+		return err
+	}
+	bitslice, err := bf.All(count)
+	if err != nil {
+		return err
+	}
+	for i, b := range bitslice {
+		if b == bit {
+			bitslice[i] = bitslice[len(bitslice)-1]
+			*bf = BitFieldFromSet(bitslice[:len(bitslice)-1])
+			return nil
+		}
+	}
+	return errors.Errorf("bit %d not found in bitfield", bit)
 }
 
 // Has returns true iff bif is set in the BitField.
-func (bf BitField) Has(bit uint64) bool {
-	_, ok := bf.bits[bit]
-	return ok
+func (bf BitField) Has(bit uint64) (bool, error) {
+	count, err := bf.Count()
+	if err != nil {
+		return false, err
+	}
+	bitmap, err := bf.AllMap(count)
+	if err != nil {
+		return false, err
+	}
+	_, ok := bitmap[bit]
+	return ok, nil
 }
 
 func (bf BitField) Count() (uint64, error) {
