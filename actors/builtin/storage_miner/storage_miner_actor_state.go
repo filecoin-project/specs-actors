@@ -179,7 +179,7 @@ func (st *StorageMinerActorState) IsSectorInTemporaryFault(sectorNumber abi.Sect
 		return false
 	}
 	ret, err := st.FaultSet.Has(uint64(sectorNumber))
-	autil.AssertNoError(err)
+	AssertNoError(err)
 	Assert(checkSector.DeclaredFaultEpoch != epochUndefined)
 	Assert(checkSector.DeclaredFaultDuration != epochUndefined)
 	return ret

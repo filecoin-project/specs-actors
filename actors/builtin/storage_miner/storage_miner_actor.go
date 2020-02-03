@@ -21,6 +21,7 @@ import (
 type Runtime = vmr.Runtime
 
 var Assert = autil.Assert
+var AssertNoError = autil.AssertNoError
 var IMPL_FINISH = autil.IMPL_FINISH
 var TODO = autil.TODO
 
@@ -46,7 +47,6 @@ type CronEventPayload struct {
 /////////////////
 // Constructor //
 /////////////////
-
 
 // Storage miner actors are created exclusively by the storage power actor. In order to break a circular dependency
 // between the two, the construction parameters are defined in the power actor.
