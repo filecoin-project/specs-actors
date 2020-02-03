@@ -1,53 +1,47 @@
 package cron
 
 import (
-	"io"
-
-	addr "github.com/filecoin-project/go-address"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type CronActorState struct {
-	Entries []CronTableEntry
-}
-
+// The cron actor is a built-in singleton that sends messages to other registered actors at the end of each epoch.
 type CronActor struct {
 }
 
-type CronTableEntry struct {
-	ToAddr    addr.Address
-	MethodNum abi.MethodNum
+func (a CronActor) Exports() []interface{} {
+	return []interface{}{
+		builtin.MethodConstructor: a.Constructor,
+		2: a.EpochTick,
+	}
 }
 
-func (a *CronActor) Constructor(rt vmr.Runtime) *adt.EmptyValue {
-	// Nothing. intentionally left blank.
+var _ abi.Invokee = CronActor{}
+
+type ConstructorParams struct {
+	Entries []CronTableEntry
+}
+
+func (a CronActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
+	rt.State().Construct(func() vmr.CBORMarshaler {
+		return ConstructState(params.Entries)
+	})
 	return &adt.EmptyValue{}
 }
 
-func (a *CronActor) EpochTick(rt vmr.Runtime) *adt.EmptyValue {
+// Invoked by the system after all other messages in the epoch have been processed.
+func (a CronActor) EpochTick(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	var st CronActorState
 	rt.State().Readonly(&st)
-	// st.Entries is basically a static registry for now, loaded
-	// in the interpreter static registry.
 	for _, entry := range st.Entries {
-		_, _ = rt.Send(entry.ToAddr, entry.MethodNum, nil, abi.NewTokenAmount(0))
+		_, _ = rt.Send(entry.Receiver, entry.MethodNum, adt.EmptyValue{}, abi.NewTokenAmount(0))
 		// Any error and return value are ignored.
 	}
 
 	return &adt.EmptyValue{}
-}
-
-func (st *CronActorState) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
-}
-
-func (st *CronActorState) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
 }
