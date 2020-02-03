@@ -12,6 +12,13 @@ const (
 	MethodPlaceholder = abi.MethodNum(1 << 30)
 )
 
+type accMethods struct {
+	Constructor   abi.MethodNum
+	PubkeyAddress abi.MethodNum
+}
+
+var MethodsAccount = accMethods{1, 2}
+
 const (
 	Method_InitActor_Exec = MethodPlaceholder + iota
 	Method_InitActor_GetActorIDForAddress
