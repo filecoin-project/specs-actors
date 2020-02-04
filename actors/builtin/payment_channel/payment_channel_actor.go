@@ -26,6 +26,17 @@ type PCAConstructorParams struct {
 
 func (pca *PaymentChannelActor) Constructor(rt vmr.Runtime, params *PCAConstructorParams) *adt.EmptyValue {
 
+	// TODO anorth: ensure parties are valid
+	// rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	// toID, err := addr.IDFromAddress(params.To)
+	// if err != nil {
+	// 	rt.Abort(exitcode.ErrIllegalArgument, "receiver must be ID address")
+	// }
+
+	// if !toID.PubKeyAddress.Protocol() == addr.SECP256K1 && !toID.PubKeyAddress.Protocol() == addr.BLS {
+	// 	rt.Abort(exitcode.ErrIllegalArgument, "address must use BLS or SECP protocol, got %v", toID.PubKeyAddress.Protocol())
+	// }
+
 	var st PaymentChannelActorState
 	rt.State().Transaction(&st, func() interface{} {
 		st.From = rt.ImmediateCaller()
