@@ -160,7 +160,7 @@ func (bf BitField) All(max uint64) ([]uint64, error) {
 		return nil, errors.Wrap(err, "count error")
 	}
 	if c > max {
-		return nil, errors.Errorf("expected %d, got %d: %w", max, c, ErrBitFieldTooMany)
+		return nil, errors.Errorf("expected %d, got %d: %v", max, c, ErrBitFieldTooMany)
 	}
 
 	runs, err := bf.sum()
