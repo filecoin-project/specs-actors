@@ -37,9 +37,9 @@ type MultiSigActor struct{}
 func (msa MultiSigActor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: msa.Constructor,
-		2: msa.Propose,
-		3: msa.Approve,
-		4: msa.Cancel,
+		2:                         msa.Propose,
+		3:                         msa.Approve,
+		4:                         msa.Cancel,
 		//5: msa.ClearCompleted, //TODO: sync with spec
 		6: msa.AddSigner,
 		7: msa.RemoveSigner,

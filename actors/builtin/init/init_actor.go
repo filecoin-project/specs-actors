@@ -19,7 +19,7 @@ type InitActor struct{}
 func (a InitActor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
-		2: a.Exec,
+		2:                         a.Exec,
 	}
 }
 
@@ -38,7 +38,7 @@ func (a InitActor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.Empty
 }
 
 type ExecParams struct {
-	CodeID cid.Cid
+	CodeID            cid.Cid
 	ConstructorParams []byte
 }
 
@@ -49,7 +49,7 @@ type ExecReturn struct {
 
 func (a InitActor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
-	callerCodeID, ok := rt.GetActorCodeID(rt.ImmediateCaller())
+	callerCodeID, ok := rt.GetActorCodeCID(rt.ImmediateCaller())
 	autil.AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
 	if !canExec(callerCodeID, params.CodeID) {
 		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeID, params.CodeID)

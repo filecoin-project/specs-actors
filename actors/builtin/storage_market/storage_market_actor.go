@@ -8,21 +8,30 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	. "github.com/filecoin-project/specs-actors/actors/util"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type StorageMarketActor struct{}
 
-type BalanceTableHAMT = autil.BalanceTableHAMT
 type Runtime = vmr.Runtime
-
-var Assert = autil.Assert
-var IMPL_FINISH = autil.IMPL_FINISH
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
+
+func (a *StorageMarketActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
+
+	rt.State().Construct(func() vmr.CBORMarshaler {
+		st, err := ConstructState(adt.AsStore(rt))
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to create storage market state map: %v", err)
+		}
+		return st
+	})
+	return &adt.EmptyValue{}
+}
 
 type WithdrawBalanceParams struct {
 	Address addr.Address
@@ -38,24 +47,24 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, params *WithdrawBalance
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
 
-	recipientAddr := builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, params.Address, builtin.MinerEntrySpec_MinerOrSignable)
+	recipientAddr := builtin.MarketAddress(rt, params.Address)
 
 	var amountExtracted abi.TokenAmount
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
-		st._rtAbortIfAddressEntryDoesNotExist(rt, params.Address)
-
 		// Before any operations that check the balance tables for funds, execute all deferred
 		// deal state updates.
-		//
-		// Note: as an optimization, implementations may cache efficient data structures indicating
-		// which of the following set of updates are redundant and can be skipped.
-		amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, params.Address))
+		amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, params.Address))
 
-		minBalance := st._getLockedReqBalanceInternal(params.Address)
-		newTable, ex, ok := autil.BalanceTable_WithExtractPartial(st.EscrowTable, params.Address, params.Amount, minBalance)
-		Assert(ok)
-		st.EscrowTable = newTable
+		minBalance := st.getLockedBalance(rt, params.Address)
+
+		et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		ex, err := et.SubtractWithMinimum(params.Address, params.Amount, minBalance)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "subtract form escrow table: %v", err)
+		}
+
+		st.EscrowTable = et.Root()
 		amountExtracted = ex
 		return nil
 	})
@@ -70,27 +79,37 @@ func (a *StorageMarketActor) WithdrawBalance(rt Runtime, params *WithdrawBalance
 // Deposits the specified amount into the balance held in escrow.
 // Note: the amount is included implicitly in the message.
 func (a *StorageMarketActor) AddBalance(rt Runtime, address *addr.Address) *adt.EmptyValue {
-	builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, *address, builtin.MinerEntrySpec_MinerOrSignable)
+	builtin.MarketAddress(rt, *address)
 
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
-		st._rtAbortIfAddressEntryDoesNotExist(rt, *address)
-
 		msgValue := rt.ValueReceived()
-		newTable, ok := autil.BalanceTable_WithAdd(st.EscrowTable, *address, msgValue)
-		if !ok {
-			// Entry not found; create implicitly.
-			newTable, ok = autil.BalanceTable_WithNewAddressEntry(st.EscrowTable, *address, msgValue)
-			Assert(ok)
+
+		{
+			et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+			err := et.AddCreate(*address, msgValue)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
+			}
+			st.EscrowTable = et.Root()
 		}
-		st.EscrowTable = newTable
+
+		{
+			lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+			err := lt.AddCreate(*address, big.NewInt(0))
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
+			}
+			st.LockedTable = lt.Root()
+		}
+
 		return nil
 	})
 	return &adt.EmptyValue{}
 }
 
 type PublishStorageDealsParams struct {
-	Deals []StorageDeal
+	Deals []StorageDealProposal
 }
 
 // Publish a new set of storage deals (not yet included in a sector).
@@ -104,44 +123,40 @@ func (a *StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStor
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
 		// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
-		for _, newDeal := range params.Deals {
-			p := newDeal.Proposal
-
-			if p.Provider != rt.ImmediateCaller() {
-				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", p.Provider)
+		for _, deal := range params.Deals {
+			if deal.Provider != rt.ImmediateCaller() {
+				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", deal.Provider)
 			}
 
-			_rtAbortIfNewDealInvalid(rt, newDeal)
+			validateDeal(rt, deal)
 
 			// Before any operations that check the balance tables for funds, execute all deferred
 			// deal state updates.
 			//
 			// Note: as an optimization, implementations may cache efficient data structures indicating
 			// which of the following set of updates are redundant and can be skipped.
-			amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Client))
-			amountSlashedTotal = big.Add(amountSlashedTotal, st._rtUpdatePendingDealStatesForParty(rt, p.Provider))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Client))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Provider))
 
-			st._rtLockBalanceOrAbort(rt, p.Client, p.ClientBalanceRequirement())
-			st._rtLockBalanceOrAbort(rt, p.Provider, p.ProviderBalanceRequirement())
+			st.lockBalanceOrAbort(rt, deal.Client, deal.ClientBalanceRequirement())
+			st.lockBalanceOrAbort(rt, deal.Provider, deal.ProviderBalanceRequirement())
 
-			id := st._generateStorageDealID()
+			id := st.generateStorageDealID()
 
-			onchainDeal := OnChainDeal{
+			onchainDeal := &OnChainDeal{
 				ID:               id,
-				Deal:             newDeal,
+				Proposal:         deal,
 				SectorStartEpoch: epochUndefined,
 			}
 
-			st.Deals[id] = onchainDeal
-
-			if _, found := st.CachedExpirationsPending[p.EndEpoch]; !found {
-				st.CachedExpirationsPending[p.EndEpoch] = NewDealIDQueue()
+			deals := AsDealArray(adt.AsStore(rt), st.Deals)
+			err := deals.Set(id, onchainDeal)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
 			}
-			cep := st.CachedExpirationsPending[p.EndEpoch]
-			cep.Enqueue(id)
+			st.Deals = deals.Root()
 		}
 
-		st.CurrEpochNumDealsPublished += len(params.Deals)
 		return nil
 	})
 
@@ -171,15 +186,24 @@ func (a *StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *
 		// if there are no dealIDs, it is a CommittedCapacity sector
 		// and the totalWeight should be zero
 		for _, dealID := range params.DealIDs {
-			deal, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
-			_rtAbortIfDealInvalidForNewSectorSeal(rt, minerAddr, params.SectorExpiry, deal)
-			ocd := st.Deals[dealID]
-			ocd.SectorStartEpoch = rt.CurrEpoch()
-			st.Deals[dealID] = ocd
+			deals := AsDealArray(adt.AsStore(rt), st.Deals)
+			deal, err := deals.Get(dealID)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "get deal %v", err)
+			}
+
+			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, deal)
+
+			deal.SectorStartEpoch = rt.CurrEpoch()
+			err = deals.Set(dealID, deal)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
+			}
+			st.Deals = deals.Root()
 
 			// Compute deal weight
-			dur := big.NewInt(int64(dealP.Duration()))
-			siz := big.NewInt(dealP.PieceSize.Total())
+			dur := big.NewInt(int64(deal.Proposal.Duration()))
+			siz := big.NewInt(deal.Proposal.PieceSize.Total())
 			weight := big.Mul(dur, siz)
 			totalWeight = big.Add(totalWeight, weight)
 		}
@@ -199,14 +223,14 @@ type GetPieceInfosForDealIDsReturn struct {
 func (a *StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, params *GetPieceInfosForDealIDsParams) *GetPieceInfosForDealIDsReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
-	ret := []abi.PieceInfo{}
+	ret := make([]abi.PieceInfo, 0)
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
 		for _, dealID := range params.DealIDs {
-			_, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
+			deal := st.mustGetDeal(rt, dealID)
 			ret = append(ret, abi.PieceInfo{
-				PieceCID: dealP.PieceCID,
-				Size:     dealP.PieceSize.Total(),
+				PieceCID: deal.Proposal.PieceCID,
+				Size:     deal.Proposal.PieceSize.Total(),
 			})
 		}
 		return nil
@@ -228,193 +252,102 @@ func (a *StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, params *OnMiner
 
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
+		deals := AsDealArray(adt.AsStore(rt), st.Deals)
+
 		for _, dealID := range params.DealIDs {
-			_, dealP := st._rtGetOnChainDealOrAbort(rt, dealID)
-			Assert(dealP.Provider == minerAddr)
+			deal, err := deals.Get(dealID)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "get deal: %v", err)
+			}
+			Assert(deal.Proposal.Provider == minerAddr)
 
 			// Note: we do not perform the balance transfers here, but rather simply record the flag
-			// to indicate that _processDealSlashed should be called when the deferred state computation
-			// is performed.
-			ocd := st.Deals[dealID]
-			ocd.SlashEpoch = rt.CurrEpoch()
-			st.Deals[dealID] = ocd
+			// to indicate that processDealSlashed should be called when the deferred state computation
+			// is performed. // TODO: Do that here
+
+			deal.SlashEpoch = rt.CurrEpoch()
+			err = deals.Set(dealID, deal)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
+			}
 		}
+
+		st.Deals = deals.Root()
 		return nil
 	})
 	return &adt.EmptyValue{}
 }
 
-func (a *StorageMarketActor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
-	var amountSlashedTotal abi.TokenAmount
+type HandleExpiredDealsParams struct {
+	Deals []abi.DealID // TODO: RLE
+}
+
+func (a *StorageMarketActor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) *adt.EmptyValue {
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	var slashed abi.TokenAmount
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
-		// Some deals may never be affected by the normal calls to _rtUpdatePendingDealStatesForParty
-		// (notably, if the relevant party never checks its balance).
-		// Without some cleanup mechanism, these deals may gradually accumulate and cause
-		// the StorageMarketActor state to grow without bound.
-		// To prevent this, we amortize the cost of this cleanup by processing a relatively
-		// small number of deals every epoch, independent of the calls above.
-		//
-		// More specifically, we process deals:
-		//   (a) In priority order of expiration epoch, up until the current epoch
-		//   (b) Within a given expiration epoch, in order of original publishing.
-		//
-		// We stop once we have exhausted this valid set, or when we have hit a certain target
-		// (DEAL_PROC_AMORTIZED_SCALE_FACTOR times the number of deals freshly published in the
-		// current epoch) of deals dequeued, whichever comes first.
-
-		const DEAL_PROC_AMORTIZED_SCALE_FACTOR = 2
-		numDequeuedTarget := st.CurrEpochNumDealsPublished * DEAL_PROC_AMORTIZED_SCALE_FACTOR
-
-		numDequeued := 0
-		extractedDealIDs := []abi.DealID{}
-
-		for {
-			if st.CachedExpirationsNextProcEpoch > rt.CurrEpoch() {
-				break
-			}
-
-			if numDequeued >= numDequeuedTarget {
-				break
-			}
-
-			queue, found := st.CachedExpirationsPending[st.CachedExpirationsNextProcEpoch]
-			if !found {
-				st.CachedExpirationsNextProcEpoch += 1
-				continue
-			}
-
-			queueDepleted := false
-			for {
-				dealID, ok := queue.Dequeue()
-				if !ok {
-					queueDepleted = true
-					break
-				}
-				numDequeued += 1
-				if _, found = st.Deals[dealID]; found {
-					// May have already processed expiration, independently, via _rtUpdatePendingDealStatesForParty.
-					// If not, add it to the list to be processed.
-					extractedDealIDs = append(extractedDealIDs, dealID)
-				}
-			}
-
-			if !queueDepleted {
-				Assert(numDequeued >= numDequeuedTarget)
-				break
-			}
-
-			delete(st.CachedExpirationsPending, st.CachedExpirationsNextProcEpoch)
-			st.CachedExpirationsNextProcEpoch += 1
-		}
-
-		amountSlashedTotal = st._updatePendingDealStates(extractedDealIDs, rt.CurrEpoch())
-
-		// Reset for next epoch.
-		st.CurrEpochNumDealsPublished = 0
+		slashed = st.updatePendingDealStates(rt, params.Deals, rt.CurrEpoch())
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+	// TODO: award some small portion of slashed to caller as incentive
+
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &adt.EmptyValue{}
 }
 
-func (a *StorageMarketActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	var st StorageMarketActorState
-	rt.State().Transaction(&st, func() interface{} {
-		st.Deals = DealsAMT_Empty()
-		st.EscrowTable = autil.BalanceTableHAMT_Empty()
-		st.LockedReqTable = autil.BalanceTableHAMT_Empty()
-		st.NextID = abi.DealID(0)
-		st.CachedDealIDsByParty = CachedDealIDsByPartyHAMT_Empty()
-		st.CachedExpirationsPending = CachedExpirationsPendingHAMT_Empty()
-		st.CachedExpirationsNextProcEpoch = abi.ChainEpoch(0)
-		return nil
-	})
-	return &adt.EmptyValue{}
-}
-
 ////////////////////////////////////////////////////////////////////////////////
-// Method utility functions
+// Checks
 ////////////////////////////////////////////////////////////////////////////////
 
-func _rtAbortIfDealAlreadyProven(rt Runtime, deal OnChainDeal) {
+func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal *OnChainDeal) {
+	if deal.Proposal.Provider != minerAddr {
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
+	}
+
 	if deal.SectorStartEpoch != epochUndefined {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
 	}
-}
 
-func _rtAbortIfDealNotFromProvider(rt Runtime, dealP StorageDealProposal, minerAddr addr.Address) {
-	if dealP.Provider != minerAddr {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
-	}
-}
-
-func _rtAbortIfDealStartElapsed(rt Runtime, dealP StorageDealProposal) {
-	if rt.CurrEpoch() > dealP.StartEpoch {
+	if rt.CurrEpoch() > deal.Proposal.StartEpoch {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
-}
 
-func _rtAbortIfDealEndElapsed(rt Runtime, dealP StorageDealProposal) {
-	if dealP.EndEpoch > rt.CurrEpoch() {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal end epoch has already elapsed.")
-	}
-}
-
-func _rtAbortIfDealExceedsSectorLifetime(rt Runtime, dealP StorageDealProposal, sectorExpiration abi.ChainEpoch) {
-	if dealP.EndEpoch > sectorExpiration {
+	if deal.Proposal.EndEpoch > sectorExpiration {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal would outlive its containing sector.")
 	}
 }
 
-func _rtAbortIfDealInvalidForNewSectorSeal(
-	rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal OnChainDeal) {
-
-	dealP := deal.Deal.Proposal
-
-	_rtAbortIfDealNotFromProvider(rt, dealP, minerAddr)
-	_rtAbortIfDealAlreadyProven(rt, deal)
-	_rtAbortIfDealStartElapsed(rt, dealP)
-	_rtAbortIfDealExceedsSectorLifetime(rt, dealP, sectorExpiration)
-}
-
-func _rtAbortIfNewDealInvalid(rt Runtime, deal StorageDeal) {
-	dealP := deal.Proposal
-
-	if !_rtDealProposalIsInternallyValid(rt, dealP) {
+func validateDeal(rt Runtime, deal StorageDealProposal) {
+	if !dealProposalIsInternallyValid(rt, deal) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
 	}
 
-	_rtAbortIfDealStartElapsed(rt, dealP)
-	_rtAbortIfDealFailsParamBounds(rt, dealP)
-}
+	if rt.CurrEpoch() > deal.StartEpoch {
+		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
+	}
 
-func _rtAbortIfDealFailsParamBounds(rt Runtime, dealP StorageDealProposal) {
 	inds := rt.CurrIndices()
 
-	minDuration, maxDuration := inds.StorageDeal_DurationBounds(dealP.PieceSize, dealP.StartEpoch)
-	if dealP.Duration() < minDuration || dealP.Duration() > maxDuration {
+	minDuration, maxDuration := inds.StorageDeal_DurationBounds(deal.PieceSize, deal.StartEpoch)
+	if deal.Duration() < minDuration || deal.Duration() > maxDuration {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
 	}
 
-	minPrice, maxPrice := inds.StorageDeal_StoragePricePerEpochBounds(dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
-	if dealP.StoragePricePerEpoch.LessThan(minPrice) || dealP.StoragePricePerEpoch.GreaterThan(maxPrice) {
+	minPrice, maxPrice := inds.StorageDeal_StoragePricePerEpochBounds(deal.PieceSize, deal.StartEpoch, deal.EndEpoch)
+	if deal.StoragePricePerEpoch.LessThan(minPrice) || deal.StoragePricePerEpoch.GreaterThan(maxPrice) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := inds.StorageDeal_ProviderCollateralBounds(
-		dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
-	if dealP.ProviderCollateral.LessThan(minProviderCollateral) || dealP.ProviderCollateral.GreaterThan(maxProviderCollateral) {
+	minProviderCollateral, maxProviderCollateral := inds.StorageDeal_ProviderCollateralBounds(deal.PieceSize, deal.StartEpoch, deal.EndEpoch)
+	if deal.ProviderCollateral.LessThan(minProviderCollateral) || deal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
-	minClientCollateral, maxClientCollateral := inds.StorageDeal_ClientCollateralBounds(
-		dealP.PieceSize, dealP.StartEpoch, dealP.EndEpoch)
-	if dealP.ClientCollateral.LessThan(minClientCollateral) || dealP.ClientCollateral.GreaterThan(maxClientCollateral) {
+	minClientCollateral, maxClientCollateral := inds.StorageDeal_ClientCollateralBounds(deal.PieceSize, deal.StartEpoch, deal.EndEpoch)
+	if deal.ClientCollateral.LessThan(minClientCollateral) || deal.ClientCollateral.GreaterThan(maxClientCollateral) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}
 }

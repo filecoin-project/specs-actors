@@ -45,7 +45,7 @@ type Runtime interface {
 	ValueReceived() abi.TokenAmount
 
 	// Look up the code ID at an actor address.
-	GetActorCodeID(addr addr.Address) (ret cid.Cid, ok bool)
+	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)
 
 	// Randomness returns a (pseudo)random string for the given epoch and tag.
 	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed

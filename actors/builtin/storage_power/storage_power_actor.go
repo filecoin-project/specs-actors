@@ -61,7 +61,7 @@ func (a *StoragePowerActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.Empt
 	rt.State().Construct(func() vmr.CBORMarshaler {
 		st, err := ConstructState(adt.AsStore(rt))
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
+			rt.Abort(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
 		}
 		return st
 	})
@@ -73,7 +73,7 @@ type AddBalanceParams struct {
 }
 
 func (a *StoragePowerActor) AddBalance(rt Runtime, params *AddBalanceParams) *adt.EmptyValue {
-	builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, params.Miner, builtin.MinerEntrySpec_MinerOnly)
+	builtin.ValidatePledgeAddress(rt, params.Miner)
 	var err error
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -94,7 +94,7 @@ func (a *StoragePowerActor) WithdrawBalance(rt Runtime, params *WithdrawBalanceP
 		rt.Abort(exitcode.ErrIllegalArgument, "negative withdrawal %v", params.Requested)
 	}
 
-	recipientAddr := builtin.RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt, params.Miner, builtin.MinerEntrySpec_MinerOnly)
+	recipientAddr := builtin.ValidatePledgeAddress(rt, params.Miner)
 
 	var amountExtracted abi.TokenAmount
 	var st StoragePowerActorState
@@ -152,7 +152,10 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, params *CreateMinerParams) *
 	)
 	builtin.RequireSuccess(rt, code, "failed to init new actor")
 	var addresses initact.ExecReturn
-	autil.AssertNoError(ret.Into(&addresses))
+	err = ret.Into(&addresses)
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "unmarshaling exec return value: %v", err)
+	}
 
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
@@ -206,7 +209,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *
 		rt.Abort(exitcode.ErrIllegalState, "Deletion requested for miner with power still remaining")
 	}
 
-	ownerAddr, workerAddr := builtin.RT_GetMinerAccountsAssert(rt, params.Miner)
+	ownerAddr, workerAddr := builtin.GetMinerControlAddrs(rt, params.Miner)
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
 	err = a.deleteMinerActor(rt, params.Miner)
@@ -232,7 +235,6 @@ type OnSectorTerminateParams struct {
 }
 
 func (a *StoragePowerActor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
-
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	if err := a.deductClaimedPowerForSector(rt, minerAddr, params.Weight); err != nil {
