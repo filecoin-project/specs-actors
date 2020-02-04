@@ -31,10 +31,3 @@ func TODO(...interface{}) {
 func IMPL_FINISH(...interface{}) {
 	panic("Not yet implemented in the spec")
 }
-
-// Version of TODO() indicating that the operation is believed to be unambiguous,
-// but is not yet implemented as code in the spec repository.
-// Some parameters still need to be set for mainnet and implementations can slot in the parameters when decisions are finalized
-func PARAM_FINISH(...interface{}) {
-	panic("Not yet implemented in the spec")
-}
