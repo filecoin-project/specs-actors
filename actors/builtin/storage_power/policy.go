@@ -9,19 +9,19 @@ import (
 
 // TerminationFault
 func pledgePenaltyForSectorTermination(weight SectorStorageWeightDesc, termType builtin.SectorTermination) abi.TokenAmount {
-	// autil.PARAM_FINISH()
+	// PARAM_FINISH
 	return abi.NewTokenAmount(0)
 }
 
 // DetectedFault
 func pledgePenaltyForSurprisePoStFailure(claimedPower abi.StoragePower, failures int64) abi.TokenAmount {
-	// autil.PARAM_FINISH()
+	// PARAM_FINISH
 	return abi.NewTokenAmount(0)
 }
 
 func pledgePenaltyForConsensusFault(currPledge abi.TokenAmount, faultType ConsensusFaultType) abi.TokenAmount {
 	// default is to slash all pledge collateral for all consensus fault
-	// autil.PARAM_FINISH()
+	// PARAM_FINISH
 	switch faultType {
 	case DoubleForkMiningFault:
 		return currPledge
@@ -35,18 +35,32 @@ func pledgePenaltyForConsensusFault(currPledge abi.TokenAmount, faultType Consen
 }
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateralToSlash abi.TokenAmount) abi.TokenAmount {
-	// autil.PARAM_FINISH()
-	growthRate := big.Div(indices.ConsensusFault_SlasherShareGrowthRateNum(), indices.ConsensusFault_SlasherShareGrowthRateDenom())
-	multiplier := big.NewInt(1)
+	// PARAM_FINISH
+	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
+	// var multiplier = growthRate^elapsedEpoch
+	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
+	// return collateralToSlash * slasherProportion
+
+	// BigInt Operation
+	// NUM = SLASHER_SHARE_GROWTH_RATE_NUM^elapsedEpoch * INITIAL_SLASHER_SHARE_NUM * collateralToSlash
+	// DENOM = SLASHER_SHARE_GROWTH_RATE_DENOM^elapsedEpoch * INITIAL_SLASHER_SHARE_DENOM
+	// slasher_amount = min(NUM/DENOM, collateralToSlash)
+	slasherShareNumMultiplier := big.NewInt(1)
 	for i := int64(0); i < int64(elapsedEpoch); i++ {
-		multiplier = big.Mul(multiplier, growthRate)
+		slasherShareNumMultiplier = big.Mul(slasherShareNumMultiplier, indices.ConsensusFault_SlasherShareGrowthRateNum())
 	}
-	initial_slasher_share := big.Div(indices.ConsensusFault_SlasherInitialShareNum(), indices.ConsensusFault_SlasherInitialShareDenom())
-	slasher_proportion := big.Min(big.Mul(initial_slasher_share, multiplier), big.NewInt(1))
-	return big.Mul(collateralToSlash, slasher_proportion)
+
+	slasherShareDenomMultiplier := big.NewInt(1)
+	for i := int64(0); i < int64(elapsedEpoch); i++ {
+		slasherShareDenomMultiplier = big.Mul(slasherShareDenomMultiplier, indices.ConsensusFault_SlasherShareGrowthRateDenom())
+	}
+
+	num := big.Mul(big.Mul(slasherShareNumMultiplier, indices.ConsensusFault_SlasherInitialShareNum()), collateralToSlash)
+	denom := big.Mul(slasherShareDenomMultiplier, indices.ConsensusFault_SlasherInitialShareDenom())
+	return big.Min(big.Div(num, denom), collateralToSlash)
 }
 
 func consensusPowerForWeight(weight SectorStorageWeightDesc) abi.StoragePower {
-	// autil.PARAM_FINISH()
-	return big.Mul(big.NewInt(int64(weight.SectorSize)), big.NewInt(int64(weight.Duration)))
+	// PARAM_FINISH
+	return abi.StoragePower(big.NewInt(int64(weight.SectorSize)))
 }

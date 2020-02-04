@@ -6,6 +6,6 @@ import (
 )
 
 func temporaryFaultFee(weights []storage_power.SectorStorageWeightDesc, duration abi.ChainEpoch) abi.TokenAmount {
-	// autil.PARAM_FINISH()
+	// PARAM_FINISH
 	return abi.NewTokenAmount(0)
 }
