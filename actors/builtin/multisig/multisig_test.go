@@ -723,6 +723,19 @@ func TestRemoveSigner(t *testing.T) {
 			expectApprovals: int64(2),
 			code:            exitcode.ErrNotFound,
 		},
+		{
+			desc: "problem: now bob is proposal creator and can cancel tx",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: int64(1),
+
+			removeSigner: anne,
+			decrease:     false,
+
+			expectSigners:   []addr.Address{bob, chuck},
+			expectApprovals: int64(1),
+			code:            exitcode.Ok,
+		},
 	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
