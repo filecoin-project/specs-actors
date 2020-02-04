@@ -523,8 +523,9 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCr
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var payload CronEventPayload
-	if err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload)); err != nil {
-		rt.Abort(exitcode.ErrIllegalArgument, "failed to deserialize event payload: %v", err)
+	err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload))
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
 	}
 
 	if payload.EventType == CronEventType_Miner_TempFault {
@@ -654,7 +655,7 @@ func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.Se
 func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType builtin.SectorTermination) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	_, found := st.Sectors[sectorNumber]
+	si, found := st.Sectors[sectorNumber]
 	Assert(found)
 
 	storageWeightDesc := a._rtGetStorageWeightDescForSector(rt, sectorNumber)
@@ -671,6 +672,18 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "failed to end fault")
+	}
+
+	{
+		_, code := rt.Send(
+			builtin.StorageMarketActorAddr,
+			builtin.Method_StorageMarketActor_OnMinerSectorsTerminate,
+			&storage_market.OnMinerSectorsTerminateParams{
+				DealIDs: si.Info.DealIDs,
+			},
+			abi.NewTokenAmount(0),
+		)
+		builtin.RequireSuccess(rt, code, "failed to terminate sector with market actor")
 	}
 
 	_, code := rt.Send(
@@ -709,7 +722,7 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 	if numConsecutiveFailures > indices.StoragePower_SurprisePoStMaxConsecutiveFailures() {
 		// Terminate all sectors, notify power and market actors to terminate
 		// associated storage deals, and reset miner's PoSt state to OK.
-		terminatedSectors := []abi.SectorNumber{}
+		var terminatedSectors []abi.SectorNumber
 		for sectorNumber := range st.Sectors {
 			terminatedSectors = append(terminatedSectors, sectorNumber)
 		}
@@ -779,7 +792,7 @@ func (a *StorageMinerActor) _rtGetStorageWeightDescsForSectors(rt Runtime, secto
 func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sectorNumbers []abi.SectorNumber) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	dealIds := []abi.DealID{}
+	var dealIds []abi.DealID
 	for _, sectorNo := range sectorNumbers {
 		dealIds = append(dealIds, st._getSectorDealIDsAssert(sectorNo)...)
 	}

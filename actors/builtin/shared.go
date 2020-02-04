@@ -29,13 +29,6 @@ const (
 	UserTermination
 )
 
-type MinerEntrySpec int64
-
-const (
-	MinerEntrySpec_MinerOnly = iota
-	MinerEntrySpec_MinerOrSignable
-)
-
 // ActorCode is the interface that all actor code types should satisfy.
 // It is merely a method dispatch interface.
 type ActorCode interface {
@@ -44,13 +37,13 @@ type ActorCode interface {
 	// When the executable actor spec is complete we can re-instantiate something here.
 }
 
-func RT_Address_Is_StorageMiner(rt runtime.Runtime, minerAddr addr.Address) bool {
-	codeID, ok := rt.GetActorCodeID(minerAddr)
+func IsStorageMiner(rt runtime.Runtime, minerAddr addr.Address) bool {
+	codeID, ok := rt.GetActorCodeCID(minerAddr)
 	autil.Assert(ok)
 	return codeID == StorageMinerActorCodeID
 }
 
-func RT_GetMinerAccountsAssert(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
+func GetMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
 	ret, code := rt.Send(minerAddr, Method_StorageMinerActor_GetOwnerAddr, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching owner addr")
 	autil.AssertNoError(ret.Into(&ownerAddr))
@@ -61,20 +54,28 @@ func RT_GetMinerAccountsAssert(rt runtime.Runtime, minerAddr addr.Address) (owne
 	return
 }
 
-func RT_MinerEntry_ValidateCaller_DetermineFundsLocation(rt runtime.Runtime, entryAddr addr.Address, entrySpec MinerEntrySpec) addr.Address {
-	if RT_Address_Is_StorageMiner(rt, entryAddr) {
+func MarketAddress(rt runtime.Runtime, addr addr.Address) addr.Address {
+	if IsStorageMiner(rt, addr) {
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
-		ownerAddr, workerAddr := RT_GetMinerAccountsAssert(rt, entryAddr)
+		ownerAddr, workerAddr := GetMinerControlAddrs(rt, addr)
 		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 		return ownerAddr
-	} else {
-		if entrySpec == MinerEntrySpec_MinerOnly {
-			rt.Abort(exitcode.ErrPlaceholder, "Only miner entries valid in current context")
-		}
-		// Ordinary account-style actor entry; funds recipient is just the entry address itself.
-		rt.ValidateImmediateCallerType(CallerTypesSignable...)
-		return entryAddr
 	}
+
+	// Ordinary account-style actor entry; funds recipient is just the entry address itself.
+	rt.ValidateImmediateCallerType(CallerTypesSignable...)
+	return addr
+}
+
+func ValidatePledgeAddress(rt runtime.Runtime, addr addr.Address) addr.Address {
+	if !IsStorageMiner(rt, addr) {
+		rt.Abort(exitcode.ErrPlaceholder, "Only miner entries valid in current context")
+	}
+
+	// Storage miner actor entry; implied funds recipient is the associated owner address.
+	ownerAddr, workerAddr := GetMinerControlAddrs(rt, addr)
+	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
+	return ownerAddr
 }
 
 func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt runtime.Runtime, fundsRequired abi.TokenAmount) {

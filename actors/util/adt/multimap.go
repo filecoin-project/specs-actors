@@ -45,7 +45,7 @@ func (mm *Multimap) Add(key Keyer, value runtime.CBORMarshaler) error {
 	}
 
 	// Append to the array.
-	if err = array.Append(value); err != nil {
+	if err = array.AppendContinuous(value); err != nil {
 		return errors.Wrapf(err, "failed to add multimap key %v value %v", key, value)
 	}
 

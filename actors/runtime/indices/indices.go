@@ -175,10 +175,10 @@ func (inds *IndicesImpl) StoragePower(
 	// StoragePower for miner = func(NominalPower for miner, PledgeCollateral for miner, global indices)
 	// Tentatively, miners dont get ConsensusPower for the share of power that they dont have collateral for
 	requiredPledge := inds.PledgeCollateralReq(minerNominalPower)
-	if minerPledgeCollateral.GreaterThanEqual(requiredPledge){
+	if minerPledgeCollateral.GreaterThanEqual(requiredPledge) {
 		return minerNominalPower
 	}
-	
+
 	// minerNominalPower * minerPledgeCollateral / requiredPledge
 	// this is likely to change
 	return big.Div(big.Mul(minerNominalPower, minerPledgeCollateral), requiredPledge)
