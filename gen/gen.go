@@ -86,6 +86,9 @@ func main() {
 	}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_power/cbor_gen.go", "storage_power",
+		// actors state
+		storage_power.StoragePowerActorState{},
+		storage_power.CronEvent{},
 		// method params
 		storage_power.AddBalanceParams{},
 		storage_power.CreateMinerParams{},
