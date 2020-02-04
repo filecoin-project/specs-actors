@@ -108,15 +108,15 @@ type SectorProveCommitInfo struct {
 }
 
 func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*StorageMinerActorState, error) {
-	emptyIntMap, err := adt.MakeEmptyIntMap(store)
+	emptyArray, err := adt.MakeEmptyArray(store)
 	if err != nil {
 		return nil, err
 	}
 	return &StorageMinerActorState{
 		PreCommittedSectors: make(PreCommittedSectorsHAMT),
-		Sectors:             emptyIntMap.Root(),
+		Sectors:             emptyArray.Root(),
 		FaultSet:            abi.NewBitField(),
-		ProvingSet:          emptyIntMap.Root(),
+		ProvingSet:          emptyArray.Root(),
 		PoStState: MinerPoStState{
 			LastSuccessfulPoSt:     epochUndefined,
 			SurpriseChallengeEpoch: epochUndefined,
@@ -161,7 +161,7 @@ func (st *StorageMinerActorState) deletePrecommitttedSector(sectorNo abi.SectorN
 }
 
 func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
-	sectors := adt.AsIntMap(store, st.Sectors)
+	sectors := adt.AsArray(store, st.Sectors)
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
@@ -171,8 +171,8 @@ func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.Sect
 }
 
 func (st *StorageMinerActorState) putSector(store adt.Store, sector *SectorOnChainInfo) error {
-	sectors := adt.AsIntMap(store, st.Sectors)
-	err := sectors.Put(uint64(sector.Info.SectorNumber), sector)
+	sectors := adt.AsArray(store, st.Sectors)
+	err := sectors.Set(uint64(sector.Info.SectorNumber), sector)
 	if err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
@@ -180,7 +180,7 @@ func (st *StorageMinerActorState) putSector(store adt.Store, sector *SectorOnCha
 }
 
 func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
-	sectors := adt.AsIntMap(store, st.Sectors)
+	sectors := adt.AsArray(store, st.Sectors)
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
@@ -190,7 +190,7 @@ func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.Sector
 }
 
 func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
-	sectors := adt.AsIntMap(store, st.Sectors)
+	sectors := adt.AsArray(store, st.Sectors)
 	err := sectors.Delete(uint64(sectorNo))
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
@@ -199,9 +199,9 @@ func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.Sec
 }
 
 func (st *StorageMinerActorState) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
-	sectors := adt.AsIntMap(store, st.Sectors)
+	sectors := adt.AsArray(store, st.Sectors)
 	var sector SectorOnChainInfo
-	err := sectors.ForEach(&sector, func(idx uint64) error {
+	err := sectors.ForEach(&sector, func(idx int64) error {
 		f(&sector)
 		return nil
 	})
