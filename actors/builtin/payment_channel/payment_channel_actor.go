@@ -2,6 +2,7 @@ package payment_channel
 
 import (
 	"bytes"
+	"io"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -10,7 +11,6 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
-	"github.com/filecoin-project/specs-actors/actors/serde"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -51,11 +51,26 @@ type PaymentVerifyParams struct {
 	Proof []byte
 }
 
-func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUpdateChannelStateParams) *adt.EmptyValue {
+func (st *PaymentVerifyParams) MarshalCBOR(w io.Writer) error {
+	panic("replace with cbor-gen")
+}
 
+func (st *PaymentVerifyParams) UnmarshalCBOR(r io.Reader) error {
+	panic("replace with cbor-gen")
+}
+
+func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUpdateChannelStateParams) *adt.EmptyValue {
 	var st PaymentChannelActorState
 	rt.State().Readonly(&st)
 
+	// both parties must sign voucher: one who submits it, the other explicitly signs it
+	rt.ValidateImmediateCallerIs(st.From, st.To)
+	var signer addr.Address
+	if rt.ImmediateCaller() == st.From {
+		signer = st.To
+	} else {
+		signer = st.From
+	}
 	sv := params.Sv
 
 	vb, nerr := sv.SigningBytes()
@@ -63,7 +78,7 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 	}
 
-	if !rt.Syscalls().VerifySignature(*sv.Signature, st.From, vb) {
+	if !rt.Syscalls().VerifySignature(*sv.Signature, signer, vb) {
 		rt.Abort(exitcode.ErrIllegalArgument, "voucher signature invalid")
 	}
 
@@ -82,12 +97,10 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 		_, code := rt.Send(
 			sv.Extra.Actor,
 			sv.Extra.Method,
-			serde.MustSerializeParams(
-				&PaymentVerifyParams{
-					sv.Extra.Data,
-					params.Proof,
-				},
-			),
+			&PaymentVerifyParams{
+				sv.Extra.Data,
+				params.Proof,
+			},
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "spend voucher verification failed")
@@ -100,9 +113,6 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 			ls = new(LaneState)
 			ls.Redeemed = big.NewInt(0)
 			st.LaneStates[sv.Lane] = ls
-		}
-		if ls.Closed {
-			rt.Abort(exitcode.ErrIllegalArgument, "cannot redeem a voucher on a closed lane")
 		}
 
 		if ls.Nonce > sv.Nonce {
@@ -147,13 +157,13 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 		// 5. add new redemption ToSend
 		st.ToSend = newSendBalance
 
-		// update channel closingAt and MinCloseAt if delayed by voucher
-		if sv.MinCloseHeight != 0 {
-			if st.ClosingAt != 0 && st.ClosingAt < sv.MinCloseHeight {
-				st.ClosingAt = sv.MinCloseHeight
+		// update channel settlingAt and MinSettleHeight if delayed by voucher
+		if sv.MinSettleHeight != 0 {
+			if st.SettlingAt != 0 && st.SettlingAt < sv.MinSettleHeight {
+				st.SettlingAt = sv.MinSettleHeight
 			}
-			if st.MinCloseHeight < sv.MinCloseHeight {
-				st.MinCloseHeight = sv.MinCloseHeight
+			if st.MinSettleHeight < sv.MinSettleHeight {
+				st.MinSettleHeight = sv.MinSettleHeight
 			}
 		}
 		return nil
@@ -161,20 +171,19 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *PCAUp
 	return &adt.EmptyValue{}
 }
 
-func (pca *PaymentChannelActor) Close(rt vmr.Runtime) *adt.EmptyValue {
-
+func (pca *PaymentChannelActor) Settle(rt vmr.Runtime) *adt.EmptyValue {
 	var st PaymentChannelActorState
 	rt.State().Transaction(&st, func() interface{} {
 
 		rt.ValidateImmediateCallerIs(st.From, st.To)
 
-		if st.ClosingAt != 0 {
-			rt.Abort(exitcode.ErrIllegalState, "channel already closing")
+		if st.SettlingAt != 0 {
+			rt.Abort(exitcode.ErrIllegalState, "channel already seettling")
 		}
 
-		st.ClosingAt = rt.CurrEpoch() + indices.PaymentChannel_PaymentChannelClosingDelay()
-		if st.ClosingAt < st.MinCloseHeight {
-			st.ClosingAt = st.MinCloseHeight
+		st.SettlingAt = rt.CurrEpoch() + indices.PaymentChannel_PaymentChannelSettleDelay()
+		if st.SettlingAt < st.MinSettleHeight {
+			st.SettlingAt = st.MinSettleHeight
 		}
 
 		return nil
@@ -186,34 +195,31 @@ func (pca *PaymentChannelActor) Collect(rt vmr.Runtime) *adt.EmptyValue {
 
 	var st PaymentChannelActorState
 	rt.State().Readonly(&st)
+	rt.ValidateImmediateCallerIs(st.From, st.To)
 
-	if st.ClosingAt == 0 {
-		rt.Abort(exitcode.ErrForbidden, "payment channel not closing or closed")
-	}
-
-	if rt.CurrEpoch() < st.ClosingAt {
-		rt.Abort(exitcode.ErrForbidden, "payment channel not closed yet")
+	if st.SettlingAt == 0 || rt.CurrEpoch() < st.SettlingAt {
+		rt.Abort(exitcode.ErrForbidden, "payment channel not settling or settled")
 	}
 
 	// send remaining balance to "From"
 
-	_, code := rt.Send(
+	_, codeFrom := rt.Send(
 		st.From,
 		builtin.MethodSend,
 		nil,
 		abi.NewTokenAmount(big.Sub(rt.CurrentBalance(), st.ToSend).Int64()),
 	)
-	builtin.RequireSuccess(rt, code, "Failed to send balance to `From`")
+	builtin.RequireSuccess(rt, codeFrom, "Failed to send balance to `From`")
 
 	// send ToSend to "To"
 
-	_, code2 := rt.Send(
+	_, codeTo := rt.Send(
 		st.From,
 		builtin.MethodSend,
 		nil,
 		abi.NewTokenAmount(st.ToSend.Int64()),
 	)
-	builtin.RequireSuccess(rt, code2, "Failed to send funds to `To`")
+	builtin.RequireSuccess(rt, codeTo, "Failed to send funds to `To`")
 
 	rt.State().Transaction(&st, func() interface{} {
 		st.ToSend = big.Zero()

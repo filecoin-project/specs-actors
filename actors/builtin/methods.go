@@ -127,7 +127,7 @@ const (
 	// State updates
 	Method_PaymentChannelActor_Create = MethodPlaceholder + iota
 	Method_PaymentChannelActor_UpdateChannelState
-	Method_PaymentChannelActor_Close
+	Method_PaymentChannelActor_Settle
 	Method_PaymentChannelActor_Collect
 
 	// State queries

@@ -23,10 +23,10 @@ type PaymentChannelActorState struct {
 	// Amount successfully redeemed through the payment channel, paid out on `Collect()`
 	ToSend abi.TokenAmount
 
-	// Height at which the channel will close
-	ClosingAt abi.ChainEpoch
-	// Height before which the channel cannot close
-	MinCloseHeight abi.ChainEpoch
+	// Height at which the channel can be `Collected`
+	SettlingAt abi.ChainEpoch
+	// Height before which the channel `ToSend` cannot be collected
+	MinSettleHeight abi.ChainEpoch
 
 	// Mapping from lane number to lane state for the channel
 	LaneStates map[int64]*LaneState
@@ -43,7 +43,6 @@ func (st *PaymentChannelActorState) UnmarshalCBOR(r io.Reader) error {
 // The Lane state tracks the latest (highest) voucher nonce used to merge the lane
 // as well as the amount it has already redeemed.
 type LaneState struct {
-	Closed   bool
 	Redeemed big.Int
 	Nonce    int64
 }
@@ -76,13 +75,13 @@ type SignedVoucher struct {
 	Nonce int64
 	// Amount voucher can be redeemed for
 	Amount big.Int
-	// (optional) MinCloseHeight can extend channel MinCloseHeight if needed
-	MinCloseHeight abi.ChainEpoch
+	// (optional) MinSettleHeight can extend channel MinSettleHeight if needed
+	MinSettleHeight abi.ChainEpoch
 
 	// (optional) Set of lanes to be merged into `Lane`
 	Merges []Merge
 
-	// `From`'s signature over the voucher
+	// Sender's signature over the voucher
 	Signature *acrypto.Signature
 }
 
