@@ -10,6 +10,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
+	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
@@ -138,7 +139,6 @@ func (st *StorageMinerActorState) _getSectorDealIDsAssert(sectorNo abi.SectorNum
 }
 
 func SectorsAMT_Empty() SectorsAMT {
-	IMPL_FINISH()
 	panic("")
 }
 
@@ -212,14 +212,14 @@ func MinerInfo_New(
 		PendingWorkerKey: WorkerKeyChange{},
 	}
 
-	TODO() // TODO anorth: determine how to generate/validate VRF key and initialize other fields
+	autil.TODO() // TODO anorth: determine how to generate/validate VRF key and initialize other fields
 
 	return *ret
 }
 
 func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
 	// TODO hs: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
-	TODO()
+	autil.TODO()
 	panic("")
 }
 

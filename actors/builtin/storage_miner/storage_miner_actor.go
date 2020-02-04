@@ -22,8 +22,6 @@ type Runtime = vmr.Runtime
 
 var Assert = autil.Assert
 var AssertNoError = autil.AssertNoError
-var IMPL_FINISH = autil.IMPL_FINISH
-var TODO = autil.TODO
 
 const epochUndefined = abi.ChainEpoch(-1)
 
@@ -329,7 +327,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
 	}
 
-	TODO()
+	autil.TODO()
 	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
@@ -823,7 +821,7 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 		challengeIndices[tix.ChallengeIndex] = true
 	}
 
-	TODO(challengedSectors)
+	autil.TODO(challengedSectors)
 	// TODO HS: Determine what should be the acceptance criterion for sector numbers
 	// proven in SurprisePoSt proofs.
 	//
@@ -920,6 +918,6 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 
 func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet cid.Cid) []abi.SectorNumber {
 	// TODO: HS
-	TODO()
+	autil.TODO()
 	panic("")
 }

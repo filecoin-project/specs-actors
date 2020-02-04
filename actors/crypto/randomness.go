@@ -62,11 +62,11 @@ func BigEndianBytesFromInt(x int) []byte {
 }
 
 func SHA256(data []byte) []byte {
-	autil.IMPL_FINISH()
+	autil.TODO()
 	return []byte{}
 }
 
 func IntFromBigEndianBytes(data []byte) int {
-	autil.IMPL_FINISH()
+	autil.TODO()
 	return -1
 }
