@@ -105,7 +105,7 @@ type Syscalls interface {
 	// Hashes input data using SHA256.
 	Hash_SHA256(data []byte) []byte
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
-	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (abi.UnsealedSectorCID, error)
+	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
 	VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) bool
 	// Verifies a proof of spacetime.

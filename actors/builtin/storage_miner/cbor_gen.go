@@ -7,11 +7,1023 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
+
+func (t *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{134}); err != nil {
+		return err
+	}
+
+	// t.PreCommittedSectors (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.PreCommittedSectors); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
+	}
+
+	// t.Sectors (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.Sectors); err != nil {
+		return xerrors.Errorf("failed to write cid field t.Sectors: %w", err)
+	}
+
+	// t.FaultSet (abi.BitField) (struct)
+	if err := t.FaultSet.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ProvingSet (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.ProvingSet); err != nil {
+		return xerrors.Errorf("failed to write cid field t.ProvingSet: %w", err)
+	}
+
+	// t.Info (storage_miner.MinerInfo) (struct)
+	if err := t.Info.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PoStState (storage_miner.MinerPoStState) (struct)
+	if err := t.PoStState.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 6 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.PreCommittedSectors (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PreCommittedSectors: %w", err)
+		}
+
+		t.PreCommittedSectors = c
+
+	}
+	// t.Sectors (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.Sectors: %w", err)
+		}
+
+		t.Sectors = c
+
+	}
+	// t.FaultSet (abi.BitField) (struct)
+
+	{
+
+		if err := t.FaultSet.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.ProvingSet (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.ProvingSet: %w", err)
+		}
+
+		t.ProvingSet = c
+
+	}
+	// t.Info (storage_miner.MinerInfo) (struct)
+
+	{
+
+		if err := t.Info.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PoStState (storage_miner.MinerPoStState) (struct)
+
+	{
+
+		if err := t.PoStState.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{133}); err != nil {
+		return err
+	}
+
+	// t.Owner (address.Address) (struct)
+	if err := t.Owner.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Worker (address.Address) (struct)
+	if err := t.Worker.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PendingWorkerKey (storage_miner.WorkerKeyChange) (struct)
+	if err := t.PendingWorkerKey.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PeerId (peer.ID) (string)
+	if len(t.PeerId) > cbg.MaxLength {
+		return xerrors.Errorf("Value in field t.PeerId was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.PeerId)))); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(t.PeerId)); err != nil {
+		return err
+	}
+
+	// t.SectorSize (abi.SectorSize) (int64)
+	if t.SectorSize >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorSize)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 5 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Owner (address.Address) (struct)
+
+	{
+
+		if err := t.Owner.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.Worker (address.Address) (struct)
+
+	{
+
+		if err := t.Worker.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PendingWorkerKey (storage_miner.WorkerKeyChange) (struct)
+
+	{
+
+		if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PeerId (peer.ID) (string)
+
+	{
+		sval, err := cbg.ReadString(br)
+		if err != nil {
+			return err
+		}
+
+		t.PeerId = peer.ID(sval)
+	}
+	// t.SectorSize (abi.SectorSize) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.SectorSize = abi.SectorSize(extraI)
+	}
+	return nil
+}
+
+func (t *MinerPoStState) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{132}); err != nil {
+		return err
+	}
+
+	// t.LastSuccessfulPoSt (abi.ChainEpoch) (int64)
+	if t.LastSuccessfulPoSt >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.LastSuccessfulPoSt))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.LastSuccessfulPoSt)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.SurpriseChallengeEpoch (abi.ChainEpoch) (int64)
+	if t.SurpriseChallengeEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SurpriseChallengeEpoch))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SurpriseChallengeEpoch)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.ChallengedSectors ([]abi.SectorNumber) (slice)
+	if len(t.ChallengedSectors) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ChallengedSectors was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.ChallengedSectors)))); err != nil {
+		return err
+	}
+	for _, v := range t.ChallengedSectors {
+		if v >= 0 {
+			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
+				return err
+			}
+		} else {
+			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.NumConsecutiveFailures (int64) (int64)
+	if t.NumConsecutiveFailures >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumConsecutiveFailures))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NumConsecutiveFailures)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *MinerPoStState) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 4 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.LastSuccessfulPoSt (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.LastSuccessfulPoSt = abi.ChainEpoch(extraI)
+	}
+	// t.SurpriseChallengeEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.SurpriseChallengeEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.ChallengedSectors ([]abi.SectorNumber) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ChallengedSectors: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.ChallengedSectors = make([]abi.SectorNumber, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+		{
+			maj, extra, err := cbg.CborReadHeader(br)
+			var extraI int64
+			if err != nil {
+				return err
+			}
+			switch maj {
+			case cbg.MajUnsignedInt:
+				extraI = int64(extra)
+				if extraI < 0 {
+					return fmt.Errorf("int64 positive overflow")
+				}
+			case cbg.MajNegativeInt:
+				extraI = int64(extra)
+				if extraI < 0 {
+					return fmt.Errorf("int64 negative oveflow")
+				}
+				extraI = -1 - extraI
+			default:
+				return fmt.Errorf("wrong type for int64 field: %d", maj)
+			}
+
+			t.ChallengedSectors[i] = abi.SectorNumber(extraI)
+		}
+	}
+
+	// t.NumConsecutiveFailures (int64) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.NumConsecutiveFailures = int64(extraI)
+	}
+	return nil
+}
+
+func (t *SectorPreCommitOnChainInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{131}); err != nil {
+		return err
+	}
+
+	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+	if err := t.Info.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PreCommitDeposit (big.Int) (struct)
+	if err := t.PreCommitDeposit.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PreCommitEpoch (abi.ChainEpoch) (int64)
+	if t.PreCommitEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.PreCommitEpoch))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.PreCommitEpoch)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *SectorPreCommitOnChainInfo) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+
+	{
+
+		if err := t.Info.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PreCommitDeposit (big.Int) (struct)
+
+	{
+
+		if err := t.PreCommitDeposit.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PreCommitEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.PreCommitEpoch = abi.ChainEpoch(extraI)
+	}
+	return nil
+}
+
+func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{133}); err != nil {
+		return err
+	}
+
+	// t.SectorNumber (abi.SectorNumber) (int64)
+	if t.SectorNumber >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorNumber))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorNumber)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.SealedCID (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.SealedCID); err != nil {
+		return xerrors.Errorf("failed to write cid field t.SealedCID: %w", err)
+	}
+
+	// t.SealEpoch (abi.ChainEpoch) (int64)
+	if t.SealEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealEpoch))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealEpoch)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.DealIDs ([]abi.DealID) (slice)
+	if len(t.DealIDs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.DealIDs was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.DealIDs)))); err != nil {
+		return err
+	}
+	for _, v := range t.DealIDs {
+		if v >= 0 {
+			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
+				return err
+			}
+		} else {
+			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.Expiration (abi.ChainEpoch) (int64)
+	if t.Expiration >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Expiration))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.Expiration)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 5 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.SectorNumber (abi.SectorNumber) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.SectorNumber = abi.SectorNumber(extraI)
+	}
+	// t.SealedCID (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.SealedCID: %w", err)
+		}
+
+		t.SealedCID = c
+
+	}
+	// t.SealEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.SealEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.DealIDs ([]abi.DealID) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.DealIDs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.DealIDs = make([]abi.DealID, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+		{
+			maj, extra, err := cbg.CborReadHeader(br)
+			var extraI int64
+			if err != nil {
+				return err
+			}
+			switch maj {
+			case cbg.MajUnsignedInt:
+				extraI = int64(extra)
+				if extraI < 0 {
+					return fmt.Errorf("int64 positive overflow")
+				}
+			case cbg.MajNegativeInt:
+				extraI = int64(extra)
+				if extraI < 0 {
+					return fmt.Errorf("int64 negative oveflow")
+				}
+				extraI = -1 - extraI
+			default:
+				return fmt.Errorf("wrong type for int64 field: %d", maj)
+			}
+
+			t.DealIDs[i] = abi.DealID(extraI)
+		}
+	}
+
+	// t.Expiration (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.Expiration = abi.ChainEpoch(extraI)
+	}
+	return nil
+}
+
+func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{133}); err != nil {
+		return err
+	}
+
+	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+	if err := t.Info.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ActivationEpoch (abi.ChainEpoch) (int64)
+	if t.ActivationEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.ActivationEpoch))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ActivationEpoch)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.DeclaredFaultEpoch (abi.ChainEpoch) (int64)
+	if t.DeclaredFaultEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.DeclaredFaultEpoch))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.DeclaredFaultEpoch)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.DeclaredFaultDuration (abi.ChainEpoch) (int64)
+	if t.DeclaredFaultDuration >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.DeclaredFaultDuration))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.DeclaredFaultDuration)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.DealWeight (big.Int) (struct)
+	if err := t.DealWeight.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 5 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+
+	{
+
+		if err := t.Info.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.ActivationEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.ActivationEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.DeclaredFaultEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.DeclaredFaultEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.DeclaredFaultDuration (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.DeclaredFaultDuration = abi.ChainEpoch(extraI)
+	}
+	// t.DealWeight (big.Int) (struct)
+
+	{
+
+		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (t *WorkerKeyChange) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.NewWorker (address.Address) (struct)
+	if err := t.NewWorker.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.EffectiveAt (abi.ChainEpoch) (int64)
+	if t.EffectiveAt >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.EffectiveAt))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.EffectiveAt)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *WorkerKeyChange) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.NewWorker (address.Address) (struct)
+
+	{
+
+		if err := t.NewWorker.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.EffectiveAt (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.EffectiveAt = abi.ChainEpoch(extraI)
+	}
+	return nil
+}
 
 func (t *PreCommitSectorParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -76,7 +1088,23 @@ func (t *ProveCommitSectorParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.SectorNumber (abi.SectorNumber) (int64)
+	if t.SectorNumber >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorNumber))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorNumber)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.Proof (abi.SealProof) (struct)
+	if err := t.Proof.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -93,10 +1121,44 @@ func (t *ProveCommitSectorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.SectorNumber (abi.SectorNumber) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.SectorNumber = abi.SectorNumber(extraI)
+	}
+	// t.Proof (abi.SealProof) (struct)
+
+	{
+
+		if err := t.Proof.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
