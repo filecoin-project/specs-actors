@@ -10,7 +10,6 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -214,7 +213,7 @@ func (st *StorageMarketActorState) processDealInitTimedOut(rt Runtime, dealID ab
 
 	st.unlockBalance(rt, deal.Proposal.Client, deal.Proposal.ClientBalanceRequirement())
 
-	amountSlashed = indices.StorageDeal_ProviderInitTimedOutSlashAmount(deal.Proposal.ProviderCollateral)
+	amountSlashed = collateralPenaltyForDealActivationMissed(deal.Proposal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.Proposal.ProviderBalanceRequirement(), amountSlashed)
 
 	st.slashBalance(rt, deal.Proposal.Provider, amountSlashed)

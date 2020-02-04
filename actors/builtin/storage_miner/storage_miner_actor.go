@@ -15,7 +15,6 @@ import (
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -93,7 +92,7 @@ func (a *StorageMinerActor) StageWorkerKeyChange(rt Runtime, params *StageWorker
 
 		keyChange := WorkerKeyChange{
 			NewWorker:   params.newKey,
-			EffectiveAt: rt.CurrEpoch() + indices.StorageMining_WorkerKeyChangeFreeze(),
+			EffectiveAt: rt.CurrEpoch() + WorkerKeyChangeDelay,
 		}
 
 		// note that this may replace another pending key change
@@ -147,7 +146,7 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValu
 			return false
 		}
 		// Do not challenge if the last successful PoSt was recent enough.
-		noChallengePeriod := indices.StorageMining_PoStNoChallengePeriod()
+		noChallengePeriod := storage_power.SurprisePoStNoChallengePeriod
 		if st.PoStState.LastSuccessfulPoSt >= rt.CurrEpoch()-noChallengePeriod {
 			return false
 		}
@@ -156,7 +155,7 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValu
 		err := rt.CurrReceiver().MarshalCBOR(&curRecBuf)
 		autil.AssertNoError(err)
 
-		randomnessK := rt.GetRandomness(rt.CurrEpoch() - indices.StorageMining_SpcLookbackPoSt())
+		randomnessK := rt.GetRandomness(rt.CurrEpoch() - PoStLookback)
 		challengedSectorsRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStSampleSectors, randomnessK, rt.CurrReceiver())
 
 		st.ProvingSet = st.ComputeProvingSet()
@@ -180,7 +179,7 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValu
 			EventType: CronEventType_Miner_SurpriseExpiration,
 			Sectors:   nil,
 		}
-		surpriseDuration := indices.StorageMining_SurprisePoStChallengeDuration()
+		surpriseDuration := storage_power.SurprisePostChallengeDuration
 		a.enrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, &cronPayload)
 	}
 	return &adt.EmptyValue{}
@@ -279,8 +278,8 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 		rt.Abort(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
 	}
 
-	cidx := rt.CurrIndices()
-	depositReq := cidx.StorageMining_PreCommitDeposit(st.getSectorSize(), params.info.Expiration)
+
+	depositReq := precommitDeposit(st.getSectorSize(), params.info.Expiration - rt.CurrEpoch())
 	confirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
@@ -306,7 +305,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 		EventType: CronEventType_Miner_PreCommitExpiry,
 		Sectors:   []abi.SectorNumber{params.info.SectorNumber},
 	}
-	expiryBound := rt.CurrEpoch() + indices.StorageMining_MaxProveCommitSectorEpoch() + 1
+	expiryBound := rt.CurrEpoch() + PoRepMaxDelay + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
@@ -332,7 +331,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 		rt.Abort(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
-	if rt.CurrEpoch() > precommit.PreCommitEpoch+indices.StorageMining_MaxProveCommitSectorEpoch() || rt.CurrEpoch() < precommit.PreCommitEpoch+indices.StorageMining_MinProveCommitSectorEpoch() {
+	if rt.CurrEpoch() > precommit.PreCommitEpoch+PoRepMaxDelay || rt.CurrEpoch() < precommit.PreCommitEpoch+PoRepMinDelay {
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
 	}
 
@@ -476,7 +475,7 @@ func (a *StorageMinerActor) TerminateSectors(rt Runtime, params *TerminateSector
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	for _, sectorNumber := range params.sectorNumbers {
-		a._rtTerminateSector(rt, sectorNumber, builtin.UserTermination)
+		a._rtTerminateSector(rt, sectorNumber, storage_power.SectorTerminationManual)
 	}
 
 	return &adt.EmptyValue{}
@@ -507,7 +506,7 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTem
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, requiredFee)
 	builtin.RequireSuccess(rt, code, "failed to burn fee")
 
-	effectiveBeginEpoch := rt.CurrEpoch() + indices.StorageMining_DeclaredFaultEffectiveDelay()
+	effectiveBeginEpoch := rt.CurrEpoch() + DeclaredFaultEffectiveDelay
 	effectiveEndEpoch := effectiveBeginEpoch + params.duration
 
 	store := adt.AsStore(rt)
@@ -677,7 +676,7 @@ func (a *StorageMinerActor) _rtCheckPreCommitExpiry(rt Runtime, sectorNo abi.Sec
 		return
 	}
 
-	if rt.CurrEpoch()-sector.PreCommitEpoch > indices.StorageMining_MaxProveCommitSectorEpoch() {
+	if rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
 		rt.State().Transaction(&st, func() interface{} {
 			err = st.deletePrecommitttedSector(store, sectorNo)
 			if err != nil {
@@ -704,12 +703,12 @@ func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.Se
 	// Note: the following test may be false, if sector expiration has been extended by the worker
 	// in the interim after the Cron request was enrolled.
 	if rt.CurrEpoch() >= sector.Info.Expiration {
-		a._rtTerminateSector(rt, sectorNumber, builtin.NormalExpiration)
+		a._rtTerminateSector(rt, sectorNumber, storage_power.SectorTerminationExpired)
 	}
 	return
 }
 
-func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType builtin.SectorTermination) {
+func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType storage_power.SectorTermination) {
 	store := adt.AsStore(rt)
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
@@ -780,15 +779,16 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 		return
 	}
 
-	provingPeriod := indices.StorageMining_SurprisePoStProvingPeriod()
-	if rt.CurrEpoch() < st.PoStState.SurpriseChallengeEpoch+provingPeriod {
+	window := storage_power.SurprisePostChallengeDuration
+	if rt.CurrEpoch() < st.PoStState.SurpriseChallengeEpoch+window {
 		// Challenge not yet expired.
 		return
 	}
 
 	numConsecutiveFailures := st.PoStState.NumConsecutiveFailures + 1
 
-	if numConsecutiveFailures > indices.StoragePower_SurprisePoStMaxConsecutiveFailures() {
+	// This comparison with the failure limit should happen only in the power actor, not here.
+	if numConsecutiveFailures > storage_power.SurprisePostFailureLimit {
 		// Terminate all sectors, notify power and market actors to terminate
 		// associated storage deals, and reset miner's PoSt state to OK.
 		if err := a._rtNotifyMarketForTerminatedSectors(rt); err != nil {
@@ -922,7 +922,7 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 	// 	rt.AbortStateMsg("Invalid Surprise PoSt. Tickets do not meet target.")
 	// }
 
-	randomnessK := rt.GetRandomness(challengeEpoch - indices.StorageMining_SpcLookbackPoSt())
+	randomnessK := rt.GetRandomness(challengeEpoch - PoStLookback)
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
 	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, randomnessK, rt.CurrReceiver())
@@ -952,7 +952,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 
 	// if IsValidAtCommitEpoch(onChainInfo.RegisteredProof, rt.CurrEpoch()) // Ensure proof type is valid at current epoch.
 	// Check randomness.
-	if onChainInfo.SealEpoch < (rt.CurrEpoch() - indices.StorageMining_Finality() - indices.StorageMining_MaxSealTime32GiBWinStackedSDR()) {
+	if onChainInfo.SealEpoch < (rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[abi.RegisteredProof_WinStackedDRG32GiBSeal]) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Seal references ticket from invalid epoch")
 	}
 

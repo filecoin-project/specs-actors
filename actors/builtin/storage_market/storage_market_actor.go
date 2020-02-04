@@ -349,24 +349,22 @@ func validateDeal(rt Runtime, deal StorageDealProposal) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 
-	inds := rt.CurrIndices()
-
-	minDuration, maxDuration := inds.StorageDeal_DurationBounds(deal.PieceSize, deal.StartEpoch)
+	minDuration, maxDuration := dealDurationBounds(deal.PieceSize)
 	if deal.Duration() < minDuration || deal.Duration() > maxDuration {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
 	}
 
-	minPrice, maxPrice := inds.StorageDeal_StoragePricePerEpochBounds(deal.PieceSize, deal.StartEpoch, deal.EndEpoch)
+	minPrice, maxPrice := dealPricePerEpochBounds(deal.PieceSize, deal.Duration())
 	if deal.StoragePricePerEpoch.LessThan(minPrice) || deal.StoragePricePerEpoch.GreaterThan(maxPrice) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := inds.StorageDeal_ProviderCollateralBounds(deal.PieceSize, deal.StartEpoch, deal.EndEpoch)
+	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(deal.PieceSize, deal.Duration())
 	if deal.ProviderCollateral.LessThan(minProviderCollateral) || deal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
-	minClientCollateral, maxClientCollateral := inds.StorageDeal_ClientCollateralBounds(deal.PieceSize, deal.StartEpoch, deal.EndEpoch)
+	minClientCollateral, maxClientCollateral := dealClientCollateralBounds(deal.PieceSize, deal.Duration())
 	if deal.ClientCollateral.LessThan(minClientCollateral) || deal.ClientCollateral.GreaterThan(maxClientCollateral) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}

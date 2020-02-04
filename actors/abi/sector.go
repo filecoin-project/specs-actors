@@ -26,7 +26,7 @@ type SectorID struct {
 }
 
 // The unit of sector weight (power-epochs)
-type SectorWeight big.Int
+type SectorWeight = big.Int
 
 // The unit of storage power (measured in bytes)
 type StoragePower = big.Int

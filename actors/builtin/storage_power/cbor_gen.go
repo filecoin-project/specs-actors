@@ -7,7 +7,6 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
@@ -657,7 +656,7 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TerminationType (builtin.SectorTermination) (int64)
+	// t.TerminationType (storage_power.SectorTermination) (int64)
 	if t.TerminationType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TerminationType))); err != nil {
 			return err
@@ -690,7 +689,7 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.TerminationType (builtin.SectorTermination) (int64)
+	// t.TerminationType (storage_power.SectorTermination) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -713,7 +712,7 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.TerminationType = builtin.SectorTermination(extraI)
+		t.TerminationType = SectorTermination(extraI)
 	}
 	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
 
