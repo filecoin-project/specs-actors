@@ -1,7 +1,6 @@
 package storage_power
 
 import (
-	"io"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
@@ -29,7 +28,7 @@ type StoragePowerActorState struct {
 	PoStDetectedFaultMiners  cid.Cid // Set, HAMT[addr.Address]struct{}
 	ClaimedPower             cid.Cid // Map, HAMT[address]StoragePower
 	NominalPower             cid.Cid // Map, HAMT[address]StoragePower
-	NumMinersMeetingMinPower int
+	NumMinersMeetingMinPower int64
 }
 
 type CronEvent struct {
@@ -389,20 +388,4 @@ func addrInArray(a addr.Address, list []addr.Address) bool {
 		}
 	}
 	return false
-}
-
-func (st *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
-}
-
-func (st *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
-}
-
-func (c *CronEvent) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
-}
-
-func (c *CronEvent) UnmarshalCBOR(r io.Reader) error {
-	panic("implement me")
 }
