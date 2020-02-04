@@ -15,6 +15,301 @@ import (
 
 var _ = xerrors.Errorf
 
+func (t *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{137}); err != nil {
+		return err
+	}
+
+	// t.TotalNetworkPower (big.Int) (struct)
+	if err := t.TotalNetworkPower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PowerTable (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.PowerTable); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PowerTable: %w", err)
+	}
+
+	// t.MinerCount (int64) (int64)
+	if t.MinerCount >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MinerCount))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.MinerCount)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.EscrowTable (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.EscrowTable); err != nil {
+		return xerrors.Errorf("failed to write cid field t.EscrowTable: %w", err)
+	}
+
+	// t.CronEventQueue (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.CronEventQueue); err != nil {
+		return xerrors.Errorf("failed to write cid field t.CronEventQueue: %w", err)
+	}
+
+	// t.PoStDetectedFaultMiners (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.PoStDetectedFaultMiners); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PoStDetectedFaultMiners: %w", err)
+	}
+
+	// t.ClaimedPower (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.ClaimedPower); err != nil {
+		return xerrors.Errorf("failed to write cid field t.ClaimedPower: %w", err)
+	}
+
+	// t.NominalPower (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.NominalPower); err != nil {
+		return xerrors.Errorf("failed to write cid field t.NominalPower: %w", err)
+	}
+
+	// t.NumMinersMeetingMinPower (int64) (int64)
+	if t.NumMinersMeetingMinPower >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumMinersMeetingMinPower))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NumMinersMeetingMinPower)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 9 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.TotalNetworkPower (big.Int) (struct)
+
+	{
+
+		if err := t.TotalNetworkPower.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PowerTable (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PowerTable: %w", err)
+		}
+
+		t.PowerTable = c
+
+	}
+	// t.MinerCount (int64) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.MinerCount = int64(extraI)
+	}
+	// t.EscrowTable (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.EscrowTable: %w", err)
+		}
+
+		t.EscrowTable = c
+
+	}
+	// t.CronEventQueue (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.CronEventQueue: %w", err)
+		}
+
+		t.CronEventQueue = c
+
+	}
+	// t.PoStDetectedFaultMiners (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PoStDetectedFaultMiners: %w", err)
+		}
+
+		t.PoStDetectedFaultMiners = c
+
+	}
+	// t.ClaimedPower (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.ClaimedPower: %w", err)
+		}
+
+		t.ClaimedPower = c
+
+	}
+	// t.NominalPower (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.NominalPower: %w", err)
+		}
+
+		t.NominalPower = c
+
+	}
+	// t.NumMinersMeetingMinPower (int64) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.NumMinersMeetingMinPower = int64(extraI)
+	}
+	return nil
+}
+
+func (t *CronEvent) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.MinerAddr (address.Address) (struct)
+	if err := t.MinerAddr.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.CallbackPayload ([]uint8) (slice)
+	if len(t.CallbackPayload) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.CallbackPayload was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.CallbackPayload)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.CallbackPayload); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *CronEvent) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.MinerAddr (address.Address) (struct)
+
+	{
+
+		if err := t.MinerAddr.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.CallbackPayload ([]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.CallbackPayload: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.CallbackPayload = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.CallbackPayload); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (t *AddBalanceParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
