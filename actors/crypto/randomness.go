@@ -66,3 +66,9 @@ func SHA256(data []byte) []byte {
 	autil.TODO()
 	return []byte{}
 }
+
+func IntFromBigEndianBytes(data []byte) int {
+	ret := big.Zero()
+	ret.SetBytes(data)
+	return int(ret.Int64())
+}
