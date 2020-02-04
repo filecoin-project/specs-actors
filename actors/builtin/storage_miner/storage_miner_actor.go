@@ -55,9 +55,6 @@ type ConstructorParams = storage_power.MinerConstructorParams
 func (a *StorageMinerActor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
-	// TODO: determine where these parameters come from or whether we actually need them.
-	var sealPartitions, electionPoStPartitions, surprisePoStPartitions int64
-
 	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
 	if params.WorkerAddr.Protocol() != addr.BLS {
 		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
@@ -65,8 +62,7 @@ func (a *StorageMinerActor) Constructor(rt Runtime, params *ConstructorParams) *
 
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize,
-			sealPartitions, electionPoStPartitions, surprisePoStPartitions)
+		state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 		}

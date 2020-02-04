@@ -73,9 +73,6 @@ type MinerInfo struct {
 
 	// Amount of space in each sector committed to the network by this miner.
 	SectorSize             abi.SectorSize
-	SealPartitions         int64
-	ElectionPoStPartitions int64
-	SurprisePoStPartitions int64
 }
 
 type WorkerKeyChange struct {
@@ -110,8 +107,7 @@ type SectorProveCommitInfo struct {
 	Proof        abi.SealProof
 }
 
-func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize,
-	sealPartitions, electionPoStPartitions, surprisePoStPartitions int64) (*StorageMinerActorState, error) {
+func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*StorageMinerActorState, error) {
 	emptyIntMap, err := adt.MakeEmptyIntMap(store)
 	if err != nil {
 		return nil, err
@@ -133,9 +129,6 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 			PendingWorkerKey:       WorkerKeyChange{},
 			PeerId:                 peerId,
 			SectorSize:             sectorSize,
-			SealPartitions:         sealPartitions,
-			ElectionPoStPartitions: electionPoStPartitions,
-			SurprisePoStPartitions: surprisePoStPartitions,
 		},
 	}, nil
 }
