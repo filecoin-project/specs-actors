@@ -4,8 +4,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
@@ -78,13 +77,3 @@ func ValidatePledgeAddress(rt runtime.Runtime, addr addr.Address) addr.Address {
 	return ownerAddr
 }
 
-func RT_ConfirmFundsReceiptOrAbort_RefundRemainder(rt runtime.Runtime, fundsRequired abi.TokenAmount) {
-	if rt.ValueReceived().LessThan(fundsRequired) {
-		rt.Abort(exitcode.ErrInsufficientFunds, "Insufficient funds received accompanying message")
-	}
-
-	if rt.ValueReceived().GreaterThan(fundsRequired) {
-		_, code := rt.Send(rt.ImmediateCaller(), MethodSend, nil, big.Sub(rt.ValueReceived(), fundsRequired))
-		RequireSuccess(rt, code, "failed to transfer refund")
-	}
-}
