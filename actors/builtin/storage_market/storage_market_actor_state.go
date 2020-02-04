@@ -377,7 +377,7 @@ func dealProposalIsInternallyValid(rt Runtime, dealP StorageDealProposal) bool {
 		return false
 	}
 
-	IMPL_FINISH()
+	TODO()
 	// Determine which subset of DealProposal to use as the message to be signed by the client.
 	var m []byte
 
