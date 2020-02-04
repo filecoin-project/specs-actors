@@ -14,7 +14,7 @@ type CronActor struct {
 func (a CronActor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
-		2: a.EpochTick,
+		2:                         a.EpochTick,
 	}
 }
 
