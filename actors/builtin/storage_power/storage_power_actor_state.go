@@ -149,7 +149,7 @@ func (st *StoragePowerActorState) subtractMinerPledge(store adt.Store, miner add
 	balanceFloor abi.TokenAmount) (abi.TokenAmount, error) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 	table := adt.AsBalanceTable(store, st.EscrowTable)
-	subtracted, err := table.SubtractWithMininum(miner, amount, balanceFloor)
+	subtracted, err := table.SubtractWithMinimum(miner, amount, balanceFloor)
 	if err == nil {
 		st.EscrowTable = table.Root()
 	}

@@ -11,7 +11,7 @@ import (
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
-// Array stores a contiguous sequence of values in an AMT.
+// Array stores a sparse sequence of values in an AMT.
 type Array struct {
 	root  cid.Cid
 	store Store
@@ -38,14 +38,37 @@ func (a *Array) Root() cid.Cid {
 	return a.root
 }
 
-// Appends a value to the end of the array.
-func (a *Array) Append(value runtime.CBORMarshaler) error {
+// Appends a value to the end of the array. Assumes continuous array.
+// If the array isn't continuous use Set and a separate counter
+func (a *Array) AppendContinuous(value runtime.CBORMarshaler) error {
 	root, err := amt.LoadAMT(a.store.Context(), a.store, a.root)
 	if err != nil {
 		return errors.Wrapf(err, "array append failed to load root %v", a.root)
 	}
 	if root.Set(a.store.Context(), root.Count, value) != nil {
 		return errors.Wrapf(err, "array append failed to set index %v value %v in root %v, ", root.Count, value, a.root)
+	}
+	return a.write(root)
+}
+
+func (a *Array) Set(i uint64, value runtime.CBORMarshaler) error {
+	root, err := amt.LoadAMT(a.store.Context(), a.store, a.root)
+	if err != nil {
+		return errors.Wrapf(err, "array set failed to load root %v", a.root)
+	}
+	if root.Set(a.store.Context(), i, value) != nil {
+		return errors.Wrapf(err, "array set failed to set index %v value %v in root %v, ", i, value, a.root)
+	}
+	return a.write(root)
+}
+
+func (a *Array) Delete(i uint64) error {
+	root, err := amt.LoadAMT(a.store.Context(), a.store, a.root)
+	if err != nil {
+		return errors.Wrapf(err, "array delete failed to load root %v", a.root)
+	}
+	if root.Delete(a.store.Context(), i) != nil {
+		return errors.Wrapf(err, "array delete failed to delete index %v in root %v, ", i, a.root)
 	}
 	return a.write(root)
 }
@@ -78,4 +101,23 @@ func (a *Array) write(root *amt.Root) error {
 	}
 	a.root = newCid
 	return nil
+}
+
+// Get retrieves array element into the 'out' unmarshaler, returning a boolean
+//  indicating whether the element was found in the array
+func (a *Array) Get(k uint64, out runtime.CBORUnmarshaler) (bool, error) {
+	root, err := amt.LoadAMT(a.store.Context(), a.store, a.root)
+	if err != nil {
+		return false, errors.Wrapf(err, "array get failed to load root %v", a.root)
+	}
+
+	err = root.Get(a.store.Context(), k, out)
+	if err == nil {
+		return true, nil
+	}
+	if _, nf := err.(amt.ErrNotFound); nf {
+		return false, nil
+	}
+
+	return false, err
 }

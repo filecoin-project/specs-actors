@@ -155,7 +155,7 @@ func (rt *Runtime) ValueReceived() abi.TokenAmount {
 	return rt.valueReceived
 }
 
-func (rt *Runtime) GetActorCodeID(addr addr.Address) (ret cid.Cid, ok bool) {
+func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
 	rt.requireInCall()
 	panic("implement me")
 }

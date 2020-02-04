@@ -37,7 +37,7 @@ type StorageDealProposal struct {
 }
 
 func (p *StorageDealProposal) Duration() abi.ChainEpoch {
-	return (p.EndEpoch - p.StartEpoch)
+	return p.EndEpoch - p.StartEpoch
 }
 
 func (p *StorageDealProposal) TotalStorageFee() abi.TokenAmount {
@@ -52,15 +52,9 @@ func (p *StorageDealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 	return p.ProviderCollateral
 }
 
-// Everything in this struct will go on chain
-// Provider's signature is implicit in the message containing this structure.
-type StorageDeal struct {
-	Proposal StorageDealProposal
-}
-
 type OnChainDeal struct {
 	ID               abi.DealID
-	Deal             StorageDeal
+	Proposal         StorageDealProposal
 	SectorStartEpoch abi.ChainEpoch // -1 if not yet included in proven sector
 	LastUpdatedEpoch abi.ChainEpoch // -1 if deal state never updated
 	SlashEpoch       abi.ChainEpoch // -1 if deal never slashed

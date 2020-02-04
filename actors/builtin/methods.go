@@ -21,7 +21,7 @@ var MethodsAccount = accMethods{1, 2}
 
 type iaMethods struct {
 	Constructor abi.MethodNum
-	Exec abi.MethodNum
+	Exec        abi.MethodNum
 }
 
 var MethodsInit = iaMethods{MethodConstructor, 2}
@@ -82,10 +82,8 @@ const (
 )
 
 const (
-	// Cron tick method
-	Method_StorageMarketActor_OnEpochTickEnd = MethodPlaceholder + iota
-
 	// User-callable methods
+	Method_StorageMarketActor_HandleExpiredDeals = MethodPlaceholder + iota
 	Method_StorageMarketActor_AddBalance
 	Method_StorageMarketActor_WithdrawBalance
 	Method_StorageMarketActor_PublishStorageDeals
