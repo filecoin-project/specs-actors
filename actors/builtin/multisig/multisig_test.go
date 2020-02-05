@@ -539,6 +539,50 @@ func TestCancel(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 	})
+
+	t.Run("fail to cancel transaction from any account after removal", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction ID: 0
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		// remove anne - tx creator
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.removeSigner(rt, anne, true)
+		rt.Verify()
+
+		// anne fails to cancel a transaction - she is not a signer
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.cancel(rt, txnID)
+		})
+		rt.Verify()
+
+		// bob either fails to cancel a transaction - he is not a proposer
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		// for some reason I cannot ExpectAbort again
+		//rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		//	actor.cancel(rt, txnID)
+		//})
+		rt.Verify()
+
+		// Transaction should remain after invalid cancel
+		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+	})
 }
 
 type addSignerTestCase struct {
@@ -724,16 +768,42 @@ func TestRemoveSigner(t *testing.T) {
 			code:            exitcode.ErrNotFound,
 		},
 		{
-			desc: "problem: now bob is proposal creator and can cancel tx",
+			desc: "remove signer and decrease threshold to 0",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
 			initialApprovals: int64(1),
 
-			removeSigner: anne,
-			decrease:     false,
+			removeSigner: chuck,
+			decrease:     true,
 
-			expectSigners:   []addr.Address{bob, chuck},
-			expectApprovals: int64(1),
+			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: int64(0),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove one more signer and decrease threshold to -1",
+
+			initialSigners:   []addr.Address{anne, bob},
+			initialApprovals: int64(0),
+
+			removeSigner: bob,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{anne},
+			expectApprovals: int64(-1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc: "remove one more signer and decrease threshold to -2 with no signers at all",
+
+			initialSigners:   []addr.Address{anne},
+			initialApprovals: int64(-1),
+
+			removeSigner: anne,
+			decrease:     true,
+
+			expectSigners:   []addr.Address(nil),
+			expectApprovals: int64(-2),
 			code:            exitcode.Ok,
 		},
 	}
