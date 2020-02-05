@@ -299,7 +299,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 	})
 
 	if params.info.Expiration <= rt.CurrEpoch() {
-		rt.Abort(exitcode.ErrIllegalArgument, "sector must expire (%v) after now (%v)", params.info.Expiration, rt.CurrEpoch())
+		rt.Abort(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.info.Expiration, rt.CurrEpoch())
 	}
 
 	// Request deferred Cron check for PreCommit expiry check.
@@ -319,7 +319,6 @@ type ProveCommitSectorParams struct {
 
 func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
 	sectorNo := params.info.SectorNumber
-	store := adt.AsStore(rt)
 
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
@@ -365,17 +364,15 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	autil.AssertNoError(ret.Into(&dealWeight))
 
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.putSector(store, &SectorOnChainInfo{
+		if err = st.putSector(adt.AsStore(rt), &SectorOnChainInfo{
 			Info:            precommit.Info,
 			ActivationEpoch: rt.CurrEpoch(),
 			DealWeight:      dealWeight,
-		})
-		if err != nil {
+		}); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
-		err = st.deletePrecommitttedSector(sectorNo)
-		if err != nil {
+		if err = st.deletePrecommitttedSector(sectorNo); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "faile to delete proven precommit for sector %v: %v", sectorNo, err)
 		}
 
@@ -446,8 +443,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, params *ExtendSec
 		}
 
 		sector.Info.Expiration = params.newExpiration
-		err = st.putSector(store, sector)
-		if err != nil {
+		if err = st.putSector(store, sector); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
 		return nil
@@ -534,8 +530,7 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTem
 
 			sector.DeclaredFaultEpoch = rt.CurrEpoch()
 			sector.DeclaredFaultDuration = params.duration
-			err = st.putSector(store, sector)
-			if err != nil {
+			if err = st.putSector(store, sector); err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 			}
 		}
@@ -566,8 +561,7 @@ func (a *StorageMinerActor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCr
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var payload CronEventPayload
-	err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload))
-	if err != nil {
+	if err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload)); err != nil {
 		rt.Abort(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
 	}
 
@@ -656,14 +650,15 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 		builtin.RequireSuccess(rt, code, "failed to end fault")
 
 		rt.State().Transaction(&st, func() interface{} {
-			st.FaultSet.Unset(uint64(sectorNumber))
+			if err = st.FaultSet.Unset(uint64(sectorNumber)); err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNumber, err)
+			}
 			return nil
 		})
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.putSector(store, sector)
-		if err != nil {
+		if err = st.putSector(store, sector); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 		}
 		return nil
@@ -790,7 +785,9 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 	if numConsecutiveFailures > indices.StoragePower_SurprisePoStMaxConsecutiveFailures() {
 		// Terminate all sectors, notify power and market actors to terminate
 		// associated storage deals, and reset miner's PoSt state to OK.
-		a._rtNotifyMarketForTerminatedSectors(rt)
+		if err := a._rtNotifyMarketForTerminatedSectors(rt); err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to notify market for terminated sectors: %v", err)
+		}
 	} else {
 		// Increment count of consecutive failures, and continue.
 		rt.State().Transaction(&st, func() interface{} {
@@ -833,10 +830,10 @@ func (a *StorageMinerActor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoc
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, sectorNumber abi.SectorNumber) {
+func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, sectorNo abi.SectorNumber) {
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.deleteSector(adt.AsStore(rt), sectorNumber)
+		err := st.deleteSector(adt.AsStore(rt), sectorNo)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
 		}
@@ -844,22 +841,22 @@ func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, sectorNumber abi.Se
 	})
 }
 
-func (a *StorageMinerActor) _rtGetStorageWeightDescForSector(rt Runtime, sectorNumber abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
+func (a *StorageMinerActor) _rtGetStorageWeightDescForSector(rt Runtime, sectorNo abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	return st.GetStorageWeightDescForSector(adt.AsStore(rt), sectorNumber)
+	return st.GetStorageWeightDescForSector(adt.AsStore(rt), sectorNo)
 }
 
-func (a *StorageMinerActor) _rtGetStorageWeightDescsForSectors(rt Runtime, sectorNumbers []abi.SectorNumber) ([]*storage_power.SectorStorageWeightDesc, error) {
+func (a *StorageMinerActor) _rtGetStorageWeightDescsForSectors(rt Runtime, sectorNos []abi.SectorNumber) ([]*storage_power.SectorStorageWeightDesc, error) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 
 	store := adt.AsStore(rt)
 	ret := []*storage_power.SectorStorageWeightDesc{}
-	for _, sectorNumber := range sectorNumbers {
-		weight, err := st.GetStorageWeightDescForSector(store, sectorNumber)
+	for _, sectorNo := range sectorNos {
+		weight, err := st.GetStorageWeightDescForSector(store, sectorNo)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failed to load weight for sector %v", sectorNo)
 		}
 		ret = append(ret, weight)
 	}

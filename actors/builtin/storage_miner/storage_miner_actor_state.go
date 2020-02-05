@@ -19,9 +19,9 @@ import (
 // that are not yet returned or burned.
 type StorageMinerActorState struct {
 	PreCommittedSectors PreCommittedSectorsHAMT
-	Sectors             cid.Cid                   // IntMap, AMT[]SectorOnChainInfo
+	Sectors             cid.Cid // IntMap, AMT[]SectorOnChainInfo
 	FaultSet            abi.BitField
-	ProvingSet          cid.Cid                   // IntMap, AMT[]SectorOnChainInfo
+	ProvingSet          cid.Cid // IntMap, AMT[]SectorOnChainInfo
 
 	PoStState MinerPoStState
 	Info      MinerInfo
@@ -72,7 +72,7 @@ type MinerInfo struct {
 	PeerId peer.ID
 
 	// Amount of space in each sector committed to the network by this miner.
-	SectorSize             abi.SectorSize
+	SectorSize abi.SectorSize
 }
 
 type WorkerKeyChange struct {
@@ -124,11 +124,11 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 			NumConsecutiveFailures: 0,
 		},
 		Info: MinerInfo{
-			Owner:                  ownerAddr,
-			Worker:                 workerAddr,
-			PendingWorkerKey:       WorkerKeyChange{},
-			PeerId:                 peerId,
-			SectorSize:             sectorSize,
+			Owner:            ownerAddr,
+			Worker:           workerAddr,
+			PendingWorkerKey: WorkerKeyChange{},
+			PeerId:           peerId,
+			SectorSize:       sectorSize,
 		},
 	}, nil
 }
@@ -172,8 +172,7 @@ func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.Sect
 
 func (st *StorageMinerActorState) putSector(store adt.Store, sector *SectorOnChainInfo) error {
 	sectors := adt.AsArray(store, st.Sectors)
-	err := sectors.Set(uint64(sector.Info.SectorNumber), sector)
-	if err != nil {
+	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
 	return nil
@@ -191,8 +190,7 @@ func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.Sector
 
 func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	sectors := adt.AsArray(store, st.Sectors)
-	err := sectors.Delete(uint64(sectorNo))
-	if err != nil {
+	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
 	}
 	return nil
@@ -201,11 +199,10 @@ func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.Sec
 func (st *StorageMinerActorState) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	var sector SectorOnChainInfo
-	err := sectors.ForEach(&sector, func(idx int64) error {
+	return sectors.ForEach(&sector, func(idx int64) error {
 		f(&sector)
 		return nil
 	})
-	return err
 }
 
 func (st *StorageMinerActorState) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
