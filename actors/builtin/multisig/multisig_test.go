@@ -16,15 +16,16 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
 func TestConstruction(t *testing.T) {
 	actor := multisig.MultiSigActor{}
 
-	receiver := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	charlie := newIDAddr(t, 103)
+	receiver := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	charlie := tutil.NewIDAddr(t, 103)
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
@@ -106,11 +107,11 @@ func TestConstruction(t *testing.T) {
 func TestVesting(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	receiver := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	charlie := newIDAddr(t, 103)
-	darlene := newIDAddr(t, 103)
+	receiver := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	charlie := tutil.NewIDAddr(t, 103)
+	darlene := tutil.NewIDAddr(t, 103)
 
 	const unlockDuration = 10
 	var multisigInitialBalance = abi.NewTokenAmount(100)
@@ -217,10 +218,10 @@ func TestVesting(t *testing.T) {
 func TestPropose(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	receiver := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
+	receiver := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
 	var sendValue = abi.NewTokenAmount(10)
@@ -284,7 +285,7 @@ func TestPropose(t *testing.T) {
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
 		// non-signer address
-		richard := newIDAddr(t, 105)
+		richard := tutil.NewIDAddr(t, 105)
 		const numApprovals = int64(2)
 
 		rt := builder.Build(t)
@@ -306,10 +307,10 @@ func TestPropose(t *testing.T) {
 func TestApprove(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	receiver := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
+	receiver := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
@@ -411,7 +412,7 @@ func TestApprove(t *testing.T) {
 
 	t.Run("fail to approve transaction by non-signer", func(t *testing.T) {
 		// non-signer address
-		richard := newIDAddr(t, 105)
+		richard := tutil.NewIDAddr(t, 105)
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
@@ -442,11 +443,11 @@ func TestApprove(t *testing.T) {
 func TestCancel(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	richard := newIDAddr(t, 104)
-	receiver := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
+	richard := tutil.NewIDAddr(t, 104)
+	receiver := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(2)
@@ -628,10 +629,10 @@ type addSignerTestCase struct {
 func TestAddSigner(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	multisigWalletAdd := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
+	multisigWalletAdd := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
 	const noUnlockDuration = int64(0)
 
 	testCases := []addSignerTestCase{
@@ -718,11 +719,11 @@ type removeSignerTestCase struct {
 func TestRemoveSigner(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	multisigWalletAdd := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
-	richard := newIDAddr(t, 104)
+	multisigWalletAdd := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
+	richard := tutil.NewIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
 
@@ -870,11 +871,11 @@ type swapTestCase struct {
 func TestSwapSigners(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	multisigWalletAdd := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
-	darlene := newIDAddr(t, 104)
+	multisigWalletAdd := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
+	darlene := tutil.NewIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = int64(1)
@@ -938,10 +939,10 @@ type thresholdTestCase struct {
 func TestChangeThreshold(t *testing.T) {
 	actor := msActorHarness{multisig.MultiSigActor{}, t}
 
-	multisigWalletAdd := newIDAddr(t, 100)
-	anne := newIDAddr(t, 101)
-	bob := newIDAddr(t, 102)
-	chuck := newIDAddr(t, 103)
+	multisigWalletAdd := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+	chuck := tutil.NewIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
 	var initialSigner = []addr.Address{anne, bob, chuck}
@@ -1104,16 +1105,4 @@ func (s key) Key() string {
 
 func asKey(in string) adt.Keyer {
 	return key(in)
-}
-
-//
-// Misc. Utility Functions
-//
-
-func newIDAddr(t *testing.T, id uint64) addr.Address {
-	address, err := addr.NewIDAddress(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return address
 }
