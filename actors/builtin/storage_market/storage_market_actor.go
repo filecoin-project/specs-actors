@@ -128,16 +128,22 @@ type PublishStorageDealsParams struct {
 	Deals []StorageDealProposal
 }
 
+type PublishStorageDealsReturn struct {
+	IDs []abi.DealID
+}
+
 // Publish a new set of storage deals (not yet included in a sector).
-func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *adt.EmptyValue {
+func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
+	newDealIds := []abi.DealID{}
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
+		deals := AsDealArray(adt.AsStore(rt), st.Deals)
 		// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			if deal.Provider != rt.ImmediateCaller() {
@@ -158,27 +164,25 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 			st.lockBalanceOrAbort(rt, deal.Provider, deal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
-
 			onchainDeal := &OnChainDeal{
 				ID:               id,
 				Proposal:         deal,
 				SectorStartEpoch: epochUndefined,
 			}
 
-			deals := AsDealArray(adt.AsStore(rt), st.Deals)
 			err := deals.Set(id, onchainDeal)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
 			}
-			st.Deals = deals.Root()
+			newDealIds = append(newDealIds, id)
 		}
-
+		st.Deals = deals.Root()
 		return nil
 	})
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
-	return &adt.EmptyValue{}
+	return &PublishStorageDealsReturn{newDealIds}
 }
 
 type VerifyDealsOnSectorProveCommitParams struct {
