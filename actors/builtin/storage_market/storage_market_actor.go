@@ -1,7 +1,10 @@
 package storage_market
 
 import (
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -25,7 +28,7 @@ func (a StorageMarketActor) Exports() []interface{} {
 		5:                         a.PublishStorageDeals,
 		6:                         a.VerifyDealsOnSectorProveCommit,
 		7:                         a.OnMinerSectorsTerminate,
-		8:                         a.GetPieceInfosForDealIDs,
+		8:                         a.ComputeDataCommitment,
 		//9: a.GetWeightForDealSet,
 	}
 }
@@ -242,23 +245,30 @@ func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *V
 	return &totalWeight
 }
 
-type GetPieceInfosForDealIDsParams struct {
-	DealIDs []abi.DealID
+type ComputeDataCommitmentParams struct {
+	DealIDs    []abi.DealID
+	SectorSize abi.SectorSize
 }
 
-type GetPieceInfosForDealIDsReturn struct {
-	Pieces []abi.PieceInfo
+// cbor gen and delete me
+func (c *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
+	panic("")
 }
 
-func (a StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, params *GetPieceInfosForDealIDsParams) *GetPieceInfosForDealIDsReturn {
+// cbor gen and delete me
+func (c *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
+	panic("")
+}
+
+func (a StorageMarketActor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
-	ret := make([]abi.PieceInfo, 0)
+	pieces := make([]abi.PieceInfo, 0)
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
 		for _, dealID := range params.DealIDs {
 			deal := st.mustGetDeal(rt, dealID)
-			ret = append(ret, abi.PieceInfo{
+			pieces = append(pieces, abi.PieceInfo{
 				PieceCID: deal.Proposal.PieceCID,
 				Size:     deal.Proposal.PieceSize.Total(),
 			})
@@ -266,7 +276,12 @@ func (a StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, params *GetPiece
 		return nil
 	})
 
-	return &GetPieceInfosForDealIDsReturn{Pieces: ret}
+	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorSize, pieces)
+	if err != nil {
+		rt.Abort(exitcode.SysErrorIllegalArgument, "failed to compute unsealed sector CID: %s", err)
+	}
+
+	return (*cbg.CborCid)(&commd)
 }
 
 type OnMinerSectorsTerminateParams struct {

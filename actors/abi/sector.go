@@ -1,9 +1,8 @@
 package abi
 
 import (
-	cid "github.com/ipfs/go-cid"
-
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	cid "github.com/ipfs/go-cid"
 )
 
 // SectorNumber is a numeric identifier for a sector. It is usually relative to a miner.

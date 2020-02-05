@@ -66,8 +66,8 @@ type smaMethods struct {
 	VerifyDealsOnSectorProveCommit abi.MethodNum
 	OnMinerSectorsTerminate        abi.MethodNum
 
-	GetPieceInfosForDealIDs abi.MethodNum
-	GetWeightForDealSet     abi.MethodNum
+	ComputeDataCommitment abi.MethodNum
+	GetWeightForDealSet   abi.MethodNum
 }
 
 var StorageMarketMethods = smaMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
