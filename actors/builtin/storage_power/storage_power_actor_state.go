@@ -90,7 +90,7 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 }
 
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
-func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeCount int, randomness abi.Randomness) ([]addr.Address, error) {
+func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
 	var allMiners []addr.Address
 	if err := adt.AsMap(s, st.PowerTable).ForEach(nil, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
@@ -104,7 +104,7 @@ func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeC
 	}
 
 	selectedMiners := make([]addr.Address, 0)
-	for chall := 0; chall < challengeCount; chall++ {
+	for chall := int64(0); chall < challengeCount; chall++ {
 		minerIndex := crypto.RandomInt(randomness, chall, st.MinerCount)
 		potentialChallengee := allMiners[minerIndex]
 		// skip dups
