@@ -55,6 +55,23 @@ type msMethods struct {
 
 var MethodsMultisig = msMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
+type smaMethods struct {
+	Constructor abi.MethodNum
+
+	AddBalance          abi.MethodNum
+	WithdrawBalance     abi.MethodNum
+	HandleExpiredDeals  abi.MethodNum
+	PublishStorageDeals abi.MethodNum
+
+	VerifyDealsOnSectorProveCommit abi.MethodNum
+	OnMinerSectorsTerminate        abi.MethodNum
+
+	GetPieceInfosForDealIDs abi.MethodNum
+	GetWeightForDealSet     abi.MethodNum
+}
+
+var StorageMarketMethods = smaMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
+
 const (
 	// Proxy cron tick method (via StoragePowerActor)
 	Method_StorageMinerActor_OnDeferredCronEvent = MethodPlaceholder + iota
@@ -79,22 +96,6 @@ const (
 	Method_StorageMinerActor_GetOwnerAddr
 	Method_StorageMinerActor_GetWorkerAddr
 	Method_StorageMinerActor_GetWorkerVRFKey
-)
-
-const (
-	// User-callable methods
-	Method_StorageMarketActor_HandleExpiredDeals = MethodPlaceholder + iota
-	Method_StorageMarketActor_AddBalance
-	Method_StorageMarketActor_WithdrawBalance
-	Method_StorageMarketActor_PublishStorageDeals
-
-	// Internal mechanism events
-	Method_StorageMarketActor_VerifyDealsOnSectorProveCommit
-	Method_StorageMarketActor_OnMinerSectorsTerminate
-
-	// State queries
-	Method_StorageMarketActor_GetPieceInfosForDealIDs
-	Method_StorageMarketActor_GetWeightForDealSet
 )
 
 const (

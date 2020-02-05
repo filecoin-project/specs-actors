@@ -34,17 +34,17 @@ type MultiSigTransaction struct {
 
 type MultiSigActor struct{}
 
-func (msa MultiSigActor) Exports() []interface{} {
+func (a MultiSigActor) Exports() []interface{} {
 	return []interface{}{
-		builtin.MethodConstructor: msa.Constructor,
-		2:                         msa.Propose,
-		3:                         msa.Approve,
-		4:                         msa.Cancel,
+		builtin.MethodConstructor: a.Constructor,
+		2:                         a.Propose,
+		3:                         a.Approve,
+		4:                         a.Cancel,
 		//5: msa.ClearCompleted, //TODO: sync with spec
-		6: msa.AddSigner,
-		7: msa.RemoveSigner,
-		8: msa.SwapSigner,
-		9: msa.ChangeNumApprovalsThreshold,
+		6: a.AddSigner,
+		7: a.RemoveSigner,
+		8: a.SwapSigner,
+		9: a.ChangeNumApprovalsThreshold,
 	}
 }
 

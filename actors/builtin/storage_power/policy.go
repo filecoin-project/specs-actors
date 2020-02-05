@@ -1,8 +1,8 @@
 package storage_power
 
 import (
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 )
