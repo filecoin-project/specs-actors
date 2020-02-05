@@ -144,6 +144,7 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
 		deals := AsDealArray(adt.AsStore(rt), st.Deals)
+		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			if deal.Provider != rt.ImmediateCaller() {
@@ -172,11 +173,20 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 
 			err := deals.Set(id, onchainDeal)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
+				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
+
+			if err := dbp.Put(adt.AddrKey(deal.Client), uint64(id)); err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set client deal id: %v", err)
+			}
+			if err := dbp.Put(adt.AddrKey(deal.Provider), uint64(id)); err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set provider deal id: %v", err)
+			}
+
 			newDealIds = append(newDealIds, id)
 		}
 		st.Deals = deals.Root()
+		st.DealIDsByParty = dbp.Root()
 		return nil
 	})
 
