@@ -20,19 +20,13 @@ func (t *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{137}); err != nil {
+	if _, err := w.Write([]byte{135}); err != nil {
 		return err
 	}
 
 	// t.TotalNetworkPower (big.Int) (struct)
 	if err := t.TotalNetworkPower.MarshalCBOR(w); err != nil {
 		return err
-	}
-
-	// t.PowerTable (cid.Cid) (struct)
-
-	if err := cbg.WriteCid(w, t.PowerTable); err != nil {
-		return xerrors.Errorf("failed to write cid field t.PowerTable: %w", err)
 	}
 
 	// t.MinerCount (int64) (int64)
@@ -70,12 +64,6 @@ func (t *StoragePowerActorState) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.ClaimedPower: %w", err)
 	}
 
-	// t.NominalPower (cid.Cid) (struct)
-
-	if err := cbg.WriteCid(w, t.NominalPower); err != nil {
-		return xerrors.Errorf("failed to write cid field t.NominalPower: %w", err)
-	}
-
 	// t.NumMinersMeetingMinPower (int64) (int64)
 	if t.NumMinersMeetingMinPower >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumMinersMeetingMinPower))); err != nil {
@@ -100,7 +88,7 @@ func (t *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -111,18 +99,6 @@ func (t *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
 		if err := t.TotalNetworkPower.UnmarshalCBOR(br); err != nil {
 			return err
 		}
-
-	}
-	// t.PowerTable (cid.Cid) (struct)
-
-	{
-
-		c, err := cbg.ReadCid(br)
-		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.PowerTable: %w", err)
-		}
-
-		t.PowerTable = c
 
 	}
 	// t.MinerCount (int64) (int64)
@@ -196,18 +172,6 @@ func (t *StoragePowerActorState) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.ClaimedPower = c
-
-	}
-	// t.NominalPower (cid.Cid) (struct)
-
-	{
-
-		c, err := cbg.ReadCid(br)
-		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.NominalPower: %w", err)
-		}
-
-		t.NominalPower = c
 
 	}
 	// t.NumMinersMeetingMinPower (int64) (int64)
