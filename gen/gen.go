@@ -6,6 +6,7 @@ import (
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	payment_channel "github.com/filecoin-project/specs-actors/actors/builtin/payment_channel"
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
 	storage_miner "github.com/filecoin-project/specs-actors/actors/builtin/storage_miner"
@@ -85,6 +86,21 @@ func main() {
 		multisig.TxnIDParams{},
 		multisig.ChangeNumApprovalsThresholdParams{},
 		multisig.SwapSignerParams{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/payment_channel/cbor_gen.go", "payment_channel",
+		// actor state
+		payment_channel.PaymentChannelActorState{},
+		payment_channel.LaneState{},
+		payment_channel.Merge{},
+		// method params
+		payment_channel.ConstructorParams{},
+		payment_channel.UpdateChannelStateParams{},
+		payment_channel.SignedVoucher{},
+		payment_channel.ModVerifyParams{},
+		payment_channel.PaymentVerifyParams{},
 	); err != nil {
 		panic(err)
 	}
