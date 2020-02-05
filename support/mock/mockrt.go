@@ -212,8 +212,8 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	}
 	expectedMsg := rt.expectSends[0]
 
-	if expectedMsg.Equal(toAddr, methodNum, params, value) {
-		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr, methodNum, value, params, rt.expectSends[0].String())
+	if !expectedMsg.Equal(toAddr, methodNum, params, value) {
+		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr.String(), methodNum, value, params, rt.expectSends[0].String())
 	}
 
 	if value.GreaterThan(rt.balance) {
@@ -371,11 +371,11 @@ type expectedMessage struct {
 }
 
 func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
-	return m.to == to && m.method == method && m.value == value && reflect.DeepEqual(m.params, params)
+	return m.to == to && m.method == method && m.value.Equals(value) && reflect.DeepEqual(m.params, params)
 }
 
 func (m *expectedMessage) String() string {
-	return fmt.Sprintf("to: %v from: %v params: %v value: %v sendReturn: %v exitCode: %v", m.to.String(), m.method, m.params, m.value, m.sendReturn, m.exitCode)
+	return fmt.Sprintf("to: %v method: %v params: %v value: %v sendReturn: %v exitCode: %v", m.to.String(), m.method, m.params, m.value, m.sendReturn, m.exitCode)
 }
 
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
