@@ -15,6 +15,9 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+// Maximum number of lanes in a channel.
+const LANE_LIMIT = 256
+
 const SETTLE_DELAY = abi.ChainEpoch(1) // placeholder PARAM_FINISH
 
 type PaymentChannelActor struct{}
@@ -147,6 +150,9 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *Updat
 		// Find the voucher lane, create and insert it in sorted order if necessary.
 		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
 		if ls == nil {
+			if len(st.LaneStates) >= LANE_LIMIT {
+				rt.Abort(exitcode.ErrIllegalArgument, "lane limit exceeded")
+			}
 			ls = &LaneState{
 				ID:       sv.Lane,
 				Redeemed: big.NewInt(0),
