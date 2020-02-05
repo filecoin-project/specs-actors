@@ -6,6 +6,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -956,30 +957,18 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 		rt.Abort(exitcode.ErrIllegalArgument, "Seal references ticket from invalid epoch")
 	}
 
-	var infos storage_market.GetPieceInfosForDealIDsReturn
+	var unsealedCID cbg.CborCid
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.StorageMarketMethods.GetPieceInfosForDealIDs,
-		&storage_market.GetPieceInfosForDealIDsParams{
-			DealIDs: onChainInfo.DealIDs,
+		builtin.StorageMarketMethods.ComputeDataCommitment,
+		&storage_market.ComputeDataCommitmentParams{
+			SectorSize: info.SectorSize,
+			DealIDs:    onChainInfo.DealIDs,
 		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to fetch piece info")
-	autil.AssertNoError(ret.Into(&infos))
-
-	// Unless we enforce a minimum padding amount, this totalPieceSize calculation can be removed.
-	// Leaving for now until that decision is entirely finalized.
-	var totalPieceSize int64
-	for _, pieceInfo := range infos.Pieces {
-		pieceSize := pieceInfo.Size
-		totalPieceSize += pieceSize
-	}
-
-	unsealedCID, err := rt.Syscalls().ComputeUnsealedSectorCID(sectorSize, infos.Pieces)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "invalid sector piece infos")
-	}
+	autil.AssertNoError(ret.Into(&unsealedCID))
 
 	minerActorID, err := addr.IDFromAddress(rt.CurrReceiver())
 	if err != nil {
@@ -997,7 +986,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 		OnChain:               *onChainInfo,
 		Randomness:            abi.SealRandomness(svInfoRandomness),
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
-		UnsealedCID:           unsealedCID,
+		UnsealedCID:           cid.Cid(unsealedCID),
 	}
 
 	isVerified := rt.Syscalls().VerifySeal(sectorSize, svInfo)
