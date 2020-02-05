@@ -17,7 +17,6 @@ import (
 type StoragePowerActorState struct {
 	TotalNetworkPower abi.StoragePower
 
-	PowerTable  cid.Cid // Map, HAMT[address]StoragePower
 	MinerCount  int64
 	EscrowTable cid.Cid // BalanceTable (HAMT[address]TokenAmount)
 
@@ -27,7 +26,6 @@ type StoragePowerActorState struct {
 	CronEventQueue           cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
 	PoStDetectedFaultMiners  cid.Cid // Set, HAMT[addr.Address]struct{}
 	ClaimedPower             cid.Cid // Map, HAMT[address]StoragePower
-	NominalPower             cid.Cid // Map, HAMT[address]StoragePower
 	NumMinersMeetingMinPower int64
 }
 
@@ -47,12 +45,10 @@ func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
 
 	return &StoragePowerActorState{
 		TotalNetworkPower:        abi.NewStoragePower(0),
-		PowerTable:               emptyMap.Root(),
 		EscrowTable:              emptyMap.Root(),
 		CronEventQueue:           emptyMap.Root(),
 		PoStDetectedFaultMiners:  emptyMap.Root(),
 		ClaimedPower:             emptyMap.Root(),
-		NominalPower:             emptyMap.Root(),
 		NumMinersMeetingMinPower: 0,
 	}, nil
 }
@@ -77,8 +73,16 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 
 	var minerSizes []abi.StoragePower
 	var pwr abi.StoragePower
-	if err := adt.AsMap(s, st.PowerTable).ForEach(&pwr, func(k string) error {
-		minerSizes = append(minerSizes, pwr.Copy())
+	if err := adt.AsMap(s, st.ClaimedPower).ForEach(&pwr, func(k string) error {
+		maddr, err := addr.NewFromBytes([]byte(k))
+		if err != nil {
+			return err
+		}
+		nominalPower, err := st.computeNominalPower(s, maddr)
+		if err != nil {
+			return err
+		}
+		minerSizes = append(minerSizes, nominalPower)
 		return nil
 	}); err != nil {
 		return false, errors.Wrap(err, "failed to iterate power table")
@@ -92,15 +96,22 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
 func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
 	var allMiners []addr.Address
-	if err := adt.AsMap(s, st.PowerTable).ForEach(nil, func(k string) error {
+	var pwr abi.StoragePower
+	if err := adt.AsMap(s, st.ClaimedPower).ForEach(&pwr, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
 		if err != nil {
 			return err
 		}
-		allMiners = append(allMiners, maddr)
+		nominalPower, err := st.computeNominalPower(s, maddr)
+		if err != nil {
+			return err
+		}
+		if nominalPower.GreaterThan(big.Zero()) {
+			allMiners = append(allMiners, maddr)
+		}
 		return nil
 	}); err != nil {
-		return nil, errors.Wrap(err, "failed to iterate PowerTable hamt when selecting miners to surprise")
+		return nil, errors.Wrap(err, "failed to iterate ClaimedPower hamt when selecting miners to surprise")
 	}
 
 	selectedMiners := make([]addr.Address, 0)
@@ -116,11 +127,6 @@ func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeC
 	}
 
 	return selectedMiners, nil
-}
-
-func (st *StoragePowerActorState) getMinerPower(s adt.Store, miner addr.Address) (
-	power abi.StoragePower, ok bool, err error) {
-	return getStoragePower(s, st.PowerTable, miner)
 }
 
 func (st *StoragePowerActorState) getMinerPledge(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
@@ -176,7 +182,7 @@ func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAdd
 	if err = st.setClaimedPower(s, minerAddr, big.Add(currentPower, sectorPower)); err != nil {
 		return err
 	}
-	return st.updatePowerEntriesFromClaimed(s, minerAddr)
+	return nil
 }
 
 func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
@@ -193,16 +199,16 @@ func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, miner
 	if err = st.setClaimedPower(s, minerAddr, big.Sub(currentPower, sectorPower)); err != nil {
 		return err
 	}
-	return st.updatePowerEntriesFromClaimed(s, minerAddr)
+	return nil
 }
 
-func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, minerAddr addr.Address) error {
+func (st *StoragePowerActorState) computeNominalPower(s adt.Store, minerAddr addr.Address) (abi.StoragePower, error) {
 	claimedPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
 	if err != nil {
-		return errors.Wrap(err, "failed to get claimed miner power while setting claimed power table entry")
+		return abi.NewStoragePower(0), errors.Wrap(err, "failed to get claimed miner power while setting claimed power table entry")
 	}
 	if !ok {
-		return errors.Errorf("no claimed power for actor %v", minerAddr)
+		return abi.NewStoragePower(0), errors.Errorf("no claimed power for actor %v", minerAddr)
 	}
 
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
@@ -211,24 +217,12 @@ func (st *StoragePowerActorState) updatePowerEntriesFromClaimed(s adt.Store, min
 	// from a SurprisePoSt challenge. TODO: hs update this
 	nominalPower := claimedPower
 	if found, err := st.hasFault(s, minerAddr); err != nil {
-		return err
+		return abi.NewStoragePower(0), err
 	} else if found {
 		nominalPower = big.Zero()
 	}
-	if err = st.setNominalPower(s, minerAddr, nominalPower); err != nil {
-		return errors.Wrap(err, "failed to set nominal power while setting claimed power table entry")
-	}
 
-	// Compute nominal power, storage power that meets consensus minimum
-	power := nominalPower
-	if found, err := st.minerNominalPowerMeetsConsensusMinimum(s, nominalPower); err != nil {
-		return errors.Wrap(err, "failed to check miners nominal power against consensus minimum")
-
-	} else if !found {
-		power = big.Zero()
-	}
-
-	return st.setPowerEntry(s, minerAddr, power)
+	return nominalPower, nil
 }
 
 func (st *StoragePowerActorState) setClaimedPower(s adt.Store, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) error {
@@ -238,50 +232,6 @@ func (st *StoragePowerActorState) setClaimedPower(s adt.Store, minerAddr addr.Ad
 	if err != nil {
 		return errors.Wrap(err, "failed to set claimed power while setting claimed power table entry")
 	}
-	return nil
-}
-
-func (st *StoragePowerActorState) setNominalPower(s adt.Store, minerAddr addr.Address, updatedMinerNominalPower abi.StoragePower) error {
-	Assert(updatedMinerNominalPower.GreaterThanEqual(big.Zero()))
-
-	prevMinerNominalPower, ok, err := getStoragePower(s, st.NominalPower, minerAddr)
-	if err != nil {
-		return errors.Wrap(err, "failed to get previous nominal miner power while setting nominal power table entry")
-	}
-	if !ok {
-		return errors.Errorf("no power for actor %v", minerAddr)
-	}
-
-	st.NominalPower, err = putStoragePower(s, st.NominalPower, minerAddr, updatedMinerNominalPower)
-	if err != nil {
-		return errors.Wrap(err, "failed to put updated nominal miner power while setting nominal power table entry")
-	}
-
-	wasMinMiner, _ := st.minerNominalPowerMeetsConsensusMinimum(s, prevMinerNominalPower)
-	isMinMiner, _ := st.minerNominalPowerMeetsConsensusMinimum(s, updatedMinerNominalPower)
-
-	if isMinMiner && !wasMinMiner {
-		st.NumMinersMeetingMinPower += 1
-	} else if !isMinMiner && wasMinMiner {
-		st.NumMinersMeetingMinPower -= 1
-	}
-	return nil
-}
-
-func (st *StoragePowerActorState) setPowerEntry(s adt.Store, minerAddr addr.Address, updatedMinerPower abi.StoragePower) error {
-	Assert(updatedMinerPower.GreaterThanEqual(big.Zero()))
-	prevMinerPower, ok, err := getStoragePower(s, st.PowerTable, minerAddr)
-	if err != nil {
-		return errors.Wrap(err, "failed to get previous miner power while setting power table entry")
-	}
-	if !ok {
-		return errors.Errorf("no power for actor %v", minerAddr)
-	}
-	st.PowerTable, err = putStoragePower(s, st.PowerTable, minerAddr, updatedMinerPower)
-	if err != nil {
-		return errors.Wrap(err, "failed to put new miner power while setting power table entry")
-	}
-	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, big.Sub(updatedMinerPower, prevMinerPower))
 	return nil
 }
 
@@ -328,8 +278,8 @@ func (st *StoragePowerActorState) loadCronEvents(store adt.Store, epoch abi.Chai
 	var ev CronEvent
 	err := mmap.ForEach(IntKey(epoch), &ev, func(i int64) error {
 		// Ignore events for defunct miners.
-		if _, found, err := getStoragePower(store, st.PowerTable, ev.MinerAddr); err != nil {
-			return errors.Wrapf(err, "failed to find power for %v for cron event", ev.MinerAddr)
+		if _, found, err := getStoragePower(store, st.ClaimedPower, ev.MinerAddr); err != nil {
+			return errors.Wrapf(err, "failed to find claimed power for %v for cron event", ev.MinerAddr)
 		} else if found {
 			events = append(events, ev)
 		}
