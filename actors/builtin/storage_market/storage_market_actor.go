@@ -1,8 +1,6 @@
 package storage_market
 
 import (
-	"io"
-
 	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
@@ -248,16 +246,6 @@ func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *V
 type ComputeDataCommitmentParams struct {
 	DealIDs    []abi.DealID
 	SectorSize abi.SectorSize
-}
-
-// cbor gen and delete me
-func (c *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
-	panic("")
-}
-
-// cbor gen and delete me
-func (c *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
-	panic("")
 }
 
 func (a StorageMarketActor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
