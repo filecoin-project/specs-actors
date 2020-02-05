@@ -478,11 +478,11 @@ func (a *StoragePowerActor) initiateNewSurprisePoStChallenges(rt Runtime) error 
 		var err error
 		// sample the actor addresses
 		minerSelectionSeed := rt.GetRandomness(rt.CurrEpoch())
-		randomness := crypto.DeriveRandWithEpoch(crypto.DomainSeparationTag_SurprisePoStSelectMiners, minerSelectionSeed, int(rt.CurrEpoch()))
+		randomness := crypto.DeriveRandWithEpoch(crypto.DomainSeparationTag_SurprisePoStSelectMiners, minerSelectionSeed, int64(rt.CurrEpoch()))
 
 		autil.TODO() // BigInt arithmetic (not floating-point)
 		challengeCount := math.Ceil(float64(st.MinerCount) / float64(provingPeriod))
-		surprisedMiners, err = st.selectMinersToSurprise(adt.AsStore(rt), int(challengeCount), randomness)
+		surprisedMiners, err = st.selectMinersToSurprise(adt.AsStore(rt), int64(challengeCount), randomness)
 		if err != nil {
 			txErr = errors.Wrap(err, "failed to select miner to surprise")
 		}

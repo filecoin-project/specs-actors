@@ -3,10 +3,11 @@ package crypto
 import (
 	"bytes"
 	"encoding/binary"
-	"math"
 
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 )
 
@@ -31,32 +32,34 @@ func DeriveRandWithMinerAddr(tag DomainSeparationTag, tix abi.RandomnessSeed, mi
 	return _deriveRandInternal(tag, tix, -1, addrBuf.Bytes())
 }
 
-func DeriveRandWithEpoch(tag DomainSeparationTag, tix abi.RandomnessSeed, epoch int) abi.Randomness {
+func DeriveRandWithEpoch(tag DomainSeparationTag, tix abi.RandomnessSeed, epoch int64) abi.Randomness {
 	return _deriveRandInternal(tag, tix, -1, BigEndianBytesFromInt(epoch))
 }
 
 func _deriveRandInternal(tag DomainSeparationTag, randSeed abi.RandomnessSeed, index int, s []byte) abi.Randomness {
 	buffer := []byte{}
-	buffer = append(buffer, BigEndianBytesFromInt(int(tag))...)
-	buffer = append(buffer, BigEndianBytesFromInt(int(index))...)
+	buffer = append(buffer, BigEndianBytesFromInt(int64(tag))...)
+	buffer = append(buffer, BigEndianBytesFromInt(int64(index))...)
 	buffer = append(buffer, randSeed...)
 	buffer = append(buffer, s...)
-	return abi.Randomness(SHA256(buffer))
+	return SHA256(buffer)
 }
 
-func RandomInt(randomness abi.Randomness, nonce int, limit int64) int {
+// Computes an unpredictable integer less than limit from inputs seed and nonce.
+func RandomInt(seed abi.Randomness, nonce int64, limit int64) int64 {
 	nonceBytes := BigEndianBytesFromInt(nonce)
-	input := randomness
-	input = append(input, nonceBytes...)
+	input := append(seed, nonceBytes...)
 	ranHash := SHA256(input)
-	hashInt := IntFromBigEndianBytes(ranHash)
-	num := int(math.Mod(float64(hashInt), float64(limit)))
-	return num
+	hashInt :=  big.FromBytes(ranHash)
+
+	num := big.Mod(hashInt, big.NewInt(limit))
+	return num.Int64()
 }
 
-func BigEndianBytesFromInt(x int) []byte {
+// Returns an 8-byte slice of the big-endian bytes of an integer.
+func BigEndianBytesFromInt(x int64) []byte {
 	buf := bytes.NewBuffer(make([]byte, 0, 8))
-	err := binary.Write(buf, binary.BigEndian, x) // nolint: staticcheck
+	err := binary.Write(buf, binary.BigEndian, x)
 	autil.AssertNoError(err)
 	return buf.Bytes()
 }
@@ -64,9 +67,4 @@ func BigEndianBytesFromInt(x int) []byte {
 func SHA256(data []byte) []byte {
 	autil.TODO()
 	return []byte{}
-}
-
-func IntFromBigEndianBytes(data []byte) int {
-	autil.TODO()
-	return -1
 }
