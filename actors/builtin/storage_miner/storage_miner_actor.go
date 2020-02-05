@@ -279,7 +279,6 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 		rt.Abort(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
 	}
 
-
 	cidx := rt.CurrIndices()
 	depositReq := cidx.StorageMining_PreCommitDeposit(st.getSectorSize(), params.info.Expiration)
 	confirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
@@ -287,7 +286,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.putPrecommittedSector(params.info.SectorNumber, &SectorPreCommitOnChainInfo{
+		err := st.putPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:             params.info,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
@@ -314,17 +313,19 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 }
 
 type ProveCommitSectorParams struct {
-	info SectorProveCommitInfo
+	SectorNumber abi.SectorNumber
+	Proof        abi.SealProof
 }
 
 func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
-	sectorNo := params.info.SectorNumber
+	sectorNo := params.SectorNumber
+	store := adt.AsStore(rt)
 
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	precommit, found, err := st.getPrecommittedSector(sectorNo)
+	precommit, found, err := st.getPrecommittedSector(store, sectorNo)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "failed to get precommitted sector %v: %v", sectorNo, err)
 	} else if !found {
@@ -342,7 +343,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	a._rtVerifySealOrAbort(rt, &abi.OnChainSealVerifyInfo{
 		SealedCID:    precommit.Info.SealedCID,
 		SealEpoch:    precommit.Info.SealEpoch,
-		Proof:        params.info.Proof,
+		Proof:        params.Proof,
 		DealIDs:      precommit.Info.DealIDs,
 		SectorNumber: precommit.Info.SectorNumber,
 	})
@@ -372,7 +373,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 			rt.Abort(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
-		if err = st.deletePrecommitttedSector(sectorNo); err != nil {
+		if err = st.deletePrecommitttedSector(store, sectorNo); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "faile to delete proven precommit for sector %v: %v", sectorNo, err)
 		}
 
@@ -665,21 +666,26 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 	})
 }
 
-func (a *StorageMinerActor) _rtCheckPreCommitExpiry(rt Runtime, sectorNumber abi.SectorNumber) {
+func (a *StorageMinerActor) _rtCheckPreCommitExpiry(rt Runtime, sectorNo abi.SectorNumber) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	checkSector, found := st.PreCommittedSectors[sectorNumber]
-
-	if !found {
+	store := adt.AsStore(rt)
+	sector, found, err := st.getPrecommittedSector(store, sectorNo)
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+	} else if !found {
 		return
 	}
 
-	if rt.CurrEpoch()-checkSector.PreCommitEpoch > indices.StorageMining_MaxProveCommitSectorEpoch() {
+	if rt.CurrEpoch()-sector.PreCommitEpoch > indices.StorageMining_MaxProveCommitSectorEpoch() {
 		rt.State().Transaction(&st, func() interface{} {
-			delete(st.PreCommittedSectors, sectorNumber)
+			err = st.deletePrecommitttedSector(store, sectorNo)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
+			}
 			return nil
 		})
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, checkSector.PreCommitDeposit)
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, sector.PreCommitDeposit)
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}
 	return

@@ -1,8 +1,6 @@
 package storage_miner
 
 import (
-	"io"
-
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -18,36 +16,13 @@ import (
 // Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
 // that are not yet returned or burned.
 type StorageMinerActorState struct {
-	PreCommittedSectors PreCommittedSectorsHAMT
-	Sectors             cid.Cid // IntMap, AMT[]SectorOnChainInfo
+	PreCommittedSectors cid.Cid // Map, HAMT[sectorNumber]SectorPreCommitOnChainInfo
+	Sectors             cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 	FaultSet            abi.BitField
-	ProvingSet          cid.Cid // IntMap, AMT[]SectorOnChainInfo
+	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 
-	PoStState MinerPoStState
 	Info      MinerInfo
-}
-
-// TODO HAMT
-type PreCommittedSectorsHAMT map[abi.SectorNumber]*SectorPreCommitOnChainInfo
-
-type MinerPoStState struct {
-	// Epoch of the last succesful PoSt, either election post or surprise post.
-	LastSuccessfulPoSt abi.ChainEpoch
-
-	// If >= 0 miner has been challenged and not yet responded successfully.
-	// SurprisePoSt challenge state: The miner has not submitted timely ElectionPoSts,
-	// and as a result, the system has fallen back to proving storage via SurprisePoSt.
-	//  `epochUndefined` if not currently challeneged.
-	SurpriseChallengeEpoch abi.ChainEpoch
-
-	// Not empty iff the miner is challenged.
-	ChallengedSectors []abi.SectorNumber
-
-	// Number of surprised post challenges that have been failed since last successful PoSt.
-	// Indicates that the claimed storage power may not actually be proven. Recovery can proceed by
-	// submitting a correct response to a subsequent SurprisePoSt challenge, up until
-	// the limit of number of consecutive failures.
-	NumConsecutiveFailures int64
+	PoStState MinerPoStState
 }
 
 type MinerInfo struct {
@@ -75,6 +50,26 @@ type MinerInfo struct {
 	SectorSize abi.SectorSize
 }
 
+type MinerPoStState struct {
+	// Epoch of the last succesful PoSt, either election post or surprise post.
+	LastSuccessfulPoSt abi.ChainEpoch
+
+	// If >= 0 miner has been challenged and not yet responded successfully.
+	// SurprisePoSt challenge state: The miner has not submitted timely ElectionPoSts,
+	// and as a result, the system has fallen back to proving storage via SurprisePoSt.
+	//  `epochUndefined` if not currently challeneged.
+	SurpriseChallengeEpoch abi.ChainEpoch
+
+	// Not empty iff the miner is challenged.
+	ChallengedSectors []abi.SectorNumber
+
+	// Number of surprised post challenges that have been failed since last successful PoSt.
+	// Indicates that the claimed storage power may not actually be proven. Recovery can proceed by
+	// submitting a correct response to a subsequent SurprisePoSt challenge, up until
+	// the limit of number of consecutive failures.
+	NumConsecutiveFailures int64
+}
+
 type WorkerKeyChange struct {
 	NewWorker   addr.Address // Must be an ID address
 	EffectiveAt abi.ChainEpoch
@@ -82,7 +77,7 @@ type WorkerKeyChange struct {
 
 type SectorPreCommitInfo struct {
 	SectorNumber abi.SectorNumber
-	SealedCID    abi.SealedSectorCID // CommR
+	SealedCID    cid.Cid // CommR
 	SealEpoch    abi.ChainEpoch
 	DealIDs      []abi.DealID
 	Expiration   abi.ChainEpoch // Sector Expiration
@@ -102,33 +97,33 @@ type SectorOnChainInfo struct {
 	DealWeight            abi.DealWeight // integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 }
 
-type SectorProveCommitInfo struct {
-	SectorNumber abi.SectorNumber
-	Proof        abi.SealProof
-}
-
 func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*StorageMinerActorState, error) {
+	emptyMap, err := adt.MakeEmptyMap(store)
+	if err != nil {
+		return nil, err
+	}
+
 	emptyArray, err := adt.MakeEmptyArray(store)
 	if err != nil {
 		return nil, err
 	}
 	return &StorageMinerActorState{
-		PreCommittedSectors: make(PreCommittedSectorsHAMT),
+		PreCommittedSectors: emptyMap.Root(),
 		Sectors:             emptyArray.Root(),
 		FaultSet:            abi.NewBitField(),
 		ProvingSet:          emptyArray.Root(),
-		PoStState: MinerPoStState{
-			LastSuccessfulPoSt:     epochUndefined,
-			SurpriseChallengeEpoch: epochUndefined,
-			ChallengedSectors:      []abi.SectorNumber{},
-			NumConsecutiveFailures: 0,
-		},
 		Info: MinerInfo{
 			Owner:            ownerAddr,
 			Worker:           workerAddr,
 			PendingWorkerKey: WorkerKeyChange{},
 			PeerId:           peerId,
 			SectorSize:       sectorSize,
+		},
+		PoStState: MinerPoStState{
+			LastSuccessfulPoSt:     epochUndefined,
+			SurpriseChallengeEpoch: epochUndefined,
+			ChallengedSectors:      []abi.SectorNumber{},
+			NumConsecutiveFailures: 0,
 		},
 	}, nil
 }
@@ -141,22 +136,31 @@ func (st *StorageMinerActorState) getSectorSize() abi.SectorSize {
 	return st.Info.SectorSize
 }
 
-func (st *StorageMinerActorState) putPrecommittedSector(sectorNo abi.SectorNumber, info *SectorPreCommitOnChainInfo) error {
-	st.PreCommittedSectors[sectorNo] = info
+func (st *StorageMinerActorState) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
+	precommitted := adt.AsMap(store, st.PreCommittedSectors)
+	err := precommitted.Put(adt.IntKey(info.Info.SectorNumber), info)
+	if err != nil {
+		return errors.Wrapf(err, "failed to store precommitment for %v", info)
+	}
 	return nil
 }
 
-func (st *StorageMinerActorState) getPrecommittedSector(sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
-	info, found := st.PreCommittedSectors[sectorNo]
-	return info, found, nil
+func (st *StorageMinerActorState) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
+	precommitted := adt.AsMap(store, st.PreCommittedSectors)
+	var info SectorPreCommitOnChainInfo
+	found, err := precommitted.Get(adt.IntKey(sectorNo), &info)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "failed to load precommitment for %v", sectorNo)
+	}
+	return &info, found, nil
 }
 
-func (st *StorageMinerActorState) deletePrecommitttedSector(sectorNo abi.SectorNumber) error {
-	_, found := st.PreCommittedSectors[sectorNo]
-	if !found {
-		return errors.Errorf("no precommitted sector %v to delete", sectorNo)
+func (st *StorageMinerActorState) deletePrecommitttedSector(store adt.Store, sectorNo abi.SectorNumber) error {
+	precommitted := adt.AsMap(store, st.PreCommittedSectors)
+	err := precommitted.Delete(adt.IntKey(sectorNo))
+	if err != nil {
+		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
 	}
-	delete(st.PreCommittedSectors, sectorNo)
 	return nil
 }
 
@@ -271,20 +275,4 @@ func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInf
 		DealWeight: sectorInfo.DealWeight,
 		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
 	}
-}
-
-func (st *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
-	panic("replace with cbor-gen")
-}
-
-func (st *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
-	panic("replace with cbor-gen")
-}
-
-func (x *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
-	panic("implement me")
-}
-
-func (x *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
-	panic("implement me")
 }

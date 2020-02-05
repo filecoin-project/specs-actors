@@ -20,6 +20,10 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
 		abi.PieceSize{},
 		abi.PieceInfo{},
+		abi.SectorID{},
+		abi.SealProof{},
+		abi.SealVerifyInfo{},
+		abi.OnChainSealVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}
@@ -134,6 +138,14 @@ func main() {
 	}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_miner/cbor_gen.go", "storage_miner",
+		// actor state
+		storage_miner.StorageMinerActorState{},
+		storage_miner.MinerInfo{},
+		storage_miner.MinerPoStState{},
+		storage_miner.SectorPreCommitOnChainInfo{},
+		storage_miner.SectorPreCommitInfo{},
+		storage_miner.SectorOnChainInfo{},
+		storage_miner.WorkerKeyChange{},
 		// method params
 		//storage_miner.ConstructorParams{},
 		storage_miner.PreCommitSectorParams{},

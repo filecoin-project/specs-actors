@@ -35,9 +35,6 @@ func NewStoragePower(n int64) StoragePower {
 	return StoragePower(big.NewInt(n))
 }
 
-type UnsealedSectorCID cid.Cid // CommD
-type SealedSectorCID cid.Cid   // CommR
-
 // This ordering, defines mappings to UInt in a way which MUST never change.
 type RegisteredProof int64
 
@@ -62,7 +59,7 @@ type SealVerifyInfo struct {
 	OnChain               OnChainSealVerifyInfo
 	Randomness            SealRandomness
 	InteractiveRandomness InteractiveSealRandomness
-	UnsealedCID           UnsealedSectorCID // CommD
+	UnsealedCID           cid.Cid // CommD
 }
 
 // OnChainSealVerifyInfo is the structure of information that must be sent with
@@ -70,8 +67,8 @@ type SealVerifyInfo struct {
 // state tree but will be verified in sm.CommitSector. See SealCommitment for
 // data stored on the state tree for each sector.
 type OnChainSealVerifyInfo struct {
-	SealedCID        SealedSectorCID // CommR
-	InteractiveEpoch ChainEpoch      // Used to derive the interactive PoRep challenge.
+	SealedCID        cid.Cid    // CommR
+	InteractiveEpoch ChainEpoch // Used to derive the interactive PoRep challenge.
 	RegisteredProof
 	Proof   SealProof
 	DealIDs []DealID
@@ -94,10 +91,10 @@ type PartialTicket []byte // 32 bytes
 // TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
-	CommR           SealedSectorCID
-	Candidates      []PoStCandidate              // From OnChain*PoStVerifyInfo
-	Proofs          []PoStProof                  // From OnChain*PoStVerifyInfo
-	EligibleSectors map[SectorID]SealedSectorCID // TODO: HAMT?
+	CommR           cid.Cid
+	Candidates      []PoStCandidate      // From OnChain*PoStVerifyInfo
+	Proofs          []PoStProof          // From OnChain*PoStVerifyInfo
+	EligibleSectors map[SectorID]cid.Cid // TODO: HAMT?
 }
 
 type OnChainElectionPoStVerifyInfo struct {
