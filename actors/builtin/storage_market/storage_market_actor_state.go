@@ -40,7 +40,7 @@ type StorageMarketActorState struct {
 	NextID abi.DealID
 
 	// Metadata cached for efficient iteration over deals.
-	DealIDsByParty cid.Cid // hamt[addr]Set
+	DealIDsByParty cid.Cid // SetMultimap, HAMT[addr]Set
 }
 
 func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
@@ -49,7 +49,7 @@ func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
 		return nil, err
 	}
 
-	emptyMSet, err := MakeEmptyMultiset(store)
+	emptyMSet, err := MakeEmptySetMultimap(store)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (st *StorageMarketActorState) updatePendingDealStatesForParty(rt Runtime, a
 	// For consistency with HandleExpiredDeals, only process updates up to the end of the _previous_ epoch.
 	epoch := rt.CurrEpoch() - 1
 
-	dbp := AsMultiset(adt.AsStore(rt), st.DealIDsByParty)
+	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	var extractedDealIDs []abi.DealID
 	err := dbp.ForEach(adt.AddrKey(addr), func(id int64) error {
 		extractedDealIDs = append(extractedDealIDs, abi.DealID(id))
@@ -172,7 +172,7 @@ func (st *StorageMarketActorState) deleteDeal(rt Runtime, dealID abi.DealID) {
 		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
 	}
 
-	dbp := AsMultiset(adt.AsStore(rt), st.DealIDsByParty)
+	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	if err := dbp.Remove(adt.AddrKey(dealP.Client), uint64(dealID)); err != nil {
 		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
 	}
