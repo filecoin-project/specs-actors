@@ -118,7 +118,6 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 		PoStState: MinerPoStState{
 			LastSuccessfulPoSt:     epochUndefined,
 			SurpriseChallengeEpoch: epochUndefined,
-			ChallengedSectors:      []abi.SectorNumber{},
 			NumConsecutiveFailures: 0,
 		},
 	}, nil

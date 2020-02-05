@@ -299,26 +299,6 @@ func (t *MinerPoStState) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.ChallengedSectors ([]abi.SectorNumber) (slice)
-	if len(t.ChallengedSectors) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.ChallengedSectors was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.ChallengedSectors)))); err != nil {
-		return err
-	}
-	for _, v := range t.ChallengedSectors {
-		if v >= 0 {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
-				return err
-			}
-		} else {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
-				return err
-			}
-		}
-	}
-
 	// t.NumConsecutiveFailures (int64) (int64)
 	if t.NumConsecutiveFailures >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumConsecutiveFailures))); err != nil {
@@ -396,49 +376,6 @@ func (t *MinerPoStState) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.SurpriseChallengeEpoch = abi.ChainEpoch(extraI)
-	}
-	// t.ChallengedSectors ([]abi.SectorNumber) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.ChallengedSectors: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-	if extra > 0 {
-		t.ChallengedSectors = make([]abi.SectorNumber, extra)
-	}
-	for i := 0; i < int(extra); i++ {
-		{
-			maj, extra, err := cbg.CborReadHeader(br)
-			var extraI int64
-			if err != nil {
-				return err
-			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative oveflow")
-				}
-				extraI = -1 - extraI
-			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
-			}
-
-			t.ChallengedSectors[i] = abi.SectorNumber(extraI)
-		}
 	}
 
 	// t.NumConsecutiveFailures (int64) (int64)
