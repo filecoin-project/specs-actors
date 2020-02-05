@@ -125,6 +125,7 @@ func main() {
 		storage_market.OnMinerSectorsTerminateParams{},
 		// method returns
 		storage_market.GetPieceInfosForDealIDsReturn{},
+		storage_market.PublishStorageDealsReturn{},
 		// other types
 		storage_market.StorageDealProposal{},
 		storage_market.OnChainDeal{},
