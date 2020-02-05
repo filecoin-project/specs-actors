@@ -14,6 +14,8 @@ const (
 	ErrInsufficientFunds
 	// Indicates an actor's internal state is invalid.
 	ErrIllegalState
+	// Indicates de/serialization failure within actor code.
+	ErrSerialization
 	// An error code intended to be replaced by different code structure or a more descriptive error.
 	ErrPlaceholder = ExitCode(1000)
 )
