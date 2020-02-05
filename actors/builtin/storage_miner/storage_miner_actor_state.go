@@ -59,9 +59,6 @@ type MinerPoStState struct {
 	//  `epochUndefined` if not currently challeneged.
 	SurpriseChallengeEpoch abi.ChainEpoch
 
-	// Not empty iff the miner is challenged.
-	ChallengedSectors []abi.SectorNumber
-
 	// Number of surprised post challenges that have been failed since last successful PoSt.
 	// Indicates that the claimed storage power may not actually be proven. Recovery can proceed by
 	// submitting a correct response to a subsequent SurprisePoSt challenge, up until
@@ -261,7 +258,7 @@ func (mps *MinerPoStState) isChallenged() bool {
 }
 
 func (mps *MinerPoStState) isPoStOk() bool {
-	return !mps.isChallenged() && !mps.hasFailedPost()
+	return !mps.hasFailedPost()
 }
 
 func (mps *MinerPoStState) hasFailedPost() bool {
