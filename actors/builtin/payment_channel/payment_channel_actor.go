@@ -2,6 +2,7 @@ package payment_channel
 
 import (
 	"bytes"
+	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 
@@ -143,13 +144,16 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *Updat
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
-		voucherKey := adt.IntKey(sv.Lane).Key()
-		ls, ok := st.LaneStates[voucherKey]
-		// create voucher lane if it does not already exist
-		if !ok {
-			ls = new(LaneState)
-			ls.Redeemed = big.NewInt(0)
-			st.LaneStates[voucherKey] = ls
+		// Find the voucher lane, create and insert it in sorted order if necessary.
+		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
+		if ls == nil {
+			ls = &LaneState{
+				ID:       sv.Lane,
+				Redeemed: big.NewInt(0),
+				Nonce:    0,
+			}
+			st.LaneStates = append(st.LaneStates[:laneIdx], append([]*LaneState{ls}, st.LaneStates[laneIdx:]...)...)
+
 		}
 
 		if ls.Nonce > sv.Nonce {
@@ -164,14 +168,17 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *Updat
 				rt.Abort(exitcode.ErrIllegalArgument, "voucher cannot merge lanes into its own lane")
 			}
 
-			otherls := st.LaneStates[adt.IntKey(merge.Lane).Key()]
+			_, otherls := findLane(st.LaneStates, merge.Lane)
+			if otherls != nil {
+				if otherls.Nonce >= merge.Nonce {
+					rt.Abort(exitcode.ErrIllegalArgument, "merged lane in voucher has outdated nonce, cannot redeem")
+				}
 
-			if otherls.Nonce >= merge.Nonce {
-				rt.Abort(exitcode.ErrIllegalArgument, "merged lane in voucher has outdated nonce, cannot redeem")
+				redeemedFromOthers = big.Add(redeemedFromOthers, otherls.Redeemed)
+				otherls.Nonce = merge.Nonce
+			} else {
+				rt.Abort(exitcode.ErrIllegalArgument, "voucher specifies invalid merge lane %v", merge.Lane)
 			}
-
-			redeemedFromOthers = big.Add(redeemedFromOthers, otherls.Redeemed)
-			otherls.Nonce = merge.Nonce
 		}
 
 		// 2. To prevent double counting, remove already redeemed amounts (from
@@ -265,8 +272,8 @@ func (pca *PaymentChannelActor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.
 	return &adt.EmptyValue{}
 }
 
-func (sv *SignedVoucher) SigningBytes() ([]byte, error) {
-	osv := *sv
+func (t *SignedVoucher) SigningBytes() ([]byte, error) {
+	osv := *t
 	osv.Signature = nil
 
 	buf := new(bytes.Buffer)
@@ -275,4 +282,16 @@ func (sv *SignedVoucher) SigningBytes() ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// Returns the insertion index for a lane ID, with the matching lane state if found, or nil.
+func findLane(lanes []*LaneState, ID int64) (int, *LaneState) {
+	insertionIdx := sort.Search(len(lanes), func(i int) bool {
+		return lanes[i].ID >= ID
+	})
+	if insertionIdx == len(lanes) || lanes[insertionIdx].ID != int64(insertionIdx) {
+		// Not found
+		return insertionIdx, nil
+	}
+	return insertionIdx, lanes[insertionIdx]
 }
