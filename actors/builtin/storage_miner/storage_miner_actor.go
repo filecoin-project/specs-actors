@@ -892,6 +892,11 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 		challengeIndices[tix.ChallengeIndex] = true
 	}
 
+	// verify appropriate number of tickets is present
+	if int64(len(onChainInfo.Candidates)) != indices.StoragePower_NumSurprisePoStSectors() {
+		rt.Abort(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Too few tickets included.")
+	}
+
 	randomnessK := rt.GetRandomness(challengeEpoch - PoStLookback)
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
