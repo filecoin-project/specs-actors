@@ -344,7 +344,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	var dealWeight abi.DealWeight
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.Method_StorageMarketActor_VerifyDealsOnSectorProveCommit,
+		builtin.StorageMarketMethods.VerifyDealsOnSectorProveCommit,
 		&storage_market.VerifyDealsOnSectorProveCommitParams{
 			DealIDs:      preCommitSector.Info.DealIDs,
 			SectorExpiry: preCommitSector.Info.Expiration,
@@ -675,7 +675,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 	{
 		_, code := rt.Send(
 			builtin.StorageMarketActorAddr,
-			builtin.Method_StorageMarketActor_OnMinerSectorsTerminate,
+			builtin.StorageMarketMethods.OnMinerSectorsTerminate,
 			&storage_market.OnMinerSectorsTerminateParams{
 				DealIDs: si.Info.DealIDs,
 			},
@@ -797,7 +797,7 @@ func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime, sect
 
 	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.Method_StorageMarketActor_OnMinerSectorsTerminate,
+		builtin.StorageMarketMethods.OnMinerSectorsTerminate,
 		&storage_market.OnMinerSectorsTerminateParams{
 			DealIDs: dealIds,
 		},
@@ -868,7 +868,7 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	var infos storage_market.GetPieceInfosForDealIDsReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.Method_StorageMarketActor_GetPieceInfosForDealIDs,
+		builtin.StorageMarketMethods.GetPieceInfosForDealIDs,
 		&storage_market.GetPieceInfosForDealIDsParams{
 			DealIDs: onChainInfo.DealIDs,
 		},
