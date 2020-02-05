@@ -502,3 +502,19 @@ func (rt *Runtime) require(predicate bool, msg string, args ...interface{}) {
 		rt.t.Fatalf(msg, args...)
 	}
 }
+
+type ReturnWrapper struct {
+	V runtime.CBORMarshaler
+}
+
+func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
+	a := []byte{}
+	b := bytes.NewBuffer(a)
+
+	err := r.V.MarshalCBOR(b)
+	if err != nil {
+		return err
+	}
+	err = o.UnmarshalCBOR(b)
+	return err
+}
