@@ -21,7 +21,7 @@ type StorageMinerActorState struct {
 	FaultSet            abi.BitField
 	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 
-	Info      MinerInfo
+	Info      MinerInfo // TODO: this needs to be a cid of the miner info struct
 	PoStState MinerPoStState
 }
 

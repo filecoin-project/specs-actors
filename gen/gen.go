@@ -141,10 +141,9 @@ func main() {
 		storage_market.WithdrawBalanceParams{},
 		storage_market.PublishStorageDealsParams{},
 		storage_market.VerifyDealsOnSectorProveCommitParams{},
-		storage_market.GetPieceInfosForDealIDsParams{},
+		storage_market.ComputeDataCommitmentParams{},
 		storage_market.OnMinerSectorsTerminateParams{},
 		// method returns
-		storage_market.GetPieceInfosForDealIDsReturn{},
 		storage_market.PublishStorageDealsReturn{},
 		// other types
 		storage_market.StorageDealProposal{},
