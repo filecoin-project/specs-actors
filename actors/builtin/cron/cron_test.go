@@ -4,22 +4,22 @@ import (
 	"context"
 	"testing"
 
-	addr "github.com/filecoin-project/go-address"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
 func TestConstructor(t *testing.T) {
 	actor := cronHarness{cron.CronActor{}, t}
 
-	receiver := newIDAddr(t, 100)
+	receiver := tutil.NewIDAddr(t, 100)
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("construct with empty entries", func(t *testing.T) {
@@ -37,10 +37,10 @@ func TestConstructor(t *testing.T) {
 		rt := builder.Build(t)
 
 		var cronEntries = []cron.CronTableEntry{
-			{Receiver: newIDAddr(t, 1001), MethodNum: abi.MethodNum(1001)},
-			{Receiver: newIDAddr(t, 1002), MethodNum: abi.MethodNum(1002)},
-			{Receiver: newIDAddr(t, 1003), MethodNum: abi.MethodNum(1003)},
-			{Receiver: newIDAddr(t, 1004), MethodNum: abi.MethodNum(1004)},
+			{Receiver: tutil.NewIDAddr(t, 1001), MethodNum: abi.MethodNum(1001)},
+			{Receiver: tutil.NewIDAddr(t, 1002), MethodNum: abi.MethodNum(1002)},
+			{Receiver: tutil.NewIDAddr(t, 1003), MethodNum: abi.MethodNum(1003)},
+			{Receiver: tutil.NewIDAddr(t, 1004), MethodNum: abi.MethodNum(1004)},
 		}
 		actor.constructAndVerify(rt, cronEntries...)
 
@@ -53,7 +53,7 @@ func TestConstructor(t *testing.T) {
 func TestEpochTick(t *testing.T) {
 	actor := cronHarness{cron.CronActor{}, t}
 
-	receiver := newIDAddr(t, 100)
+	receiver := tutil.NewIDAddr(t, 100)
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("epoch tick with empty entries", func(t *testing.T) {
@@ -67,10 +67,10 @@ func TestEpochTick(t *testing.T) {
 	t.Run("epoch tick with non-empty entries", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		entry1 := cron.CronTableEntry{Receiver: newIDAddr(t, 1001), MethodNum: abi.MethodNum(1001)}
-		entry2 := cron.CronTableEntry{Receiver: newIDAddr(t, 1002), MethodNum: abi.MethodNum(1002)}
-		entry3 := cron.CronTableEntry{Receiver: newIDAddr(t, 1003), MethodNum: abi.MethodNum(1003)}
-		entry4 := cron.CronTableEntry{Receiver: newIDAddr(t, 1004), MethodNum: abi.MethodNum(1004)}
+		entry1 := cron.CronTableEntry{Receiver: tutil.NewIDAddr(t, 1001), MethodNum: abi.MethodNum(1001)}
+		entry2 := cron.CronTableEntry{Receiver: tutil.NewIDAddr(t, 1002), MethodNum: abi.MethodNum(1002)}
+		entry3 := cron.CronTableEntry{Receiver: tutil.NewIDAddr(t, 1003), MethodNum: abi.MethodNum(1003)}
+		entry4 := cron.CronTableEntry{Receiver: tutil.NewIDAddr(t, 1004), MethodNum: abi.MethodNum(1004)}
 
 		actor.constructAndVerify(rt, entry1, entry2, entry3, entry4)
 		// exit code should not matter
@@ -101,16 +101,4 @@ func (h *cronHarness) epochTickAndVerify(rt *mock.Runtime) {
 	ret := rt.Call(h.EpochTick, &adt.EmptyValue{}).(*adt.EmptyValue)
 	assert.Equal(h.t, &adt.EmptyValue{}, ret)
 	rt.Verify()
-}
-
-//
-// Misc. Utility Functions
-//
-
-func newIDAddr(t *testing.T, id uint64) addr.Address {
-	address, err := addr.NewIDAddress(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return address
 }

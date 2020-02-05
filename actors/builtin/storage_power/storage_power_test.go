@@ -2,26 +2,27 @@ package storage_power_test
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/ipfs/go-cid"
-	"github.com/stretchr/testify/require"
 	"testing"
 
-	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
-	"github.com/stretchr/testify/assert"
+	cid "github.com/ipfs/go-cid"
+	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
+
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	mock "github.com/filecoin-project/specs-actors/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
 func TestConstruction(t *testing.T) {
 	actor := spActorHarness{storage_power.StoragePowerActor{}, t}
-	powerActor := newIDAddr(t, 100)
-	owner1 := newIDAddr(t, 101)
-	worker1 := newIDAddr(t, 102)
-	miner1 := newIDAddr(t, 103)
-	unused := newIDAddr(t, 104)
+	powerActor := tutil.NewIDAddr(t, 100)
+	owner1 := tutil.NewIDAddr(t, 101)
+	worker1 := tutil.NewIDAddr(t, 102)
+	miner1 := tutil.NewIDAddr(t, 103)
+	unused := tutil.NewIDAddr(t, 104)
 
 	builder := mock.NewBuilder(context.Background(), powerActor).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
@@ -46,7 +47,7 @@ func TestConstruction(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 		createMinerRet := &storage_power.CreateMinerReturn{
-			IDAddress:     miner1,     // miner actor id address
+			IDAddress:     miner1, // miner actor id address
 			RobustAddress: unused, // should be long miner actor address
 		}
 		rt.ExpectSend(owner1, builtin.MethodSend, createMinerParams, abi.NewTokenAmount(10), &mock.ReturnWrapper{createMinerRet}, 0)
@@ -92,14 +93,6 @@ type key string
 
 func asKey(in string) adt.Keyer {
 	return key(in)
-}
-
-func newIDAddr(t *testing.T, id uint64) addr.Address {
-	address, err := addr.NewIDAddress(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return address
 }
 
 func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
