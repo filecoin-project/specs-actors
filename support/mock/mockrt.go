@@ -213,7 +213,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	expectedMsg := rt.expectSends[0]
 
 	if !expectedMsg.Equal(toAddr, methodNum, params, value) {
-		rt.t.Errorf("expectedMessage being sent does not match expectation. Message: to %v method: %v value: %v params: %v, Expected: %v", toAddr.String(), methodNum, value, params, rt.expectSends[0].String())
+		rt.t.Errorf("expectedMessage being sent does not match expectation.\nMessage -\t to: %v method: %v value: %v params: %v\nExpected -\t %v", toAddr, methodNum, value, params, rt.expectSends[0])
 	}
 
 	if value.GreaterThan(rt.balance) {
@@ -375,7 +375,7 @@ func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params ru
 }
 
 func (m *expectedMessage) String() string {
-	return fmt.Sprintf("to: %v method: %v params: %v value: %v sendReturn: %v exitCode: %v", m.to.String(), m.method, m.params, m.value, m.sendReturn, m.exitCode)
+	return fmt.Sprintf("to: %v method: %v value: %v params: %v sendReturn: %v exitCode: %v", m.to, m.method, m.value, m.params, m.sendReturn, m.exitCode)
 }
 
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
