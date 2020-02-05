@@ -525,7 +525,15 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 }
 
 func (a *StoragePowerActor) getPledgeCollateralReqForMiner(rt Runtime, st *StoragePowerActorState, minerAddr addr.Address) (abi.TokenAmount, error) {
-	minerNominalPower, err := st.computeNominalPower(adt.AsStore(rt), minerAddr)
+	claimedPower, ok, err := getStoragePower(adt.AsStore(rt), st.ClaimedPower, minerAddr)
+	if err != nil {
+		return abi.NewStoragePower(0), errors.Wrap(err, "failed to get claimed miner power while computing pledge collateral requirement")
+	}
+	if !ok {
+		return abi.NewStoragePower(0), errors.Errorf("no claimed power for actor %v", minerAddr)
+	}
+
+	minerNominalPower, err := st.computeNominalPower(adt.AsStore(rt), minerAddr, claimedPower)
 	if err != nil {
 		return abi.NewTokenAmount(0), err
 	}

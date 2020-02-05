@@ -78,7 +78,7 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 		if err != nil {
 			return err
 		}
-		nominalPower, err := st.computeNominalPower(s, maddr)
+		nominalPower, err := st.computeNominalPower(s, maddr, pwr)
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeC
 		if err != nil {
 			return err
 		}
-		nominalPower, err := st.computeNominalPower(s, maddr)
+		nominalPower, err := st.computeNominalPower(s, maddr, pwr)
 		if err != nil {
 			return err
 		}
@@ -202,15 +202,7 @@ func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, miner
 	return nil
 }
 
-func (st *StoragePowerActorState) computeNominalPower(s adt.Store, minerAddr addr.Address) (abi.StoragePower, error) {
-	claimedPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
-	if err != nil {
-		return abi.NewStoragePower(0), errors.Wrap(err, "failed to get claimed miner power while setting claimed power table entry")
-	}
-	if !ok {
-		return abi.NewStoragePower(0), errors.Errorf("no claimed power for actor %v", minerAddr)
-	}
-
+func (st *StoragePowerActorState) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
 	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
