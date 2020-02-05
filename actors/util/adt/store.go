@@ -7,6 +7,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	"github.com/pkg/errors"
 
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -63,4 +64,12 @@ func (k IntKey) Key() string {
 	var buf []byte
 	n := binary.PutVarint(buf, int64(k))
 	return string(buf[:n])
+}
+
+func ParseIntKey(k string) (IntKey, error) {
+	i, n := binary.Varint([]byte(k))
+	if n != len(k) {
+		return 0, errors.New("failed to decode varint key")
+	}
+	return IntKey(i), nil
 }

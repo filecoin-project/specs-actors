@@ -52,41 +52,12 @@ func (t *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.DealIDsByParty (map[string]storage_market.PartyDeals) (map)
-	{
-		if len(t.DealIDsByParty) > 4096 {
-			return xerrors.Errorf("cannot marshal t.DealIDsByParty map too large")
-		}
+	// t.DealIDsByParty (cid.Cid) (struct)
 
-		if err := cbg.CborWriteHeader(w, cbg.MajMap, uint64(len(t.DealIDsByParty))); err != nil {
-			return err
-		}
-
-		keys := make([]string, 0, len(t.DealIDsByParty))
-		for k := range t.DealIDsByParty {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			v := t.DealIDsByParty[k]
-
-			if len(k) > cbg.MaxLength {
-				return xerrors.Errorf("Value in field k was too long")
-			}
-
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(k)))); err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte(k)); err != nil {
-				return err
-			}
-
-			if err := v.MarshalCBOR(w); err != nil {
-				return err
-			}
-
-		}
+	if err := cbg.WriteCid(w, t.DealIDsByParty); err != nil {
+		return xerrors.Errorf("failed to write cid field t.DealIDsByParty: %w", err)
 	}
+
 	return nil
 }
 
@@ -166,45 +137,16 @@ func (t *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
 
 		t.NextID = abi.DealID(extraI)
 	}
-	// t.DealIDsByParty (map[string]storage_market.PartyDeals) (map)
+	// t.DealIDsByParty (cid.Cid) (struct)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajMap {
-		return fmt.Errorf("expected a map (major type 5)")
-	}
-	if extra > 4096 {
-		return fmt.Errorf("t.DealIDsByParty: map too large")
-	}
+	{
 
-	t.DealIDsByParty = make(map[string]PartyDeals, extra)
-
-	for i, l := 0, int(extra); i < l; i++ {
-
-		var k string
-
-		{
-			sval, err := cbg.ReadString(br)
-			if err != nil {
-				return err
-			}
-
-			k = string(sval)
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.DealIDsByParty: %w", err)
 		}
 
-		var v PartyDeals
-
-		{
-
-			if err := v.UnmarshalCBOR(br); err != nil {
-				return err
-			}
-
-		}
-
-		t.DealIDsByParty[k] = v
+		t.DealIDsByParty = c
 
 	}
 	return nil

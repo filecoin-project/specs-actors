@@ -1,9 +1,6 @@
 package storage_market
 
 import (
-	"fmt"
-	"strconv"
-
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
 
@@ -43,11 +40,16 @@ type StorageMarketActorState struct {
 	NextID abi.DealID
 
 	// Metadata cached for efficient iteration over deals.
-	DealIDsByParty map[string]PartyDeals // TODO: figure out a way to drop this
+	DealIDsByParty cid.Cid // SetMultimap, HAMT[addr]Set
 }
 
 func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
 	emptyArray, err := adt.MakeEmptyArray(store)
+	if err != nil {
+		return nil, err
+	}
+
+	emptyMSet, err := MakeEmptySetMultimap(store)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +59,7 @@ func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
 		EscrowTable:    emptyArray.Root(),
 		LockedTable:    emptyArray.Root(),
 		NextID:         abi.DealID(0),
-		DealIDsByParty: map[string]PartyDeals{},
+		DealIDsByParty: emptyMSet.Root(),
 	}, nil
 }
 
@@ -69,13 +71,14 @@ func (st *StorageMarketActorState) updatePendingDealStatesForParty(rt Runtime, a
 	// For consistency with HandleExpiredDeals, only process updates up to the end of the _previous_ epoch.
 	epoch := rt.CurrEpoch() - 1
 
-	deals, ok := st.DealIDsByParty[addr.String()]
-	Assert(ok)
+	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	var extractedDealIDs []abi.DealID
-	for cachedDealID := range deals.Deals {
-		id, err := strconv.ParseUint(cachedDealID, 10, 64)
-		AssertNoError(err)
+	err := dbp.ForEach(adt.AddrKey(addr), func(id int64) error {
 		extractedDealIDs = append(extractedDealIDs, abi.DealID(id))
+		return nil
+	})
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "foreach error %v", err)
 	}
 
 	amountSlashedTotal = st.updatePendingDealStates(rt, extractedDealIDs, epoch)
@@ -169,7 +172,11 @@ func (st *StorageMarketActorState) deleteDeal(rt Runtime, dealID abi.DealID) {
 		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
 	}
 
-	delete(st.DealIDsByParty[dealP.Client.String()].Deals, fmt.Sprint(dealID))
+	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+	if err := dbp.Remove(adt.AddrKey(dealP.Client), uint64(dealID)); err != nil {
+		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
+	}
+	st.DealIDsByParty = dbp.Root()
 }
 
 // Note: only processes deal payments, not deal expiration (even if the deal has expired).
