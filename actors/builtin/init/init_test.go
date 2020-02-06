@@ -101,7 +101,6 @@ func TestExec(t *testing.T) {
 		actualIdAddr2, err := st2.ResolveAddress(rt.Store(), uniqueAddr2)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIdAddr2, actualIdAddr2)
-
 	})
 
 	t.Run("happy path exec create storage miner", func(t *testing.T) {
@@ -137,7 +136,6 @@ func TestExec(t *testing.T) {
 		actualUnknownAddr, err := st.ResolveAddress(rt.Store(), expUnknowAddr)
 		assert.NoError(t, err)
 		assert.Equal(t, expUnknowAddr, actualUnknownAddr)
-
 	})
 
 }
