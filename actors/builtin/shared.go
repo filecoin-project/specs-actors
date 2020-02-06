@@ -66,4 +66,3 @@ func ValidatePledgeAddress(rt runtime.Runtime, addr addr.Address) addr.Address {
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 	return ownerAddr
 }
-
