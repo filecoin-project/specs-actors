@@ -558,20 +558,20 @@ func TestCancel(t *testing.T) {
 		rt.Verify()
 
 		// anne fails to cancel a transaction - she is not a signer
-		rt.SetCaller(anne, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.cancel(rt, txnID)
-		})
-		rt.Verify()
+		//for some reason I cannot ExpectAbort again
+		//rt.SetCaller(anne, builtin.AccountActorCodeID)
+		//rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		//rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		//	actor.cancel(rt, txnID)
+		//})
+		//rt.Verify()
 
 		// bob either fails to cancel a transaction - he is not a proposer
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		// for some reason I cannot ExpectAbort again
-		//rt.ExpectAbort(exitcode.ErrForbidden, func() {
-		//	actor.cancel(rt, txnID)
-		//})
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.cancel(rt, txnID)
+		})
 		rt.Verify()
 
 		// Transaction should remain after invalid cancel
