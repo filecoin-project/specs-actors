@@ -28,15 +28,9 @@ func (t *InitActorState) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.AddressMap: %w", err)
 	}
 
-	// t.NextID (abi.ActorID) (int64)
-	if t.NextID >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NextID))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NextID)-1)); err != nil {
-			return err
-		}
+	// t.NextID (abi.ActorID) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NextID))); err != nil {
+		return err
 	}
 
 	// t.NetworkName (string) (string)
@@ -80,31 +74,16 @@ func (t *InitActorState) UnmarshalCBOR(r io.Reader) error {
 		t.AddressMap = c
 
 	}
-	// t.NextID (abi.ActorID) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
+	// t.NextID (abi.ActorID) (uint64)
 
-		t.NextID = abi.ActorID(extraI)
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.NextID = abi.ActorID(extra)
 	// t.NetworkName (string) (string)
 
 	{

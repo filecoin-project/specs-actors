@@ -894,15 +894,9 @@ func (t *ModVerifyParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Method (abi.MethodNum) (int64)
-	if t.Method >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.Method)-1)); err != nil {
-			return err
-		}
+	// t.Method (abi.MethodNum) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
+		return err
 	}
 
 	// t.Data ([]uint8) (slice)
@@ -943,31 +937,16 @@ func (t *ModVerifyParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.Method (abi.MethodNum) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
+	// t.Method (abi.MethodNum) (uint64)
 
-		t.Method = abi.MethodNum(extraI)
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.Method = abi.MethodNum(extra)
 	// t.Data ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)

@@ -7,7 +7,7 @@ import (
 )
 
 // SectorNumber is a numeric identifier for a sector. It is usually relative to a miner.
-type SectorNumber int64
+type SectorNumber uint64
 
 // SectorSize indicates one of a set of possible sizes in the network.
 // Ideally, SectorSize would be an enum
@@ -18,7 +18,7 @@ type SectorNumber int64
 //   1TiB = 1099511627776
 //   1PiB = 1125899906842624
 // }
-type SectorSize int64
+type SectorSize uint64
 
 type SectorID struct {
 	Miner  ActorID
@@ -49,8 +49,8 @@ const (
 /// Sealing
 ///
 
-type SealRandomness []byte
-type InteractiveSealRandomness []byte
+type SealRandomness Randomness
+type InteractiveSealRandomness Randomness
 
 // SealVerifyInfo is the structure of all the information a verifier
 // needs to verify a Seal.
@@ -85,7 +85,7 @@ type SealProof struct { //<curve, system> {
 ///
 
 type ChallengeTicketsCommitment []byte
-type PoStRandomness []byte
+type PoStRandomness Randomness
 type PartialTicket []byte // 32 bytes
 
 // TODO Porcu: refactor these types to get rid of the squishy optional fields.

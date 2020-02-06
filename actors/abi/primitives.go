@@ -14,7 +14,7 @@ type ChainEpoch int64
 
 // A sequential number assigned to an actor when created by the InitActor.
 // This ID is embedded in ID-type addresses.
-type ActorID int64
+type ActorID uint64
 
 // MethodNum is an integer that represents a particular method
 // in an actor's function table. These numbers are used to compress
@@ -30,7 +30,7 @@ type ActorID int64
 // still remain defined in the code to ensure the tag number is not
 // reused accidentally. The same should apply to the MethodNum
 // associated with methods in Filecoin VM Actors.
-type MethodNum int64
+type MethodNum uint64
 
 // TokenAmount is an amount of Filecoin tokens. This type is used within
 // the VM in message execution, to account movement of tokens, payment
