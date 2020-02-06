@@ -49,10 +49,10 @@ type Runtime struct {
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
 	expectSends              []*expectedMessage
-	expectCreateActor        *expectCreateActorPair
+	expectCreateActor        *expectCreateActor
 }
 
-type expectCreateActorPair struct {
+type expectCreateActor struct {
 	codeId  cid.Cid
 	address addr.Address
 }
@@ -255,8 +255,8 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 		rt.t.Fatal("unexpected call to create actor")
 	}
 	if !rt.expectCreateActor.codeId.Equals(codeId) || rt.expectCreateActor.address != address {
-		rt.t.Errorf("unexpected actor being created, expected code: %v address: %v, actual code: %v address: %v",
-			rt.expectCreateActor.codeId.String(), rt.expectCreateActor.address.String(), codeId.String(), address.String())
+		rt.t.Errorf("unexpected actor being created, expected code: %s address: %s, actual code: %s address: %s",
+			rt.expectCreateActor.codeId, rt.expectCreateActor.address, codeId, address)
 	}
 	defer func() {
 		rt.expectCreateActor = nil
@@ -450,7 +450,7 @@ func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, para
 }
 
 func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
-	rt.expectCreateActor = &expectCreateActorPair{
+	rt.expectCreateActor = &expectCreateActor{
 		codeId:  codeId,
 		address: address,
 	}
