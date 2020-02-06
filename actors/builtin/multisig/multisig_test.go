@@ -896,6 +896,7 @@ func TestCancel(t *testing.T) {
 		actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
+
 		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
@@ -909,6 +910,25 @@ func TestCancel(t *testing.T) {
 			actor.cancel(rt, dneTxnID, proposalHashData)
 		})
 		rt.Verify()
+
+
+		// anne fails to cancel a transaction - she is not a signer
+		//for some reason I cannot ExpectAbort again
+		//rt.SetCaller(anne, builtin.AccountActorCodeID)
+		//rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		//rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		//	actor.cancel(rt, txnID)
+		//})
+		//rt.Verify()
+
+		// bob either fails to cancel a transaction - he is not a proposer
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.cancel(rt, txnID)
+		})
+		rt.Verify()
+
 
 		// Transaction should remain after invalid cancel
 		actor.assertTransactions(rt, multisig.Transaction{
