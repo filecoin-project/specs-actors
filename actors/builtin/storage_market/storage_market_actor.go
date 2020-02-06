@@ -2,6 +2,7 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
+
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -234,7 +235,7 @@ func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *V
 
 			// Compute deal weight
 			dur := big.NewInt(int64(proposal.Duration()))
-			siz := big.NewInt(proposal.PieceSize.Total())
+			siz := big.NewInt(int64(proposal.PieceSize.Total()))
 			weight := big.Mul(dur, siz)
 			totalWeight = big.Add(totalWeight, weight)
 		}

@@ -330,15 +330,9 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SectorSize (abi.SectorSize) (int64)
-	if t.SectorSize >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorSize)-1)); err != nil {
-			return err
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
+		return err
 	}
 
 	// t.Peer (peer.ID) (string)
@@ -379,31 +373,16 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SectorSize (abi.SectorSize) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
 
-		t.SectorSize = abi.SectorSize(extraI)
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.SectorSize = abi.SectorSize(extra)
 	// t.Peer (peer.ID) (string)
 
 	{
@@ -1190,15 +1169,9 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SectorSize (abi.SectorSize) (int64)
-	if t.SectorSize >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorSize)-1)); err != nil {
-			return err
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
+		return err
 	}
 
 	// t.PeerId (peer.ID) (string)
@@ -1248,31 +1221,16 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SectorSize (abi.SectorSize) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
 
-		t.SectorSize = abi.SectorSize(extraI)
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.SectorSize = abi.SectorSize(extra)
 	// t.PeerId (peer.ID) (string)
 
 	{
@@ -1295,15 +1253,9 @@ func (t *SectorStorageWeightDesc) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SectorSize (abi.SectorSize) (int64)
-	if t.SectorSize >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorSize)-1)); err != nil {
-			return err
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
+		return err
 	}
 
 	// t.Duration (abi.ChainEpoch) (int64)
@@ -1339,31 +1291,16 @@ func (t *SectorStorageWeightDesc) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.SectorSize (abi.SectorSize) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
 
-		t.SectorSize = abi.SectorSize(extraI)
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.SectorSize = abi.SectorSize(extra)
 	// t.Duration (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
