@@ -50,7 +50,7 @@ func TestExec(t *testing.T) {
 	var fakeParams = runtime.CBORBytes([]byte{'D', 'E', 'A', 'D', 'B', 'E', 'E', 'F'})
 	var balance = abi.NewTokenAmount(100)
 
-	t.Run("happy path exec create payment channel", func(t *testing.T) {
+	t.Run("happy path exec create 2 payment channels", func(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
@@ -136,6 +136,39 @@ func TestExec(t *testing.T) {
 		actualUnknownAddr, err := st.ResolveAddress(rt.Store(), expUnknowAddr)
 		assert.NoError(t, err)
 		assert.Equal(t, expUnknowAddr, actualUnknownAddr)
+	})
+
+	t.Run("sending to constructor failure", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt)
+
+		// only the storage power actor can create a miner
+		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+
+		// re-org-stable address of the storage miner actor
+		uniqueAddr := tutil.NewActorAddr(t, "miner")
+		rt.SetNewActorAddress(uniqueAddr)
+
+		// next id address
+		expectedIdAddr := tutil.NewIDAddr(t, 100)
+		rt.ExpectCreateActor(builtin.StorageMinerActorCodeID, expectedIdAddr)
+
+		// expect storage power actor creating a storage miner actor to trigger a send to the storage miner actors constructor
+		rt.ExpectSend(expectedIdAddr, builtin.MethodConstructor, fakeParams, big.Zero(), nil, exitcode.ErrIllegalState)
+		var execRet *init_.ExecReturn
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			execRet = actor.execAndVerify(rt, builtin.StorageMinerActorCodeID, fakeParams)
+			assert.Nil(t, execRet)
+		})
+
+		// since the send failed the uniqueAddr should resolve to itself instead of an ID address
+		var st init_.InitActorState
+		rt.GetState(&st)
+		noResoAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
+		assert.NoError(t, err)
+		assert.Equal(t, uniqueAddr, noResoAddr)
+
 	})
 
 }
