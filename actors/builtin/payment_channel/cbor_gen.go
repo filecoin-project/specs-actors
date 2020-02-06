@@ -5,7 +5,6 @@ package payment_channel
 import (
 	"fmt"
 	"io"
-	"sort"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
@@ -61,39 +60,17 @@ func (t *PaymentChannelActorState) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.LaneStates (map[string]*payment_channel.LaneState) (map)
-	{
-		if len(t.LaneStates) > 4096 {
-			return xerrors.Errorf("cannot marshal t.LaneStates map too large")
-		}
+	// t.LaneStates ([]*payment_channel.LaneState) (slice)
+	if len(t.LaneStates) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.LaneStates was too long")
+	}
 
-		if err := cbg.CborWriteHeader(w, cbg.MajMap, uint64(len(t.LaneStates))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.LaneStates)))); err != nil {
+		return err
+	}
+	for _, v := range t.LaneStates {
+		if err := v.MarshalCBOR(w); err != nil {
 			return err
-		}
-
-		keys := make([]string, 0, len(t.LaneStates))
-		for k := range t.LaneStates {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			v := t.LaneStates[k]
-
-			if len(k) > cbg.MaxLength {
-				return xerrors.Errorf("Value in field k was too long")
-			}
-
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(k)))); err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte(k)); err != nil {
-				return err
-			}
-
-			if err := v.MarshalCBOR(w); err != nil {
-				return err
-			}
-
 		}
 	}
 	return nil
@@ -191,59 +168,33 @@ func (t *PaymentChannelActorState) UnmarshalCBOR(r io.Reader) error {
 
 		t.MinSettleHeight = abi.ChainEpoch(extraI)
 	}
-	// t.LaneStates (map[string]*payment_channel.LaneState) (map)
+	// t.LaneStates ([]*payment_channel.LaneState) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
 		return err
 	}
-	if maj != cbg.MajMap {
-		return fmt.Errorf("expected a map (major type 5)")
-	}
-	if extra > 4096 {
-		return fmt.Errorf("t.LaneStates: map too large")
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.LaneStates: array too large (%d)", extra)
 	}
 
-	t.LaneStates = make(map[string]*LaneState, extra)
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.LaneStates = make([]*LaneState, extra)
+	}
+	for i := 0; i < int(extra); i++ {
 
-	for i, l := 0, int(extra); i < l; i++ {
-
-		var k string
-
-		{
-			sval, err := cbg.ReadString(br)
-			if err != nil {
-				return err
-			}
-
-			k = string(sval)
+		var v LaneState
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
 		}
 
-		var v *LaneState
-
-		{
-
-			pb, err := br.PeekByte()
-			if err != nil {
-				return err
-			}
-			if pb == cbg.CborNull[0] {
-				var nbuf [1]byte
-				if _, err := br.Read(nbuf[:]); err != nil {
-					return err
-				}
-			} else {
-				v = new(LaneState)
-				if err := v.UnmarshalCBOR(br); err != nil {
-					return err
-				}
-			}
-
-		}
-
-		t.LaneStates[k] = v
-
+		t.LaneStates[i] = &v
 	}
+
 	return nil
 }
 
@@ -252,8 +203,19 @@ func (t *LaneState) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{131}); err != nil {
 		return err
+	}
+
+	// t.ID (int64) (int64)
+	if t.ID >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.ID))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ID)-1)); err != nil {
+			return err
+		}
 	}
 
 	// t.Redeemed (big.Int) (struct)
@@ -285,10 +247,35 @@ func (t *LaneState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.ID (int64) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.ID = int64(extraI)
+	}
 	// t.Redeemed (big.Int) (struct)
 
 	{

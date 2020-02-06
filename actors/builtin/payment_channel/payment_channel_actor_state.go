@@ -24,13 +24,14 @@ type PaymentChannelActorState struct {
 	// Height before which the channel `ToSend` cannot be collected
 	MinSettleHeight abi.ChainEpoch
 
-	// Mapping from lane number to lane state for the channel
-	LaneStates map[string]*LaneState
+	// Collections of lane states for the channel, maintained in ID order.
+	LaneStates []*LaneState
 }
 
 // The Lane state tracks the latest (highest) voucher nonce used to merge the lane
 // as well as the amount it has already redeemed.
 type LaneState struct {
+	ID       int64 // Unique to this channel
 	Redeemed big.Int
 	Nonce    int64
 }
@@ -48,6 +49,6 @@ func ConstructState(from addr.Address, to addr.Address) *PaymentChannelActorStat
 		ToSend:          big.Zero(),
 		SettlingAt:      0,
 		MinSettleHeight: 0,
-		LaneStates:      make(map[string]*LaneState),
+		LaneStates:      []*LaneState{},
 	}
 }
