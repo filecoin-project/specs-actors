@@ -14,12 +14,12 @@ const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
 const PoRepLookback = ChainFinalityish // Should be approximately chain ~finality. PARAM_FINISH
 
 // Minimum and maximum delay (inclusive) between a sector pre-commitment and corresponding proof of commitment.
-const PoRepMinDelay = abi.ChainEpoch(5) // PARAM_FINISH
+const PoRepMinDelay = abi.ChainEpoch(5)  // PARAM_FINISH
 const PoRepMaxDelay = abi.ChainEpoch(10) // PARAM_FINISH
 
 // Maximum duration to allow for the sealing process for seal algorithms.
 var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
-	abi.RegisteredProof_StackedDRG32GiBSeal: abi.ChainEpoch(1), // PARAM_FINISH
+	abi.RegisteredProof_StackedDRG32GiBSeal:    abi.ChainEpoch(1), // PARAM_FINISH
 	abi.RegisteredProof_WinStackedDRG32GiBSeal: abi.ChainEpoch(1), // PARAM_FINISH
 }
 
@@ -28,6 +28,9 @@ const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
 // Lookback from the current epoch for state view for elections; for Election PoSt, same as the PoSt lookback.
 const ElectionLookback = PoStLookback // PARAM_FINISH
+
+// Number of sectors to be sampled as part of surprise PoSt
+const NumSurprisePoStSectors = 200 // PARAM_FINISH
 
 // Delay between declaration of a temporary sector fault and effectiveness of reducing the active proving set for PoSts.
 const DeclaredFaultEffectiveDelay = abi.ChainEpoch(20) // PARAM_FINISH

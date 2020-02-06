@@ -893,7 +893,7 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 	}
 
 	// verify appropriate number of tickets is present
-	if int64(len(onChainInfo.Candidates)) != indices.StoragePower_NumSurprisePoStSectors() {
+	if int64(len(onChainInfo.Candidates)) != NumSurprisePoStSectors {
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Too few tickets included.")
 	}
 
