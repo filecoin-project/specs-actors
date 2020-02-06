@@ -54,31 +54,53 @@ func TestExec(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
-
 		// anne execs a payment channel actor with 100 FIL.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
+
 		rt.SetBalance(balance)
 		rt.SetReceived(balance)
 
 		// re-org-stable address of the payment channel actor
-		uniqueAddr := tutil.NewActorAddr(t, "paych")
-		rt.SetNewActorAddress(uniqueAddr)
+		uniqueAddr1 := tutil.NewActorAddr(t, "paych")
+		rt.SetNewActorAddress(uniqueAddr1)
 
 		// next id address
-		expectedIdAddr := tutil.NewIDAddr(t, 100)
-		rt.ExpectCreateActor(builtin.PaymentChannelActorCodeID, expectedIdAddr)
+		expectedIdAddr1 := tutil.NewIDAddr(t, 100)
+		rt.ExpectCreateActor(builtin.PaymentChannelActorCodeID, expectedIdAddr1)
 
 		// expect anne creating a payment channel to trigger a send to the payment channels constructor
-		rt.ExpectSend(expectedIdAddr, builtin.MethodConstructor, fakeParams, balance, nil, exitcode.Ok)
-		execRet := actor.execAndVerify(rt, builtin.PaymentChannelActorCodeID, fakeParams)
-		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
-		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
+		rt.ExpectSend(expectedIdAddr1, builtin.MethodConstructor, fakeParams, balance, nil, exitcode.Ok)
+		execRet1 := actor.execAndVerify(rt, builtin.PaymentChannelActorCodeID, fakeParams)
+		assert.Equal(t, uniqueAddr1, execRet1.RobustAddress)
+		assert.Equal(t, expectedIdAddr1, execRet1.IDAddress)
 
 		var st init_.InitActorState
 		rt.GetState(&st)
-		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
+		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr1)
 		assert.NoError(t, err)
-		assert.Equal(t, expectedIdAddr, actualIdAddr)
+		assert.Equal(t, expectedIdAddr1, actualIdAddr)
+
+		// creating another actor should get a different address, the below logic is a repeat of the above to insure
+		// the next ID address created is incremented. 100 -> 101
+		rt.SetBalance(balance)
+		rt.SetReceived(balance)
+		uniqueAddr2 := tutil.NewActorAddr(t, "paych2")
+		rt.SetNewActorAddress(uniqueAddr2)
+		// the incremented ID address.
+		expectedIdAddr2 := tutil.NewIDAddr(t, 101)
+		rt.ExpectCreateActor(builtin.PaymentChannelActorCodeID, expectedIdAddr2)
+
+		// expect anne creating a payment channel to trigger a send to the payment channels constructor
+		rt.ExpectSend(expectedIdAddr2, builtin.MethodConstructor, fakeParams, balance, nil, exitcode.Ok)
+		execRet2 := actor.execAndVerify(rt, builtin.PaymentChannelActorCodeID, fakeParams)
+		assert.Equal(t, uniqueAddr2, execRet2.RobustAddress)
+		assert.Equal(t, expectedIdAddr2, execRet2.IDAddress)
+
+		var st2 init_.InitActorState
+		rt.GetState(&st2)
+		actualIdAddr2, err := st2.ResolveAddress(rt.Store(), uniqueAddr2)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedIdAddr2, actualIdAddr2)
 
 	})
 
