@@ -150,7 +150,7 @@ func (st *StorageMinerActorState) getPrecommittedSector(store adt.Store, sectorN
 	return &info, found, nil
 }
 
-func (st *StorageMinerActorState) deletePrecommitttedSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *StorageMinerActorState) deletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Delete(adt.IntKey(sectorNo))
 	if err != nil {
