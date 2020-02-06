@@ -126,7 +126,7 @@ func (a StorageMarketActor) AddBalance(rt Runtime, address *addr.Address) *adt.E
 }
 
 type PublishStorageDealsParams struct {
-	Deals []StorageDealProposal
+	Deals []DealProposal
 }
 
 type PublishStorageDealsReturn struct {
@@ -144,9 +144,9 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 	newDealIds := []abi.DealID{}
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
-		deals := AsDealArray(adt.AsStore(rt), st.Deals)
+		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
-		// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
+		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			if deal.Provider != rt.ImmediateCaller() {
 				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", deal.Provider)
@@ -166,13 +166,8 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 			st.lockBalanceOrAbort(rt, deal.Provider, deal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
-			onchainDeal := &OnChainDeal{
-				ID:               id,
-				Proposal:         deal,
-				SectorStartEpoch: epochUndefined,
-			}
 
-			err := deals.Set(id, onchainDeal)
+			err := proposals.Set(id, &deal)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
@@ -186,7 +181,7 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 
 			newDealIds = append(newDealIds, id)
 		}
-		st.Deals = deals.Root()
+		st.Proposals = proposals.Root()
 		st.DealIDsByParty = dbp.Root()
 		return nil
 	})
@@ -216,28 +211,35 @@ func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *V
 	rt.State().Transaction(&st, func() interface{} {
 		// if there are no dealIDs, it is a CommittedCapacity sector
 		// and the totalWeight should be zero
+		states := AsDealStateArray(adt.AsStore(rt), st.States)
+		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+
 		for _, dealID := range params.DealIDs {
-			deals := AsDealArray(adt.AsStore(rt), st.Deals)
-			deal, err := deals.Get(dealID)
+			deal, err := states.Get(dealID)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "get deal %v", err)
+			}
+			proposal, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "get deal %v", err)
 			}
 
-			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, deal)
+			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, deal, proposal)
 
 			deal.SectorStartEpoch = rt.CurrEpoch()
-			err = deals.Set(dealID, deal)
+			err = states.Set(dealID, deal)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
 			}
-			st.Deals = deals.Root()
 
 			// Compute deal weight
-			dur := big.NewInt(int64(deal.Proposal.Duration()))
-			siz := big.NewInt(deal.Proposal.PieceSize.Total())
+			dur := big.NewInt(int64(proposal.Duration()))
+			siz := big.NewInt(proposal.PieceSize.Total())
 			weight := big.Mul(dur, siz)
 			totalWeight = big.Add(totalWeight, weight)
 		}
+		st.States = states.Root()
+
 		return nil
 	})
 	return &totalWeight
@@ -257,8 +259,8 @@ func (a StorageMarketActor) ComputeDataCommitment(rt Runtime, params *ComputeDat
 		for _, dealID := range params.DealIDs {
 			deal := st.mustGetDeal(rt, dealID)
 			pieces = append(pieces, abi.PieceInfo{
-				PieceCID: deal.Proposal.PieceCID,
-				Size:     deal.Proposal.PieceSize.Total(),
+				PieceCID: deal.PieceCID,
+				Size:     deal.PieceSize.Total(),
 			})
 		}
 		return nil
@@ -285,27 +287,33 @@ func (a StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerS
 
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
-		deals := AsDealArray(adt.AsStore(rt), st.Deals)
+		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		states := AsDealStateArray(adt.AsStore(rt), st.States)
 
 		for _, dealID := range params.DealIDs {
-			deal, err := deals.Get(dealID)
+			deal, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
-			Assert(deal.Proposal.Provider == minerAddr)
+			Assert(deal.Provider == minerAddr)
+
+			state, err := states.Get(dealID)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "get deal: %v", err)
+			}
 
 			// Note: we do not perform the balance transfers here, but rather simply record the flag
 			// to indicate that processDealSlashed should be called when the deferred state computation
 			// is performed. // TODO: Do that here
 
-			deal.SlashEpoch = rt.CurrEpoch()
-			err = deals.Set(dealID, deal)
+			state.SlashEpoch = rt.CurrEpoch()
+			err = states.Set(dealID, state)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 		}
 
-		st.Deals = deals.Root()
+		st.States = states.Root()
 		return nil
 	})
 	return &adt.EmptyValue{}
@@ -335,8 +343,8 @@ func (a StorageMarketActor) HandleExpiredDeals(rt Runtime, params *HandleExpired
 // Checks
 ////////////////////////////////////////////////////////////////////////////////
 
-func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal *OnChainDeal) {
-	if deal.Proposal.Provider != minerAddr {
+func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal *DealState, proposal *DealProposal) {
+	if proposal.Provider != minerAddr {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
 	}
 
@@ -344,16 +352,16 @@ func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiratio
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
 	}
 
-	if rt.CurrEpoch() > deal.Proposal.StartEpoch {
+	if rt.CurrEpoch() > proposal.StartEpoch {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 
-	if deal.Proposal.EndEpoch > sectorExpiration {
+	if proposal.EndEpoch > sectorExpiration {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal would outlive its containing sector.")
 	}
 }
 
-func validateDeal(rt Runtime, deal StorageDealProposal) {
+func validateDeal(rt Runtime, deal DealProposal) {
 	if !dealProposalIsInternallyValid(rt, deal) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
 	}

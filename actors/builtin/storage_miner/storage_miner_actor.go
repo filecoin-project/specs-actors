@@ -247,7 +247,7 @@ type PreCommitSectorParams struct {
 	info SectorPreCommitInfo
 }
 
-// Deals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
+// Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
 func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.EmptyValue {
 	var st StorageMinerActorState
