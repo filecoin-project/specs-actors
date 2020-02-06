@@ -10,7 +10,6 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -56,7 +55,7 @@ func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
 func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
 
 	// if miner is larger than min power requirement, we're set
-	if minerPower.GreaterThanEqual(indices.StoragePower_MinMinerSizeStor()) {
+	if minerPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		return true, nil
 	}
 
@@ -66,7 +65,7 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 	}
 
 	// else if none do, check whether in MIN_MINER_SIZE_TARG miners
-	if st.MinerCount <= indices.StoragePower_MinMinerSizeTarg() {
+	if st.MinerCount <= ConsensusMinerMinMiners {
 		// miner should pass
 		return true, nil
 	}
@@ -90,7 +89,7 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 
 	// get size of MIN_MINER_SIZE_TARGth largest miner
 	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
-	return minerPower.GreaterThanEqual(minerSizes[indices.StoragePower_MinMinerSizeTarg()-1]), nil
+	return minerPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
 }
 
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm

@@ -16,7 +16,6 @@ import (
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -28,10 +27,17 @@ var Assert = autil.Assert
 type ConsensusFaultType int64
 
 const (
-	//UncommittedPowerFault ConsensusFaultType = 0
-	DoubleForkMiningFault ConsensusFaultType = 1
-	ParentGrindingFault   ConsensusFaultType = 2
-	TimeOffsetMiningFault ConsensusFaultType = 3
+	//ConsensusFaultUncommittedPower ConsensusFaultType = 0
+	ConsensusFaultDoubleForkMining ConsensusFaultType = 1
+	ConsensusFaultParentGrinding   ConsensusFaultType = 2
+	ConsensusFaultTimeOffsetMining ConsensusFaultType = 3
+)
+
+type SectorTermination int64
+
+const (
+	SectorTerminationExpired SectorTermination = iota // Implicit termination after all deals expire
+	SectorTerminationManual                           // Unscheduled explicit termination by the miner
 )
 
 type StoragePowerActor struct{}
@@ -222,7 +228,7 @@ func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, params *OnSectorProv
 }
 
 type OnSectorTerminateParams struct {
-	TerminationType builtin.SectorTermination
+	TerminationType SectorTermination
 	Weight          SectorStorageWeightDesc
 }
 
@@ -233,7 +239,7 @@ func (a *StoragePowerActor) OnSectorTerminate(rt Runtime, params *OnSectorTermin
 		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
 	}
 
-	if params.TerminationType != builtin.NormalExpiration {
+	if params.TerminationType != SectorTerminationExpired {
 		amountToSlash := pledgePenaltyForSectorTermination(params.Weight, params.TerminationType)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
@@ -323,7 +329,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMin
 		return nil
 	})
 
-	if params.NumConsecutiveFailures > indices.StoragePower_SurprisePoStMaxConsecutiveFailures() {
+	if params.NumConsecutiveFailures > SurprisePostFailureLimit {
 		err := a.deleteMinerActor(rt, minerAddr)
 		abortIfError(rt, err, "failed to delete failed miner %v", minerAddr)
 	} else {
@@ -457,7 +463,7 @@ func (a *StoragePowerActor) deductClaimedPowerForSector(rt Runtime, minerAddr ad
 }
 
 func (a *StoragePowerActor) initiateNewSurprisePoStChallenges(rt Runtime) error {
-	provingPeriod := indices.StorageMining_SurprisePoStProvingPeriod()
+	provingPeriod := SurprisePoStPeriod
 	var surprisedMiners []addr.Address
 	var st StoragePowerActorState
 	var txErr error
