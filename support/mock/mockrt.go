@@ -403,6 +403,7 @@ func (m *expectedMessage) String() string {
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.caller = address
 	rt.callerType = actorType
+	rt.actorCodeCIDs[address] = actorType
 }
 
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
@@ -415,10 +416,6 @@ func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
 
 func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
 	rt.epoch = epoch
-}
-
-func (rt *Runtime) SetActorCodeCID(actAddr addr.Address, codeCID cid.Cid) {
-	rt.actorCodeCIDs[actAddr] = codeCID
 }
 
 func (rt *Runtime) SetNewActorAddress(actAddr addr.Address) {

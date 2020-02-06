@@ -39,7 +39,6 @@ func TestExec(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
-		rt.SetActorCodeCID(anne, builtin.AccountActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.execAndVerify(rt, builtin.AccountActorCodeID, []byte{})
 		})
@@ -60,7 +59,6 @@ func TestExec(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetBalance(balance)
 		rt.SetReceived(balance)
-		rt.SetActorCodeCID(anne, builtin.AccountActorCodeID)
 
 		// re-org-stable address of the payment channel actor
 		uniqueAddr := tutil.NewActorAddr(t, "paych")
@@ -91,7 +89,6 @@ func TestExec(t *testing.T) {
 
 		// only the storage power actor can create a miner
 		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-		rt.SetActorCodeCID(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 
 		// re-org-stable address of the storage miner actor
 		uniqueAddr := tutil.NewActorAddr(t, "miner")
