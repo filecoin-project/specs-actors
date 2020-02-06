@@ -19,7 +19,7 @@ const epochUndefined = abi.ChainEpoch(-1)
 // activate deal (miner)
 // end deal (miner terminate, expire(no activation))
 
-type StorageMarketActorState struct {
+type State struct {
 	Proposals cid.Cid // AMT[DealID]DealProposal
 	States    cid.Cid // AMT[DealID]DealState
 
@@ -37,7 +37,7 @@ type StorageMarketActorState struct {
 	DealIDsByParty cid.Cid // SetMultimap, HAMT[addr]Set
 }
 
-func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
+func ConstructState(store adt.Store) (*State, error) {
 	emptyArray, err := adt.MakeEmptyArray(store)
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
 		return nil, err
 	}
 
-	return &StorageMarketActorState{
+	return &State{
 		Proposals:      emptyArray.Root(),
 		EscrowTable:    emptyArray.Root(),
 		LockedTable:    emptyArray.Root(),
@@ -61,7 +61,7 @@ func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *StorageMarketActorState) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) (amountSlashedTotal abi.TokenAmount) {
+func (st *State) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) (amountSlashedTotal abi.TokenAmount) {
 	// For consistency with HandleExpiredDeals, only process updates up to the end of the _previous_ epoch.
 	epoch := rt.CurrEpoch() - 1
 
@@ -79,7 +79,7 @@ func (st *StorageMarketActorState) updatePendingDealStatesForParty(rt Runtime, a
 	return
 }
 
-func (st *StorageMarketActorState) updatePendingDealStates(rt Runtime, dealIDs []abi.DealID, epoch abi.ChainEpoch) abi.TokenAmount {
+func (st *State) updatePendingDealStates(rt Runtime, dealIDs []abi.DealID, epoch abi.ChainEpoch) abi.TokenAmount {
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	for _, dealID := range dealIDs {
@@ -90,7 +90,7 @@ func (st *StorageMarketActorState) updatePendingDealStates(rt Runtime, dealIDs [
 }
 
 // TODO: This does waaaay too many redundant hamt reads
-func (st *StorageMarketActorState) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount) {
+func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount) {
 	amountSlashed = abi.NewTokenAmount(0)
 
 	deal := st.mustGetDeal(rt, dealID)
@@ -168,7 +168,7 @@ func (st *StorageMarketActorState) updatePendingDealState(rt Runtime, dealID abi
 	return
 }
 
-func (st *StorageMarketActorState) deleteDeal(rt Runtime, dealID abi.DealID) {
+func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 	dealP := st.mustGetDeal(rt, dealID)
 
 	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
@@ -187,7 +187,7 @@ func (st *StorageMarketActorState) deleteDeal(rt Runtime, dealID abi.DealID) {
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *StorageMarketActorState) processDealInitTimedOut(rt Runtime, dealID abi.DealID) (amountSlashed abi.TokenAmount) {
+func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID) (amountSlashed abi.TokenAmount) {
 	deal := st.mustGetDeal(rt, dealID)
 	state := st.mustGetDealState(rt, dealID)
 
@@ -206,7 +206,7 @@ func (st *StorageMarketActorState) processDealInitTimedOut(rt Runtime, dealID ab
 }
 
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
-func (st *StorageMarketActorState) processDealExpired(rt Runtime, dealID abi.DealID) {
+func (st *State) processDealExpired(rt Runtime, dealID abi.DealID) {
 	deal := st.mustGetDeal(rt, dealID)
 	state := st.mustGetDealState(rt, dealID)
 
@@ -219,7 +219,7 @@ func (st *StorageMarketActorState) processDealExpired(rt Runtime, dealID abi.Dea
 	st.deleteDeal(rt, dealID)
 }
 
-func (st *StorageMarketActorState) generateStorageDealID() abi.DealID {
+func (st *State) generateStorageDealID() abi.DealID {
 	ret := st.NextID
 	st.NextID = st.NextID + abi.DealID(1)
 	return ret
@@ -229,7 +229,7 @@ func (st *StorageMarketActorState) generateStorageDealID() abi.DealID {
 // Balance table operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *StorageMarketActorState) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
+func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable).Get(a)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "get escrow balance: %v", err)
@@ -237,7 +237,7 @@ func (st *StorageMarketActorState) getEscrowBalance(rt Runtime, a addr.Address) 
 	return ret
 }
 
-func (st *StorageMarketActorState) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
+func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable).Get(a)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "get locked balance: %v", err)
@@ -245,7 +245,7 @@ func (st *StorageMarketActorState) getLockedBalance(rt Runtime, a addr.Address) 
 	return ret
 }
 
-func (st *StorageMarketActorState) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) (lockBalanceOK bool) {
+func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) (lockBalanceOK bool) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	prevLocked := st.getLockedBalance(rt, addr)
@@ -266,7 +266,7 @@ func (st *StorageMarketActorState) maybeLockBalance(rt Runtime, addr addr.Addres
 	return
 }
 
-func (st *StorageMarketActorState) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
+func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
@@ -278,7 +278,7 @@ func (st *StorageMarketActorState) unlockBalance(rt Runtime, addr addr.Address, 
 }
 
 // move funds from locked in client to available in provider
-func (st *StorageMarketActorState) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount) {
+func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
@@ -303,7 +303,7 @@ func (st *StorageMarketActorState) transferBalance(rt Runtime, fromAddr addr.Add
 	st.EscrowTable = et.Root()
 }
 
-func (st *StorageMarketActorState) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
+func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
@@ -326,7 +326,7 @@ func (st *StorageMarketActorState) slashBalance(rt Runtime, addr addr.Address, a
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *StorageMarketActorState) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
+func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	proposal, err := proposals.Get(dealID)
 	if err != nil {
@@ -336,7 +336,7 @@ func (st *StorageMarketActorState) mustGetDeal(rt Runtime, dealID abi.DealID) *D
 	return proposal
 }
 
-func (st *StorageMarketActorState) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
+func (st *State) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
 	states := AsDealStateArray(adt.AsStore(rt), st.States)
 	state, err := states.Get(dealID)
 	if err != nil {
@@ -346,7 +346,7 @@ func (st *StorageMarketActorState) mustGetDealState(rt Runtime, dealID abi.DealI
 	return state
 }
 
-func (st *StorageMarketActorState) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
+func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	if amount.LessThan(big.Zero()) {
 		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amount)
 	}

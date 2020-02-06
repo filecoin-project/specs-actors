@@ -19,7 +19,7 @@ import (
 )
 
 func TestConstruction(t *testing.T) {
-	actor := spActorHarness{storage_power.StoragePowerActor{}, t}
+	actor := spActorHarness{storage_power.Actor{}, t}
 	powerActor := tutil.NewIDAddr(t, 100)
 	owner1 := tutil.NewIDAddr(t, 101)
 	worker1 := tutil.NewIDAddr(t, 102)
@@ -43,7 +43,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		// owner1 send CreateMiner to StoragePowerActor
+		// owner1 send CreateMiner to Actor
 		rt.SetCaller(owner1, builtin.AccountActorCodeID)
 		rt.SetReceived(abi.NewTokenAmount(1))
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -56,14 +56,14 @@ func TestConstruction(t *testing.T) {
 		err := createMinerParams.MarshalCBOR(bytes.NewBuffer(ctorParamBytes))
 		require.NoError(t, err)
 		msgParams := &initact.ExecParams{
-			CodeID:            builtin.StorageMinerActorCodeID,
+			CodeCID:           builtin.StorageMinerActorCodeID,
 			ConstructorParams: ctorParamBytes,
 		}
 		rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
-		rt.Call(actor.StoragePowerActor.CreateMiner, createMinerParams)
+		rt.Call(actor.Actor.CreateMiner, createMinerParams)
 		rt.Verify()
 
-		var st storage_power.StoragePowerActorState
+		var st storage_power.State
 		rt.GetState(&st)
 		assert.Equal(t, int64(1), st.MinerCount)
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalNetworkPower)
@@ -112,7 +112,7 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 }
 
 type spActorHarness struct {
-	storage_power.StoragePowerActor
+	storage_power.Actor
 	t testing.TB
 }
 
@@ -122,11 +122,11 @@ func (s key) Key() string {
 
 func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	constructRet := rt.Call(h.StoragePowerActor.Constructor, &adt.EmptyValue{}).(*adt.EmptyValue)
+	constructRet := rt.Call(h.Actor.Constructor, &adt.EmptyValue{}).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 
-	var st storage_power.StoragePowerActorState
+	var st storage_power.State
 	rt.GetState(&st)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalNetworkPower)
 	assert.Equal(h.t, int64(0), st.MinerCount)

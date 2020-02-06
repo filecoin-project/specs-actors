@@ -12,16 +12,16 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-// Balance of a StorageMinerActor should equal exactly the sum of PreCommit deposits
+// Balance of a Actor should equal exactly the sum of PreCommit deposits
 // that are not yet returned or burned.
-type StorageMinerActorState struct {
+type State struct {
 	PreCommittedSectors cid.Cid // Map, HAMT[sectorNumber]SectorPreCommitOnChainInfo
 	Sectors             cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 	FaultSet            abi.BitField
 	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 
 	Info      MinerInfo // TODO: this needs to be a cid of the miner info struct
-	PoStState MinerPoStState
+	PoStState PoStState
 }
 
 type MinerInfo struct {
@@ -49,7 +49,7 @@ type MinerInfo struct {
 	SectorSize abi.SectorSize
 }
 
-type MinerPoStState struct {
+type PoStState struct {
 	// Epoch of the last succesful PoSt, either election post or surprise post.
 	LastSuccessfulPoSt abi.ChainEpoch
 
@@ -93,7 +93,7 @@ type SectorOnChainInfo struct {
 	DealWeight            abi.DealWeight // integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 }
 
-func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*StorageMinerActorState, error) {
+func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*State, error) {
 	emptyMap, err := adt.MakeEmptyMap(store)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 	if err != nil {
 		return nil, err
 	}
-	return &StorageMinerActorState{
+	return &State{
 		PreCommittedSectors: emptyMap.Root(),
 		Sectors:             emptyArray.Root(),
 		FaultSet:            abi.NewBitField(),
@@ -115,7 +115,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 			PeerId:           peerId,
 			SectorSize:       sectorSize,
 		},
-		PoStState: MinerPoStState{
+		PoStState: PoStState{
 			LastSuccessfulPoSt:     epochUndefined,
 			SurpriseChallengeEpoch: epochUndefined,
 			NumConsecutiveFailures: 0,
@@ -123,15 +123,15 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 	}, nil
 }
 
-func (st *StorageMinerActorState) getWorker() addr.Address {
+func (st *State) getWorker() addr.Address {
 	return st.Info.Worker
 }
 
-func (st *StorageMinerActorState) getSectorSize() abi.SectorSize {
+func (st *State) getSectorSize() abi.SectorSize {
 	return st.Info.SectorSize
 }
 
-func (st *StorageMinerActorState) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
+func (st *State) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Put(adt.IntKey(info.Info.SectorNumber), info)
 	if err != nil {
@@ -140,7 +140,7 @@ func (st *StorageMinerActorState) putPrecommittedSector(store adt.Store, info *S
 	return nil
 }
 
-func (st *StorageMinerActorState) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
+func (st *State) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	var info SectorPreCommitOnChainInfo
 	found, err := precommitted.Get(adt.IntKey(sectorNo), &info)
@@ -150,7 +150,7 @@ func (st *StorageMinerActorState) getPrecommittedSector(store adt.Store, sectorN
 	return &info, found, nil
 }
 
-func (st *StorageMinerActorState) deletePrecommitttedSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *State) deletePrecommitttedSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Delete(adt.IntKey(sectorNo))
 	if err != nil {
@@ -159,7 +159,7 @@ func (st *StorageMinerActorState) deletePrecommitttedSector(store adt.Store, sec
 	return nil
 }
 
-func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
+func (st *State) hasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
 	sectors := adt.AsArray(store, st.Sectors)
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
@@ -169,7 +169,7 @@ func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.Sect
 	return found, nil
 }
 
-func (st *StorageMinerActorState) putSector(store adt.Store, sector *SectorOnChainInfo) error {
+func (st *State) putSector(store adt.Store, sector *SectorOnChainInfo) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
@@ -177,7 +177,7 @@ func (st *StorageMinerActorState) putSector(store adt.Store, sector *SectorOnCha
 	return nil
 }
 
-func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
+func (st *State) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
 	sectors := adt.AsArray(store, st.Sectors)
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
@@ -187,7 +187,7 @@ func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.Sector
 	return &info, found, nil
 }
 
-func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *State) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
@@ -195,7 +195,7 @@ func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.Sec
 	return nil
 }
 
-func (st *StorageMinerActorState) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
+func (st *State) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	var sector SectorOnChainInfo
 	return sectors.ForEach(&sector, func(idx int64) error {
@@ -204,7 +204,7 @@ func (st *StorageMinerActorState) forEachSector(store adt.Store, f func(*SectorO
 	})
 }
 
-func (st *StorageMinerActorState) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
+func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
 	sectorInfo, found, err := st.getSector(store, sectorNo)
 	if err != nil {
 		return nil, err
@@ -215,7 +215,7 @@ func (st *StorageMinerActorState) GetStorageWeightDescForSector(store adt.Store,
 	return asStorageWeightDesc(st.Info.SectorSize, sectorInfo), nil
 }
 
-func (st *StorageMinerActorState) IsSectorInTemporaryFault(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
+func (st *State) IsSectorInTemporaryFault(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
 	sectorInfo, found, err := st.getSector(store, sectorNo)
 	if err != nil {
 		return false, err
@@ -229,28 +229,28 @@ func (st *StorageMinerActorState) IsSectorInTemporaryFault(store adt.Store, sect
 	return ret, nil
 }
 
-func (st *StorageMinerActorState) ComputeProvingSet() cid.Cid {
+func (st *State) ComputeProvingSet() cid.Cid {
 	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
 	// TODO: actually implement this
 	var ret cid.Cid
 	return ret
 }
 
-func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
+func (st *State) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
 	// TODO hs: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
 	autil.TODO()
 	panic("")
 }
 
-func (mps *MinerPoStState) isChallenged() bool {
+func (mps *PoStState) isChallenged() bool {
 	return mps.SurpriseChallengeEpoch != epochUndefined
 }
 
-func (mps *MinerPoStState) isPoStOk() bool {
+func (mps *PoStState) isPoStOk() bool {
 	return !mps.hasFailedPost()
 }
 
-func (mps *MinerPoStState) hasFailedPost() bool {
+func (mps *PoStState) hasFailedPost() bool {
 	return mps.NumConsecutiveFailures > 0
 }
 

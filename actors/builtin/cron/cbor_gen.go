@@ -13,7 +13,7 @@ import (
 
 var _ = xerrors.Errorf
 
-func (t *CronActorState) MarshalCBOR(w io.Writer) error {
+func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -22,7 +22,7 @@ func (t *CronActorState) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Entries ([]cron.CronTableEntry) (slice)
+	// t.Entries ([]cron.Entry) (slice)
 	if len(t.Entries) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Entries was too long")
 	}
@@ -38,7 +38,7 @@ func (t *CronActorState) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *CronActorState) UnmarshalCBOR(r io.Reader) error {
+func (t *State) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -53,7 +53,7 @@ func (t *CronActorState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Entries ([]cron.CronTableEntry) (slice)
+	// t.Entries ([]cron.Entry) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -68,11 +68,11 @@ func (t *CronActorState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("expected cbor array")
 	}
 	if extra > 0 {
-		t.Entries = make([]CronTableEntry, extra)
+		t.Entries = make([]Entry, extra)
 	}
 	for i := 0; i < int(extra); i++ {
 
-		var v CronTableEntry
+		var v Entry
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
@@ -83,7 +83,7 @@ func (t *CronActorState) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *CronTableEntry) MarshalCBOR(w io.Writer) error {
+func (t *Entry) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -104,7 +104,7 @@ func (t *CronTableEntry) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *CronTableEntry) UnmarshalCBOR(r io.Reader) error {
+func (t *Entry) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -150,7 +150,7 @@ func (t *ConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Entries ([]cron.CronTableEntry) (slice)
+	// t.Entries ([]cron.Entry) (slice)
 	if len(t.Entries) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Entries was too long")
 	}
@@ -181,7 +181,7 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Entries ([]cron.CronTableEntry) (slice)
+	// t.Entries ([]cron.Entry) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -196,11 +196,11 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("expected cbor array")
 	}
 	if extra > 0 {
-		t.Entries = make([]CronTableEntry, extra)
+		t.Entries = make([]Entry, extra)
 	}
 	for i := 0; i < int(extra); i++ {
 
-		var v CronTableEntry
+		var v Entry
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}

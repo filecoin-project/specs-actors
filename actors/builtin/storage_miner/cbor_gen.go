@@ -14,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-func (t *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
+func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -51,14 +51,14 @@ func (t *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.PoStState (storage_miner.MinerPoStState) (struct)
+	// t.PoStState (storage_miner.PoStState) (struct)
 	if err := t.PoStState.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
+func (t *State) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -127,7 +127,7 @@ func (t *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.PoStState (storage_miner.MinerPoStState) (struct)
+	// t.PoStState (storage_miner.PoStState) (struct)
 
 	{
 
@@ -247,7 +247,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *MinerPoStState) MarshalCBOR(w io.Writer) error {
+func (t *PoStState) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -291,7 +291,7 @@ func (t *MinerPoStState) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *MinerPoStState) UnmarshalCBOR(r io.Reader) error {
+func (t *PoStState) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

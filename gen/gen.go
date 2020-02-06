@@ -38,14 +38,14 @@ func main() {
 	// Actors
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/account/cbor_gen.go", "account",
 		// actor state
-		account.AccountActorState{},
+		account.State{},
 	); err != nil {
 		panic(err)
 	}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/init/cbor_gen.go", "init",
 		// actor state
-		init_.InitActorState{},
+		init_.State{},
 		// method params
 		init_.ExecParams{},
 		init_.ExecReturn{},
@@ -55,8 +55,8 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cron/cbor_gen.go", "cron",
 		// actor state
-		cron.CronActorState{},
-		cron.CronTableEntry{},
+		cron.State{},
+		cron.Entry{},
 		// method params
 		cron.ConstructorParams{},
 	); err != nil {
@@ -65,7 +65,7 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/reward/cbor_gen.go", "reward",
 		// actor state
-		reward.RewardActorState{},
+		reward.State{},
 		// method params
 		reward.AwardBlockRewardParams{},
 		// other types
@@ -76,8 +76,8 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/multisig/cbor_gen.go", "multisig",
 		// actor state
-		multisig.MultiSigActorState{},
-		multisig.MultiSigTransaction{},
+		multisig.State{},
+		multisig.Transaction{},
 		// method params
 		multisig.ConstructorParams{},
 		multisig.ProposeParams{},
@@ -92,7 +92,7 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/payment_channel/cbor_gen.go", "payment_channel",
 		// actor state
-		payment_channel.PaymentChannelActorState{},
+		payment_channel.State{},
 		payment_channel.LaneState{},
 		payment_channel.Merge{},
 		// method params
@@ -107,7 +107,7 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_power/cbor_gen.go", "storage_power",
 		// actors state
-		storage_power.StoragePowerActorState{},
+		storage_power.State{},
 		storage_power.CronEvent{},
 		// method params
 		storage_power.AddBalanceParams{},
@@ -133,7 +133,7 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_market/cbor_gen.go", "storage_market",
 		// actor state
-		storage_market.StorageMarketActorState{},
+		storage_market.State{},
 
 		// method params
 		storage_market.WithdrawBalanceParams{},
@@ -152,9 +152,9 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/storage_miner/cbor_gen.go", "storage_miner",
 		// actor state
-		storage_miner.StorageMinerActorState{},
+		storage_miner.State{},
 		storage_miner.MinerInfo{},
-		storage_miner.MinerPoStState{},
+		storage_miner.PoStState{},
 		storage_miner.SectorPreCommitOnChainInfo{},
 		storage_miner.SectorPreCommitInfo{},
 		storage_miner.SectorOnChainInfo{},

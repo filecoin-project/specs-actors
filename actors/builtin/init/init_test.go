@@ -19,7 +19,7 @@ import (
 )
 
 func TestConstructor(t *testing.T) {
-	actor := initHarness{init_.InitActor{}, t}
+	actor := initHarness{init_.Actor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 1000)
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
@@ -28,7 +28,7 @@ func TestConstructor(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	actor := initHarness{init_.InitActor{}, t}
+	actor := initHarness{init_.Actor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 1000)
 	anne := tutil.NewIDAddr(t, 1001)
@@ -74,7 +74,7 @@ func TestExec(t *testing.T) {
 		assert.Equal(t, uniqueAddr1, execRet1.RobustAddress)
 		assert.Equal(t, expectedIdAddr1, execRet1.IDAddress)
 
-		var st init_.InitActorState
+		var st init_.State
 		rt.GetState(&st)
 		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr1)
 		assert.NoError(t, err)
@@ -96,7 +96,7 @@ func TestExec(t *testing.T) {
 		assert.Equal(t, uniqueAddr2, execRet2.RobustAddress)
 		assert.Equal(t, expectedIdAddr2, execRet2.IDAddress)
 
-		var st2 init_.InitActorState
+		var st2 init_.State
 		rt.GetState(&st2)
 		actualIdAddr2, err := st2.ResolveAddress(rt.Store(), uniqueAddr2)
 		assert.NoError(t, err)
@@ -125,7 +125,7 @@ func TestExec(t *testing.T) {
 		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
 		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
 
-		var st init_.InitActorState
+		var st init_.State
 		rt.GetState(&st)
 		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
 		assert.NoError(t, err)
@@ -163,7 +163,7 @@ func TestExec(t *testing.T) {
 		})
 
 		// since the send failed the uniqueAddr should resolve to itself instead of an ID address
-		var st init_.InitActorState
+		var st init_.State
 		rt.GetState(&st)
 		noResoAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
 		assert.NoError(t, err)
@@ -174,7 +174,7 @@ func TestExec(t *testing.T) {
 }
 
 type initHarness struct {
-	init_.InitActor
+	init_.Actor
 	t testing.TB
 }
 
@@ -184,7 +184,7 @@ func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, &adt.EmptyValue{}, ret)
 	rt.Verify()
 
-	var st init_.InitActorState
+	var st init_.State
 	rt.GetState(&st)
 	emptyMap := adt.AsMap(rt.Store(), st.AddressMap)
 	assert.Equal(h.t, emptyMap.Root(), st.AddressMap)
@@ -195,7 +195,7 @@ func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 func (h *initHarness) execAndVerify(rt *mock.Runtime, codeID cid.Cid, constructorParams []byte) *init_.ExecReturn {
 	rt.ExpectValidateCallerAny()
 	ret := rt.Call(h.Exec, &init_.ExecParams{
-		CodeID:            codeID,
+		CodeCID:           codeID,
 		ConstructorParams: constructorParams,
 	}).(*init_.ExecReturn)
 	rt.Verify()

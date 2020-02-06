@@ -6,7 +6,7 @@ import (
 )
 
 // The built-in actor code IDs
-var SystemActorCodeID cid.Cid
+var SystemActorCodeID cid.Cid // todo: drop id?
 var InitActorCodeID cid.Cid
 var CronActorCodeID cid.Cid
 var AccountActorCodeID cid.Cid

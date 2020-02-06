@@ -13,9 +13,9 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type RewardActor struct{}
+type Actor struct{}
 
-func (a RewardActor) Exports() []interface{} {
+func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
@@ -23,9 +23,9 @@ func (a RewardActor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = RewardActor{}
+var _ abi.Invokee = Actor{}
 
-func (a RewardActor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	rt.State().Construct(func() vmr.CBORMarshaler {
 		state, err := ConstructState(adt.AsStore(rt))
@@ -37,11 +37,11 @@ func (a RewardActor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyVa
 	return &adt.EmptyValue{}
 }
 
-func (a RewardActor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	owner := rt.ImmediateCaller()
 
-	var st RewardActorState
+	var st State
 	withdrawableReward := rt.State().Transaction(&st, func() interface{} {
 		// Withdraw all available funds
 		withdrawn, err := st.withdrawReward(adt.AsStore(rt), owner, rt.CurrEpoch())
@@ -65,7 +65,7 @@ type AwardBlockRewardParams struct {
 }
 
 // gasReward is expected to be transferred to this actor by the runtime before invocation
-func (a RewardActor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
+func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	AssertMsg(params.GasReward.Equals(rt.ValueReceived()),
 		"expected value received %v to match gas reward %v", rt.ValueReceived(), params.GasReward)
@@ -105,7 +105,7 @@ func (a RewardActor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardPa
 	}
 
 	// Record new reward into reward map.
-	var st RewardActorState
+	var st State
 	if actualReward.GreaterThan(abi.NewTokenAmount(0)) {
 		rt.State().Transaction(&st, func() interface{} {
 			newReward := Reward{
