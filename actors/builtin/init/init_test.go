@@ -56,7 +56,7 @@ func TestExec(t *testing.T) {
 
 		actor.constructAndVerify(rt)
 
-		// anne the account actor with 100 FIL in their balance is going to create a payment channel actor with 100 FIL.
+		// anne execs a payment channel actor with 100 FIL.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetBalance(balance)
 		rt.SetReceived(balance)
