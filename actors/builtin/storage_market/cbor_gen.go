@@ -5,9 +5,8 @@ package storage_market
 import (
 	"fmt"
 	"io"
-	"sort"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -170,141 +169,6 @@ func (t *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *PartyDeals) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{129}); err != nil {
-		return err
-	}
-
-	// t.Proposals (map[string]storage_market.DealSet) (map)
-	{
-		if len(t.Deals) > 4096 {
-			return xerrors.Errorf("cannot marshal t.Proposals map too large")
-		}
-
-		if err := cbg.CborWriteHeader(w, cbg.MajMap, uint64(len(t.Deals))); err != nil {
-			return err
-		}
-
-		keys := make([]string, 0, len(t.Deals))
-		for k := range t.Deals {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			v := t.Deals[k]
-
-			if len(k) > cbg.MaxLength {
-				return xerrors.Errorf("Value in field k was too long")
-			}
-
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(k)))); err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte(k)); err != nil {
-				return err
-			}
-
-			if err := v.MarshalCBOR(w); err != nil {
-				return err
-			}
-
-		}
-	}
-	return nil
-}
-
-func (t *PartyDeals) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Proposals (map[string]storage_market.DealSet) (map)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajMap {
-		return fmt.Errorf("expected a map (major type 5)")
-	}
-	if extra > 4096 {
-		return fmt.Errorf("t.Proposals: map too large")
-	}
-
-	t.Deals = make(map[string]DealSet, extra)
-
-	for i, l := 0, int(extra); i < l; i++ {
-
-		var k string
-
-		{
-			sval, err := cbg.ReadString(br)
-			if err != nil {
-				return err
-			}
-
-			k = string(sval)
-		}
-
-		var v DealSet
-
-		{
-
-			if err := v.UnmarshalCBOR(br); err != nil {
-				return err
-			}
-
-		}
-
-		t.Deals[k] = v
-
-	}
-	return nil
-}
-
-func (t *DealSet) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{128}); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *DealSet) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 0 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	return nil
-}
-
 func (t *WithdrawBalanceParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -371,9 +235,9 @@ func (t *PublishStorageDealsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Proposals ([]storage_market.DealProposal) (slice)
+	// t.Deals ([]storage_market.DealProposal) (slice)
 	if len(t.Deals) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Proposals was too long")
+		return xerrors.Errorf("Slice value in field t.Deals was too long")
 	}
 
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Deals)))); err != nil {
@@ -402,7 +266,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Proposals ([]storage_market.DealProposal) (slice)
+	// t.Deals ([]storage_market.DealProposal) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -410,7 +274,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Proposals: array too large (%d)", extra)
+		return fmt.Errorf("t.Deals: array too large (%d)", extra)
 	}
 
 	if maj != cbg.MajArray {

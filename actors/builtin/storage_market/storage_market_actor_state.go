@@ -19,12 +19,6 @@ const epochUndefined = abi.ChainEpoch(-1)
 // activate deal (miner)
 // end deal (miner terminate, expire(no activation))
 
-type DealSet struct{}
-
-type PartyDeals struct {
-	Deals map[string]DealSet
-}
-
 type StorageMarketActorState struct {
 	Proposals cid.Cid // AMT[DealID]DealProposal
 	States    cid.Cid // AMT[DealID]DealState

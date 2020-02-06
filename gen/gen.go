@@ -135,8 +135,6 @@ func main() {
 		// actor state
 		storage_market.StorageMarketActorState{},
 
-		storage_market.PartyDeals{}, // Temp hacks until we cleanup the state
-		storage_market.DealSet{},
 		// method params
 		storage_market.WithdrawBalanceParams{},
 		storage_market.PublishStorageDealsParams{},
