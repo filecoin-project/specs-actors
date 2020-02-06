@@ -4,22 +4,22 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ipfs/go-cid"
+	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	_init "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
 func TestConstructor(t *testing.T) {
-	actor := initHarness{_init.InitActor{}, t}
+	actor := initHarness{init_.InitActor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 1000)
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
@@ -28,7 +28,7 @@ func TestConstructor(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	actor := initHarness{_init.InitActor{}, t}
+	actor := initHarness{init_.InitActor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 1000)
 	anne := tutil.NewIDAddr(t, 1001)
@@ -77,7 +77,7 @@ func TestExec(t *testing.T) {
 		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
 		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
 
-		var st _init.InitActorState
+		var st init_.InitActorState
 		rt.GetState(&st)
 		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
 		assert.NoError(t, err)
@@ -108,7 +108,7 @@ func TestExec(t *testing.T) {
 		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
 		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
 
-		var st _init.InitActorState
+		var st init_.InitActorState
 		rt.GetState(&st)
 		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
 		assert.NoError(t, err)
@@ -125,7 +125,7 @@ func TestExec(t *testing.T) {
 }
 
 type initHarness struct {
-	_init.InitActor
+	init_.InitActor
 	t testing.TB
 }
 
@@ -135,7 +135,7 @@ func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, &adt.EmptyValue{}, ret)
 	rt.Verify()
 
-	var st _init.InitActorState
+	var st init_.InitActorState
 	rt.GetState(&st)
 	emptyMap := adt.AsMap(rt.Store(), st.AddressMap)
 	assert.Equal(h.t, emptyMap.Root(), st.AddressMap)
@@ -143,12 +143,12 @@ func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, "mock", st.NetworkName)
 }
 
-func (h *initHarness) execAndVerify(rt *mock.Runtime, codeID cid.Cid, constructorParams []byte) *_init.ExecReturn {
+func (h *initHarness) execAndVerify(rt *mock.Runtime, codeID cid.Cid, constructorParams []byte) *init_.ExecReturn {
 	rt.ExpectValidateCallerAny()
-	ret := rt.Call(h.Exec, &_init.ExecParams{
+	ret := rt.Call(h.Exec, &init_.ExecParams{
 		CodeID:            codeID,
 		ConstructorParams: constructorParams,
-	}).(*_init.ExecReturn)
+	}).(*init_.ExecReturn)
 	rt.Verify()
 	return ret
 }
