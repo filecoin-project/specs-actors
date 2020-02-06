@@ -2,6 +2,7 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
+
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"

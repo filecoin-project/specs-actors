@@ -517,7 +517,7 @@ func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -625,7 +625,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
 		}
 
-		t.DealIDs[i] = val
+		t.DealIDs[i] = abi.DealID(val)
 	}
 
 	// t.Expiration (abi.ChainEpoch) (int64)
@@ -1190,7 +1190,7 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.Sectors {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -1265,7 +1265,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("value read for array t.Sectors was not a uint, instead got %d", maj)
 		}
 
-		t.Sectors[i] = val
+		t.Sectors[i] = abi.SectorNumber(val)
 	}
 
 	return nil

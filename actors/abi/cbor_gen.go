@@ -436,7 +436,7 @@ func (t *OnChainSealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -573,7 +573,7 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
 		}
 
-		t.DealIDs[i] = val
+		t.DealIDs[i] = DealID(val)
 	}
 
 	// t.SectorNumber (abi.SectorNumber) (uint64)

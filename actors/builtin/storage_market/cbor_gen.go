@@ -293,7 +293,7 @@ func (t *VerifyDealsOnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -354,7 +354,7 @@ func (t *VerifyDealsOnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error 
 			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
 		}
 
-		t.DealIDs[i] = val
+		t.DealIDs[i] = abi.DealID(val)
 	}
 
 	// t.SectorExpiry (abi.ChainEpoch) (int64)
@@ -403,7 +403,7 @@ func (t *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -458,7 +458,7 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
 		}
 
-		t.DealIDs[i] = val
+		t.DealIDs[i] = abi.DealID(val)
 	}
 
 	// t.SectorSize (abi.SectorSize) (uint64)
@@ -492,7 +492,7 @@ func (t *OnMinerSectorsTerminateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -542,7 +542,7 @@ func (t *OnMinerSectorsTerminateParams) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
 		}
 
-		t.DealIDs[i] = val
+		t.DealIDs[i] = abi.DealID(val)
 	}
 
 	return nil
@@ -566,7 +566,7 @@ func (t *PublishStorageDealsReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.IDs {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
 	}
@@ -616,7 +616,7 @@ func (t *PublishStorageDealsReturn) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("value read for array t.IDs was not a uint, instead got %d", maj)
 		}
 
-		t.IDs[i] = val
+		t.IDs[i] = abi.DealID(val)
 	}
 
 	return nil
