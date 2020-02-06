@@ -18,16 +18,6 @@ func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ..
 	}
 }
 
-type SectorTermination int64
-
-// Note: Detected fault termination (due to exceeding the limit of consecutive
-// SurprisePoSt failures) is not listed here, since this does not terminate all
-// sectors individually, but rather the miner as a whole.
-const (
-	NormalExpiration SectorTermination = iota
-	UserTermination
-)
-
 // ActorCode is the interface that all actor code types should satisfy.
 // It is merely a method dispatch interface.
 type ActorCode interface {

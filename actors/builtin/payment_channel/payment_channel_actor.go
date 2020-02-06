@@ -11,9 +11,10 @@ import (
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
+
+const SETTLE_DELAY = abi.ChainEpoch(1) // placeholder PARAM_FINISH
 
 type PaymentChannelActor struct{}
 
@@ -217,7 +218,7 @@ func (pca *PaymentChannelActor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.E
 			rt.Abort(exitcode.ErrIllegalState, "channel already seettling")
 		}
 
-		st.SettlingAt = rt.CurrEpoch() + indices.PaymentChannel_PaymentChannelSettleDelay()
+		st.SettlingAt = rt.CurrEpoch() + SETTLE_DELAY
 		if st.SettlingAt < st.MinSettleHeight {
 			st.SettlingAt = st.MinSettleHeight
 		}

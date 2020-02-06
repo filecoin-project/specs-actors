@@ -8,7 +8,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -250,7 +249,7 @@ func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi
 // Must be significantly larger than DeclaredFaultEpoch, since otherwise it may be possible
 // to declare faults adaptively in order to exempt challenged sectors.
 func (x *SectorOnChainInfo) EffectiveFaultBeginEpoch() abi.ChainEpoch {
-	return x.DeclaredFaultEpoch + indices.StorageMining_DeclaredFaultEffectiveDelay()
+	return x.DeclaredFaultEpoch + DeclaredFaultEffectiveDelay
 }
 
 func (x *SectorOnChainInfo) EffectiveFaultEndEpoch() abi.ChainEpoch {
