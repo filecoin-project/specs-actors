@@ -147,7 +147,7 @@ func main() {
 		storage_market.PublishStorageDealsReturn{},
 		// other types
 		storage_market.DealProposal{},
-		storage_market.DealMeta{},
+		storage_market.DealState{},
 	); err != nil {
 		panic(err)
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-const epochUndefined = abi.ChainEpoch(0)
+const epochUndefined = abi.ChainEpoch(-1)
 
 // Market mutations
 // add / rm balance
@@ -26,8 +26,8 @@ type PartyDeals struct {
 }
 
 type StorageMarketActorState struct {
-	Deals cid.Cid // AMT[DealID]DealProposal
-	Meta  cid.Cid // AMT[DealID]DealMeta
+	Proposals cid.Cid // AMT[DealID]DealProposal
+	States    cid.Cid // AMT[DealID]DealState
 
 	// Total amount held in escrow, indexed by actor address (including both locked and unlocked amounts).
 	EscrowTable cid.Cid // BalanceTable
@@ -55,7 +55,7 @@ func ConstructState(store adt.Store) (*StorageMarketActorState, error) {
 	}
 
 	return &StorageMarketActorState{
-		Deals:          emptyArray.Root(),
+		Proposals:      emptyArray.Root(),
 		EscrowTable:    emptyArray.Root(),
 		LockedTable:    emptyArray.Root(),
 		NextID:         abi.DealID(0),
@@ -100,18 +100,18 @@ func (st *StorageMarketActorState) updatePendingDealState(rt Runtime, dealID abi
 	amountSlashed = abi.NewTokenAmount(0)
 
 	deal := st.mustGetDeal(rt, dealID)
-	meta := st.mustGetDealMeta(rt, dealID)
+	state := st.mustGetDealState(rt, dealID)
 
-	everUpdated := meta.LastUpdatedEpoch != epochUndefined
-	everSlashed := meta.SlashEpoch != epochUndefined
+	everUpdated := state.LastUpdatedEpoch != epochUndefined
+	everSlashed := state.SlashEpoch != epochUndefined
 
-	Assert(!everUpdated || (meta.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
+	Assert(!everUpdated || (state.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
 
-	if meta.LastUpdatedEpoch == epoch { // TODO: This looks fishy, check all places that set LastUpdatedEpoch
+	if state.LastUpdatedEpoch == epoch { // TODO: This looks fishy, check all places that set LastUpdatedEpoch
 		return
 	}
 
-	if meta.SectorStartEpoch == epochUndefined {
+	if state.SectorStartEpoch == epochUndefined {
 		// Not yet appeared in proven sector; check for timeout.
 		if deal.StartEpoch >= epoch {
 			return st.processDealInitTimedOut(rt, dealID)
@@ -123,13 +123,13 @@ func (st *StorageMarketActorState) updatePendingDealState(rt Runtime, dealID abi
 
 	dealEnd := deal.EndEpoch
 	if everSlashed {
-		Assert(meta.SlashEpoch <= dealEnd)
-		dealEnd = meta.SlashEpoch
+		Assert(state.SlashEpoch <= dealEnd)
+		dealEnd = state.SlashEpoch
 	}
 
 	elapsedStart := deal.StartEpoch
-	if everUpdated && meta.LastUpdatedEpoch > elapsedStart {
-		elapsedStart = meta.LastUpdatedEpoch
+	if everUpdated && state.LastUpdatedEpoch > elapsedStart {
+		elapsedStart = state.LastUpdatedEpoch
 	}
 
 	elapsedEnd := dealEnd
@@ -148,7 +148,7 @@ func (st *StorageMarketActorState) updatePendingDealState(rt Runtime, dealID abi
 	if everSlashed {
 		// unlock client collateral and locked storage fee
 		clientCollateral := deal.ClientCollateral
-		paymentRemaining := dealGetPaymentRemaining(deal, meta.SlashEpoch)
+		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
 		st.unlockBalance(rt, deal.Client, big.Add(clientCollateral, paymentRemaining))
 
 		// slash provider collateral
@@ -164,23 +164,24 @@ func (st *StorageMarketActorState) updatePendingDealState(rt Runtime, dealID abi
 		return
 	}
 
-	meta.LastUpdatedEpoch = epoch
+	state.LastUpdatedEpoch = epoch
 
-	deals := AsDealMetaArray(adt.AsStore(rt), st.Meta)
-	if err := deals.Set(dealID, meta); err != nil {
+	states := AsDealStateArray(adt.AsStore(rt), st.States)
+	if err := states.Set(dealID, state); err != nil {
 		rt.Abort(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
 	}
-	st.Meta = deals.Root()
+	st.States = states.Root()
 	return
 }
 
 func (st *StorageMarketActorState) deleteDeal(rt Runtime, dealID abi.DealID) {
 	dealP := st.mustGetDeal(rt, dealID)
 
-	deals := AsDealArray(adt.AsStore(rt), st.Deals)
-	if err := deals.Delete(uint64(dealID)); err != nil {
+	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	if err := proposals.Delete(uint64(dealID)); err != nil {
 		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
 	}
+	st.Proposals = proposals.Root()
 
 	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	if err := dbp.Remove(adt.AddrKey(dealP.Client), uint64(dealID)); err != nil {
@@ -194,9 +195,9 @@ func (st *StorageMarketActorState) deleteDeal(rt Runtime, dealID abi.DealID) {
 // for both provider and client.
 func (st *StorageMarketActorState) processDealInitTimedOut(rt Runtime, dealID abi.DealID) (amountSlashed abi.TokenAmount) {
 	deal := st.mustGetDeal(rt, dealID)
-	meta := st.mustGetDealMeta(rt, dealID)
+	state := st.mustGetDealState(rt, dealID)
 
-	Assert(meta.SectorStartEpoch == epochUndefined)
+	Assert(state.SectorStartEpoch == epochUndefined)
 
 	st.unlockBalance(rt, deal.Client, deal.ClientBalanceRequirement())
 
@@ -213,9 +214,9 @@ func (st *StorageMarketActorState) processDealInitTimedOut(rt Runtime, dealID ab
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
 func (st *StorageMarketActorState) processDealExpired(rt Runtime, dealID abi.DealID) {
 	deal := st.mustGetDeal(rt, dealID)
-	meta := st.mustGetDealMeta(rt, dealID)
+	state := st.mustGetDealState(rt, dealID)
 
-	Assert(meta.SectorStartEpoch != epochUndefined)
+	Assert(state.SectorStartEpoch != epochUndefined)
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
 	st.unlockBalance(rt, deal.Provider, deal.ProviderCollateral)
@@ -332,23 +333,23 @@ func (st *StorageMarketActorState) slashBalance(rt Runtime, addr addr.Address, a
 ////////////////////////////////////////////////////////////////////////////////
 
 func (st *StorageMarketActorState) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
-	deals := AsDealArray(adt.AsStore(rt), st.Deals)
-	deal, err := deals.Get(dealID)
+	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	proposal, err := proposals.Get(dealID)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "get deal: %v", err)
+		rt.Abort(exitcode.ErrIllegalState, "get proposal: %v", err)
 	}
 
-	return deal
+	return proposal
 }
 
-func (st *StorageMarketActorState) mustGetDealMeta(rt Runtime, dealID abi.DealID) *DealMeta {
-	deals := AsDealMetaArray(adt.AsStore(rt), st.Deals)
-	deal, err := deals.Get(dealID)
+func (st *StorageMarketActorState) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
+	states := AsDealStateArray(adt.AsStore(rt), st.States)
+	state, err := states.Get(dealID)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "get deal meta: %v", err)
+		rt.Abort(exitcode.ErrIllegalState, "get state state: %v", err)
 	}
 
-	return deal
+	return state
 }
 
 func (st *StorageMarketActorState) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {

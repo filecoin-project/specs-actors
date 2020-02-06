@@ -23,16 +23,16 @@ func (t *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Deals (cid.Cid) (struct)
+	// t.Proposals (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(w, t.Deals); err != nil {
-		return xerrors.Errorf("failed to write cid field t.Deals: %w", err)
+	if err := cbg.WriteCid(w, t.Proposals); err != nil {
+		return xerrors.Errorf("failed to write cid field t.Proposals: %w", err)
 	}
 
-	// t.Meta (cid.Cid) (struct)
+	// t.States (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(w, t.Meta); err != nil {
-		return xerrors.Errorf("failed to write cid field t.Meta: %w", err)
+	if err := cbg.WriteCid(w, t.States); err != nil {
+		return xerrors.Errorf("failed to write cid field t.States: %w", err)
 	}
 
 	// t.EscrowTable (cid.Cid) (struct)
@@ -82,28 +82,28 @@ func (t *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Deals (cid.Cid) (struct)
+	// t.Proposals (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.Deals: %w", err)
+			return xerrors.Errorf("failed to read cid field t.Proposals: %w", err)
 		}
 
-		t.Deals = c
+		t.Proposals = c
 
 	}
-	// t.Meta (cid.Cid) (struct)
+	// t.States (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.Meta: %w", err)
+			return xerrors.Errorf("failed to read cid field t.States: %w", err)
 		}
 
-		t.Meta = c
+		t.States = c
 
 	}
 	// t.EscrowTable (cid.Cid) (struct)
@@ -179,10 +179,10 @@ func (t *PartyDeals) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Deals (map[string]storage_market.DealSet) (map)
+	// t.Proposals (map[string]storage_market.DealSet) (map)
 	{
 		if len(t.Deals) > 4096 {
-			return xerrors.Errorf("cannot marshal t.Deals map too large")
+			return xerrors.Errorf("cannot marshal t.Proposals map too large")
 		}
 
 		if err := cbg.CborWriteHeader(w, cbg.MajMap, uint64(len(t.Deals))); err != nil {
@@ -232,7 +232,7 @@ func (t *PartyDeals) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Deals (map[string]storage_market.DealSet) (map)
+	// t.Proposals (map[string]storage_market.DealSet) (map)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -242,7 +242,7 @@ func (t *PartyDeals) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("expected a map (major type 5)")
 	}
 	if extra > 4096 {
-		return fmt.Errorf("t.Deals: map too large")
+		return fmt.Errorf("t.Proposals: map too large")
 	}
 
 	t.Deals = make(map[string]DealSet, extra)
@@ -371,9 +371,9 @@ func (t *PublishStorageDealsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Deals ([]storage_market.DealProposal) (slice)
+	// t.Proposals ([]storage_market.DealProposal) (slice)
 	if len(t.Deals) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Deals was too long")
+		return xerrors.Errorf("Slice value in field t.Proposals was too long")
 	}
 
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Deals)))); err != nil {
@@ -402,7 +402,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Deals ([]storage_market.DealProposal) (slice)
+	// t.Proposals ([]storage_market.DealProposal) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -410,7 +410,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Deals: array too large (%d)", extra)
+		return fmt.Errorf("t.Proposals: array too large (%d)", extra)
 	}
 
 	if maj != cbg.MajArray {
@@ -1093,7 +1093,7 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *DealMeta) MarshalCBOR(w io.Writer) error {
+func (t *DealState) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1137,7 +1137,7 @@ func (t *DealMeta) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *DealMeta) UnmarshalCBOR(r io.Reader) error {
+func (t *DealState) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

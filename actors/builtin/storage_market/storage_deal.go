@@ -52,7 +52,7 @@ func (p *DealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 	return p.ProviderCollateral
 }
 
-type DealMeta struct {
+type DealState struct {
 	SectorStartEpoch abi.ChainEpoch // -1 if not yet included in proven sector
 	LastUpdatedEpoch abi.ChainEpoch // -1 if deal state never updated
 	SlashEpoch       abi.ChainEpoch // -1 if deal never slashed
