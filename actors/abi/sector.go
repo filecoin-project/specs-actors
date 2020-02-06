@@ -49,8 +49,8 @@ const (
 /// Sealing
 ///
 
-type SealRandomness []byte
-type InteractiveSealRandomness []byte
+type SealRandomness Randomness
+type InteractiveSealRandomness Randomness
 
 // SealVerifyInfo is the structure of all the information a verifier
 // needs to verify a Seal.
@@ -85,7 +85,7 @@ type SealProof struct { //<curve, system> {
 ///
 
 type ChallengeTicketsCommitment []byte
-type PoStRandomness []byte
+type PoStRandomness Randomness
 type PartialTicket []byte // 32 bytes
 
 // TODO Porcu: refactor these types to get rid of the squishy optional fields.
