@@ -4,10 +4,6 @@ import (
 	"bytes"
 
 	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
-	cbg "github.com/whyrusleeping/cbor-gen"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -18,6 +14,9 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	cid "github.com/ipfs/go-cid"
+	errors "github.com/pkg/errors"
+	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 type Runtime = vmr.Runtime
@@ -146,29 +145,14 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValu
 		if st.PoStState.isChallenged() {
 			return false
 		}
-		// Do not challenge if the last successful PoSt was recent enough.
-		noChallengePeriod := storage_power.SurprisePoStNoChallengePeriod
-		if st.PoStState.LastSuccessfulPoSt >= rt.CurrEpoch()-noChallengePeriod {
-			return false
-		}
 
 		var curRecBuf bytes.Buffer
 		err := rt.CurrReceiver().MarshalCBOR(&curRecBuf)
 		autil.AssertNoError(err)
 
-		randomnessK := rt.GetRandomness(rt.CurrEpoch() - PoStLookback)
-		challengedSectorsRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStSampleSectors, randomnessK, rt.CurrReceiver())
-
-		st.ProvingSet = st.ComputeProvingSet()
-		challengedSectors := _surprisePoStSampleChallengedSectors(
-			challengedSectorsRandomness,
-			st.ProvingSet,
-		)
-
 		st.PoStState = MinerPoStState{
 			LastSuccessfulPoSt:     st.PoStState.LastSuccessfulPoSt,
 			SurpriseChallengeEpoch: rt.CurrEpoch(),
-			ChallengedSectors:      challengedSectors,
 			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures,
 		}
 		return true
@@ -203,7 +187,6 @@ func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, params *Submi
 		st.PoStState = MinerPoStState{
 			LastSuccessfulPoSt:     rt.CurrEpoch(),
 			SurpriseChallengeEpoch: epochUndefined,
-			ChallengedSectors:      nil,
 			NumConsecutiveFailures: 0,
 		}
 		return nil
@@ -242,13 +225,12 @@ func (a *StorageMinerActor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue
 	rt.State().Transaction(&st, func() interface{} {
 		updateSuccessEpoch := st.PoStState.isPoStOk()
 
-		// Advance the timestamp of the most recent PoSt success, provided the miner is currently
-		// in normal state. (Cannot do this if SurprisePoSt mechanism already underway.)
+		// Advance the timestamp of the most recent PoSt success, provided the miner has not faulted
+		// in normal state. (Cannot do this if miner has missed a SurprisePoSt.)
 		if updateSuccessEpoch {
 			st.PoStState = MinerPoStState{
 				LastSuccessfulPoSt:     rt.CurrEpoch(),
 				SurpriseChallengeEpoch: st.PoStState.SurpriseChallengeEpoch, // expected to be undef because PoStState is OK
-				ChallengedSectors:      st.PoStState.ChallengedSectors,      // expected to be empty
 				NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures, // expected to be 0
 			}
 		}
@@ -279,8 +261,7 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 		rt.Abort(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
 	}
 
-
-	depositReq := precommitDeposit(st.getSectorSize(), params.info.Expiration - rt.CurrEpoch())
+	depositReq := precommitDeposit(st.getSectorSize(), params.info.Expiration-rt.CurrEpoch())
 	confirmFundsReceiptOrAbort_RefundRemainder(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
@@ -801,7 +782,6 @@ func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
 			st.PoStState = MinerPoStState{
 				LastSuccessfulPoSt:     st.PoStState.LastSuccessfulPoSt,
 				SurpriseChallengeEpoch: epochUndefined,
-				ChallengedSectors:      nil,
 				NumConsecutiveFailures: numConsecutiveFailures,
 			}
 			return nil
@@ -902,7 +882,6 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 	Assert(st.PoStState.isChallenged())
 	sectorSize := st.Info.SectorSize
 	challengeEpoch := st.PoStState.SurpriseChallengeEpoch
-	challengedSectors := st.PoStState.ChallengedSectors
 
 	// verify no duplicate tickets
 	challengeIndices := make(map[int64]bool)
@@ -913,15 +892,10 @@ func (a *StorageMinerActor) verifySurprisePost(rt Runtime, st *StorageMinerActor
 		challengeIndices[tix.ChallengeIndex] = true
 	}
 
-	autil.TODO(challengedSectors)
-	// TODO HS: Determine what should be the acceptance criterion for sector numbers
-	// proven in SurprisePoSt proofs.
-	//
-	// Previous note:
-	// Verify the partialTicket values
-	// if !a._rtVerifySurprisePoStMeetsTargetReq(rt) {
-	// 	rt.AbortStateMsg("Invalid Surprise PoSt. Tickets do not meet target.")
-	// }
+	// verify appropriate number of tickets is present
+	if int64(len(onChainInfo.Candidates)) != NumSurprisePoStSectors {
+		rt.Abort(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Too few tickets included.")
+	}
 
 	randomnessK := rt.GetRandomness(challengeEpoch - PoStLookback)
 	// regenerate randomness used. The PoSt Verification below will fail if
@@ -994,12 +968,6 @@ func (a *StorageMinerActor) _rtVerifySealOrAbort(rt Runtime, onChainInfo *abi.On
 	if !isVerified {
 		rt.Abort(exitcode.ErrIllegalState, "Sector seal failed to verify")
 	}
-}
-
-func _surprisePoStSampleChallengedSectors(sampleRandomness abi.Randomness, provingSet cid.Cid) []abi.SectorNumber {
-	// TODO: HS
-	autil.TODO()
-	panic("")
 }
 
 func confirmFundsReceiptOrAbort_RefundRemainder(rt vmr.Runtime, fundsRequired abi.TokenAmount) {
