@@ -75,6 +75,32 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(1234), st.StartEpoch)
 		// assert no transactions
 	})
+
+	t.Run("simple construction with illegal params", func(t *testing.T) {
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{},
+			NumApprovalsThreshold: -13,
+			UnlockDuration:        -100,
+		}
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
+		assert.Equal(t, adt.EmptyValue{}, *ret)
+		rt.Verify()
+
+		var st multisig.MultiSigActorState
+		rt.GetState(&st)
+		assert.Equal(t, []addr.Address(nil), st.Signers)
+		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
+		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
+		assert.Equal(t, abi.ChainEpoch(-100), st.UnlockDuration)
+		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+		txns := adt.AsMap(rt.Store(), st.PendingTxns)
+		keys, err := txns.CollectKeys()
+		require.NoError(t, err)
+		assert.Empty(t, keys)
+	})
 }
 
 func TestVesting(t *testing.T) {
