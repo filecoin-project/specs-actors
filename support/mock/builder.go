@@ -31,10 +31,14 @@ func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 		balance:       abi.NewTokenAmount(0),
 		valueReceived: abi.NewTokenAmount(0),
 
+		actorCodeCIDs: make(map[addr.Address]cid.Cid),
+		newActorAddr:  addr.Undef,
+
 		t:                        nil, // Initialized at Build()
 		expectValidateCallerAny:  false,
 		expectValidateCallerAddr: nil,
 		expectValidateCallerType: nil,
+		expectCreateActor:        nil,
 
 		expectSends: make([]*expectedMessage, 0),
 	}

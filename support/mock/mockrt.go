@@ -31,6 +31,8 @@ type Runtime struct {
 	callerType    cid.Cid
 	miner         addr.Address
 	valueReceived abi.TokenAmount
+	actorCodeCIDs map[addr.Address]cid.Cid
+	newActorAddr  addr.Address
 
 	// Actor state
 	state   cid.Cid
@@ -47,6 +49,12 @@ type Runtime struct {
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
 	expectSends              []*expectedMessage
+	expectCreateActor        *expectCreateActor
+}
+
+type expectCreateActor struct {
+	codeId  cid.Cid
+	address addr.Address
 }
 
 var _ runtime.Runtime = &Runtime{}
@@ -157,7 +165,8 @@ func (rt *Runtime) ValueReceived() abi.TokenAmount {
 
 func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
 	rt.requireInCall()
-	panic("implement me")
+	ret, ok = rt.actorCodeCIDs[addr]
+	return
 }
 
 func (rt *Runtime) GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed {
@@ -230,7 +239,11 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 
 func (rt *Runtime) NewActorAddress() addr.Address {
 	rt.requireInCall()
-	panic("implement me")
+	if rt.newActorAddr == addr.Undef {
+		rt.t.Fatal("unexpected call to new actor address")
+	}
+	defer func() { rt.newActorAddr = addr.Undef }()
+	return rt.newActorAddr
 }
 
 func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
@@ -238,7 +251,16 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	panic("implement me")
+	if rt.expectCreateActor == nil {
+		rt.t.Fatal("unexpected call to create actor")
+	}
+	if !rt.expectCreateActor.codeId.Equals(codeId) || rt.expectCreateActor.address != address {
+		rt.t.Errorf("unexpected actor being created, expected code: %s address: %s, actual code: %s address: %s",
+			rt.expectCreateActor.codeId, rt.expectCreateActor.address, codeId, address)
+	}
+	defer func() {
+		rt.expectCreateActor = nil
+	}()
 }
 
 func (rt *Runtime) DeleteActor(address addr.Address) {
@@ -381,6 +403,7 @@ func (m *expectedMessage) String() string {
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.caller = address
 	rt.callerType = actorType
+	rt.actorCodeCIDs[address] = actorType
 }
 
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
@@ -393,6 +416,11 @@ func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
 
 func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
 	rt.epoch = epoch
+}
+
+func (rt *Runtime) SetNewActorAddress(actAddr addr.Address) {
+	rt.require(actAddr.Protocol() == addr.Actor, "new actor address must be protocol: Actor, got protocol: %v", actAddr.Protocol())
+	rt.newActorAddr = actAddr
 }
 
 func (rt *Runtime) ExpectValidateCallerAny() {
@@ -421,6 +449,13 @@ func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, para
 	})
 }
 
+func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
+	rt.expectCreateActor = &expectCreateActor{
+		codeId:  codeId,
+		address: address,
+	}
+}
+
 // Verifies that expected calls were received, and resets all expectations.
 func (rt *Runtime) Verify() {
 	if rt.expectValidateCallerAny {
@@ -435,6 +470,10 @@ func (rt *Runtime) Verify() {
 	if len(rt.expectSends) > 0 {
 		rt.t.Errorf("expected all message to be send, unsent messages %v", rt.expectSends)
 	}
+	if rt.expectCreateActor != nil {
+		rt.t.Errorf("expected actor to be created, uncreated actor code: %v, address %v",
+			rt.expectCreateActor.codeId, rt.expectCreateActor.address)
+	}
 
 	rt.Reset()
 }
@@ -444,6 +483,7 @@ func (rt *Runtime) Reset() {
 	rt.expectValidateCallerAny = false
 	rt.expectValidateCallerAddr = nil
 	rt.expectValidateCallerType = nil
+	rt.expectCreateActor = nil
 }
 
 // Calls f() expecting it to invoke Runtime.Abort() with a specified exit code.
