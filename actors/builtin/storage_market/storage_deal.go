@@ -17,7 +17,7 @@ import (
 // minimal deals that last for a long time.
 // Note: ClientCollateralPerEpoch may not be needed and removed pending future confirmation.
 // There will be a Minimum value for both client and provider deal collateral.
-type StorageDealProposal struct {
+type DealProposal struct {
 	PieceCID        cid.Cid // CommP
 	PieceSize       abi.PieceSize
 	Client          addr.Address
@@ -36,25 +36,23 @@ type StorageDealProposal struct {
 	ClientCollateral   abi.TokenAmount
 }
 
-func (p *StorageDealProposal) Duration() abi.ChainEpoch {
+func (p *DealProposal) Duration() abi.ChainEpoch {
 	return p.EndEpoch - p.StartEpoch
 }
 
-func (p *StorageDealProposal) TotalStorageFee() abi.TokenAmount {
+func (p *DealProposal) TotalStorageFee() abi.TokenAmount {
 	return big.Mul(p.StoragePricePerEpoch, big.NewInt(int64(p.Duration())))
 }
 
-func (p *StorageDealProposal) ClientBalanceRequirement() abi.TokenAmount {
+func (p *DealProposal) ClientBalanceRequirement() abi.TokenAmount {
 	return big.Add(p.ClientCollateral, p.TotalStorageFee())
 }
 
-func (p *StorageDealProposal) ProviderBalanceRequirement() abi.TokenAmount {
+func (p *DealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 	return p.ProviderCollateral
 }
 
-type OnChainDeal struct {
-	ID               abi.DealID
-	Proposal         StorageDealProposal
+type DealState struct {
 	SectorStartEpoch abi.ChainEpoch // -1 if not yet included in proven sector
 	LastUpdatedEpoch abi.ChainEpoch // -1 if deal state never updated
 	SlashEpoch       abi.ChainEpoch // -1 if deal never slashed

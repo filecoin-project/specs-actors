@@ -5,7 +5,6 @@ package storage_market
 import (
 	"fmt"
 	"io"
-	"sort"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -19,14 +18,20 @@ func (t *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{133}); err != nil {
+	if _, err := w.Write([]byte{134}); err != nil {
 		return err
 	}
 
-	// t.Deals (cid.Cid) (struct)
+	// t.Proposals (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(w, t.Deals); err != nil {
-		return xerrors.Errorf("failed to write cid field t.Deals: %w", err)
+	if err := cbg.WriteCid(w, t.Proposals); err != nil {
+		return xerrors.Errorf("failed to write cid field t.Proposals: %w", err)
+	}
+
+	// t.States (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.States); err != nil {
+		return xerrors.Errorf("failed to write cid field t.States: %w", err)
 	}
 
 	// t.EscrowTable (cid.Cid) (struct)
@@ -72,20 +77,32 @@ func (t *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 6 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Deals (cid.Cid) (struct)
+	// t.Proposals (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.Deals: %w", err)
+			return xerrors.Errorf("failed to read cid field t.Proposals: %w", err)
 		}
 
-		t.Deals = c
+		t.Proposals = c
+
+	}
+	// t.States (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.States: %w", err)
+		}
+
+		t.States = c
 
 	}
 	// t.EscrowTable (cid.Cid) (struct)
@@ -149,141 +166,6 @@ func (t *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
 		t.DealIDsByParty = c
 
 	}
-	return nil
-}
-
-func (t *PartyDeals) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{129}); err != nil {
-		return err
-	}
-
-	// t.Deals (map[string]storage_market.DealSet) (map)
-	{
-		if len(t.Deals) > 4096 {
-			return xerrors.Errorf("cannot marshal t.Deals map too large")
-		}
-
-		if err := cbg.CborWriteHeader(w, cbg.MajMap, uint64(len(t.Deals))); err != nil {
-			return err
-		}
-
-		keys := make([]string, 0, len(t.Deals))
-		for k := range t.Deals {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			v := t.Deals[k]
-
-			if len(k) > cbg.MaxLength {
-				return xerrors.Errorf("Value in field k was too long")
-			}
-
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(k)))); err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte(k)); err != nil {
-				return err
-			}
-
-			if err := v.MarshalCBOR(w); err != nil {
-				return err
-			}
-
-		}
-	}
-	return nil
-}
-
-func (t *PartyDeals) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Deals (map[string]storage_market.DealSet) (map)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajMap {
-		return fmt.Errorf("expected a map (major type 5)")
-	}
-	if extra > 4096 {
-		return fmt.Errorf("t.Deals: map too large")
-	}
-
-	t.Deals = make(map[string]DealSet, extra)
-
-	for i, l := 0, int(extra); i < l; i++ {
-
-		var k string
-
-		{
-			sval, err := cbg.ReadString(br)
-			if err != nil {
-				return err
-			}
-
-			k = string(sval)
-		}
-
-		var v DealSet
-
-		{
-
-			if err := v.UnmarshalCBOR(br); err != nil {
-				return err
-			}
-
-		}
-
-		t.Deals[k] = v
-
-	}
-	return nil
-}
-
-func (t *DealSet) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{128}); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *DealSet) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 0 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
 	return nil
 }
 
@@ -353,7 +235,7 @@ func (t *PublishStorageDealsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Deals ([]storage_market.StorageDealProposal) (slice)
+	// t.Deals ([]storage_market.DealProposal) (slice)
 	if len(t.Deals) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Deals was too long")
 	}
@@ -384,7 +266,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Deals ([]storage_market.StorageDealProposal) (slice)
+	// t.Deals ([]storage_market.DealProposal) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -399,11 +281,11 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("expected cbor array")
 	}
 	if extra > 0 {
-		t.Deals = make([]StorageDealProposal, extra)
+		t.Deals = make([]DealProposal, extra)
 	}
 	for i := 0; i < int(extra); i++ {
 
-		var v StorageDealProposal
+		var v DealProposal
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
@@ -858,7 +740,7 @@ func (t *PublishStorageDealsReturn) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *StorageDealProposal) MarshalCBOR(w io.Writer) error {
+func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -932,7 +814,7 @@ func (t *StorageDealProposal) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *StorageDealProposal) UnmarshalCBOR(r io.Reader) error {
+func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -1075,28 +957,12 @@ func (t *StorageDealProposal) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnChainDeal) MarshalCBOR(w io.Writer) error {
+func (t *DealState) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{133}); err != nil {
-		return err
-	}
-
-	// t.ID (abi.DealID) (int64)
-	if t.ID >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.ID))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ID)-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.Proposal (storage_market.StorageDealProposal) (struct)
-	if err := t.Proposal.MarshalCBOR(w); err != nil {
+	if _, err := w.Write([]byte{131}); err != nil {
 		return err
 	}
 
@@ -1135,7 +1001,7 @@ func (t *OnChainDeal) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *OnChainDeal) UnmarshalCBOR(r io.Reader) error {
+func (t *DealState) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -1146,44 +1012,10 @@ func (t *OnChainDeal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.ID (abi.DealID) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.ID = abi.DealID(extraI)
-	}
-	// t.Proposal (storage_market.StorageDealProposal) (struct)
-
-	{
-
-		if err := t.Proposal.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
 	// t.SectorStartEpoch (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
