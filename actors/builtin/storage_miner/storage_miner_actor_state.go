@@ -242,16 +242,6 @@ func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi
 	panic("")
 }
 
-// Must be significantly larger than DeclaredFaultEpoch, since otherwise it may be possible
-// to declare faults adaptively in order to exempt challenged sectors.
-func (x *SectorOnChainInfo) EffectiveFaultBeginEpoch() abi.ChainEpoch {
-	return x.DeclaredFaultEpoch + DeclaredFaultEffectiveDelay
-}
-
-func (x *SectorOnChainInfo) EffectiveFaultEndEpoch() abi.ChainEpoch {
-	return x.EffectiveFaultBeginEpoch() + x.DeclaredFaultDuration
-}
-
 func (mps *MinerPoStState) isChallenged() bool {
 	return mps.SurpriseChallengeEpoch != epochUndefined
 }
