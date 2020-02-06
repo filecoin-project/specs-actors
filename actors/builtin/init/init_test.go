@@ -68,14 +68,21 @@ func TestExec(t *testing.T) {
 		rt.SetNewActorAddress(uniqueAddr)
 
 		// next id address
-		expectActor := tutil.NewIDAddr(t, 100)
-		rt.ExpectCreateActor(builtin.PaymentChannelActorCodeID, expectActor)
+		expectedIdAddr := tutil.NewIDAddr(t, 100)
+		rt.ExpectCreateActor(builtin.PaymentChannelActorCodeID, expectedIdAddr)
 
 		// expect anne creating a payment channel to trigger a send to the payment channels constructor
-		rt.ExpectSend(expectActor, builtin.MethodConstructor, fakeParams, balance, nil, exitcode.Ok)
+		rt.ExpectSend(expectedIdAddr, builtin.MethodConstructor, fakeParams, balance, nil, exitcode.Ok)
 		execRet := actor.execAndVerify(rt, builtin.PaymentChannelActorCodeID, fakeParams)
 		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
-		assert.Equal(t, expectActor, execRet.IDAddress)
+		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
+
+		var st _init.InitActorState
+		rt.GetState(&st)
+		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedIdAddr, actualIdAddr)
+
 	})
 
 	t.Run("happy path exec create storage miner", func(t *testing.T) {
@@ -92,14 +99,27 @@ func TestExec(t *testing.T) {
 		rt.SetNewActorAddress(uniqueAddr)
 
 		// next id address
-		expectActor := tutil.NewIDAddr(t, 100)
-		rt.ExpectCreateActor(builtin.StorageMinerActorCodeID, expectActor)
+		expectedIdAddr := tutil.NewIDAddr(t, 100)
+		rt.ExpectCreateActor(builtin.StorageMinerActorCodeID, expectedIdAddr)
 
 		// expect storage power actor creating a storage miner actor to trigger a send to the storage miner actors constructor
-		rt.ExpectSend(expectActor, builtin.MethodConstructor, fakeParams, big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(expectedIdAddr, builtin.MethodConstructor, fakeParams, big.Zero(), nil, exitcode.Ok)
 		execRet := actor.execAndVerify(rt, builtin.StorageMinerActorCodeID, fakeParams)
 		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
-		assert.Equal(t, expectActor, execRet.IDAddress)
+		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
+
+		var st _init.InitActorState
+		rt.GetState(&st)
+		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedIdAddr, actualIdAddr)
+
+		// should return the same address if not able to resolve
+		expUnknowAddr := tutil.NewActorAddr(t, "flurbo")
+		actualUnknownAddr, err := st.ResolveAddress(rt.Store(), expUnknowAddr)
+		assert.NoError(t, err)
+		assert.Equal(t, expUnknowAddr, actualUnknownAddr)
+
 	})
 
 }
