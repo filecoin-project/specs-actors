@@ -234,7 +234,7 @@ func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *V
 
 			// Compute deal weight
 			dur := big.NewInt(int64(proposal.Duration()))
-			siz := big.NewInt(proposal.PieceSize.Total())
+			siz := big.NewInt(int64(proposal.PieceSize.Total()))
 			weight := big.Mul(dur, siz)
 			totalWeight = big.Add(totalWeight, weight)
 		}

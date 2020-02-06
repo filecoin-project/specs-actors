@@ -46,15 +46,9 @@ func (t *StorageMarketActorState) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.LockedTable: %w", err)
 	}
 
-	// t.NextID (abi.DealID) (int64)
-	if t.NextID >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NextID))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NextID)-1)); err != nil {
-			return err
-		}
+	// t.NextID (abi.DealID) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NextID))); err != nil {
+		return err
 	}
 
 	// t.DealIDsByParty (cid.Cid) (struct)
@@ -129,31 +123,16 @@ func (t *StorageMarketActorState) UnmarshalCBOR(r io.Reader) error {
 		t.LockedTable = c
 
 	}
-	// t.NextID (abi.DealID) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
+	// t.NextID (abi.DealID) (uint64)
 
-		t.NextID = abi.DealID(extraI)
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.NextID = abi.DealID(extra)
 	// t.DealIDsByParty (cid.Cid) (struct)
 
 	{
@@ -314,14 +293,8 @@ func (t *VerifyDealsOnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if v >= 0 {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
-				return err
-			}
-		} else {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
-				return err
-			}
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+			return err
 		}
 	}
 
@@ -371,30 +344,17 @@ func (t *VerifyDealsOnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error 
 		t.DealIDs = make([]abi.DealID, extra)
 	}
 	for i := 0; i < int(extra); i++ {
-		{
-			maj, extra, err := cbg.CborReadHeader(br)
-			var extraI int64
-			if err != nil {
-				return err
-			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative oveflow")
-				}
-				extraI = -1 - extraI
-			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
-			}
 
-			t.DealIDs[i] = abi.DealID(extraI)
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.DealIDs slice: %w", err)
 		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
+		}
+
+		t.DealIDs[i] = val
 	}
 
 	// t.SectorExpiry (abi.ChainEpoch) (int64)
@@ -443,26 +403,14 @@ func (t *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if v >= 0 {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
-				return err
-			}
-		} else {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
-				return err
-			}
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+			return err
 		}
 	}
 
-	// t.SectorSize (abi.SectorSize) (int64)
-	if t.SectorSize >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SectorSize)-1)); err != nil {
-			return err
-		}
+	// t.SectorSize (abi.SectorSize) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
+		return err
 	}
 	return nil
 }
@@ -500,57 +448,29 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 		t.DealIDs = make([]abi.DealID, extra)
 	}
 	for i := 0; i < int(extra); i++ {
-		{
-			maj, extra, err := cbg.CborReadHeader(br)
-			var extraI int64
-			if err != nil {
-				return err
-			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative oveflow")
-				}
-				extraI = -1 - extraI
-			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
-			}
 
-			t.DealIDs[i] = abi.DealID(extraI)
-		}
-	}
-
-	// t.SectorSize (abi.SectorSize) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
+		maj, val, err := cbg.CborReadHeader(br)
 		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
+			return xerrors.Errorf("failed to read uint64 for t.DealIDs slice: %w", err)
 		}
 
-		t.SectorSize = abi.SectorSize(extraI)
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
+		}
+
+		t.DealIDs[i] = val
 	}
+
+	// t.SectorSize (abi.SectorSize) (uint64)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.SectorSize = abi.SectorSize(extra)
 	return nil
 }
 
@@ -572,14 +492,8 @@ func (t *OnMinerSectorsTerminateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.DealIDs {
-		if v >= 0 {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
-				return err
-			}
-		} else {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
-				return err
-			}
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -618,30 +532,17 @@ func (t *OnMinerSectorsTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		t.DealIDs = make([]abi.DealID, extra)
 	}
 	for i := 0; i < int(extra); i++ {
-		{
-			maj, extra, err := cbg.CborReadHeader(br)
-			var extraI int64
-			if err != nil {
-				return err
-			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative oveflow")
-				}
-				extraI = -1 - extraI
-			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
-			}
 
-			t.DealIDs[i] = abi.DealID(extraI)
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.DealIDs slice: %w", err)
 		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.DealIDs was not a uint, instead got %d", maj)
+		}
+
+		t.DealIDs[i] = val
 	}
 
 	return nil
@@ -665,14 +566,8 @@ func (t *PublishStorageDealsReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	for _, v := range t.IDs {
-		if v >= 0 {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
-				return err
-			}
-		} else {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
-				return err
-			}
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, v); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -711,30 +606,17 @@ func (t *PublishStorageDealsReturn) UnmarshalCBOR(r io.Reader) error {
 		t.IDs = make([]abi.DealID, extra)
 	}
 	for i := 0; i < int(extra); i++ {
-		{
-			maj, extra, err := cbg.CborReadHeader(br)
-			var extraI int64
-			if err != nil {
-				return err
-			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative oveflow")
-				}
-				extraI = -1 - extraI
-			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
-			}
 
-			t.IDs[i] = abi.DealID(extraI)
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.IDs slice: %w", err)
 		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.IDs was not a uint, instead got %d", maj)
+		}
+
+		t.IDs[i] = val
 	}
 
 	return nil
