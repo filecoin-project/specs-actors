@@ -40,7 +40,6 @@ func TestExec(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetActorCodeCID(anne, builtin.AccountActorCodeID)
-		// TODO test case where `ok` == false, current impl panics
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.execAndVerify(rt, builtin.AccountActorCodeID, []byte{})
 		})
