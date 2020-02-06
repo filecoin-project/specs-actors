@@ -132,6 +132,10 @@ func (bi Int) Equals(o Int) bool {
 }
 
 func (bi *Int) MarshalJSON() ([]byte, error) {
+	if bi.Int == nil {
+		zero := NewInt(0)
+		return json.Marshal(zero)
+	}
 	return json.Marshal(bi.String())
 }
 
@@ -190,7 +194,8 @@ func FromCborBytes(buf []byte) (Int, error) {
 
 func (bi *Int) MarshalCBOR(w io.Writer) error {
 	if bi.Int == nil {
-		return fmt.Errorf("failed to Marshal to CBOR, big is nil")
+		zero := NewInt(0)
+		return zero.MarshalCBOR(w)
 	}
 
 	enc, err := bi.CborBytes()
@@ -246,4 +251,8 @@ func (bi *Int) UnmarshalCBOR(br io.Reader) error {
 
 func (bi *Int) IsZero() bool {
 	return bi.Int.Sign() == 0
+}
+
+func (bi *Int) Nil() bool {
+	return bi.Int == nil
 }

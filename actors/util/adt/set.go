@@ -45,6 +45,12 @@ func (h *Set) Delete(k Keyer) error {
 	return h.m.Delete(k)
 }
 
+// ForEach iterates over all values in the set, calling the callback for each value.
+// Returning error from the callback stops the iteration.
+func (h *Set) ForEach(cb func(k string) error) error {
+	return h.m.ForEach(EmptyValue{}, cb)
+}
+
 // Collects all the keys from the set into a slice of strings.
 func (h *Set) CollectKeys() (out []string, err error) {
 	return h.m.CollectKeys()

@@ -1,6 +1,7 @@
 package storage_power_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
@@ -50,7 +52,14 @@ func TestConstruction(t *testing.T) {
 			IDAddress:     miner1, // miner actor id address
 			RobustAddress: unused, // should be long miner actor address
 		}
-		rt.ExpectSend(owner1, builtin.MethodSend, createMinerParams, abi.NewTokenAmount(10), &mock.ReturnWrapper{createMinerRet}, 0)
+		var ctorParamBytes []byte
+		err := createMinerParams.MarshalCBOR(bytes.NewBuffer(ctorParamBytes))
+		require.NoError(t, err)
+		msgParams := &initact.ExecParams{
+			CodeID:            builtin.StorageMinerActorCodeID,
+			ConstructorParams: ctorParamBytes,
+		}
+		rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
 		rt.Call(actor.StoragePowerActor.CreateMiner, createMinerParams)
 		rt.Verify()
 

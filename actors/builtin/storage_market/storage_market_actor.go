@@ -2,6 +2,7 @@ package storage_market
 
 import (
 	addr "github.com/filecoin-project/go-address"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -25,7 +26,7 @@ func (a StorageMarketActor) Exports() []interface{} {
 		5:                         a.PublishStorageDeals,
 		6:                         a.VerifyDealsOnSectorProveCommit,
 		7:                         a.OnMinerSectorsTerminate,
-		8:                         a.GetPieceInfosForDealIDs,
+		8:                         a.ComputeDataCommitment,
 		//9: a.GetWeightForDealSet,
 	}
 }
@@ -144,6 +145,7 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
 		deals := AsDealArray(adt.AsStore(rt), st.Deals)
+		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage deals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			if deal.Provider != rt.ImmediateCaller() {
@@ -172,11 +174,20 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 
 			err := deals.Set(id, onchainDeal)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
+				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
+
+			if err := dbp.Put(adt.AddrKey(deal.Client), uint64(id)); err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set client deal id: %v", err)
+			}
+			if err := dbp.Put(adt.AddrKey(deal.Provider), uint64(id)); err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "set provider deal id: %v", err)
+			}
+
 			newDealIds = append(newDealIds, id)
 		}
 		st.Deals = deals.Root()
+		st.DealIDsByParty = dbp.Root()
 		return nil
 	})
 
@@ -232,23 +243,20 @@ func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *V
 	return &totalWeight
 }
 
-type GetPieceInfosForDealIDsParams struct {
-	DealIDs []abi.DealID
+type ComputeDataCommitmentParams struct {
+	DealIDs    []abi.DealID
+	SectorSize abi.SectorSize
 }
 
-type GetPieceInfosForDealIDsReturn struct {
-	Pieces []abi.PieceInfo
-}
-
-func (a StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, params *GetPieceInfosForDealIDsParams) *GetPieceInfosForDealIDsReturn {
+func (a StorageMarketActor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
-	ret := make([]abi.PieceInfo, 0)
+	pieces := make([]abi.PieceInfo, 0)
 	var st StorageMarketActorState
 	rt.State().Transaction(&st, func() interface{} {
 		for _, dealID := range params.DealIDs {
 			deal := st.mustGetDeal(rt, dealID)
-			ret = append(ret, abi.PieceInfo{
+			pieces = append(pieces, abi.PieceInfo{
 				PieceCID: deal.Proposal.PieceCID,
 				Size:     deal.Proposal.PieceSize.Total(),
 			})
@@ -256,7 +264,12 @@ func (a StorageMarketActor) GetPieceInfosForDealIDs(rt Runtime, params *GetPiece
 		return nil
 	})
 
-	return &GetPieceInfosForDealIDsReturn{Pieces: ret}
+	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorSize, pieces)
+	if err != nil {
+		rt.Abort(exitcode.SysErrorIllegalArgument, "failed to compute unsealed sector CID: %s", err)
+	}
+
+	return (*cbg.CborCid)(&commd)
 }
 
 type OnMinerSectorsTerminateParams struct {

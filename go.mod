@@ -14,5 +14,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20200123233031-1cdf64d27158
+	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 )

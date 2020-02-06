@@ -168,17 +168,9 @@ func (a *StoragePowerActor) CreateMiner(rt Runtime, params *CreateMinerParams) *
 		store := adt.AsStore(rt)
 		err = st.setMinerPledge(store, addresses.IDAddress, rt.ValueReceived())
 		abortIfError(rt, err, "failed to set pledge balance")
-		st.PowerTable, err = putStoragePower(store, st.PowerTable, addresses.IDAddress, abi.NewStoragePower(0))
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to put power in power table while creating miner: %v", err)
-		}
 		st.ClaimedPower, err = putStoragePower(store, st.ClaimedPower, addresses.IDAddress, abi.NewStoragePower(0))
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
-		}
-		st.NominalPower, err = putStoragePower(store, st.NominalPower, addresses.IDAddress, abi.NewStoragePower(0))
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to put power in nominal power table while creating miner: %v", err)
 		}
 		st.MinerCount += 1
 		return nil
@@ -204,7 +196,7 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *
 		rt.Abort(exitcode.ErrForbidden, "deletion requested for miner %v with pledge balance %v", params.Miner, balance)
 	}
 
-	minerPower, found, err := getStoragePower(adt.AsStore(rt), st.PowerTable, params.Miner)
+	minerPower, found, err := getStoragePower(adt.AsStore(rt), st.ClaimedPower, params.Miner)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "Failed to get miner power from power table for deletion request: %v", err)
 	}
@@ -304,9 +296,7 @@ func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime, _ *adt.EmptyV
 		if err := st.deleteFault(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to delete miner fault: %v", err)
 		}
-		if err := st.updatePowerEntriesFromClaimed(adt.AsStore(rt), minerAddr); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to update miners claimed power table on surprise PoSt success: %v", err)
-		}
+
 		return nil
 	})
 	return &adt.EmptyValue{}
@@ -325,9 +315,6 @@ func (a *StoragePowerActor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMin
 	rt.State().Transaction(&st, func() interface{} {
 		if err := st.putFault(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to put miner fault: %v", err)
-		}
-		if err := st.updatePowerEntriesFromClaimed(adt.AsStore(rt), minerAddr); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "Failed to update power entries for claimed power: %v", err)
 		}
 
 		var found bool
@@ -544,12 +531,17 @@ func (a *StoragePowerActor) processDeferredCronEvents(rt Runtime) error {
 }
 
 func (a *StoragePowerActor) getPledgeCollateralReqForMiner(rt Runtime, st *StoragePowerActorState, minerAddr addr.Address) (abi.TokenAmount, error) {
-	minerNominalPower, found, err := getStoragePower(adt.AsStore(rt), st.NominalPower, minerAddr)
+	claimedPower, ok, err := getStoragePower(adt.AsStore(rt), st.ClaimedPower, minerAddr)
 	if err != nil {
-		return abi.NewTokenAmount(0), errors.Wrap(err, "Failed to get miner power from nominal power table")
+		return abi.NewStoragePower(0), errors.Wrap(err, "failed to get claimed miner power while computing pledge collateral requirement")
 	}
-	if !found {
-		return abi.NewTokenAmount(0), errors.Errorf("no miner %v", minerAddr)
+	if !ok {
+		return abi.NewStoragePower(0), errors.Errorf("no claimed power for actor %v", minerAddr)
+	}
+
+	minerNominalPower, err := st.computeNominalPower(adt.AsStore(rt), minerAddr, claimedPower)
+	if err != nil {
+		return abi.NewTokenAmount(0), err
 	}
 	return rt.CurrIndices().PledgeCollateralReq(minerNominalPower), nil
 }
@@ -571,21 +563,13 @@ func (a *StoragePowerActor) deleteMinerActor(rt Runtime, miner addr.Address) err
 	var txErr error
 	amountSlashed := rt.State().Transaction(&st, func() interface{} {
 		var err error
-		st.PowerTable, err = deleteStoragePower(adt.AsStore(rt), st.PowerTable, miner)
-		if err != nil {
-			txErr = errors.Wrapf(err, "failed to delete %v from storage power table", miner)
-			return big.Zero()
-		}
+
 		st.ClaimedPower, err = deleteStoragePower(adt.AsStore(rt), st.ClaimedPower, miner)
 		if err != nil {
 			txErr = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
 			return big.Zero()
 		}
-		st.NominalPower, err = deleteStoragePower(adt.AsStore(rt), st.NominalPower, miner)
-		if err != nil {
-			txErr = errors.Wrapf(err, "failed to delete %v from nominal power table", miner)
-			return big.Zero()
-		}
+
 		st.MinerCount -= 1
 		if err = st.deleteFault(adt.AsStore(rt), miner); err != nil {
 			return err
