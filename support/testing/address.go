@@ -44,3 +44,11 @@ func NewActorAddr(t *testing.T, data string) addr.Address {
 	}
 	return address
 }
+
+func NewActorAddr(t *testing.T, data string) addr.Address {
+	address, err := addr.NewActorAddress([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return address
+}
