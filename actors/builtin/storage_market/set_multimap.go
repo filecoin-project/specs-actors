@@ -9,7 +9,7 @@ import (
 )
 
 type SetMultimap struct {
-	mp *adt.Map
+	mp    *adt.Map
 	store adt.Store
 }
 
