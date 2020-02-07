@@ -8,7 +8,7 @@ import (
 )
 
 // The cron actor is a built-in singleton that sends messages to other registered actors at the end of each epoch.
-type Actor struct {}
+type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
 	return []interface{}{
