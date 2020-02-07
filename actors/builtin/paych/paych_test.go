@@ -122,6 +122,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, pcaAddr, callerAddr)
+		rt.ExpectValidateCallerAddr(callerAddr, pcaAddr)
 
 		tl := abi.ChainEpoch(10)
 		amt := big.NewInt(9)

@@ -49,7 +49,6 @@ type Runtime struct {
 	expectValidateCallerAny  bool
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
-	expectValidateReceiverType cid.Cid
 	expectSends              []*expectedMessage
 	expectCreateActor        *expectCreateActor
 }
@@ -244,7 +243,7 @@ func (rt *Runtime) AbortStateMsg(msg string) {
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
-	panic("implement me")
+	return rt.syscalls
 }
 
 func (rt *Runtime) Context() context.Context {
