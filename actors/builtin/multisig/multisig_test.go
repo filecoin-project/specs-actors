@@ -913,7 +913,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-	constructRet := rt.Call(h.MultiSigActor.Constructor, &constructParams).(*adt.EmptyValue)
+	constructRet := rt.Call(h.Actor.Constructor, &constructParams).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 }
@@ -925,19 +925,19 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Method: method,
 		Params: params,
 	}
-	rt.Call(h.MultiSigActor.Propose, proposeParams)
+	rt.Call(h.Actor.Propose, proposeParams)
 }
 
 // TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
 // exercise both un/successful sends.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	rt.Call(h.MultiSigActor.Approve, approveParams)
+	rt.Call(h.Actor.Approve, approveParams)
 }
 
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
 	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	rt.Call(h.MultiSigActor.Cancel, cancelParams)
+	rt.Call(h.Actor.Cancel, cancelParams)
 }
 
 func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increase bool) {
@@ -945,7 +945,7 @@ func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increa
 		Signer:   signer,
 		Increase: increase,
 	}
-	rt.Call(h.MultiSigActor.AddSigner, addSignerParams)
+	rt.Call(h.Actor.AddSigner, addSignerParams)
 }
 
 func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, decrease bool) {
@@ -953,7 +953,7 @@ func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, dec
 		Signer:   signer,
 		Decrease: decrease,
 	}
-	rt.Call(h.MultiSigActor.RemoveSigner, rmSignerParams)
+	rt.Call(h.Actor.RemoveSigner, rmSignerParams)
 }
 
 func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr.Address) {
@@ -961,12 +961,12 @@ func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr
 		From: oldSigner,
 		To:   newSigner,
 	}
-	rt.Call(h.MultiSigActor.SwapSigner, swpParams)
+	rt.Call(h.Actor.SwapSigner, swpParams)
 }
 
 func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold int64) {
 	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
-	rt.Call(h.MultiSigActor.ChangeNumApprovalsThreshold, thrshParams)
+	rt.Call(h.Actor.ChangeNumApprovalsThreshold, thrshParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.Transaction) {
