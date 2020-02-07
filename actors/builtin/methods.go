@@ -70,7 +70,7 @@ type smaMethods struct {
 	GetWeightForDealSet   abi.MethodNum
 }
 
-var StorageMarketMethods = smaMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
+var MethodsMarket = smaMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
 const (
 	// Proxy cron tick method (via StoragePowerActor)

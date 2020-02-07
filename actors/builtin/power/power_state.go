@@ -1,4 +1,4 @@
-package storage_power
+package power
 
 import (
 	"sort"
@@ -13,7 +13,7 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type StoragePowerActorState struct {
+type State struct {
 	TotalNetworkPower abi.StoragePower
 
 	MinerCount  int64
@@ -36,13 +36,13 @@ type CronEvent struct {
 type AddrKey = adt.AddrKey
 type IntKey = adt.IntKey
 
-func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
+func ConstructState(store adt.Store) (*State, error) {
 	emptyMap, err := adt.MakeEmptyMap(store)
 	if err != nil {
 		return nil, err
 	}
 
-	return &StoragePowerActorState{
+	return &State{
 		TotalNetworkPower:        abi.NewStoragePower(0),
 		EscrowTable:              emptyMap.Root(),
 		CronEventQueue:           emptyMap.Root(),
@@ -52,7 +52,7 @@ func ConstructState(store adt.Store) (*StoragePowerActorState, error) {
 	}, nil
 }
 
-func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
+func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
 
 	// if miner is larger than min power requirement, we're set
 	if minerPower.GreaterThanEqual(ConsensusMinerMinPower) {
@@ -93,7 +93,7 @@ func (st *StoragePowerActorState) minerNominalPowerMeetsConsensusMinimum(s adt.S
 }
 
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
-func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
+func (st *State) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
 	var allMiners []addr.Address
 	var pwr abi.StoragePower
 	if err := adt.AsMap(s, st.ClaimedPower).ForEach(&pwr, func(k string) error {
@@ -128,12 +128,12 @@ func (st *StoragePowerActorState) selectMinersToSurprise(s adt.Store, challengeC
 	return selectedMiners, nil
 }
 
-func (st *StoragePowerActorState) getMinerPledge(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
+func (st *State) getMinerPledge(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
 	table := adt.AsBalanceTable(store, st.EscrowTable)
 	return table.Get(miner)
 }
 
-func (st *StoragePowerActorState) setMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
+func (st *State) setMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
 	table := adt.AsBalanceTable(store, st.EscrowTable)
 	if table.Set(miner, amount) == nil {
 		st.EscrowTable = table.Root()
@@ -141,7 +141,7 @@ func (st *StoragePowerActorState) setMinerPledge(store adt.Store, miner addr.Add
 	return nil
 }
 
-func (st *StoragePowerActorState) addMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
+func (st *State) addMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 	table := adt.AsBalanceTable(store, st.EscrowTable)
 	if table.Add(miner, amount) == nil {
@@ -150,7 +150,7 @@ func (st *StoragePowerActorState) addMinerPledge(store adt.Store, miner addr.Add
 	return table.Add(miner, amount)
 }
 
-func (st *StoragePowerActorState) subtractMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount,
+func (st *State) subtractMinerPledge(store adt.Store, miner addr.Address, amount abi.TokenAmount,
 	balanceFloor abi.TokenAmount) (abi.TokenAmount, error) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 	table := adt.AsBalanceTable(store, st.EscrowTable)
@@ -161,7 +161,7 @@ func (st *StoragePowerActorState) subtractMinerPledge(store adt.Store, miner add
 	return subtracted, err
 }
 
-func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
+func (st *State) addClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
 	// Note: The following computation does not use any of the dynamic information from CurrIndices();
 	// it depends only on weight. This means that the power of a given weight
 	// does not vary over time, so we can avoid continually updating it for each sector every epoch.
@@ -184,7 +184,7 @@ func (st *StoragePowerActorState) addClaimedPowerForSector(s adt.Store, minerAdd
 	return nil
 }
 
-func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
+func (st *State) deductClaimedPowerForSector(s adt.Store, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
 	sectorPower := consensusPowerForWeight(weight)
 
 	currentPower, ok, err := getStoragePower(s, st.ClaimedPower, minerAddr)
@@ -201,7 +201,7 @@ func (st *StoragePowerActorState) deductClaimedPowerForSector(s adt.Store, miner
 	return nil
 }
 
-func (st *StoragePowerActorState) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
+func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
 	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
@@ -216,7 +216,7 @@ func (st *StoragePowerActorState) computeNominalPower(s adt.Store, minerAddr add
 	return nominalPower, nil
 }
 
-func (st *StoragePowerActorState) setClaimedPower(s adt.Store, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) error {
+func (st *State) setClaimedPower(s adt.Store, minerAddr addr.Address, updatedMinerClaimedPower abi.StoragePower) error {
 	Assert(updatedMinerClaimedPower.GreaterThanEqual(big.Zero()))
 	var err error
 	st.ClaimedPower, err = putStoragePower(s, st.ClaimedPower, minerAddr, updatedMinerClaimedPower)
@@ -226,7 +226,7 @@ func (st *StoragePowerActorState) setClaimedPower(s adt.Store, minerAddr addr.Ad
 	return nil
 }
 
-func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, error) {
+func (st *State) hasFault(s adt.Store, a addr.Address) (bool, error) {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	found, err := faultyMiners.Has(AddrKey(a))
 	if err != nil {
@@ -235,7 +235,7 @@ func (st *StoragePowerActorState) hasFault(s adt.Store, a addr.Address) (bool, e
 	return found, nil
 }
 
-func (st *StoragePowerActorState) putFault(s adt.Store, a addr.Address) error {
+func (st *State) putFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Put(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
@@ -244,7 +244,7 @@ func (st *StoragePowerActorState) putFault(s adt.Store, a addr.Address) error {
 	return nil
 }
 
-func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error {
+func (st *State) deleteFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
@@ -253,7 +253,7 @@ func (st *StoragePowerActorState) deleteFault(s adt.Store, a addr.Address) error
 	return nil
 }
 
-func (st *StoragePowerActorState) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
+func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
 	mmap := adt.AsMultimap(store, st.CronEventQueue)
 	err := mmap.Add(IntKey(epoch), event)
 	if err != nil {
@@ -263,7 +263,7 @@ func (st *StoragePowerActorState) appendCronEvent(store adt.Store, epoch abi.Cha
 	return nil
 }
 
-func (st *StoragePowerActorState) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEvent, error) {
+func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEvent, error) {
 	mmap := adt.AsMultimap(store, st.CronEventQueue)
 	var events []CronEvent
 	var ev CronEvent
@@ -279,7 +279,7 @@ func (st *StoragePowerActorState) loadCronEvents(store adt.Store, epoch abi.Chai
 	return events, err
 }
 
-func (st *StoragePowerActorState) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
+func (st *State) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
 	mmap := adt.AsMultimap(store, st.CronEventQueue)
 	err := mmap.RemoveAll(IntKey(epoch))
 	if err != nil {

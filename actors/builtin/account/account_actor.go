@@ -10,22 +10,22 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type AccountActor struct{}
+type Actor struct{}
 
-func (a AccountActor) Exports() []interface{} {
+func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		1: a.Constructor,
 		2: a.PubkeyAddress,
 	}
 }
 
-var _ abi.Invokee = AccountActor{}
+var _ abi.Invokee = Actor{}
 
-type AccountActorState struct {
+type State struct {
 	Address addr.Address
 }
 
-func (a AccountActor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValue {
+func (a Actor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValue {
 	// Account actors are created implicitly by sending a message to a pubkey-style address.
 	// This constructor is not invoked by the InitActor, but by the system.
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
@@ -37,15 +37,15 @@ func (a AccountActor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.Em
 		rt.Abort(exitcode.ErrIllegalArgument, "address must use BLS or SECP protocol, got %v", address.Protocol())
 	}
 	rt.State().Construct(func() vmr.CBORMarshaler {
-		st := AccountActorState{Address: *address}
+		st := State{Address: *address}
 		return &st
 	})
 	return &adt.EmptyValue{}
 }
 
 // Fetches the pubkey-type address from this actor.
-func (a AccountActor) PubkeyAddress(rt vmr.Runtime, _ *adt.EmptyValue) addr.Address {
-	var st AccountActorState
+func (a Actor) PubkeyAddress(rt vmr.Runtime, _ *adt.EmptyValue) addr.Address {
+	var st State
 	rt.State().Readonly(&st)
 	return st.Address
 }

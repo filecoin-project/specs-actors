@@ -1,4 +1,4 @@
-package storage_power_test
+package power_test
 
 import (
 	"bytes"
@@ -12,14 +12,14 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
 func TestConstruction(t *testing.T) {
-	actor := spActorHarness{storage_power.StoragePowerActor{}, t}
+	actor := spActorHarness{power.Actor{}, t}
 	powerActor := tutil.NewIDAddr(t, 100)
 	owner1 := tutil.NewIDAddr(t, 101)
 	worker1 := tutil.NewIDAddr(t, 102)
@@ -34,7 +34,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("create miner", func(t *testing.T) {
-		createMinerParams := &storage_power.CreateMinerParams{
+		createMinerParams := &power.CreateMinerParams{
 			Worker:     worker1,
 			SectorSize: abi.SectorSize(int64(32)),
 			Peer:       "miner1",
@@ -43,12 +43,12 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		// owner1 send CreateMiner to StoragePowerActor
+		// owner1 send CreateMiner to Actor
 		rt.SetCaller(owner1, builtin.AccountActorCodeID)
 		rt.SetReceived(abi.NewTokenAmount(1))
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
-		createMinerRet := &storage_power.CreateMinerReturn{
+		createMinerRet := &power.CreateMinerReturn{
 			IDAddress:     miner1, // miner actor id address
 			RobustAddress: unused, // should be long miner actor address
 		}
@@ -56,14 +56,14 @@ func TestConstruction(t *testing.T) {
 		err := createMinerParams.MarshalCBOR(bytes.NewBuffer(ctorParamBytes))
 		require.NoError(t, err)
 		msgParams := &initact.ExecParams{
-			CodeID:            builtin.StorageMinerActorCodeID,
+			CodeCID:           builtin.StorageMinerActorCodeID,
 			ConstructorParams: ctorParamBytes,
 		}
 		rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
-		rt.Call(actor.StoragePowerActor.CreateMiner, createMinerParams)
+		rt.Call(actor.Actor.CreateMiner, createMinerParams)
 		rt.Verify()
 
-		var st storage_power.StoragePowerActorState
+		var st power.State
 		rt.GetState(&st)
 		assert.Equal(t, int64(1), st.MinerCount)
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalNetworkPower)
@@ -112,7 +112,7 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 }
 
 type spActorHarness struct {
-	storage_power.StoragePowerActor
+	power.Actor
 	t testing.TB
 }
 
@@ -122,11 +122,11 @@ func (s key) Key() string {
 
 func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	constructRet := rt.Call(h.StoragePowerActor.Constructor, &adt.EmptyValue{}).(*adt.EmptyValue)
+	constructRet := rt.Call(h.Actor.Constructor, &adt.EmptyValue{}).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 
-	var st storage_power.StoragePowerActorState
+	var st power.State
 	rt.GetState(&st)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalNetworkPower)
 	assert.Equal(h.t, int64(0), st.MinerCount)

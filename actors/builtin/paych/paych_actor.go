@@ -1,4 +1,4 @@
-package payment_channel
+package paych
 
 import (
 	"bytes"
@@ -16,17 +16,17 @@ import (
 )
 
 // Maximum number of lanes in a channel.
-const LANE_LIMIT = 256
+const LaneLimit = 256
 
-const SETTLE_DELAY = abi.ChainEpoch(1) // placeholder PARAM_FINISH
+const SettleDelay = abi.ChainEpoch(1) // placeholder PARAM_FINISH
 
-type PaymentChannelActor struct{}
+type Actor struct{}
 
 type ConstructorParams struct {
 	To addr.Address
 }
 
-func (pca *PaymentChannelActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	// Check that both parties are capable of signing vouchers by requiring them to be account actors.
 	// The account actor constructor checks that the embedded address is associated with an appropriate key.
 	// An alternative (more expensive) would be to send a message to the actor to fetch its key.
@@ -99,8 +99,8 @@ type PaymentVerifyParams struct {
 	Proof []byte
 }
 
-func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
-	var st PaymentChannelActorState
+func (pca *Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
+	var st State
 	rt.State().Readonly(&st)
 
 	// both parties must sign voucher: one who submits it, the other explicitly signs it
@@ -150,7 +150,7 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *Updat
 		// Find the voucher lane, create and insert it in sorted order if necessary.
 		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
 		if ls == nil {
-			if len(st.LaneStates) >= LANE_LIMIT {
+			if len(st.LaneStates) >= LaneLimit {
 				rt.Abort(exitcode.ErrIllegalArgument, "lane limit exceeded")
 			}
 			ls = &LaneState{
@@ -221,8 +221,8 @@ func (pca *PaymentChannelActor) UpdateChannelState(rt vmr.Runtime, params *Updat
 	return &adt.EmptyValue{}
 }
 
-func (pca *PaymentChannelActor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	var st PaymentChannelActorState
+func (pca *Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 
 		rt.ValidateImmediateCallerIs(st.From, st.To)
@@ -231,7 +231,7 @@ func (pca *PaymentChannelActor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.E
 			rt.Abort(exitcode.ErrIllegalState, "channel already seettling")
 		}
 
-		st.SettlingAt = rt.CurrEpoch() + SETTLE_DELAY
+		st.SettlingAt = rt.CurrEpoch() + SettleDelay
 		if st.SettlingAt < st.MinSettleHeight {
 			st.SettlingAt = st.MinSettleHeight
 		}
@@ -241,9 +241,8 @@ func (pca *PaymentChannelActor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.E
 	return &adt.EmptyValue{}
 }
 
-func (pca *PaymentChannelActor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-
-	var st PaymentChannelActorState
+func (pca *Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.From, st.To)
 

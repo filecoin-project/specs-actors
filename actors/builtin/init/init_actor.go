@@ -14,18 +14,18 @@ import (
 
 // The init actor uniquely has the power to create new actors.
 // It maintains a table resolving pubkey and temporary actor addresses to the canonical ID-addresses.
-type InitActor struct{}
+type Actor struct{}
 
-func (a InitActor) Exports() []interface{} {
+func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.Exec,
 	}
 }
 
-var _ abi.Invokee = InitActor{}
+var _ abi.Invokee = Actor{}
 
-func (a InitActor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	rt.State().Construct(func() runtime.CBORMarshaler {
 		state, err := ConstructState(adt.AsStore(rt), rt.NetworkName())
@@ -38,7 +38,7 @@ func (a InitActor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.Empty
 }
 
 type ExecParams struct {
-	CodeID            cid.Cid
+	CodeCID           cid.Cid
 	ConstructorParams []byte
 }
 
@@ -47,12 +47,12 @@ type ExecReturn struct {
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 }
 
-func (a InitActor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
+func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
-	callerCodeID, ok := rt.GetActorCodeCID(rt.ImmediateCaller())
+	callerCodeCID, ok := rt.GetActorCodeCID(rt.ImmediateCaller())
 	autil.AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
-	if !canExec(callerCodeID, params.CodeID) {
-		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeID, params.CodeID)
+	if !canExec(callerCodeCID, params.CodeCID) {
+		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}
 
 	// Compute a re-org-stable address.
@@ -63,7 +63,7 @@ func (a InitActor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 
 	// Allocate an ID for this actor.
 	// Store mapping of pubkey or actor address to actor ID
-	var st InitActorState
+	var st State
 	idAddr := rt.State().Transaction(&st, func() interface{} {
 		idAddr, err := st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
 		if err != nil {
@@ -73,7 +73,7 @@ func (a InitActor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	}).(addr.Address)
 
 	// Create an empty actor.
-	rt.CreateActor(params.CodeID, idAddr)
+	rt.CreateActor(params.CodeCID, idAddr)
 
 	// Invoke constructor.
 	_, code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.ValueReceived())

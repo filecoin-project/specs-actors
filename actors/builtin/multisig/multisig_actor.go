@@ -22,7 +22,7 @@ func (t TxnID) Key() string {
 	return string(txnKey[:n])
 }
 
-type MultiSigTransaction struct {
+type Transaction struct {
 	To     addr.Address
 	Value  abi.TokenAmount
 	Method abi.MethodNum
@@ -32,9 +32,9 @@ type MultiSigTransaction struct {
 	Approved []addr.Address
 }
 
-type MultiSigActor struct{}
+type Actor struct{}
 
-func (a MultiSigActor) Exports() []interface{} {
+func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.Propose,
@@ -48,7 +48,7 @@ func (a MultiSigActor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = MultiSigActor{}
+var _ abi.Invokee = Actor{}
 
 type ConstructorParams struct {
 	Signers               []addr.Address
@@ -56,7 +56,7 @@ type ConstructorParams struct {
 	UnlockDuration        abi.ChainEpoch
 }
 
-func (a MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	var signers []addr.Address
@@ -70,7 +70,7 @@ func (a MultiSigActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *a
 			rt.Abort(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
 		}
 
-		var st MultiSigActorState
+		var st State
 		st.Signers = signers
 		st.NumApprovalsThreshold = params.NumApprovalsThreshold
 		st.PendingTxns = pending.Root()
@@ -92,18 +92,18 @@ type ProposeParams struct {
 	Params []byte
 }
 
-func (a MultiSigActor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
+func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
 	var txnID TxnID
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		a.validateSigner(rt, &st, callerAddr)
 		txnID = st.NextTxnID
 		st.NextTxnID += 1
 
-		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, MultiSigTransaction{
+		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, Transaction{
 			To:       params.To,
 			Value:    params.Value,
 			Method:   params.Method,
@@ -129,10 +129,10 @@ type TxnIDParams struct {
 	ID TxnID
 }
 
-func (a MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		a.validateSigner(rt, &st, callerAddr)
 		return nil
@@ -141,11 +141,11 @@ func (a MultiSigActor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyVa
 	return &adt.EmptyValue{}
 }
 
-func (a MultiSigActor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.ImmediateCaller()
 
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		a.validateSigner(rt, &st, callerAddr)
 		txn, err := st.getPendingTransaction(adt.AsStore(rt), params.ID)
@@ -170,11 +170,11 @@ type AddSignerParams struct {
 	Increase bool
 }
 
-func (a MultiSigActor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
+func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if st.isSigner(params.Signer) {
 			rt.Abort(exitcode.ErrIllegalArgument, "party is already a signer")
@@ -193,11 +193,11 @@ type RemoveSignerParams struct {
 	Decrease bool
 }
 
-func (a MultiSigActor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
+func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.Signer) {
 			rt.Abort(exitcode.ErrNotFound, "Party not found")
@@ -224,11 +224,11 @@ type SwapSignerParams struct {
 	To   addr.Address
 }
 
-func (a MultiSigActor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
+func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.From) {
 			rt.Abort(exitcode.ErrNotFound, "Party not found")
@@ -256,11 +256,11 @@ type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold int64
 }
 
-func (a MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
+func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
 
-	var st MultiSigActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
 			rt.Abort(exitcode.ErrIllegalArgument, "New threshold value not supported")
@@ -272,9 +272,9 @@ func (a MultiSigActor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *Chang
 	return &adt.EmptyValue{}
 }
 
-func (a MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
-	var st MultiSigActorState
-	var txn MultiSigTransaction
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
+	var st State
+	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
 		var err error
 		txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
@@ -321,7 +321,7 @@ func (a MultiSigActor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	}
 }
 
-func (a MultiSigActor) validateSigner(rt vmr.Runtime, st *MultiSigActorState, address addr.Address) {
+func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
 	if !st.isSigner(address) {
 		rt.Abort(exitcode.ErrForbidden, "party not a signer")
 	}

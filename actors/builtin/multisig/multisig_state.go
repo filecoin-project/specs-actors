@@ -10,7 +10,7 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type MultiSigActorState struct {
+type State struct {
 	Signers               []address.Address
 	NumApprovalsThreshold int64
 	NextTxnID             TxnID
@@ -23,7 +23,7 @@ type MultiSigActorState struct {
 	PendingTxns cid.Cid
 }
 
-func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
+func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	if elapsedEpoch >= st.UnlockDuration {
 		return abi.NewTokenAmount(0)
 	}
@@ -32,7 +32,7 @@ func (st *MultiSigActorState) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.Toke
 	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
 }
 
-func (st *MultiSigActorState) isSigner(party address.Address) bool {
+func (st *State) isSigner(party address.Address) bool {
 	for _, ap := range st.Signers {
 		if party == ap {
 			return true
@@ -42,7 +42,7 @@ func (st *MultiSigActorState) isSigner(party address.Address) bool {
 }
 
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
-func (st *MultiSigActorState) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
+func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
 	if amountToSpend.LessThan(big.Zero()) {
 		return errors.Errorf("amount to spend %s less than zero", amountToSpend.String())
 	}
@@ -59,23 +59,23 @@ func (st *MultiSigActorState) assertAvailable(currBalance abi.TokenAmount, amoun
 	return nil
 }
 
-func (as *MultiSigActorState) getPendingTransaction(s adt.Store, txnID TxnID) (MultiSigTransaction, error) {
+func (as *State) getPendingTransaction(s adt.Store, txnID TxnID) (Transaction, error) {
 	hm := adt.AsMap(s, as.PendingTxns)
 
-	var out MultiSigTransaction
+	var out Transaction
 	found, err := hm.Get(txnID, &out)
 	if err != nil {
-		return MultiSigTransaction{}, errors.Wrapf(err, "failed to read transaction")
+		return Transaction{}, errors.Wrapf(err, "failed to read transaction")
 	}
 	if !found {
-		return MultiSigTransaction{}, errors.Errorf("failed to find transaction %v in HAMT %s", txnID, as.PendingTxns)
+		return Transaction{}, errors.Errorf("failed to find transaction %v in HAMT %s", txnID, as.PendingTxns)
 	}
 
 	as.PendingTxns = hm.Root()
 	return out, nil
 }
 
-func (as *MultiSigActorState) putPendingTransaction(s adt.Store, txnID TxnID, txn MultiSigTransaction) error {
+func (as *State) putPendingTransaction(s adt.Store, txnID TxnID, txn Transaction) error {
 	hm := adt.AsMap(s, as.PendingTxns)
 
 	if err := hm.Put(txnID, &txn); err != nil {
@@ -86,7 +86,7 @@ func (as *MultiSigActorState) putPendingTransaction(s adt.Store, txnID TxnID, tx
 	return nil
 }
 
-func (as *MultiSigActorState) deletePendingTransaction(s adt.Store, txnID TxnID) error {
+func (as *State) deletePendingTransaction(s adt.Store, txnID TxnID) error {
 	hm := adt.AsMap(s, as.PendingTxns)
 
 	if err := hm.Delete(txnID); err != nil {
