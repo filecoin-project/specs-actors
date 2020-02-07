@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // A mock runtime for unit testing of actors in isolation.
@@ -67,7 +68,7 @@ var cidBuilder = cid.V1Builder{
 	MhLength: 0, // default
 }
 
-///// Implementation of the runtime API /////
+// /// Implementation of the runtime API /////
 
 func (rt *Runtime) Message() runtime.Message {
 	rt.requireInCall()
@@ -353,7 +354,7 @@ func (a abort) String() string {
 	return fmt.Sprintf("abort(%v): %s", a.code, a.msg)
 }
 
-///// Inspection facilities /////
+// /// Inspection facilities /////
 
 func (rt *Runtime) StateRoot() cid.Cid {
 	return rt.state
@@ -494,6 +495,29 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 		}
 		if a.code != expected {
 			rt.t.Errorf("abort expected code %v, got %v %s", expected, a.code, a.msg)
+		}
+		// Roll back state change.
+		rt.state = prevState
+	}()
+	f()
+}
+
+func (rt *Runtime) ExpectAbortWithMsg(expCode exitcode.ExitCode, expMsg string, f func()) {
+	prevState := rt.state
+	defer func() {
+		r := recover()
+		if r == nil {
+			rt.t.Errorf("expected abort with code %v but call succeeded", expCode)
+			return
+		}
+		a, ok := r.(abort)
+		if !ok {
+			panic(r)
+		}
+		if a.code != expCode {
+			rt.t.Errorf("abort expected code %v, got %v %s", expCode, a.code, a.msg)
+		} else if a.msg != expMsg {
+			rt.t.Errorf("abort expected message \n%s\ngot\n%s", expMsg, a.msg)
 		}
 		// Roll back state change.
 		rt.state = prevState

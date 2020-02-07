@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/stretchr/testify/require"
 )
 
 func NewIDAddr(t *testing.T, id uint64) addr.Address {
@@ -42,5 +43,11 @@ func NewActorAddr(t *testing.T, data string) addr.Address {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return address
+}
+
+func NewActorAddr(t *testing.T, data []byte) addr.Address {
+	address, err := addr.NewActorAddress(data)
+	require.NoError(t, err)
 	return address
 }

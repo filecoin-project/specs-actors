@@ -21,6 +21,7 @@ func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 		ctx:        ctx,
 		epoch:      0,
 		receiver:   receiver,
+		receiverType: cid.Undef,
 		caller:     addr.Address{},
 		callerType: cid.Undef,
 		miner:      addr.Address{},
@@ -78,5 +79,10 @@ func (b *RuntimeBuilder) WithMiner(miner addr.Address) *RuntimeBuilder {
 func (b *RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) *RuntimeBuilder {
 	b.rt.balance = balance
 	b.rt.valueReceived = received
+	return b
+}
+
+func (b *RuntimeBuilder) WithReceiverType(code cid.Cid) *RuntimeBuilder {
+	b.rt.receiverType = code
 	return b
 }
