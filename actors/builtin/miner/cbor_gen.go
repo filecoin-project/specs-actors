@@ -46,12 +46,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.ProvingSet: %w", err)
 	}
 
-	// t.Info (storage_miner.MinerInfo) (struct)
+	// t.Info (miner.MinerInfo) (struct)
 	if err := t.Info.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.PoStState (storage_miner.PoStState) (struct)
+	// t.PoStState (miner.PoStState) (struct)
 	if err := t.PoStState.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.ProvingSet = c
 
 	}
-	// t.Info (storage_miner.MinerInfo) (struct)
+	// t.Info (miner.MinerInfo) (struct)
 
 	{
 
@@ -127,7 +127,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.PoStState (storage_miner.PoStState) (struct)
+	// t.PoStState (miner.PoStState) (struct)
 
 	{
 
@@ -158,7 +158,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.PendingWorkerKey (storage_miner.WorkerKeyChange) (struct)
+	// t.PendingWorkerKey (miner.WorkerKeyChange) (struct)
 	if err := t.PendingWorkerKey.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.PendingWorkerKey (storage_miner.WorkerKeyChange) (struct)
+	// t.PendingWorkerKey (miner.WorkerKeyChange) (struct)
 
 	{
 
@@ -393,7 +393,7 @@ func (t *SectorPreCommitOnChainInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+	// t.Info (miner.SectorPreCommitInfo) (struct)
 	if err := t.Info.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -431,7 +431,7 @@ func (t *SectorPreCommitOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+	// t.Info (miner.SectorPreCommitInfo) (struct)
 
 	{
 
@@ -665,7 +665,7 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+	// t.Info (miner.SectorPreCommitInfo) (struct)
 	if err := t.Info.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -725,7 +725,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Info (storage_miner.SectorPreCommitInfo) (struct)
+	// t.Info (miner.SectorPreCommitInfo) (struct)
 
 	{
 
@@ -1170,7 +1170,7 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.EventType (storage_miner.CronEventType) (int64)
+	// t.EventType (miner.CronEventType) (int64)
 	if t.EventType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.EventType))); err != nil {
 			return err
@@ -1212,7 +1212,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.EventType (storage_miner.CronEventType) (int64)
+	// t.EventType (miner.CronEventType) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64

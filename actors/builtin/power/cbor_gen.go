@@ -599,7 +599,7 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TerminationType (storage_power.SectorTermination) (int64)
+	// t.TerminationType (power.SectorTermination) (int64)
 	if t.TerminationType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TerminationType))); err != nil {
 			return err
@@ -610,7 +610,7 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 	if err := t.Weight.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -632,7 +632,7 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.TerminationType (storage_power.SectorTermination) (int64)
+	// t.TerminationType (power.SectorTermination) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -657,7 +657,7 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.TerminationType = SectorTermination(extraI)
 	}
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 
 	{
 
@@ -678,12 +678,12 @@ func (t *OnSectorModifyWeightDescParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.PrevWeight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
 	if err := t.PrevWeight.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.NewWeight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.NewWeight (power.SectorStorageWeightDesc) (struct)
 	if err := t.NewWeight.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -705,7 +705,7 @@ func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.PrevWeight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
 
 	{
 
@@ -714,7 +714,7 @@ func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.NewWeight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.NewWeight (power.SectorStorageWeightDesc) (struct)
 
 	{
 
@@ -735,7 +735,7 @@ func (t *OnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 	if err := t.Weight.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -757,7 +757,7 @@ func (t *OnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 
 	{
 
@@ -818,7 +818,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.FaultType (storage_power.ConsensusFaultType) (int64)
+	// t.FaultType (power.ConsensusFaultType) (int64)
 	if t.FaultType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.FaultType))); err != nil {
 			return err
@@ -914,7 +914,7 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.FaultEpoch = abi.ChainEpoch(extraI)
 	}
-	// t.FaultType (storage_power.ConsensusFaultType) (int64)
+	// t.FaultType (power.ConsensusFaultType) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -1016,7 +1016,7 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) MarshalCBOR(w io.Writer) erro
 		return err
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 	if err := t.Weight.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -1038,7 +1038,7 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) UnmarshalCBOR(r io.Reader) er
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 
 	{
 
@@ -1059,7 +1059,7 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) MarshalCBOR(w io.Writer) er
 		return err
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 	if err := t.Weight.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -1081,7 +1081,7 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) UnmarshalCBOR(r io.Reader) 
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
+	// t.Weight (power.SectorStorageWeightDesc) (struct)
 
 	{
 
