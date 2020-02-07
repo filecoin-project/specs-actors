@@ -214,7 +214,7 @@ func (t *PublishStorageDealsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Deals ([]market.DealProposal) (slice)
+	// t.Deals ([]market.ClientDealProposal) (slice)
 	if len(t.Deals) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Deals was too long")
 	}
@@ -245,7 +245,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Deals ([]market.DealProposal) (slice)
+	// t.Deals ([]market.ClientDealProposal) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -260,11 +260,11 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("expected cbor array")
 	}
 	if extra > 0 {
-		t.Deals = make([]DealProposal, extra)
+		t.Deals = make([]ClientDealProposal, extra)
 	}
 	for i := 0; i < int(extra); i++ {
 
-		var v DealProposal
+		var v ClientDealProposal
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
@@ -627,7 +627,7 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{138}); err != nil {
+	if _, err := w.Write([]byte{137}); err != nil {
 		return err
 	}
 
@@ -649,11 +649,6 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 
 	// t.Provider (address.Address) (struct)
 	if err := t.Provider.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.ClientSignature (crypto.Signature) (struct)
-	if err := t.ClientSignature.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -707,7 +702,7 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -747,15 +742,6 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Provider.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.ClientSignature (crypto.Signature) (struct)
-
-	{
-
-		if err := t.ClientSignature.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
@@ -833,6 +819,63 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.ClientCollateral.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (t *ClientDealProposal) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.Proposal (market.DealProposal) (struct)
+	if err := t.Proposal.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ClientSignature (crypto.Signature) (struct)
+	if err := t.ClientSignature.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *ClientDealProposal) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Proposal (market.DealProposal) (struct)
+
+	{
+
+		if err := t.Proposal.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.ClientSignature (crypto.Signature) (struct)
+
+	{
+
+		if err := t.ClientSignature.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
