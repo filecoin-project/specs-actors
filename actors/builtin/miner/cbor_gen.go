@@ -661,7 +661,7 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{133}); err != nil {
+	if _, err := w.Write([]byte{134}); err != nil {
 		return err
 	}
 
@@ -679,6 +679,16 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ActivationEpoch)-1)); err != nil {
 			return err
 		}
+	}
+
+	// t.DealWeight (big.Int) (struct)
+	if err := t.DealWeight.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PledgeRequirement (big.Int) (struct)
+	if err := t.PledgeRequirement.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.DeclaredFaultEpoch (abi.ChainEpoch) (int64)
@@ -702,11 +712,6 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.DealWeight (big.Int) (struct)
-	if err := t.DealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -721,7 +726,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 6 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -758,6 +763,24 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.ActivationEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.DealWeight (big.Int) (struct)
+
+	{
+
+		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.PledgeRequirement (big.Int) (struct)
+
+	{
+
+		if err := t.PledgeRequirement.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
 	}
 	// t.DeclaredFaultEpoch (abi.ChainEpoch) (int64)
 	{
@@ -808,15 +831,6 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.DeclaredFaultDuration = abi.ChainEpoch(extraI)
-	}
-	// t.DealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
 	}
 	return nil
 }

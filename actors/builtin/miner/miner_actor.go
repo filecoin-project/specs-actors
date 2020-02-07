@@ -15,14 +15,11 @@ import (
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type Runtime = vmr.Runtime
-
-var Assert = autil.Assert
-var AssertNoError = autil.AssertNoError
 
 const epochUndefined = abi.ChainEpoch(-1)
 
@@ -145,10 +142,6 @@ func (a *Actor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValue) *adt.Empt
 		if st.PoStState.isChallenged() {
 			return false
 		}
-
-		var curRecBuf bytes.Buffer
-		err := rt.CurrReceiver().MarshalCBOR(&curRecBuf)
-		autil.AssertNoError(err)
 
 		st.PoStState = PoStState{
 			LastSuccessfulPoSt:     st.PoStState.LastSuccessfulPoSt,
@@ -317,7 +310,7 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
 	}
 
-	autil.TODO()
+	TODO()
 	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
@@ -341,27 +334,41 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 		},
 		abi.NewTokenAmount(0),
 	)
-
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-	autil.AssertNoError(ret.Into(&dealWeight))
+	AssertNoError(ret.Into(&dealWeight))
 
-	var storageWeightDesc *power.SectorStorageWeightDesc
+	// Request power for activated sector.
+	var pledgeRequirement abi.TokenAmount
+	ret, code = rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.Method_StoragePowerActor_OnSectorProveCommit,
+		&power.OnSectorProveCommitParams{
+			Weight: power.SectorStorageWeightDesc{
+				SectorSize: st.Info.SectorSize,
+				DealWeight: dealWeight,
+				Duration:   precommit.Info.Expiration - rt.CurrEpoch(),
+			},
+		},
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to notify power actor")
+	AssertNoError(ret.Into(&pledgeRequirement))
+
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
-			Info:            precommit.Info,
-			ActivationEpoch: rt.CurrEpoch(),
-			DealWeight:      dealWeight,
+			Info:              precommit.Info,
+			ActivationEpoch:   rt.CurrEpoch(),
+			DealWeight:        dealWeight,
+			PledgeRequirement: pledgeRequirement,
 		}
 		if err = st.putSector(adt.AsStore(rt), newSectorInfo); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
-
 		if err = st.deletePrecommitttedSector(store, sectorNo); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "faile to delete proven precommit for sector %v: %v", sectorNo, err)
+			rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
 		}
 
 		st.ProvingSet = st.ComputeProvingSet()
-		storageWeightDesc = asStorageWeightDesc(st.Info.SectorSize, newSectorInfo)
 		return nil
 	})
 
@@ -371,17 +378,6 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 		Sectors:   []abi.SectorNumber{sectorNo},
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
-
-	// Request power for activated sector.
-	_, code = rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.Method_StoragePowerActor_OnSectorProveCommit,
-		&power.OnSectorProveCommitParams{
-			Weight: *storageWeightDesc,
-		},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, precommit.PreCommitDeposit)
@@ -399,50 +395,52 @@ type ExtendSectorExpirationParams struct {
 }
 
 func (a *Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
-	sectorNo := params.sectorNumber
+	var st State
+	rt.State().Readonly(&st)
+	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	var storageWeightDescPrev *power.SectorStorageWeightDesc
-	var extensionLength abi.ChainEpoch
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		rt.ValidateImmediateCallerIs(st.Info.Worker)
-		var err error
+	sectorNo := params.sectorNumber
+	sector, found, err := st.getSector(store, sectorNo)
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+	} else if !found {
+		rt.Abort(exitcode.ErrNotFound, "no such sector %v", sectorNo)
+	}
 
-		sector, found, err := st.getSector(store, sectorNo)
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
-		} else if !found {
-			rt.Abort(exitcode.ErrNotFound, "no such sector %v", sectorNo)
-		}
+	storageWeightDescPrev := asStorageWeightDesc(st.Info.SectorSize, sector)
+	pledgePrev := sector.PledgeRequirement
 
-		storageWeightDescPrev = asStorageWeightDesc(st.Info.SectorSize, sector)
-
-		extensionLength = params.newExpiration - sector.Info.Expiration
-		if extensionLength < 0 {
-			rt.Abort(exitcode.ErrIllegalArgument, "cannot reduce sector expiration")
-		}
-
-		sector.Info.Expiration = params.newExpiration
-		if err = st.putSector(store, sector); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
-		}
-		return nil
-	})
+	extensionLength := params.newExpiration - sector.Info.Expiration
+	if extensionLength < 0 {
+		rt.Abort(exitcode.ErrIllegalArgument, "cannot reduce sector expiration")
+	}
 
 	storageWeightDescNew := *storageWeightDescPrev
 	storageWeightDescNew.Duration = storageWeightDescPrev.Duration + extensionLength
 
-	_, code := rt.Send(
+	ret, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorModifyWeightDesc,
 		&power.OnSectorModifyWeightDescParams{
 			PrevWeight: *storageWeightDescPrev,
+			PrevPledge: pledgePrev,
 			NewWeight:  storageWeightDescNew,
 		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
+	var newPledgeRequirement abi.TokenAmount
+	AssertNoError(ret.Into(&newPledgeRequirement))
+
+	rt.State().Transaction(&st, func() interface{} {
+		sector.Info.Expiration = params.newExpiration
+		sector.PledgeRequirement = newPledgeRequirement
+		if err = st.putSector(store, sector); err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
+		}
+		return nil
+	})
 	return &adt.EmptyValue{}
 }
 
@@ -541,8 +539,9 @@ func (a *Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParam
 	}
 
 	if payload.EventType == CronEventType_Miner_TempFault {
+		// should roll the huge number of state transactions in this loop into ~1
 		for _, sectorNumber := range payload.Sectors {
-			a._rtCheckTemporaryFaultEvents(rt, sectorNumber)
+			a.checkTemporaryFaultEvents(rt, sectorNumber)
 		}
 	}
 
@@ -573,7 +572,7 @@ func (a *Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParam
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a *Actor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumber abi.SectorNumber) {
+func (a *Actor) checkTemporaryFaultEvents(rt Runtime, sectorNumber abi.SectorNumber) {
 	store := adt.AsStore(rt)
 
 	var st State
@@ -599,6 +598,7 @@ func (a *Actor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumber abi.Sector
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
 			&power.OnSectorTemporaryFaultEffectiveBeginParams{
 				Weight: *weight,
+				Pledge: sector.PledgeRequirement,
 			},
 			abi.NewTokenAmount(0),
 		)
@@ -619,6 +619,7 @@ func (a *Actor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumber abi.Sector
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
 			&power.OnSectorTemporaryFaultEffectiveEndParams{
 				Weight: *weight,
+				Pledge: sector.PledgeRequirement,
 			},
 			abi.NewTokenAmount(0),
 		)
@@ -689,6 +690,7 @@ func (a *Actor) terminateSector(rt Runtime, sectorNumber abi.SectorNumber, termi
 
 	var dealIDs []abi.DealID
 	var weight *power.SectorStorageWeightDesc
+	var pledge abi.TokenAmount
 	var fault bool
 	rt.State().Transaction(&st, func() interface{} {
 		sector, found, err := st.getSector(store, sectorNumber)
@@ -699,6 +701,7 @@ func (a *Actor) terminateSector(rt Runtime, sectorNumber abi.SectorNumber, termi
 
 		dealIDs = sector.Info.DealIDs
 		weight = asStorageWeightDesc(st.Info.SectorSize, sector)
+		pledge = sector.PledgeRequirement
 		fault, err = st.IsSectorInTemporaryFault(store, sectorNumber)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to check fault for sector %v: %v", sectorNumber, err)
@@ -717,7 +720,7 @@ func (a *Actor) terminateSector(rt Runtime, sectorNumber abi.SectorNumber, termi
 	}
 
 	a.requestTerminateDeals(rt, dealIDs)
-	a.requestTerminatePower(rt, terminationType, weight)
+	a.requestTerminatePower(rt, terminationType, weight, pledge)
 }
 
 func (a *Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
@@ -821,13 +824,15 @@ func (a *Actor) requestTerminateAllDeals(rt Runtime, st *State) {
 	a.requestTerminateDeals(rt, dealIds)
 }
 
-func (a *Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTermination, weight *power.SectorStorageWeightDesc) {
+func (a *Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTermination,
+	weight *power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTerminate,
 		&power.OnSectorTerminateParams{
 			TerminationType: terminationType,
 			Weight:          *weight,
+			Pledge:          pledge,
 		},
 		abi.NewTokenAmount(0),
 	)
@@ -883,7 +888,7 @@ func (a *Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *a
 	commD := a.requestUnsealedSectorCID(rt, sectorSize, onChainInfo.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.CurrReceiver())
-	autil.AssertNoError(err) // Runtime always provides ID-addresses
+	AssertNoError(err) // Runtime always provides ID-addresses
 
 	svInfoRandomness := rt.GetRandomness(onChainInfo.SealEpoch)
 	svInfoInteractiveRandomness := rt.GetRandomness(onChainInfo.InteractiveEpoch)
@@ -916,7 +921,7 @@ func (a *Actor) requestUnsealedSectorCID(rt Runtime, sectorSize abi.SectorSize, 
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed request for unsealed sector CID for deals %v", dealIDs)
-	autil.AssertNoError(ret.Into(&unsealedCID))
+	AssertNoError(ret.Into(&unsealedCID))
 	return cid.Cid(unsealedCID)
 }
 

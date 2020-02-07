@@ -107,6 +107,7 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/power/cbor_gen.go", "power",
 		// actors state
 		power.State{},
+		power.Claim{},
 		power.CronEvent{},
 		// method params
 		power.AddBalanceParams{},
