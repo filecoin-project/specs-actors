@@ -77,7 +77,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 	callerAddr := tutil.NewIDAddr(t, 101)
 	syscalls := tutil.MockSyscalls{VerifiesSig: true}
 
-	t.Run("Can add a lane", func(t *testing.T) {
+	t.Run("Can add a lane/update actor state", func(t *testing.T) {
 		balance:= abi.NewTokenAmount(100)
 		received := abi.NewTokenAmount(0)
 		builder := mock.NewBuilder(ctx, pcaAddr).
@@ -91,16 +91,17 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		actor.constructAndVerify(rt, pcaAddr, callerAddr)
 		rt.ExpectValidateCallerAddr(callerAddr, pcaAddr)
 
-		tl := abi.ChainEpoch(1)
 		amt := big.NewInt(10)
+		lane := int64(999)
 		nonce := int64(1)
 		sig := &crypto.Signature{
 			Type: crypto.SigTypeBLS,
 			Data: []byte("doesn't matter"),
 		}
+		tl := abi.ChainEpoch(1)
 		sv := SignedVoucher{
 			TimeLock:  tl,
-			Lane:      99999,
+			Lane:      lane,
 			Nonce:     nonce,
 			Amount:    amt,
 			Signature: sig,
@@ -110,10 +111,18 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
 		assert.Equal(t, adt.EmptyValue{}, *constructRet)
 		rt.Verify()
+
+		var st State
+		rt.GetState(&st)
+		assert.Equal(t, pcaAddr, st.To)
+		assert.Equal(t, callerAddr, st.From)
+		assert.Len(t, st.LaneStates, 1)
+		ls := st.LaneStates[0]
+		assert.Equal(t, amt, ls.Redeemed)
+		assert.Equal(t, nonce, ls.Nonce)
+		assert.Equal(t, lane, ls.ID)
 	})
-	t.Run("Can merge lanes", func(t *testing.T) {})
-	t.Run("Can add funds to voucher", func(t *testing.T) {})
-	t.Run("fails to create lane if not enough funds", func(t *testing.T){})
+
 	t.Run("Fails to update state if too early for voucher", func(t *testing.T) {
 		builder := mock.NewBuilder(ctx, pcaAddr).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
