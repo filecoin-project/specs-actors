@@ -7,7 +7,7 @@ import (
 	errors "github.com/pkg/errors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -204,7 +204,7 @@ func (st *State) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 	})
 }
 
-func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
+func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*power.SectorStorageWeightDesc, error) {
 	sectorInfo, found, err := st.getSector(store, sectorNo)
 	if err != nil {
 		return nil, err
@@ -254,8 +254,8 @@ func (mps *PoStState) hasFailedPost() bool {
 	return mps.NumConsecutiveFailures > 0
 }
 
-func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *storage_power.SectorStorageWeightDesc {
-	return &storage_power.SectorStorageWeightDesc{
+func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *power.SectorStorageWeightDesc {
+	return &power.SectorStorageWeightDesc{
 		SectorSize: sectorSize,
 		DealWeight: sectorInfo.DealWeight,
 		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,

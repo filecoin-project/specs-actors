@@ -3,7 +3,7 @@ package miner
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 )
 
 // An approximation to chain state finality.
@@ -44,6 +44,6 @@ func precommitDeposit(sectorSize abi.SectorSize, duration abi.ChainEpoch) abi.To
 	return big.Mul(depositPerByte, big.NewInt(int64(sectorSize)))
 }
 
-func temporaryFaultFee(weights []*storage_power.SectorStorageWeightDesc, duration abi.ChainEpoch) abi.TokenAmount {
+func temporaryFaultFee(weights []*power.SectorStorageWeightDesc, duration abi.ChainEpoch) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }

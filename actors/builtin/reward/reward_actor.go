@@ -6,7 +6,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
@@ -98,7 +98,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		_, code = rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_AddBalance,
-			&storage_power.AddBalanceParams{Miner: params.Miner},
+			&power.AddBalanceParams{Miner: params.Miner},
 			abi.TokenAmount(rewardToGarnish),
 		)
 		builtin.RequireSuccess(rt, code, "failed to add balance to power actor")

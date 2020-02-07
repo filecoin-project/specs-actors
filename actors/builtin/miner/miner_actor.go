@@ -10,8 +10,8 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/market"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -49,7 +49,7 @@ type CronEventPayload struct {
 
 // Storage miner actors are created exclusively by the storage power actor. In order to break a circular dependency
 // between the two, the construction parameters are defined in the power actor.
-type ConstructorParams = storage_power.MinerConstructorParams
+type ConstructorParams = power.MinerConstructorParams
 
 func (a *Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
@@ -164,7 +164,7 @@ func (a *Actor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValue) *adt.Empt
 			EventType: CronEventType_Miner_SurpriseExpiration,
 			Sectors:   nil,
 		}
-		surpriseDuration := storage_power.SurprisePostChallengeDuration
+		surpriseDuration := power.SurprisePostChallengeDuration
 		a.enrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, &cronPayload)
 	}
 	return &adt.EmptyValue{}
@@ -335,7 +335,7 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
-		&storage_market.VerifyDealsOnSectorProveCommitParams{
+		&market.VerifyDealsOnSectorProveCommitParams{
 			DealIDs:      precommit.Info.DealIDs,
 			SectorExpiry: precommit.Info.Expiration,
 		},
@@ -345,7 +345,7 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 	autil.AssertNoError(ret.Into(&dealWeight))
 
-	var storageWeightDesc *storage_power.SectorStorageWeightDesc
+	var storageWeightDesc *power.SectorStorageWeightDesc
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
 			Info:            precommit.Info,
@@ -376,7 +376,7 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 	_, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorProveCommit,
-		&storage_power.OnSectorProveCommitParams{
+		&power.OnSectorProveCommitParams{
 			Weight: *storageWeightDesc,
 		},
 		abi.NewTokenAmount(0),
@@ -402,7 +402,7 @@ func (a *Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiratio
 	sectorNo := params.sectorNumber
 
 	store := adt.AsStore(rt)
-	var storageWeightDescPrev *storage_power.SectorStorageWeightDesc
+	var storageWeightDescPrev *power.SectorStorageWeightDesc
 	var extensionLength abi.ChainEpoch
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -436,7 +436,7 @@ func (a *Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiratio
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorModifyWeightDesc,
-		&storage_power.OnSectorModifyWeightDescParams{
+		&power.OnSectorModifyWeightDescParams{
 			PrevWeight: *storageWeightDescPrev,
 			NewWeight:  storageWeightDescNew,
 		},
@@ -456,7 +456,7 @@ func (a *Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *ad
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	for _, sectorNumber := range params.sectorNumbers {
-		a.terminateSector(rt, sectorNumber, storage_power.SectorTerminationManual)
+		a.terminateSector(rt, sectorNumber, power.SectorTerminationManual)
 	}
 
 	return &adt.EmptyValue{}
@@ -482,7 +482,7 @@ func (a *Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaults
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 		store := adt.AsStore(rt)
-		storageWeightDescs := []*storage_power.SectorStorageWeightDesc{}
+		storageWeightDescs := []*power.SectorStorageWeightDesc{}
 		for _, sectorNumber := range params.sectorNumbers {
 			sector, found, err := st.getSector(store, sectorNumber)
 			if err != nil {
@@ -597,7 +597,7 @@ func (a *Actor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumber abi.Sector
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
-			&storage_power.OnSectorTemporaryFaultEffectiveBeginParams{
+			&power.OnSectorTemporaryFaultEffectiveBeginParams{
 				Weight: *weight,
 			},
 			abi.NewTokenAmount(0),
@@ -617,7 +617,7 @@ func (a *Actor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumber abi.Sector
 		_, code := rt.Send(
 			builtin.StoragePowerActorAddr,
 			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
-			&storage_power.OnSectorTemporaryFaultEffectiveEndParams{
+			&power.OnSectorTemporaryFaultEffectiveEndParams{
 				Weight: *weight,
 			},
 			abi.NewTokenAmount(0),
@@ -678,17 +678,17 @@ func (a *Actor) checkSectorExpiry(rt Runtime, sectorNumber abi.SectorNumber) {
 	// Note: the following test may be false, if sector expiration has been extended by the worker
 	// in the interim after the Cron request was enrolled.
 	if rt.CurrEpoch() >= sector.Info.Expiration {
-		a.terminateSector(rt, sectorNumber, storage_power.SectorTerminationExpired)
+		a.terminateSector(rt, sectorNumber, power.SectorTerminationExpired)
 	}
 	return
 }
 
-func (a *Actor) terminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType storage_power.SectorTermination) {
+func (a *Actor) terminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType power.SectorTermination) {
 	store := adt.AsStore(rt)
 	var st State
 
 	var dealIDs []abi.DealID
-	var weight *storage_power.SectorStorageWeightDesc
+	var weight *power.SectorStorageWeightDesc
 	var fault bool
 	rt.State().Transaction(&st, func() interface{} {
 		sector, found, err := st.getSector(store, sectorNumber)
@@ -729,7 +729,7 @@ func (a *Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 			return false // Already exited challenged state successfully prior to expiry.
 		}
 
-		window := storage_power.SurprisePostChallengeDuration
+		window := power.SurprisePostChallengeDuration
 		if rt.CurrEpoch() < st.PoStState.SurpriseChallengeEpoch+window {
 			// Challenge not yet expired.
 			return false
@@ -750,7 +750,7 @@ func (a *Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 
 	// Period has expired.
 	// Terminate deals...
-	if st.PoStState.NumConsecutiveFailures > storage_power.SurprisePostFailureLimit {
+	if st.PoStState.NumConsecutiveFailures > power.SurprisePostFailureLimit {
 		a.requestTerminateAllDeals(rt, &st)
 	}
 
@@ -758,7 +758,7 @@ func (a *Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerSurprisePoStFailure,
-		&storage_power.OnMinerSurprisePoStFailureParams{
+		&power.OnMinerSurprisePoStFailureParams{
 			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures,
 		},
 		abi.NewTokenAmount(0),
@@ -775,7 +775,7 @@ func (a *Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackP
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnMinerEnrollCronEvent,
-		&storage_power.EnrollCronEventParams{
+		&power.EnrollCronEventParams{
 			EventEpoch: eventEpoch,
 			Payload:    payload,
 		},
@@ -784,11 +784,11 @@ func (a *Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackP
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func (a *Actor) requestEndFault(rt Runtime, weight *storage_power.SectorStorageWeightDesc) {
+func (a *Actor) requestEndFault(rt Runtime, weight *power.SectorStorageWeightDesc) {
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
-		&storage_power.OnSectorTemporaryFaultEffectiveEndParams{
+		&power.OnSectorTemporaryFaultEffectiveEndParams{
 			Weight: *weight,
 		},
 		abi.NewTokenAmount(0),
@@ -800,7 +800,7 @@ func (a *Actor) requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
 	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.OnMinerSectorsTerminate,
-		&storage_market.OnMinerSectorsTerminateParams{
+		&market.OnMinerSectorsTerminateParams{
 			DealIDs: dealIDs,
 		},
 		abi.NewTokenAmount(0),
@@ -821,11 +821,11 @@ func (a *Actor) requestTerminateAllDeals(rt Runtime, st *State) {
 	a.requestTerminateDeals(rt, dealIds)
 }
 
-func (a *Actor) requestTerminatePower(rt Runtime, terminationType storage_power.SectorTermination, weight *storage_power.SectorStorageWeightDesc) {
+func (a *Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTermination, weight *power.SectorStorageWeightDesc) {
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTerminate,
-		&storage_power.OnSectorTerminateParams{
+		&power.OnSectorTerminateParams{
 			TerminationType: terminationType,
 			Weight:          *weight,
 		},
@@ -909,7 +909,7 @@ func (a *Actor) requestUnsealedSectorCID(rt Runtime, sectorSize abi.SectorSize, 
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.ComputeDataCommitment,
-		&storage_market.ComputeDataCommitmentParams{
+		&market.ComputeDataCommitmentParams{
 			SectorSize: sectorSize,
 			DealIDs:    dealIDs,
 		},
