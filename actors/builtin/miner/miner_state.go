@@ -1,4 +1,4 @@
-package storage_miner
+package miner
 
 import (
 	addr "github.com/filecoin-project/go-address"
@@ -7,7 +7,7 @@ import (
 	errors "github.com/pkg/errors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )

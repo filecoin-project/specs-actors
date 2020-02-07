@@ -1,4 +1,4 @@
-package payment_channel
+package paych
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package storage_market
+package market
 
 import "github.com/filecoin-project/specs-actors/actors/abi"
 

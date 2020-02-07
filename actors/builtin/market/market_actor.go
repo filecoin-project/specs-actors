@@ -1,4 +1,4 @@
-package storage_market
+package market
 
 import (
 	addr "github.com/filecoin-project/go-address"

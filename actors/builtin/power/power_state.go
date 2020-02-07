@@ -1,4 +1,4 @@
-package storage_power
+package power
 
 import (
 	"sort"

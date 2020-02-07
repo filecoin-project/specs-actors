@@ -1,9 +1,9 @@
-package storage_miner
+package miner
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 )
 
 // An approximation to chain state finality.

@@ -1,4 +1,4 @@
-package storage_power_test
+package power_test
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"

@@ -1,4 +1,4 @@
-package storage_miner
+package miner
 
 import (
 	"bytes"
@@ -10,8 +10,8 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/storage_market"
-	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
+	storage_market "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -334,7 +334,7 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 	var dealWeight abi.DealWeight
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.StorageMarketMethods.VerifyDealsOnSectorProveCommit,
+		builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
 		&storage_market.VerifyDealsOnSectorProveCommitParams{
 			DealIDs:      precommit.Info.DealIDs,
 			SectorExpiry: precommit.Info.Expiration,
@@ -799,7 +799,7 @@ func (a *Actor) requestEndFault(rt Runtime, weight *storage_power.SectorStorageW
 func (a *Actor) requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
 	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.StorageMarketMethods.OnMinerSectorsTerminate,
+		builtin.MethodsMarket.OnMinerSectorsTerminate,
 		&storage_market.OnMinerSectorsTerminateParams{
 			DealIDs: dealIDs,
 		},
@@ -908,7 +908,7 @@ func (a *Actor) requestUnsealedSectorCID(rt Runtime, sectorSize abi.SectorSize, 
 	var unsealedCID cbg.CborCid
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.StorageMarketMethods.ComputeDataCommitment,
+		builtin.MethodsMarket.ComputeDataCommitment,
 		&storage_market.ComputeDataCommitmentParams{
 			SectorSize: sectorSize,
 			DealIDs:    dealIDs,

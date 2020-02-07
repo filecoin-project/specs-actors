@@ -1,4 +1,4 @@
-package storage_power
+package power
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
