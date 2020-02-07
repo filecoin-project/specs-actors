@@ -1,4 +1,4 @@
-package payment_channel_test
+package paych_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/payment_channel"
+	. "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -20,7 +20,7 @@ import (
 
 func TestPaymentChannelActor_Constructor(t *testing.T) {
 	ctx := context.Background()
-	actor := pcActorHarness{payment_channel.PaymentChannelActor{}, t}
+	actor := pcActorHarness{Actor{}, t}
 
 	pcaAddr := tutil.NewIDAddr(t, 100)
 	callerAddr := tutil.NewIDAddr(t, 101)
@@ -39,7 +39,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		rt := builder.Build(t)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
 		rt.ExpectAbort(18, func() {
-			rt.Call(actor.Constructor, &payment_channel.ConstructorParams{To: pcaAddr})
+			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr})
 		})
 	})
 
@@ -51,12 +51,12 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
 		expMsg := "target actor [0 - 64] must be an account (bafkqadlgnfwc6mjpmfrwg33vnz2a), was bafkqactgnfwc6mjpmnzg63q"
 		rt.ExpectAbortWithMsg(16, expMsg, func() {
-			rt.Call(actor.Constructor, &payment_channel.ConstructorParams{To: pcaAddr})
+			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr})
 		})
 	})
 
 	t.Run("fails if addr is not ID type", func(t *testing.T) {
-		pcaAddr1 := tutil.NewActorAddr(t, []byte("beach blanket babylon"))
+		pcaAddr1 := tutil.NewActorAddr(t, "beach blanket babylon")
 		builder := mock.NewBuilder(ctx, pcaAddr1).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
 			WithReceiverType(builtin.AccountActorCodeID)
@@ -64,14 +64,14 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
 		expMsg := "target address must be an ID-address, [2 - 343095ece71e03006965c10e88314fb7c103f413] is 2"
 		rt.ExpectAbortWithMsg(16, expMsg, func() {
-			rt.Call(actor.Constructor, &payment_channel.ConstructorParams{To: pcaAddr1})
+			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr1})
 		})
 	})
 }
 
 func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 	ctx := context.Background()
-	actor := pcActorHarness{payment_channel.PaymentChannelActor{}, t}
+	actor := pcActorHarness{Actor{}, t}
 
 	pcaAddr := tutil.NewIDAddr(t, 100)
 	callerAddr := tutil.NewIDAddr(t, 101)
@@ -98,14 +98,14 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			Type: crypto.SigTypeBLS,
 			Data: []byte("doesn't matter"),
 		}
-		sv := payment_channel.SignedVoucher{
+		sv := SignedVoucher{
 			TimeLock:  tl,
 			Lane:      99999,
 			Nonce:     nonce,
 			Amount:    amt,
 			Signature: sig,
 		}
-		ucp := &payment_channel.UpdateChannelStateParams{ Sv: sv }
+		ucp := &UpdateChannelStateParams{ Sv: sv }
 
 		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
 		assert.Equal(t, adt.EmptyValue{}, *constructRet)
@@ -131,14 +131,14 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			Type: crypto.SigTypeBLS,
 			Data: []byte("doesn't matter"),
 		}
-		sv := payment_channel.SignedVoucher{
+		sv := SignedVoucher{
 			TimeLock:  tl,
 			Lane:      lane,
 			Nonce:     nonce,
 			Amount:    amt,
 			Signature: sig,
 		}
-		ucp := &payment_channel.UpdateChannelStateParams{ Sv: sv }
+		ucp := &UpdateChannelStateParams{ Sv: sv }
 
 		expectMsg := "cannot use this voucher yet!"
 		rt.ExpectAbortWithMsg(exitcode.ErrIllegalArgument, expectMsg, func() {
@@ -148,17 +148,17 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 }
 
 type pcActorHarness struct {
-	payment_channel.PaymentChannelActor
+	Actor
 	t testing.TB
 }
 
 func (h *pcActorHarness) constructAndVerify(rt *mock.Runtime, receiver, caller addr.Address) {
 	rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
-	constructRet := rt.Call(h.PaymentChannelActor.Constructor, &payment_channel.ConstructorParams{To: receiver}).(*adt.EmptyValue)
+	constructRet := rt.Call(h.Actor.Constructor, &ConstructorParams{To: receiver}).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 
-	var st payment_channel.PaymentChannelActorState
+	var st State
 	rt.GetState(&st)
 	assert.Equal(h.t, receiver, st.To)
 	assert.Equal(h.t, caller, st.From)

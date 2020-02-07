@@ -49,6 +49,7 @@ type Runtime struct {
 	expectValidateCallerAny  bool
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
+	expectValidateReceiverType cid.Cid
 	expectSends              []*expectedMessage
 	expectCreateActor        *expectCreateActor
 }
@@ -243,7 +244,7 @@ func (rt *Runtime) AbortStateMsg(msg string) {
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
-	return rt.syscalls
+	panic("implement me")
 }
 
 func (rt *Runtime) Context() context.Context {
@@ -576,4 +577,3 @@ func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
 	err = o.UnmarshalCBOR(b)
 	return err
 }
-

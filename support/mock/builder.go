@@ -85,6 +85,7 @@ func (b *RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) *Runtime
 
 func (b *RuntimeBuilder) WithReceiverType(code cid.Cid) *RuntimeBuilder {
 	b.rt.receiverType = code
+	b.rt.actorCodeCIDs[b.rt.receiver] = code
 	return b
 }
 
