@@ -37,7 +37,7 @@ func (s PaddedPieceSize) Validate() error {
 		return errors.New("minimum padded piece size is 128 bytes")
 	}
 
-	if bits.OnesCount64(uint64(s)) == 1 {
+	if bits.OnesCount64(uint64(s)) != 1 {
 		return errors.New("padded piece size must be a power of 2")
 	}
 
