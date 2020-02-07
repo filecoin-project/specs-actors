@@ -144,6 +144,7 @@ func main() {
 		market.PublishStorageDealsReturn{},
 		// other types
 		market.DealProposal{},
+		market.ClientDealProposal{},
 		market.DealState{},
 	); err != nil {
 		panic(err)

@@ -47,7 +47,7 @@ func TestPieceSize(t *testing.T) {
 	require.Error(t, UnpaddedPieceSize(9).Validate())
 	require.Error(t, UnpaddedPieceSize(128).Validate())
 	require.Error(t, UnpaddedPieceSize(99453687).Validate())
-	require.Error(t, UnpaddedPieceSize(1016 + 0x1000000).Validate())
+	require.Error(t, UnpaddedPieceSize(1016+0x1000000).Validate())
 
 	require.Error(t, PaddedPieceSize(8).Validate())
 	require.Error(t, PaddedPieceSize(127).Validate())

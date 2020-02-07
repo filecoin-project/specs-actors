@@ -127,7 +127,7 @@ func (a Actor) AddBalance(rt Runtime, address *addr.Address) *adt.EmptyValue {
 }
 
 type PublishStorageDealsParams struct {
-	Deals []DealProposal
+	Deals []ClientDealProposal
 }
 
 type PublishStorageDealsReturn struct {
@@ -149,8 +149,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
-			if deal.Provider != rt.ImmediateCaller() {
-				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", deal.Provider)
+			if deal.Proposal.Provider != rt.ImmediateCaller() {
+				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
 			}
 
 			validateDeal(rt, deal)
@@ -160,23 +160,23 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			//
 			// Note: as an optimization, implementations may cache efficient data structures indicating
 			// which of the following set of updates are redundant and can be skipped.
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Client))
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Provider))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Client))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Provider))
 
-			st.lockBalanceOrAbort(rt, deal.Client, deal.ClientBalanceRequirement())
-			st.lockBalanceOrAbort(rt, deal.Provider, deal.ProviderBalanceRequirement())
+			st.lockBalanceOrAbort(rt, deal.Proposal.Client, deal.Proposal.ClientBalanceRequirement())
+			st.lockBalanceOrAbort(rt, deal.Proposal.Provider, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
 
-			err := proposals.Set(id, &deal)
+			err := proposals.Set(id, &deal.Proposal)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
-			if err := dbp.Put(adt.AddrKey(deal.Client), uint64(id)); err != nil {
+			if err := dbp.Put(adt.AddrKey(deal.Proposal.Client), uint64(id)); err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set client deal id: %v", err)
 			}
-			if err := dbp.Put(adt.AddrKey(deal.Provider), uint64(id)); err != nil {
+			if err := dbp.Put(adt.AddrKey(deal.Proposal.Provider), uint64(id)); err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "set provider deal id: %v", err)
 			}
 
@@ -362,32 +362,34 @@ func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiratio
 	}
 }
 
-func validateDeal(rt Runtime, deal DealProposal) {
+func validateDeal(rt Runtime, deal ClientDealProposal) {
 	if !dealProposalIsInternallyValid(rt, deal) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
 	}
 
-	if rt.CurrEpoch() > deal.StartEpoch {
+	proposal := deal.Proposal
+
+	if rt.CurrEpoch() > proposal.StartEpoch {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 
-	minDuration, maxDuration := dealDurationBounds(deal.PieceSize)
-	if deal.Duration() < minDuration || deal.Duration() > maxDuration {
+	minDuration, maxDuration := dealDurationBounds(proposal.PieceSize)
+	if proposal.Duration() < minDuration || proposal.Duration() > maxDuration {
 		rt.Abort(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
 	}
 
-	minPrice, maxPrice := dealPricePerEpochBounds(deal.PieceSize, deal.Duration())
-	if deal.StoragePricePerEpoch.LessThan(minPrice) || deal.StoragePricePerEpoch.GreaterThan(maxPrice) {
+	minPrice, maxPrice := dealPricePerEpochBounds(proposal.PieceSize, proposal.Duration())
+	if proposal.StoragePricePerEpoch.LessThan(minPrice) || proposal.StoragePricePerEpoch.GreaterThan(maxPrice) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(deal.PieceSize, deal.Duration())
-	if deal.ProviderCollateral.LessThan(minProviderCollateral) || deal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
+	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(proposal.PieceSize, proposal.Duration())
+	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
-	minClientCollateral, maxClientCollateral := dealClientCollateralBounds(deal.PieceSize, deal.Duration())
-	if deal.ClientCollateral.LessThan(minClientCollateral) || deal.ClientCollateral.GreaterThan(maxClientCollateral) {
+	minClientCollateral, maxClientCollateral := dealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
+	if proposal.ClientCollateral.LessThan(minClientCollateral) || proposal.ClientCollateral.GreaterThan(maxClientCollateral) {
 		rt.Abort(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}
 }
