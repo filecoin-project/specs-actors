@@ -1,5 +1,9 @@
 package crypto
 
+import (
+	"context"
+)
+
 type SigType int64
 
 const (
@@ -12,4 +16,10 @@ const (
 type Signature struct {
 	Type SigType
 	Data []byte
+}
+
+type SignFunc = func(context.Context, []byte) (*Signature, error)
+
+type Signable interface {
+	Sign(context.Context, SignFunc) error
 }

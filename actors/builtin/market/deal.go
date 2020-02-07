@@ -1,8 +1,12 @@
 package market
 
 import (
+	"bytes"
+	"context"
+
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -22,7 +26,7 @@ type DealProposal struct {
 	PieceSize       abi.PaddedPieceSize
 	Client          addr.Address
 	Provider        addr.Address
-	ClientSignature acrypto.Signature
+	ClientSignature *acrypto.Signature
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,
 	// with total amount StoragePricePerEpoch * (EndEpoch - StartEpoch).
@@ -50,6 +54,22 @@ func (p *DealProposal) ClientBalanceRequirement() abi.TokenAmount {
 
 func (p *DealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 	return p.ProviderCollateral
+}
+
+func (p *DealProposal) Sign(ctx context.Context, sign acrypto.SignFunc) error {
+	if p.ClientSignature != nil {
+		return xerrors.New("signature already present in StorageDealProposal")
+	}
+	var buf bytes.Buffer
+	if err := p.MarshalCBOR(&buf); err != nil {
+		return err
+	}
+	sig, err := sign(ctx, buf.Bytes())
+	if err != nil {
+		return err
+	}
+	p.ClientSignature = sig
+	return nil
 }
 
 type DealState struct {
