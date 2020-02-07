@@ -360,12 +360,12 @@ func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.To
 // State utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func dealProposalIsInternallyValid(rt Runtime, dealP DealProposal) bool {
-	if dealP.EndEpoch <= dealP.StartEpoch {
+func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) bool {
+	if proposal.Proposal.EndEpoch <= proposal.Proposal.StartEpoch {
 		return false
 	}
 
-	if dealP.Duration() != dealP.EndEpoch-dealP.StartEpoch {
+	if proposal.Proposal.Duration() != proposal.Proposal.EndEpoch-proposal.Proposal.StartEpoch {
 		return false
 	}
 
@@ -375,7 +375,7 @@ func dealProposalIsInternallyValid(rt Runtime, dealP DealProposal) bool {
 
 	// Note: we do not verify the provider signature here, since this is implicit in the
 	// authenticity of the on-chain message publishing the deal.
-	sigVerified := rt.Syscalls().VerifySignature(dealP.ClientSignature, dealP.Client, m)
+	sigVerified := rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, m)
 	if !sigVerified {
 		return false
 	}

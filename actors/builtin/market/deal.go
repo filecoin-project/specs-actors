@@ -18,11 +18,10 @@ import (
 // Note: ClientCollateralPerEpoch may not be needed and removed pending future confirmation.
 // There will be a Minimum value for both client and provider deal collateral.
 type DealProposal struct {
-	PieceCID        cid.Cid // CommP
-	PieceSize       abi.PaddedPieceSize
-	Client          addr.Address
-	Provider        addr.Address
-	ClientSignature acrypto.Signature
+	PieceCID  cid.Cid // CommP
+	PieceSize abi.PaddedPieceSize
+	Client    addr.Address
+	Provider  addr.Address
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,
 	// with total amount StoragePricePerEpoch * (EndEpoch - StartEpoch).
@@ -34,6 +33,12 @@ type DealProposal struct {
 
 	ProviderCollateral abi.TokenAmount
 	ClientCollateral   abi.TokenAmount
+}
+
+// ClientDealProposal is a DealProposal signed by a client
+type ClientDealProposal struct {
+	Proposal        DealProposal
+	ClientSignature acrypto.Signature
 }
 
 func (p *DealProposal) Duration() abi.ChainEpoch {
