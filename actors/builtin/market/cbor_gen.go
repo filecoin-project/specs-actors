@@ -637,8 +637,8 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.PieceCID: %w", err)
 	}
 
-	// t.PieceSize (abi.PieceSize) (struct)
-	if err := t.PieceSize.MarshalCBOR(w); err != nil {
+	// t.PieceSize (abi.PaddedPieceSize) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.PieceSize))); err != nil {
 		return err
 	}
 
@@ -723,15 +723,16 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 		t.PieceCID = c
 
 	}
-	// t.PieceSize (abi.PieceSize) (struct)
+	// t.PieceSize (abi.PaddedPieceSize) (uint64)
 
-	{
-
-		if err := t.PieceSize.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.PieceSize = abi.PaddedPieceSize(extra)
 	// t.Client (address.Address) (struct)
 
 	{

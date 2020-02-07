@@ -19,7 +19,7 @@ import (
 // There will be a Minimum value for both client and provider deal collateral.
 type DealProposal struct {
 	PieceCID        cid.Cid // CommP
-	PieceSize       abi.PieceSize
+	PieceSize       abi.PaddedPieceSize
 	Client          addr.Address
 	Provider        addr.Address
 	ClientSignature acrypto.Signature

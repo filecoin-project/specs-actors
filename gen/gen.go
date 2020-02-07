@@ -19,7 +19,6 @@ import (
 func main() {
 	// Common types
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
-		abi.PieceSize{},
 		abi.PieceInfo{},
 		abi.SectorID{},
 		abi.SealProof{},
