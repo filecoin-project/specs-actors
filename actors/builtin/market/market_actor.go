@@ -235,7 +235,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 
 			// Compute deal weight
 			dur := big.NewInt(int64(proposal.Duration()))
-			siz := big.NewInt(int64(proposal.PieceSize.Total()))
+			siz := big.NewInt(int64(proposal.PieceSize))
 			weight := big.Mul(dur, siz)
 			totalWeight = big.Add(totalWeight, weight)
 		}
@@ -261,7 +261,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 			deal := st.mustGetDeal(rt, dealID)
 			pieces = append(pieces, abi.PieceInfo{
 				PieceCID: deal.PieceCID,
-				Size:     deal.PieceSize.Total(),
+				Size:     deal.PieceSize,
 			})
 		}
 		return nil
