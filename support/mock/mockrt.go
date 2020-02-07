@@ -33,6 +33,8 @@ type Runtime struct {
 	actorCodeCIDs map[addr.Address]cid.Cid
 	newActorAddr  addr.Address
 
+	syscalls runtime.Syscalls
+
 	// Actor state
 	state   cid.Cid
 	balance abi.TokenAmount
@@ -241,7 +243,7 @@ func (rt *Runtime) AbortStateMsg(msg string) {
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
-	panic("implement me")
+	return rt.syscalls
 }
 
 func (rt *Runtime) Context() context.Context {
@@ -574,3 +576,4 @@ func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
 	err = o.UnmarshalCBOR(b)
 	return err
 }
+

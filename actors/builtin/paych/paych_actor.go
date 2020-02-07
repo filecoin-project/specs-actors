@@ -237,7 +237,7 @@ func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.ValidateImmediateCallerIs(st.From, st.To)
 
 		if st.SettlingAt != 0 {
-			rt.Abortf(exitcode.ErrIllegalState, "channel already seettling")
+			rt.Abortf(exitcode.ErrIllegalState, "channel already settling")
 		}
 
 		st.SettlingAt = rt.CurrEpoch() + SettleDelay

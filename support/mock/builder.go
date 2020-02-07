@@ -8,6 +8,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
 // Build for fluent initialization of a mock runtime.
@@ -84,5 +85,10 @@ func (b *RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) *Runtime
 
 func (b *RuntimeBuilder) WithReceiverType(code cid.Cid) *RuntimeBuilder {
 	b.rt.receiverType = code
+	return b
+}
+
+func (b *RuntimeBuilder) WithSysCalls(calls runtime.Syscalls) *RuntimeBuilder {
+	b.rt.syscalls = calls
 	return b
 }
