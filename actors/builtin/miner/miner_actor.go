@@ -37,7 +37,8 @@ const (
 
 type CronEventPayload struct {
 	EventType CronEventType
-	Sectors   []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
+	// TODO: replace sectors with a bitfield
+	Sectors []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
 }
 
 /////////////////
@@ -364,7 +365,8 @@ func (a *Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *
 		if err = st.putSector(adt.AsStore(rt), newSectorInfo); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
-		if err = st.deletePrecommitttedSector(store, sectorNo); err != nil {
+
+		if err = st.deletePrecommittedSector(store, sectorNo); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
 		}
 
@@ -453,9 +455,9 @@ func (a *Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *ad
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	for _, sectorNumber := range params.sectorNumbers {
-		a.terminateSector(rt, sectorNumber, power.SectorTerminationManual)
-	}
+	// Note: this cannot terminate pre-committed but un-proven sectors.
+	// They must be allowed to expire (and deposit burnt).
+	a.terminateSectors(rt, params.sectorNumbers, power.SectorTerminationManual)
 
 	return &adt.EmptyValue{}
 }
@@ -486,12 +488,12 @@ func (a *Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaults
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 			}
-			fault, err := st.IsSectorInTemporaryFault(store, sectorNumber)
-			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to check sector fault %v: %v", sectorNumber, err)
-			}
+			fault, err := st.FaultSet.Has(uint64(sectorNumber))
+			AssertNoError(err)
+			Assert(fault == (sector.DeclaredFaultEpoch != epochUndefined))
+			Assert(fault == (sector.DeclaredFaultDuration != epochUndefined))
 			if !found || fault {
-				continue
+				continue // Ignore declaration for missing or already-faulted sector.
 			}
 
 			storageWeightDescs = append(storageWeightDescs, asStorageWeightDesc(st.Info.SectorSize, sector))
@@ -539,22 +541,15 @@ func (a *Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParam
 	}
 
 	if payload.EventType == CronEventType_Miner_TempFault {
-		// should roll the huge number of state transactions in this loop into ~1
-		for _, sectorNumber := range payload.Sectors {
-			a.checkTemporaryFaultEvents(rt, sectorNumber)
-		}
+		a.checkTemporaryFaultEvents(rt, payload.Sectors)
 	}
 
 	if payload.EventType == CronEventType_Miner_PreCommitExpiry {
-		for _, sectorNumber := range payload.Sectors {
-			a.checkPrecommitExpiry(rt, sectorNumber)
-		}
+		a.checkPrecommitExpiry(rt, payload.Sectors)
 	}
 
 	if payload.EventType == CronEventType_Miner_SectorExpiry {
-		for _, sectorNumber := range payload.Sectors {
-			a.checkSectorExpiry(rt, sectorNumber)
-		}
+		a.checkSectorExpiry(rt, payload.Sectors)
 	}
 
 	if payload.EventType == CronEventType_Miner_SurpriseExpiration {
@@ -572,155 +567,153 @@ func (a *Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParam
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a *Actor) checkTemporaryFaultEvents(rt Runtime, sectorNumber abi.SectorNumber) {
+func (a *Actor) checkTemporaryFaultEvents(rt Runtime, sectorNos []abi.SectorNumber) {
 	store := adt.AsStore(rt)
 
+	var beginFaults []*power.SectorStorageWeightDesc
+	var endFaults []*power.SectorStorageWeightDesc
+	beginFaultPledge := abi.NewTokenAmount(0)
+	endFaultPledge := abi.NewTokenAmount(0)
 	var st State
-	rt.State().Readonly(&st)
-	sector, found, err := st.getSector(store, sectorNumber)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "error loading sector %v: %v", sectorNumber, err)
-	} else if !found {
-		return
-	}
-	weight, err := st.GetStorageWeightDescForSector(store, sectorNumber)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to get weight for sector %v: %v", sectorNumber, err)
-	}
-	fault, err := st.IsSectorInTemporaryFault(store, sectorNumber)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to check fault for sector %v: %v", sectorNumber, err)
-	}
-
-	if !fault && rt.CurrEpoch() >= sector.DeclaredFaultEpoch {
-		_, code := rt.Send(
-			builtin.StoragePowerActorAddr,
-			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
-			&power.OnSectorTemporaryFaultEffectiveBeginParams{
-				Weight: *weight,
-				Pledge: sector.PledgeRequirement,
-			},
-			abi.NewTokenAmount(0),
-		)
-		builtin.RequireSuccess(rt, code, "failed to begin fault")
-
-		rt.State().Transaction(&st, func() interface{} {
-			st.FaultSet.Set(uint64(sectorNumber))
-			return nil
-		})
-	}
-
-	if fault && rt.CurrEpoch() >= sector.DeclaredFaultEpoch+sector.DeclaredFaultDuration {
-		sector.DeclaredFaultEpoch = epochUndefined
-		sector.DeclaredFaultDuration = epochUndefined
-
-		_, code := rt.Send(
-			builtin.StoragePowerActorAddr,
-			builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
-			&power.OnSectorTemporaryFaultEffectiveEndParams{
-				Weight: *weight,
-				Pledge: sector.PledgeRequirement,
-			},
-			abi.NewTokenAmount(0),
-		)
-		builtin.RequireSuccess(rt, code, "failed to end fault")
-
-		rt.State().Transaction(&st, func() interface{} {
-			if err = st.FaultSet.Unset(uint64(sectorNumber)); err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNumber, err)
-			}
-			return nil
-		})
-	}
-
 	rt.State().Transaction(&st, func() interface{} {
-		if err = st.putSector(store, sector); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
+		for _, sectorNo := range sectorNos {
+			sector, found, err := st.getSector(store, sectorNo)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+			} else if !found {
+				continue // Sector has been terminated
+			}
+
+			hasFault, err := st.FaultSet.Has(uint64(sectorNo))
+			AssertNoError(err)
+			Assert(hasFault == (sector.DeclaredFaultEpoch != epochUndefined))
+			Assert(hasFault == (sector.DeclaredFaultDuration != epochUndefined))
+
+			if !hasFault && rt.CurrEpoch() >= sector.DeclaredFaultEpoch {
+				beginFaults = append(beginFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
+				beginFaultPledge = big.Add(beginFaultPledge, sector.PledgeRequirement)
+				st.FaultSet.Set(uint64(sectorNo))
+			}
+			if hasFault && rt.CurrEpoch() >= sector.DeclaredFaultEpoch+sector.DeclaredFaultDuration {
+				sector.DeclaredFaultEpoch = epochUndefined
+				sector.DeclaredFaultDuration = epochUndefined
+				endFaults = append(endFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
+				endFaultPledge = big.Add(endFaultPledge, sector.PledgeRequirement)
+				if err = st.FaultSet.Unset(uint64(sectorNo)); err != nil {
+					rt.Abort(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNo, err)
+				}
+				if err = st.putSector(store, sector); err != nil {
+					rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
+				}
+			}
 		}
 		return nil
 	})
+
+	if len(beginFaults) > 0 {
+		a.requestBeginFaults(rt, beginFaults, beginFaultPledge)
+	}
+
+	if len(endFaults) > 0 {
+		a.requestEndFaults(rt, endFaults, endFaultPledge)
+	}
 }
 
-func (a *Actor) checkPrecommitExpiry(rt Runtime, sectorNo abi.SectorNumber) {
-	var st State
-	rt.State().Readonly(&st)
+func (a *Actor) checkPrecommitExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
 	store := adt.AsStore(rt)
-	sector, found, err := st.getPrecommittedSector(store, sectorNo)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
-	} else if !found {
-		return
-	}
+	var st State
 
-	if rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
-		rt.State().Transaction(&st, func() interface{} {
-			err = st.deletePrecommitttedSector(store, sectorNo)
+	depositToBurn := abi.NewTokenAmount(0)
+	rt.State().Transaction(&st, func() interface{} {
+		for _, sectorNo := range sectorNos {
+			sector, found, err := st.getPrecommittedSector(store, sectorNo)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
+				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 			}
-			return nil
-		})
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, sector.PreCommitDeposit)
-		builtin.RequireSuccess(rt, code, "failed to burn funds")
-	}
+			if found && rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
+				err = st.deletePrecommittedSector(store, sectorNo)
+				if err != nil {
+					rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
+				}
+				depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+			}
+			// Else sector has been terminated.
+		}
+		return nil
+	})
+
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, depositToBurn)
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return
 }
 
-func (a *Actor) checkSectorExpiry(rt Runtime, sectorNumber abi.SectorNumber) {
+func (a *Actor) checkSectorExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
 	var st State
 	rt.State().Readonly(&st)
-	sector, found, err := st.getSector(adt.AsStore(rt), sectorNumber)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
-	} else if !found {
-		return
+	toTerminate := []abi.SectorNumber{}
+	for _, sectorNo := range sectorNos {
+		sector, found, err := st.getSector(adt.AsStore(rt), sectorNo)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+		}
+		if found && rt.CurrEpoch() >= sector.Info.Expiration {
+			toTerminate = append(toTerminate, sectorNo)
+		}
+		// Else sector has been terminated or extended.
 	}
 
-	// Note: the following test may be false, if sector expiration has been extended by the worker
-	// in the interim after the Cron request was enrolled.
-	if rt.CurrEpoch() >= sector.Info.Expiration {
-		a.terminateSector(rt, sectorNumber, power.SectorTerminationExpired)
-	}
+	a.terminateSectors(rt, toTerminate, power.SectorTerminationExpired)
 	return
 }
 
-func (a *Actor) terminateSector(rt Runtime, sectorNumber abi.SectorNumber, terminationType power.SectorTermination) {
+func (a *Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, terminationType power.SectorTermination) {
 	store := adt.AsStore(rt)
 	var st State
 
 	var dealIDs []abi.DealID
-	var weight *power.SectorStorageWeightDesc
-	var pledge abi.TokenAmount
-	var fault bool
+	var allWeights []*power.SectorStorageWeightDesc
+	allPledge := abi.NewTokenAmount(0)
+	var faultedWeights []*power.SectorStorageWeightDesc
+	faultPledge := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
-		sector, found, err := st.getSector(store, sectorNumber)
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", sectorNumber, err)
-		}
-		Assert(found)
+		for _, sectorNo := range sectorNos {
+			sector, found, err := st.getSector(store, sectorNo)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", sectorNo, err)
+			}
+			if !found {
+				rt.Abort(exitcode.ErrNotFound, "no sector %v", sectorNo)
+			}
 
-		dealIDs = sector.Info.DealIDs
-		weight = asStorageWeightDesc(st.Info.SectorSize, sector)
-		pledge = sector.PledgeRequirement
-		fault, err = st.IsSectorInTemporaryFault(store, sectorNumber)
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to check fault for sector %v: %v", sectorNumber, err)
-		}
+			dealIDs = append(dealIDs, sector.Info.DealIDs...)
+			weight := asStorageWeightDesc(st.Info.SectorSize, sector)
+			allWeights = append(allWeights, weight)
+			allPledge = big.Add(allPledge, sector.PledgeRequirement)
 
-		err = st.deleteSector(store, sectorNumber)
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
+			fault, err := st.FaultSet.Has(uint64(sectorNo))
+			AssertNoError(err)
+			Assert(fault == (sector.DeclaredFaultEpoch != epochUndefined))
+			Assert(fault == (sector.DeclaredFaultDuration != epochUndefined))
+			if fault {
+				faultedWeights = append(faultedWeights, weight)
+				faultPledge = big.Add(faultPledge, sector.PledgeRequirement)
+			}
+
+			err = st.deleteSector(store, sectorNo)
+			if err != nil {
+				rt.Abort(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
+			}
 		}
 		return nil
 	})
 
 	// End any fault state before terminating sector power.
-	if fault {
-		a.requestEndFault(rt, weight)
+	if len(faultedWeights) > 0 {
+		a.requestEndFaults(rt, faultedWeights, faultPledge)
 	}
 
 	a.requestTerminateDeals(rt, dealIDs)
-	a.requestTerminatePower(rt, terminationType, weight, pledge)
+	a.requestTerminatePower(rt, terminationType, allWeights, allPledge)
 }
 
 func (a *Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
@@ -787,16 +780,40 @@ func (a *Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackP
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func (a *Actor) requestEndFault(rt Runtime, weight *power.SectorStorageWeightDesc) {
+func (a *Actor) requestBeginFaults(rt Runtime, weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+	params := &power.OnSectorTemporaryFaultEffectiveBeginParams{
+		Weights: make([]power.SectorStorageWeightDesc, len(weights)),
+		Pledge:  pledge,
+	}
+	for i, w := range weights {
+		params.Weights[i] = *w
+	}
+
+	_, code := rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin,
+		params,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to request faults %v", weights)
+}
+
+func (a *Actor) requestEndFaults(rt Runtime, weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+	params := &power.OnSectorTemporaryFaultEffectiveEndParams{
+		Weights: make([]power.SectorStorageWeightDesc, len(weights)),
+		Pledge:  pledge,
+	}
+	for i, w := range weights {
+		params.Weights[i] = *w
+	}
+
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd,
-		&power.OnSectorTemporaryFaultEffectiveEndParams{
-			Weight: *weight,
-		},
+		params,
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to end fault weight %v", weight)
+	builtin.RequireSuccess(rt, code, "failed to request end faults %v", weights)
 }
 
 func (a *Actor) requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
@@ -825,18 +842,23 @@ func (a *Actor) requestTerminateAllDeals(rt Runtime, st *State) {
 }
 
 func (a *Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTermination,
-	weight *power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+	weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+	params := &power.OnSectorTerminateParams{
+		TerminationType: terminationType,
+		Weights:         make([]power.SectorStorageWeightDesc, len(weights)),
+		Pledge:          pledge,
+	}
+	for i, w := range weights {
+		params.Weights[i] = *w
+	}
+
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.Method_StoragePowerActor_OnSectorTerminate,
-		&power.OnSectorTerminateParams{
-			TerminationType: terminationType,
-			Weight:          *weight,
-			Pledge:          pledge,
-		},
+		params,
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to terminate sector power type %v, weight %v", terminationType, weight)
+	builtin.RequireSuccess(rt, code, "failed to terminate sector power type %v, weights %v", terminationType, weights)
 }
 
 func (a *Actor) verifySurprisePost(rt Runtime, st *State, onChainInfo *abi.OnChainSurprisePoStVerifyInfo) {
