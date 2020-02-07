@@ -1,4 +1,4 @@
-package payment_channel
+package paych
 
 import (
 	addr "github.com/filecoin-project/go-address"
@@ -10,7 +10,7 @@ import (
 // A given payment channel actor is established by From
 // to enable off-chain microtransactions to To to be reconciled
 // and tallied on chain.
-type PaymentChannelActorState struct {
+type State struct {
 	// Channel owner, who has funded the actor
 	From addr.Address
 	// Recipient of payouts from channel
@@ -42,8 +42,8 @@ type Merge struct {
 	Nonce int64
 }
 
-func ConstructState(from addr.Address, to addr.Address) *PaymentChannelActorState {
-	return &PaymentChannelActorState{
+func ConstructState(from addr.Address, to addr.Address) *State {
+	return &State{
 		From:            from,
 		To:              to,
 		ToSend:          big.Zero(),

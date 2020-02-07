@@ -8,23 +8,22 @@ import (
 )
 
 // The cron actor is a built-in singleton that sends messages to other registered actors at the end of each epoch.
-type CronActor struct {
-}
+type Actor struct {}
 
-func (a CronActor) Exports() []interface{} {
+func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.EpochTick,
 	}
 }
 
-var _ abi.Invokee = CronActor{}
+var _ abi.Invokee = Actor{}
 
 type ConstructorParams struct {
-	Entries []CronTableEntry
+	Entries []Entry
 }
 
-func (a CronActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	rt.State().Construct(func() vmr.CBORMarshaler {
 		return ConstructState(params.Entries)
@@ -33,10 +32,10 @@ func (a CronActor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.E
 }
 
 // Invoked by the system after all other messages in the epoch have been processed.
-func (a CronActor) EpochTick(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) EpochTick(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	var st CronActorState
+	var st State
 	rt.State().Readonly(&st)
 	for _, entry := range st.Entries {
 		_, _ = rt.Send(entry.Receiver, entry.MethodNum, adt.EmptyValue{}, abi.NewTokenAmount(0))

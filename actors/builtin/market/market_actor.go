@@ -1,4 +1,4 @@
-package storage_market
+package market
 
 import (
 	addr "github.com/filecoin-project/go-address"
@@ -14,11 +14,11 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type StorageMarketActor struct{}
+type Actor struct{}
 
 type Runtime = vmr.Runtime
 
-func (a StorageMarketActor) Exports() []interface{} {
+func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AddBalance,
@@ -32,13 +32,13 @@ func (a StorageMarketActor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = StorageMarketActor{}
+var _ abi.Invokee = Actor{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a StorageMarketActor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	rt.State().Construct(func() vmr.CBORMarshaler {
@@ -58,7 +58,7 @@ type WithdrawBalanceParams struct {
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
-func (a StorageMarketActor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	if params.Amount.LessThan(big.Zero()) {
@@ -68,7 +68,7 @@ func (a StorageMarketActor) WithdrawBalance(rt Runtime, params *WithdrawBalanceP
 	recipientAddr := builtin.MarketAddress(rt, params.Address)
 
 	var amountExtracted abi.TokenAmount
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		// Before any operations that check the balance tables for funds, execute all deferred
 		// deal state updates.
@@ -96,10 +96,10 @@ func (a StorageMarketActor) WithdrawBalance(rt Runtime, params *WithdrawBalanceP
 
 // Deposits the specified amount into the balance held in escrow.
 // Note: the amount is included implicitly in the message.
-func (a StorageMarketActor) AddBalance(rt Runtime, address *addr.Address) *adt.EmptyValue {
+func (a Actor) AddBalance(rt Runtime, address *addr.Address) *adt.EmptyValue {
 	builtin.MarketAddress(rt, *address)
 
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		msgValue := rt.ValueReceived()
 
@@ -135,7 +135,7 @@ type PublishStorageDealsReturn struct {
 }
 
 // Publish a new set of storage deals (not yet included in a sector).
-func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
+func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	// Deal message must have a From field identical to the provider of all the deals.
@@ -143,7 +143,7 @@ func (a StorageMarketActor) PublishStorageDeals(rt Runtime, params *PublishStora
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
 	newDealIds := []abi.DealID{}
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
@@ -203,12 +203,12 @@ type VerifyDealsOnSectorProveCommitParams struct {
 // The weight is defined as the sum, over all deals in the set, of the product of its size
 // with its duration. This quantity may be an input into the functions specifying block reward,
 // sector power, collateral, and/or other parameters.
-func (a StorageMarketActor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *abi.DealWeight {
+func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *abi.DealWeight {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 	totalWeight := big.Zero()
 
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		// if there are no dealIDs, it is a CommittedCapacity sector
 		// and the totalWeight should be zero
@@ -251,11 +251,11 @@ type ComputeDataCommitmentParams struct {
 	SectorSize abi.SectorSize
 }
 
-func (a StorageMarketActor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
+func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	pieces := make([]abi.PieceInfo, 0)
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		for _, dealID := range params.DealIDs {
 			deal := st.mustGetDeal(rt, dealID)
@@ -282,11 +282,11 @@ type OnMinerSectorsTerminateParams struct {
 // Terminate a set of deals in response to their containing sector being terminated.
 // Slash provider collateral, refund client collateral, and refund partial unpaid escrow
 // amount to client.
-func (a StorageMarketActor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTerminateParams) *adt.EmptyValue {
+func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTerminateParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		states := AsDealStateArray(adt.AsStore(rt), st.States)
@@ -324,10 +324,10 @@ type HandleExpiredDealsParams struct {
 	Deals []abi.DealID // TODO: RLE
 }
 
-func (a StorageMarketActor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) *adt.EmptyValue {
+func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	var slashed abi.TokenAmount
-	var st StorageMarketActorState
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		slashed = st.updatePendingDealStates(rt, params.Deals, rt.CurrEpoch())
 		return nil

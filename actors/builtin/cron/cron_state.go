@@ -6,15 +6,15 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
-type CronActorState struct {
-	Entries []CronTableEntry
+type State struct {
+	Entries []Entry
 }
 
-type CronTableEntry struct {
+type Entry struct {
 	Receiver  addr.Address  // The actor to call (must be an ID-address)
 	MethodNum abi.MethodNum // The method number to call (must accept empty parameters)
 }
 
-func ConstructState(entries []CronTableEntry) *CronActorState {
-	return &CronActorState{Entries: entries}
+func ConstructState(entries []Entry) *State {
+	return &State{Entries: entries}
 }

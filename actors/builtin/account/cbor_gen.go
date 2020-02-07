@@ -12,7 +12,7 @@ import (
 
 var _ = xerrors.Errorf
 
-func (t *AccountActorState) MarshalCBOR(w io.Writer) error {
+func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -28,7 +28,7 @@ func (t *AccountActorState) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *AccountActorState) UnmarshalCBOR(r io.Reader) error {
+func (t *State) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

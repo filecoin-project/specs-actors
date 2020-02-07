@@ -14,19 +14,19 @@ import (
 
 type AddrKey = adt.AddrKey
 
-type InitActorState struct {
+type State struct {
 	AddressMap  cid.Cid // HAMT[addr.Address]abi.ActorID
 	NextID      abi.ActorID
 	NetworkName string
 }
 
-func ConstructState(store adt.Store, networkName string) (*InitActorState, error) {
+func ConstructState(store adt.Store, networkName string) (*State, error) {
 	emptyMap, err := adt.MakeEmptyMap(store)
 	if err != nil {
 		return nil, err
 	}
 
-	return &InitActorState{
+	return &State{
 		AddressMap:  emptyMap.Root(),
 		NextID:      abi.ActorID(builtin.FirstNonSingletonActorId),
 		NetworkName: networkName,
@@ -36,7 +36,7 @@ func ConstructState(store adt.Store, networkName string) (*InitActorState, error
 // Resolves an address to an ID-address, if possible.
 // If the provided address is not in the table, it is returned as-is. This means that ID-addresses
 // (which should only appear as values, not keys) and singleton actor addresses pass through unchanged.
-func (s *InitActorState) ResolveAddress(store adt.Store, address addr.Address) (addr.Address, error) {
+func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Address, error) {
 	m := adt.AsMap(store, s.AddressMap)
 	var actorID cbg.CborInt
 	found, err := m.Get(AddrKey(address), &actorID)
@@ -53,7 +53,7 @@ func (s *InitActorState) ResolveAddress(store adt.Store, address addr.Address) (
 
 // Allocates a new ID address and stores a mapping of the argument address to it.
 // Returns the newly-allocated address.
-func (s *InitActorState) MapAddressToNewID(store adt.Store, address addr.Address) (addr.Address, error) {
+func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.Address, error) {
 	actorID := cbg.CborInt(s.NextID)
 	s.NextID++
 

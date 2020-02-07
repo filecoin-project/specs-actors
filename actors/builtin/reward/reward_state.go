@@ -10,7 +10,7 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-type RewardActorState struct {
+type State struct {
 	RewardMap cid.Cid // HAMT[Address]AMT[Reward]
 }
 
@@ -31,18 +31,18 @@ const (
 
 type AddrKey = adt.AddrKey
 
-func ConstructState(store adt.Store) (*RewardActorState, error) {
+func ConstructState(store adt.Store) (*State, error) {
 	rewards, err := adt.MakeEmptyMultiap(store)
 	if err != nil {
 		return nil, err
 	}
 
-	return &RewardActorState{
+	return &State{
 		RewardMap: rewards.Root(),
 	}, nil
 }
 
-func (st *RewardActorState) addReward(store adt.Store, owner addr.Address, reward *Reward) error {
+func (st *State) addReward(store adt.Store, owner addr.Address, reward *Reward) error {
 	rewards := adt.AsMultimap(store, st.RewardMap)
 	key := AddrKey(owner)
 	err := rewards.Add(key, reward)
@@ -54,7 +54,7 @@ func (st *RewardActorState) addReward(store adt.Store, owner addr.Address, rewar
 }
 
 // Calculates and subtracts the total withdrawable reward for an owner.
-func (st *RewardActorState) withdrawReward(store adt.Store, owner addr.Address, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	rewards := adt.AsMultimap(store, st.RewardMap)
 	key := AddrKey(owner)
 

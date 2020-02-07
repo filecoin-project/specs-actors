@@ -22,7 +22,7 @@ type constructorTestCase struct {
 }
 
 func TestAccountactor(t *testing.T) {
-	actor := account.AccountActor{}
+	actor := account.Actor{}
 
 	receiver := tutil.NewIDAddr(t, 100)
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
@@ -57,7 +57,7 @@ func TestAccountactor(t *testing.T) {
 			if tc.exitCode.IsSuccess() {
 				rt.Call(actor.Constructor, &tc.addr)
 
-				var st account.AccountActorState
+				var st account.State
 				rt.GetState(&st)
 				assert.Equal(t, tc.addr, st.Address)
 

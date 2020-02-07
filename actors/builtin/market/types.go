@@ -1,4 +1,4 @@
-package storage_market
+package market
 
 import (
 	"github.com/ipfs/go-cid"

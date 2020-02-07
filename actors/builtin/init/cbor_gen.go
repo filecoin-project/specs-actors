@@ -13,7 +13,7 @@ import (
 
 var _ = xerrors.Errorf
 
-func (t *InitActorState) MarshalCBOR(w io.Writer) error {
+func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -47,7 +47,7 @@ func (t *InitActorState) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *InitActorState) UnmarshalCBOR(r io.Reader) error {
+func (t *State) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -106,10 +106,10 @@ func (t *ExecParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.CodeID (cid.Cid) (struct)
+	// t.CodeCID (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(w, t.CodeID); err != nil {
-		return xerrors.Errorf("failed to write cid field t.CodeID: %w", err)
+	if err := cbg.WriteCid(w, t.CodeCID); err != nil {
+		return xerrors.Errorf("failed to write cid field t.CodeCID: %w", err)
 	}
 
 	// t.ConstructorParams ([]uint8) (slice)
@@ -141,16 +141,16 @@ func (t *ExecParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.CodeID (cid.Cid) (struct)
+	// t.CodeCID (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.CodeID: %w", err)
+			return xerrors.Errorf("failed to read cid field t.CodeCID: %w", err)
 		}
 
-		t.CodeID = c
+		t.CodeCID = c
 
 	}
 	// t.ConstructorParams ([]uint8) (slice)

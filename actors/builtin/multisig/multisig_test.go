@@ -20,7 +20,7 @@ import (
 )
 
 func TestConstruction(t *testing.T) {
-	actor := multisig.MultiSigActor{}
+	actor := multisig.Actor{}
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -42,7 +42,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, adt.EmptyValue{}, *ret)
 		rt.Verify()
 
-		var st multisig.MultiSigActorState
+		var st multisig.State
 		rt.GetState(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
@@ -67,7 +67,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, adt.EmptyValue{}, *ret)
 		rt.Verify()
 
-		var st multisig.MultiSigActorState
+		var st multisig.State
 		rt.GetState(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
@@ -79,7 +79,7 @@ func TestConstruction(t *testing.T) {
 }
 
 func TestVesting(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -190,7 +190,7 @@ func TestVesting(t *testing.T) {
 }
 
 func TestPropose(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -214,7 +214,7 @@ func TestPropose(t *testing.T) {
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 
 		// the transaction remains awaiting second approval
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   builtin.MethodSend,
@@ -279,7 +279,7 @@ func TestPropose(t *testing.T) {
 }
 
 func TestApprove(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -306,7 +306,7 @@ func TestApprove(t *testing.T) {
 		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
@@ -345,7 +345,7 @@ func TestApprove(t *testing.T) {
 		rt.Verify()
 
 		// Transaction still exists
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   builtin.MethodSend,
@@ -374,7 +374,7 @@ func TestApprove(t *testing.T) {
 		rt.Verify()
 
 		// Transaction was not removed from store.
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   builtin.MethodSend,
@@ -403,7 +403,7 @@ func TestApprove(t *testing.T) {
 		rt.Verify()
 
 		// Transaction was not removed from store.
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   builtin.MethodSend,
@@ -414,7 +414,7 @@ func TestApprove(t *testing.T) {
 }
 
 func TestCancel(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	richard := tutil.NewIDAddr(t, 104)
 	receiver := tutil.NewIDAddr(t, 100)
@@ -473,7 +473,7 @@ func TestCancel(t *testing.T) {
 		rt.Verify()
 
 		// Transaction should remain after invalid cancel
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
@@ -502,7 +502,7 @@ func TestCancel(t *testing.T) {
 		rt.Verify()
 
 		// Transaction should remain after invalid cancel
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
@@ -531,7 +531,7 @@ func TestCancel(t *testing.T) {
 		rt.Verify()
 
 		// Transaction should remain after invalid cancel
-		actor.assertTransactions(rt, multisig.MultiSigTransaction{
+		actor.assertTransactions(rt, multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
@@ -556,7 +556,7 @@ type addSignerTestCase struct {
 }
 
 func TestAddSigner(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -621,7 +621,7 @@ func TestAddSigner(t *testing.T) {
 				})
 			} else {
 				actor.addSigner(rt, tc.addSigner, tc.increase)
-				var st multisig.MultiSigActorState
+				var st multisig.State
 				rt.Readonly(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
@@ -646,7 +646,7 @@ type removeSignerTestCase struct {
 }
 
 func TestRemoveSigner(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -740,7 +740,7 @@ func TestRemoveSigner(t *testing.T) {
 				})
 			} else {
 				actor.removeSigner(rt, tc.removeSigner, tc.decrease)
-				var st multisig.MultiSigActorState
+				var st multisig.State
 				rt.Readonly(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
@@ -759,7 +759,7 @@ type swapTestCase struct {
 }
 
 func TestSwapSigners(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -810,7 +810,7 @@ func TestSwapSigners(t *testing.T) {
 				})
 			} else {
 				actor.swapSigners(rt, tc.from, tc.to)
-				var st multisig.MultiSigActorState
+				var st multisig.State
 				rt.Readonly(&st)
 				assert.Equal(t, tc.expect, st.Signers)
 			}
@@ -827,7 +827,7 @@ type thresholdTestCase struct {
 }
 
 func TestChangeThreshold(t *testing.T) {
-	actor := msActorHarness{multisig.MultiSigActor{}, t}
+	actor := msActorHarness{multisig.Actor{}, t}
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -887,7 +887,7 @@ func TestChangeThreshold(t *testing.T) {
 				})
 			} else {
 				actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
-				var st multisig.MultiSigActorState
+				var st multisig.State
 				rt.Readonly(&st)
 				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
 			}
@@ -901,7 +901,7 @@ func TestChangeThreshold(t *testing.T) {
 //
 
 type msActorHarness struct {
-	multisig.MultiSigActor
+	multisig.Actor
 	t testing.TB
 }
 
@@ -913,7 +913,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-	constructRet := rt.Call(h.MultiSigActor.Constructor, &constructParams).(*adt.EmptyValue)
+	constructRet := rt.Call(h.Actor.Constructor, &constructParams).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 }
@@ -925,19 +925,19 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Method: method,
 		Params: params,
 	}
-	rt.Call(h.MultiSigActor.Propose, proposeParams)
+	rt.Call(h.Actor.Propose, proposeParams)
 }
 
 // TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
 // exercise both un/successful sends.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	rt.Call(h.MultiSigActor.Approve, approveParams)
+	rt.Call(h.Actor.Approve, approveParams)
 }
 
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
 	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	rt.Call(h.MultiSigActor.Cancel, cancelParams)
+	rt.Call(h.Actor.Cancel, cancelParams)
 }
 
 func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increase bool) {
@@ -945,7 +945,7 @@ func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increa
 		Signer:   signer,
 		Increase: increase,
 	}
-	rt.Call(h.MultiSigActor.AddSigner, addSignerParams)
+	rt.Call(h.Actor.AddSigner, addSignerParams)
 }
 
 func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, decrease bool) {
@@ -953,7 +953,7 @@ func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, dec
 		Signer:   signer,
 		Decrease: decrease,
 	}
-	rt.Call(h.MultiSigActor.RemoveSigner, rmSignerParams)
+	rt.Call(h.Actor.RemoveSigner, rmSignerParams)
 }
 
 func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr.Address) {
@@ -961,16 +961,16 @@ func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr
 		From: oldSigner,
 		To:   newSigner,
 	}
-	rt.Call(h.MultiSigActor.SwapSigner, swpParams)
+	rt.Call(h.Actor.SwapSigner, swpParams)
 }
 
 func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold int64) {
 	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
-	rt.Call(h.MultiSigActor.ChangeNumApprovalsThreshold, thrshParams)
+	rt.Call(h.Actor.ChangeNumApprovalsThreshold, thrshParams)
 }
 
-func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.MultiSigTransaction) {
-	var st multisig.MultiSigActorState
+func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.Transaction) {
+	var st multisig.State
 	rt.GetState(&st)
 
 	txns := adt.AsMap(rt.Store(), st.PendingTxns)
@@ -979,7 +979,7 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 
 	require.Equal(h.t, len(expected), len(keys))
 	for i, k := range keys {
-		var actual multisig.MultiSigTransaction
+		var actual multisig.Transaction
 		found, err_ := txns.Get(asKey(k), &actual)
 		require.NoError(h.t, err_)
 		assert.True(h.t, found)
