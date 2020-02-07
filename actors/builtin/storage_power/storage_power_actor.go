@@ -215,18 +215,6 @@ func (a *StoragePowerActor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *
 	return &adt.EmptyValue{}
 }
 
-type OnSectorProveCommitParams struct {
-	Weight SectorStorageWeightDesc
-}
-
-func (a *StoragePowerActor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), params.Weight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
-	}
-	return &adt.EmptyValue{}
-}
-
 type OnSectorTerminateParams struct {
 	TerminationType SectorTermination
 	Weight          SectorStorageWeightDesc
@@ -287,10 +275,22 @@ func (a *StoragePowerActor) OnSectorModifyWeightDesc(rt Runtime, params *OnSecto
 	return &adt.EmptyValue{}
 }
 
-func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+type OnMinerSurprisePoStSuccessParams struct {
+	Weights []SectorStorageWeightDesc
+}
+
+func (a *StoragePowerActor) OnMinerSurprisePoStSuccess(rt Runtime, params *OnMinerSurprisePoStSuccessParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
+	// add power for challenged sectors
+	for _, wt := range params.Weights {
+		if err := a.addPowerForSector(rt, minerAddr, wt); err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
+		}
+	}
+
+	// remove faults
 	var st StoragePowerActorState
 	rt.State().Transaction(&st, func() interface{} {
 		if err := st.deleteFault(adt.AsStore(rt), minerAddr); err != nil {

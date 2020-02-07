@@ -29,12 +29,6 @@ func (t *StorageMinerActorState) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
 	}
 
-	// t.Sectors (cid.Cid) (struct)
-
-	if err := cbg.WriteCid(w, t.Sectors); err != nil {
-		return xerrors.Errorf("failed to write cid field t.Sectors: %w", err)
-	}
-
 	// t.FaultSet (abi.BitField) (struct)
 	if err := t.FaultSet.MarshalCBOR(w); err != nil {
 		return err
@@ -83,18 +77,6 @@ func (t *StorageMinerActorState) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.PreCommittedSectors = c
-
-	}
-	// t.Sectors (cid.Cid) (struct)
-
-	{
-
-		c, err := cbg.ReadCid(br)
-		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.Sectors: %w", err)
-		}
-
-		t.Sectors = c
 
 	}
 	// t.FaultSet (abi.BitField) (struct)

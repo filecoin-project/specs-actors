@@ -110,7 +110,6 @@ const (
 	Method_StoragePowerActor_ReportConsensusFault
 
 	// Internal mechanism events
-	Method_StoragePowerActor_OnSectorProveCommit
 	Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin
 	Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd
 	Method_StoragePowerActor_OnSectorModifyWeightDesc

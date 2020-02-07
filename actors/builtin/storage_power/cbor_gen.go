@@ -747,49 +747,6 @@ func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{129}); err != nil {
-		return err
-	}
-
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
-	if err := t.Weight.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *OnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Weight (storage_power.SectorStorageWeightDesc) (struct)
-
-	{
-
-		if err := t.Weight.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
 func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)

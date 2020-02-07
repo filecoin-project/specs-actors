@@ -150,9 +150,25 @@ func (a *StorageMinerActor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValu
 		err := rt.CurrReceiver().MarshalCBOR(&curRecBuf)
 		autil.AssertNoError(err)
 
+		// all committed and proving sectors are challenged
+		challSecs := make(map[abi.SectorNumber]bool)
+		err = st.forEachSector(adt.AsStore(rt), SetIdentifier_CommittedSet, func(sector *SectorOnChainInfo) {
+			challSecs[sector.Info.SectorNumber] = true
+		})
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to traverse committed set to challenge: %v", err)
+		}
+		err = st.forEachSector(adt.AsStore(rt), SetIdentifier_ProvingSet, func(sector *SectorOnChainInfo) {
+			challSecs[sector.Info.SectorNumber] = true
+		})
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to traverse proving set to challenge: %v", err)
+		}
+
 		st.PoStState = MinerPoStState{
 			LastSuccessfulPoSt:     st.PoStState.LastSuccessfulPoSt,
 			SurpriseChallengeEpoch: rt.CurrEpoch(),
+			ChallengedSectors:      challSecs,
 			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures,
 		}
 		return true
@@ -177,28 +193,68 @@ type SubmitSurprisePoStResponseParams struct {
 // Invoked by miner's worker address to submit a response to a pending SurprisePoSt challenge.
 func (a *StorageMinerActor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoStResponseParams) *adt.EmptyValue {
 	var st StorageMinerActorState
-	rt.State().Transaction(&st, func() interface{} {
-		rt.ValidateImmediateCallerIs(st.Info.Worker)
-		if !st.PoStState.isChallenged() {
-			rt.Abort(exitcode.ErrIllegalState, "Not currently challenged")
-		}
-		a.verifySurprisePost(rt, &st, &params.onChainInfo)
+	rt.State().Readonly(&st)
+	rt.ValidateImmediateCallerIs(st.Info.Worker)
+	if !st.PoStState.isChallenged() {
+		rt.Abort(exitcode.ErrIllegalState, "Not currently challenged")
+	}
+	a.verifySurprisePost(rt, &st, &params.onChainInfo)
 
+	// Surprise PoSt is valid
+
+	// Notify SPA to update power associated to newly activated sectors
+	// ie those that were committed but not yet PoSted
+	challengedWeights := []storage_power.SectorStorageWeightDesc{}
+	err := st.forEachSector(adt.AsStore(rt), SetIdentifier_CommittedSet, func(sector *SectorOnChainInfo) {
+		_, challenged := st.PoStState.ChallengedSectors[sector.Info.SectorNumber]
+		if challenged {
+			challengedWeights = append(challengedWeights, asStorageWeightDesc(st.Info.SectorSize, sector))
+		}
+	})
+	if err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "failed to traverse challenged sectors for weight: %v", err)
+	}
+
+	_, code := rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.Method_StoragePowerActor_OnMinerSurprisePoStSuccess,
+		&storage_power.OnMinerSurprisePoStSuccessParams{
+			Weights: challengedWeights,
+		}, abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to notify storage power actor")
+
+	// Update Miner State
+	rt.State().Transaction(&st, func() interface{} {
+
+		// move challenged sectors from committedSet into ProvingSet
+		err := st.forEachSector(adt.AsStore(rt), SetIdentifier_CommittedSet, func(sector *SectorOnChainInfo) {
+			_, challenged := st.PoStState.ChallengedSectors[sector.Info.SectorNumber]
+			if challenged {
+				err2 := st.putSector(adt.AsStore(rt), SetIdentifier_ProvingSet, sector)
+				err3 := st.deleteSector(adt.AsStore(rt), SetIdentifier_CommittedSet, sector.Info.SectorNumber)
+				if err2 != nil {
+					rt.Abort(exitcode.ErrIllegalState, "failed to put sector into proving set: %v", err)
+				}
+				if err3 != nil {
+					rt.Abort(exitcode.ErrIllegalState, "failed to delete sector from committed set: %v", err)
+				}
+			}
+		})
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to traverse sectors moving challenged set into proving set: %v", err)
+		}
+
+		// update PoStState
 		st.PoStState = MinerPoStState{
 			LastSuccessfulPoSt:     rt.CurrEpoch(),
 			SurpriseChallengeEpoch: epochUndefined,
+			ChallengedSectors:      make(map[abi.SectorNumber]bool),
 			NumConsecutiveFailures: 0,
 		}
 		return nil
 	})
 
-	_, code := rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.Method_StoragePowerActor_OnMinerSurprisePoStSuccess,
-		&adt.EmptyValue{},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify storage power actor")
 	return &adt.EmptyValue{}
 }
 
@@ -255,7 +311,13 @@ func (a *StorageMinerActor) PreCommitSector(rt Runtime, params *PreCommitSectorP
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	if found, err := st.hasSectorNo(store, params.info.SectorNumber); err != nil {
+	if found, err := st.hasSectorNo(store, SetIdentifier_CommittedSet, params.info.SectorNumber); err != nil {
+		rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.info.SectorNumber, err)
+	} else if found {
+		rt.Abort(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
+	}
+
+	if found, err := st.hasSectorNo(store, SetIdentifier_ProvingSet, params.info.SectorNumber); err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.info.SectorNumber, err)
 	} else if found {
 		rt.Abort(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
@@ -346,7 +408,7 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 	autil.AssertNoError(ret.Into(&dealWeight))
 
 	rt.State().Transaction(&st, func() interface{} {
-		if err = st.putSector(adt.AsStore(rt), &SectorOnChainInfo{
+		if err = st.putSector(adt.AsStore(rt), SetIdentifier_CommittedSet, &SectorOnChainInfo{
 			Info:            precommit.Info,
 			ActivationEpoch: rt.CurrEpoch(),
 			DealWeight:      dealWeight,
@@ -354,11 +416,10 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 			rt.Abort(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
-		if err = st.deletePrecommitttedSector(store, sectorNo); err != nil {
+		if err = st.deletePrecommittedSector(store, sectorNo); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "faile to delete proven precommit for sector %v: %v", sectorNo, err)
 		}
 
-		st.ProvingSet = st.ComputeProvingSet()
 		return nil
 	})
 
@@ -368,21 +429,6 @@ func (a *StorageMinerActor) ProveCommitSector(rt Runtime, params *ProveCommitSec
 		Sectors:   []abi.SectorNumber{sectorNo},
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
-
-	// Notify SPA to update power associated to newly activated sector.
-	storageWeightDesc, err := a._rtGetStorageWeightDescForSector(rt, sectorNo)
-	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to get weight for sector %v: %v", sectorNo, err)
-	}
-	_, code = rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.Method_StoragePowerActor_OnSectorProveCommit,
-		&storage_power.OnSectorProveCommitParams{
-			Weight: *storageWeightDesc,
-		},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, precommit.PreCommitDeposit)
@@ -412,7 +458,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, params *ExtendSec
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		sector, found, err := st.getSector(store, sectorNo)
+		sector, found, ident, err := st.getSector(store, sectorNo)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 		} else if !found {
@@ -425,7 +471,7 @@ func (a *StorageMinerActor) ExtendSectorExpiration(rt Runtime, params *ExtendSec
 		}
 
 		sector.Info.Expiration = params.newExpiration
-		if err = st.putSector(store, sector); err != nil {
+		if err = st.putSector(store, ident, sector); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
 		return nil
@@ -497,7 +543,7 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTem
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 		for _, sectorNumber := range params.sectorNumbers {
-			sector, found, err := st.getSector(store, sectorNumber)
+			sector, found, ident, err := st.getSector(store, sectorNumber)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 			}
@@ -512,7 +558,7 @@ func (a *StorageMinerActor) DeclareTemporaryFaults(rt Runtime, params DeclareTem
 
 			sector.DeclaredFaultEpoch = rt.CurrEpoch()
 			sector.DeclaredFaultDuration = params.duration
-			if err = st.putSector(store, sector); err != nil {
+			if err = st.putSector(store, ident, sector); err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 			}
 		}
@@ -585,7 +631,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	sector, found, err := st.getSector(store, sectorNumber)
+	sector, found, ident, err := st.getSector(store, sectorNumber)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "error loading sector %v: %v", sectorNumber, err)
 	} else if !found {
@@ -640,7 +686,7 @@ func (a *StorageMinerActor) _rtCheckTemporaryFaultEvents(rt Runtime, sectorNumbe
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
-		if err = st.putSector(store, sector); err != nil {
+		if err = st.putSector(store, ident, sector); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 		}
 		return nil
@@ -660,7 +706,7 @@ func (a *StorageMinerActor) _rtCheckPreCommitExpiry(rt Runtime, sectorNo abi.Sec
 
 	if rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
 		rt.State().Transaction(&st, func() interface{} {
-			err = st.deletePrecommitttedSector(store, sectorNo)
+			err = st.deletePrecommittedSector(store, sectorNo)
 			if err != nil {
 				rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
 			}
@@ -675,7 +721,7 @@ func (a *StorageMinerActor) _rtCheckPreCommitExpiry(rt Runtime, sectorNo abi.Sec
 func (a *StorageMinerActor) _rtCheckSectorExpiry(rt Runtime, sectorNumber abi.SectorNumber) {
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
-	sector, found, err := st.getSector(adt.AsStore(rt), sectorNumber)
+	sector, found, _, err := st.getSector(adt.AsStore(rt), sectorNumber)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 	} else if !found {
@@ -695,7 +741,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 
-	sector, found, err := st.getSector(store, sectorNumber)
+	sector, found, ident, err := st.getSector(store, sectorNumber)
 	if err != nil {
 		rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", sectorNumber, err)
 	}
@@ -747,7 +793,7 @@ func (a *StorageMinerActor) _rtTerminateSector(rt Runtime, sectorNumber abi.Sect
 	)
 	builtin.RequireSuccess(rt, code, "failed to terminate sector with power actor")
 
-	a._rtDeleteSectorEntry(rt, sectorNumber)
+	a._rtDeleteSectorEntry(rt, ident, sectorNumber)
 }
 
 func (a *StorageMinerActor) _rtCheckSurprisePoStExpiry(rt Runtime) {
@@ -817,10 +863,10 @@ func (a *StorageMinerActor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoc
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, sectorNo abi.SectorNumber) {
+func (a *StorageMinerActor) _rtDeleteSectorEntry(rt Runtime, ident SetIdentifier, sectorNo abi.SectorNumber) {
 	var st StorageMinerActorState
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.deleteSector(adt.AsStore(rt), sectorNo)
+		err := st.deleteSector(adt.AsStore(rt), ident, sectorNo)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
 		}
@@ -857,7 +903,7 @@ func (a *StorageMinerActor) _rtNotifyMarketForTerminatedSectors(rt Runtime) erro
 	var st StorageMinerActorState
 	rt.State().Readonly(&st)
 	dealIds := []abi.DealID{}
-	err := st.forEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
+	err := st.forEachSector(adt.AsStore(rt), SetIdentifier_ProvingSet, func(sector *SectorOnChainInfo) {
 		dealIds = append(dealIds, sector.Info.DealIDs...)
 	})
 	if err != nil {

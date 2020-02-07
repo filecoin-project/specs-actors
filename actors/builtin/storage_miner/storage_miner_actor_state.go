@@ -8,7 +8,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	storage_power "github.com/filecoin-project/specs-actors/actors/builtin/storage_power"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -16,13 +15,20 @@ import (
 // that are not yet returned or burned.
 type StorageMinerActorState struct {
 	PreCommittedSectors cid.Cid // Map, HAMT[sectorNumber]SectorPreCommitOnChainInfo
-	Sectors             cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
-	FaultSet            abi.BitField
+	CommittedSet        cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
+	FaultSet            abi.BitField
 
 	Info      MinerInfo // TODO: this needs to be a cid of the miner info struct
 	PoStState MinerPoStState
 }
+
+type SetIdentifier int64
+
+const (
+	SetIdentifier_CommittedSet = SetIdentifier(0)
+	SetIdentifier_ProvingSet   = SetIdentifier(1)
+)
 
 type MinerInfo struct {
 	// Account that owns this miner.
@@ -58,6 +64,9 @@ type MinerPoStState struct {
 	// and as a result, the system has fallen back to proving storage via SurprisePoSt.
 	//  `epochUndefined` if not currently challeneged.
 	SurpriseChallengeEpoch abi.ChainEpoch
+
+	// True for challenged sector numbers when miner is challenged.
+	ChallengedSectors cid.Cid // Map, HAMT[abi.SectorNumber]bool
 
 	// Number of surprised post challenges that have been failed since last successful PoSt.
 	// Indicates that the claimed storage power may not actually be proven. Recovery can proceed by
@@ -105,7 +114,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 	}
 	return &StorageMinerActorState{
 		PreCommittedSectors: emptyMap.Root(),
-		Sectors:             emptyArray.Root(),
+		CommittedSet:        emptyArray.Root(),
 		FaultSet:            abi.NewBitField(),
 		ProvingSet:          emptyArray.Root(),
 		Info: MinerInfo{
@@ -118,6 +127,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 		PoStState: MinerPoStState{
 			LastSuccessfulPoSt:     epochUndefined,
 			SurpriseChallengeEpoch: epochUndefined,
+			ChallengedSectors:      emptyMap.Root(),
 			NumConsecutiveFailures: 0,
 		},
 	}, nil
@@ -159,8 +169,11 @@ func (st *StorageMinerActorState) deletePrecommittedSector(store adt.Store, sect
 	return nil
 }
 
-func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
-	sectors := adt.AsArray(store, st.Sectors)
+func (st *StorageMinerActorState) hasSectorNo(store adt.Store, ident SetIdentifier, sectorNo abi.SectorNumber) (bool, error) {
+	sectors := getSet(ident)
+	if sectors == nil {
+		return false, errors.Wrapf(err, "invalid sector set requested %v", ident)
+	}
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
@@ -169,16 +182,24 @@ func (st *StorageMinerActorState) hasSectorNo(store adt.Store, sectorNo abi.Sect
 	return found, nil
 }
 
-func (st *StorageMinerActorState) putSector(store adt.Store, sector *SectorOnChainInfo) error {
-	sectors := adt.AsArray(store, st.Sectors)
+func (st *StorageMinerActorState) putSector(store adt.Store, ident SetIdentifier, sector *SectorOnChainInfo) error {
+	sectors := getSet(ident)
+	if sectors == nil {
+		return errors.Wrapf(err, "invalid sector set requested %v", ident)
+	}
+
 	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
 	return nil
 }
 
-func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
-	sectors := adt.AsArray(store, st.Sectors)
+func (st *StorageMinerActorState) getSectorFromSet(store adt.Store, ident SetIdentifier, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
+	sectors := getSet(ident)
+	if sectors == nil {
+		return nil, false, errors.Wrapf(err, "invalid sector set requested %v", ident)
+	}
+
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
@@ -187,16 +208,56 @@ func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.Sector
 	return &info, found, nil
 }
 
-func (st *StorageMinerActorState) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
-	sectors := adt.AsArray(store, st.Sectors)
+func (st *StorageMinerActorState) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, SetIdentifier, error) {
+	commSector, commFound, cErr := st.getSectorFromSet(store, SetIdentifier_CommittedSet, sectorNo)
+	provSector, provFound, pErr := st.getSectorFromSet(store, SetIdentifier_CommittedSet, sectorNo)
+
+	if cErr != nil {
+		return nil, false, errors.Wrapf(cErr, "failed to get sector %v", sectorNo)
+	}
+	if pErr != nil {
+		return nil, false, errors.Wrapf(pErr, "failed to get sector %v", sectorNo)
+	}
+
+	if commFound {
+		return commSector, commFound, SetIdentifier_CommittedSet, nil
+	}
+	if provFound {
+		return provSector, provFound, SetIdentifier_ProvingSet, nil
+	}
+	return nil, false, nil, nil
+}
+
+func (st *StorageMinerActorState) deleteSector(store adt.Store, ident SetIdentifier, sectorNo abi.SectorNumber) error {
+	sectors := getSet(ident)
+	if sectors == nil {
+		return errors.Wrapf(err, "invalid sector set requested %v", ident)
+	}
+
 	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
 	}
 	return nil
 }
 
-func (st *StorageMinerActorState) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
-	sectors := adt.AsArray(store, st.Sectors)
+func (st *StorageMinerActorState) listSectors(store adt.Store, ident SetIdentifier) ([]abi.SectorNumber, error) {
+	var ls []abi.SectorNumber
+	err := st.forEachSector(store, ident, func(sector *SectorOnChainInfo) {
+		ls = append(ls, sector.Info.SectorNumber)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ls, nil
+}
+
+func (st *StorageMinerActorState) forEachSector(store adt.Store, ident SetIdentifier, f func(*SectorOnChainInfo)) error {
+	sectors := getSet(ident)
+	if sectors == nil {
+		return errors.Wrapf(err, "invalid sector set requested %v", ident)
+	}
+
 	var sector SectorOnChainInfo
 	return sectors.ForEach(&sector, func(idx int64) error {
 		f(&sector)
@@ -205,7 +266,7 @@ func (st *StorageMinerActorState) forEachSector(store adt.Store, f func(*SectorO
 }
 
 func (st *StorageMinerActorState) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*storage_power.SectorStorageWeightDesc, error) {
-	sectorInfo, found, err := st.getSector(store, sectorNo)
+	sectorInfo, found, _, err := st.getSector(store, sectorNo)
 	if err != nil {
 		return nil, err
 	} else if !found {
@@ -213,6 +274,30 @@ func (st *StorageMinerActorState) GetStorageWeightDescForSector(store adt.Store,
 	}
 
 	return asStorageWeightDesc(st.Info.SectorSize, sectorInfo), nil
+}
+
+// formatting helper
+func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) storage_power.SectorStorageWeightDesc {
+	return storage_power.SectorStorageWeightDesc{
+		SectorSize: sectorSize,
+		DealWeight: sectorInfo.DealWeight,
+		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
+	}
+}
+
+func getSet(ident SetIdentifier) *adt.Array {
+	var sectors *adt.Array
+	switch ident {
+	case SetIdentifier_CommittedSet:
+		sectors = adt.AsArray(store, st.CommittedSet)
+	case SetIdentifier_ProvingSet:
+		sectors = adt.AsArray(store, st.ProvingSet)
+	case SetIdentifier_ChallengedSet:
+		sectors = adt.AsArray(store, st.ChallengedSet)
+	default:
+		sectors = nil
+	}
+	return sectors
 }
 
 func (st *StorageMinerActorState) IsSectorInTemporaryFault(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
@@ -236,12 +321,6 @@ func (st *StorageMinerActorState) ComputeProvingSet() cid.Cid {
 	return ret
 }
 
-func (st *StorageMinerActorState) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
-	// TODO hs: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
-	autil.TODO()
-	panic("")
-}
-
 // Must be significantly larger than DeclaredFaultEpoch, since otherwise it may be possible
 // to declare faults adaptively in order to exempt challenged sectors.
 func (x *SectorOnChainInfo) EffectiveFaultBeginEpoch() abi.ChainEpoch {
@@ -262,12 +341,4 @@ func (mps *MinerPoStState) isPoStOk() bool {
 
 func (mps *MinerPoStState) hasFailedPost() bool {
 	return mps.NumConsecutiveFailures > 0
-}
-
-func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *storage_power.SectorStorageWeightDesc {
-	return &storage_power.SectorStorageWeightDesc{
-		SectorSize: sectorSize,
-		DealWeight: sectorInfo.DealWeight,
-		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
-	}
 }
