@@ -39,6 +39,7 @@ func NewStoragePower(n int64) StoragePower {
 type RegisteredProof int64
 
 const (
+	RegisteredProof_Undefined              = RegisteredProof(0)
 	RegisteredProof_WinStackedDRG32GiBSeal = RegisteredProof(1)
 	RegisteredProof_WinStackedDRG32GiBPoSt = RegisteredProof(2)
 	RegisteredProof_StackedDRG32GiBSeal    = RegisteredProof(3)
@@ -81,7 +82,7 @@ type OnChainSealVerifyInfo struct {
 	Proof   SealProof
 	DealIDs []DealID
 	SectorNumber
-	SealEpoch ChainEpoch // Used to tie the seal to a chain.
+	SealRandEpoch ChainEpoch // Used to tie the seal to a chain.
 }
 
 type SealProof struct { //<curve, system> {

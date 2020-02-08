@@ -387,13 +387,13 @@ func (t *OnChainSealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SealEpoch (abi.ChainEpoch) (int64)
-	if t.SealEpoch >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealEpoch))); err != nil {
+	// t.SealRandEpoch (abi.ChainEpoch) (int64)
+	if t.SealRandEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealRandEpoch))); err != nil {
 			return err
 		}
 	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealEpoch)-1)); err != nil {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealRandEpoch)-1)); err != nil {
 			return err
 		}
 	}
@@ -527,7 +527,7 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("wrong type for uint64 field")
 	}
 	t.SectorNumber = SectorNumber(extra)
-	// t.SealEpoch (abi.ChainEpoch) (int64)
+	// t.SealRandEpoch (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -550,7 +550,7 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.SealEpoch = ChainEpoch(extraI)
+		t.SealRandEpoch = ChainEpoch(extraI)
 	}
 	return nil
 }
