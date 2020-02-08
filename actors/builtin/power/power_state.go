@@ -68,8 +68,9 @@ func ConstructState(store adt.Store) (*State, error) {
 	}, nil
 }
 
+// Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate
+// Election PoSt winners outside the chain state. We may remove it.
 func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
-
 	// if miner is larger than min power requirement, we're set
 	if minerPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		return true, nil

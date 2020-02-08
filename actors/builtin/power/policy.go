@@ -3,6 +3,7 @@ package power
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 )
 
 // The average period (i.e. 1/frequency) of surprise PoSt challenges to each miner.
@@ -24,7 +25,7 @@ const ConsensusMinerMinMiners = 3
 var PledgeFactor = big.NewInt(3) // PARAM_FINISH
 
 // Total expected block reward per epoch (per-winner reward * expected winners), as input to pledge requirement.
-var EpochTotalExpectedReward = big.NewInt(100 * 5) // PARAM_FINISH
+var EpochTotalExpectedReward = big.Mul(reward.BlockRewardTarget, big.NewInt(5)) // PARAM_FINISH
 
 // Minimum power of an individual miner to meet the threshold for leader election.
 var ConsensusMinerMinPower = abi.NewStoragePower(100 * (1 << 40)) // placeholder, 100 TB
