@@ -151,7 +151,7 @@ func (st *State) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	return &info, found, nil
 }
 
-func (st *State) deletePrecommitttedSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *State) deletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Delete(adt.IntKey(sectorNo))
 	if err != nil {
@@ -214,20 +214,6 @@ func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.Sec
 	}
 
 	return asStorageWeightDesc(st.Info.SectorSize, sectorInfo), nil
-}
-
-func (st *State) IsSectorInTemporaryFault(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
-	sectorInfo, found, err := st.getSector(store, sectorNo)
-	if err != nil {
-		return false, err
-	} else if !found {
-		return false, errors.Errorf("no such sector %v", sectorNo)
-	}
-	ret, err := st.FaultSet.Has(uint64(sectorNo))
-	AssertNoError(err)
-	Assert(sectorInfo.DeclaredFaultEpoch != epochUndefined)
-	Assert(sectorInfo.DeclaredFaultDuration != epochUndefined)
-	return ret, nil
 }
 
 func (st *State) ComputeProvingSet() cid.Cid {

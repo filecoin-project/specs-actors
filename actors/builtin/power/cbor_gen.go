@@ -667,9 +667,18 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
-	if err := t.Weight.MarshalCBOR(w); err != nil {
+	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	if len(t.Weights) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Weights was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
 		return err
+	}
+	for _, v := range t.Weights {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	// t.Pledge (big.Int) (struct)
@@ -719,15 +728,33 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.TerminationType = SectorTermination(extraI)
 	}
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
+	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		if err := t.Weight.UnmarshalCBOR(br); err != nil {
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Weights: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.Weights = make([]SectorStorageWeightDesc, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		var v SectorStorageWeightDesc
+		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
+		t.Weights[i] = v
 	}
+
 	// t.Pledge (big.Int) (struct)
 
 	{
@@ -1101,9 +1128,18 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) MarshalCBOR(w io.Writer) erro
 		return err
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
-	if err := t.Weight.MarshalCBOR(w); err != nil {
+	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	if len(t.Weights) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Weights was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
 		return err
+	}
+	for _, v := range t.Weights {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	// t.Pledge (big.Int) (struct)
@@ -1128,15 +1164,33 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) UnmarshalCBOR(r io.Reader) er
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
+	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		if err := t.Weight.UnmarshalCBOR(br); err != nil {
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Weights: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.Weights = make([]SectorStorageWeightDesc, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		var v SectorStorageWeightDesc
+		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
+		t.Weights[i] = v
 	}
+
 	// t.Pledge (big.Int) (struct)
 
 	{
@@ -1158,9 +1212,18 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) MarshalCBOR(w io.Writer) er
 		return err
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
-	if err := t.Weight.MarshalCBOR(w); err != nil {
+	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	if len(t.Weights) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Weights was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
 		return err
+	}
+	for _, v := range t.Weights {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	// t.Pledge (big.Int) (struct)
@@ -1185,15 +1248,33 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) UnmarshalCBOR(r io.Reader) 
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
+	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		if err := t.Weight.UnmarshalCBOR(br); err != nil {
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Weights: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.Weights = make([]SectorStorageWeightDesc, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		var v SectorStorageWeightDesc
+		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
+		t.Weights[i] = v
 	}
+
 	// t.Pledge (big.Int) (struct)
 
 	{

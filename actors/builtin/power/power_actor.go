@@ -248,7 +248,7 @@ func (a *Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParam
 
 type OnSectorTerminateParams struct {
 	TerminationType SectorTermination
-	Weight          SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	Weights         []SectorStorageWeightDesc  // TODO: replace with power if it can be computed by miner
 	Pledge          abi.TokenAmount
 }
 
@@ -258,7 +258,7 @@ func (a *Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeight(&params.Weight)
+		power := consensusPowerForWeights(params.Weights)
 		err := st.addToClaim(adt.AsStore(rt), minerAddr, power.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
@@ -274,7 +274,7 @@ func (a *Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *
 }
 
 type OnSectorTemporaryFaultEffectiveBeginParams struct {
-	Weight SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	Weights []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
 	Pledge abi.TokenAmount
 }
 
@@ -282,7 +282,7 @@ func (a *Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSecto
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeight(&params.Weight)
+		power := consensusPowerForWeights(params.Weights)
 		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
@@ -294,7 +294,7 @@ func (a *Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSecto
 }
 
 type OnSectorTemporaryFaultEffectiveEndParams struct {
-	Weight SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	Weights []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
 	Pledge abi.TokenAmount
 }
 
@@ -303,7 +303,7 @@ func (a *Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorT
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeight(&params.Weight)
+		power := consensusPowerForWeights(params.Weights)
 		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power, params.Pledge)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to add claimed power for sector: %v", err)
@@ -621,6 +621,14 @@ func (a *Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 
 	return nil
+}
+
+func consensusPowerForWeights(weights []SectorStorageWeightDesc) abi.StoragePower {
+	power := big.Zero()
+	for i := range weights {
+		power = big.Add(power, consensusPowerForWeight(&weights[i]))
+	}
+	return power
 }
 
 func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {
