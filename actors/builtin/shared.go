@@ -18,51 +18,17 @@ func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ..
 	}
 }
 
-// ActorCode is the interface that all actor code types should satisfy.
-// It is merely a method dispatch interface.
-type ActorCode interface {
-	//InvokeMethod(rt Runtime, method actor.MethodNum, params actor.MethodParams) InvocOutput
-	// Method dispatch mechanism is deferred to implementations.
-	// When the executable actor spec is complete we can re-instantiate something here.
+func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
+	ret, code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0))
+	RequireSuccess(rt, code, "failed fetching control addresses")
+	var addrs MinerAddrs
+	autil.AssertNoError(ret.Into(&addrs))
+
+	return addrs.Owner, addrs.Worker
 }
 
-func IsStorageMiner(rt runtime.Runtime, minerAddr addr.Address) bool {
-	codeID, ok := rt.GetActorCodeCID(minerAddr)
-	autil.Assert(ok)
-	return codeID == StorageMinerActorCodeID
-}
-
-func GetMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
-	ret, code := rt.Send(minerAddr, Method_StorageMinerActor_GetOwnerAddr, nil, abi.NewTokenAmount(0))
-	RequireSuccess(rt, code, "failed fetching owner addr")
-	autil.AssertNoError(ret.Into(&ownerAddr))
-
-	ret, code = rt.Send(minerAddr, Method_StorageMinerActor_GetWorkerAddr, nil, abi.NewTokenAmount(0))
-	RequireSuccess(rt, code, "failed fetching worker addr")
-	autil.AssertNoError(ret.Into(&workerAddr))
-	return
-}
-
-func MarketAddress(rt runtime.Runtime, addr addr.Address) addr.Address {
-	if IsStorageMiner(rt, addr) {
-		// Storage miner actor entry; implied funds recipient is the associated owner address.
-		ownerAddr, workerAddr := GetMinerControlAddrs(rt, addr)
-		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
-		return ownerAddr
-	}
-
-	// Ordinary account-style actor entry; funds recipient is just the entry address itself.
-	rt.ValidateImmediateCallerType(CallerTypesSignable...)
-	return addr
-}
-
-func ValidatePledgeAddress(rt runtime.Runtime, addr addr.Address) addr.Address {
-	if !IsStorageMiner(rt, addr) {
-		rt.Abort(exitcode.ErrPlaceholder, "Only miner entries valid in current context")
-	}
-
-	// Storage miner actor entry; implied funds recipient is the associated owner address.
-	ownerAddr, workerAddr := GetMinerControlAddrs(rt, addr)
-	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
-	return ownerAddr
+// This type duplicates the Miner.ControlAddresses return type, to work around a circular dependency between actors.
+type MinerAddrs struct {
+	Owner addr.Address
+	Worker addr.Address
 }

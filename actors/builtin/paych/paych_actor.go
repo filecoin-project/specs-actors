@@ -22,11 +22,22 @@ const SettleDelay = abi.ChainEpoch(1) // placeholder PARAM_FINISH
 
 type Actor struct{}
 
+func (a Actor) Exports() []interface{} {
+	return []interface{}{
+		builtin.MethodConstructor: a.Constructor,
+		2:                         a.UpdateChannelState,
+		3:                         a.Settle,
+		4:                         a.Collect,
+	}
+}
+
+var _ abi.Invokee = Actor{}
+
 type ConstructorParams struct {
 	To addr.Address
 }
 
-func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (pca Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	// Check that both parties are capable of signing vouchers by requiring them to be account actors.
 	// The account actor constructor checks that the embedded address is associated with an appropriate key.
 	// An alternative (more expensive) would be to send a message to the actor to fetch its key.
@@ -99,7 +110,7 @@ type PaymentVerifyParams struct {
 	Proof []byte
 }
 
-func (pca *Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
+func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
@@ -221,7 +232,7 @@ func (pca *Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateP
 	return &adt.EmptyValue{}
 }
 
-func (pca *Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 
@@ -241,7 +252,7 @@ func (pca *Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return &adt.EmptyValue{}
 }
 
-func (pca *Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.From, st.To)
