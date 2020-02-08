@@ -192,6 +192,21 @@ func FromCborBytes(buf []byte) (Int, error) {
 	return Int{i}, nil
 }
 
+func (bi *Int) MarshalBinary() ([]byte, error) {
+	return bi.CborBytes()
+}
+
+func (bi *Int) UnmarshalBinary(buf []byte) error {
+	i, err := FromCborBytes(buf)
+	if err != nil {
+		return err
+	}
+
+	*bi = i
+
+	return nil
+}
+
 func (bi *Int) MarshalCBOR(w io.Writer) error {
 	if bi.Int == nil {
 		zero := NewInt(0)
