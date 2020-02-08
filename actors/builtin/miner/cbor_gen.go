@@ -1059,7 +1059,7 @@ func (t *OnDeferredCronEventParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *StageWorkerKeyChangeParams) MarshalCBOR(w io.Writer) error {
+func (t *ChangeWorkerAddressParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1070,7 +1070,7 @@ func (t *StageWorkerKeyChangeParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *StageWorkerKeyChangeParams) UnmarshalCBOR(r io.Reader) error {
+func (t *ChangeWorkerAddressParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

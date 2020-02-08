@@ -12,36 +12,28 @@ const (
 	MethodPlaceholder = abi.MethodNum(1 << 30)
 )
 
-type accMethods struct {
+var MethodsAccount = struct {
 	Constructor   abi.MethodNum
 	PubkeyAddress abi.MethodNum
-}
+}{MethodConstructor, 2}
 
-var MethodsAccount = accMethods{1, 2}
-
-type iaMethods struct {
+var MethodsInit = struct {
 	Constructor abi.MethodNum
 	Exec        abi.MethodNum
-}
+}{MethodConstructor, 2}
 
-var MethodsInit = iaMethods{MethodConstructor, 2}
-
-type cronMethods struct {
+var MethodsCron = struct {
 	Constructor abi.MethodNum
 	EpochTick   abi.MethodNum
-}
+}{MethodConstructor, 2}
 
-var MethodsCron = cronMethods{MethodConstructor, 2}
-
-type rewardMethods struct {
+var MethodsReward = struct {
 	Constructor      abi.MethodNum
 	AwardBlockReward abi.MethodNum
 	WithdrawReward   abi.MethodNum
-}
+}{MethodConstructor, 2, 3}
 
-var MethodsReward = rewardMethods{MethodConstructor, 2, 3}
-
-type msMethods struct {
+var MethodsMultisig = struct {
 	Constructor                 abi.MethodNum
 	Propose                     abi.MethodNum
 	Approve                     abi.MethodNum
@@ -51,87 +43,57 @@ type msMethods struct {
 	RemoveSigner                abi.MethodNum
 	SwapSigner                  abi.MethodNum
 	ChangeNumApprovalsThreshold abi.MethodNum
-}
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
-var MethodsMultisig = msMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
+var MethodsPaych = struct {
+	Constructor        abi.MethodNum
+	UpdateChannelState abi.MethodNum
+	Settle             abi.MethodNum
+	Collect            abi.MethodNum
+}{MethodConstructor, 2, 3, 4}
 
-type smaMethods struct {
-	Constructor abi.MethodNum
-
-	AddBalance          abi.MethodNum
-	WithdrawBalance     abi.MethodNum
-	HandleExpiredDeals  abi.MethodNum
-	PublishStorageDeals abi.MethodNum
-
+var MethodsMarket = struct {
+	Constructor                    abi.MethodNum
+	AddBalance                     abi.MethodNum
+	WithdrawBalance                abi.MethodNum
+	HandleExpiredDeals             abi.MethodNum
+	PublishStorageDeals            abi.MethodNum
 	VerifyDealsOnSectorProveCommit abi.MethodNum
 	OnMinerSectorsTerminate        abi.MethodNum
+	ComputeDataCommitment          abi.MethodNum
+	GetWeightForDealSet            abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
-	ComputeDataCommitment abi.MethodNum
-	GetWeightForDealSet   abi.MethodNum
-}
+var MethodsPower = struct {
+	Constructor                          abi.MethodNum
+	AddBalance                           abi.MethodNum
+	WithdrawBalance                      abi.MethodNum
+	CreateMiner                          abi.MethodNum
+	DeleteMiner                          abi.MethodNum
+	OnSectorProveCommit                  abi.MethodNum
+	OnSectorTerminate                    abi.MethodNum
+	OnSectorTemporaryFaultEffectiveBegin abi.MethodNum
+	OnSectorTemporaryFaultEffectiveEnd   abi.MethodNum
+	OnSectorModifyWeightDesc             abi.MethodNum
+	OnMinerSurprisePoStSuccess           abi.MethodNum
+	OnMinerSurprisePoStFailure           abi.MethodNum
+	EnrollCronEvent                      abi.MethodNum
+	ReportConsensusFault                 abi.MethodNum
+	OnEpochTickEnd                       abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 
-var MethodsMarket = smaMethods{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
-
-const (
-	// Proxy cron tick method (via StoragePowerActor)
-	Method_StorageMinerActor_OnDeferredCronEvent = MethodPlaceholder + iota
-
-	// User-callable methods
-	Method_StorageMinerActor_PreCommitSector
-	Method_StorageMinerActor_ProveCommitSector
-	Method_StorageMinerActor_DeclareTemporaryFaults
-	Method_StorageMinerActor_RecoverTemporaryFaults
-	Method_StorageMinerActor_ExtendSectorExpiration
-	Method_StorageMinerActor_TerminateSectors
-	Method_StorageMinerActor_SubmitSurprisePoStResponse
-	Method_StorageMinerActor_StageWorkerKeyChange
-
-	// Internal mechanism events
-	Method_StorageMinerActor_OnVerifiedElectionPoSt
-	Method_StorageMinerActor_OnSurprisePoStChallenge
-	Method_StorageMinerActor_OnDeleteMiner
-
-	// State queries
-	Method_StorageMinerActor_GetPoStState
-	Method_StorageMinerActor_GetOwnerAddr
-	Method_StorageMinerActor_GetWorkerAddr
-	Method_StorageMinerActor_GetWorkerVRFKey
-)
-
-const (
-	// Cron tick method
-	Method_StoragePowerActor_OnEpochTickEnd = MethodPlaceholder + iota
-
-	// User-callable methods
-	Method_StoragePowerActor_AddBalance
-	Method_StoragePowerActor_WithdrawBalance
-	Method_StoragePowerActor_CreateMiner
-	Method_StoragePowerActor_DeleteMiner
-	Method_StoragePowerActor_ReportConsensusFault
-
-	// Internal mechanism events
-	Method_StoragePowerActor_OnSectorProveCommit
-	Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveBegin
-	Method_StoragePowerActor_OnSectorTemporaryFaultEffectiveEnd
-	Method_StoragePowerActor_OnSectorModifyWeightDesc
-	Method_StoragePowerActor_OnSectorTerminate
-	Method_StoragePowerActor_OnMinerSurprisePoStSuccess
-	Method_StoragePowerActor_OnMinerSurprisePoStFailure
-	Method_StoragePowerActor_OnMinerEnrollCronEvent
-
-	// State queries
-	Method_StoragePowerActor_GetMinerConsensusPower
-	Method_StoragePowerActor_GetMinerUnmetPledgeCollateralRequirement
-)
-
-const (
-	// State updates
-	Method_PaymentChannelActor_Create = MethodPlaceholder + iota
-	Method_PaymentChannelActor_UpdateChannelState
-	Method_PaymentChannelActor_Settle
-	Method_PaymentChannelActor_Collect
-
-	// State queries
-	Method_PaymentChannelActor_GetOwner
-	Method_PaymentChannelActor_GetInfo
-)
+var MethodsMiner = struct {
+	Constructor                abi.MethodNum
+	ControlAddresses           abi.MethodNum
+	ChangeWorkerAddress        abi.MethodNum
+	OnSurprisePoStChallenge    abi.MethodNum
+	SubmitSurprisePoStResponse abi.MethodNum
+	OnDeleteMiner              abi.MethodNum
+	OnVerifiedElectionPoSt     abi.MethodNum
+	PreCommitSector            abi.MethodNum
+	ProveCommitSector          abi.MethodNum
+	ExtendSectorExpiration     abi.MethodNum
+	TerminateSectors           abi.MethodNum
+	DeclareTemporaryFaults     abi.MethodNum
+	OnDeferredCronEvent        abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}

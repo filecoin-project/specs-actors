@@ -157,8 +157,8 @@ func (t *WithdrawBalanceParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Address (address.Address) (struct)
-	if err := t.Address.MarshalCBOR(w); err != nil {
+	// t.ProviderOrClientAddress (address.Address) (struct)
+	if err := t.ProviderOrClientAddress.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -184,11 +184,11 @@ func (t *WithdrawBalanceParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Address (address.Address) (struct)
+	// t.ProviderOrClientAddress (address.Address) (struct)
 
 	{
 
-		if err := t.Address.UnmarshalCBOR(br); err != nil {
+		if err := t.ProviderOrClientAddress.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
