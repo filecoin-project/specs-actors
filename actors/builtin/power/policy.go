@@ -3,7 +3,7 @@ package power
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 )
 
 // The average period (i.e. 1/frequency) of surprise PoSt challenges to each miner.
