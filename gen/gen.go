@@ -2,6 +2,7 @@ package main
 
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
@@ -24,6 +25,12 @@ func main() {
 		abi.SealProof{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
+		builtin.MinerAddrs{},
 	); err != nil {
 		panic(err)
 	}
@@ -166,7 +173,7 @@ func main() {
 		miner.TerminateSectorsParams{},
 		miner.ProveCommitSectorParams{},
 		miner.OnDeferredCronEventParams{},
-		miner.StageWorkerKeyChangeParams{},
+		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
 		miner.SubmitSurprisePoStResponseParams{},
 		miner.DeclareTemporaryFaultsParams{},
