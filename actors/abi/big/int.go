@@ -24,7 +24,9 @@ func Zero() Int {
 	return NewInt(0)
 }
 
-func FromBytes(b []byte) Int {
+// PositiveFromUnsignedBytes interprets b as the bytes of a big-endian unsigned
+// integer and returns a positive Int with this absolute value.
+func PositiveFromUnsignedBytes(b []byte) Int {
 	i := big.NewInt(0).SetBytes(b)
 	return Int{i}
 }
@@ -154,22 +156,22 @@ func (bi *Int) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (bi *Int) CborBytes() ([]byte, error) {
+func (bi *Int) Bytes() ([]byte, error) {
 	if bi.Int == nil {
 		return []byte{}, fmt.Errorf("failed to convert to bytes, big is nil")
 	}
 
 	switch {
 	case bi.Sign() > 0:
-		return append([]byte{0}, bi.Bytes()...), nil
+		return append([]byte{0}, bi.Int.Bytes()...), nil
 	case bi.Sign() < 0:
-		return append([]byte{1}, bi.Bytes()...), nil
+		return append([]byte{1}, bi.Int.Bytes()...), nil
 	default: //  bi.Sign() == 0:
 		return []byte{}, nil
 	}
 }
 
-func FromCborBytes(buf []byte) (Int, error) {
+func FromBytes(buf []byte) (Int, error) {
 	if len(buf) == 0 {
 		return NewInt(0), nil
 	}
@@ -193,11 +195,11 @@ func FromCborBytes(buf []byte) (Int, error) {
 }
 
 func (bi *Int) MarshalBinary() ([]byte, error) {
-	return bi.CborBytes()
+	return bi.Bytes()
 }
 
 func (bi *Int) UnmarshalBinary(buf []byte) error {
-	i, err := FromCborBytes(buf)
+	i, err := FromBytes(buf)
 	if err != nil {
 		return err
 	}
@@ -213,7 +215,7 @@ func (bi *Int) MarshalCBOR(w io.Writer) error {
 		return zero.MarshalCBOR(w)
 	}
 
-	enc, err := bi.CborBytes()
+	enc, err := bi.Bytes()
 	if err != nil {
 		return err
 	}
@@ -254,7 +256,7 @@ func (bi *Int) UnmarshalCBOR(br io.Reader) error {
 		return err
 	}
 
-	i, err := FromCborBytes(buf)
+	i, err := FromBytes(buf)
 	if err != nil {
 		return err
 	}

@@ -122,16 +122,17 @@ func TestInt_Format(t *testing.T) {
 	assert.Equal(t, "33333000000    ", s2)
 }
 
-func TestFromBytes(t *testing.T) {
-	res := FromBytes([]byte("garbage"[:]))
+func TestPositveFromUnsignedBytes(t *testing.T) {
+	res := PositiveFromUnsignedBytes([]byte("garbage"[:]))
 	// garbage in, garbage out
 	expected := Int{Int: big.NewInt(29099066505914213)}
 	assert.Equal(t, expected, res)
 
 	expected2 := Int{Int: big.NewInt(12345)}
-	expectedRes := expected2.Bytes()
-	res = FromBytes(expectedRes)
+	expectedRes := expected2.Int.Bytes()
+	res = PositiveFromUnsignedBytes(expectedRes)
 	assert.Equal(t, expected2, res)
+	assert.Equal(t, 1, res.Sign()) // positive
 }
 
 func TestFromString(t *testing.T) {
