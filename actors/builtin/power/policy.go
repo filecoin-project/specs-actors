@@ -3,6 +3,7 @@ package power
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 )
 
 // The average period (i.e. 1/frequency) of surprise PoSt challenges to each miner.
@@ -20,6 +21,12 @@ const SurprisePostFailureLimit = int64(3) // PARAM_FINISH
 // Minimum number of registered miners for the minimum miner size limit to effectively limit consensus power.
 const ConsensusMinerMinMiners = 3
 
+// Multiplier on sector pledge requirement.
+var PledgeFactor = big.NewInt(3) // PARAM_FINISH
+
+// Total expected block reward per epoch (per-winner reward * expected winners), as input to pledge requirement.
+var EpochTotalExpectedReward = big.Mul(reward.BlockRewardTarget, big.NewInt(5)) // PARAM_FINISH
+
 // Minimum power of an individual miner to meet the threshold for leader election.
 var ConsensusMinerMinPower = abi.NewStoragePower(100 * (1 << 40)) // placeholder, 100 TB
 
@@ -29,12 +36,12 @@ type BigFrac struct {
 }
 
 // Penalty to pledge collateral for the termination of an individual sector.
-func pledgePenaltyForSectorTermination(weight SectorStorageWeightDesc, termType SectorTermination) abi.TokenAmount {
+func pledgePenaltyForSectorTermination(pledge abi.TokenAmount, termType SectorTermination) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
 // Penalty to pledge collateral for repeated failure to prove storage.
-func pledgePenaltyForSurprisePoStFailure(claimedPower abi.StoragePower, failures int64) abi.TokenAmount {
+func pledgePenaltyForSurprisePoStFailure(pledge abi.TokenAmount, failures int64) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
@@ -84,6 +91,20 @@ func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	return big.Min(big.Div(num, denom), collateral)
 }
 
-func consensusPowerForWeight(weight SectorStorageWeightDesc) abi.StoragePower {
+func consensusPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
 	return big.NewInt(int64(weight.SectorSize)) // PARAM_FINISH
+}
+
+func pledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePower) abi.TokenAmount {
+	// Details here are still subject to change.
+	// PARAM_FINISH
+	numerator := bigProduct(
+		big.NewInt(int64(weight.SectorSize)), // bytes
+		big.NewInt(int64(weight.Duration)), // epochs
+		EpochTotalExpectedReward, // FIL/epoch
+		PledgeFactor, // unitless
+	) // = bytes*FIL
+	denominator := networkPower // bytes
+
+	return big.Div(numerator, denominator) // FIL
 }

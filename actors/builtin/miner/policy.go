@@ -36,7 +36,7 @@ const NumSurprisePoStSectors = 200 // PARAM_FINISH
 const DeclaredFaultEffectiveDelay = abi.ChainEpoch(20) // PARAM_FINISH
 
 // Staging period for a miner worker key change.
-const WorkerKeyChangeDelay = 2 * ElectionLookback
+const WorkerKeyChangeDelay = 2 * ElectionLookback // PARAM_FINISH
 
 // Deposit per sector required at pre-commitment, refunded after the commitment is proven (else burned).
 func precommitDeposit(sectorSize abi.SectorSize, duration abi.ChainEpoch) abi.TokenAmount {
