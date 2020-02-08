@@ -504,29 +504,6 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 	f()
 }
 
-func (rt *Runtime) ExpectAbortWithMsg(expCode exitcode.ExitCode, expMsg string, f func()) {
-	prevState := rt.state
-	defer func() {
-		r := recover()
-		if r == nil {
-			rt.t.Errorf("expected abort with code %v but call succeeded", expCode)
-			return
-		}
-		a, ok := r.(abort)
-		if !ok {
-			panic(r)
-		}
-		if a.code != expCode {
-			rt.t.Errorf("abort expected code %v, got %v %s", expCode, a.code, a.msg)
-		} else if a.msg != expMsg {
-			rt.t.Errorf("abort expected message \n%s\ngot\n%s", expMsg, a.msg)
-		}
-		// Roll back state change.
-		rt.state = prevState
-	}()
-	f()
-}
-
 func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	meth := reflect.ValueOf(method)
 	rt.verifyExportedMethodType(meth)

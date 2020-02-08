@@ -28,29 +28,19 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 	t.Run("can create a payment channel actor", func(t *testing.T) {
 		builder := mock.NewBuilder(ctx, pcaAddr).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithReceiverType(builtin.AccountActorCodeID)
+			WithActorType(pcaAddr, builtin.AccountActorCodeID)
 
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, pcaAddr, callerAddr)
 	})
 
-	t.Run("fails if caller is not account actor", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, pcaAddr).WithCaller(callerAddr, builtin.CronActorCodeID)
-		rt := builder.Build(t)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
-		rt.ExpectAbort(18, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr})
-		})
-	})
-
 	t.Run("fails if target is not account actor", func(t *testing.T) {
 		builder := mock.NewBuilder(ctx, pcaAddr).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithReceiverType(builtin.CronActorCodeID)
+			WithActorType(pcaAddr, builtin.CronActorCodeID)
 		rt := builder.Build(t)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
-		expMsg := "target actor [0 - 64] must be an account (bafkqadlgnfwc6mjpmfrwg33vnz2a), was bafkqactgnfwc6mjpmnzg63q"
-		rt.ExpectAbortWithMsg(16, expMsg, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr})
 		})
 	})
@@ -59,11 +49,10 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		pcaAddr1 := tutil.NewActorAddr(t, "beach blanket babylon")
 		builder := mock.NewBuilder(ctx, pcaAddr1).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithReceiverType(builtin.AccountActorCodeID)
+			WithActorType(pcaAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
-		expMsg := "target address must be an ID-address, [2 - 343095ece71e03006965c10e88314fb7c103f413] is 2"
-		rt.ExpectAbortWithMsg(16, expMsg, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr1})
 		})
 	})
@@ -84,12 +73,11 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			WithBalance(balance, received).
 			WithEpoch(abi.ChainEpoch(2)).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithReceiverType(builtin.AccountActorCodeID).
+			WithActorType(pcaAddr, builtin.AccountActorCodeID).
 			WithSysCalls(&syscalls)
 
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, pcaAddr, callerAddr)
-		rt.ExpectValidateCallerAddr(callerAddr, pcaAddr)
 
 		amt := big.NewInt(10)
 		lane := int64(999)
@@ -107,6 +95,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			Signature: sig,
 		}
 		ucp := &UpdateChannelStateParams{ Sv: sv }
+		rt.ExpectValidateCallerAddr(callerAddr, pcaAddr)
 
 		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
 		assert.Equal(t, adt.EmptyValue{}, *constructRet)
@@ -126,7 +115,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 	t.Run("Fails to update state if too early for voucher", func(t *testing.T) {
 		builder := mock.NewBuilder(ctx, pcaAddr).
 			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithReceiverType(builtin.AccountActorCodeID).
+			WithActorType(pcaAddr, builtin.AccountActorCodeID).
 			WithSysCalls(&syscalls)
 
 		rt := builder.Build(t)
@@ -150,8 +139,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		}
 		ucp := &UpdateChannelStateParams{ Sv: sv }
 
-		expectMsg := "cannot use this voucher yet!"
-		rt.ExpectAbortWithMsg(exitcode.ErrIllegalArgument, expectMsg, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.UpdateChannelState, ucp)
 		})
 	})

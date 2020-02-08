@@ -82,8 +82,8 @@ func (b *RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) *Runtime
 	return b
 }
 
-func (b *RuntimeBuilder) WithReceiverType(code cid.Cid) *RuntimeBuilder {
-	b.rt.actorCodeCIDs[b.rt.receiver] = code
+func (b *RuntimeBuilder) WithActorType(addr addr.Address, code cid.Cid) *RuntimeBuilder {
+	b.rt.actorCodeCIDs[addr] = code
 	return b
 }
 
