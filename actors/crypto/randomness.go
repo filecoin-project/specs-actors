@@ -50,7 +50,7 @@ func RandomInt(seed abi.Randomness, nonce int64, limit int64) int64 {
 	nonceBytes := BigEndianBytesFromInt(nonce)
 	input := append(seed, nonceBytes...)
 	ranHash := SHA256(input)
-	hashInt := big.FromBytes(ranHash)
+	hashInt := big.PositiveFromUnsignedBytes(ranHash)
 
 	num := big.Mod(hashInt, big.NewInt(limit))
 	return num.Int64()
