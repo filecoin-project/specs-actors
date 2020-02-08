@@ -6,12 +6,14 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
+
+const rewardVestingFunction = None // PARAM_FINISH
+const rewardVestingPeriod = abi.ChainEpoch(0) // PARAM_FINISH
 
 type Actor struct{}
 
@@ -37,6 +39,65 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return &adt.EmptyValue{}
 }
 
+type AwardBlockRewardParams struct {
+	Miner        addr.Address
+	Penalty      abi.TokenAmount // penalty for including bad messages in a block
+	GasReward    abi.TokenAmount // gas reward from all gas fees in a block
+	NominalPower abi.StoragePower
+}
+
+// Awards a reward to a block producer, by accounting for it internally to be withdrawn later.
+// This method is called only by the system actor, implicitly, as the last message in the evaluation of a block.
+// The system actor thus computes the parameters and attached value.
+//
+// The reward includes two components:
+// - the epoch block reward, computed and paid from the reward actor's balance,
+// - the block gas reward, expected to be transferred to the reward actor with this invocation.
+//
+// The reward is reduced before the residual is credited to the block producer, by:
+// - a penalty amount, provided as a parameter, which is burnt,
+func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
+	AssertMsg(params.GasReward.Equals(rt.ValueReceived()),
+		"expected value received %v to match gas reward %v", rt.ValueReceived(), params.GasReward)
+	priorBalance := rt.CurrentBalance()
+
+	var penalty abi.TokenAmount
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward))
+		totalReward := big.Add(blockReward, params.GasReward)
+
+		// Cap the penalty at the total reward value.
+		penalty = big.Min(params.Penalty, totalReward)
+
+		// Reduce the payable reward by the penalty.
+		rewardPayable := big.Sub(totalReward, penalty)
+
+		AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
+			"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
+
+		// Record new reward into reward map.
+		if rewardPayable.GreaterThan(abi.NewTokenAmount(0)) {
+			newReward := Reward{
+				StartEpoch:      rt.CurrEpoch(),
+				EndEpoch:        rt.CurrEpoch() + rewardVestingPeriod,
+				Value:           rewardPayable,
+				AmountWithdrawn: abi.NewTokenAmount(0),
+				VestingFunction: rewardVestingFunction,
+			}
+			return st.addReward(adt.AsStore(rt), params.Miner, &newReward)
+		}
+		return nil
+	})
+
+	// Burn the penalty amount.
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
+	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
+
+	return &adt.EmptyValue{}
+}
+
 func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	owner := rt.ImmediateCaller()
@@ -56,67 +117,10 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue
 	return &adt.EmptyValue{}
 }
 
-type AwardBlockRewardParams struct {
-	Miner            addr.Address
-	Penalty          abi.TokenAmount // penalty for including bad messages in a block
-	GasReward        abi.TokenAmount // gas reward from all gas fees in a block
-	NominalPower     abi.StoragePower
-	PledgeCollateral abi.TokenAmount
-}
-
-// gasReward is expected to be transferred to this actor by the runtime before invocation
-func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	AssertMsg(params.GasReward.Equals(rt.ValueReceived()),
-		"expected value received %v to match gas reward %v", rt.ValueReceived(), params.GasReward)
-
-	inds := rt.CurrIndices()
-	pledgeReq := inds.PledgeCollateralReq(params.NominalPower)
-	currReward := inds.GetCurrBlockRewardForMiner(params.NominalPower, params.PledgeCollateral)
-	totalReward := big.Add(currReward, params.GasReward)
-
-	// BlockReward + GasReward <= penalty
-	penalty := params.Penalty
-	if totalReward.LessThanEqual(params.Penalty) {
-		penalty = totalReward
-	}
-
-	// Burn the penalty amount
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
-	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
-
-	// 0 if totalReward <= penalty
-	rewardAfterPenalty := big.Sub(totalReward, penalty)
-
-	// 0 if over collateralized
-	underPledge := big.Max(big.Zero(), big.Sub(pledgeReq, params.PledgeCollateral))
-	rewardToGarnish := big.Min(rewardAfterPenalty, underPledge)
-
-	actualReward := big.Sub(rewardAfterPenalty, rewardToGarnish)
-	if rewardToGarnish.GreaterThan(big.Zero()) {
-		// Send fund to SPA to top up collateral
-		_, code = rt.Send(
-			builtin.StoragePowerActorAddr,
-			builtin.Method_StoragePowerActor_AddBalance,
-			&power.AddBalanceParams{Miner: params.Miner},
-			abi.TokenAmount(rewardToGarnish),
-		)
-		builtin.RequireSuccess(rt, code, "failed to add balance to power actor")
-	}
-
-	// Record new reward into reward map.
-	var st State
-	if actualReward.GreaterThan(abi.NewTokenAmount(0)) {
-		rt.State().Transaction(&st, func() interface{} {
-			newReward := Reward{
-				StartEpoch:      rt.CurrEpoch(),
-				EndEpoch:        rt.CurrEpoch(),
-				Value:           actualReward,
-				AmountWithdrawn: abi.NewTokenAmount(0),
-				VestingFunction: None,
-			}
-			return st.addReward(adt.AsStore(rt), params.Miner, &newReward)
-		})
-	}
-	return &adt.EmptyValue{}
+func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount) abi.TokenAmount {
+	// TODO: this is definitely not the final form of the block reward function.
+	// The eventual form will be some kind of exponential decay.
+	treasury := big.Sub(balance, st.RewardTotal)
+	targetReward := abi.NewTokenAmount(100)
+	return big.Min(targetReward, treasury)
 }

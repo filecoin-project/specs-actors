@@ -21,15 +21,6 @@ type Indices interface {
 		minerNominalPower abi.StoragePower,
 		minerPledgeCollateral abi.TokenAmount,
 	) abi.StoragePower
-	CurrEpochBlockReward(
-		networkIndicator big.Int,
-		networkKPI big.Int,
-		networkTime big.Int,
-	) abi.TokenAmount
-	GetCurrBlockRewardForMiner(
-		minerStoragePower abi.StoragePower,
-		minerPledgeCollateral abi.TokenAmount,
-	) abi.TokenAmount
 }
 
 type IndicesImpl struct {
@@ -85,24 +76,4 @@ func (inds *IndicesImpl) StoragePower(
 	// this is likely to change
 	// PARAM_FINISH
 	return big.Div(big.Mul(minerNominalPower, minerPledgeCollateral), requiredPledge)
-}
-
-func (inds *IndicesImpl) CurrEpochBlockReward(
-	networkIndicator big.Int,
-	networkKPI big.Int,
-	networkTime big.Int,
-) abi.TokenAmount {
-	// total block reward allocated for CurrEpoch
-	// each expected winner get an equal share of this reward
-	// computed as a function of NetworkKPI, NetworkIndicator, LastEpochReward, TotalUnmminedFIL, etc
-	// PARAM_FINISH
-	return abi.NewTokenAmount(1)
-}
-
-func (inds *IndicesImpl) GetCurrBlockRewardForMiner(
-	minerStoragePower abi.StoragePower,
-	minerPledgeCollateral abi.TokenAmount,
-) abi.TokenAmount {
-	// PARAM_FINISH
-	return abi.NewTokenAmount(1)
 }

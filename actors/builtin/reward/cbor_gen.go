@@ -18,7 +18,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
@@ -28,6 +28,10 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.RewardMap: %w", err)
 	}
 
+	// t.RewardTotal (big.Int) (struct)
+	if err := t.RewardTotal.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -42,7 +46,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -58,6 +62,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.RewardMap = c
 
 	}
+	// t.RewardTotal (big.Int) (struct)
+
+	{
+
+		if err := t.RewardTotal.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -66,7 +79,7 @@ func (t *AwardBlockRewardParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{133}); err != nil {
+	if _, err := w.Write([]byte{132}); err != nil {
 		return err
 	}
 
@@ -89,11 +102,6 @@ func (t *AwardBlockRewardParams) MarshalCBOR(w io.Writer) error {
 	if err := t.NominalPower.MarshalCBOR(w); err != nil {
 		return err
 	}
-
-	// t.PledgeCollateral (big.Int) (struct)
-	if err := t.PledgeCollateral.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -108,7 +116,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -144,15 +152,6 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.NominalPower.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.PledgeCollateral (big.Int) (struct)
-
-	{
-
-		if err := t.PledgeCollateral.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 

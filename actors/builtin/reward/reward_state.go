@@ -7,11 +7,13 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type State struct {
-	RewardMap cid.Cid // HAMT[Address]AMT[Reward]
+	RewardMap   cid.Cid // HAMT[Address]AMT[Reward]
+	RewardTotal abi.TokenAmount // Sum of un-withdrawn rewards.
 }
 
 type Reward struct {
@@ -39,6 +41,7 @@ func ConstructState(store adt.Store) (*State, error) {
 
 	return &State{
 		RewardMap: rewards.Root(),
+		RewardTotal: big.Zero(),
 	}, nil
 }
 
@@ -50,6 +53,7 @@ func (st *State) addReward(store adt.Store, owner addr.Address, reward *Reward) 
 		return errors.Wrap(err, "failed to add reward")
 	}
 	st.RewardMap = rewards.Root()
+	st.RewardTotal = big.Add(st.RewardTotal, reward.Value)
 	return nil
 }
 
@@ -87,6 +91,9 @@ func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch a
 		return big.Zero(), err
 	}
 
+	AssertMsg(withdrawableSum.LessThan(st.RewardTotal), "withdrawable %v exceeds recorded prior total %v",
+		withdrawableSum, st.RewardTotal)
+
 	// Replace old reward list for this key with the updated list.
 	if err := rewards.RemoveAll(key); err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to remove rewards")
@@ -97,6 +104,7 @@ func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch a
 		}
 	}
 	st.RewardMap = rewards.Root()
+	st.RewardTotal = big.Sub(st.RewardTotal, withdrawableSum)
 	return withdrawableSum, nil
 }
 
