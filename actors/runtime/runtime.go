@@ -10,7 +10,6 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 )
 
 // Runtime is the VM's internal runtime object.
@@ -82,9 +81,6 @@ type Runtime interface {
 	// Deletes an actor in the state tree. May only be called by the actor itself,
 	// or by StoragePowerActor in the case of StorageMinerActors.
 	DeleteActor(address addr.Address)
-
-	// Look up the current values of several system-wide economic indices.
-	CurrIndices() indices.Indices
 
 	// Provides the system call interface.
 	Syscalls() Syscalls

@@ -10,6 +10,7 @@ import (
 	require "github.com/stretchr/testify/require"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
@@ -69,15 +70,15 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalNetworkPower)
 		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
 
-		claimedPower := adt.AsMap(rt.Store(), st.ClaimedPower)
-		keys, err := claimedPower.CollectKeys()
+		claim := adt.AsMap(rt.Store(), st.Claims)
+		keys, err := claim.CollectKeys()
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(keys))
-		var actualClaimedPower abi.StoragePower
-		found, err_ := claimedPower.Get(asKey(keys[0]), &actualClaimedPower)
+		var actualClaim power.Claim
+		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, abi.NewStoragePower(0), actualClaimedPower) // miner has not proven anything
+		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		escrowTable := adt.AsMap(rt.Store(), st.EscrowTable)
 		keys, err = escrowTable.CollectKeys()
@@ -133,7 +134,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
 
 	verifyEmptyMap(h.t, rt, st.EscrowTable)
-	verifyEmptyMap(h.t, rt, st.ClaimedPower)
+	verifyEmptyMap(h.t, rt, st.Claims)
 	verifyEmptyMap(h.t, rt, st.PoStDetectedFaultMiners)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
 }

@@ -15,7 +15,6 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	indices "github.com/filecoin-project/specs-actors/actors/runtime/indices"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -268,11 +267,6 @@ func (rt *Runtime) DeleteActor(address addr.Address) {
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	panic("implement me")
-}
-
-func (rt *Runtime) CurrIndices() indices.Indices {
-	rt.requireInCall()
 	panic("implement me")
 }
 

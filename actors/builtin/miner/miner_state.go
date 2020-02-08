@@ -8,7 +8,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -88,9 +88,10 @@ type SectorPreCommitOnChainInfo struct {
 type SectorOnChainInfo struct {
 	Info                  SectorPreCommitInfo
 	ActivationEpoch       abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
+	DealWeight            abi.DealWeight // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
+	PledgeRequirement     abi.TokenAmount // Fixed pledge collateral requirement determined at activation
 	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
 	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
-	DealWeight            abi.DealWeight // integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 }
 
 func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*State, error) {
@@ -238,7 +239,7 @@ func (st *State) ComputeProvingSet() cid.Cid {
 
 func (st *State) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
 	// TODO hs: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
-	autil.TODO()
+	TODO()
 	panic("")
 }
 

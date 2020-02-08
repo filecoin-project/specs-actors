@@ -16,13 +16,11 @@ import (
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type Runtime = vmr.Runtime
-
-var Assert = autil.Assert
 
 type ConsensusFaultType int64
 
@@ -83,7 +81,7 @@ func (a *Actor) AddBalance(rt Runtime, params *AddBalanceParams) *adt.EmptyValue
 	var err error
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.addMinerPledge(adt.AsStore(rt), params.Miner, rt.ValueReceived())
+		err = st.addMinerBalance(adt.AsStore(rt), params.Miner, rt.ValueReceived())
 		abortIfError(rt, err, "failed to add pledge balance")
 		return nil
 	})
@@ -105,12 +103,23 @@ func (a *Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.
 	var amountExtracted abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		minCollateralRequired, err := a.getPledgeCollateralReqForMiner(rt, &st, params.Miner)
+		claim, found, err := st.getClaim(adt.AsStore(rt), params.Miner)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "Failed to get required pledge collateral required for miner %v: %v", params.Miner, err)
+			rt.Abort(exitcode.ErrIllegalState, "failed to load claim for miner %v", params.Miner)
+			panic("can't get here") // Convince Go that claim will not be used while nil below
+		}
+		if !found {
+			// This requirement prevents a terminated miner from withdrawing any posted collateral in excess of
+			// their previous requirements. This is consistent with the slashing routine burning it all.
+			// Alternatively, we could interpret a missing claim here as evidence of termination and allow
+			// withdrawal of any residual balance.
+			rt.Abort(exitcode.ErrIllegalArgument, "no claim for miner %v", params.Miner)
 		}
 
-		subtracted, err := st.subtractMinerPledge(adt.AsStore(rt), params.Miner, params.Requested, minCollateralRequired)
+		// Pledge for sectors in temporary fault has already been subtracted from the claim.
+		// If the miner has failed a scheduled PoSt, collateral remains locked for further penalization.
+		// Thus the current claimed pledge is the amount to keep locked.
+		subtracted, err := st.subtractMinerBalance(adt.AsStore(rt), params.Miner, params.Requested, claim.Pledge)
 		abortIfError(rt, err, "failed to subtract pledge balance")
 		amountExtracted = subtracted
 		return nil
@@ -166,9 +175,9 @@ func (a *Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerR
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		err = st.setMinerPledge(store, addresses.IDAddress, rt.ValueReceived())
+		err = st.setMinerBalance(store, addresses.IDAddress, rt.ValueReceived())
 		abortIfError(rt, err, "failed to set pledge balance")
-		st.ClaimedPower, err = putStoragePower(store, st.ClaimedPower, addresses.IDAddress, abi.NewStoragePower(0))
+		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewTokenAmount(0)})
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
 		}
@@ -189,22 +198,22 @@ func (a *Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyVal
 	var st State
 	rt.State().Readonly(&st)
 
-	balance, err := st.getMinerPledge(adt.AsStore(rt), params.Miner)
+	balance, err := st.getMinerBalance(adt.AsStore(rt), params.Miner)
 	abortIfError(rt, err, "failed to get pledge balance for deletion")
 
 	if balance.GreaterThan(abi.NewTokenAmount(0)) {
 		rt.Abort(exitcode.ErrForbidden, "deletion requested for miner %v with pledge balance %v", params.Miner, balance)
 	}
 
-	minerPower, found, err := getStoragePower(adt.AsStore(rt), st.ClaimedPower, params.Miner)
+	claim, found, err := st.getClaim(adt.AsStore(rt), params.Miner)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to get miner power from power table for deletion request: %v", err)
+		rt.Abort(exitcode.ErrIllegalState, "failed to load miner claim for deletion: %v", err)
 	}
 	if !found {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to find miner power in power table for deletion request")
+		rt.Abort(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", params.Miner)
 	}
-	if minerPower.GreaterThan(big.Zero()) {
-		rt.Abort(exitcode.ErrIllegalState, "Deletion requested for miner with power still remaining")
+	if claim.Power.GreaterThan(big.Zero()) {
+		rt.Abort(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", params.Miner, claim.Power)
 	}
 
 	ownerAddr, workerAddr := builtin.GetMinerControlAddrs(rt, params.Miner)
@@ -219,72 +228,120 @@ type OnSectorProveCommitParams struct {
 	Weight SectorStorageWeightDesc
 }
 
-func (a *Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *adt.EmptyValue {
+// Returns the computed pledge collateral requirement, which is now committed.
+func (a *Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *big.Int {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), params.Weight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
-	}
-	return &adt.EmptyValue{}
+	var pledge abi.TokenAmount
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		power := consensusPowerForWeight(&params.Weight)
+		pledge = pledgeForWeight(&params.Weight, st.TotalNetworkPower)
+		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power, pledge)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
+		}
+		return nil
+	})
+
+	return &pledge
 }
 
 type OnSectorTerminateParams struct {
 	TerminationType SectorTermination
-	Weight          SectorStorageWeightDesc
+	Weight          SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	Pledge          abi.TokenAmount
 }
 
 func (a *Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
-	if err := a.deductClaimedPowerForSector(rt, minerAddr, params.Weight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
-	}
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		power := consensusPowerForWeight(&params.Weight)
+		err := st.addToClaim(adt.AsStore(rt), minerAddr, power.Neg(), params.Pledge.Neg())
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
+		}
+		return nil
+	})
 
 	if params.TerminationType != SectorTerminationExpired {
-		amountToSlash := pledgePenaltyForSectorTermination(params.Weight, params.TerminationType)
-		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
+		amountToSlash := pledgePenaltyForSectorTermination(params.Pledge, params.TerminationType)
+		a.slashPledgeCollateral(rt, minerAddr, amountToSlash) // state transactions could be combined.
 	}
 	return &adt.EmptyValue{}
 }
 
 type OnSectorTemporaryFaultEffectiveBeginParams struct {
-	Weight SectorStorageWeightDesc
+	Weight SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	Pledge abi.TokenAmount
 }
 
 func (a *Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSectorTemporaryFaultEffectiveBeginParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.deductClaimedPowerForSector(rt, rt.ImmediateCaller(), params.Weight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
-	}
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		power := consensusPowerForWeight(&params.Weight)
+		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power.Neg(), params.Pledge.Neg())
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
+		}
+		return nil
+	})
+
 	return &adt.EmptyValue{}
 }
 
 type OnSectorTemporaryFaultEffectiveEndParams struct {
-	Weight SectorStorageWeightDesc
+	Weight SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	Pledge abi.TokenAmount
 }
 
 func (a *Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorTemporaryFaultEffectiveEndParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), params.Weight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
-	}
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		power := consensusPowerForWeight(&params.Weight)
+		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power, params.Pledge)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to add claimed power for sector: %v", err)
+		}
+		return nil
+	})
+
 	return &adt.EmptyValue{}
 }
 
 type OnSectorModifyWeightDescParams struct {
-	PrevWeight SectorStorageWeightDesc
+	PrevWeight SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
+	PrevPledge abi.TokenAmount
 	NewWeight  SectorStorageWeightDesc
 }
 
-func (a *Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *adt.EmptyValue {
-
+// Returns new pledge collateral requirement, now committed in place of the old.
+func (a *Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	if err := a.deductClaimedPowerForSector(rt, rt.ImmediateCaller(), params.PrevWeight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to deduct claimed power for sector: %v", err)
-	}
-	if err := a.addPowerForSector(rt, rt.ImmediateCaller(), params.NewWeight); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
-	}
-	return &adt.EmptyValue{}
+	var newPledge abi.TokenAmount
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		prevPower := consensusPowerForWeight(&params.PrevWeight)
+		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), prevPower.Neg(), params.PrevPledge.Neg())
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
+		}
+
+		newPower := consensusPowerForWeight(&params.NewWeight)
+		newPledge = pledgeForWeight(&params.NewWeight, st.TotalNetworkPower)
+		err = st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), newPower, newPledge)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to add power for sector: %v", err)
+		}
+		return nil
+	})
+
+	return &newPledge
 }
 
 func (a *Actor) OnMinerSurprisePoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
@@ -310,7 +367,7 @@ func (a *Actor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMinerSurprisePo
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.ImmediateCaller()
 
-	var minerClaimedPower abi.StoragePower
+	var claim *Claim
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if err := st.putFault(adt.AsStore(rt), minerAddr); err != nil {
@@ -319,7 +376,7 @@ func (a *Actor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMinerSurprisePo
 
 		var found bool
 		var err error
-		minerClaimedPower, found, err = getStoragePower(adt.AsStore(rt), st.ClaimedPower, minerAddr)
+		claim, found, err = st.getClaim(adt.AsStore(rt), minerAddr)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to get miner power from claimed power table for surprise PoSt failure: %v", err)
 		}
@@ -333,7 +390,9 @@ func (a *Actor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMinerSurprisePo
 		err := a.deleteMinerActor(rt, minerAddr)
 		abortIfError(rt, err, "failed to delete failed miner %v", minerAddr)
 	} else {
-		amountToSlash := pledgePenaltyForSurprisePoStFailure(minerClaimedPower, params.NumConsecutiveFailures)
+		// Penalise pledge collateral without reducing the claim.
+		// The miner will have to deposit more when recovering the fault (unless already in sufficient surplus).
+		amountToSlash := pledgePenaltyForSurprisePoStFailure(claim.Pledge, params.NumConsecutiveFailures)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
 	return &adt.EmptyValue{}
@@ -383,18 +442,18 @@ func (a *Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPar
 	var st State
 	reward := rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		claimedPower, powerOk, err := getStoragePower(store, st.ClaimedPower, params.Target)
+		claim, powerOk, err := st.getClaim(store, params.Target)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
 		if !powerOk {
 			rt.Abort(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", params.Target)
 		}
-		Assert(claimedPower.GreaterThanEqual(big.Zero()))
+		Assert(claim.Power.GreaterThanEqual(big.Zero()))
 
-		currPledge, err := st.getMinerPledge(store, params.Target)
-		abortIfError(rt, err, "failed to get miner pledge")
-		Assert(currPledge.GreaterThanEqual(big.Zero()))
+		currBalance, err := st.getMinerBalance(store, params.Target)
+		abortIfError(rt, err, "failed to get miner pledge balance")
+		Assert(currBalance.GreaterThanEqual(big.Zero()))
 
 		// elapsed epoch from the latter block which committed the fault
 		elapsedEpoch := rt.CurrEpoch() - params.FaultEpoch
@@ -402,10 +461,11 @@ func (a *Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPar
 			rt.Abort(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", params.FaultEpoch, rt.CurrEpoch())
 		}
 
-		collateralToSlash := pledgePenaltyForConsensusFault(currPledge, params.FaultType)
+		// Note: this slashes the miner's whole balance, including any excess over the required claim.Pledge.
+		collateralToSlash := pledgePenaltyForConsensusFault(currBalance, params.FaultType)
 		targetReward := rewardForConsensusSlashReport(elapsedEpoch, collateralToSlash)
 
-		availableReward, err := st.subtractMinerPledge(store, params.Target, targetReward, big.Zero())
+		availableReward, err := st.subtractMinerBalance(store, params.Target, targetReward, big.Zero())
 		abortIfError(rt, err, "failed to subtract pledge for reward")
 		return availableReward
 	}).(abi.TokenAmount)
@@ -438,30 +498,6 @@ func (a *Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a *Actor) addPowerForSector(rt Runtime, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
-	var st State
-	var txErr error
-	rt.State().Transaction(&st, func() interface{} {
-		if err := st.addClaimedPowerForSector(adt.AsStore(rt), minerAddr, weight); err != nil {
-			txErr = errors.Wrap(err, "failed to add power power for sector")
-		}
-		return nil
-	})
-	return txErr
-}
-
-func (a *Actor) deductClaimedPowerForSector(rt Runtime, minerAddr addr.Address, weight SectorStorageWeightDesc) error {
-	var st State
-	var txErr error
-	rt.State().Transaction(&st, func() interface{} {
-		if err := st.deductClaimedPowerForSector(adt.AsStore(rt), minerAddr, weight); err != nil {
-			txErr = errors.Wrap(err, "failed to deducted claimed power for sector")
-		}
-		return nil
-	})
-	return txErr
-}
-
 func (a *Actor) initiateNewSurprisePoStChallenges(rt Runtime) error {
 	provingPeriod := SurprisePoStPeriod
 	var surprisedMiners []addr.Address
@@ -473,7 +509,7 @@ func (a *Actor) initiateNewSurprisePoStChallenges(rt Runtime) error {
 		minerSelectionSeed := rt.GetRandomness(rt.CurrEpoch())
 		randomness := crypto.DeriveRandWithEpoch(crypto.DomainSeparationTag_SurprisePoStSelectMiners, minerSelectionSeed, int64(rt.CurrEpoch()))
 
-		autil.TODO() // BigInt arithmetic (not floating-point)
+		TODO() // BigInt arithmetic (not floating-point)
 		challengeCount := math.Ceil(float64(st.MinerCount) / float64(provingPeriod))
 		surprisedMiners, err = st.selectMinersToSurprise(adt.AsStore(rt), int64(challengeCount), randomness)
 		if err != nil {
@@ -530,26 +566,10 @@ func (a *Actor) processDeferredCronEvents(rt Runtime) error {
 	return nil
 }
 
-func (a *Actor) getPledgeCollateralReqForMiner(rt Runtime, st *State, minerAddr addr.Address) (abi.TokenAmount, error) {
-	claimedPower, ok, err := getStoragePower(adt.AsStore(rt), st.ClaimedPower, minerAddr)
-	if err != nil {
-		return abi.NewStoragePower(0), errors.Wrap(err, "failed to get claimed miner power while computing pledge collateral requirement")
-	}
-	if !ok {
-		return abi.NewStoragePower(0), errors.Errorf("no claimed power for actor %v", minerAddr)
-	}
-
-	minerNominalPower, err := st.computeNominalPower(adt.AsStore(rt), minerAddr, claimedPower)
-	if err != nil {
-		return abi.NewTokenAmount(0), err
-	}
-	return rt.CurrIndices().PledgeCollateralReq(minerNominalPower), nil
-}
-
 func (a *Actor) slashPledgeCollateral(rt Runtime, minerAddr addr.Address, amountToSlash abi.TokenAmount) {
 	var st State
 	amountSlashed := rt.State().Transaction(&st, func() interface{} {
-		subtracted, err := st.subtractMinerPledge(adt.AsStore(rt), minerAddr, amountToSlash, big.Zero())
+		subtracted, err := st.subtractMinerBalance(adt.AsStore(rt), minerAddr, amountToSlash, big.Zero())
 		abortIfError(rt, err, "failed to subtract collateral for slash")
 		return subtracted
 	}).(abi.TokenAmount)
@@ -564,7 +584,7 @@ func (a *Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	amountSlashed := rt.State().Transaction(&st, func() interface{} {
 		var err error
 
-		st.ClaimedPower, err = deleteStoragePower(adt.AsStore(rt), st.ClaimedPower, miner)
+		err = st.deleteClaim(adt.AsStore(rt), miner)
 		if err != nil {
 			txErr = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
 			return big.Zero()
@@ -612,4 +632,11 @@ func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {
 		fmtmst := fmt.Sprintf(msg, args...)
 		rt.Abort(code, "%s: %v", fmtmst, err)
 	}
+}
+
+func bigProduct(p big.Int, rest ...big.Int) big.Int {
+	for _, r := range rest {
+		p = big.Mul(p, r)
+	}
+	return p
 }

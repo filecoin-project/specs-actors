@@ -12,6 +12,14 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+// Number of token units in an abstract "FIL" token.
+// The network works purely in the indivisible token amounts. This constant converts to a fixed decimal with more
+// human-friendly scale.
+const TokenPrecision = int64(1_000_000_000_000_000_000)
+
+// Target reward released to each block winner.
+var BlockRewardTarget = big.Mul(big.NewInt(100), big.NewInt(TokenPrecision))
+
 const rewardVestingFunction = None // PARAM_FINISH
 const rewardVestingPeriod = abi.ChainEpoch(0) // PARAM_FINISH
 
@@ -121,6 +129,6 @@ func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount) abi.TokenA
 	// TODO: this is definitely not the final form of the block reward function.
 	// The eventual form will be some kind of exponential decay.
 	treasury := big.Sub(balance, st.RewardTotal)
-	targetReward := abi.NewTokenAmount(100)
+	targetReward := BlockRewardTarget
 	return big.Min(targetReward, treasury)
 }
