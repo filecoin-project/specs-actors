@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -38,45 +39,50 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		assert.Equal(t, newPaychAddr, st.To)
 		assert.Equal(t, payerAddr, st.From)
 		assert.Empty(t, st.LaneStates)
-
 	})
 
-	t.Run("fails if target (to) is not account actor", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, newPaychAddr).
-			WithCaller(callerAddr, builtin.InitActorCodeID).
-			WithActorType(newPaychAddr, builtin.CronActorCodeID).
-			WithActorType(payerAddr, builtin.AccountActorCodeID)
-		rt := builder.Build(t)
-		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr})
+	testCases := []struct {
+		desc string
+		newActorAddr addr.Address
+		callerCode cid.Cid
+		newActorCode cid.Cid
+		payerCode cid.Cid
+		expExitCode exitcode.ExitCode
+
+	} {
+		{ "fails if target (to) is not account actor",
+			newPaychAddr,
+			builtin.InitActorCodeID,
+			builtin.CronActorCodeID,
+			builtin.AccountActorCodeID,
+			exitcode.ErrIllegalArgument,
+		},{ "fails if sender (from) is not account actor",
+			newPaychAddr,
+			builtin.InitActorCodeID,
+			builtin.CronActorCodeID,
+			builtin.AccountActorCodeID,
+			exitcode.ErrIllegalArgument,
+		},{ "fails if addr is not ID type",
+			tutil.NewActorAddr(t, "beach blanket babylon"),
+			builtin.InitActorCodeID,
+			builtin.CronActorCodeID,
+			builtin.AccountActorCodeID,
+			exitcode.ErrIllegalArgument,
+		},
+	}
+	for _,tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			builder := mock.NewBuilder(ctx, newPaychAddr).
+				WithCaller(callerAddr, tc.callerCode).
+				WithActorType(newPaychAddr, tc.newActorCode).
+				WithActorType(payerAddr, tc.payerCode)
+			rt := builder.Build(t)
+			rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+			rt.ExpectAbort(tc.expExitCode, func() {
+				rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr})
+			})
 		})
-	})
-
-	t.Run("fails if sender (from) is not account actor", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, newPaychAddr).
-			WithCaller(callerAddr, builtin.InitActorCodeID).
-			WithActorType(newPaychAddr, builtin.AccountActorCodeID).
-			WithActorType(payerAddr, builtin.CronActorCodeID)
-		rt := builder.Build(t)
-		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr})
-		})
-	})
-
-	t.Run("fails if addr is not ID type", func(t *testing.T) {
-		newPaychAddr1 := tutil.NewActorAddr(t, "beach blanket babylon")
-		builder := mock.NewBuilder(ctx, newPaychAddr1).
-			WithCaller(callerAddr, builtin.InitActorCodeID).
-			WithActorType(newPaychAddr, builtin.AccountActorCodeID).
-			WithActorType(payerAddr, builtin.AccountActorCodeID)
-		rt := builder.Build(t)
-		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr1})
-		})
-	})
+	}
 }
 
 func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
