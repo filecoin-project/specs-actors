@@ -22,38 +22,59 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 	ctx := context.Background()
 	actor := pcActorHarness{Actor{}, t}
 
-	pcaAddr := tutil.NewIDAddr(t, 100)
-	callerAddr := tutil.NewIDAddr(t, 101)
+	newPaychAddr := tutil.NewIDAddr(t, 100)
+	payerAddr := tutil.NewIDAddr(t, 101)
+	callerAddr := tutil.NewIDAddr(t, 102)
 
 	t.Run("can create a payment channel actor", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, pcaAddr).
-			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithActorType(pcaAddr, builtin.AccountActorCodeID)
-
+		builder := mock.NewBuilder(ctx, newPaychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(newPaychAddr, builtin.AccountActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, pcaAddr, callerAddr)
+		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
+		var st State
+		rt.GetState(&st)
+		assert.Equal(t, newPaychAddr, st.To)
+		assert.Equal(t, payerAddr, st.From)
+		assert.Empty(t, st.LaneStates)
+
 	})
 
-	t.Run("fails if target is not account actor", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, pcaAddr).
-			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithActorType(pcaAddr, builtin.CronActorCodeID)
+	t.Run("fails if target (to) is not account actor", func(t *testing.T) {
+		builder := mock.NewBuilder(ctx, newPaychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(newPaychAddr, builtin.CronActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr})
+			rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr})
+		})
+	})
+
+	t.Run("fails if sender (from) is not account actor", func(t *testing.T) {
+		builder := mock.NewBuilder(ctx, newPaychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(newPaychAddr, builtin.AccountActorCodeID).
+			WithActorType(payerAddr, builtin.CronActorCodeID)
+		rt := builder.Build(t)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr})
 		})
 	})
 
 	t.Run("fails if addr is not ID type", func(t *testing.T) {
-		pcaAddr1 := tutil.NewActorAddr(t, "beach blanket babylon")
-		builder := mock.NewBuilder(ctx, pcaAddr1).
-			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithActorType(pcaAddr, builtin.AccountActorCodeID)
+		newPaychAddr1 := tutil.NewActorAddr(t, "beach blanket babylon")
+		builder := mock.NewBuilder(ctx, newPaychAddr1).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(newPaychAddr, builtin.AccountActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: pcaAddr1})
+			rt.Call(actor.Constructor, &ConstructorParams{To: newPaychAddr1})
 		})
 	})
 }
@@ -62,23 +83,29 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 	ctx := context.Background()
 	actor := pcActorHarness{Actor{}, t}
 
-	pcaAddr := tutil.NewIDAddr(t, 100)
+	newPaychAddr := tutil.NewIDAddr(t, 100)
 	callerAddr := tutil.NewIDAddr(t, 101)
-	syscalls := tutil.MockSyscalls{VerifiesSig: true}
+	payerAddr := tutil.NewIDAddr(t, 102)
+
+	// set up trivial signature verifier and hasher
+	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
+	hasher := func(data []byte) []byte { return data }
+
+	balance:= abi.NewTokenAmount(100)
+	received := abi.NewTokenAmount(0)
+	builder := mock.NewBuilder(ctx, newPaychAddr).
+		WithBalance(balance, received).
+		WithEpoch(abi.ChainEpoch(2)).
+		WithCaller(callerAddr, builtin.InitActorCodeID).
+		WithActorType(newPaychAddr, builtin.AccountActorCodeID).
+		WithActorType(payerAddr, builtin.AccountActorCodeID).
+		WithVerifiesSig(versig).
+		WithHasher(hasher)
+
 
 	t.Run("Can add a lane/update actor state", func(t *testing.T) {
-		balance:= abi.NewTokenAmount(100)
-		received := abi.NewTokenAmount(0)
-		builder := mock.NewBuilder(ctx, pcaAddr).
-			WithBalance(balance, received).
-			WithEpoch(abi.ChainEpoch(2)).
-			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithActorType(pcaAddr, builtin.AccountActorCodeID).
-			WithSysCalls(&syscalls)
-
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, pcaAddr, callerAddr)
-
+		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
 		amt := big.NewInt(10)
 		lane := int64(999)
 		nonce := int64(1)
@@ -95,16 +122,18 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			Signature: sig,
 		}
 		ucp := &UpdateChannelStateParams{ Sv: sv }
-		rt.ExpectValidateCallerAddr(callerAddr, pcaAddr)
 
+		// payerAddr updates state, creates a lane
+		rt.SetCaller(payerAddr, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
 		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
 		assert.Equal(t, adt.EmptyValue{}, *constructRet)
 		rt.Verify()
 
 		var st State
 		rt.GetState(&st)
-		assert.Equal(t, pcaAddr, st.To)
-		assert.Equal(t, callerAddr, st.From)
+		assert.Equal(t, newPaychAddr, st.To)
+		assert.Equal(t, payerAddr, st.From)
 		assert.Len(t, st.LaneStates, 1)
 		ls := st.LaneStates[0]
 		assert.Equal(t, amt, ls.Redeemed)
@@ -113,15 +142,8 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 	})
 
 	t.Run("Fails to update state if too early for voucher", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, pcaAddr).
-			WithCaller(callerAddr, builtin.AccountActorCodeID).
-			WithActorType(pcaAddr, builtin.AccountActorCodeID).
-			WithSysCalls(&syscalls)
-
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, pcaAddr, callerAddr)
-		rt.ExpectValidateCallerAddr(callerAddr, pcaAddr)
-
+		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
 		tl := abi.ChainEpoch(10)
 		amt := big.NewInt(9)
 		lane := int64(8)
@@ -139,6 +161,9 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		}
 		ucp := &UpdateChannelStateParams{ Sv: sv }
 
+		// payerAddr updates state, creates a lane
+		rt.SetCaller(payerAddr, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.UpdateChannelState, ucp)
 		})
@@ -150,16 +175,18 @@ type pcActorHarness struct {
 	t testing.TB
 }
 
-func (h *pcActorHarness) constructAndVerify(rt *mock.Runtime, receiver, caller addr.Address) {
-	rt.ExpectValidateCallerType(builtin.AccountActorCodeID)
-	constructRet := rt.Call(h.Actor.Constructor, &ConstructorParams{To: receiver}).(*adt.EmptyValue)
+func (h *pcActorHarness) constructAndVerify(rt *mock.Runtime, sender, receiver addr.Address) {
+	params := &ConstructorParams{To: receiver, From: sender}
+
+	rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+	constructRet := rt.Call(h.Actor.Constructor, params).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
 
 	var st State
 	rt.GetState(&st)
 	assert.Equal(h.t, receiver, st.To)
-	assert.Equal(h.t, caller, st.From)
+	assert.Equal(h.t, sender, st.From)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.ToSend)
 	assert.Equal(h.t, abi.ChainEpoch(0), st.SettlingAt)
 	assert.Equal(h.t, abi.ChainEpoch(0), st.MinSettleHeight)

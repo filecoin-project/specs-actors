@@ -2,17 +2,18 @@ package paych
 
 import (
 	"bytes"
+	"fmt"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // Maximum number of lanes in a channel.
@@ -34,31 +35,50 @@ func (a Actor) Exports() []interface{} {
 var _ abi.Invokee = Actor{}
 
 type ConstructorParams struct {
-	To addr.Address
+	From addr.Address // Payer
+	To addr.Address   // Payee
 }
 
-func (pca Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
-	// Check that both parties are capable of signing vouchers by requiring them to be account actors.
-	// The account actor constructor checks that the embedded address is associated with an appropriate key.
-	// An alternative (more expensive) would be to send a message to the actor to fetch its key.
-	rt.ValidateImmediateCallerType(builtin.AccountActorCodeID)
-	targetCodeID, ok := rt.GetActorCodeCID(params.To)
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "no code for target address %v", params.To)
+// Constructor creates a payment channel actor.
+// See State for meaning of params
+func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+	// Only InitActor can create a payment channel actor.
+	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
+
+	// check that both parties are capable of signing vouchers
+	err := pca.validateActor(rt, params.To)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
 	}
-	if targetCodeID != builtin.AccountActorCodeID {
-		rt.Abortf(exitcode.ErrIllegalArgument, "target actor %v must be an account (%v), was %v",
-			params.To, builtin.AccountActorCodeID, targetCodeID)
+	err = pca.validateActor(rt, params.From)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
 	}
 
-	// Check that target is a canonical ID address.
-	// This is required for consistent caller validation.
-	if params.To.Protocol() != addr.ID {
-		rt.Abortf(exitcode.ErrIllegalArgument, "target address must be an ID-address, %v is %v", params.To, params.To.Protocol())
-	}
 	st := ConstructState(rt.Message().Caller(), params.To)
 	rt.State().Create(st)
+
 	return &adt.EmptyValue{}
+}
+
+// validateActor requires an actor to be an account actor and to have a canonical ID address.
+// It checks that the embedded address is associated with an appropriate key.
+// An alternative (more expensive) would be to send a message to the actor to fetch its key.
+func (pca *Actor) validateActor(rt vmr.Runtime, actorAddr addr.Address) error {
+	targetCodeID, ok := rt.GetActorCodeCID(actorAddr)
+	if !ok {
+		return fmt.Errorf("no code for address %v", actorAddr)
+	}
+	if targetCodeID != builtin.AccountActorCodeID {
+		return fmt.Errorf("actor %v must be an account (%v), was %v",
+			actorAddr, builtin.AccountActorCodeID, targetCodeID)
+	}
+	// Check that target is a canonical ID address.
+	// This is required for consistent caller validation.
+	if actorAddr.Protocol() != addr.ID {
+		return fmt.Errorf("address must be an ID-address, %v is %v", actorAddr, actorAddr.Protocol())
+	}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

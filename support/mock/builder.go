@@ -5,10 +5,9 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-cid"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 // Build for fluent initialization of a mock runtime.
@@ -87,7 +86,12 @@ func (b *RuntimeBuilder) WithActorType(addr addr.Address, code cid.Cid) *Runtime
 	return b
 }
 
-func (b *RuntimeBuilder) WithSysCalls(calls runtime.Syscalls) *RuntimeBuilder {
-	b.rt.syscalls = calls
+func (b *RuntimeBuilder) WithVerifiesSig(f VerifyFunc) *RuntimeBuilder {
+	b.rt.SetVerifier(f)
+	return b
+}
+
+func (b *RuntimeBuilder) WithHasher(f HasherFunc) *RuntimeBuilder {
+	b.rt.SetHasher(f)
 	return b
 }

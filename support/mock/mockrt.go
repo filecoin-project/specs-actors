@@ -33,7 +33,7 @@ type Runtime struct {
 	actorCodeCIDs map[addr.Address]cid.Cid
 	newActorAddr  addr.Address
 
-	syscalls runtime.Syscalls
+	syscalls syscaller
 
 	// Actor state
 	state   cid.Cid
@@ -70,7 +70,7 @@ var cidBuilder = cid.V1Builder{
 	MhLength: 0, // default
 }
 
-// /// Implementation of the runtime API /////
+///// Implementation of the runtime API /////
 
 func (rt *Runtime) Message() runtime.Message {
 	rt.requireInCall()
@@ -243,7 +243,7 @@ func (rt *Runtime) AbortStateMsg(msg string) {
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
-	return rt.syscalls
+	return &rt.syscalls
 }
 
 func (rt *Runtime) Context() context.Context {
@@ -356,7 +356,7 @@ func (a abort) String() string {
 	return fmt.Sprintf("abort(%v): %s", a.code, a.msg)
 }
 
-// /// Inspection facilities /////
+///// Inspection facilities /////
 
 func (rt *Runtime) StateRoot() cid.Cid {
 	return rt.state
@@ -517,6 +517,14 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	return ret[0].Interface()
 }
 
+func (rt *Runtime) SetVerifier(f VerifyFunc) {
+	rt.syscalls.Verifier = f
+}
+
+func (rt *Runtime) SetHasher(f HasherFunc) {
+	rt.syscalls.Hasher = f
+}
+
 func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
 	t := meth.Type()
 	rt.require(t.Kind() == reflect.Func, "%v is not a function", meth)
@@ -553,3 +561,4 @@ func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
 	err = o.UnmarshalCBOR(b)
 	return err
 }
+
