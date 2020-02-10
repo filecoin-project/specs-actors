@@ -285,6 +285,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
+	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
 		SealedCID:    precommit.Info.SealedCID,
 		SealEpoch:    precommit.Info.SealEpoch,
@@ -309,6 +310,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	AssertNoError(ret.Into(&dealWeight))
 
 	// Request power for activated sector.
+	// Returns relevant pledge requirement.
 	var pledgeRequirement abi.TokenAmount
 	ret, code = rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -325,6 +327,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 	AssertNoError(ret.Into(&pledgeRequirement))
 
+	// add sector to miner state
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
 			Info:              precommit.Info,

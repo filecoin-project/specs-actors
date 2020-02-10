@@ -211,11 +211,36 @@ func (st *State) InChallengeWindow(rt Runtime) bool {
 	return rt.CurrEpoch() > st.PoStState.ProvingPeriodStart // TODO: maybe also a few blocks beforehand?
 }
 
-func (st *State) ComputeProvingSet() cid.Cid {
+func (st *State) ComputeProvingSet(store adt.Store) (cid.Cid, error) {
 	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
-	// TODO: actually implement this
-	var ret cid.Cid
-	return ret
+
+	provingSet, err := adt.MakeEmptyArray(store)
+	if err != nil {
+		return provingSet.Root(), errors.Wrapf(err, "failed to create a new provingSet")
+	}
+
+	var err2 error
+	err = st.forEachSector(store, func(sector *SectorOnChainInfo) {
+		fault, err := st.FaultSet.Has(uint64(sector.Info.SectorNumber))
+		AssertNoError(err)
+		Assert(sector.DeclaredFaultEpoch != epochUndefined)
+		Assert(sector.DeclaredFaultDuration != epochUndefined)
+
+		if !fault {
+			err2 := provingSet.Set(uint64(sector.Info.SectorNumber), sector)
+			if err2 != nil {
+				return
+			}
+		}
+	})
+	if err != nil {
+		return provingSet.Root(), errors.Wrapf(err, "failed to traverse sectors for proving set")
+	}
+	if err2 != nil {
+		return provingSet.Root(), errors.Wrapf(err, "failed to copy sectors into proving set")
+	}
+
+	return provingSet.Root(), nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {
