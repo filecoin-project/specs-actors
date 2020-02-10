@@ -62,12 +62,11 @@ type WorkerKeyChange struct {
 }
 
 type SectorPreCommitInfo struct {
-	RegisteredProof abi.RegisteredProof
-	SectorNumber    abi.SectorNumber
-	SealedCID       cid.Cid // CommR
-	SealRandEpoch   abi.ChainEpoch
-	DealIDs         []abi.DealID
-	Expiration      abi.ChainEpoch // Sector Expiration
+	SectorNumber  abi.SectorNumber
+	SealedCID     cid.Cid // CommR
+	SealRandEpoch abi.ChainEpoch
+	DealIDs       []abi.DealID
+	Expiration    abi.ChainEpoch // Sector Expiration
 }
 
 type SectorPreCommitOnChainInfo struct {

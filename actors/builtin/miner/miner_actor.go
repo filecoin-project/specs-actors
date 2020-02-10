@@ -210,6 +210,11 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 // Sector Commitment //
 ///////////////////////
 
+type PreCommitSectorParams struct {
+	Info SectorPreCommitInfo
+	RegisteredProof abi.RegisteredProof
+}
+
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
 func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
@@ -248,11 +253,17 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
+<<<<<<< HEAD
 		EventType:       cronEventPreCommitExpiry,
 		Sectors:         &bf,
 		RegisteredProof: params.info.RegisteredProof,
+=======
+		EventType:       CronEventType_Miner_PreCommitExpiry,
+		Sectors:         []abi.SectorNumber{params.info.SectorNumber},
+		RegisteredProof: params.RegisteredProof,
+>>>>>>> address anorth comments
 	}
-	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.info.RegisteredProof] + 1
+	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.RegisteredProof] + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
@@ -636,6 +647,7 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof 
 		rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 	}
 
+<<<<<<< HEAD
 	sectorNos := bitfieldToSectorNos(rt, sectors)
 
 	depositToBurn := abi.NewTokenAmount(0)
@@ -651,9 +663,21 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof 
 
 		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, depositToBurn)
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
+=======
+	if rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
+>>>>>>> address anorth comments
 		return
 	}
-	// Else sector has been terminated or is not yet expired (which shouldn't happen).
+
+	rt.State().Transaction(&st, func() interface{} {
+		err = st.deletePrecommitttedSector(store, sectorNo)
+		if err != nil {
+			rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
+		}
+		return nil
+	})
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, sector.PreCommitDeposit)
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
 }
 
 func (a Actor) checkSectorExpiry(rt Runtime, sectors *abi.BitField) {
