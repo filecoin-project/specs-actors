@@ -561,4 +561,3 @@ func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
 	err = o.UnmarshalCBOR(b)
 	return err
 }
-

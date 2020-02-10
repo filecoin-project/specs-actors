@@ -39,8 +39,7 @@ type ConstructorParams struct {
 	To addr.Address   // Payee
 }
 
-// Constructor creates a payment channel actor.
-// See State for meaning of params
+// Constructor creates a payment channel actor. See State for meaning of params
 func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	// Only InitActor can create a payment channel actor.
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
@@ -67,7 +66,7 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 func (pca *Actor) validateActor(rt vmr.Runtime, actorAddr addr.Address) error {
 	targetCodeID, ok := rt.GetActorCodeCID(actorAddr)
 	if !ok {
-		return fmt.Errorf("no code for address %v", actorAddr)
+		return fmt.Errorf("no code for target address %v", actorAddr)
 	}
 	if targetCodeID != builtin.AccountActorCodeID {
 		return fmt.Errorf("actor %v must be an account (%v), was %v",
