@@ -11,12 +11,13 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
-func TestConstruction(t *testing.T) {
-	builder := mock.NewBuilder(context.Background(), address.Undef)
+func TestMarketState(t *testing.T) {
+	t.Run("constructor initializes all fields", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), address.Undef)
 
-	t.Run("initializes all fields", func(t *testing.T) {
 		rt := builder.Build(t)
 		store := adt.AsStore(rt)
 
@@ -37,5 +38,44 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, emptyMap.Root(), state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
 		assert.Equal(t, emptyMultiMap.Root(), state.DealIDsByParty)
+	})
+
+	t.Run("balance tables", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), address.Undef)
+		addr := tutil.NewIDAddr(t, 100)
+
+		testCases := []struct {
+			delta int64
+			total int64
+		}{
+			{10, 10},
+			{20, 30},
+			{40, 70},
+		}
+
+		setup := func(t *testing.T) (*mock.Runtime, *market.State) {
+			rt := builder.Build(t)
+			store := adt.AsStore(rt)
+			state, err := market.ConstructState(store)
+			assert.NoError(t, err)
+
+			return rt, state
+		}
+
+		t.Run("AddEscrowBalance adds to escrow table, GetEscrowBalance returns balance", func(t *testing.T) {
+			rt, st := setup(t)
+			for _, tc := range testCases {
+				st.AddEscrowBalance(rt, addr, abi.NewTokenAmount(tc.delta))
+				assert.Equal(t, abi.NewTokenAmount(tc.total), st.GetEscrowBalance(rt, addr))
+			}
+		})
+
+		t.Run("AddLockedBalance adds to escrow table, GetLockedBalance returns balance", func(t *testing.T) {
+			rt, st := setup(t)
+			for _, tc := range testCases {
+				st.AddLockedBalance(rt, addr, abi.NewTokenAmount(tc.delta))
+				assert.Equal(t, abi.NewTokenAmount(tc.total), st.GetLockedBalance(rt, addr))
+			}
+		})
 	})
 }

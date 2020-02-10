@@ -83,7 +83,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		// deal state updates.
 		amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, nominal))
 
-		minBalance := st.getLockedBalance(rt, nominal)
+		minBalance := st.GetLockedBalance(rt, nominal)
 
 		et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 		ex, err := et.SubtractWithMinimum(nominal, params.Amount, minBalance)
@@ -104,30 +104,17 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 }
 
 // Deposits the received value into the balance held in escrow.
-func (a Actor) AddBalance(rt Runtime, providerOrClientAdrress *addr.Address) *adt.EmptyValue {
-	nominal, _ := escrowAddress(rt, *providerOrClientAdrress)
+func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		msgValue := rt.Message().ValueReceived()
 
-		{
-			et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-			err := et.AddCreate(nominal, msgValue)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
-			}
-			st.EscrowTable = et.Root()
-		}
+		st.AddEscrowBalance(rt, nominal, msgValue)
 
-		{
-			lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-			err := lt.AddCreate(nominal, big.NewInt(0))
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
-			}
-			st.LockedTable = lt.Root()
-		}
+		// ensure there is an entry in the locked table
+		st.AddLockedBalance(rt, nominal, big.Zero())
 
 		return nil
 	})

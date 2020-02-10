@@ -222,7 +222,25 @@ func (st *State) generateStorageDealID() abi.DealID {
 // Balance table operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
+func (st *State) AddEscrowBalance(rt Runtime, a addr.Address, amount abi.TokenAmount) {
+	et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+	err := et.AddCreate(a, amount)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
+	}
+	st.EscrowTable = et.Root()
+}
+
+func (st *State) AddLockedBalance(rt Runtime, a addr.Address, amount abi.TokenAmount) {
+	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+	err := lt.AddCreate(a, amount)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
+	}
+	st.LockedTable = lt.Root()
+}
+
+func (st *State) GetEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable).Get(a)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
@@ -230,7 +248,7 @@ func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	return ret
 }
 
-func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
+func (st *State) GetLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable).Get(a)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
@@ -241,9 +259,9 @@ func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	prevLocked := st.getLockedBalance(rt, addr)
+	prevLocked := st.GetLockedBalance(rt, addr)
 	escrowBalance := st.getEscrowBalance(rt, addr)
-	if big.Add(prevLocked, amount).GreaterThan(st.getEscrowBalance(rt, addr)) {
+	if big.Add(prevLocked, amount).GreaterThan(st.GetEscrowBalance(rt, addr)) {
 		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount)
 	}
 
