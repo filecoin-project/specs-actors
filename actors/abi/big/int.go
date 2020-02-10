@@ -195,6 +195,10 @@ func FromBytes(buf []byte) (Int, error) {
 }
 
 func (bi *Int) MarshalBinary() ([]byte, error) {
+	if bi.Int == nil {
+		zero := Zero()
+		return zero.Bytes()
+	}	
 	return bi.Bytes()
 }
 
