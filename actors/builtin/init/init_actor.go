@@ -30,7 +30,7 @@ func (a Actor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValu
 	rt.State().Construct(func() runtime.CBORMarshaler {
 		state, err := ConstructState(adt.AsStore(rt), rt.NetworkName())
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to construct state: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 		}
 		return state
 	})
@@ -52,7 +52,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	callerCodeCID, ok := rt.GetActorCodeCID(rt.Message().Caller())
 	autil.AssertMsg(ok, "no code for actor at %s", rt.Message().Caller())
 	if !canExec(callerCodeCID, params.CodeCID) {
-		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
+		rt.Abortf(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}
 
 	// Compute a re-org-stable address.
@@ -67,7 +67,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	idAddr := rt.State().Transaction(&st, func() interface{} {
 		idAddr, err := st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "exec failed: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "exec failed: %v", err)
 		}
 		return idAddr
 	}).(addr.Address)

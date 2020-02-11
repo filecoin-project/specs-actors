@@ -57,7 +57,7 @@ type Runtime interface {
 	// This method does not return.
 	// The message and args are for diagnostic purposes and do not persist on chain. They should be suitable for
 	// passing to fmt.Errorf(msg, args...).
-	Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{})
+	Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{})
 
 	// Computes an address for a new actor. The returned address is intended to uniquely refer to
 	// the actor even in the event of a chain re-org (whereas an ID-address might refer to a

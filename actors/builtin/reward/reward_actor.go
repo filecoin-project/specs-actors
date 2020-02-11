@@ -40,7 +40,7 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.State().Construct(func() vmr.CBORMarshaler {
 		state, err := ConstructState(adt.AsStore(rt))
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to construct state: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 		}
 		return state
 	})
@@ -115,7 +115,7 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue
 		// Withdraw all available funds
 		withdrawn, err := st.withdrawReward(adt.AsStore(rt), owner, rt.CurrEpoch())
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to withdraw reward: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to withdraw reward: %v", err)
 		}
 		return withdrawn
 	}).(abi.TokenAmount)

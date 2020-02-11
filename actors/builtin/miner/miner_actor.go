@@ -74,14 +74,14 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 
 	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
 	if params.WorkerAddr.Protocol() != addr.BLS {
-		rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 	}
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 		}
 		return state
 	})
@@ -120,7 +120,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		// Specifically, this check isn't quite right
 		// TODO: check that the account actor at the other end of this address has a BLS key.
 		if params.newKey.Protocol() != addr.BLS {
-			rt.Abort(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
+			rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 		}
 
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
@@ -187,7 +187,7 @@ func (a Actor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoSt
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 		if !st.PoStState.isChallenged() {
-			rt.Abort(exitcode.ErrIllegalState, "Not currently challenged")
+			rt.Abortf(exitcode.ErrIllegalState, "Not currently challenged")
 		}
 		a.verifySurprisePost(rt, &st, &params.onChainInfo)
 
@@ -224,7 +224,7 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 func (a Actor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	if rt.Message().BlockMiner() != rt.Message().Receiver() {
-		rt.Abort(exitcode.ErrForbidden, "receiver must be miner of this block")
+		rt.Abortf(exitcode.ErrForbidden, "receiver must be miner of this block")
 	}
 
 	var st State
@@ -262,9 +262,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.E
 
 	store := adt.AsStore(rt)
 	if found, err := st.hasSectorNo(store, params.info.SectorNumber); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.info.SectorNumber, err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.info.SectorNumber, err)
 	} else if found {
-		rt.Abort(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
 	}
 
 	depositReq := precommitDeposit(st.getSectorSize(), params.info.Expiration-rt.CurrEpoch())
@@ -279,13 +279,13 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.E
 			PreCommitEpoch:   rt.CurrEpoch(),
 		})
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.info.SectorNumber, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.info.SectorNumber, err)
 		}
 		return nil
 	})
 
 	if params.info.Expiration <= rt.CurrEpoch() {
-		rt.Abort(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.info.Expiration, rt.CurrEpoch())
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.info.Expiration, rt.CurrEpoch())
 	}
 
 	// Request deferred Cron check for PreCommit expiry check.
@@ -314,13 +314,13 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	precommit, found, err := st.getPrecommittedSector(store, sectorNo)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to get precommitted sector %v: %v", sectorNo, err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to get precommitted sector %v: %v", sectorNo, err)
 	} else if !found {
-		rt.Abort(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
+		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
 	if rt.CurrEpoch() > precommit.PreCommitEpoch+PoRepMaxDelay || rt.CurrEpoch() < precommit.PreCommitEpoch+PoRepMinDelay {
-		rt.Abort(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
 	}
 
 	TODO()
@@ -375,11 +375,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			PledgeRequirement: pledgeRequirement,
 		}
 		if err = st.putSector(adt.AsStore(rt), newSectorInfo); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
 		if err = st.deletePrecommittedSector(store, sectorNo); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
 		}
 
 		st.ProvingSet = st.ComputeProvingSet()
@@ -417,9 +417,9 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	sectorNo := params.sectorNumber
 	sector, found, err := st.getSector(store, sectorNo)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 	} else if !found {
-		rt.Abort(exitcode.ErrNotFound, "no such sector %v", sectorNo)
+		rt.Abortf(exitcode.ErrNotFound, "no such sector %v", sectorNo)
 	}
 
 	storageWeightDescPrev := asStorageWeightDesc(st.Info.SectorSize, sector)
@@ -427,7 +427,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 	extensionLength := params.newExpiration - sector.Info.Expiration
 	if extensionLength < 0 {
-		rt.Abort(exitcode.ErrIllegalArgument, "cannot reduce sector expiration")
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration")
 	}
 
 	storageWeightDescNew := *storageWeightDescPrev
@@ -451,7 +451,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		sector.Info.Expiration = params.newExpiration
 		sector.PledgeRequirement = newPledgeRequirement
 		if err = st.putSector(store, sector); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
 		return nil
 	})
@@ -485,7 +485,7 @@ type DeclareTemporaryFaultsParams struct {
 
 func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsParams) *adt.EmptyValue {
 	if params.duration <= abi.ChainEpoch(0) {
-		rt.Abort(exitcode.ErrIllegalArgument, "non-positive fault duration %v", params.duration)
+		rt.Abortf(exitcode.ErrIllegalArgument, "non-positive fault duration %v", params.duration)
 	}
 
 	effectiveEpoch := rt.CurrEpoch() + DeclaredFaultEffectiveDelay
@@ -498,7 +498,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 		for _, sectorNumber := range params.sectorNumbers {
 			sector, found, err := st.getSector(store, sectorNumber)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 			}
 			fault, err := st.FaultSet.Has(uint64(sectorNumber))
 			AssertNoError(err)
@@ -513,7 +513,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 			sector.DeclaredFaultEpoch = effectiveEpoch
 			sector.DeclaredFaultDuration = params.duration
 			if err = st.putSector(store, sector); err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 			}
 		}
 		return temporaryFaultFee(storageWeightDescs, params.duration)
@@ -549,7 +549,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 
 	var payload CronEventPayload
 	if err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload)); err != nil {
-		rt.Abort(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
 	}
 
 	if payload.EventType == CronEventType_Miner_TempFault {
@@ -591,7 +591,7 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectorNos []abi.SectorNumbe
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.getSector(store, sectorNo)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 			} else if !found {
 				continue // Sector has been terminated
 			}
@@ -612,10 +612,10 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectorNos []abi.SectorNumbe
 				endFaults = append(endFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
 				endFaultPledge = big.Add(endFaultPledge, sector.PledgeRequirement)
 				if err = st.FaultSet.Unset(uint64(sectorNo)); err != nil {
-					rt.Abort(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNo, err)
+					rt.Abortf(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNo, err)
 				}
 				if err = st.putSector(store, sector); err != nil {
-					rt.Abort(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
+					rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
 				}
 			}
 		}
@@ -640,12 +640,12 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.getPrecommittedSector(store, sectorNo)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 			}
 			if found && rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
 				err = st.deletePrecommittedSector(store, sectorNo)
 				if err != nil {
-					rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
+					rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
 				}
 				depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
 			}
@@ -666,7 +666,7 @@ func (a Actor) checkSectorExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
 	for _, sectorNo := range sectorNos {
 		sector, found, err := st.getSector(adt.AsStore(rt), sectorNo)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 		}
 		if found && rt.CurrEpoch() >= sector.Info.Expiration {
 			toTerminate = append(toTerminate, sectorNo)
@@ -691,10 +691,10 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.getSector(store, sectorNo)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to check sector %v: %v", sectorNo, err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", sectorNo, err)
 			}
 			if !found {
-				rt.Abort(exitcode.ErrNotFound, "no sector %v", sectorNo)
+				rt.Abortf(exitcode.ErrNotFound, "no sector %v", sectorNo)
 			}
 
 			dealIDs = append(dealIDs, sector.Info.DealIDs...)
@@ -713,7 +713,7 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 
 			err = st.deleteSector(store, sectorNo)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
 			}
 		}
 		return nil
@@ -778,7 +778,7 @@ func (a Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPa
 	var payload []byte
 	err := callbackPayload.MarshalCBOR(bytes.NewBuffer(payload))
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize payload: %v", err)
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to serialize payload: %v", err)
 	}
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -847,7 +847,7 @@ func (a Actor) requestTerminateAllDeals(rt Runtime, st *State) {
 	if err := st.forEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
 		dealIds = append(dealIds, sector.Info.DealIDs...)
 	}); err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
 	}
 
 	a.requestTerminateDeals(rt, dealIds)
@@ -882,14 +882,14 @@ func (a Actor) verifySurprisePost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	challengeIndices := make(map[int64]bool)
 	for _, tix := range onChainInfo.Candidates {
 		if _, ok := challengeIndices[tix.ChallengeIndex]; ok {
-			rt.Abort(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Duplicate ticket included.")
+			rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Duplicate ticket included.")
 		}
 		challengeIndices[tix.ChallengeIndex] = true
 	}
 
 	// verify appropriate number of tickets is present
 	if int64(len(onChainInfo.Candidates)) != NumSurprisePoStSectors {
-		rt.Abort(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Too few tickets included.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Too few tickets included.")
 	}
 
 	randomnessK := rt.GetRandomness(challengeEpoch - PoStLookback)
@@ -908,7 +908,7 @@ func (a Actor) verifySurprisePost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 	// Verify the PoSt Proof
 	if !rt.Syscalls().VerifyPoSt(sectorSize, pvInfo) {
-		rt.Abort(exitcode.ErrIllegalArgument, "invalid PoSt %+v", pvInfo)
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid PoSt %+v", pvInfo)
 	}
 }
 
@@ -916,7 +916,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 	// Check randomness.
 	sealEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[abi.RegisteredProof_WinStackedDRG32GiBSeal]
 	if onChainInfo.SealEpoch < sealEarliest {
-		rt.Abort(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealEpoch, sealEarliest)
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealEpoch, sealEarliest)
 	}
 
 	commD := a.requestUnsealedSectorCID(rt, sectorSize, onChainInfo.DealIDs)
@@ -938,7 +938,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 		UnsealedCID:           commD,
 	}
 	if !rt.Syscalls().VerifySeal(sectorSize, svInfo) {
-		rt.Abort(exitcode.ErrIllegalState, "invalid seal %+v", svInfo)
+		rt.Abortf(exitcode.ErrIllegalState, "invalid seal %+v", svInfo)
 	}
 }
 
@@ -965,11 +965,11 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if (st.Info.PendingWorkerKey == WorkerKeyChange{}) {
-			rt.Abort(exitcode.ErrIllegalState, "No pending key change.")
+			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
 		}
 
 		if st.Info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
-			rt.Abort(exitcode.ErrIllegalState, "Too early for key change. Current: %v, Change: %v)", rt.CurrEpoch(), st.Info.PendingWorkerKey.EffectiveAt)
+			rt.Abortf(exitcode.ErrIllegalState, "Too early for key change. Current: %v, Change: %v)", rt.CurrEpoch(), st.Info.PendingWorkerKey.EffectiveAt)
 		}
 
 		st.Info.Worker = st.Info.PendingWorkerKey.NewWorker
@@ -982,7 +982,7 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 func confirmPaymentAndRefundChange(rt vmr.Runtime, expected abi.TokenAmount) {
 	if rt.Message().ValueReceived().LessThan(expected) {
-		rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds received, expected %v", expected)
+		rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds received, expected %v", expected)
 	}
 
 	if rt.Message().ValueReceived().GreaterThan(expected) {

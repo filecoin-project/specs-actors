@@ -41,7 +41,7 @@ func (r rtStore) Context() context.Context {
 
 func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
 	if !r.IpldGet(c, out.(vmr.CBORUnmarshaler)) {
-		r.Abort(exitcode.ErrNotFound, "not found")
+		r.Abortf(exitcode.ErrNotFound, "not found")
 	}
 	return nil
 }

@@ -44,17 +44,17 @@ func (pca Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Emp
 	rt.ValidateImmediateCallerType(builtin.AccountActorCodeID)
 	targetCodeID, ok := rt.GetActorCodeCID(params.To)
 	if !ok {
-		rt.Abort(exitcode.ErrIllegalArgument, "no code for target address %v", params.To)
+		rt.Abortf(exitcode.ErrIllegalArgument, "no code for target address %v", params.To)
 	}
 	if targetCodeID != builtin.AccountActorCodeID {
-		rt.Abort(exitcode.ErrIllegalArgument, "target actor %v must be an account (%v), was %v",
+		rt.Abortf(exitcode.ErrIllegalArgument, "target actor %v must be an account (%v), was %v",
 			params.To, builtin.AccountActorCodeID, targetCodeID)
 	}
 
 	// Check that target is a canonical ID address.
 	// This is required for consistent caller validation.
 	if params.To.Protocol() != addr.ID {
-		rt.Abort(exitcode.ErrIllegalArgument, "target address must be an ID-address, %v is %v", params.To, params.To.Protocol())
+		rt.Abortf(exitcode.ErrIllegalArgument, "target address must be an ID-address, %v is %v", params.To, params.To.Protocol())
 	}
 
 	rt.State().Construct(func() vmr.CBORMarshaler {
@@ -126,20 +126,20 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 
 	vb, nerr := sv.SigningBytes()
 	if nerr != nil {
-		rt.Abort(exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 	}
 
 	if !rt.Syscalls().VerifySignature(*sv.Signature, signer, vb) {
-		rt.Abort(exitcode.ErrIllegalArgument, "voucher signature invalid")
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher signature invalid")
 	}
 
 	if rt.CurrEpoch() < sv.TimeLock {
-		rt.Abort(exitcode.ErrIllegalArgument, "cannot use this voucher yet!")
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot use this voucher yet!")
 	}
 
 	if len(sv.SecretPreimage) > 0 {
 		if !bytes.Equal(rt.Syscalls().Hash_SHA256(params.Secret), sv.SecretPreimage) {
-			rt.Abort(exitcode.ErrIllegalArgument, "incorrect secret!")
+			rt.Abortf(exitcode.ErrIllegalArgument, "incorrect secret!")
 		}
 	}
 
@@ -162,7 +162,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
 		if ls == nil {
 			if len(st.LaneStates) >= LaneLimit {
-				rt.Abort(exitcode.ErrIllegalArgument, "lane limit exceeded")
+				rt.Abortf(exitcode.ErrIllegalArgument, "lane limit exceeded")
 			}
 			ls = &LaneState{
 				ID:       sv.Lane,
@@ -174,7 +174,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		}
 
 		if ls.Nonce > sv.Nonce {
-			rt.Abort(exitcode.ErrIllegalArgument, "voucher has an outdated nonce, cannot redeem")
+			rt.Abortf(exitcode.ErrIllegalArgument, "voucher has an outdated nonce, cannot redeem")
 		}
 
 		// The next section actually calculates the payment amounts to update the payment channel state
@@ -182,19 +182,19 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		redeemedFromOthers := big.Zero()
 		for _, merge := range sv.Merges {
 			if merge.Lane == sv.Lane {
-				rt.Abort(exitcode.ErrIllegalArgument, "voucher cannot merge lanes into its own lane")
+				rt.Abortf(exitcode.ErrIllegalArgument, "voucher cannot merge lanes into its own lane")
 			}
 
 			_, otherls := findLane(st.LaneStates, merge.Lane)
 			if otherls != nil {
 				if otherls.Nonce >= merge.Nonce {
-					rt.Abort(exitcode.ErrIllegalArgument, "merged lane in voucher has outdated nonce, cannot redeem")
+					rt.Abortf(exitcode.ErrIllegalArgument, "merged lane in voucher has outdated nonce, cannot redeem")
 				}
 
 				redeemedFromOthers = big.Add(redeemedFromOthers, otherls.Redeemed)
 				otherls.Nonce = merge.Nonce
 			} else {
-				rt.Abort(exitcode.ErrIllegalArgument, "voucher specifies invalid merge lane %v", merge.Lane)
+				rt.Abortf(exitcode.ErrIllegalArgument, "voucher specifies invalid merge lane %v", merge.Lane)
 			}
 		}
 
@@ -209,10 +209,10 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 
 		// 4. check operation validity
 		if newSendBalance.LessThan(big.Zero()) {
-			rt.Abort(exitcode.ErrIllegalState, "voucher would leave channel balance negative")
+			rt.Abortf(exitcode.ErrIllegalState, "voucher would leave channel balance negative")
 		}
 		if newSendBalance.GreaterThan(rt.CurrentBalance()) {
-			rt.Abort(exitcode.ErrIllegalState, "not enough funds in channel to cover voucher")
+			rt.Abortf(exitcode.ErrIllegalState, "not enough funds in channel to cover voucher")
 		}
 
 		// 5. add new redemption ToSend
@@ -239,7 +239,7 @@ func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.ValidateImmediateCallerIs(st.From, st.To)
 
 		if st.SettlingAt != 0 {
-			rt.Abort(exitcode.ErrIllegalState, "channel already seettling")
+			rt.Abortf(exitcode.ErrIllegalState, "channel already seettling")
 		}
 
 		st.SettlingAt = rt.CurrEpoch() + SettleDelay
@@ -258,7 +258,7 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(st.From, st.To)
 
 	if st.SettlingAt == 0 || rt.CurrEpoch() < st.SettlingAt {
-		rt.Abort(exitcode.ErrForbidden, "payment channel not settling or settled")
+		rt.Abortf(exitcode.ErrForbidden, "payment channel not settling or settled")
 	}
 
 	// send remaining balance to "From"
