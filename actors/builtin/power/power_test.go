@@ -70,7 +70,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalNetworkPower)
 		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
 
-		claim := adt.AsMap(rt.Store(), st.Claims)
+		claim := adt.AsMap(adt.AsStore(rt), st.Claims)
 		keys, err := claim.CollectKeys()
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(keys))
@@ -80,7 +80,7 @@ func TestConstruction(t *testing.T) {
 		assert.True(t, found)
 		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
-		escrowTable := adt.AsMap(rt.Store(), st.EscrowTable)
+		escrowTable := adt.AsMap(adt.AsStore(rt), st.EscrowTable)
 		keys, err = escrowTable.CollectKeys()
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(keys))
@@ -106,7 +106,7 @@ func asKey(in string) adt.Keyer {
 }
 
 func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
-	mapChecked := adt.AsMap(rt.Store(), cid)
+	mapChecked := adt.AsMap(adt.AsStore(rt), cid)
 	keys, err := mapChecked.CollectKeys()
 	require.NoError(t, err)
 	assert.Empty(t, keys)

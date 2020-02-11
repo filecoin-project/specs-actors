@@ -15,7 +15,6 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // A mock runtime for unit testing of actors in isolation.
@@ -163,32 +162,9 @@ func (rt *Runtime) State() runtime.StateHandle {
 	return rt
 }
 
-func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
+func (rt *Runtime) Store() runtime.Store {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	data, found := rt.store[c]
-	if found {
-		err := o.UnmarshalCBOR(bytes.NewReader(data))
-		if err != nil {
-			rt.Abortf(exitcode.SysErrSerialization, err.Error())
-		}
-	}
-	return found
-}
-
-func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
-	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	r := bytes.Buffer{}
-	err := o.MarshalCBOR(&r)
-	if err != nil {
-		rt.Abortf(exitcode.SysErrSerialization, err.Error())
-	}
-	data := r.Bytes()
-	key, err := cidBuilder.Sum(data)
-	if err != nil {
-		rt.Abortf(exitcode.SysErrSerialization, err.Error())
-	}
-	rt.store[key] = data
-	return key
+	return rt
 }
 
 func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) (runtime.SendReturn, exitcode.ExitCode) {
@@ -283,6 +259,36 @@ func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}
 	}
 }
 
+///// Store implementation /////
+
+func (rt *Runtime) Get(c cid.Cid, o runtime.CBORUnmarshaler) bool {
+	// requireInCall omitted because it makes using this mock runtime as a store awkward.
+	data, found := rt.store[c]
+	if found {
+		err := o.UnmarshalCBOR(bytes.NewReader(data))
+		if err != nil {
+			rt.Abortf(exitcode.SysErrSerialization, err.Error())
+		}
+	}
+	return found
+}
+
+func (rt *Runtime) Put(o runtime.CBORMarshaler) cid.Cid {
+	// requireInCall omitted because it makes using this mock runtime as a store awkward.
+	r := bytes.Buffer{}
+	err := o.MarshalCBOR(&r)
+	if err != nil {
+		rt.Abortf(exitcode.SysErrSerialization, err.Error())
+	}
+	data := r.Bytes()
+	key, err := cidBuilder.Sum(data)
+	if err != nil {
+		rt.Abortf(exitcode.SysErrSerialization, err.Error())
+	}
+	rt.store[key] = data
+	return key
+}
+
 ///// Message implementation /////
 
 func (rt *Runtime) BlockMiner() addr.Address {
@@ -307,11 +313,11 @@ func (rt *Runtime) Create(obj runtime.CBORMarshaler) {
 	if rt.state.Defined() {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "state already constructed")
 	}
-	rt.state = rt.IpldPut(obj)
+	rt.state = rt.Store().Put(obj)
 }
 
 func (rt *Runtime) Readonly(st runtime.CBORUnmarshaler) {
-	found := rt.IpldGet(rt.state, st)
+	found := rt.Store().Get(rt.state, st)
 	if !found {
 		rt.Abortf(exitcode.SysErrInternal, "actor state not found: %v", rt.state)
 	}
@@ -324,7 +330,7 @@ func (rt *Runtime) Transaction(st runtime.CBORer, f func() interface{}) interfac
 	rt.Readonly(st)
 	rt.inTransaction = true
 	ret := f()
-	rt.state = rt.IpldPut(st)
+	rt.state = rt.Put(st)
 	rt.inTransaction = false
 	return ret
 }
@@ -362,10 +368,6 @@ func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
 	if err != nil {
 		rt.t.Fatalf("error loading state: %v", err)
 	}
-}
-
-func (rt *Runtime) Store() adt.Store {
-	return adt.AsStore(rt)
 }
 
 ///// Mocking facilities /////
