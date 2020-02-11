@@ -76,7 +76,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		st.PendingTxns = pending.Root()
 		st.InitialBalance = abi.NewTokenAmount(0)
 		if params.UnlockDuration != 0 {
-			st.InitialBalance = rt.ValueReceived()
+			st.InitialBalance = rt.Message().ValueReceived()
 			st.UnlockDuration = params.UnlockDuration
 			st.StartEpoch = rt.CurrEpoch()
 		}
@@ -94,7 +94,7 @@ type ProposeParams struct {
 
 func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.ImmediateCaller()
+	callerAddr := rt.Message().Caller()
 
 	var txnID TxnID
 	var st State
@@ -131,7 +131,7 @@ type TxnIDParams struct {
 
 func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.ImmediateCaller()
+	callerAddr := rt.Message().Caller()
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		a.validateSigner(rt, &st, callerAddr)
@@ -143,7 +143,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 
 func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.ImmediateCaller()
+	callerAddr := rt.Message().Caller()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -172,7 +172,7 @@ type AddSignerParams struct {
 
 func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -195,7 +195,7 @@ type RemoveSignerParams struct {
 
 func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -226,7 +226,7 @@ type SwapSignerParams struct {
 
 func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -258,7 +258,7 @@ type ChangeNumApprovalsThresholdParams struct {
 
 func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
-	rt.ValidateImmediateCallerIs(rt.CurrReceiver())
+	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -283,12 +283,12 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		}
 		// abort duplicate approval
 		for _, previousApprover := range txn.Approved {
-			if previousApprover == rt.ImmediateCaller() {
+			if previousApprover == rt.Message().Caller() {
 				rt.Abort(exitcode.ErrIllegalState, "already approved this message")
 			}
 		}
 		// update approved on the transaction
-		txn.Approved = append(txn.Approved, rt.ImmediateCaller())
+		txn.Approved = append(txn.Approved, rt.Message().Caller())
 		if err = st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
 		}

@@ -58,7 +58,7 @@ func (pca Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Emp
 	}
 
 	rt.State().Construct(func() vmr.CBORMarshaler {
-		return ConstructState(rt.ImmediateCaller(), params.To)
+		return ConstructState(rt.Message().Caller(), params.To)
 	})
 	return &adt.EmptyValue{}
 }
@@ -117,7 +117,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 	// both parties must sign voucher: one who submits it, the other explicitly signs it
 	rt.ValidateImmediateCallerIs(st.From, st.To)
 	var signer addr.Address
-	if rt.ImmediateCaller() == st.From {
+	if rt.Message().Caller() == st.From {
 		signer = st.To
 	} else {
 		signer = st.From

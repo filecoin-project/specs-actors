@@ -15,17 +15,14 @@ import (
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
+	// Information related to the current message being executed.
+	Message() Message
+
 	// The network name, e.g. "mainnet".
 	NetworkName() string
 
 	// The current chain epoch number. The genesis block has epoch zero.
 	CurrEpoch() abi.ChainEpoch
-
-	// The address of the actor receiving the message. Always an ID-address.
-	CurrReceiver() addr.Address
-
-	// The address of the immediate calling actor. Always an ID-address.
-	ImmediateCaller() addr.Address
 
 	// Validates the caller against some predicate.
 	// Exported actor methods must invoke at least one caller validation before returning.
@@ -33,15 +30,8 @@ type Runtime interface {
 	ValidateImmediateCallerIs(addrs ...addr.Address)
 	ValidateImmediateCallerType(types ...cid.Cid)
 
-	// The actor who mined the block in which the current invocation is being evaluated.
-	// Always an ID-address.
-	ToplevelBlockWinner() addr.Address
-
 	// The balance of the receiver.
 	CurrentBalance() abi.TokenAmount
-
-	// The value attached to the message being processed, implicitly added to CurrentBalance() before method invocation.
-	ValueReceived() abi.TokenAmount
 
 	// Look up the code ID at an actor address.
 	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)
@@ -92,6 +82,22 @@ type Runtime interface {
 
 	// Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
 	StartSpan(name string) TraceSpan
+}
+
+// Message contains information available to the actor about the executing message.
+type Message interface {
+	// The actor who mined the block in which the current method was included.
+	// Always an ID-address.
+	BlockMiner() addr.Address
+
+	// The address of the immediate calling actor. Always an ID-address.
+	Caller() addr.Address
+
+	// The address of the actor receiving the message. Always an ID-address.
+	Receiver() addr.Address
+
+	// The value attached to the message being processed, implicitly added to CurrentBalance() before method invocation.
+	ValueReceived() abi.TokenAmount
 }
 
 // Pure functions implemented as primitives by the runtime.
