@@ -26,7 +26,7 @@ const epochUndefined = abi.ChainEpoch(-1)
 type CronEventType int64
 
 const (
-	CronEventType_Miner_SurpriseExpiration CronEventType = iota
+	CronEventType_Miner_PoStExpiration CronEventType = iota
 	CronEventType_Miner_WorkerKeyChange
 	CronEventType_Miner_PreCommitExpiry
 	CronEventType_Miner_SectorExpiry
@@ -36,7 +36,7 @@ const (
 type CronEventPayload struct {
 	EventType CronEventType
 	// TODO: replace sectors with a bitfield
-	Sectors []abi.SectorNumber // Empty for global events, such as SurprisePoSt expiration.
+	Sectors *abi.BitField
 }
 
 type Actor struct{}
@@ -46,16 +46,14 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.ControlAddresses,
 		3:                         a.ChangeWorkerAddress,
-		4:                         a.OnSurprisePoStChallenge,
-		5:                         a.SubmitSurprisePoStResponse,
-		6:                         a.OnDeleteMiner,
-		7:                         a.OnVerifiedElectionPoSt,
-		8:                         a.PreCommitSector,
-		9:                         a.ProveCommitSector,
-		10:                        a.ExtendSectorExpiration,
-		11:                        a.TerminateSectors,
-		12:                        a.DeclareTemporaryFaults,
-		13:                        a.OnDeferredCronEvent,
+		4:                         a.SubmitWindowedPoSt,
+		5:                         a.OnDeleteMiner,
+		6:                         a.PreCommitSector,
+		7:                         a.ProveCommitSector,
+		8:                         a.ExtendSectorExpiration,
+		9:                         a.TerminateSectors,
+		10:                        a.DeclareTemporaryFaults,
+		11:                        a.OnDeferredCronEvent,
 	}
 }
 
@@ -142,70 +140,46 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 }
 
 //////////////////
-// SurprisePoSt //
+// WindowedPoSt //
 //////////////////
 
-// Called by Actor to notify StorageMiner of SurprisePoSt Challenge.
-func (a Actor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-
-	var st State
-	challenged := rt.State().Transaction(&st, func() interface{} {
-		// If already challenged, do not challenge again.
-		// Failed PoSt will automatically reset the state to not-challenged.
-		if st.PoStState.isChallenged() {
-			return false
-		}
-
-		st.PoStState = PoStState{
-			LastSuccessfulPoSt:     st.PoStState.LastSuccessfulPoSt,
-			SurpriseChallengeEpoch: rt.CurrEpoch(),
-			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures,
-		}
-		return true
-	}).(bool)
-
-	if challenged {
-		// Request deferred Cron check for SurprisePoSt challenge expiry.
-		cronPayload := CronEventPayload{
-			EventType: CronEventType_Miner_SurpriseExpiration,
-			Sectors:   nil,
-		}
-		surpriseDuration := power.SurprisePostChallengeDuration
-		a.enrollCronEvent(rt, rt.CurrEpoch()+surpriseDuration, &cronPayload)
-	}
-	return &adt.EmptyValue{}
-}
-
-type SubmitSurprisePoStResponseParams struct {
-	OnChainInfo abi.OnChainSurprisePoStVerifyInfo
-}
-
-// Invoked by miner's worker address to submit a response to a pending SurprisePoSt challenge.
-func (a Actor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoStResponseParams) *adt.EmptyValue {
+// Invoked by miner's worker address to submit their fallback post
+func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
-		if !st.PoStState.isChallenged() {
-			rt.Abortf(exitcode.ErrIllegalState, "Not currently challenged")
+
+		if rt.CurrEpoch() > st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration {
+			rt.Abortf(exitcode.ErrIllegalState, "PoSt submission too late")
 		}
-		a.verifySurprisePost(rt, &st, &params.OnChainInfo)
+
+		if rt.CurrEpoch() <= st.PoStState.ProvingPeriodStart {
+			rt.Abortf(exitcode.ErrIllegalState, "Not currently in submission window for PoSt")
+		}
+
+		// A failed verification doesnt necessarily immediately cause a penalty
+		// The miner has until the end of the window to submit a good proof
+		a.verifyWindowedPost(rt, &st, params)
+
+		// TODO: post is valid, do we do anything with faults now?
+		// Assume there will be work to be done here once faults are
+		// implemented, with faults, we have potential power adjustments
 
 		st.PoStState = PoStState{
-			LastSuccessfulPoSt:     rt.CurrEpoch(),
-			SurpriseChallengeEpoch: epochUndefined,
+			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: 0,
 		}
+
+		st.ProvingSet = st.Sectors
+
 		return nil
 	})
 
-	_, code := rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnMinerSurprisePoStSuccess,
-		&adt.EmptyValue{},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify storage power actor")
+	a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
+		EventType: CronEventType_Miner_PoStExpiration,
+	})
+	// TODO: register a callback with cron to check that we submitted our proof at the right time
+
 	return &adt.EmptyValue{}
 }
 
@@ -216,82 +190,52 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return &adt.EmptyValue{}
 }
 
-//////////////////
-// ElectionPoSt //
-//////////////////
-
-// Called by the VM interpreter once an ElectionPoSt has been verified.
-func (a Actor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	if rt.Message().BlockMiner() != rt.Message().Receiver() {
-		rt.Abortf(exitcode.ErrForbidden, "receiver must be miner of this block")
-	}
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		updateSuccessEpoch := st.PoStState.isPoStOk()
-
-		// Advance the timestamp of the most recent PoSt success, provided the miner has not faulted
-		// in normal state. (Cannot do this if miner has missed a SurprisePoSt.)
-		if updateSuccessEpoch {
-			st.PoStState = PoStState{
-				LastSuccessfulPoSt:     rt.CurrEpoch(),
-				SurpriseChallengeEpoch: st.PoStState.SurpriseChallengeEpoch, // expected to be undef because PoStState is OK
-				NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures, // expected to be 0
-			}
-		}
-		return nil
-	})
-	return &adt.EmptyValue{}
-}
-
 ///////////////////////
 // Sector Commitment //
 ///////////////////////
 
-type PreCommitSectorParams struct {
-	Info SectorPreCommitInfo
-}
-
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.EmptyValue {
+func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	if found, err := st.hasSectorNo(store, params.Info.SectorNumber); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.Info.SectorNumber, err)
+	if found, err := st.hasSectorNo(store, params.SectorNumber); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 	} else if found {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.Info.SectorNumber)
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 	}
 
-	depositReq := precommitDeposit(st.getSectorSize(), params.Info.Expiration-rt.CurrEpoch())
+	depositReq := precommitDeposit(st.getSectorSize(), params.Expiration-rt.CurrEpoch())
 	confirmPaymentAndRefundChange(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.putPrecommittedSector(store, &SectorPreCommitOnChainInfo{
-			Info:             params.Info,
+			Info:             *params,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
 		})
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.Info.SectorNumber, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
 		return nil
 	})
 
-	if params.Info.Expiration <= rt.CurrEpoch() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Info.Expiration, rt.CurrEpoch())
+	if params.Expiration <= rt.CurrEpoch() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
 	}
+
+	bf := abi.NewBitField()
+	bf.Set(uint64(params.SectorNumber))
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
 		EventType: CronEventType_Miner_PreCommitExpiry,
-		Sectors:   []abi.SectorNumber{params.Info.SectorNumber},
+		Sectors:   &bf,
 	}
 	expiryBound := rt.CurrEpoch() + PoRepMaxDelay + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
@@ -374,6 +318,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			DealWeight:        dealWeight,
 			PledgeRequirement: pledgeRequirement,
 		}
+
 		if err = st.putSector(adt.AsStore(rt), newSectorInfo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
@@ -382,14 +327,20 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
 		}
 
-		st.ProvingSet = st.ComputeProvingSet()
+		// Do not update proving set during challenge window
+		if !st.inChallengeWindow(rt) {
+			st.ProvingSet = st.Sectors
+		}
 		return nil
 	})
+
+	bf := abi.NewBitField()
+	bf.Set(uint64(sectorNo))
 
 	// Request deferred callback for sector expiry.
 	cronPayload := CronEventPayload{
 		EventType: CronEventType_Miner_SectorExpiry,
-		Sectors:   []abi.SectorNumber{sectorNo},
+		Sectors:   &bf,
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
 
@@ -459,7 +410,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 }
 
 type TerminateSectorsParams struct {
-	SectorNumbers []abi.SectorNumber
+	Sectors *abi.BitField
 }
 
 func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
@@ -467,9 +418,11 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
+	sectorNos := bitfieldToSectorNos(rt, params.Sectors)
+
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
-	a.terminateSectors(rt, params.SectorNumbers, power.SectorTerminationManual)
+	a.terminateSectors(rt, sectorNos, power.SectorTerminationManual)
 
 	return &adt.EmptyValue{}
 }
@@ -479,7 +432,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 ////////////
 
 type DeclareTemporaryFaultsParams struct {
-	SectorNumbers []abi.SectorNumber
+	SectorNumbers abi.BitField
 	Duration      abi.ChainEpoch
 }
 
@@ -495,8 +448,13 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 
 		store := adt.AsStore(rt)
 		storageWeightDescs := []*power.SectorStorageWeightDesc{}
-		for _, sectorNumber := range params.SectorNumbers {
-			sector, found, err := st.getSector(store, sectorNumber)
+		sectors, err := params.SectorNumbers.All(MaxFaultsCount)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalArgument, "failed to enumerate faulted sector list")
+		}
+
+		for _, sectorNumber := range sectors {
+			sector, found, err := st.getSector(store, abi.SectorNumber(sectorNumber))
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 			}
@@ -525,9 +483,10 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 	builtin.RequireSuccess(rt, code, "failed to burn fee")
 
 	// Request deferred Cron invocation to update temporary fault state.
+	// TODO: cant we just lazily clean this up?
 	cronPayload := CronEventPayload{
 		EventType: CronEventType_Miner_TempFault,
-		Sectors:   params.SectorNumbers,
+		Sectors:   &params.SectorNumbers,
 	}
 	// schedule cron event to start marking temp fault at BeginEpoch
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
@@ -564,7 +523,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 		a.checkSectorExpiry(rt, payload.Sectors)
 	}
 
-	if payload.EventType == CronEventType_Miner_SurpriseExpiration {
+	if payload.EventType == CronEventType_Miner_PoStExpiration {
 		a.checkPoStProvingPeriodExpiration(rt)
 	}
 
@@ -579,7 +538,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectorNos []abi.SectorNumber) {
+func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 	store := adt.AsStore(rt)
 
 	var beginFaults []*power.SectorStorageWeightDesc
@@ -587,6 +546,9 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectorNos []abi.SectorNumbe
 	beginFaultPledge := abi.NewTokenAmount(0)
 	endFaultPledge := abi.NewTokenAmount(0)
 	var st State
+
+	sectorNos := bitfieldToSectorNos(rt, sectors)
+
 	rt.State().Transaction(&st, func() interface{} {
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.getSector(store, sectorNo)
@@ -631,9 +593,11 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectorNos []abi.SectorNumbe
 	}
 }
 
-func (a Actor) checkPrecommitExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
+func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 	store := adt.AsStore(rt)
 	var st State
+
+	sectorNos := bitfieldToSectorNos(rt, sectors)
 
 	depositToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
@@ -659,7 +623,9 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
 	return
 }
 
-func (a Actor) checkSectorExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
+func (a Actor) checkSectorExpiry(rt Runtime, sectors *abi.BitField) {
+	sectorNos := bitfieldToSectorNos(rt, sectors)
+
 	var st State
 	rt.State().Readonly(&st)
 	toTerminate := []abi.SectorNumber{}
@@ -678,6 +644,7 @@ func (a Actor) checkSectorExpiry(rt Runtime, sectorNos []abi.SectorNumber) {
 	return
 }
 
+// TODO: red flag that this method is potentially super expensive
 func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, terminationType power.SectorTermination) {
 	store := adt.AsStore(rt)
 	var st State
@@ -715,6 +682,10 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
 			}
+
+			if !st.inChallengeWindow(rt) {
+				st.ProvingSet = st.Sectors
+			}
 		}
 		return nil
 	})
@@ -733,20 +704,16 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 
 	var st State
 	expired := rt.State().Transaction(&st, func() interface{} {
-		if !st.PoStState.isChallenged() {
-			return false // Already exited challenged state successfully prior to expiry.
-		}
 
-		window := power.SurprisePostChallengeDuration
-		if rt.CurrEpoch() < st.PoStState.SurpriseChallengeEpoch+window {
-			// Challenge not yet expired.
-			return false
+		window := power.WindowedPostChallengeDuration
+		if rt.CurrEpoch() < st.PoStState.ProvingPeriodStart+window {
+			// NB: We don't expect this to be possible, need to guarantee with tests
+			rt.Abortf(exitcode.ErrIllegalState, "should not be able to check post proving period expiration when not inside window")
 		}
 
 		// Increment count of consecutive failures.
 		st.PoStState = PoStState{
-			LastSuccessfulPoSt:     st.PoStState.LastSuccessfulPoSt,
-			SurpriseChallengeEpoch: epochUndefined,
+			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures + 1,
 		}
 		return true
@@ -758,15 +725,15 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 
 	// Period has expired.
 	// Terminate deals...
-	if st.PoStState.NumConsecutiveFailures > power.SurprisePostFailureLimit {
+	if st.PoStState.NumConsecutiveFailures > power.WindowedPostFailureLimit {
 		a.requestTerminateAllDeals(rt, &st)
 	}
 
 	// ... and pay penalty (possibly terminating and deleting the miner).
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnMinerSurprisePoStFailure,
-		&power.OnMinerSurprisePoStFailureParams{
+		builtin.MethodsPower.OnMinerWindowedPoStFailure,
+		&power.OnMinerWindowedPoStFailureParams{
 			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures,
 		},
 		abi.NewTokenAmount(0),
@@ -873,37 +840,54 @@ func (a Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTer
 	builtin.RequireSuccess(rt, code, "failed to terminate sector power type %v, weights %v", terminationType, weights)
 }
 
-func (a Actor) verifySurprisePost(rt Runtime, st *State, onChainInfo *abi.OnChainSurprisePoStVerifyInfo) {
-	Assert(st.PoStState.isChallenged())
+func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChainPoStVerifyInfo) {
 	sectorSize := st.Info.SectorSize
-	challengeEpoch := st.PoStState.SurpriseChallengeEpoch
+
+	// TODO: verifying no duplicates here seems wrong, we should be verifying
+	// that exactly what we expect is passed in (this isnt election post)
 
 	// verify no duplicate tickets
 	challengeIndices := make(map[int64]bool)
 	for _, tix := range onChainInfo.Candidates {
 		if _, ok := challengeIndices[tix.ChallengeIndex]; ok {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Duplicate ticket included.")
+			rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Windowed PoSt. Duplicate ticket included.")
 		}
 		challengeIndices[tix.ChallengeIndex] = true
 	}
 
 	// verify appropriate number of tickets is present
-	if int64(len(onChainInfo.Candidates)) != NumSurprisePoStSectors {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Surprise PoSt. Too few tickets included.")
+	if int64(len(onChainInfo.Candidates)) != NumWindowedPoStSectors {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Windowed PoSt. Too few tickets included.")
 	}
 
-	randomnessK := rt.GetRandomness(challengeEpoch - PoStLookback)
+	randomnessK := rt.GetRandomness(st.PoStState.ProvingPeriodStart)
+
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
-	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, randomnessK, rt.Message().Receiver())
+	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, randomnessK, rt.Message().Receiver())
+
+	store := adt.AsStore(rt)
+	provingSet := adt.AsArray(store, st.ProvingSet)
+
+	var sectorInfos []abi.SectorInfo
+	var ssinfo SectorOnChainInfo
+	provingSet.ForEach(&ssinfo, func(i int64) error {
+
+		// TODO: faults!!!!
+		sectorInfos = append(sectorInfos, abi.SectorInfo{
+			CommR:    ssinfo.Info.SealedCID,
+			SectorID: ssinfo.Info.SectorNumber,
+		})
+		return nil
+	})
 
 	// Get public inputs
 
 	pvInfo := abi.PoStVerifyInfo{
-		Candidates: onChainInfo.Candidates,
-		Proofs:     onChainInfo.Proofs,
-		Randomness: abi.PoStRandomness(postRandomness),
-		// EligibleSectors_: FIXME: verification needs these.
+		Candidates:      onChainInfo.Candidates,
+		Proof:           onChainInfo.Proof,
+		Randomness:      abi.PoStRandomness(postRandomness),
+		EligibleSectors: sectorInfos,
 	}
 
 	// Verify the PoSt Proof

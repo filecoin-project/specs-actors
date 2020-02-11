@@ -10,7 +10,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -107,42 +106,6 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 	// get size of MIN_MINER_SIZE_TARGth largest miner
 	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
 	return minerPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
-}
-
-// selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
-func (st *State) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
-	var allMiners []addr.Address
-	var claim Claim
-	if err := adt.AsMap(s, st.Claims).ForEach(&claim, func(k string) error {
-		maddr, err := addr.NewFromBytes([]byte(k))
-		if err != nil {
-			return err
-		}
-		nominalPower, err := st.computeNominalPower(s, maddr, claim.Power)
-		if err != nil {
-			return err
-		}
-		if nominalPower.GreaterThan(big.Zero()) {
-			allMiners = append(allMiners, maddr)
-		}
-		return nil
-	}); err != nil {
-		return nil, errors.Wrap(err, "failed to iterate Claim hamt when selecting miners to surprise")
-	}
-
-	selectedMiners := make([]addr.Address, 0)
-	for chall := int64(0); chall < challengeCount; chall++ {
-		minerIndex := crypto.RandomInt(randomness, chall, st.MinerCount)
-		potentialChallengee := allMiners[minerIndex]
-		// skip dups
-		for addrInArray(potentialChallengee, selectedMiners) {
-			minerIndex = crypto.RandomInt(randomness, chall, st.MinerCount) // TODO fix this, it's a constant value
-			potentialChallengee = allMiners[minerIndex]
-		}
-		selectedMiners = append(selectedMiners, potentialChallengee)
-	}
-
-	return selectedMiners, nil
 }
 
 func (st *State) getMinerBalance(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {

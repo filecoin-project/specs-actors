@@ -25,7 +25,6 @@ func main() {
 		abi.SealProof{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
-		abi.OnChainSurprisePoStVerifyInfo{},
 		abi.PoStCandidate{},
 		abi.PoStProof{},
 		abi.PrivatePoStCandidateProof{},
@@ -131,7 +130,7 @@ func main() {
 		power.OnSectorModifyWeightDescParams{},
 		power.OnSectorProveCommitParams{},
 		power.ReportConsensusFaultParams{},
-		power.OnMinerSurprisePoStFailureParams{},
+		power.OnMinerWindowedPoStFailureParams{},
 		power.OnSectorTemporaryFaultEffectiveEndParams{},
 		power.OnSectorTemporaryFaultEffectiveBeginParams{},
 		// method returns
@@ -174,13 +173,11 @@ func main() {
 		miner.WorkerKeyChange{},
 		// method params
 		// miner.ConstructorParams{},
-		miner.PreCommitSectorParams{},
 		miner.TerminateSectorsParams{},
 		miner.ProveCommitSectorParams{},
 		miner.OnDeferredCronEventParams{},
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
-		miner.SubmitSurprisePoStResponseParams{},
 		miner.DeclareTemporaryFaultsParams{},
 		// other types
 		miner.CronEventPayload{},

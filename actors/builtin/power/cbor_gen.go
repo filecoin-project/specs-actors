@@ -1054,7 +1054,7 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnMinerSurprisePoStFailureParams) MarshalCBOR(w io.Writer) error {
+func (t *OnMinerWindowedPoStFailureParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1076,7 +1076,7 @@ func (t *OnMinerSurprisePoStFailureParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *OnMinerSurprisePoStFailureParams) UnmarshalCBOR(r io.Reader) error {
+func (t *OnMinerWindowedPoStFailureParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
