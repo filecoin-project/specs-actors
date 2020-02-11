@@ -57,7 +57,7 @@ type Runtime interface {
 	// This method does not return.
 	// The message and args are for diagnostic purposes and do not persist on chain. They should be suitable for
 	// passing to fmt.Errorf(msg, args...).
-	Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{})
+	Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{})
 
 	// Computes an address for a new actor. The returned address is intended to uniquely refer to
 	// the actor even in the event of a chain re-org (whereas an ID-address might refer to a
@@ -68,9 +68,8 @@ type Runtime interface {
 	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by InitActor.
 	CreateActor(codeId cid.Cid, address addr.Address)
 
-	// Deletes an actor in the state tree. May only be called by the actor itself,
-	// or by StoragePowerActor in the case of StorageMinerActors.
-	DeleteActor(address addr.Address)
+	// Deletes the executing actor from the state tree. May only be called by the actor itself.
+	DeleteActor()
 
 	// Provides the system call interface.
 	Syscalls() Syscalls
@@ -135,9 +134,9 @@ type TraceSpan interface {
 
 // StateHandle provides mutable, exclusive access to actor state.
 type StateHandle interface {
-	// Construct initializes the state object.
+	// Create initializes the state object.
 	// This is only valid in a constructor function and when the state has not yet been initialized.
-	Construct(f func() CBORMarshaler)
+	Create(obj CBORMarshaler)
 
 	// Readonly loads a readonly copy of the state into the argument.
 	//

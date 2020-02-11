@@ -25,9 +25,7 @@ type ConstructorParams struct {
 
 func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		return ConstructState(params.Entries)
-	})
+	rt.State().Create(ConstructState(params.Entries))
 	return &adt.EmptyValue{}
 }
 
