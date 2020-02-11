@@ -6,11 +6,11 @@ package exitcode
 const (
 	// Indicates a method parameter is invalid.
 	ErrIllegalArgument = FirstActorErrorCode + iota
-	// Indicates a requested resource does not
+	// Indicates a requested resource does not exist.
+	ErrNotFound
 	// Indicates an action is disallowed.
 	ErrForbidden
-	// Indicates a balance of funds is insufficient.exist.
-	//	ErrNotFound
+	// Indicates a balance of funds is insufficient.
 	ErrInsufficientFunds
 	// Indicates an actor's internal state is invalid.
 	ErrIllegalState

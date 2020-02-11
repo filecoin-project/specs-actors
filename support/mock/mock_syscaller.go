@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"fmt"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -30,29 +31,33 @@ func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, p
 
 func (s *syscaller) Hash_SHA256(data []byte) []byte {
 	if s.Hasher == nil {
-		s.FailOnUnsetFunc("Hasher")
+		s.PanicOnUnsetFunc("Hasher")
 	}
 	return s.Hasher(data)
 }
 
 func (s *syscaller) ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error) {
-	s.FailOnUnsetFunc("UnsealedSectorCIDComputer")
+	s.PanicOnUnsetFunc("UnsealedSectorCIDComputer")
+	return cid.Undef, nil
 }
 
 func (s *syscaller) VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) bool {
-	s.FailOnUnsetFunc("SealVerifier")
+	s.PanicOnUnsetFunc("SealVerifier")
+	return false
 }
 
 func (s *syscaller) VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool {
-	s.FailOnUnsetFunc("PoStVerifier")
+	s.PanicOnUnsetFunc("PoStVerifier")
+	return false
 }
 
 func (s *syscaller) VerifyConsensusFault(h1, h2 []byte) bool {
-	s.FailOnUnsetFunc("ConsensusFaultVerifier")
+	s.PanicOnUnsetFunc("ConsensusFaultVerifier")
+	return false
 }
 
-func (s *syscaller) FailOnUnsetFunc(unsetFuncName string) {
-	s.T.Fatalf("no %s set", unsetFuncName)
+func (s *syscaller) PanicOnUnsetFunc(unsetFuncName string) {
+	panic(fmt.Sprintf("no %s set", unsetFuncName))
 }
 
 
