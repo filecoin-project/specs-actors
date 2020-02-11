@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-cid"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 // Build for fluent initialization of a mock runtime.
@@ -78,5 +78,20 @@ func (b *RuntimeBuilder) WithMiner(miner addr.Address) *RuntimeBuilder {
 func (b *RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) *RuntimeBuilder {
 	b.rt.balance = balance
 	b.rt.valueReceived = received
+	return b
+}
+
+func (b *RuntimeBuilder) WithActorType(addr addr.Address, code cid.Cid) *RuntimeBuilder {
+	b.rt.actorCodeCIDs[addr] = code
+	return b
+}
+
+func (b *RuntimeBuilder) WithVerifiesSig(f VerifyFunc) *RuntimeBuilder {
+	b.rt.SetVerifier(f)
+	return b
+}
+
+func (b *RuntimeBuilder) WithHasher(f HasherFunc) *RuntimeBuilder {
+	b.rt.SetHasher(f)
 	return b
 }
