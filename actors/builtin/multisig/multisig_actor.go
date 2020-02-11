@@ -64,24 +64,23 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		signers = append(signers, sa)
 	}
 
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
-		}
+	pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
+	}
 
-		var st State
-		st.Signers = signers
-		st.NumApprovalsThreshold = params.NumApprovalsThreshold
-		st.PendingTxns = pending.Root()
-		st.InitialBalance = abi.NewTokenAmount(0)
-		if params.UnlockDuration != 0 {
-			st.InitialBalance = rt.Message().ValueReceived()
-			st.UnlockDuration = params.UnlockDuration
-			st.StartEpoch = rt.CurrEpoch()
-		}
-		return &st
-	})
+	var st State
+	st.Signers = signers
+	st.NumApprovalsThreshold = params.NumApprovalsThreshold
+	st.PendingTxns = pending.Root()
+	st.InitialBalance = abi.NewTokenAmount(0)
+	if params.UnlockDuration != 0 {
+		st.InitialBalance = rt.Message().ValueReceived()
+		st.UnlockDuration = params.UnlockDuration
+		st.StartEpoch = rt.CurrEpoch()
+	}
+
+	rt.State().Create(&st)
 	return &adt.EmptyValue{}
 }
 
@@ -110,7 +109,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 			Params:   params.Params,
 			Approved: []addr.Address{},
 		}); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to put transaction for propose: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for propose: %v", err)
 		}
 		return nil
 	})
@@ -150,15 +149,15 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		a.validateSigner(rt, &st, callerAddr)
 		txn, err := st.getPendingTransaction(adt.AsStore(rt), params.ID)
 		if err != nil {
-			rt.Abort(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
+			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
 		}
 		proposer := txn.Approved[0]
 		if proposer != callerAddr {
-			rt.Abort(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
+			rt.Abortf(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
 		}
 
 		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
 		}
 		return nil
 	})
@@ -177,7 +176,7 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if st.isSigner(params.Signer) {
-			rt.Abort(exitcode.ErrIllegalArgument, "party is already a signer")
+			rt.Abortf(exitcode.ErrIllegalArgument, "party is already a signer")
 		}
 		st.Signers = append(st.Signers, params.Signer)
 		if params.Increase {
@@ -200,7 +199,7 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.Signer) {
-			rt.Abort(exitcode.ErrNotFound, "Party not found")
+			rt.Abortf(exitcode.ErrNotFound, "Party not found")
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))
@@ -231,11 +230,11 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.From) {
-			rt.Abort(exitcode.ErrNotFound, "Party not found")
+			rt.Abortf(exitcode.ErrNotFound, "Party not found")
 		}
 
 		if st.isSigner(params.To) {
-			rt.Abort(exitcode.ErrIllegalArgument, "Party already present")
+			rt.Abortf(exitcode.ErrIllegalArgument, "Party already present")
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))
@@ -263,7 +262,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
-			rt.Abort(exitcode.ErrIllegalArgument, "New threshold value not supported")
+			rt.Abortf(exitcode.ErrIllegalArgument, "New threshold value not supported")
 		}
 
 		st.NumApprovalsThreshold = params.NewThreshold
@@ -279,18 +278,18 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		var err error
 		txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
 		if err != nil {
-			rt.Abort(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
+			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
 		}
 		// abort duplicate approval
 		for _, previousApprover := range txn.Approved {
 			if previousApprover == rt.Message().Caller() {
-				rt.Abort(exitcode.ErrIllegalState, "already approved this message")
+				rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
 			}
 		}
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
 		if err = st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
 		}
 		return nil
 	})
@@ -298,7 +297,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
-			rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
@@ -314,7 +313,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {
 			if err := st.deletePendingTransaction(adt.AsStore(rt), txnID); err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
 			return nil
 		})
@@ -323,6 +322,6 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
 	if !st.isSigner(address) {
-		rt.Abort(exitcode.ErrForbidden, "party not a signer")
+		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
 	}
 }

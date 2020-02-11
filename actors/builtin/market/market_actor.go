@@ -40,14 +40,11 @@ var _ abi.Invokee = Actor{}
 
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		st, err := ConstructState(adt.AsStore(rt))
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to create storage market state map: %v", err)
-		}
-		return st
-	})
+	st, err := ConstructState(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state map: %v", err)
+	}
+	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
 
@@ -62,7 +59,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	if params.Amount.LessThan(big.Zero()) {
-		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
+		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
 
 	recipientAddr := escrowAddress(rt, params.ProviderOrClientAddress)
@@ -79,7 +76,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 		ex, err := et.SubtractWithMinimum(params.ProviderOrClientAddress, params.Amount, minBalance)
 		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "subtract form escrow table: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "subtract form escrow table: %v", err)
 		}
 
 		st.EscrowTable = et.Root()
@@ -106,7 +103,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAdrress *addr.Address) *ad
 			et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 			err := et.AddCreate(*providerOrClientAdrress, msgValue)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
 			}
 			st.EscrowTable = et.Root()
 		}
@@ -115,7 +112,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAdrress *addr.Address) *ad
 			lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 			err := lt.AddCreate(*providerOrClientAdrress, big.NewInt(0))
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
+				rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
 			}
 			st.LockedTable = lt.Root()
 		}
@@ -149,7 +146,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			if deal.Proposal.Provider != rt.Message().Caller() {
-				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
+				rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
 			}
 
 			validateDeal(rt, deal)
@@ -169,14 +166,14 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			err := proposals.Set(id, &deal.Proposal)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
 			if err := dbp.Put(adt.AddrKey(deal.Proposal.Client), uint64(id)); err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set client deal id: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "set client deal id: %v", err)
 			}
 			if err := dbp.Put(adt.AddrKey(deal.Proposal.Provider), uint64(id)); err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set provider deal id: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "set provider deal id: %v", err)
 			}
 
 			newDealIds = append(newDealIds, id)
@@ -217,11 +214,11 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		for _, dealID := range params.DealIDs {
 			deal, err := states.Get(dealID)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "get deal %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
 			proposal, err := proposals.Get(dealID)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "get deal %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
 
 			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, deal, proposal)
@@ -229,7 +226,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 			deal.SectorStartEpoch = rt.CurrEpoch()
 			err = states.Set(dealID, deal)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set deal %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "set deal %v", err)
 			}
 
 			// Compute deal weight
@@ -268,7 +265,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 
 	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorSize, pieces)
 	if err != nil {
-		rt.Abort(exitcode.SysErrorIllegalArgument, "failed to compute unsealed sector CID: %s", err)
+		rt.Abortf(exitcode.SysErrorIllegalArgument, "failed to compute unsealed sector CID: %s", err)
 	}
 
 	return (*cbg.CborCid)(&commd)
@@ -293,13 +290,13 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 		for _, dealID := range params.DealIDs {
 			deal, err := proposals.Get(dealID)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "get deal: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
 			Assert(deal.Provider == minerAddr)
 
 			state, err := states.Get(dealID)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "get deal: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
 
 			// Note: we do not perform the balance transfers here, but rather simply record the flag
@@ -309,7 +306,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			state.SlashEpoch = rt.CurrEpoch()
 			err = states.Set(dealID, state)
 			if err != nil {
-				rt.Abort(exitcode.ErrIllegalState, "set deal: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 		}
 
@@ -345,58 +342,58 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 
 func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal *DealState, proposal *DealProposal) {
 	if proposal.Provider != minerAddr {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
 	}
 
 	if deal.SectorStartEpoch != epochUndefined {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
 	}
 
 	if rt.CurrEpoch() > proposal.StartEpoch {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 
 	if proposal.EndEpoch > sectorExpiration {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal would outlive its containing sector.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Deal would outlive its containing sector.")
 	}
 }
 
 func validateDeal(rt Runtime, deal ClientDealProposal) {
 	if !dealProposalIsInternallyValid(rt, deal) {
-		rt.Abort(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
 	}
 
 	proposal := deal.Proposal
 
 	if rt.CurrEpoch() > proposal.StartEpoch {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 
 	minDuration, maxDuration := dealDurationBounds(proposal.PieceSize)
 	if proposal.Duration() < minDuration || proposal.Duration() > maxDuration {
-		rt.Abort(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
 	}
 
 	minPrice, maxPrice := dealPricePerEpochBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.StoragePricePerEpoch.LessThan(minPrice) || proposal.StoragePricePerEpoch.GreaterThan(maxPrice) {
-		rt.Abort(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
 	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
-		rt.Abort(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
 	minClientCollateral, maxClientCollateral := dealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.ClientCollateral.LessThan(minClientCollateral) || proposal.ClientCollateral.GreaterThan(maxClientCollateral) {
-		rt.Abort(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
+		rt.Abortf(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}
 }
 
 func escrowAddress(rt Runtime, addr addr.Address) addr.Address {
 	codeID, ok := rt.GetActorCodeCID(addr)
 	if !ok {
-		rt.Abort(exitcode.ErrIllegalArgument, "no code for address %v", addr)
+		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", addr)
 	}
 
 	if codeID.Equals(builtin.StorageMinerActorCodeID) {

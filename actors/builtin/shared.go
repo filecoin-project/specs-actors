@@ -14,7 +14,7 @@ import (
 // Propagates a failed send by aborting the current method with the same exit code.
 func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ...interface{}) {
 	if !e.IsSuccess() {
-		rt.Abort(e, msg, args)
+		rt.Abortf(e, msg, args)
 	}
 }
 

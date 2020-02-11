@@ -34,12 +34,10 @@ func (a Actor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValu
 	case addr.BLS:
 		break // ok
 	default:
-		rt.Abort(exitcode.ErrIllegalArgument, "address must use BLS or SECP protocol, got %v", address.Protocol())
+		rt.Abortf(exitcode.ErrIllegalArgument, "address must use BLS or SECP protocol, got %v", address.Protocol())
 	}
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		st := State{Address: *address}
-		return &st
-	})
+	st := State{Address: *address}
+	rt.State().Create(&st)
 	return &adt.EmptyValue{}
 }
 

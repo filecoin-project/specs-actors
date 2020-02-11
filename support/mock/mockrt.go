@@ -115,7 +115,7 @@ func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
 			return
 		}
 	}
-	rt.Abort(exitcode.ErrForbidden, "caller address %v forbidden, allowed: %v", rt.caller, addrs)
+	rt.Abortf(exitcode.ErrForbidden, "caller address %v forbidden, allowed: %v", rt.caller, addrs)
 }
 
 func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
@@ -139,7 +139,7 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 			return
 		}
 	}
-	rt.Abort(exitcode.ErrForbidden, "caller type %v forbidden, allowed: %v", rt.callerType, types)
+	rt.Abortf(exitcode.ErrForbidden, "caller type %v forbidden, allowed: %v", rt.callerType, types)
 }
 
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
@@ -169,7 +169,7 @@ func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 	if found {
 		err := o.UnmarshalCBOR(bytes.NewReader(data))
 		if err != nil {
-			rt.Abort(exitcode.SysErrSerialization, err.Error())
+			rt.Abortf(exitcode.SysErrSerialization, err.Error())
 		}
 	}
 	return found
@@ -177,19 +177,15 @@ func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 
 func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	if !rt.inTransaction {
-		rt.Abort(exitcode.SysErrorIllegalActor, "store put outside transaction")
-	}
-
 	r := bytes.Buffer{}
 	err := o.MarshalCBOR(&r)
 	if err != nil {
-		rt.Abort(exitcode.SysErrSerialization, err.Error())
+		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}
 	data := r.Bytes()
 	key, err := cidBuilder.Sum(data)
 	if err != nil {
-		rt.Abort(exitcode.SysErrSerialization, err.Error())
+		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}
 	rt.store[key] = data
 	return key
@@ -198,7 +194,7 @@ func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
 func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) (runtime.SendReturn, exitcode.ExitCode) {
 	rt.requireInCall()
 	if rt.inTransaction {
-		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
+		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	if len(rt.expectSends) == 0 {
 		rt.t.Fatalf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
@@ -210,7 +206,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	}
 
 	if value.GreaterThan(rt.balance) {
-		rt.Abort(exitcode.SysErrInsufficientFunds, "cannot send value: %v exceeds balance: %v", value, rt.balance)
+		rt.Abortf(exitcode.SysErrInsufficientFunds, "cannot send value: %v exceeds balance: %v", value, rt.balance)
 	}
 
 	// pop the expectedMessage from the queue and modify the mockrt balance to reflect the send.
@@ -233,7 +229,7 @@ func (rt *Runtime) NewActorAddress() addr.Address {
 func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 	rt.requireInCall()
 	if rt.inTransaction {
-		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
+		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	if rt.expectCreateActor == nil {
 		rt.t.Fatal("unexpected call to create actor")
@@ -247,15 +243,15 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 	}()
 }
 
-func (rt *Runtime) DeleteActor(address addr.Address) {
+func (rt *Runtime) DeleteActor() {
 	rt.requireInCall()
 	if rt.inTransaction {
-		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")
+		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	panic("implement me")
 }
 
-func (rt *Runtime) Abort(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
+func (rt *Runtime) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
 	rt.requireInCall()
 	rt.t.Logf("Mock Runtime Abort ExitCode: %v Reason: %s", errExitCode, fmt.Sprintf(msg, args...))
 	panic(abort{errExitCode, fmt.Sprintf(msg, args...)})
@@ -263,7 +259,7 @@ func (rt *Runtime) Abort(errExitCode exitcode.ExitCode, msg string, args ...inte
 
 func (rt *Runtime) AbortStateMsg(msg string) {
 	rt.requireInCall()
-	rt.Abort(exitcode.ErrPlaceholder, msg)
+	rt.Abortf(exitcode.ErrPlaceholder, msg)
 }
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
@@ -283,7 +279,7 @@ func (rt *Runtime) StartSpan(name string) runtime.TraceSpan {
 
 func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}) {
 	if !predicate {
-		rt.Abort(exitcode.SysErrorIllegalArgument, msg, args...)
+		rt.Abortf(exitcode.SysErrorIllegalArgument, msg, args...)
 	}
 }
 
@@ -307,26 +303,23 @@ func (rt *Runtime) ValueReceived() abi.TokenAmount {
 
 ///// State handle implementation /////
 
-func (rt *Runtime) Construct(f func() runtime.CBORMarshaler) {
+func (rt *Runtime) Create(obj runtime.CBORMarshaler) {
 	if rt.state.Defined() {
-		rt.Abort(exitcode.SysErrorIllegalActor, "state already constructed")
+		rt.Abortf(exitcode.SysErrorIllegalActor, "state already constructed")
 	}
-	rt.inTransaction = true
-	st := f()
-	rt.state = rt.IpldPut(st)
-	rt.inTransaction = false
+	rt.state = rt.IpldPut(obj)
 }
 
 func (rt *Runtime) Readonly(st runtime.CBORUnmarshaler) {
 	found := rt.IpldGet(rt.state, st)
 	if !found {
-		rt.Abort(exitcode.SysErrInternal, "actor state not found: %v", rt.state)
+		rt.Abortf(exitcode.SysErrInternal, "actor state not found: %v", rt.state)
 	}
 }
 
 func (rt *Runtime) Transaction(st runtime.CBORer, f func() interface{}) interface{} {
 	if rt.inTransaction {
-		rt.Abort(exitcode.SysErrorIllegalActor, "nested transaction")
+		rt.Abortf(exitcode.SysErrorIllegalActor, "nested transaction")
 	}
 	rt.Readonly(st)
 	rt.inTransaction = true
@@ -483,7 +476,7 @@ func (rt *Runtime) Reset() {
 	rt.expectCreateActor = nil
 }
 
-// Calls f() expecting it to invoke Runtime.Abort() with a specified exit code.
+// Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code.
 func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 	prevState := rt.state
 

@@ -72,7 +72,7 @@ func (st *State) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) 
 		return nil
 	})
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "foreach error %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "foreach error %v", err)
 	}
 
 	amountSlashedTotal = st.updatePendingDealStates(rt, extractedDealIDs, epoch)
@@ -162,7 +162,7 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 
 	states := AsDealStateArray(adt.AsStore(rt), st.States)
 	if err := states.Set(dealID, state); err != nil {
-		rt.Abort(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
+		rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
 	}
 	st.States = states.Root()
 	return
@@ -173,13 +173,13 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 
 	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	if err := proposals.Delete(uint64(dealID)); err != nil {
-		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
+		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
 	}
 	st.Proposals = proposals.Root()
 
 	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	if err := dbp.Remove(adt.AddrKey(dealP.Client), uint64(dealID)); err != nil {
-		rt.Abort(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
+		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
 	}
 	st.DealIDsByParty = dbp.Root()
 }
@@ -232,7 +232,7 @@ func (st *State) generateStorageDealID() abi.DealID {
 func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable).Get(a)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "get escrow balance: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
 	}
 	return ret
 }
@@ -240,7 +240,7 @@ func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable).Get(a)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "get locked balance: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
 	}
 	return ret
 }
@@ -257,7 +257,7 @@ func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.Toke
 	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 	err := lt.Add(addr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "adding locked balance: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "adding locked balance: %v", err)
 	}
 
 	st.LockedTable = lt.Root()
@@ -272,7 +272,7 @@ func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAm
 	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 	err := lt.MustSubtract(addr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "subtracting from locked balance: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "subtracting from locked balance: %v", err)
 	}
 	st.LockedTable = lt.Root()
 }
@@ -286,17 +286,17 @@ func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.
 
 	err := et.MustSubtract(fromAddr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
 	}
 
 	err = lt.MustSubtract(fromAddr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "subtract from locked: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
 	}
 
 	err = et.Add(toAddr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "add to escrow: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "add to escrow: %v", err)
 	}
 
 	st.LockedTable = lt.Root()
@@ -311,11 +311,11 @@ func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmo
 
 	err := et.MustSubtract(addr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
 	}
 	err = lt.MustSubtract(addr, amount)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "subtract from locked: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
 	}
 
 	st.LockedTable = lt.Root()
@@ -330,7 +330,7 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	proposal, err := proposals.Get(dealID)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "get proposal: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
 	}
 
 	return proposal
@@ -340,7 +340,7 @@ func (st *State) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
 	states := AsDealStateArray(adt.AsStore(rt), st.States)
 	state, err := states.Get(dealID)
 	if err != nil {
-		rt.Abort(exitcode.ErrIllegalState, "get state state: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
 	}
 
 	return state
@@ -348,11 +348,11 @@ func (st *State) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
 
 func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	if amount.LessThan(big.Zero()) {
-		rt.Abort(exitcode.ErrIllegalArgument, "negative amount %v", amount)
+		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", amount)
 	}
 
 	if !st.maybeLockBalance(rt, addr, amount) {
-		rt.Abort(exitcode.ErrInsufficientFunds, "Insufficient funds available to lock")
+		rt.Abortf(exitcode.ErrInsufficientFunds, "Insufficient funds available to lock")
 	}
 }
 
