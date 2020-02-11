@@ -42,10 +42,7 @@ type Runtime interface {
 	// Provides a handle for the actor's state object.
 	State() StateHandle
 
-	// Retrieves and deserializes an object from the store into o. Returns whether successful.
-	IpldGet(c cid.Cid, o CBORUnmarshaler) bool
-	// Serializes and stores an object, returning its CID.
-	IpldPut(x CBORMarshaler) cid.Cid
+	Store() Store
 
 	// Sends a message to another actor, returning the exit code and return value envelope.
 	// If the invoked method does not return successfully, its state changes (and that of any messages it sent in turn)
@@ -81,6 +78,14 @@ type Runtime interface {
 
 	// Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
 	StartSpan(name string) TraceSpan
+}
+
+// Store defines the storage module exposed to actors.
+type Store interface {
+	// Retrieves and deserializes an object from the store into `o`. Returns whether successful.
+	Get(c cid.Cid, o CBORUnmarshaler) bool
+	// Serializes and stores an object, returning its CID.
+	Put(x CBORMarshaler) cid.Cid
 }
 
 // Message contains information available to the actor about the executing message.
@@ -151,7 +156,7 @@ type StateHandle interface {
 	//
 	// If the state is modified after this function returns, execution will abort.
 	//
-	// The gas cost of this method is that of an IpldPut of the mutated state object.
+	// The gas cost of this method is that of a Store.Put of the mutated state object.
 	//
 	// Note: the Go signature is not ideal due to lack of type system power.
 	//

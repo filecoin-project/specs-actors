@@ -76,7 +76,7 @@ func TestExec(t *testing.T) {
 
 		var st init_.State
 		rt.GetState(&st)
-		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr1)
+		actualIdAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr1)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIdAddr1, actualIdAddr)
 
@@ -98,7 +98,7 @@ func TestExec(t *testing.T) {
 
 		var st2 init_.State
 		rt.GetState(&st2)
-		actualIdAddr2, err := st2.ResolveAddress(rt.Store(), uniqueAddr2)
+		actualIdAddr2, err := st2.ResolveAddress(adt.AsStore(rt), uniqueAddr2)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIdAddr2, actualIdAddr2)
 	})
@@ -127,13 +127,13 @@ func TestExec(t *testing.T) {
 
 		var st init_.State
 		rt.GetState(&st)
-		actualIdAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
+		actualIdAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIdAddr, actualIdAddr)
 
 		// should return the same address if not able to resolve
 		expUnknowAddr := tutil.NewActorAddr(t, "flurbo")
-		actualUnknownAddr, err := st.ResolveAddress(rt.Store(), expUnknowAddr)
+		actualUnknownAddr, err := st.ResolveAddress(adt.AsStore(rt), expUnknowAddr)
 		assert.NoError(t, err)
 		assert.Equal(t, expUnknowAddr, actualUnknownAddr)
 	})
@@ -165,7 +165,7 @@ func TestExec(t *testing.T) {
 		// since the send failed the uniqueAddr should resolve to itself instead of an ID address
 		var st init_.State
 		rt.GetState(&st)
-		noResoAddr, err := st.ResolveAddress(rt.Store(), uniqueAddr)
+		noResoAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
 		assert.NoError(t, err)
 		assert.Equal(t, uniqueAddr, noResoAddr)
 
@@ -186,7 +186,7 @@ func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 
 	var st init_.State
 	rt.GetState(&st)
-	emptyMap := adt.AsMap(rt.Store(), st.AddressMap)
+	emptyMap := adt.AsMap(adt.AsStore(rt), st.AddressMap)
 	assert.Equal(h.t, emptyMap.Root(), st.AddressMap)
 	assert.Equal(h.t, abi.ActorID(builtin.FirstNonSingletonActorId), st.NextID)
 	assert.Equal(h.t, "mock", st.NetworkName)
