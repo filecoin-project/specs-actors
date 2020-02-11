@@ -107,7 +107,7 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 }
 
 type ChangeWorkerAddressParams struct {
-	newKey addr.Address
+	NewKey addr.Address
 }
 
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
@@ -119,7 +119,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		// must be BLS since the worker key will be used alongside a BLS-VRF
 		// Specifically, this check isn't quite right
 		// TODO: check that the account actor at the other end of this address has a BLS key.
-		if params.newKey.Protocol() != addr.BLS {
+		if params.NewKey.Protocol() != addr.BLS {
 			rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 		}
 
@@ -127,7 +127,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 
 		// This may replace another pending key change.
 		st.Info.PendingWorkerKey = WorkerKeyChange{
-			NewWorker:   params.newKey,
+			NewWorker:   params.NewKey,
 			EffectiveAt: effectiveEpoch,
 		}
 		return nil
@@ -178,7 +178,7 @@ func (a Actor) OnSurprisePoStChallenge(rt Runtime, _ *adt.EmptyValue) *adt.Empty
 }
 
 type SubmitSurprisePoStResponseParams struct {
-	onChainInfo abi.OnChainSurprisePoStVerifyInfo
+	OnChainInfo abi.OnChainSurprisePoStVerifyInfo
 }
 
 // Invoked by miner's worker address to submit a response to a pending SurprisePoSt challenge.
@@ -189,7 +189,7 @@ func (a Actor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoSt
 		if !st.PoStState.isChallenged() {
 			rt.Abortf(exitcode.ErrIllegalState, "Not currently challenged")
 		}
-		a.verifySurprisePost(rt, &st, &params.onChainInfo)
+		a.verifySurprisePost(rt, &st, &params.OnChainInfo)
 
 		st.PoStState = PoStState{
 			LastSuccessfulPoSt:     rt.CurrEpoch(),
@@ -250,7 +250,7 @@ func (a Actor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyV
 ///////////////////////
 
 type PreCommitSectorParams struct {
-	info SectorPreCommitInfo
+	Info SectorPreCommitInfo
 }
 
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
@@ -261,37 +261,37 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.E
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	if found, err := st.hasSectorNo(store, params.info.SectorNumber); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.info.SectorNumber, err)
+	if found, err := st.hasSectorNo(store, params.Info.SectorNumber); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.Info.SectorNumber, err)
 	} else if found {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.Info.SectorNumber)
 	}
 
-	depositReq := precommitDeposit(st.getSectorSize(), params.info.Expiration-rt.CurrEpoch())
+	depositReq := precommitDeposit(st.getSectorSize(), params.Info.Expiration-rt.CurrEpoch())
 	confirmPaymentAndRefundChange(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.putPrecommittedSector(store, &SectorPreCommitOnChainInfo{
-			Info:             params.info,
+			Info:             params.Info,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
 		})
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.info.SectorNumber, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.Info.SectorNumber, err)
 		}
 		return nil
 	})
 
-	if params.info.Expiration <= rt.CurrEpoch() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.info.Expiration, rt.CurrEpoch())
+	if params.Info.Expiration <= rt.CurrEpoch() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Info.Expiration, rt.CurrEpoch())
 	}
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
 		EventType: CronEventType_Miner_PreCommitExpiry,
-		Sectors:   []abi.SectorNumber{params.info.SectorNumber},
+		Sectors:   []abi.SectorNumber{params.Info.SectorNumber},
 	}
 	expiryBound := rt.CurrEpoch() + PoRepMaxDelay + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
@@ -404,8 +404,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 /////////////////////////
 
 type ExtendSectorExpirationParams struct {
-	sectorNumber  abi.SectorNumber
-	newExpiration abi.ChainEpoch
+	SectorNumber  abi.SectorNumber
+	NewExpiration abi.ChainEpoch
 }
 
 func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
@@ -414,7 +414,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	sectorNo := params.sectorNumber
+	sectorNo := params.SectorNumber
 	sector, found, err := st.getSector(store, sectorNo)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
@@ -425,7 +425,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	storageWeightDescPrev := asStorageWeightDesc(st.Info.SectorSize, sector)
 	pledgePrev := sector.PledgeRequirement
 
-	extensionLength := params.newExpiration - sector.Info.Expiration
+	extensionLength := params.NewExpiration - sector.Info.Expiration
 	if extensionLength < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration")
 	}
@@ -448,7 +448,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	AssertNoError(ret.Into(&newPledgeRequirement))
 
 	rt.State().Transaction(&st, func() interface{} {
-		sector.Info.Expiration = params.newExpiration
+		sector.Info.Expiration = params.NewExpiration
 		sector.PledgeRequirement = newPledgeRequirement
 		if err = st.putSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
@@ -459,7 +459,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 }
 
 type TerminateSectorsParams struct {
-	sectorNumbers []abi.SectorNumber
+	SectorNumbers []abi.SectorNumber
 }
 
 func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
@@ -469,7 +469,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
-	a.terminateSectors(rt, params.sectorNumbers, power.SectorTerminationManual)
+	a.terminateSectors(rt, params.SectorNumbers, power.SectorTerminationManual)
 
 	return &adt.EmptyValue{}
 }
@@ -479,13 +479,13 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 ////////////
 
 type DeclareTemporaryFaultsParams struct {
-	sectorNumbers []abi.SectorNumber
-	duration      abi.ChainEpoch
+	SectorNumbers []abi.SectorNumber
+	Duration      abi.ChainEpoch
 }
 
 func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsParams) *adt.EmptyValue {
-	if params.duration <= abi.ChainEpoch(0) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "non-positive fault duration %v", params.duration)
+	if params.Duration <= abi.ChainEpoch(0) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "non-positive fault Duration %v", params.Duration)
 	}
 
 	effectiveEpoch := rt.CurrEpoch() + DeclaredFaultEffectiveDelay
@@ -495,7 +495,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 
 		store := adt.AsStore(rt)
 		storageWeightDescs := []*power.SectorStorageWeightDesc{}
-		for _, sectorNumber := range params.sectorNumbers {
+		for _, sectorNumber := range params.SectorNumbers {
 			sector, found, err := st.getSector(store, sectorNumber)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
@@ -511,12 +511,12 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 			storageWeightDescs = append(storageWeightDescs, asStorageWeightDesc(st.Info.SectorSize, sector))
 
 			sector.DeclaredFaultEpoch = effectiveEpoch
-			sector.DeclaredFaultDuration = params.duration
+			sector.DeclaredFaultDuration = params.Duration
 			if err = st.putSector(store, sector); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 			}
 		}
-		return temporaryFaultFee(storageWeightDescs, params.duration)
+		return temporaryFaultFee(storageWeightDescs, params.Duration)
 	}).(abi.TokenAmount)
 
 	// Burn the fee, refund any change.
@@ -527,12 +527,12 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 	// Request deferred Cron invocation to update temporary fault state.
 	cronPayload := CronEventPayload{
 		EventType: CronEventType_Miner_TempFault,
-		Sectors:   params.sectorNumbers,
+		Sectors:   params.SectorNumbers,
 	}
 	// schedule cron event to start marking temp fault at BeginEpoch
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	// schedule cron event to end marking temp fault at EndEpoch
-	a.enrollCronEvent(rt, effectiveEpoch+params.duration, &cronPayload)
+	a.enrollCronEvent(rt, effectiveEpoch+params.Duration, &cronPayload)
 	return &adt.EmptyValue{}
 }
 
@@ -541,14 +541,14 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsP
 //////////
 
 type OnDeferredCronEventParams struct {
-	callbackPayload []byte
+	CallbackPayload []byte
 }
 
 func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var payload CronEventPayload
-	if err := payload.UnmarshalCBOR(bytes.NewReader(params.callbackPayload)); err != nil {
+	if err := payload.UnmarshalCBOR(bytes.NewReader(params.CallbackPayload)); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
 	}
 
