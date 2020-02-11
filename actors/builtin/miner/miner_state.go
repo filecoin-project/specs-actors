@@ -20,7 +20,7 @@ type State struct {
 	FaultSet            abi.BitField
 	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 
-	Info      MinerInfo // TODO: this needs to be a cid of the miner info struct
+	Info      MinerInfo // TODO: this needs to be a cid of the miner Info struct
 	PoStState PoStState
 }
 

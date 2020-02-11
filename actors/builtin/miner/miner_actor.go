@@ -249,49 +249,45 @@ func (a Actor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyV
 // Sector Commitment //
 ///////////////////////
 
-type PreCommitSectorParams struct {
-	info SectorPreCommitInfo
-}
-
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.EmptyValue {
+func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	if found, err := st.hasSectorNo(store, params.info.SectorNumber); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.info.SectorNumber, err)
+	if found, err := st.hasSectorNo(store, params.SectorNumber); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 	} else if found {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.info.SectorNumber)
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 	}
 
-	depositReq := precommitDeposit(st.getSectorSize(), params.info.Expiration-rt.CurrEpoch())
+	depositReq := precommitDeposit(st.getSectorSize(), params.Expiration-rt.CurrEpoch())
 	confirmPaymentAndRefundChange(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.putPrecommittedSector(store, &SectorPreCommitOnChainInfo{
-			Info:             params.info,
+			Info:             *params,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
 		})
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.info.SectorNumber, err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
 		return nil
 	})
 
-	if params.info.Expiration <= rt.CurrEpoch() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.info.Expiration, rt.CurrEpoch())
+	if params.Expiration <= rt.CurrEpoch() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
 	}
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
 		EventType: CronEventType_Miner_PreCommitExpiry,
-		Sectors:   []abi.SectorNumber{params.info.SectorNumber},
+		Sectors:   []abi.SectorNumber{params.SectorNumber},
 	}
 	expiryBound := rt.CurrEpoch() + PoRepMaxDelay + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
