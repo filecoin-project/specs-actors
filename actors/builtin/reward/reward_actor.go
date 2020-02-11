@@ -20,7 +20,7 @@ const TokenPrecision = int64(1_000_000_000_000_000_000)
 // Target reward released to each block winner.
 var BlockRewardTarget = big.Mul(big.NewInt(100), big.NewInt(TokenPrecision))
 
-const rewardVestingFunction = None // PARAM_FINISH
+const rewardVestingFunction = None            // PARAM_FINISH
 const rewardVestingPeriod = abi.ChainEpoch(0) // PARAM_FINISH
 
 type Actor struct{}
@@ -66,8 +66,8 @@ type AwardBlockRewardParams struct {
 // - a penalty amount, provided as a parameter, which is burnt,
 func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	AssertMsg(params.GasReward.Equals(rt.ValueReceived()),
-		"expected value received %v to match gas reward %v", rt.ValueReceived(), params.GasReward)
+	AssertMsg(params.GasReward.Equals(rt.Message().ValueReceived()),
+		"expected value received %v to match gas reward %v", rt.Message().ValueReceived(), params.GasReward)
 	priorBalance := rt.CurrentBalance()
 
 	var penalty abi.TokenAmount
@@ -108,7 +108,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	owner := rt.ImmediateCaller()
+	owner := rt.Message().Caller()
 
 	var st State
 	withdrawableReward := rt.State().Transaction(&st, func() interface{} {

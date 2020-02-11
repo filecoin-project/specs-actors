@@ -107,7 +107,7 @@ func (a Actor) AddBalance(rt Runtime, params *AddBalanceParams) *adt.EmptyValue 
 	var err error
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.addMinerBalance(adt.AsStore(rt), params.Miner, rt.ValueReceived())
+		err = st.addMinerBalance(adt.AsStore(rt), params.Miner, rt.Message().ValueReceived())
 		abortIfError(rt, err, "failed to add pledge balance")
 		return nil
 	})
@@ -172,7 +172,7 @@ type CreateMinerReturn struct {
 
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	ownerAddr := rt.ImmediateCaller()
+	ownerAddr := rt.Message().Caller()
 
 	ctorParams := MinerConstructorParams{
 		OwnerAddr:  ownerAddr,
@@ -204,7 +204,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		err = st.setMinerBalance(store, addresses.IDAddress, rt.ValueReceived())
+		err = st.setMinerBalance(store, addresses.IDAddress, rt.Message().ValueReceived())
 		abortIfError(rt, err, "failed to set pledge balance")
 		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewTokenAmount(0)})
 		if err != nil {
@@ -265,7 +265,7 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 	rt.State().Transaction(&st, func() interface{} {
 		power := consensusPowerForWeight(&params.Weight)
 		pledge = pledgeForWeight(&params.Weight, st.TotalNetworkPower)
-		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power, pledge)
+		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), power, pledge)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 		}
@@ -283,7 +283,7 @@ type OnSectorTerminateParams struct {
 
 func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+	minerAddr := rt.Message().Caller()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -312,7 +312,7 @@ func (a Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSector
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		power := consensusPowerForWeights(params.Weights)
-		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power.Neg(), params.Pledge.Neg())
+		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), power.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
@@ -333,7 +333,7 @@ func (a Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorTe
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		power := consensusPowerForWeights(params.Weights)
-		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), power, params.Pledge)
+		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), power, params.Pledge)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to add claimed power for sector: %v", err)
 		}
@@ -356,14 +356,14 @@ func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeight
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		prevPower := consensusPowerForWeight(&params.PrevWeight)
-		err := st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), prevPower.Neg(), params.PrevPledge.Neg())
+		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), prevPower.Neg(), params.PrevPledge.Neg())
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
 
 		newPower := consensusPowerForWeight(&params.NewWeight)
 		newPledge = pledgeForWeight(&params.NewWeight, st.TotalNetworkPower)
-		err = st.addToClaim(adt.AsStore(rt), rt.ImmediateCaller(), newPower, newPledge)
+		err = st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), newPower, newPledge)
 		if err != nil {
 			rt.Abort(exitcode.ErrIllegalState, "failed to add power for sector: %v", err)
 		}
@@ -375,7 +375,7 @@ func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeight
 
 func (a Actor) OnMinerSurprisePoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+	minerAddr := rt.Message().Caller()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -394,7 +394,7 @@ type OnMinerSurprisePoStFailureParams struct {
 
 func (a Actor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMinerSurprisePoStFailureParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+	minerAddr := rt.Message().Caller()
 
 	var claim *Claim
 	var st State
@@ -434,7 +434,7 @@ type EnrollCronEventParams struct {
 
 func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+	minerAddr := rt.Message().Caller()
 	minerEvent := CronEvent{
 		MinerAddr:       minerAddr,
 		CallbackPayload: params.Payload,
@@ -467,7 +467,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		rt.Abort(exitcode.ErrIllegalArgument, "reported consensus fault failed verification")
 	}
 
-	reporter := rt.ImmediateCaller()
+	reporter := rt.Message().Caller()
 	var st State
 	reward := rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)

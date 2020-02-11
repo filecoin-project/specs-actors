@@ -212,7 +212,7 @@ func (a Actor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoSt
 // Called by Actor.
 func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-	minerAddr := rt.CurrReceiver()
+	minerAddr := rt.Message().Receiver()
 	rt.DeleteActor(minerAddr)
 	return &adt.EmptyValue{}
 }
@@ -224,7 +224,7 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 // Called by the VM interpreter once an ElectionPoSt has been verified.
 func (a Actor) OnVerifiedElectionPoSt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	if rt.ToplevelBlockWinner() != rt.CurrReceiver() {
+	if rt.Message().BlockMiner() != rt.Message().Receiver() {
 		rt.Abort(exitcode.ErrForbidden, "receiver must be miner of this block")
 	}
 
@@ -896,7 +896,7 @@ func (a Actor) verifySurprisePost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	randomnessK := rt.GetRandomness(challengeEpoch - PoStLookback)
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
-	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, randomnessK, rt.CurrReceiver())
+	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, randomnessK, rt.Message().Receiver())
 
 	// Get public inputs
 
@@ -922,7 +922,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 
 	commD := a.requestUnsealedSectorCID(rt, sectorSize, onChainInfo.DealIDs)
 
-	minerActorID, err := addr.IDFromAddress(rt.CurrReceiver())
+	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
 	svInfoRandomness := rt.GetRandomness(onChainInfo.SealEpoch)
@@ -982,12 +982,12 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 }
 
 func confirmPaymentAndRefundChange(rt vmr.Runtime, expected abi.TokenAmount) {
-	if rt.ValueReceived().LessThan(expected) {
+	if rt.Message().ValueReceived().LessThan(expected) {
 		rt.Abort(exitcode.ErrInsufficientFunds, "insufficient funds received, expected %v", expected)
 	}
 
-	if rt.ValueReceived().GreaterThan(expected) {
-		_, code := rt.Send(rt.ImmediateCaller(), builtin.MethodSend, nil, big.Sub(rt.ValueReceived(), expected))
+	if rt.Message().ValueReceived().GreaterThan(expected) {
+		_, code := rt.Send(rt.Message().Caller(), builtin.MethodSend, nil, big.Sub(rt.Message().ValueReceived(), expected))
 		builtin.RequireSuccess(rt, code, "failed to transfer refund")
 	}
 }
