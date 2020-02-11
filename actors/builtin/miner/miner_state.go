@@ -87,11 +87,11 @@ type SectorPreCommitOnChainInfo struct {
 
 type SectorOnChainInfo struct {
 	Info                  SectorPreCommitInfo
-	ActivationEpoch       abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
-	DealWeight            abi.DealWeight // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
+	ActivationEpoch       abi.ChainEpoch  // Epoch at which SectorProveCommit is accepted
+	DealWeight            abi.DealWeight  // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 	PledgeRequirement     abi.TokenAmount // Fixed pledge collateral requirement determined at activation
-	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
-	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
+	DeclaredFaultEpoch    abi.ChainEpoch  // -1 if not currently declared faulted.
+	DeclaredFaultDuration abi.ChainEpoch  // -1 if not currently declared faulted.
 }
 
 func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*State, error) {

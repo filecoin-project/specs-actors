@@ -100,9 +100,9 @@ func pledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePo
 	// PARAM_FINISH
 	numerator := bigProduct(
 		big.NewInt(int64(weight.SectorSize)), // bytes
-		big.NewInt(int64(weight.Duration)), // epochs
-		EpochTotalExpectedReward, // FIL/epoch
-		PledgeFactor, // unitless
+		big.NewInt(int64(weight.Duration)),   // epochs
+		EpochTotalExpectedReward,             // FIL/epoch
+		PledgeFactor,                         // unitless
 	) // = bytes*FIL
 	denominator := networkPower // bytes
 

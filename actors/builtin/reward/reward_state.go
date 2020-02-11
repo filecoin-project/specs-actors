@@ -12,7 +12,7 @@ import (
 )
 
 type State struct {
-	RewardMap   cid.Cid // HAMT[Address]AMT[Reward]
+	RewardMap   cid.Cid         // HAMT[Address]AMT[Reward]
 	RewardTotal abi.TokenAmount // Sum of un-withdrawn rewards.
 }
 
@@ -40,7 +40,7 @@ func ConstructState(store adt.Store) (*State, error) {
 	}
 
 	return &State{
-		RewardMap: rewards.Root(),
+		RewardMap:   rewards.Root(),
 		RewardTotal: big.Zero(),
 	}, nil
 }
