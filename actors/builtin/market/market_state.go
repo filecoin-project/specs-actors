@@ -43,6 +43,11 @@ func ConstructState(store adt.Store) (*State, error) {
 		return nil, err
 	}
 
+	emptyMap, err := adt.MakeEmptyMap(store)
+	if err != nil {
+		return nil, err
+	}
+
 	emptyMSet, err := MakeEmptySetMultimap(store)
 	if err != nil {
 		return nil, err
@@ -50,8 +55,9 @@ func ConstructState(store adt.Store) (*State, error) {
 
 	return &State{
 		Proposals:      emptyArray.Root(),
-		EscrowTable:    emptyArray.Root(),
-		LockedTable:    emptyArray.Root(),
+		States:         emptyArray.Root(),
+		EscrowTable:    emptyMap.Root(),
+		LockedTable:    emptyMap.Root(),
 		NextID:         abi.DealID(0),
 		DealIDsByParty: emptyMSet.Root(),
 	}, nil
