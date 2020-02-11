@@ -61,7 +61,7 @@ func (k AddrKey) Key() string {
 type IntKey int64
 
 func (k IntKey) Key() string {
-	var buf []byte
+	buf := make([]byte, 8)
 	n := binary.PutVarint(buf, int64(k))
 	return string(buf[:n])
 }

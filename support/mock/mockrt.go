@@ -32,6 +32,8 @@ type Runtime struct {
 	actorCodeCIDs map[addr.Address]cid.Cid
 	newActorAddr  addr.Address
 
+	syscalls syscaller
+
 	// Actor state
 	state   cid.Cid
 	balance abi.TokenAmount
@@ -240,7 +242,7 @@ func (rt *Runtime) AbortStateMsg(msg string) {
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
-	panic("implement me")
+	return &rt.syscalls
 }
 
 func (rt *Runtime) Context() context.Context {
@@ -512,6 +514,14 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), reflect.ValueOf(params)})
 	rt.inCall = false
 	return ret[0].Interface()
+}
+
+func (rt *Runtime) SetVerifier(f VerifyFunc) {
+	rt.syscalls.SignatureVerifier = f
+}
+
+func (rt *Runtime) SetHasher(f HasherFunc) {
+	rt.syscalls.Hasher = f
 }
 
 func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
