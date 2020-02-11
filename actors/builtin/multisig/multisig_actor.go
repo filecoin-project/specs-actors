@@ -64,24 +64,23 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		signers = append(signers, sa)
 	}
 
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
-		}
+	pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
+	}
 
-		var st State
-		st.Signers = signers
-		st.NumApprovalsThreshold = params.NumApprovalsThreshold
-		st.PendingTxns = pending.Root()
-		st.InitialBalance = abi.NewTokenAmount(0)
-		if params.UnlockDuration != 0 {
-			st.InitialBalance = rt.Message().ValueReceived()
-			st.UnlockDuration = params.UnlockDuration
-			st.StartEpoch = rt.CurrEpoch()
-		}
-		return &st
-	})
+	var st State
+	st.Signers = signers
+	st.NumApprovalsThreshold = params.NumApprovalsThreshold
+	st.PendingTxns = pending.Root()
+	st.InitialBalance = abi.NewTokenAmount(0)
+	if params.UnlockDuration != 0 {
+		st.InitialBalance = rt.Message().ValueReceived()
+		st.UnlockDuration = params.UnlockDuration
+		st.StartEpoch = rt.CurrEpoch()
+	}
+
+	rt.State().Create(&st)
 	return &adt.EmptyValue{}
 }
 

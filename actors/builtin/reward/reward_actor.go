@@ -37,13 +37,11 @@ var _ abi.Invokee = Actor{}
 
 func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		state, err := ConstructState(adt.AsStore(rt))
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
-		}
-		return state
-	})
+	st, err := ConstructState(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
+	}
+	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
 

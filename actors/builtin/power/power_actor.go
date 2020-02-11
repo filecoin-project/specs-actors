@@ -84,13 +84,11 @@ type SectorStorageWeightDesc struct {
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		st, err := ConstructState(adt.AsStore(rt))
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
-		}
-		return st
-	})
+	st, err := ConstructState(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
+	}
+	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
 

@@ -40,14 +40,11 @@ var _ abi.Invokee = Actor{}
 
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		st, err := ConstructState(adt.AsStore(rt))
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state map: %v", err)
-		}
-		return st
-	})
+	st, err := ConstructState(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state map: %v", err)
+	}
+	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
 

@@ -56,10 +56,8 @@ func (pca Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Emp
 	if params.To.Protocol() != addr.ID {
 		rt.Abortf(exitcode.ErrIllegalArgument, "target address must be an ID-address, %v is %v", params.To, params.To.Protocol())
 	}
-
-	rt.State().Construct(func() vmr.CBORMarshaler {
-		return ConstructState(rt.Message().Caller(), params.To)
-	})
+	st := ConstructState(rt.Message().Caller(), params.To)
+	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
 

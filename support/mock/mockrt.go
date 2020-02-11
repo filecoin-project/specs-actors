@@ -307,13 +307,12 @@ func (rt *Runtime) ValueReceived() abi.TokenAmount {
 
 ///// State handle implementation /////
 
-func (rt *Runtime) Construct(f func() runtime.CBORMarshaler) {
+func (rt *Runtime) Create(obj runtime.CBORMarshaler) {
 	if rt.state.Defined() {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "state already constructed")
 	}
 	rt.inTransaction = true
-	st := f()
-	rt.state = rt.IpldPut(st)
+	rt.state = rt.IpldPut(obj)
 	rt.inTransaction = false
 }
 
