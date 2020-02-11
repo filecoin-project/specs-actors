@@ -49,8 +49,8 @@ type ExecReturn struct {
 
 func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
-	callerCodeCID, ok := rt.GetActorCodeCID(rt.ImmediateCaller())
-	autil.AssertMsg(ok, "no code for actor at %s", rt.ImmediateCaller())
+	callerCodeCID, ok := rt.GetActorCodeCID(rt.Message().Caller())
+	autil.AssertMsg(ok, "no code for actor at %s", rt.Message().Caller())
 	if !canExec(callerCodeCID, params.CodeCID) {
 		rt.Abort(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}
@@ -76,7 +76,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.CreateActor(params.CodeCID, idAddr)
 
 	// Invoke constructor.
-	_, code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.ValueReceived())
+	_, code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.Message().ValueReceived())
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{idAddr, uniqueAddress}

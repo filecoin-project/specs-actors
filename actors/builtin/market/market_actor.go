@@ -53,7 +53,7 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 type WithdrawBalanceParams struct {
 	ProviderOrClientAddress addr.Address
-	Amount  abi.TokenAmount
+	Amount                  abi.TokenAmount
 }
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
@@ -100,7 +100,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAdrress *addr.Address) *ad
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msgValue := rt.ValueReceived()
+		msgValue := rt.Message().ValueReceived()
 
 		{
 			et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
@@ -148,7 +148,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
-			if deal.Proposal.Provider != rt.ImmediateCaller() {
+			if deal.Proposal.Provider != rt.Message().Caller() {
 				rt.Abort(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
 			}
 
@@ -204,7 +204,7 @@ type VerifyDealsOnSectorProveCommitParams struct {
 // sector power, collateral, and/or other parameters.
 func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *abi.DealWeight {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+	minerAddr := rt.Message().Caller()
 	totalWeight := big.Zero()
 
 	var st State
@@ -283,7 +283,7 @@ type OnMinerSectorsTerminateParams struct {
 // amount to client.
 func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTerminateParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.ImmediateCaller()
+	minerAddr := rt.Message().Caller()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {

@@ -70,6 +70,11 @@ var cidBuilder = cid.V1Builder{
 
 ///// Implementation of the runtime API /////
 
+func (rt *Runtime) Message() runtime.Message {
+	rt.requireInCall()
+	return rt
+}
+
 func (rt *Runtime) NetworkName() string {
 	rt.requireInCall()
 	return "mock"
@@ -78,16 +83,6 @@ func (rt *Runtime) NetworkName() string {
 func (rt *Runtime) CurrEpoch() abi.ChainEpoch {
 	rt.requireInCall()
 	return rt.epoch
-}
-
-func (rt *Runtime) CurrReceiver() addr.Address {
-	rt.requireInCall()
-	return rt.receiver
-}
-
-func (rt *Runtime) ImmediateCaller() addr.Address {
-	rt.requireInCall()
-	return rt.caller
 }
 
 func (rt *Runtime) ValidateImmediateCallerAcceptAny() {
@@ -147,19 +142,9 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 	rt.Abort(exitcode.ErrForbidden, "caller type %v forbidden, allowed: %v", rt.callerType, types)
 }
 
-func (rt *Runtime) ToplevelBlockWinner() addr.Address {
-	rt.requireInCall()
-	return rt.miner
-}
-
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
 	rt.requireInCall()
 	return rt.balance
-}
-
-func (rt *Runtime) ValueReceived() abi.TokenAmount {
-	rt.requireInCall()
-	return rt.valueReceived
 }
 
 func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
@@ -300,6 +285,24 @@ func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}
 	if !predicate {
 		rt.Abort(exitcode.SysErrorIllegalArgument, msg, args...)
 	}
+}
+
+///// Message implementation /////
+
+func (rt *Runtime) BlockMiner() addr.Address {
+	return rt.miner
+}
+
+func (rt *Runtime) Caller() addr.Address {
+	return rt.caller
+}
+
+func (rt *Runtime) Receiver() addr.Address {
+	return rt.receiver
+}
+
+func (rt *Runtime) ValueReceived() abi.TokenAmount {
+	return rt.valueReceived
 }
 
 ///// State handle implementation /////
