@@ -14,17 +14,29 @@ import (
 )
 
 func TestConstruction(t *testing.T) {
-	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+	builder := mock.NewBuilder(context.Background(), address.Undef)
 
 	t.Run("initializes all fields", func(t *testing.T) {
-		state, err := market.ConstructState(adt.AsStore(rt))
+		rt := builder.Build(t)
+		store := adt.AsStore(rt)
 
+		emptyMap, err := adt.MakeEmptyMap(store)
 		assert.NoError(t, err)
-		assert.True(t, state.Proposals.Defined())
-		assert.True(t, state.States.Defined())
-		assert.True(t, state.EscrowTable.Defined())
-		assert.NotNil(t, state.LockedTable.Defined())
+
+		emptyArray, err := adt.MakeEmptyArray(store)
+		assert.NoError(t, err)
+
+		emptyMultiMap, err := market.MakeEmptySetMultimap(store)
+		assert.NoError(t, err)
+
+		state, err := market.ConstructState(store)
+		assert.NoError(t, err)
+
+		assert.Equal(t, emptyArray.Root(), state.Proposals)
+		assert.Equal(t, emptyArray.Root(), state.States)
+		assert.Equal(t, emptyMap.Root(), state.EscrowTable)
+		assert.Equal(t, emptyMap.Root(), state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
-		assert.True(t, state.DealIDsByParty.Defined())
+		assert.Equal(t, emptyMultiMap.Root(), state.DealIDsByParty)
 	})
 }
