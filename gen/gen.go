@@ -169,7 +169,6 @@ func main() {
 		miner.WorkerKeyChange{},
 		// method params
 		// miner.ConstructorParams{},
-		miner.PreCommitSectorParams{},
 		miner.TerminateSectorsParams{},
 		miner.ProveCommitSectorParams{},
 		miner.OnDeferredCronEventParams{},
