@@ -54,7 +54,7 @@ func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
 type AddrKey addr.Address
 
 func (k AddrKey) Key() string {
-	return string(addr.Address(k).Bytes())
+	return addr.Address(k).String()
 }
 
 // Adapts an int64 as a mapping key.

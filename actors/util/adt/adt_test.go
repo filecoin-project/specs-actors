@@ -14,9 +14,9 @@ func TestAddrKey(t *testing.T) {
 	actor_address_2 := tutil.NewActorAddr(t, "222")
 
 	t.Run("address to key string conversion", func(t *testing.T) {
-		assert.Equal(t, "\x00e", adt.AddrKey(id_address_1).Key())
-		assert.Equal(t, "\x00f", adt.AddrKey(id_address_2).Key())
-		assert.Equal(t, "\x02X\xbeO\xd7u\xa0\xc8͚\xed\x86Ns\xab\xb1\x86F_\xef\xe1", adt.AddrKey(actor_address_1).Key())
-		assert.Equal(t, "\x02\xaaв\x98\xa9ޫ\xbb\xb6\u007f\x80_f\xaah\x8c݉\xad\xf5", adt.AddrKey(actor_address_2).Key())
+		assert.Equal(t, "t0101", adt.AddrKey(id_address_1).Key())
+		assert.Equal(t, "t0102", adt.AddrKey(id_address_2).Key())
+		assert.Equal(t, "t2lc7e7v3vudem3gxnqzhhhk5rqzdf737bv3bjjoq", adt.AddrKey(actor_address_1).Key())
+		assert.Equal(t, "t2vlilfgfj32v3xnt7qbpwnktirtoytlpv3u7jiuy", adt.AddrKey(actor_address_2).Key())
 	})
 }
