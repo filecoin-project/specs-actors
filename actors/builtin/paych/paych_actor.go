@@ -54,7 +54,7 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
 	}
 
-	st := ConstructState(rt.Message().Caller(), params.To)
+	st := ConstructState(params.From, params.To)
 	rt.State().Create(st)
 
 	return &adt.EmptyValue{}
@@ -64,13 +64,13 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 // It checks that the embedded address is associated with an appropriate key.
 // An alternative (more expensive) would be to send a message to the actor to fetch its key.
 func (pca *Actor) validateActor(rt vmr.Runtime, actorAddr addr.Address) error {
-	targetCodeID, ok := rt.GetActorCodeCID(actorAddr)
+	codeCID, ok := rt.GetActorCodeCID(actorAddr)
 	if !ok {
-		return fmt.Errorf("no code for target address %v", actorAddr)
+		return fmt.Errorf("no code for address %v", actorAddr)
 	}
-	if targetCodeID != builtin.AccountActorCodeID {
+	if codeCID != builtin.AccountActorCodeID {
 		return fmt.Errorf("actor %v must be an account (%v), was %v",
-			actorAddr, builtin.AccountActorCodeID, targetCodeID)
+			actorAddr, builtin.AccountActorCodeID, codeCID)
 	}
 	// Check that target is a canonical ID address.
 	// This is required for consistent caller validation.
@@ -140,6 +140,10 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		signer = st.From
 	}
 	sv := params.Sv
+
+	if sv.Signature == nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher has no signature")
+	}
 
 	vb, nerr := sv.SigningBytes()
 	if nerr != nil {
