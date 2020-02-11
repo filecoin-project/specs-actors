@@ -7,13 +7,13 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // Maximum number of lanes in a channel.
@@ -39,9 +39,10 @@ type ConstructorParams struct {
 	To addr.Address   // Payee
 }
 
-// Constructor creates a payment channel actor. See State for meaning of params
+// Constructor creates a payment channel actor. See State for meaning of params.
 func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
-	// Only InitActor can create a payment channel actor.
+	// Only InitActor can create a payment channel actor. It creates the actor on
+	// behalf of the payer/payee.
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
 
 	// check that both parties are capable of signing vouchers
@@ -61,7 +62,8 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 }
 
 // validateActor requires an actor to be an account actor and to have a canonical ID address.
-// It checks that the embedded address is associated with an appropriate key.
+// The account actor constructor checks that the embedded address is associated
+// with an appropriate key.
 // An alternative (more expensive) would be to send a message to the actor to fetch its key.
 func (pca *Actor) validateActor(rt vmr.Runtime, actorAddr addr.Address) error {
 	codeCID, ok := rt.GetActorCodeCID(actorAddr)

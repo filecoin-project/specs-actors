@@ -42,35 +42,34 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 	})
 
 	testCases := []struct {
-		desc string
+		desc         string
 		newActorAddr addr.Address
-		callerCode cid.Cid
+		callerCode   cid.Cid
 		newActorCode cid.Cid
-		payerCode cid.Cid
-		expExitCode exitcode.ExitCode
-
-	} {
-		{ "fails if target (to) is not account actor",
+		payerCode    cid.Cid
+		expExitCode  exitcode.ExitCode
+	}{
+		{"fails if target (to) is not account actor",
 			newPaychAddr,
 			builtin.InitActorCodeID,
-			builtin.CronActorCodeID,
+			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
 			exitcode.ErrIllegalArgument,
-		},{ "fails if sender (from) is not account actor",
+		}, {"fails if sender (from) is not account actor",
 			newPaychAddr,
 			builtin.InitActorCodeID,
-			builtin.CronActorCodeID,
+			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
 			exitcode.ErrIllegalArgument,
-		},{ "fails if addr is not ID type",
+		}, {"fails if addr is not ID type",
 			tutil.NewActorAddr(t, "beach blanket babylon"),
 			builtin.InitActorCodeID,
-			builtin.CronActorCodeID,
+			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
 			exitcode.ErrIllegalArgument,
 		},
 	}
-	for _,tc := range testCases {
+	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			builder := mock.NewBuilder(ctx, newPaychAddr).
 				WithCaller(callerAddr, tc.callerCode).
@@ -97,7 +96,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
 	hasher := func(data []byte) []byte { return data }
 
-	balance:= abi.NewTokenAmount(100)
+	balance := abi.NewTokenAmount(100)
 	received := abi.NewTokenAmount(0)
 	builder := mock.NewBuilder(ctx, newPaychAddr).
 		WithBalance(balance, received).
@@ -107,7 +106,6 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		WithActorType(payerAddr, builtin.AccountActorCodeID).
 		WithVerifiesSig(versig).
 		WithHasher(hasher)
-
 
 	t.Run("Can add a lane/update actor state", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -120,14 +118,8 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			Data: []byte("doesn't matter"),
 		}
 		tl := abi.ChainEpoch(1)
-		sv := SignedVoucher{
-			TimeLock:  tl,
-			Lane:      lane,
-			Nonce:     nonce,
-			Amount:    amt,
-			Signature: sig,
-		}
-		ucp := &UpdateChannelStateParams{ Sv: sv }
+		sv := SignedVoucher{TimeLock: tl, Lane: lane, Nonce: nonce, Amount: amt, Signature: sig}
+		ucp := &UpdateChannelStateParams{Sv: sv}
 
 		// payerAddr updates state, creates a lane
 		rt.SetCaller(payerAddr, builtin.AccountActorCodeID)
@@ -165,7 +157,7 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 			Amount:    amt,
 			Signature: sig,
 		}
-		ucp := &UpdateChannelStateParams{ Sv: sv }
+		ucp := &UpdateChannelStateParams{Sv: sv}
 
 		// payerAddr updates state, creates a lane
 		rt.SetCaller(payerAddr, builtin.AccountActorCodeID)

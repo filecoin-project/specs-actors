@@ -1,6 +1,8 @@
 package mock
 
 import (
+	"testing"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
 
@@ -13,39 +15,44 @@ type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext 
 type HasherFunc func(data []byte) []byte
 
 type syscaller struct {
-	Verifier VerifyFunc
-	Hasher   HasherFunc
+	T                 testing.T
+	SignatureVerifier VerifyFunc
+	Hasher            HasherFunc
 }
 
 // Interface methods
 func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte) bool {
-	if s.Verifier == nil {
-		panic("set me")
+	if s.SignatureVerifier == nil {
+		s.FailOnUnsetFunc("SignatureVerifier")
 	}
-	return s.Verifier(sig,signer,plaintext)
+	return s.SignatureVerifier(sig,signer,plaintext)
 }
 
 func (s *syscaller) Hash_SHA256(data []byte) []byte {
 	if s.Hasher == nil {
-		panic("set me")
+		s.FailOnUnsetFunc("Hasher")
 	}
 	return s.Hasher(data)
 }
 
 func (s *syscaller) ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error) {
-	panic("implement me")
+	s.FailOnUnsetFunc("UnsealedSectorCIDComputer")
 }
 
 func (s *syscaller) VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) bool {
-	panic("implement me")
+	s.FailOnUnsetFunc("SealVerifier")
 }
 
 func (s *syscaller) VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool {
-	panic("implement me")
+	s.FailOnUnsetFunc("PoStVerifier")
 }
 
 func (s *syscaller) VerifyConsensusFault(h1, h2 []byte) bool {
-	panic("implement me")
+	s.FailOnUnsetFunc("ConsensusFaultVerifier")
+}
+
+func (s *syscaller) FailOnUnsetFunc(unsetFuncName string) {
+	s.T.Fatalf("no %s set", unsetFuncName)
 }
 
 

@@ -8,13 +8,13 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/ipfs/go-cid"
+	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
 
 // A mock runtime for unit testing of actors in isolation.
@@ -517,7 +517,7 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 }
 
 func (rt *Runtime) SetVerifier(f VerifyFunc) {
-	rt.syscalls.Verifier = f
+	rt.syscalls.SignatureVerifier = f
 }
 
 func (rt *Runtime) SetHasher(f HasherFunc) {
