@@ -177,10 +177,6 @@ func (rt *Runtime) IpldGet(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 
 func (rt *Runtime) IpldPut(o runtime.CBORMarshaler) cid.Cid {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	if !rt.inTransaction {
-		rt.Abortf(exitcode.SysErrorIllegalActor, "store put outside transaction")
-	}
-
 	r := bytes.Buffer{}
 	err := o.MarshalCBOR(&r)
 	if err != nil {
@@ -311,9 +307,7 @@ func (rt *Runtime) Create(obj runtime.CBORMarshaler) {
 	if rt.state.Defined() {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "state already constructed")
 	}
-	rt.inTransaction = true
 	rt.state = rt.IpldPut(obj)
-	rt.inTransaction = false
 }
 
 func (rt *Runtime) Readonly(st runtime.CBORUnmarshaler) {
