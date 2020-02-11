@@ -40,14 +40,14 @@ func (r rtStore) Context() context.Context {
 }
 
 func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
-	if !r.IpldGet(c, out.(vmr.CBORUnmarshaler)) {
+	if !r.Store().Get(c, out.(vmr.CBORUnmarshaler)) {
 		r.Abortf(exitcode.ErrNotFound, "not found")
 	}
 	return nil
 }
 
 func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
-	return r.IpldPut(v.(vmr.CBORMarshaler)), nil
+	return r.Store().Put(v.(vmr.CBORMarshaler)), nil
 }
 
 // Adapts an address as a mapping key.
