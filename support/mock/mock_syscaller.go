@@ -2,7 +2,6 @@ package mock
 
 import (
 	"fmt"
-	"testing"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
@@ -16,7 +15,6 @@ type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext 
 type HasherFunc func(data []byte) []byte
 
 type syscaller struct {
-	T                 testing.T
 	SignatureVerifier VerifyFunc
 	Hasher            HasherFunc
 }
@@ -24,7 +22,7 @@ type syscaller struct {
 // Interface methods
 func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte) bool {
 	if s.SignatureVerifier == nil {
-		s.FailOnUnsetFunc("SignatureVerifier")
+		s.PanicOnUnsetFunc("SignatureVerifier")
 	}
 	return s.SignatureVerifier(sig,signer,plaintext)
 }
