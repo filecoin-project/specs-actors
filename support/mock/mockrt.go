@@ -247,7 +247,7 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 	}()
 }
 
-func (rt *Runtime) DeleteActor(address addr.Address) {
+func (rt *Runtime) DeleteActor() {
 	rt.requireInCall()
 	if rt.inTransaction {
 		rt.Abort(exitcode.SysErrorIllegalActor, "side-effect within transaction")

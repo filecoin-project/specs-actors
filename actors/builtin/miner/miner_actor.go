@@ -212,8 +212,7 @@ func (a Actor) SubmitSurprisePoStResponse(rt Runtime, params *SubmitSurprisePoSt
 // Called by Actor.
 func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-	minerAddr := rt.Message().Receiver()
-	rt.DeleteActor(minerAddr)
+	rt.DeleteActor()
 	return &adt.EmptyValue{}
 }
 
