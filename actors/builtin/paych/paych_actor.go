@@ -102,9 +102,9 @@ type SignedVoucher struct {
 	// (optional) Extra can be specified by `From` to add a verification method to the voucher
 	Extra *ModVerifyParams
 	// Specifies which lane the Voucher merges into (will be created if does not exist)
-	Lane int64
+	Lane uint64
 	// Nonce is set by `From` to prevent redemption of stale vouchers on a lane
-	Nonce int64
+	Nonce uint64
 	// Amount voucher can be redeemed for
 	Amount big.Int
 	// (optional) MinSettleHeight can extend channel MinSettleHeight if needed
@@ -324,11 +324,11 @@ func (t *SignedVoucher) SigningBytes() ([]byte, error) {
 }
 
 // Returns the insertion index for a lane ID, with the matching lane state if found, or nil.
-func findLane(lanes []*LaneState, ID int64) (int, *LaneState) {
+func findLane(lanes []*LaneState, ID uint64) (int, *LaneState) {
 	insertionIdx := sort.Search(len(lanes), func(i int) bool {
 		return lanes[i].ID >= ID
 	})
-	if insertionIdx == len(lanes) || lanes[insertionIdx].ID != int64(insertionIdx) {
+	if insertionIdx == len(lanes) || lanes[insertionIdx].ID != uint64(insertionIdx) {
 		// Not found
 		return insertionIdx, nil
 	}

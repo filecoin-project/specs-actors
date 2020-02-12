@@ -111,8 +111,8 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
 		amt := big.NewInt(10)
-		lane := int64(999)
-		nonce := int64(1)
+		lane := uint64(999)
+		nonce := uint64(1)
 		sig := &crypto.Signature{
 			Type: crypto.SigTypeBLS,
 			Data: []byte("doesn't matter"),
@@ -144,8 +144,8 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
 		tl := abi.ChainEpoch(10)
 		amt := big.NewInt(9)
-		lane := int64(8)
-		nonce := int64(7)
+		lane := uint64(8)
+		nonce := uint64(7)
 		sig := &crypto.Signature{
 			Type: crypto.SigTypeBLS,
 			Data: []byte("doesn't matter"),
