@@ -11,6 +11,11 @@ import (
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
+// Branching factor of the HAMT.
+// This value has been empirically chosen, but the optimal value for maps with different mutation profiles
+// may differ, in which case we can expose it for configuration.
+const hamtBitwidth = 5
+
 // Map stores key-value pairs in a HAMT.
 type Map struct {
 	root  cid.Cid
@@ -27,7 +32,7 @@ func AsMap(s Store, r cid.Cid) *Map {
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
 func MakeEmptyMap(s Store) (*Map, error) {
-	nd := hamt.NewNode(s)
+	nd := hamt.NewNode(s, hamt.UseTreeBitWidth(hamtBitwidth))
 	newMap := AsMap(s, cid.Undef)
 	err := newMap.write(nd)
 	return newMap, err
@@ -40,7 +45,7 @@ func (m *Map) Root() cid.Cid {
 
 // Put adds value `v` with key `k` to the hamt store.
 func (m *Map) Put(k Keyer, v runtime.CBORMarshaler) error {
-	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
+	root, err := m.loadRoot()
 	if err != nil {
 		return errors.Wrapf(err, "map put failed to load node %v", m.root)
 	}
@@ -56,7 +61,7 @@ func (m *Map) Put(k Keyer, v runtime.CBORMarshaler) error {
 
 // Get puts the value at `k` into `out`.
 func (m *Map) Get(k Keyer, out runtime.CBORUnmarshaler) (bool, error) {
-	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
+	root, err := m.loadRoot()
 	if err != nil {
 		return false, errors.Wrapf(err, "map get failed to load node %v", m.root)
 	}
@@ -71,7 +76,7 @@ func (m *Map) Get(k Keyer, out runtime.CBORUnmarshaler) (bool, error) {
 
 // Delete removes the value at `k` from the hamt store.
 func (m *Map) Delete(k Keyer) error {
-	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
+	root, err := m.loadRoot()
 	if err != nil {
 		return errors.Wrapf(err, "map delete failed to load node %v", m.root)
 	}
@@ -90,7 +95,7 @@ func (m *Map) Delete(k Keyer) error {
 // Iteration halts if the function returns an error.
 // If the output parameter is nil, deserialization is skipped.
 func (m *Map) ForEach(out runtime.CBORUnmarshaler, fn func(key string) error) error {
-	root, err := hamt.LoadNode(m.store.Context(), m.store, m.root)
+	root, err := m.loadRoot()
 	if err != nil {
 		return errors.Wrapf(err, "map foreach failed to load root %s", m.root)
 	}
@@ -113,6 +118,11 @@ func (m *Map) CollectKeys() (out []string, err error) {
 		return nil
 	})
 	return
+}
+
+// Loads the root node.
+func (m *Map) loadRoot() (*hamt.Node, error) {
+	return hamt.LoadNode(m.store.Context(), m.store, m.root, hamt.UseTreeBitWidth(hamtBitwidth))
 }
 
 // Writes the root node to storage and sets the new root CID.
