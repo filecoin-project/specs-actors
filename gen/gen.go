@@ -25,6 +25,10 @@ func main() {
 		abi.SealProof{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
+		abi.OnChainSurprisePoStVerifyInfo{},
+		abi.PoStCandidate{},
+		abi.PoStProof{},
+		abi.PrivatePoStCandidateProof{},
 	); err != nil {
 		panic(err)
 	}
@@ -53,6 +57,7 @@ func main() {
 		// actor state
 		init_.State{},
 		// method params
+		init_.ConstructorParams{},
 		init_.ExecParams{},
 		init_.ExecReturn{},
 	); err != nil {

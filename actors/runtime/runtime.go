@@ -18,9 +18,6 @@ type Runtime interface {
 	// Information related to the current message being executed.
 	Message() Message
 
-	// The network name, e.g. "mainnet".
-	NetworkName() string
-
 	// The current chain epoch number. The genesis block has epoch zero.
 	CurrEpoch() abi.ChainEpoch
 
