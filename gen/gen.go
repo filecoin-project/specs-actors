@@ -25,6 +25,10 @@ func main() {
 		abi.SealProof{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
+		abi.OnChainSurprisePoStVerifyInfo{},
+		abi.PoStCandidate{},
+		abi.PoStProof{},
+		abi.PrivatePoStCandidateProof{},
 	); err != nil {
 		panic(err)
 	}

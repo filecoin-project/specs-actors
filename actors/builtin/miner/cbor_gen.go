@@ -919,7 +919,12 @@ func (t *PreCommitSectorParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.Info (miner.SectorPreCommitInfo) (struct)
+	if err := t.Info.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -936,10 +941,19 @@ func (t *PreCommitSectorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.Info (miner.SectorPreCommitInfo) (struct)
+
+	{
+
+		if err := t.Info.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -948,8 +962,22 @@ func (t *TerminateSectorsParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
 		return err
+	}
+
+	// t.SectorNumbers ([]abi.SectorNumber) (slice)
+	if len(t.SectorNumbers) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.SectorNumbers was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.SectorNumbers)))); err != nil {
+		return err
+	}
+	for _, v := range t.SectorNumbers {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -965,8 +993,39 @@ func (t *TerminateSectorsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.SectorNumbers ([]abi.SectorNumber) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.SectorNumbers: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.SectorNumbers = make([]abi.SectorNumber, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.SectorNumbers slice: %w", err)
+		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.SectorNumbers was not a uint, instead got %d", maj)
+		}
+
+		t.SectorNumbers[i] = abi.SectorNumber(val)
 	}
 
 	return nil
@@ -1035,7 +1094,19 @@ func (t *OnDeferredCronEventParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.CallbackPayload ([]uint8) (slice)
+	if len(t.CallbackPayload) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.CallbackPayload was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.CallbackPayload)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.CallbackPayload); err != nil {
 		return err
 	}
 	return nil
@@ -1052,10 +1123,27 @@ func (t *OnDeferredCronEventParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.CallbackPayload ([]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.CallbackPayload: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.CallbackPayload = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.CallbackPayload); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1064,7 +1152,12 @@ func (t *ChangeWorkerAddressParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.NewKey (address.Address) (struct)
+	if err := t.NewKey.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -1081,10 +1174,19 @@ func (t *ChangeWorkerAddressParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.NewKey (address.Address) (struct)
+
+	{
+
+		if err := t.NewKey.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -1093,8 +1195,24 @@ func (t *ExtendSectorExpirationParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
+	}
+
+	// t.SectorNumber (abi.SectorNumber) (uint64)
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorNumber))); err != nil {
+		return err
+	}
+
+	// t.NewExpiration (abi.ChainEpoch) (int64)
+	if t.NewExpiration >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NewExpiration))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NewExpiration)-1)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1110,10 +1228,45 @@ func (t *ExtendSectorExpirationParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.SectorNumber (abi.SectorNumber) (uint64)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajUnsignedInt {
+		return fmt.Errorf("wrong type for uint64 field")
+	}
+	t.SectorNumber = abi.SectorNumber(extra)
+	// t.NewExpiration (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.NewExpiration = abi.ChainEpoch(extraI)
+	}
 	return nil
 }
 
@@ -1122,7 +1275,12 @@ func (t *SubmitSurprisePoStResponseParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.OnChainInfo (abi.OnChainSurprisePoStVerifyInfo) (struct)
+	if err := t.OnChainInfo.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -1139,10 +1297,19 @@ func (t *SubmitSurprisePoStResponseParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.OnChainInfo (abi.OnChainSurprisePoStVerifyInfo) (struct)
+
+	{
+
+		if err := t.OnChainInfo.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
@@ -1151,8 +1318,33 @@ func (t *DeclareTemporaryFaultsParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{128}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
+	}
+
+	// t.SectorNumbers ([]abi.SectorNumber) (slice)
+	if len(t.SectorNumbers) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.SectorNumbers was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.SectorNumbers)))); err != nil {
+		return err
+	}
+	for _, v := range t.SectorNumbers {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
+			return err
+		}
+	}
+
+	// t.Duration (abi.ChainEpoch) (int64)
+	if t.Duration >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Duration))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.Duration)-1)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1168,10 +1360,66 @@ func (t *DeclareTemporaryFaultsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.SectorNumbers ([]abi.SectorNumber) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.SectorNumbers: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.SectorNumbers = make([]abi.SectorNumber, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.SectorNumbers slice: %w", err)
+		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.SectorNumbers was not a uint, instead got %d", maj)
+		}
+
+		t.SectorNumbers[i] = abi.SectorNumber(val)
+	}
+
+	// t.Duration (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.Duration = abi.ChainEpoch(extraI)
+	}
 	return nil
 }
 
