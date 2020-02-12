@@ -76,11 +76,6 @@ func (rt *Runtime) Message() runtime.Message {
 	return rt
 }
 
-func (rt *Runtime) NetworkName() string {
-	rt.requireInCall()
-	return "mock"
-}
-
 func (rt *Runtime) CurrEpoch() abi.ChainEpoch {
 	rt.requireInCall()
 	return rt.epoch
