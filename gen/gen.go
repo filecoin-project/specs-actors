@@ -57,6 +57,7 @@ func main() {
 		// actor state
 		init_.State{},
 		// method params
+		init_.ConstructorParams{},
 		init_.ExecParams{},
 		init_.ExecReturn{},
 	); err != nil {
