@@ -31,15 +31,15 @@ type State struct {
 // The Lane state tracks the latest (highest) voucher nonce used to merge the lane
 // as well as the amount it has already redeemed.
 type LaneState struct {
-	ID       int64 // Unique to this channel
+	ID       uint64 // Unique to this channel
 	Redeemed big.Int
-	Nonce    int64
+	Nonce    uint64
 }
 
 // Specifies which `Lane`s to be merged with what `Nonce` on channelUpdate
 type Merge struct {
-	Lane  int64
-	Nonce int64
+	Lane  uint64
+	Nonce uint64
 }
 
 func ConstructState(from addr.Address, to addr.Address) *State {
