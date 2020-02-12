@@ -169,10 +169,10 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
-			if err := dbp.Put(adt.AddrKey(deal.Proposal.Client), uint64(id)); err != nil {
+			if err = dbp.Put(deal.Proposal.Client, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set client deal id: %v", err)
 			}
-			if err := dbp.Put(adt.AddrKey(deal.Proposal.Provider), uint64(id)); err != nil {
+			if err = dbp.Put(deal.Proposal.Provider, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set provider deal id: %v", err)
 			}
 
