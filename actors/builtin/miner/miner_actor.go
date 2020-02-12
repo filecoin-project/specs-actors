@@ -127,6 +127,10 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 			NewWorker:   worker,
 			EffectiveAt: effectiveEpoch,
 		}
+
+		cronPayload := CronEventPayload{
+			EventType: CronEventType_Miner_WorkerKeyChange,
+		}
 		return nil
 	})
 
@@ -211,7 +215,7 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 ///////////////////////
 
 type PreCommitSectorParams struct {
-	Info SectorPreCommitInfo
+	Info            SectorPreCommitInfo
 	RegisteredProof abi.RegisteredProof
 }
 
@@ -253,15 +257,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
-<<<<<<< HEAD
 		EventType:       cronEventPreCommitExpiry,
 		Sectors:         &bf,
 		RegisteredProof: params.info.RegisteredProof,
-=======
-		EventType:       CronEventType_Miner_PreCommitExpiry,
-		Sectors:         []abi.SectorNumber{params.info.SectorNumber},
-		RegisteredProof: params.RegisteredProof,
->>>>>>> address anorth comments
 	}
 	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.RegisteredProof] + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
@@ -558,9 +556,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 	}
 
 	if payload.EventType == cronEventPreCommitExpiry {
-		for _, sectorNumber := range payload.Sectors {
-			a.checkPrecommitExpiry(rt, sectorNumber, payload.RegisteredProof)
-		}
+		a.checkPrecommitExpiry(rt, payload.Sectors, payload.RegisteredProof)
 	}
 
 	if payload.EventType == cronEventSectorExpiry {
@@ -638,46 +634,38 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 }
 
 func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof abi.RegisteredProof) {
-	var st State
-	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
+	var st State
 
-	sector, found, err := st.GetPrecommittedSector(store, sectorNo)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
-	}
-
-<<<<<<< HEAD
 	sectorNos := bitfieldToSectorNos(rt, sectors)
 
+	// initialize here to add together for all sectors and minimize calls across actors
 	depositToBurn := abi.NewTokenAmount(0)
-	if found && rt.CurrEpoch()-sector.PreCommitEpoch > MaxSealDuration[regProof] {
-		rt.State().Transaction(&st, func() interface{} {
-			err = st.deletePrecommittedSector(store, sectorNo)
+	rt.State().Transaction(&st, func() interface{} {
+		for _, sectorNo := range sectorNos {
+			sector, found, err := st.GetPrecommittedSector(store, sectorNo)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
+			}
+			if !found || rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
+				// already deleted or not yet expired
+				return
+			}
+
+			// delete sector
+			err = st.DeletePrecommittedSector(store, sectorNo)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
 			}
+			// increment deposit to burn
 			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
-			return nil
-		})
-
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, depositToBurn)
-		builtin.RequireSuccess(rt, code, "failed to burn funds")
-=======
-	if rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
->>>>>>> address anorth comments
-		return
-	}
-
-	rt.State().Transaction(&st, func() interface{} {
-		err = st.deletePrecommitttedSector(store, sectorNo)
-		if err != nil {
-			rt.Abort(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
 		}
 		return nil
 	})
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, sector.PreCommitDeposit)
+
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, depositToBurn)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
+	return
 }
 
 func (a Actor) checkSectorExpiry(rt Runtime, sectors *abi.BitField) {
