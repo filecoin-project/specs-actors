@@ -15,12 +15,12 @@ import (
 // Balance of a Actor should equal exactly the sum of PreCommit deposits
 // that are not yet returned or burned.
 type State struct {
-	PreCommittedSectors cid.Cid // Map, HAMT[sectorNumber]SectorPreCommitOnChainInfo
+	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 	Sectors             cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 	FaultSet            abi.BitField
 	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 
-	Info      MinerInfo // TODO: this needs to be a cid of the miner info struct
+	Info      MinerInfo // TODO: this needs to be a cid of the miner Info struct
 	PoStState PoStState
 }
 
@@ -87,11 +87,11 @@ type SectorPreCommitOnChainInfo struct {
 
 type SectorOnChainInfo struct {
 	Info                  SectorPreCommitInfo
-	ActivationEpoch       abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
-	DealWeight            abi.DealWeight // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
+	ActivationEpoch       abi.ChainEpoch  // Epoch at which SectorProveCommit is accepted
+	DealWeight            abi.DealWeight  // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 	PledgeRequirement     abi.TokenAmount // Fixed pledge collateral requirement determined at activation
-	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
-	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
+	DeclaredFaultEpoch    abi.ChainEpoch  // -1 if not currently declared faulted.
+	DeclaredFaultDuration abi.ChainEpoch  // -1 if not currently declared faulted.
 }
 
 func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*State, error) {
