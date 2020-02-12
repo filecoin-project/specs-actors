@@ -25,9 +25,13 @@ func (a Actor) Exports() []interface{} {
 
 var _ abi.Invokee = Actor{}
 
-func (a Actor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+type ConstructorParams struct {
+	NetworkName string
+}
+
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	st, err := ConstructState(adt.AsStore(rt), rt.NetworkName())
+	st, err := ConstructState(adt.AsStore(rt), params.NetworkName)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
