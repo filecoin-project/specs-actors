@@ -39,7 +39,6 @@ func NewStoragePower(n int64) StoragePower {
 type RegisteredProof int64
 
 const (
-	RegisteredProof_Undefined              = RegisteredProof(0)
 	RegisteredProof_WinStackedDRG32GiBSeal = RegisteredProof(1)
 	RegisteredProof_WinStackedDRG32GiBPoSt = RegisteredProof(2)
 	RegisteredProof_StackedDRG32GiBSeal    = RegisteredProof(3)
