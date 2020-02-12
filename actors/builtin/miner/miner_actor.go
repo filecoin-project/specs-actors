@@ -127,16 +127,11 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 			NewWorker:   worker,
 			EffectiveAt: effectiveEpoch,
 		}
-
-		cronPayload := CronEventPayload{
-			EventType: CronEventType_Miner_WorkerKeyChange,
-		}
 		return nil
 	})
 
 	cronPayload := CronEventPayload{
 		EventType: cronEventWorkerKeyChange,
-		Sectors:   nil,
 	}
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	return &adt.EmptyValue{}
@@ -937,7 +932,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 	// Check randomness.
 	sealRandEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[onChainInfo.RegisteredProof]
 	if onChainInfo.SealRandEpoch < sealRandEarliest {
-		rt.Abort(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, sealRandEarliest)
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, sealRandEarliest)
 	}
 
 	commD := a.requestUnsealedSectorCID(rt, sectorSize, onChainInfo.DealIDs)
