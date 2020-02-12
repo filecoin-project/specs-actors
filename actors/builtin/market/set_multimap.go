@@ -1,10 +1,14 @@
 package market
 
 import (
+	"reflect"
+
+	"github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -29,9 +33,10 @@ func (mm *SetMultimap) Root() cid.Cid {
 	return mm.mp.Root()
 }
 
-func (mm *SetMultimap) Put(key adt.Keyer, idx uint64) error {
+func (mm *SetMultimap) Put(key address.Address, v abi.DealID) error {
 	// Load the hamt under key, or initialize a new empty one if not found.
-	set, found, err := mm.get(key)
+	k := adt.AddrKey(key)
+	set, found, err := mm.get(k)
 	if err != nil {
 		return err
 	}
@@ -43,13 +48,13 @@ func (mm *SetMultimap) Put(key adt.Keyer, idx uint64) error {
 	}
 
 	// Add to the set.
-	if err = set.Put(adt.IntKey(idx)); err != nil {
+	if err = set.Put(dealKey(v)); err != nil {
 		return errors.Wrapf(err, "failed to add key to set %v", key)
 	}
 
 	// Store the new set root under key.
 	newSetRoot := cbg.CborCid(set.Root())
-	err = mm.mp.Put(key, &newSetRoot)
+	err = mm.mp.Put(k, &newSetRoot)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store set")
 	}
@@ -57,9 +62,10 @@ func (mm *SetMultimap) Put(key adt.Keyer, idx uint64) error {
 }
 
 // Removes a value for a key.
-func (mm *SetMultimap) Remove(key adt.Keyer, idx uint64) error {
+func (mm *SetMultimap) Remove(key address.Address, v abi.DealID) error {
+	k := adt.AddrKey(key)
 	// Load the set under key, or initialize a new empty one if not found.
-	set, found, err := mm.get(key)
+	set, found, err := mm.get(k)
 	if err != nil {
 		return err
 	}
@@ -68,13 +74,13 @@ func (mm *SetMultimap) Remove(key adt.Keyer, idx uint64) error {
 	}
 
 	// Append to the set.
-	if err = set.Delete(adt.IntKey(idx)); err != nil {
+	if err = set.Delete(dealKey(v)); err != nil {
 		return errors.Wrapf(err, "failed to remove set key %v", key)
 	}
 
 	// Store the new set root under key.
 	newSetRoot := cbg.CborCid(set.Root())
-	err = mm.mp.Put(key, &newSetRoot)
+	err = mm.mp.Put(k, &newSetRoot)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store set root")
 	}
@@ -82,8 +88,8 @@ func (mm *SetMultimap) Remove(key adt.Keyer, idx uint64) error {
 }
 
 // Removes all values for a key.
-func (mm *SetMultimap) RemoveAll(key adt.Keyer) error {
-	err := mm.mp.Delete(key)
+func (mm *SetMultimap) RemoveAll(key address.Address) error {
+	err := mm.mp.Delete(adt.AddrKey(key))
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete set key %v root %v", key, mm.mp.Root())
 	}
@@ -91,18 +97,18 @@ func (mm *SetMultimap) RemoveAll(key adt.Keyer) error {
 }
 
 // Iterates all entries for a key, iteration halts if the function returns an error.
-func (mm *SetMultimap) ForEach(key adt.Keyer, fn func(i int64) error) error {
-	set, found, err := mm.get(key)
+func (mm *SetMultimap) ForEach(key address.Address, fn func(id abi.DealID) error) error {
+	set, found, err := mm.get(adt.AddrKey(key))
 	if err != nil {
 		return err
 	}
 	if found {
 		return set.ForEach(func(k string) error {
-			i, err := adt.ParseIntKey(k)
+			v, err := parseDealKey(k)
 			if err != nil {
 				return err
 			}
-			return fn(int64(i))
+			return fn(v)
 		})
 	}
 	return nil
@@ -119,4 +125,21 @@ func (mm *SetMultimap) get(key adt.Keyer) (*adt.Set, bool, error) {
 		set = adt.AsSet(mm.store, cid.Cid(setRoot))
 	}
 	return set, found, nil
+}
+
+func dealKey(e abi.DealID) adt.Keyer {
+	return adt.UIntKey(uint64(e))
+}
+
+func parseDealKey(s string) (abi.DealID, error) {
+	key, err := adt.ParseUIntKey(s)
+	return abi.DealID(key), err
+}
+
+func init() {
+	// Check that DealID is indeed an unsigned integer to confirm that dealKey is making the right interpretation.
+	var e abi.DealID
+	if reflect.TypeOf(e).Kind() != reflect.Uint64 {
+		panic("incorrect sector number encoding")
+	}
 }

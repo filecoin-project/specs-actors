@@ -1,6 +1,8 @@
 package miner
 
 import (
+	"reflect"
+
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -134,7 +136,7 @@ func (st *State) getSectorSize() abi.SectorSize {
 
 func (st *State) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
-	err := precommitted.Put(adt.IntKey(info.Info.SectorNumber), info)
+	err := precommitted.Put(sectorKey(info.Info.SectorNumber), info)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store precommitment for %v", info)
 	}
@@ -144,7 +146,7 @@ func (st *State) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 func (st *State) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	var info SectorPreCommitOnChainInfo
-	found, err := precommitted.Get(adt.IntKey(sectorNo), &info)
+	found, err := precommitted.Get(sectorKey(sectorNo), &info)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "failed to load precommitment for %v", sectorNo)
 	}
@@ -153,7 +155,7 @@ func (st *State) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 
 func (st *State) deletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
-	err := precommitted.Delete(adt.IntKey(sectorNo))
+	err := precommitted.Delete(sectorKey(sectorNo))
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
 	}
@@ -246,5 +248,17 @@ func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInf
 		SectorSize: sectorSize,
 		DealWeight: sectorInfo.DealWeight,
 		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
+	}
+}
+
+func sectorKey(e abi.SectorNumber) adt.Keyer {
+	return adt.UIntKey(uint64(e))
+}
+
+func init() {
+	// Check that ChainEpoch is indeed an unsigned integer to confirm that sectorKey is making the right interpretation.
+	var e abi.SectorNumber
+	if reflect.TypeOf(e).Kind() != reflect.Uint64 {
+		panic("incorrect sector number encoding")
 	}
 }

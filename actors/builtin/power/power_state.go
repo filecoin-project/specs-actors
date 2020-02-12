@@ -1,6 +1,7 @@
 package power
 
 import (
+	"reflect"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
@@ -50,7 +51,6 @@ type CronEvent struct {
 }
 
 type AddrKey = adt.AddrKey
-type IntKey = adt.IntKey
 
 func ConstructState(store adt.Store) (*State, error) {
 	emptyMap, err := adt.MakeEmptyMap(store)
@@ -239,7 +239,7 @@ func (st *State) deleteFault(s adt.Store, a addr.Address) error {
 
 func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
 	mmap := adt.AsMultimap(store, st.CronEventQueue)
-	err := mmap.Add(IntKey(epoch), event)
+	err := mmap.Add(epochKey(epoch), event)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
 	}
@@ -251,7 +251,7 @@ func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEv
 	mmap := adt.AsMultimap(store, st.CronEventQueue)
 	var events []CronEvent
 	var ev CronEvent
-	err := mmap.ForEach(IntKey(epoch), &ev, func(i int64) error {
+	err := mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
 		// Ignore events for defunct miners.
 		if _, found, err := st.getClaim(store, ev.MinerAddr); err != nil {
 			return errors.Wrapf(err, "failed to find claimed power for %v for cron event", ev.MinerAddr)
@@ -265,7 +265,7 @@ func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEv
 
 func (st *State) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
 	mmap := adt.AsMultimap(store, st.CronEventQueue)
-	err := mmap.RemoveAll(IntKey(epoch))
+	err := mmap.RemoveAll(epochKey(epoch))
 	if err != nil {
 		return errors.Wrapf(err, "failed to clear cron events")
 	}
@@ -317,4 +317,16 @@ func addrInArray(a addr.Address, list []addr.Address) bool {
 		}
 	}
 	return false
+}
+
+func epochKey(e abi.ChainEpoch) adt.Keyer {
+	return adt.IntKey(int64(e))
+}
+
+func init() {
+	// Check that ChainEpoch is indeed a signed integer to confirm that epochKey is making the right interpretation.
+	var e abi.ChainEpoch
+	if reflect.TypeOf(e).Kind() != reflect.Int64 {
+		panic("incorrect chain epoch encoding")
+	}
 }

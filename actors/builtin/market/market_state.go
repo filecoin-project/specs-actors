@@ -73,8 +73,8 @@ func (st *State) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) 
 
 	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	var extractedDealIDs []abi.DealID
-	err := dbp.ForEach(adt.AddrKey(addr), func(id int64) error {
-		extractedDealIDs = append(extractedDealIDs, abi.DealID(id))
+	err := dbp.ForEach(addr, func(id abi.DealID) error {
+		extractedDealIDs = append(extractedDealIDs, id)
 		return nil
 	})
 	if err != nil {
@@ -184,7 +184,7 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 	st.Proposals = proposals.Root()
 
 	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
-	if err := dbp.Remove(adt.AddrKey(dealP.Client), uint64(dealID)); err != nil {
+	if err := dbp.Remove(dealP.Client, dealID); err != nil {
 		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
 	}
 	st.DealIDsByParty = dbp.Root()
