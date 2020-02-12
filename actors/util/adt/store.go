@@ -19,11 +19,6 @@ type Store interface {
 	cbor.IpldStore
 }
 
-// Keyer defines an interface required to put values in mapping.
-type Keyer interface {
-	Key() string
-}
-
 // AsStore allows Runtime to satisfy the adt.Store interface.
 func AsStore(rt vmr.Runtime) Store {
 	return rtStore{rt}
@@ -39,15 +34,24 @@ func (r rtStore) Context() context.Context {
 	return r.Runtime.Context()
 }
 
-func (r rtStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
+func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
+	// The Go context is (un/fortunately?) dropped here.
+	// See https://github.com/filecoin-project/specs-actors/issues/140
 	if !r.Store().Get(c, out.(vmr.CBORUnmarshaler)) {
 		r.Abortf(exitcode.ErrNotFound, "not found")
 	}
 	return nil
 }
 
-func (r rtStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
+func (r rtStore) Put(_ context.Context, v interface{}) (cid.Cid, error) {
+	// The Go context is (un/fortunately?) dropped here.
+	// See https://github.com/filecoin-project/specs-actors/issues/140
 	return r.Store().Put(v.(vmr.CBORMarshaler)), nil
+}
+
+// Keyer defines an interface required to put values in mapping.
+type Keyer interface {
+	Key() string
 }
 
 // Adapts an address as a mapping key.
@@ -58,18 +62,50 @@ func (k AddrKey) Key() string {
 }
 
 // Adapts an int64 as a mapping key.
-type IntKey int64
+type intKey struct {
+	int64
+}
 
-func (k IntKey) Key() string {
+//noinspection GoExportedFuncWithUnexportedType
+func IntKey(k int64) intKey {
+	return intKey{k}
+}
+
+func (k intKey) Key() string {
 	buf := make([]byte, 8)
-	n := binary.PutVarint(buf, int64(k))
+	n := binary.PutVarint(buf, k.int64)
 	return string(buf[:n])
 }
 
-func ParseIntKey(k string) (IntKey, error) {
+//noinspection GoUnusedExportedFunction
+func ParseIntKey(k string) (int64, error) {
 	i, n := binary.Varint([]byte(k))
 	if n != len(k) {
 		return 0, errors.New("failed to decode varint key")
 	}
-	return IntKey(i), nil
+	return i, nil
+}
+
+// Adapts a uint64 as a mapping key.
+type uintKey struct {
+	uint64
+}
+
+//noinspection GoExportedFuncWithUnexportedType
+func UIntKey (k uint64) uintKey {
+	return uintKey{k}
+}
+
+func (k uintKey) Key() string {
+	buf := make([]byte, 8)
+	n := binary.PutUvarint(buf, k.uint64)
+	return string(buf[:n])
+}
+
+func ParseUIntKey(k string) (uint64, error) {
+	i, n := binary.Uvarint([]byte(k))
+	if n != len(k) {
+		return 0, errors.New("failed to decode varint key")
+	}
+	return i, nil
 }
