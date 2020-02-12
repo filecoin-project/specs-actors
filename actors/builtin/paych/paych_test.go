@@ -115,6 +115,8 @@ func TestPaymentChannelActor_CreateLaneSuccess(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
 		amt := big.NewInt(10)
+		lane := uint64(999)
+		nonce := uint64(1)
 		sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
 		tl := abi.ChainEpoch(1)
 		sv := SignedVoucher{TimeLock: tl, Lane: lane, Nonce: nonce, Amount: amt, Signature: sig}
