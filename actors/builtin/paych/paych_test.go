@@ -7,6 +7,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -93,8 +94,8 @@ func TestPaymentChannelActor_CreateLaneSuccess(t *testing.T) {
 	payerAddr := tutil.NewIDAddr(t, 102)
 	balance := abi.NewTokenAmount(100)
 	received := abi.NewTokenAmount(0)
-	lane := int64(999)
-	nonce := int64(1)
+	lane := uint64(999)
+	nonce := uint64(1)
 
 	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
 	hasher := func(data []byte) [8]byte {
@@ -115,8 +116,6 @@ func TestPaymentChannelActor_CreateLaneSuccess(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
 		amt := big.NewInt(10)
-		lane := uint64(999)
-		nonce := uint64(1)
 		sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
 		tl := abi.ChainEpoch(1)
 		sv := SignedVoucher{TimeLock: tl, Lane: lane, Nonce: nonce, Amount: amt, Signature: sig}
@@ -160,8 +159,8 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 		epoch    int64
 
 		tl    int64
-		lane  int64
-		nonce int64
+		lane  uint64
+		nonce uint64
 		amt   int64
 
 		secretPreimage []byte
@@ -234,55 +233,14 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 }
 func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 	ctx := context.Background()
-	actor := pcActorHarness{Actor{}, t}
-
-	newPaychAddr := tutil.NewIDAddr(t, 100)
-	payerAddr := tutil.NewIDAddr(t, 101)
-	initActor := tutil.NewIDAddr(t, 102)
-
-	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
-	hasher := func(data []byte) []byte { return data }
-
-	balance := abi.NewTokenAmount(100)
-	received := abi.NewTokenAmount(0)
-
-	builder := mock.NewBuilder(ctx, newPaychAddr).
-		WithBalance(balance, received).
-		WithEpoch(abi.ChainEpoch(2)).
-		WithCaller(initActor, builtin.InitActorCodeID).
-		WithActorType(newPaychAddr, builtin.AccountActorCodeID).
-		WithActorType(payerAddr, builtin.AccountActorCodeID).
-		WithVerifiesSig(versig).
-		WithHasher(hasher)
-
-	rt := builder.Build(t)
-	actor.constructAndVerify(rt, payerAddr, newPaychAddr)
-
-	amt := big.NewInt(10)
-	lane := int64(999)
-	nonce := int64(1)
-	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
-	tl := abi.ChainEpoch(1)
-	sv := SignedVoucher{TimeLock: tl, Lane: lane, Nonce: nonce, Amount: amt, Signature: sig}
-
-	ucp := &UpdateChannelStateParams{Sv: sv}
-
 
 	t.Run("redeems voucher", func(t *testing.T) {
-		// payerAddr updates state, creates a lane
-		rt.SetCaller(payerAddr, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
-		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
-		assert.Equal(t, adt.EmptyValue{}, *constructRet)
-		rt.Verify()
-
+		rt := requireCreateChannelWithLane(t, ctx)
 		var st1 State
 		rt.GetState(&st1)
-		assert.Equal(t, amt, st1.ToSend)
-		assert.Len(t, st1.LaneStates, 1)
 
 		// payerAddr updates the lane with "new" state
-		rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
+		rt.ExpectValidateCallerAddr(st1.From, st1.To)
 
 		sv.Amount = big.NewInt(9)
 		ucp.Sv = sv
@@ -307,6 +265,17 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 	})
 
 	t.Run("redeems voucher for correct lane", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt, payerAddr, newPaychAddr)
+
+		amt := big.NewInt(10)
+		lane := uint64(999)
+		nonce := uint64(1)
+		sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
+		tl := abi.ChainEpoch(1)
+		sv := SignedVoucher{TimeLock: tl, Lane: lane, Nonce: nonce, Amount: amt, Signature: sig}
+
+		ucp := &UpdateChannelStateParams{Sv: sv}
 		// create another lane
 		sv.Lane++
 		ucp.Sv = sv
@@ -316,24 +285,104 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		assert.Equal(t, adt.EmptyValue{}, *constructRet)
 		rt.Verify()
 
+		var st1 State
+		rt.GetState(&st1)
+		assert.Equal(t, amt, st1.ToSend)
+		assert.Len(t, st1.LaneStates, 1)
+		// payerAddr updates the lane with new state
+		rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
+
+		sv.Amount = big.NewInt(9)
+		ucp.Sv = sv
+
+		constructRet = rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
+		assert.Equal(t, adt.EmptyValue{}, *constructRet)
+		rt.Verify()
+
 		var st2 State
 		rt.GetState(&st2)
-		assert.Len(t, st2.LaneStates,3)
-		// redeem the voucher for the new lane
-		// check the state
+
+		// toSend updated to add new voucher amount
+		toSendAmt := big.NewInt(0).Add(sv.Amount.Int,amt.Int)
+		assert.Len(t, st2.LaneStates,2)
+		assert.Equal(t, toSendAmt, st2.ToSend.Int)
+
+		// payment channel To redeems the voucher for the new lane
+		rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
+		constructRet = rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
+		assert.Equal(t, adt.EmptyValue{}, *constructRet)
+		rt.Verify()
+
+		var st3 State
+		rt.GetState(&st3)
+		assert.Len(t, st2.LaneStates,2)
+
+		// All lanes reflect total redeemed amount
+		assert.Equal(t,sv.Amount, st3.LaneStates[1].Redeemed)
+		assert.Equal(t, sv.Amount, st3.LaneStates[0].Redeemed)
+
+		// toSend is now all 3 amounts added together
+		toSendAmt = toSendAmt.Add(toSendAmt,sv.Amount.Int)
+		assert.Equal(t, toSendAmt, st3.ToSend.Int)
 	})
 }
 
 func TestActor_UpdateChannelStateMerge(t *testing.T)          {}
 func TestActor_UpdateChannelStateExtra(t *testing.T)          {}
 func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {}
-func TestActor_Settle(t *testing.T)                           {}
+func TestActor_Settle(t *testing.T)                           {
+
+}
 func TestActor_Collect(t *testing.T)                          {}
-func TestActor_Exports(t *testing.T)                          {}
+
+func TestActor_Exports(t *testing.T)                          {
+
+}
 
 type pcActorHarness struct {
 	Actor
 	t testing.TB
+}
+
+func requireCreateChannelWithLane(t *testing.T, ctx context.Context) (*mock.Runtime, SignedVoucher) {
+	actor := pcActorHarness{Actor{}, t}
+
+	newPaychAddr := tutil.NewIDAddr(t, 100)
+	callerAddr := tutil.NewIDAddr(t, 101)
+	payerAddr := tutil.NewIDAddr(t, 102)
+	balance := abi.NewTokenAmount(100)
+	received := abi.NewTokenAmount(0)
+	lane := uint64(999)
+	nonce := uint64(1)
+	amt := big.NewInt(10)
+
+	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
+	hasher := func(data []byte) []byte { return data }
+
+	builder := mock.NewBuilder(ctx, newPaychAddr).
+		WithBalance(balance, received).
+		WithEpoch(abi.ChainEpoch(2)).
+		WithCaller(callerAddr, builtin.InitActorCodeID).
+		WithActorType(newPaychAddr, builtin.AccountActorCodeID).
+		WithActorType(payerAddr, builtin.AccountActorCodeID).
+		WithVerifiesSig(versig).
+		WithHasher(hasher)
+
+	rt := builder.Build(t)
+	actor.constructAndVerify(rt, payerAddr, newPaychAddr)
+
+	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
+	tl := abi.ChainEpoch(1)
+	sv := SignedVoucher{TimeLock: tl, Lane: lane, Nonce: nonce, Amount: amt, Signature: sig}
+
+	ucp := &UpdateChannelStateParams{Sv: sv}
+	// payerAddr updates state, creates a lane
+	rt.SetCaller(payerAddr, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(payerAddr, newPaychAddr)
+	constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
+	require.Equal(t, adt.EmptyValue{}, *constructRet)
+	rt.Verify()
+	return rt, sv
 }
 
 func (h *pcActorHarness) constructAndVerify(rt *mock.Runtime, sender, receiver addr.Address) {
