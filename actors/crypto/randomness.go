@@ -31,16 +31,15 @@ func DeriveRandWithMinerAddr(tag DomainSeparationTag, randSeed []byte, minerAddr
 }
 
 type AddressEpochEntropy struct {
-	minerAddress addr.Address // Must be an ID-addr
-	epoch        abi.ChainEpoch
+	MinerAddress addr.Address // Must be an ID-addr
+	Epoch        abi.ChainEpoch
 }
 
 func DeriveRandWithMinerAddrAndEpoch(tag DomainSeparationTag, randSeed []byte, minerAddr addr.Address, epoch abi.ChainEpoch) []byte {
 	entropy := &AddressEpochEntropy{
-		minerAddress: minerAddr,
-		epoch:        epoch,
+		MinerAddress: minerAddr,
+		Epoch:        epoch,
 	}
-	_ = entropy
 	var entrBuf bytes.Buffer
 	err := entropy.MarshalCBOR(&entrBuf)
 	autil.AssertNoError(err)
