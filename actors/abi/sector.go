@@ -43,6 +43,14 @@ const (
 	RegisteredProof_WinStackedDRG32GiBPoSt = RegisteredProof(2)
 	RegisteredProof_StackedDRG32GiBSeal    = RegisteredProof(3)
 	RegisteredProof_StackedDRG32GiBPoSt    = RegisteredProof(4)
+	RegisteredProof_StackedDRG1KiBSeal     = RegisteredProof(5)
+	RegisteredProof_StackedDRG1KiBPoSt     = RegisteredProof(6)
+	RegisteredProof_StackedDRG16MiBSeal    = RegisteredProof(7)
+	RegisteredProof_StackedDRG16MiBPoSt    = RegisteredProof(8)
+	RegisteredProof_StackedDRG256MiBSeal   = RegisteredProof(9)
+	RegisteredProof_StackedDRG256MiBPoSt   = RegisteredProof(10)
+	RegisteredProof_StackedDRG1GiBSeal     = RegisteredProof(11)
+	RegisteredProof_StackedDRG1GiBPoSt     = RegisteredProof(12)
 )
 
 ///
