@@ -87,11 +87,13 @@ type SealProof struct { //<curve, system> {
 type ChallengeTicketsCommitment []byte
 type PoStRandomness Randomness
 type PartialTicket []byte // 32 bytes
+type ChallengeCount uint64
 
 // TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
+	ChallengeCount  ChallengeCount
 	Randomness      PoStRandomness
-	CommR           cid.Cid
+	SealedCID       cid.Cid
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
 	Proof           []byte
 	EligibleSectors []SectorInfo
