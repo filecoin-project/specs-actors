@@ -887,7 +887,6 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Windowed PoSt. Too few tickets included.")
 	}
 
-	randomnessK := rt.DrawRandomnessFromChain(challengeEpoch - PoStLookback)
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
 	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, randomnessK, rt.Message().Receiver())
@@ -907,8 +906,9 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 		return nil
 	})
 
-	// Get public inputs
+	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, challengeEpoch-PoStLookback, addrBuf.Bytes())
 
+	// Get public inputs
 	pvInfo := abi.PoStVerifyInfo{
 		Candidates:      onChainInfo.Candidates,
 		Proofs:          onChainInfo.Proofs,
@@ -934,8 +934,8 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
-	svInfoRandomness := rt.DrawRandomnessFromChain(onChainInfo.SealEpoch)
-	svInfoInteractiveRandomness := rt.DrawRandomnessFromChain(onChainInfo.InteractiveEpoch)
+	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealEpoch, nil)
+	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealRandomness, onChainInfo.InteractiveEpoch, nil)
 
 	svInfo := abi.SealVerifyInfo{
 		SectorID: abi.SectorID{

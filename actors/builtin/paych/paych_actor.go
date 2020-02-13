@@ -161,7 +161,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 	}
 
 	if len(sv.SecretPreimage) > 0 {
-		if !bytes.Equal(rt.Syscalls().Hash_Blake2b(params.Secret), sv.SecretPreimage) {
+		if !bytes.Equal(rt.Syscalls().HashBlake2b(params.Secret), sv.SecretPreimage) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "incorrect secret!")
 		}
 	}
