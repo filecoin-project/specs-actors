@@ -149,7 +149,7 @@ func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
 	return
 }
 
-func (rt *Runtime) GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed {
+func (rt *Runtime) DrawRandomnessFromChain(epoch abi.ChainEpoch) []byte {
 	rt.requireInCall()
 	panic("implement me")
 }
