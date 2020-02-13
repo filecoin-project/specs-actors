@@ -64,7 +64,7 @@ func (t *BalanceTable) Add(key addr.Address, value abi.TokenAmount) error {
 // Adds an amount to a balance. Create entry if not exists
 func (t *BalanceTable) AddCreate(key addr.Address, value abi.TokenAmount) error {
 	var prev abi.TokenAmount
-	found, err := (*Map)(t).Get(AddrKey(key), &value)
+	found, err := (*Map)(t).Get(AddrKey(key), &prev)
 	if err != nil {
 		return err
 	}
