@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/minio/blake2b-simd"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -15,40 +16,54 @@ import (
 type DomainSeparationTag int
 
 const (
-	DomainSeparationTag_TicketDrawing DomainSeparationTag = 1 + iota
-	DomainSeparationTag_TicketProduction
+	DomainSeparationTag_TicketProduction DomainSeparationTag = 1 + iota
 	DomainSeparationTag_ElectionPoStChallengeSeed
 	DomainSeparationTag_WindowedPoStChallengeSeed
 )
 
 // Derive a random byte string from a domain separation tag and the appropriate values
-func DeriveRandWithMinerAddr(tag DomainSeparationTag, tix abi.RandomnessSeed, minerAddr addr.Address) abi.Randomness {
+func DeriveRandWithMinerAddr(tag DomainSeparationTag, randSeed []byte, minerAddr addr.Address) []byte {
 	var addrBuf bytes.Buffer
 	err := minerAddr.MarshalCBOR(&addrBuf)
 	autil.AssertNoError(err)
 
-	return _deriveRandInternal(tag, tix, -1, addrBuf.Bytes())
+	return _deriveRandInternal(tag, randSeed, addrBuf.Bytes())
 }
 
-func DeriveRandWithEpoch(tag DomainSeparationTag, tix abi.RandomnessSeed, epoch int64) abi.Randomness {
-	return _deriveRandInternal(tag, tix, -1, BigEndianBytesFromInt(epoch))
+type AddressEpochEntropy struct {
+	minerAddress addr.Address // Must be an ID-addr
+	epoch        abi.ChainEpoch
 }
 
-func _deriveRandInternal(tag DomainSeparationTag, randSeed abi.RandomnessSeed, index int, s []byte) abi.Randomness {
+func DeriveRandWithMinerAddrAndEpoch(tag DomainSeparationTag, randSeed []byte, minerAddr addr.Address, epoch abi.ChainEpoch) []byte {
+	entropy := &AddressEpochEntropy{
+		minerAddress: minerAddr,
+		epoch:        epoch,
+	}
+	_ = entropy
+	var entrBuf bytes.Buffer
+	err := entropy.MarshalCBOR(&entrBuf)
+	autil.AssertNoError(err)
+
+	return _deriveRandInternal(tag, randSeed, entrBuf.Bytes())
+}
+
+func _deriveRandInternal(tag DomainSeparationTag, randSeed []byte, serializedEntropy []byte) []byte {
 	buffer := []byte{}
 	buffer = append(buffer, BigEndianBytesFromInt(int64(tag))...)
-	buffer = append(buffer, BigEndianBytesFromInt(int64(index))...)
 	buffer = append(buffer, randSeed...)
-	buffer = append(buffer, s...)
-	return SHA256(buffer)
+	buffer = append(buffer, serializedEntropy...)
+	bufHash := blake2b.Sum256(buffer)
+	return bufHash[:]
 }
 
+// TODO hs: remove once 148 lands
 // Computes an unpredictable integer less than limit from inputs seed and nonce.
-func RandomInt(seed abi.Randomness, nonce int64, limit int64) int64 {
+func RandomInt(seed []byte, nonce int64, limit int64) int64 {
 	nonceBytes := BigEndianBytesFromInt(nonce)
 	input := append(seed, nonceBytes...)
-	ranHash := SHA256(input)
-	hashInt := big.PositiveFromUnsignedBytes(ranHash)
+	ranHash := blake2b.Sum256(input)
+	hashInt := big.PositiveFromUnsignedBytes(ranHash[:])
 
 	num := big.Mod(hashInt, big.NewInt(limit))
 	return num.Int64()
@@ -60,15 +75,4 @@ func BigEndianBytesFromInt(x int64) []byte {
 	err := binary.Write(buf, binary.BigEndian, x)
 	autil.AssertNoError(err)
 	return buf.Bytes()
-}
-
-func SHA256(data []byte) []byte {
-	autil.TODO()
-	return []byte{}
-}
-
-func IntFromBigEndianBytes(data []byte) int {
-	ret := big.Zero()
-	ret.SetBytes(data)
-	return int(ret.Int64())
 }
