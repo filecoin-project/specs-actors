@@ -86,6 +86,7 @@ var MethodsMiner = struct {
 	Constructor            abi.MethodNum
 	ControlAddresses       abi.MethodNum
 	ChangeWorkerAddress    abi.MethodNum
+	ChangePeerID           abi.MethodNum
 	SubmitWindowedPoSt     abi.MethodNum
 	OnDeleteMiner          abi.MethodNum
 	PreCommitSector        abi.MethodNum
@@ -94,4 +95,4 @@ var MethodsMiner = struct {
 	TerminateSectors       abi.MethodNum
 	DeclareTemporaryFaults abi.MethodNum
 	OnDeferredCronEvent    abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
