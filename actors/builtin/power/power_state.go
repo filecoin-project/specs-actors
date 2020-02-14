@@ -10,7 +10,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -109,42 +108,6 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 	return minerPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
 }
 
-// selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
-func (st *State) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
-	var allMiners []addr.Address
-	var claim Claim
-	if err := adt.AsMap(s, st.Claims).ForEach(&claim, func(k string) error {
-		maddr, err := addr.NewFromBytes([]byte(k))
-		if err != nil {
-			return err
-		}
-		nominalPower, err := st.computeNominalPower(s, maddr, claim.Power)
-		if err != nil {
-			return err
-		}
-		if nominalPower.GreaterThan(big.Zero()) {
-			allMiners = append(allMiners, maddr)
-		}
-		return nil
-	}); err != nil {
-		return nil, errors.Wrap(err, "failed to iterate Claim hamt when selecting miners to surprise")
-	}
-
-	selectedMiners := make([]addr.Address, 0)
-	for chall := int64(0); chall < challengeCount; chall++ {
-		minerIndex := crypto.RandomInt(randomness, chall, st.MinerCount)
-		potentialChallengee := allMiners[minerIndex]
-		// skip dups
-		for addrInArray(potentialChallengee, selectedMiners) {
-			minerIndex = crypto.RandomInt(randomness, chall, st.MinerCount) // TODO fix this, it's a constant value
-			potentialChallengee = allMiners[minerIndex]
-		}
-		selectedMiners = append(selectedMiners, potentialChallengee)
-	}
-
-	return selectedMiners, nil
-}
-
 func (st *State) getMinerBalance(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
 	table := adt.AsBalanceTable(store, st.EscrowTable)
 	return table.Get(miner)
@@ -201,7 +164,7 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
 	// from a SurprisePoSt challenge. TODO: hs update this
 	nominalPower := claimedPower
-	if found, err := st.hasFault(s, minerAddr); err != nil {
+	if found, err := st.hasDetectedFault(s, minerAddr); err != nil {
 		return abi.NewStoragePower(0), err
 	} else if found {
 		nominalPower = big.Zero()
@@ -210,7 +173,7 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 	return nominalPower, nil
 }
 
-func (st *State) hasFault(s adt.Store, a addr.Address) (bool, error) {
+func (st *State) hasDetectedFault(s adt.Store, a addr.Address) (bool, error) {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	found, err := faultyMiners.Has(AddrKey(a))
 	if err != nil {
@@ -219,7 +182,7 @@ func (st *State) hasFault(s adt.Store, a addr.Address) (bool, error) {
 	return found, nil
 }
 
-func (st *State) putFault(s adt.Store, a addr.Address) error {
+func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Put(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
@@ -228,7 +191,7 @@ func (st *State) putFault(s adt.Store, a addr.Address) error {
 	return nil
 }
 
-func (st *State) deleteFault(s adt.Store, a addr.Address) error {
+func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)

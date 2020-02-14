@@ -6,17 +6,11 @@ import (
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 )
 
-// The average period (i.e. 1/frequency) of surprise PoSt challenges to each miner.
-const SurprisePoStPeriod = abi.ChainEpoch(5760) // ~2 days @ 30 second epochs. PARAM_FINISH
-
 // The time a miner has to respond to a surprise PoSt challenge.
-const SurprisePostChallengeDuration = abi.ChainEpoch(240) // ~2 hours @ 30 second epochs. PARAM_FINISH
-
-// The minimum period after a PoSt challenge before a miner can be challenged again.
-const SurprisePoStNoChallengePeriod = abi.ChainEpoch(240) // PARAM_FINISH
+const WindowedPostChallengeDuration = abi.ChainEpoch(240) // ~2 hours @ 30 second epochs. PARAM_FINISH
 
 // The number of consecutive failures to meet a surprise PoSt challenge before a miner is terminated.
-const SurprisePostFailureLimit = int64(3) // PARAM_FINISH
+const WindowedPostFailureLimit = int64(3) // PARAM_FINISH
 
 // Minimum number of registered miners for the minimum miner size limit to effectively limit consensus power.
 const ConsensusMinerMinMiners = 3
@@ -41,7 +35,7 @@ func pledgePenaltyForSectorTermination(pledge abi.TokenAmount, termType SectorTe
 }
 
 // Penalty to pledge collateral for repeated failure to prove storage.
-func pledgePenaltyForSurprisePoStFailure(pledge abi.TokenAmount, failures int64) abi.TokenAmount {
+func pledgePenaltyForWindowedPoStFailure(pledge abi.TokenAmount, failures int64) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
@@ -100,9 +94,9 @@ func pledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePo
 	// PARAM_FINISH
 	numerator := bigProduct(
 		big.NewInt(int64(weight.SectorSize)), // bytes
-		big.NewInt(int64(weight.Duration)), // epochs
-		EpochTotalExpectedReward, // FIL/epoch
-		PledgeFactor, // unitless
+		big.NewInt(int64(weight.Duration)),   // epochs
+		EpochTotalExpectedReward,             // FIL/epoch
+		PledgeFactor,                         // unitless
 	) // = bytes*FIL
 	denominator := networkPower // bytes
 

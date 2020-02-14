@@ -99,10 +99,15 @@ type PartialTicket []byte // 32 bytes
 // TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
-	CommR           cid.Cid
-	Candidates      []PoStCandidate      // From OnChain*PoStVerifyInfo
-	Proofs          []PoStProof          // From OnChain*PoStVerifyInfo
-	EligibleSectors map[SectorID]cid.Cid // TODO: HAMT?
+	SealedCID       cid.Cid         // CommR
+	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
+	Proofs          []PoStProof
+	EligibleSectors []SectorInfo
+}
+
+type SectorInfo struct {
+	SectorNumber SectorNumber
+	SealedCID    cid.Cid // CommR
 }
 
 type OnChainElectionPoStVerifyInfo struct {
@@ -113,11 +118,10 @@ type OnChainElectionPoStVerifyInfo struct {
 	Randomness       PoStRandomness
 }
 
-type OnChainSurprisePoStVerifyInfo struct {
-	RegisteredProof
+type OnChainPoStVerifyInfo struct {
+	ProofType  RegisteredProof
 	Candidates []PoStCandidate
 	Proofs     []PoStProof
-	// CommT      ChallengeTicketsCommitment // Potential future optimization.
 }
 
 type PoStCandidate struct {

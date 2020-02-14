@@ -10,7 +10,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -36,7 +36,7 @@ var _ abi.Invokee = Actor{}
 
 type ConstructorParams struct {
 	From addr.Address // Payer
-	To addr.Address   // Payee
+	To   addr.Address // Payee
 }
 
 // Constructor creates a payment channel actor. See State for meaning of params.
@@ -114,7 +114,7 @@ type SignedVoucher struct {
 	Merges []Merge
 
 	// Sender's signature over the voucher
-	Signature *acrypto.Signature
+	Signature *crypto.Signature
 }
 
 // Modular Verification method
