@@ -2,7 +2,6 @@ package power
 
 import (
 	"reflect"
-	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
@@ -87,7 +86,8 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 		return true, nil
 	}
 
-	var minerSizes []abi.StoragePower
+	maxPower := abi.NewStoragePower(0)
+	//var minerSizes []abi.StoragePower
 	var claimed Claim
 	if err := adt.AsMap(s, st.Claims).ForEach(&claimed, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
@@ -98,15 +98,15 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 		if err != nil {
 			return err
 		}
-		minerSizes = append(minerSizes, nominalPower)
+		if maxPower.LessThan(nominalPower) {
+			maxPower = nominalPower
+		}
 		return nil
 	}); err != nil {
 		return false, errors.Wrap(err, "failed to iterate power table")
 	}
 
-	// get size of MIN_MINER_SIZE_TARGth largest miner
-	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
-	return minerPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
+	return minerPower.GreaterThanEqual(maxPower), nil
 }
 
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
