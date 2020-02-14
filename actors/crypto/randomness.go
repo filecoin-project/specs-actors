@@ -7,4 +7,6 @@ const (
 	DomainSeparationTag_TicketProduction DomainSeparationTag = 1 + iota
 	DomainSeparationTag_ElectionPoStChallengeSeed
 	DomainSeparationTag_WindowedPoStChallengeSeed
+	DomainSeparationTag_SealRandomness
+	DomainSeparationTag_InteractiveSealChallengeSeed
 )

@@ -889,7 +889,6 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
-	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, randomnessK, rt.Message().Receiver())
 
 	store := adt.AsStore(rt)
 	provingSet := adt.AsArray(store, st.ProvingSet)
@@ -906,7 +905,10 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 		return nil
 	})
 
-	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SurprisePoStChallengeSeed, challengeEpoch-PoStLookback, addrBuf.Bytes())
+	var addrBuf bytes.Buffer
+	err := rt.Message().Receiver().MarshalCBOR(&addrBuf)
+	AssertNoError(err)
+	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, st.PoStState.ProvingPeriodStart, addrBuf.Bytes())
 
 	// Get public inputs
 	pvInfo := abi.PoStVerifyInfo{
@@ -935,7 +937,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 	AssertNoError(err) // Runtime always provides ID-addresses
 
 	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealEpoch, nil)
-	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealRandomness, onChainInfo.InteractiveEpoch, nil)
+	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, nil)
 
 	svInfo := abi.SealVerifyInfo{
 		SectorID: abi.SectorID{
