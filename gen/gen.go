@@ -153,6 +153,7 @@ func main() {
 		market.VerifyDealsOnSectorProveCommitParams{},
 		market.ComputeDataCommitmentParams{},
 		market.OnMinerSectorsTerminateParams{},
+		market.HandleExpiredDealsParams{},
 		// method returns
 		market.PublishStorageDealsReturn{},
 		// other types
