@@ -111,6 +111,9 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 
 // selectMinersToSurprise implements the PoSt-Surprise sampling algorithm
 func (st *State) selectMinersToSurprise(s adt.Store, challengeCount int64, randomness abi.Randomness) ([]addr.Address, error) {
+	if challengeCount > st.MinerCount {
+		return nil, errors.Errorf("challengeCount > MinerCount(%d)", st.MinerCount)
+	}
 	var allMiners []addr.Address
 	var claim Claim
 	if err := adt.AsMap(s, st.Claims).ForEach(&claim, func(k string) error {
