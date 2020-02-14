@@ -6,17 +6,19 @@ import (
 )
 
 // The built-in actor code IDs
-var SystemActorCodeID cid.Cid
-var InitActorCodeID cid.Cid
-var CronActorCodeID cid.Cid
-var AccountActorCodeID cid.Cid
-var StoragePowerActorCodeID cid.Cid
-var StorageMinerActorCodeID cid.Cid
-var StorageMarketActorCodeID cid.Cid
-var PaymentChannelActorCodeID cid.Cid
-var MultisigActorCodeID cid.Cid
-var RewardActorCodeID cid.Cid
-var CallerTypesSignable []cid.Cid
+var (
+	SystemActorCodeID         cid.Cid
+	InitActorCodeID           cid.Cid
+	CronActorCodeID           cid.Cid
+	AccountActorCodeID        cid.Cid
+	StoragePowerActorCodeID   cid.Cid
+	StorageMinerActorCodeID   cid.Cid
+	StorageMarketActorCodeID  cid.Cid
+	PaymentChannelActorCodeID cid.Cid
+	MultisigActorCodeID       cid.Cid
+	RewardActorCodeID         cid.Cid
+	CallerTypesSignable       []cid.Cid
+)
 
 func init() {
 	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
@@ -41,4 +43,43 @@ func init() {
 
 	// Set of actor code types that can represent external signing parties.
 	CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}
+}
+
+// IsBuiltinActor returns true if the code belongs to an actor defined in this repo.
+func IsBuiltinActor(code cid.Cid) bool {
+	return code.Equals(SystemActorCodeID) ||
+		code.Equals(InitActorCodeID) ||
+		code.Equals(CronActorCodeID) ||
+		code.Equals(AccountActorCodeID) ||
+		code.Equals(StoragePowerActorCodeID) ||
+		code.Equals(StorageMinerActorCodeID) ||
+		code.Equals(StorageMarketActorCodeID) ||
+		code.Equals(PaymentChannelActorCodeID) ||
+		code.Equals(MultisigActorCodeID) ||
+		code.Equals(RewardActorCodeID)
+}
+
+// ActorNameByCode returns the (string) name of the actor given a cid code.
+func ActorNameByCode(code cid.Cid) string {
+	if !code.Defined() {
+		return "<undefined>"
+	}
+
+	names := map[cid.Cid]string{
+		SystemActorCodeID:         "fil/1/system",
+		InitActorCodeID:           "fil/1/init",
+		CronActorCodeID:           "fil/1/cron",
+		AccountActorCodeID:        "fil/1/account",
+		StoragePowerActorCodeID:   "fil/1/storagepower",
+		StorageMinerActorCodeID:   "fil/1/storageminer",
+		StorageMarketActorCodeID:  "fil/1/storagemarket",
+		PaymentChannelActorCodeID: "fil/1/paymentchannel",
+		MultisigActorCodeID:       "fil/1/multisig",
+		RewardActorCodeID:         "fil/1/reward",
+	}
+	name, ok := names[code]
+	if !ok {
+		return "<unknown>"
+	}
+	return name
 }

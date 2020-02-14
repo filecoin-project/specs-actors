@@ -548,6 +548,80 @@ func (t *OnMinerSectorsTerminateParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+func (t *HandleExpiredDealsParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.Deals ([]abi.DealID) (slice)
+	if len(t.Deals) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Deals was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Deals)))); err != nil {
+		return err
+	}
+	for _, v := range t.Deals {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *HandleExpiredDealsParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Deals ([]abi.DealID) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Deals: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.Deals = make([]abi.DealID, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.Deals slice: %w", err)
+		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.Deals was not a uint, instead got %d", maj)
+		}
+
+		t.Deals[i] = abi.DealID(val)
+	}
+
+	return nil
+}
+
 func (t *PublishStorageDealsReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
