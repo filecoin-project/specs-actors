@@ -93,6 +93,14 @@ func (a *Array) ForEach(out runtime.CBORUnmarshaler, fn func(i int64) error) err
 	})
 }
 
+func (a *Array) Length() (uint64, error) {
+	root, err := amt.LoadAMT(a.store.Context(), a.store, a.root)
+	if err != nil {
+		return 0, err
+	}
+	return root.Count, nil
+}
+
 // Writes the root node to storage and sets the new root CID.
 func (a *Array) write(root *amt.Root) error {
 	newCid, err := root.Flush(a.store.Context()) // this does the store.Put() too, differing from HAMT

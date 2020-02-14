@@ -375,8 +375,14 @@ func (a Actor) OnMinerWindowedPoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.Em
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if err := st.deleteFault(adt.AsStore(rt), minerAddr); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to delete miner fault: %v", err)
+		hasFault, err := st.hasDetectedFault(adt.AsStore(rt), minerAddr)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "Failed to check miner for detected fault: %v", err)
+		}
+		if hasFault {
+			if err := st.deleteDetectedFault(adt.AsStore(rt), minerAddr); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "Failed to delete miner detected fault: %v", err)
+			}
 		}
 
 		return nil
@@ -395,7 +401,7 @@ func (a Actor) OnMinerWindowedPoStFailure(rt Runtime, params *OnMinerWindowedPoS
 	var claim *Claim
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if err := st.putFault(adt.AsStore(rt), minerAddr); err != nil {
+		if err := st.putDetectedFault(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to put miner fault: %v", err)
 		}
 
@@ -577,8 +583,14 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 		}
 
 		st.MinerCount -= 1
-		if err = st.deleteFault(adt.AsStore(rt), miner); err != nil {
+		hasFault, err := st.hasDetectedFault(adt.AsStore(rt), miner)
+		if err != nil {
 			return err
+		}
+		if hasFault {
+			if err := st.deleteDetectedFault(adt.AsStore(rt), miner); err != nil {
+				return err
+			}
 		}
 
 		table := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)

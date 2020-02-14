@@ -101,13 +101,13 @@ type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
 	CommR           cid.Cid
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
-	Proof           []byte
+	Proofs          []PoStProof
 	EligibleSectors []SectorInfo
 }
 
 type SectorInfo struct {
-	SectorID SectorNumber
-	CommR    cid.Cid
+	SectorNumber SectorNumber
+	SealedCID    cid.Cid
 }
 
 type OnChainElectionPoStVerifyInfo struct {
@@ -121,7 +121,7 @@ type OnChainElectionPoStVerifyInfo struct {
 type OnChainPoStVerifyInfo struct {
 	ProofType  RegisteredProof
 	Candidates []PoStCandidate
-	Proof      []byte
+	Proofs     []PoStProof
 }
 
 type PoStCandidate struct {

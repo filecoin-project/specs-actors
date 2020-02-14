@@ -35,8 +35,7 @@ const (
 
 type CronEventPayload struct {
 	EventType CronEventType
-	// TODO: replace sectors with a bitfield
-	Sectors *abi.BitField
+	Sectors   *abi.BitField
 }
 
 type Actor struct{}
@@ -157,14 +156,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 			rt.Abortf(exitcode.ErrIllegalState, "Not currently in submission window for PoSt")
 		}
 
-		// A failed verification doesnt necessarily immediately cause a penalty
+		// A failed verification doesn't necessarily immediately cause a penalty
 		// The miner has until the end of the window to submit a good proof
 		a.verifyWindowedPost(rt, &st, params)
 
-		// TODO: post is valid, do we do anything with faults now?
-		// Assume there will be work to be done here once faults are
-		// implemented, with faults, we have potential power adjustments
-
+		// increment proving period start
 		st.PoStState = PoStState{
 			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: 0,
@@ -175,10 +171,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 		return nil
 	})
 
-	a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-		EventType: CronEventType_Miner_PoStExpiration,
-	})
-	// TODO: register a callback with cron to check that we submitted our proof at the right time
+	// if PoSt is valid, notify the power actor to remove detected faults
+	_, code := rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.OnMinerWindowedPoStSuccess,
+		nil,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to call OnMinerWindowedPoStSuccess in Power Actor")
 
 	return &adt.EmptyValue{}
 }
@@ -319,12 +319,24 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			PledgeRequirement: pledgeRequirement,
 		}
 
-		if err = st.putSector(adt.AsStore(rt), newSectorInfo); err != nil {
+		if err = st.putSector(store, newSectorInfo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
 		if err = st.deletePrecommittedSector(store, sectorNo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
+		}
+
+		// if first sector, set proving period start at next period
+		len, err := adt.AsArray(store, st.Sectors).Length()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to check miner sectors sizes: %v", err)
+		}
+		if len == 1 {
+			// enroll expiration check
+			a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
+				EventType: CronEventType_Miner_PoStExpiration,
+			})
 		}
 
 		// Do not update proving set during challenge window
@@ -343,6 +355,18 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		Sectors:   &bf,
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
+
+	// If first sector
+	len, err := adt.AsArray(store, st.Sectors).Length()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to check miner sectors sizes: %v", err)
+	}
+	if len == 1 {
+		// enroll expiration check
+		a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
+			EventType: CronEventType_Miner_PoStExpiration,
+		})
+	}
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, precommit.PreCommitDeposit)
@@ -423,6 +447,9 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
 	a.terminateSectors(rt, sectorNos, power.SectorTerminationManual)
+
+	// If last sector was terminated
+	// TODO: clear cron event for windowed post
 
 	return &adt.EmptyValue{}
 }
@@ -711,7 +738,7 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 			rt.Abortf(exitcode.ErrIllegalState, "should not be able to check post proving period expiration when not inside window")
 		}
 
-		// Increment count of consecutive failures.
+		// Increment count of consecutive failures and provingPeriodStart.
 		st.PoStState = PoStState{
 			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: st.PoStState.NumConsecutiveFailures + 1,
@@ -875,8 +902,8 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 		// TODO: faults!!!!
 		sectorInfos = append(sectorInfos, abi.SectorInfo{
-			CommR:    ssinfo.Info.SealedCID,
-			SectorID: ssinfo.Info.SectorNumber,
+			SealedCID:    ssinfo.Info.SealedCID,
+			SectorNumber: ssinfo.Info.SectorNumber,
 		})
 		return nil
 	})
@@ -885,7 +912,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 	pvInfo := abi.PoStVerifyInfo{
 		Candidates:      onChainInfo.Candidates,
-		Proof:           onChainInfo.Proof,
+		Proofs:          onChainInfo.Proofs,
 		Randomness:      abi.PoStRandomness(postRandomness),
 		EligibleSectors: sectorInfos,
 	}

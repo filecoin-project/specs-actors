@@ -164,7 +164,7 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
 	// from a SurprisePoSt challenge. TODO: hs update this
 	nominalPower := claimedPower
-	if found, err := st.hasFault(s, minerAddr); err != nil {
+	if found, err := st.hasDetectedFault(s, minerAddr); err != nil {
 		return abi.NewStoragePower(0), err
 	} else if found {
 		nominalPower = big.Zero()
@@ -173,7 +173,7 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 	return nominalPower, nil
 }
 
-func (st *State) hasFault(s adt.Store, a addr.Address) (bool, error) {
+func (st *State) hasDetectedFault(s adt.Store, a addr.Address) (bool, error) {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	found, err := faultyMiners.Has(AddrKey(a))
 	if err != nil {
@@ -182,7 +182,7 @@ func (st *State) hasFault(s adt.Store, a addr.Address) (bool, error) {
 	return found, nil
 }
 
-func (st *State) putFault(s adt.Store, a addr.Address) error {
+func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Put(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
@@ -191,7 +191,7 @@ func (st *State) putFault(s adt.Store, a addr.Address) error {
 	return nil
 }
 
-func (st *State) deleteFault(s adt.Store, a addr.Address) error {
+func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
