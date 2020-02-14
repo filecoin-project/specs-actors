@@ -12,7 +12,7 @@ import (
 )
 
 type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
-type HasherFunc func(data []byte) []byte
+type HasherFunc func(data []byte) [8]byte
 
 type syscaller struct {
 	SignatureVerifier VerifyFunc
