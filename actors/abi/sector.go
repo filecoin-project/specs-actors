@@ -100,9 +100,14 @@ type PartialTicket []byte // 32 bytes
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
 	CommR           cid.Cid
-	Candidates      []PoStCandidate      // From OnChain*PoStVerifyInfo
-	Proofs          []PoStProof          // From OnChain*PoStVerifyInfo
-	EligibleSectors map[SectorID]cid.Cid // TODO: HAMT?
+	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
+	Proof           []byte
+	EligibleSectors []SectorInfo
+}
+
+type SectorInfo struct {
+	SectorID SectorNumber
+	CommR    cid.Cid
 }
 
 type OnChainElectionPoStVerifyInfo struct {
@@ -113,11 +118,10 @@ type OnChainElectionPoStVerifyInfo struct {
 	Randomness       PoStRandomness
 }
 
-type OnChainSurprisePoStVerifyInfo struct {
-	RegisteredProof
+type OnChainPoStVerifyInfo struct {
+	ProofType  RegisteredProof
 	Candidates []PoStCandidate
-	Proofs     []PoStProof
-	// CommT      ChallengeTicketsCommitment // Potential future optimization.
+	Proof      []byte
 }
 
 type PoStCandidate struct {

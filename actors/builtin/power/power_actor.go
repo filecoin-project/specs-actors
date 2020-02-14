@@ -3,7 +3,6 @@ package power
 import (
 	"bytes"
 	"fmt"
-	"math"
 
 	addr "github.com/filecoin-project/go-address"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -13,7 +12,6 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
@@ -52,8 +50,8 @@ func (a Actor) Exports() []interface{} {
 		8:                         a.OnSectorTemporaryFaultEffectiveBegin,
 		9:                         a.OnSectorTemporaryFaultEffectiveEnd,
 		10:                        a.OnSectorModifyWeightDesc,
-		11:                        a.OnMinerSurprisePoStSuccess,
-		12:                        a.OnMinerSurprisePoStFailure,
+		11:                        a.OnMinerWindowedPoStSuccess,
+		12:                        a.OnMinerWindowedPoStFailure,
 		13:                        a.EnrollCronEvent,
 		14:                        a.ReportConsensusFault,
 		15:                        a.OnEpochTickEnd,
@@ -371,7 +369,7 @@ func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeight
 	return &newPledge
 }
 
-func (a Actor) OnMinerSurprisePoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) OnMinerWindowedPoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 
@@ -386,11 +384,11 @@ func (a Actor) OnMinerSurprisePoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.Em
 	return &adt.EmptyValue{}
 }
 
-type OnMinerSurprisePoStFailureParams struct {
+type OnMinerWindowedPoStFailureParams struct {
 	NumConsecutiveFailures int64
 }
 
-func (a Actor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMinerSurprisePoStFailureParams) *adt.EmptyValue {
+func (a Actor) OnMinerWindowedPoStFailure(rt Runtime, params *OnMinerWindowedPoStFailureParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 
@@ -413,13 +411,13 @@ func (a Actor) OnMinerSurprisePoStFailure(rt Runtime, params *OnMinerSurprisePoS
 		return nil
 	})
 
-	if params.NumConsecutiveFailures > SurprisePostFailureLimit {
+	if params.NumConsecutiveFailures > WindowedPostFailureLimit {
 		err := a.deleteMinerActor(rt, minerAddr)
 		abortIfError(rt, err, "failed to delete failed miner %v", minerAddr)
 	} else {
 		// Penalise pledge collateral without reducing the claim.
 		// The miner will have to deposit more when recovering the fault (unless already in sufficient surplus).
-		amountToSlash := pledgePenaltyForSurprisePoStFailure(claim.Pledge, params.NumConsecutiveFailures)
+		amountToSlash := pledgePenaltyForWindowedPoStFailure(claim.Pledge, params.NumConsecutiveFailures)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
 	return &adt.EmptyValue{}
@@ -512,9 +510,6 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
-	if err := a.initiateNewSurprisePoStChallenges(rt); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "Failed to initiate new surprise PoSt challenges: %v", err)
-	}
 	if err := a.processDeferredCronEvents(rt); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
@@ -524,42 +519,6 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 ////////////////////////////////////////////////////////////////////////////////
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
-
-func (a Actor) initiateNewSurprisePoStChallenges(rt Runtime) error {
-	provingPeriod := SurprisePoStPeriod
-	var surprisedMiners []addr.Address
-	var st State
-	var txErr error
-	rt.State().Transaction(&st, func() interface{} {
-		var err error
-		// sample the actor addresses
-		minerSelectionSeed := rt.GetRandomness(rt.CurrEpoch())
-		randomness := crypto.DeriveRandWithEpoch(crypto.DomainSeparationTag_SurprisePoStSelectMiners, minerSelectionSeed, int64(rt.CurrEpoch()))
-
-		TODO() // BigInt arithmetic (not floating-point)
-		challengeCount := math.Ceil(float64(st.MinerCount) / float64(provingPeriod))
-		surprisedMiners, err = st.selectMinersToSurprise(adt.AsStore(rt), int64(challengeCount), randomness)
-		if err != nil {
-			txErr = errors.Wrap(err, "failed to select miner to surprise")
-		}
-		return nil
-	})
-
-	if txErr != nil {
-		return txErr
-	}
-
-	for _, address := range surprisedMiners {
-		_, code := rt.Send(
-			address,
-			builtin.MethodsMiner.OnSurprisePoStChallenge,
-			&adt.EmptyValue{},
-			abi.NewTokenAmount(0),
-		)
-		builtin.RequireSuccess(rt, code, "failed to challenge miner")
-	}
-	return nil
-}
 
 func (a Actor) processDeferredCronEvents(rt Runtime) error {
 	epoch := rt.CurrEpoch()

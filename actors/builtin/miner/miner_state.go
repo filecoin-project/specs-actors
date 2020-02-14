@@ -10,7 +10,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
-	. "github.com/filecoin-project/specs-actors/actors/util"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -52,18 +52,12 @@ type MinerInfo struct {
 }
 
 type PoStState struct {
-	// Epoch of the last succesful PoSt, either election post or surprise post.
-	LastSuccessfulPoSt abi.ChainEpoch
-
-	// If >= 0 miner has been challenged and not yet responded successfully.
-	// SurprisePoSt challenge state: The miner has not submitted timely ElectionPoSts,
-	// and as a result, the system has fallen back to proving storage via SurprisePoSt.
-	//  `epochUndefined` if not currently challeneged.
-	SurpriseChallengeEpoch abi.ChainEpoch
+	// Epoch that starts the current proving period
+	ProvingPeriodStart abi.ChainEpoch
 
 	// Number of surprised post challenges that have been failed since last successful PoSt.
 	// Indicates that the claimed storage power may not actually be proven. Recovery can proceed by
-	// submitting a correct response to a subsequent SurprisePoSt challenge, up until
+	// submitting a correct response to a subsequent PoSt challenge, up until
 	// the limit of number of consecutive failures.
 	NumConsecutiveFailures int64
 }
@@ -119,8 +113,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 			SectorSize:       sectorSize,
 		},
 		PoStState: PoStState{
-			LastSuccessfulPoSt:     epochUndefined,
-			SurpriseChallengeEpoch: epochUndefined,
+			ProvingPeriodStart:     epochUndefined,
 			NumConsecutiveFailures: 0,
 		},
 	}, nil
@@ -218,21 +211,15 @@ func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.Sec
 	return asStorageWeightDesc(st.Info.SectorSize, sectorInfo), nil
 }
 
+func (st *State) inChallengeWindow(rt Runtime) bool {
+	return rt.CurrEpoch() > st.PoStState.ProvingPeriodStart // TODO: maybe also a few blocks beforehand?
+}
+
 func (st *State) ComputeProvingSet() cid.Cid {
 	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
 	// TODO: actually implement this
 	var ret cid.Cid
 	return ret
-}
-
-func (st *State) VerifySurprisePoStMeetsTargetReq(candidate abi.PoStCandidate) bool {
-	// TODO hs: Determine what should be the acceptance criterion for sector numbers proven in SurprisePoSt proofs.
-	TODO()
-	panic("")
-}
-
-func (mps *PoStState) isChallenged() bool {
-	return mps.SurpriseChallengeEpoch != epochUndefined
 }
 
 func (mps *PoStState) isPoStOk() bool {
@@ -261,4 +248,18 @@ func init() {
 	if reflect.TypeOf(e).Kind() != reflect.Uint64 {
 		panic("incorrect sector number encoding")
 	}
+}
+
+func bitfieldToSectorNos(rt Runtime, bf *abi.BitField) []abi.SectorNumber {
+	sns, err := bf.All(MaxFaultsCount)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to enumerate sector numbers from bitfield: %s", err)
+	}
+
+	var snums []abi.SectorNumber
+	for _, sn := range sns {
+		snums = append(snums, abi.SectorNumber(sn))
+	}
+
+	return snums
 }
