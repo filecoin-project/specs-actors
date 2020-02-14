@@ -176,6 +176,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 		a.verifyWindowedPost(rt, &st, params)
 
 		// increment proving period start
+		// Note: this must happen after verifyWindowedPoSt, lest verification use the wrong randomness
+		// (drawn from ProvingPeriodStart)
 		st.PoStState = PoStState{
 			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: 0,
