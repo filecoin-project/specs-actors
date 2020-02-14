@@ -211,16 +211,18 @@ func (st *State) InChallengeWindow(rt Runtime) bool {
 	return rt.CurrEpoch() > st.PoStState.ProvingPeriodStart // TODO: maybe also a few blocks beforehand?
 }
 
-func (st *State) ComputeProvingSet(store adt.Store) (cid.Cid, error) {
+func (st *State) ComputeProvingSet(store adt.Store) (*adt.Array, error) {
 	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
 
-	provingSet, err := adt.MakeEmptyArray(store)
+	computedProvingSet, err := adt.MakeEmptyArray(store)
 	if err != nil {
-		return provingSet.Root(), errors.Wrapf(err, "failed to create a new provingSet")
+		return computedProvingSet, errors.Wrapf(err, "failed to create a new provingSet")
 	}
 
-	var err2 error
-	err = st.forEachSector(store, func(sector *SectorOnChainInfo) {
+	cachedProvingSet := adt.AsArray(store, st.ProvingSet)
+	var sector SectorOnChainInfo
+
+	cachedProvingSet.ForEach(&sector, func(sector *SectorOnChainInfo) {
 		fault, err := st.FaultSet.Has(uint64(sector.Info.SectorNumber))
 		AssertNoError(err)
 		Assert(sector.DeclaredFaultEpoch != epochUndefined)
@@ -233,6 +235,7 @@ func (st *State) ComputeProvingSet(store adt.Store) (cid.Cid, error) {
 			}
 		}
 	})
+
 	if err != nil {
 		return provingSet.Root(), errors.Wrapf(err, "failed to traverse sectors for proving set")
 	}

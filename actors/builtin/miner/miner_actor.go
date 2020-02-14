@@ -25,8 +25,9 @@ type Runtime = vmr.Runtime
 const epochUndefined = abi.ChainEpoch(-1)
 
 type CronEventType int64
+
 const (
-	cronEventPoStExpiration CronEventType = iota
+	cronEventWindowedPoStExpiration CronEventType = iota
 	cronEventWorkerKeyChange
 	cronEventPreCommitExpiry
 	cronEventSectorExpiry
@@ -180,6 +181,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 			NumConsecutiveFailures: 0,
 		}
 
+		// reset provingSet to include all sectors (were not included during challenge period)
 		st.ProvingSet = st.Sectors
 
 		return nil
@@ -350,10 +352,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check miner sectors sizes: %v", err)
 		}
 		if len == 1 {
-			// enroll expiration check
-			a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-				EventType: cronEventPoStExpiration,
-			})
+			st.PoStState.ProvingPeriodStart = rt.CurrEpoch() + ProvingPeriod
 		}
 
 		// Do not update proving set during challenge window
@@ -381,7 +380,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	if len == 1 {
 		// enroll expiration check
 		a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-			EventType: cronEventPoStExpiration,
+			EventType: cronEventWindowedPoStExpiration,
 		})
 	}
 
@@ -563,7 +562,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 		a.checkSectorExpiry(rt, payload.Sectors)
 	}
 
-	if payload.EventType == cronEventPoStExpiration {
+	if payload.EventType == cronEventWindowedPoStExpiration {
 		a.checkPoStProvingPeriodExpiration(rt)
 	}
 
@@ -904,7 +903,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	// the same was not used to generate the proof
 
 	store := adt.AsStore(rt)
-	provingSet := adt.AsArray(store, st.ProvingSet)
+	provingSet, err := st.ComputeProvingSet(store)
 
 	var sectorInfos []abi.SectorInfo
 	var ssinfo SectorOnChainInfo
