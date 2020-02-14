@@ -25,8 +25,9 @@ type Runtime = vmr.Runtime
 const epochUndefined = abi.ChainEpoch(-1)
 
 type CronEventType int64
+
 const (
-	cronEventPoStExpiration CronEventType = iota
+	cronEventWindowedPoStExpiration CronEventType = iota
 	cronEventWorkerKeyChange
 	cronEventPreCommitExpiry
 	cronEventSectorExpiry
@@ -175,11 +176,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 		a.verifyWindowedPost(rt, &st, params)
 
 		// increment proving period start
+		// Note: this must happen after verifyWindowedPoSt, lest verification use the wrong randomness
+		// (drawn from ProvingPeriodStart)
 		st.PoStState = PoStState{
 			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: 0,
 		}
 
+		// reset provingSet to include all sectors (were not included during challenge period)
 		st.ProvingSet = st.Sectors
 
 		return nil
@@ -285,6 +289,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
+	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
 		SealedCID:    precommit.Info.SealedCID,
 		SealEpoch:    precommit.Info.SealEpoch,
@@ -309,6 +314,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	AssertNoError(ret.Into(&dealWeight))
 
 	// Request power for activated sector.
+	// Returns relevant pledge requirement.
 	var pledgeRequirement abi.TokenAmount
 	ret, code = rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -325,6 +331,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 	AssertNoError(ret.Into(&pledgeRequirement))
 
+	// add sector to miner state
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
 			Info:              precommit.Info,
@@ -347,10 +354,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check miner sectors sizes: %v", err)
 		}
 		if len == 1 {
-			// enroll expiration check
-			a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-				EventType: cronEventPoStExpiration,
-			})
+			st.PoStState.ProvingPeriodStart = rt.CurrEpoch() + ProvingPeriod
 		}
 
 		// Do not update proving set during challenge window
@@ -378,7 +382,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	if len == 1 {
 		// enroll expiration check
 		a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-			EventType: cronEventPoStExpiration,
+			EventType: cronEventWindowedPoStExpiration,
 		})
 	}
 
@@ -560,7 +564,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 		a.checkSectorExpiry(rt, payload.Sectors)
 	}
 
-	if payload.EventType == cronEventPoStExpiration {
+	if payload.EventType == cronEventWindowedPoStExpiration {
 		a.checkPoStProvingPeriodExpiration(rt)
 	}
 
@@ -901,21 +905,9 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	// the same was not used to generate the proof
 
 	store := adt.AsStore(rt)
-	provingSet := adt.AsArray(store, st.ProvingSet)
-
-	var sectorInfos []abi.SectorInfo
-	var ssinfo SectorOnChainInfo
-	err := provingSet.ForEach(&ssinfo, func(i int64) error {
-
-		// TODO: faults!!!!
-		sectorInfos = append(sectorInfos, abi.SectorInfo{
-			SealedCID:    ssinfo.Info.SealedCID,
-			SectorNumber: ssinfo.Info.SectorNumber,
-		})
-		return nil
-	})
+	sectorInfos, err := st.ComputeProvingSet(store)
 	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to enumerate proving set: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set.")
 	}
 
 	var addrBuf bytes.Buffer

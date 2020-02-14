@@ -211,11 +211,39 @@ func (st *State) InChallengeWindow(rt Runtime) bool {
 	return rt.CurrEpoch() > st.PoStState.ProvingPeriodStart // TODO: maybe also a few blocks beforehand?
 }
 
-func (st *State) ComputeProvingSet() cid.Cid {
-	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
-	// TODO: actually implement this
-	var ret cid.Cid
-	return ret
+func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
+	// ProvingSet is a snapshot of the Sectors AMT, must subtract sectors in the FaultSet
+
+	provingSet := adt.AsArray(store, st.ProvingSet)
+
+	var sectorInfos []abi.SectorInfo
+	var ssinfo SectorOnChainInfo
+
+	err := provingSet.ForEach(&ssinfo, func(sectorNum int64) error {
+		// TODO: touch up faults
+		fault, err := st.FaultSet.Has(uint64(sectorNum))
+		if err != nil {
+			return err
+		}
+		if ssinfo.DeclaredFaultEpoch != epochUndefined || ssinfo.DeclaredFaultDuration != epochUndefined {
+			return errors.Errorf("sector faultEpoch or duration invalid %v", ssinfo.Info.SectorNumber)
+		}
+
+		// if not a temp fault sector, add to computed proving set
+		if !fault {
+			sectorInfos = append(sectorInfos, abi.SectorInfo{
+				SealedCID:    ssinfo.Info.SealedCID,
+				SectorNumber: ssinfo.Info.SectorNumber,
+			})
+		}
+		return nil
+	})
+
+	if err != nil {
+		return sectorInfos, errors.Wrapf(err, "failed to traverse sectors for proving set: %v", err)
+	}
+
+	return sectorInfos, nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {
