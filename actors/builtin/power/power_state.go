@@ -87,7 +87,6 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 	}
 
 	maxPower := abi.NewStoragePower(0)
-	//var minerSizes []abi.StoragePower
 	var claimed Claim
 	if err := adt.AsMap(s, st.Claims).ForEach(&claimed, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
