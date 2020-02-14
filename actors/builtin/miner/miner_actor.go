@@ -904,6 +904,9 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 	store := adt.AsStore(rt)
 	provingSet, err := st.ComputeProvingSet(store)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set.")
+	}
 
 	var sectorInfos []abi.SectorInfo
 	var ssinfo SectorOnChainInfo

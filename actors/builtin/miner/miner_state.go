@@ -220,30 +220,32 @@ func (st *State) ComputeProvingSet(store adt.Store) (*adt.Array, error) {
 	}
 
 	cachedProvingSet := adt.AsArray(store, st.ProvingSet)
-	var sector SectorOnChainInfo
+	var sector *SectorOnChainInfo
 
-	cachedProvingSet.ForEach(&sector, func(sector *SectorOnChainInfo) {
-		fault, err := st.FaultSet.Has(uint64(sector.Info.SectorNumber))
-		AssertNoError(err)
-		Assert(sector.DeclaredFaultEpoch != epochUndefined)
-		Assert(sector.DeclaredFaultDuration != epochUndefined)
+	err = cachedProvingSet.ForEach(sector, func(sectorNum int64) error {
+		fault, err := st.FaultSet.Has(uint64(sectorNum))
+		if err != nil {
+			return err
+		}
+		if sector.DeclaredFaultEpoch != epochUndefined || sector.DeclaredFaultDuration != epochUndefined {
+			return errors.Errorf("sector faultEpoch or duration invalid %v", sector.Info.SectorNumber)
+		}
 
+		// if not a temp fault sector, add to computed proving set
 		if !fault {
-			err2 := provingSet.Set(uint64(sector.Info.SectorNumber), sector)
-			if err2 != nil {
-				return
+			err = computedProvingSet.Set(uint64(sectorNum), sector)
+			if err != nil {
+				return err
 			}
 		}
+		return nil
 	})
 
 	if err != nil {
-		return provingSet.Root(), errors.Wrapf(err, "failed to traverse sectors for proving set")
-	}
-	if err2 != nil {
-		return provingSet.Root(), errors.Wrapf(err, "failed to copy sectors into proving set")
+		return computedProvingSet, errors.Wrapf(err, "failed to traverse sectors for proving set")
 	}
 
-	return provingSet.Root(), nil
+	return computedProvingSet, nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {
