@@ -30,7 +30,7 @@ const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
 const ElectionLookback = PoStLookback // PARAM_FINISH
 
 // Number of sectors to be sampled as part of surprise PoSt
-const NumSurprisePoStSectors = 200 // PARAM_FINISH
+const NumWindowedPoStSectors = 200 // PARAM_FINISH
 
 // Delay between declaration of a temporary sector fault and effectiveness of reducing the active proving set for PoSts.
 const DeclaredFaultEffectiveDelay = abi.ChainEpoch(20) // PARAM_FINISH
@@ -47,3 +47,9 @@ func precommitDeposit(sectorSize abi.SectorSize, duration abi.ChainEpoch) abi.To
 func temporaryFaultFee(weights []*power.SectorStorageWeightDesc, duration abi.ChainEpoch) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
+
+// MaxFaultsCount is the maximum number of faults that can be declared
+const MaxFaultsCount = 32 << 20
+
+// ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
+const ProvingPeriod = 300

@@ -75,25 +75,23 @@ var MethodsPower = struct {
 	OnSectorTemporaryFaultEffectiveBegin abi.MethodNum
 	OnSectorTemporaryFaultEffectiveEnd   abi.MethodNum
 	OnSectorModifyWeightDesc             abi.MethodNum
-	OnMinerSurprisePoStSuccess           abi.MethodNum
-	OnMinerSurprisePoStFailure           abi.MethodNum
+	OnMinerWindowedPoStSuccess           abi.MethodNum
+	OnMinerWindowedPoStFailure           abi.MethodNum
 	EnrollCronEvent                      abi.MethodNum
 	ReportConsensusFault                 abi.MethodNum
 	OnEpochTickEnd                       abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 
 var MethodsMiner = struct {
-	Constructor                abi.MethodNum
-	ControlAddresses           abi.MethodNum
-	ChangeWorkerAddress        abi.MethodNum
-	OnSurprisePoStChallenge    abi.MethodNum
-	SubmitSurprisePoStResponse abi.MethodNum
-	OnDeleteMiner              abi.MethodNum
-	OnVerifiedElectionPoSt     abi.MethodNum
-	PreCommitSector            abi.MethodNum
-	ProveCommitSector          abi.MethodNum
-	ExtendSectorExpiration     abi.MethodNum
-	TerminateSectors           abi.MethodNum
-	DeclareTemporaryFaults     abi.MethodNum
-	OnDeferredCronEvent        abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+	Constructor            abi.MethodNum
+	ControlAddresses       abi.MethodNum
+	ChangeWorkerAddress    abi.MethodNum
+	SubmitWindowedPoSt     abi.MethodNum
+	OnDeleteMiner          abi.MethodNum
+	PreCommitSector        abi.MethodNum
+	ProveCommitSector      abi.MethodNum
+	ExtendSectorExpiration abi.MethodNum
+	TerminateSectors       abi.MethodNum
+	DeclareTemporaryFaults abi.MethodNum
+	OnDeferredCronEvent    abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
