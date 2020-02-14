@@ -463,7 +463,7 @@ type DeclareTemporaryFaultsParams struct {
 	Duration      abi.ChainEpoch
 }
 
-func (a Actor) DeclareTemporaryFaults(rt Runtime, params DeclareTemporaryFaultsParams) *adt.EmptyValue {
+func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaultsParams) *adt.EmptyValue {
 	if params.Duration <= abi.ChainEpoch(0) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "non-positive fault Duration %v", params.Duration)
 	}

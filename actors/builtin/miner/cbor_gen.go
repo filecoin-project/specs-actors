@@ -1251,6 +1251,63 @@ func (t *DeclareTemporaryFaultsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+func (t *GetControlAddressesReturn) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.Owner (address.Address) (struct)
+	if err := t.Owner.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Worker (address.Address) (struct)
+	if err := t.Worker.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *GetControlAddressesReturn) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Owner (address.Address) (struct)
+
+	{
+
+		if err := t.Owner.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.Worker (address.Address) (struct)
+
+	{
+
+		if err := t.Worker.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
 func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
