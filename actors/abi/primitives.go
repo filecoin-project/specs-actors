@@ -44,9 +44,5 @@ func NewTokenAmount(t int64) TokenAmount {
 	return big.NewInt(t)
 }
 
-// The randomness seed is a string of byte, distinguished from Randomness
-// for expressiveness: it hasn't been given the needed entropy
-type RandomnessSeed []byte
-
 // Randomness is a string of random bytes
 type Randomness []byte

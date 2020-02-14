@@ -33,8 +33,9 @@ type Runtime interface {
 	// Look up the code ID at an actor address.
 	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)
 
-	// Randomness returns a (pseudo)random string for the given epoch and tag.
-	GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed
+	// Randomness returns a (pseudo)random byte array drawing from a
+	// random beacon at a given epoch and incorporating reequisite entropy
+	GetRandomness(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
 
 	// Provides a handle for the actor's state object.
 	State() StateHandle
@@ -105,8 +106,8 @@ type Message interface {
 type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
-	// Hashes input data using SHA256.
-	Hash_SHA256(data []byte) []byte
+	// Hashes input data using blake2b with 256 bit output.
+	HashBlake2b(data []byte) [8]byte
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
