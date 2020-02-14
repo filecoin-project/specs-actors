@@ -211,41 +211,39 @@ func (st *State) InChallengeWindow(rt Runtime) bool {
 	return rt.CurrEpoch() > st.PoStState.ProvingPeriodStart // TODO: maybe also a few blocks beforehand?
 }
 
-func (st *State) ComputeProvingSet(store adt.Store) (*adt.Array, error) {
-	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
+func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
+	// ProvingSet is a snapshot of the Sectors AMT, must subtract sectors in the FaultSet
 
-	computedProvingSet, err := adt.MakeEmptyArray(store)
-	if err != nil {
-		return computedProvingSet, errors.Wrapf(err, "failed to create a new provingSet")
-	}
+	provingSet := adt.AsArray(store, st.ProvingSet)
 
-	cachedProvingSet := adt.AsArray(store, st.ProvingSet)
-	var sector *SectorOnChainInfo
+	var sectorInfos []abi.SectorInfo
+	var ssinfo SectorOnChainInfo
 
-	err = cachedProvingSet.ForEach(sector, func(sectorNum int64) error {
+	err := provingSet.ForEach(&ssinfo, func(sectorNum int64) error {
+		// TODO: touch up faults
 		fault, err := st.FaultSet.Has(uint64(sectorNum))
 		if err != nil {
 			return err
 		}
-		if sector.DeclaredFaultEpoch != epochUndefined || sector.DeclaredFaultDuration != epochUndefined {
-			return errors.Errorf("sector faultEpoch or duration invalid %v", sector.Info.SectorNumber)
+		if ssinfo.DeclaredFaultEpoch != epochUndefined || ssinfo.DeclaredFaultDuration != epochUndefined {
+			return errors.Errorf("sector faultEpoch or duration invalid %v", ssinfo.Info.SectorNumber)
 		}
 
 		// if not a temp fault sector, add to computed proving set
 		if !fault {
-			err = computedProvingSet.Set(uint64(sectorNum), sector)
-			if err != nil {
-				return err
-			}
+			sectorInfos = append(sectorInfos, abi.SectorInfo{
+				SealedCID:    ssinfo.Info.SealedCID,
+				SectorNumber: ssinfo.Info.SectorNumber,
+			})
 		}
 		return nil
 	})
 
 	if err != nil {
-		return computedProvingSet, errors.Wrapf(err, "failed to traverse sectors for proving set")
+		return sectorInfos, errors.Wrapf(err, "failed to traverse sectors for proving set: %v", err)
 	}
 
-	return computedProvingSet, nil
+	return sectorInfos, nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {

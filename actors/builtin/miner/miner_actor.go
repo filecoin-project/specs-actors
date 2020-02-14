@@ -905,24 +905,9 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	// the same was not used to generate the proof
 
 	store := adt.AsStore(rt)
-	provingSet, err := st.ComputeProvingSet(store)
+	sectorInfos, err := st.ComputeProvingSet(store)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set.")
-	}
-
-	var sectorInfos []abi.SectorInfo
-	var ssinfo SectorOnChainInfo
-	err := provingSet.ForEach(&ssinfo, func(i int64) error {
-
-		// TODO: faults!!!!
-		sectorInfos = append(sectorInfos, abi.SectorInfo{
-			SealedCID:    ssinfo.Info.SealedCID,
-			SectorNumber: ssinfo.Info.SectorNumber,
-		})
-		return nil
-	})
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to enumerate proving set: %v", err)
 	}
 
 	var addrBuf bytes.Buffer
