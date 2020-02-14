@@ -45,6 +45,20 @@ func init() {
 	CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}
 }
 
+// IsBuiltinActor returns true if the code belongs to an actor defined in this repo.
+func IsBuiltinActor(code cid.Cid) bool {
+	return code.Equals(SystemActorCodeID) ||
+		code.Equals(InitActorCodeID) ||
+		code.Equals(CronActorCodeID) ||
+		code.Equals(AccountActorCodeID) ||
+		code.Equals(StoragePowerActorCodeID) ||
+		code.Equals(StorageMinerActorCodeID) ||
+		code.Equals(StorageMarketActorCodeID) ||
+		code.Equals(PaymentChannelActorCodeID) ||
+		code.Equals(MultisigActorCodeID) ||
+		code.Equals(RewardActorCodeID)
+}
+
 // ActorNameByCode returns the (string) name of the actor given a cid code.
 func ActorNameByCode(code cid.Cid) string {
 	if !code.Defined() {
