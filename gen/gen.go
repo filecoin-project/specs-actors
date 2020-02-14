@@ -40,7 +40,6 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/crypto/cbor_gen.go", "crypto",
 		crypto.Signature{},
-		crypto.AddressEpochEntropy{},
 	); err != nil {
 		panic(err)
 	}

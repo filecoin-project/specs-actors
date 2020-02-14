@@ -27,7 +27,7 @@ func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, p
 	return s.SignatureVerifier(sig, signer, plaintext)
 }
 
-func (s *syscaller) HashBlake2b(data []byte) []byte {
+func (s *syscaller) HashBlake2b(data []byte) [8]byte {
 	if s.Hasher == nil {
 		s.PanicOnUnsetFunc("Hasher")
 	}
