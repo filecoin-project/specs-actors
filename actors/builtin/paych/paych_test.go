@@ -94,7 +94,9 @@ func TestPaymentChannelActor_UpdateChannelState(t *testing.T) {
 
 	// set up trivial signature verifier and hasher
 	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
-	hasher := func(data []byte) []byte { return data }
+	hasher := func(data []byte) [8]byte {
+		return [8]byte{}
+	}
 
 	balance := abi.NewTokenAmount(100)
 	received := abi.NewTokenAmount(0)

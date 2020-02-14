@@ -13,6 +13,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
@@ -149,7 +150,7 @@ func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
 	return
 }
 
-func (rt *Runtime) GetRandomness(epoch abi.ChainEpoch) abi.RandomnessSeed {
+func (rt *Runtime) GetRandomness(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness {
 	rt.requireInCall()
 	panic("implement me")
 }
