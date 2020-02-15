@@ -12,7 +12,7 @@ import (
 )
 
 type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
-type HasherFunc func(data []byte) []byte
+type HasherFunc func(data []byte) [8]byte
 
 type syscaller struct {
 	SignatureVerifier VerifyFunc
@@ -24,10 +24,10 @@ func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, p
 	if s.SignatureVerifier == nil {
 		s.PanicOnUnsetFunc("SignatureVerifier")
 	}
-	return s.SignatureVerifier(sig,signer,plaintext)
+	return s.SignatureVerifier(sig, signer, plaintext)
 }
 
-func (s *syscaller) Hash_SHA256(data []byte) []byte {
+func (s *syscaller) HashBlake2b(data []byte) [8]byte {
 	if s.Hasher == nil {
 		s.PanicOnUnsetFunc("Hasher")
 	}
@@ -58,7 +58,4 @@ func (s *syscaller) PanicOnUnsetFunc(unsetFuncName string) {
 	panic(fmt.Sprintf("no %s set", unsetFuncName))
 }
 
-
 var _ runtime.Syscalls = &syscaller{}
-
-

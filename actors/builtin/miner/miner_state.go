@@ -36,10 +36,6 @@ type MinerInfo struct {
 	// This will be the key that is used to sign blocks created by this miner, and
 	// sign messages sent on behalf of this miner to commit sectors, submit PoSts, and
 	// other day to day miner activities.
-
-	// TODO: All addresses appearing on chain anywhere except the account actor are ID addresses
-	// We want to enforce that the account actor referenced by this address carries a BLS key in its state.
-	// This id -> pubkey lookup could be implemented now by asking the account actor for its pubkey address.
 	Worker addr.Address // Must be an ID-address.
 
 	PendingWorkerKey WorkerKeyChange
@@ -119,15 +115,15 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 	}, nil
 }
 
-func (st *State) getWorker() addr.Address {
+func (st *State) GetWorker() addr.Address {
 	return st.Info.Worker
 }
 
-func (st *State) getSectorSize() abi.SectorSize {
+func (st *State) GetSectorSize() abi.SectorSize {
 	return st.Info.SectorSize
 }
 
-func (st *State) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
+func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Put(sectorKey(info.Info.SectorNumber), info)
 	if err != nil {
@@ -136,7 +132,7 @@ func (st *State) putPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 	return nil
 }
 
-func (st *State) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
+func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	var info SectorPreCommitOnChainInfo
 	found, err := precommitted.Get(sectorKey(sectorNo), &info)
@@ -146,7 +142,7 @@ func (st *State) getPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	return &info, found, nil
 }
 
-func (st *State) deletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *State) DeletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Delete(sectorKey(sectorNo))
 	if err != nil {
@@ -155,7 +151,7 @@ func (st *State) deletePrecommittedSector(store adt.Store, sectorNo abi.SectorNu
 	return nil
 }
 
-func (st *State) hasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
+func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
 	sectors := adt.AsArray(store, st.Sectors)
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
@@ -165,7 +161,7 @@ func (st *State) hasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, 
 	return found, nil
 }
 
-func (st *State) putSector(store adt.Store, sector *SectorOnChainInfo) error {
+func (st *State) PutSector(store adt.Store, sector *SectorOnChainInfo) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
@@ -173,7 +169,7 @@ func (st *State) putSector(store adt.Store, sector *SectorOnChainInfo) error {
 	return nil
 }
 
-func (st *State) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
+func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
 	sectors := adt.AsArray(store, st.Sectors)
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
@@ -183,7 +179,7 @@ func (st *State) getSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorO
 	return &info, found, nil
 }
 
-func (st *State) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *State) DeleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
@@ -191,7 +187,7 @@ func (st *State) deleteSector(store adt.Store, sectorNo abi.SectorNumber) error 
 	return nil
 }
 
-func (st *State) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
+func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
 	sectors := adt.AsArray(store, st.Sectors)
 	var sector SectorOnChainInfo
 	return sectors.ForEach(&sector, func(idx int64) error {
@@ -201,7 +197,7 @@ func (st *State) forEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 }
 
 func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.SectorNumber) (*power.SectorStorageWeightDesc, error) {
-	sectorInfo, found, err := st.getSector(store, sectorNo)
+	sectorInfo, found, err := st.GetSector(store, sectorNo)
 	if err != nil {
 		return nil, err
 	} else if !found {
@@ -211,22 +207,50 @@ func (st *State) GetStorageWeightDescForSector(store adt.Store, sectorNo abi.Sec
 	return asStorageWeightDesc(st.Info.SectorSize, sectorInfo), nil
 }
 
-func (st *State) inChallengeWindow(rt Runtime) bool {
+func (st *State) InChallengeWindow(rt Runtime) bool {
 	return rt.CurrEpoch() > st.PoStState.ProvingPeriodStart // TODO: maybe also a few blocks beforehand?
 }
 
-func (st *State) ComputeProvingSet() cid.Cid {
-	// Current ProvingSet is a snapshot of the Sectors AMT subtracting sectors in the FaultSet
-	// TODO: actually implement this
-	var ret cid.Cid
-	return ret
+func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
+	// ProvingSet is a snapshot of the Sectors AMT, must subtract sectors in the FaultSet
+
+	provingSet := adt.AsArray(store, st.ProvingSet)
+
+	var sectorInfos []abi.SectorInfo
+	var ssinfo SectorOnChainInfo
+
+	err := provingSet.ForEach(&ssinfo, func(sectorNum int64) error {
+		// TODO: touch up faults
+		fault, err := st.FaultSet.Has(uint64(sectorNum))
+		if err != nil {
+			return err
+		}
+		if ssinfo.DeclaredFaultEpoch != epochUndefined || ssinfo.DeclaredFaultDuration != epochUndefined {
+			return errors.Errorf("sector faultEpoch or duration invalid %v", ssinfo.Info.SectorNumber)
+		}
+
+		// if not a temp fault sector, add to computed proving set
+		if !fault {
+			sectorInfos = append(sectorInfos, abi.SectorInfo{
+				SealedCID:    ssinfo.Info.SealedCID,
+				SectorNumber: ssinfo.Info.SectorNumber,
+			})
+		}
+		return nil
+	})
+
+	if err != nil {
+		return sectorInfos, errors.Wrapf(err, "failed to traverse sectors for proving set: %v", err)
+	}
+
+	return sectorInfos, nil
 }
 
-func (mps *PoStState) isPoStOk() bool {
-	return !mps.hasFailedPost()
+func (mps *PoStState) IsPoStOk() bool {
+	return !mps.HasFailedPost()
 }
 
-func (mps *PoStState) hasFailedPost() bool {
+func (mps *PoStState) HasFailedPost() bool {
 	return mps.NumConsecutiveFailures > 0
 }
 

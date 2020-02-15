@@ -5,6 +5,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -26,11 +27,11 @@ const epochUndefined = abi.ChainEpoch(-1)
 type CronEventType int64
 
 const (
-	CronEventType_Miner_PoStExpiration CronEventType = iota
-	CronEventType_Miner_WorkerKeyChange
-	CronEventType_Miner_PreCommitExpiry
-	CronEventType_Miner_SectorExpiry
-	CronEventType_Miner_TempFault
+	cronEventWindowedPoStExpiration CronEventType = iota
+	cronEventWorkerKeyChange
+	cronEventPreCommitExpiry
+	cronEventSectorExpiry
+	cronEventTempFault
 )
 
 type CronEventPayload struct {
@@ -45,14 +46,15 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.ControlAddresses,
 		3:                         a.ChangeWorkerAddress,
-		4:                         a.SubmitWindowedPoSt,
-		5:                         a.OnDeleteMiner,
-		6:                         a.PreCommitSector,
-		7:                         a.ProveCommitSector,
-		8:                         a.ExtendSectorExpiration,
-		9:                         a.TerminateSectors,
-		10:                        a.DeclareTemporaryFaults,
-		11:                        a.OnDeferredCronEvent,
+		4:                         a.ChangePeerID,
+		5:                         a.SubmitWindowedPoSt,
+		6:                         a.OnDeleteMiner,
+		7:                         a.PreCommitSector,
+		8:                         a.ProveCommitSector,
+		9:                         a.ExtendSectorExpiration,
+		10:                        a.TerminateSectors,
+		11:                        a.DeclareTemporaryFaults,
+		12:                        a.OnDeferredCronEvent,
 	}
 }
 
@@ -131,10 +133,23 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	})
 
 	cronPayload := CronEventPayload{
-		EventType: CronEventType_Miner_WorkerKeyChange,
+		EventType: cronEventWorkerKeyChange,
 		Sectors:   nil,
 	}
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
+	return &adt.EmptyValue{}
+}
+
+type ChangePeerIDParams struct {
+	NewID peer.ID
+}
+
+func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		st.Info.PeerId = params.NewID
+		return nil
+	})
 	return &adt.EmptyValue{}
 }
 
@@ -161,11 +176,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 		a.verifyWindowedPost(rt, &st, params)
 
 		// increment proving period start
+		// Note: this must happen after verifyWindowedPoSt, lest verification use the wrong randomness
+		// (drawn from ProvingPeriodStart)
 		st.PoStState = PoStState{
 			ProvingPeriodStart:     st.PoStState.ProvingPeriodStart + ProvingPeriod,
 			NumConsecutiveFailures: 0,
 		}
 
+		// reset provingSet to include all sectors (were not included during challenge period)
 		st.ProvingSet = st.Sectors
 
 		return nil
@@ -202,19 +220,19 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 	store := adt.AsStore(rt)
-	if found, err := st.hasSectorNo(store, params.SectorNumber); err != nil {
+	if found, err := st.HasSectorNo(store, params.SectorNumber); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 	} else if found {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 	}
 
-	depositReq := precommitDeposit(st.getSectorSize(), params.Expiration-rt.CurrEpoch())
+	depositReq := precommitDeposit(st.GetSectorSize(), params.Expiration-rt.CurrEpoch())
 	confirmPaymentAndRefundChange(rt, depositReq)
 
 	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.putPrecommittedSector(store, &SectorPreCommitOnChainInfo{
+		err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:             *params,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
@@ -234,7 +252,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
-		EventType: CronEventType_Miner_PreCommitExpiry,
+		EventType: cronEventPreCommitExpiry,
 		Sectors:   &bf,
 	}
 	expiryBound := rt.CurrEpoch() + PoRepMaxDelay + 1
@@ -256,7 +274,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	precommit, found, err := st.getPrecommittedSector(store, sectorNo)
+	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to get precommitted sector %v: %v", sectorNo, err)
 	} else if !found {
@@ -271,6 +289,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
 	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
+	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
 		SealedCID:    precommit.Info.SealedCID,
 		SealEpoch:    precommit.Info.SealEpoch,
@@ -295,6 +314,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	AssertNoError(ret.Into(&dealWeight))
 
 	// Request power for activated sector.
+	// Returns relevant pledge requirement.
 	var pledgeRequirement abi.TokenAmount
 	ret, code = rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -311,6 +331,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 	AssertNoError(ret.Into(&pledgeRequirement))
 
+	// add sector to miner state
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
 			Info:              precommit.Info,
@@ -319,11 +340,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			PledgeRequirement: pledgeRequirement,
 		}
 
-		if err = st.putSector(store, newSectorInfo); err != nil {
+		if err = st.PutSector(store, newSectorInfo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
-		if err = st.deletePrecommittedSector(store, sectorNo); err != nil {
+		if err = st.DeletePrecommittedSector(store, sectorNo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
 		}
 
@@ -333,14 +354,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check miner sectors sizes: %v", err)
 		}
 		if len == 1 {
-			// enroll expiration check
-			a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-				EventType: CronEventType_Miner_PoStExpiration,
-			})
+			st.PoStState.ProvingPeriodStart = rt.CurrEpoch() + ProvingPeriod
 		}
 
 		// Do not update proving set during challenge window
-		if !st.inChallengeWindow(rt) {
+		if !st.InChallengeWindow(rt) {
 			st.ProvingSet = st.Sectors
 		}
 		return nil
@@ -351,7 +369,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	// Request deferred callback for sector expiry.
 	cronPayload := CronEventPayload{
-		EventType: CronEventType_Miner_SectorExpiry,
+		EventType: cronEventSectorExpiry,
 		Sectors:   &bf,
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
@@ -364,7 +382,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	if len == 1 {
 		// enroll expiration check
 		a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-			EventType: CronEventType_Miner_PoStExpiration,
+			EventType: cronEventWindowedPoStExpiration,
 		})
 	}
 
@@ -390,7 +408,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
-	sector, found, err := st.getSector(store, sectorNo)
+	sector, found, err := st.GetSector(store, sectorNo)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 	} else if !found {
@@ -425,7 +443,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	rt.State().Transaction(&st, func() interface{} {
 		sector.Info.Expiration = params.NewExpiration
 		sector.PledgeRequirement = newPledgeRequirement
-		if err = st.putSector(store, sector); err != nil {
+		if err = st.PutSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
 		return nil
@@ -447,10 +465,6 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
 	a.terminateSectors(rt, sectorNos, power.SectorTerminationManual)
-
-	// If last sector was terminated
-	// TODO: clear cron event for windowed post
-
 	return &adt.EmptyValue{}
 }
 
@@ -481,7 +495,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 		}
 
 		for _, sectorNumber := range sectors {
-			sector, found, err := st.getSector(store, abi.SectorNumber(sectorNumber))
+			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNumber))
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 			}
@@ -497,7 +511,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 
 			sector.DeclaredFaultEpoch = effectiveEpoch
 			sector.DeclaredFaultDuration = params.Duration
-			if err = st.putSector(store, sector); err != nil {
+			if err = st.PutSector(store, sector); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNumber, err)
 			}
 		}
@@ -512,7 +526,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 	// Request deferred Cron invocation to update temporary fault state.
 	// TODO: cant we just lazily clean this up?
 	cronPayload := CronEventPayload{
-		EventType: CronEventType_Miner_TempFault,
+		EventType: cronEventTempFault,
 		Sectors:   &params.SectorNumbers,
 	}
 	// schedule cron event to start marking temp fault at BeginEpoch
@@ -538,23 +552,23 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
 	}
 
-	if payload.EventType == CronEventType_Miner_TempFault {
+	if payload.EventType == cronEventTempFault {
 		a.checkTemporaryFaultEvents(rt, payload.Sectors)
 	}
 
-	if payload.EventType == CronEventType_Miner_PreCommitExpiry {
+	if payload.EventType == cronEventPreCommitExpiry {
 		a.checkPrecommitExpiry(rt, payload.Sectors)
 	}
 
-	if payload.EventType == CronEventType_Miner_SectorExpiry {
+	if payload.EventType == cronEventSectorExpiry {
 		a.checkSectorExpiry(rt, payload.Sectors)
 	}
 
-	if payload.EventType == CronEventType_Miner_PoStExpiration {
+	if payload.EventType == cronEventWindowedPoStExpiration {
 		a.checkPoStProvingPeriodExpiration(rt)
 	}
 
-	if payload.EventType == CronEventType_Miner_WorkerKeyChange {
+	if payload.EventType == cronEventWorkerKeyChange {
 		a.commitWorkerKeyChange(rt)
 	}
 
@@ -578,7 +592,7 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 
 	rt.State().Transaction(&st, func() interface{} {
 		for _, sectorNo := range sectorNos {
-			sector, found, err := st.getSector(store, sectorNo)
+			sector, found, err := st.GetSector(store, sectorNo)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 			} else if !found {
@@ -603,7 +617,7 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 				if err = st.FaultSet.Unset(uint64(sectorNo)); err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNo, err)
 				}
-				if err = st.putSector(store, sector); err != nil {
+				if err = st.PutSector(store, sector); err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
 				}
 			}
@@ -629,12 +643,12 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 	depositToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
 		for _, sectorNo := range sectorNos {
-			sector, found, err := st.getPrecommittedSector(store, sectorNo)
+			sector, found, err := st.GetPrecommittedSector(store, sectorNo)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 			}
 			if found && rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
-				err = st.deletePrecommittedSector(store, sectorNo)
+				err = st.DeletePrecommittedSector(store, sectorNo)
 				if err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
 				}
@@ -657,7 +671,7 @@ func (a Actor) checkSectorExpiry(rt Runtime, sectors *abi.BitField) {
 	rt.State().Readonly(&st)
 	toTerminate := []abi.SectorNumber{}
 	for _, sectorNo := range sectorNos {
-		sector, found, err := st.getSector(adt.AsStore(rt), sectorNo)
+		sector, found, err := st.GetSector(adt.AsStore(rt), sectorNo)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 		}
@@ -683,7 +697,7 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 	faultPledge := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
 		for _, sectorNo := range sectorNos {
-			sector, found, err := st.getSector(store, sectorNo)
+			sector, found, err := st.GetSector(store, sectorNo)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", sectorNo, err)
 			}
@@ -705,12 +719,12 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 				faultPledge = big.Add(faultPledge, sector.PledgeRequirement)
 			}
 
-			err = st.deleteSector(store, sectorNo)
+			err = st.DeleteSector(store, sectorNo)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to delete sector: %v", err)
 			}
 
-			if !st.inChallengeWindow(rt) {
+			if !st.InChallengeWindow(rt) {
 				st.ProvingSet = st.Sectors
 			}
 		}
@@ -838,7 +852,7 @@ func (a Actor) requestTerminateAllDeals(rt Runtime, st *State) {
 	// TODO: this is an unbounded computation. Transform into an idempotent partial computation that can be
 	// progressed on each invocation.
 	dealIds := []abi.DealID{}
-	if err := st.forEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
+	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
 		dealIds = append(dealIds, sector.Info.DealIDs...)
 	}); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
@@ -887,29 +901,21 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Windowed PoSt. Too few tickets included.")
 	}
 
-	randomnessK := rt.GetRandomness(st.PoStState.ProvingPeriodStart)
-
 	// regenerate randomness used. The PoSt Verification below will fail if
 	// the same was not used to generate the proof
-	postRandomness := crypto.DeriveRandWithMinerAddr(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, randomnessK, rt.Message().Receiver())
 
 	store := adt.AsStore(rt)
-	provingSet := adt.AsArray(store, st.ProvingSet)
+	sectorInfos, err := st.ComputeProvingSet(store)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set.")
+	}
 
-	var sectorInfos []abi.SectorInfo
-	var ssinfo SectorOnChainInfo
-	provingSet.ForEach(&ssinfo, func(i int64) error {
-
-		// TODO: faults!!!!
-		sectorInfos = append(sectorInfos, abi.SectorInfo{
-			SealedCID:    ssinfo.Info.SealedCID,
-			SectorNumber: ssinfo.Info.SectorNumber,
-		})
-		return nil
-	})
+	var addrBuf bytes.Buffer
+	err = rt.Message().Receiver().MarshalCBOR(&addrBuf)
+	AssertNoError(err)
+	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, st.PoStState.ProvingPeriodStart, addrBuf.Bytes())
 
 	// Get public inputs
-
 	pvInfo := abi.PoStVerifyInfo{
 		Candidates:      onChainInfo.Candidates,
 		Proofs:          onChainInfo.Proofs,
@@ -935,8 +941,8 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
-	svInfoRandomness := rt.GetRandomness(onChainInfo.SealEpoch)
-	svInfoInteractiveRandomness := rt.GetRandomness(onChainInfo.InteractiveEpoch)
+	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealEpoch, nil)
+	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, nil)
 
 	svInfo := abi.SealVerifyInfo{
 		SectorID: abi.SectorID{
