@@ -531,7 +531,82 @@ func TestActor_Settle(t *testing.T)                           {
 }
 
 func TestActor_Collect(t *testing.T) {
+	t.Run("Happy path", func(t *testing.T) {
+		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
 
+		ep := abi.ChainEpoch(10)
+		rt.SetEpoch(ep)
+		var st State
+		rt.GetState(&st)
+
+		// Settle.
+		rt.SetCaller(st.From, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.Call(actor.Settle, &adt.EmptyValue{})
+
+		rt.GetState(&st)
+		require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+
+		// "wait" for SettlingAt epoch
+		rt.SetEpoch(12)
+
+		sentToFrom := big.Sub(big.NewInt(100), st.ToSend)
+		rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.Ok)
+		rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
+
+		// Collect.
+		rt.SetCaller(st.From, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+		res := rt.Call(actor.Collect, &adt.EmptyValue{})
+		require.Equal(t, &adt.EmptyValue{}, res)
+
+		var newSt State
+		rt.GetState(&newSt)
+		assert.Equal(t, big.Zero(), newSt.ToSend)
+	})
+
+	testCases := []struct{
+		name                                           string
+		expSendToCode, expSendFromCode, expCollectExit exitcode.ExitCode
+		dontSettle                                    bool
+	}{
+		{name: "fails if not settling", expCollectExit: exitcode.ErrForbidden},
+		{name: "fails if can't send to From", expSendFromCode:exitcode.ErrPlaceholder},
+		{name: "fails if can't send to To", expSendToCode: exitcode.ErrPlaceholder},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
+
+			ep := abi.ChainEpoch(10)
+			rt.SetEpoch(ep)
+			var st State
+			rt.GetState(&st)
+
+			if !tc.dontSettle {
+				rt.SetCaller(st.From, builtin.AccountActorCodeID)
+				rt.ExpectValidateCallerAddr(st.From, st.To)
+				rt.Call(actor.Settle, &adt.EmptyValue{})
+				rt.GetState(&st)
+				require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
+			}
+
+			// "wait" for SettlingAt epoch
+			rt.SetEpoch(12)
+
+			sentToFrom := big.Sub(big.NewInt(100), st.ToSend)
+			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.ErrPlaceholder)
+			rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
+
+			// Collect.
+			rt.SetCaller(st.From, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerAddr(st.From, st.To)
+			rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+				rt.Call(actor.Collect, &adt.EmptyValue{})
+			})
+		})
+	}
 }
 
 type pcActorHarness struct {
