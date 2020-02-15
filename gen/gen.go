@@ -180,6 +180,7 @@ func main() {
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
 		miner.DeclareTemporaryFaultsParams{},
+		miner.GetControlAddressesReturn{},
 		// other types
 		miner.CronEventPayload{},
 	); err != nil {
