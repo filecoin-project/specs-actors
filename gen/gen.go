@@ -28,6 +28,8 @@ func main() {
 		abi.PoStCandidate{},
 		abi.PoStProof{},
 		abi.PrivatePoStCandidateProof{},
+		abi.OnChainPoStVerifyInfo{},
+		abi.OnChainElectionPoStVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}
