@@ -176,8 +176,8 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		SectorSize: params.SectorSize,
 		PeerId:     params.Peer,
 	}
-	var ctorParamBytes []byte
-	err := ctorParams.MarshalCBOR(bytes.NewBuffer(ctorParamBytes))
+	ctorParamBuf := new(bytes.Buffer)
+	err := ctorParams.MarshalCBOR(ctorParamBuf)
 	if err != nil {
 		rt.Abortf(exitcode.ErrPlaceholder, "failed to serialize miner constructor params %v: %v", ctorParams, err)
 	}
@@ -186,7 +186,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		builtin.MethodsInit.Exec,
 		&initact.ExecParams{
 			CodeCID:           builtin.StorageMinerActorCodeID,
-			ConstructorParams: ctorParamBytes,
+			ConstructorParams: ctorParamBuf.Bytes(),
 		},
 		abi.NewTokenAmount(0),
 	)
