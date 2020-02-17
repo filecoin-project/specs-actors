@@ -76,14 +76,11 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 	}
 
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
-		}
-		return state
-	})
+	state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
+	}
+	rt.State().Create(state)
 	return &adt.EmptyValue{}
 }
 
