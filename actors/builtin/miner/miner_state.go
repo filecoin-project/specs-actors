@@ -38,7 +38,7 @@ type MinerInfo struct {
 	// other day to day miner activities.
 	Worker addr.Address // Must be an ID-address.
 
-	PendingWorkerKey WorkerKeyChange
+	PendingWorkerKey *WorkerKeyChange
 
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
@@ -104,7 +104,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 		Info: MinerInfo{
 			Owner:            ownerAddr,
 			Worker:           workerAddr,
-			PendingWorkerKey: WorkerKeyChange{},
+			PendingWorkerKey: nil,
 			PeerId:           peerId,
 			SectorSize:       sectorSize,
 		},

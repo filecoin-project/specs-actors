@@ -122,7 +122,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
 		// This may replace another pending key change.
-		st.Info.PendingWorkerKey = WorkerKeyChange{
+		st.Info.PendingWorkerKey = &WorkerKeyChange{
 			NewWorker:   params.NewKey,
 			EffectiveAt: effectiveEpoch,
 		}
@@ -978,7 +978,7 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if (st.Info.PendingWorkerKey == WorkerKeyChange{}) {
+		if st.Info.PendingWorkerKey == nil {
 			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
 		}
 
@@ -987,7 +987,7 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 		}
 
 		st.Info.Worker = st.Info.PendingWorkerKey.NewWorker
-		st.Info.PendingWorkerKey = WorkerKeyChange{}
+		st.Info.PendingWorkerKey = nil
 
 		return nil
 	})
