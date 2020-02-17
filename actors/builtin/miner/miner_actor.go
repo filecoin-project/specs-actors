@@ -69,7 +69,7 @@ var _ abi.Invokee = Actor{}
 type ConstructorParams = power.MinerConstructorParams
 
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
 	if params.WorkerAddr.Protocol() != addr.BLS {
