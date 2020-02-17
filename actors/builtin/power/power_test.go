@@ -40,6 +40,12 @@ func TestConstruction(t *testing.T) {
 			SectorSize: abi.SectorSize(int64(32)),
 			Peer:       "miner1",
 		}
+		initCreateMinerParams := &power.MinerConstructorParams{
+			OwnerAddr:     owner1,
+			WorkerAddr:     worker1,
+			SectorSize: abi.SectorSize(int64(32)),
+			PeerId:       "miner1",
+		}
 
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -53,14 +59,19 @@ func TestConstruction(t *testing.T) {
 			IDAddress:     miner1, // miner actor id address
 			RobustAddress: unused, // should be long miner actor address
 		}
-		var ctorParamBytes []byte
-		err := createMinerParams.MarshalCBOR(bytes.NewBuffer(ctorParamBytes))
+		createMinerBuf := new(bytes.Buffer)
+		err := createMinerParams.MarshalCBOR(createMinerBuf)
+		require.NoError(t, err)
+
+		initCreateMinerBuf := new(bytes.Buffer)
+		err = initCreateMinerParams.MarshalCBOR(initCreateMinerBuf)
 		require.NoError(t, err)
 		msgParams := &initact.ExecParams{
 			CodeCID:           builtin.StorageMinerActorCodeID,
-			ConstructorParams: ctorParamBytes,
+			ConstructorParams: initCreateMinerBuf.Bytes(),
 		}
 		rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
+
 		rt.Call(actor.Actor.CreateMiner, createMinerParams)
 		rt.Verify()
 

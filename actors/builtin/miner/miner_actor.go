@@ -69,21 +69,18 @@ var _ abi.Invokee = Actor{}
 type ConstructorParams = power.MinerConstructorParams
 
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
 	if params.WorkerAddr.Protocol() != addr.BLS {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
 	}
 
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
-		}
-		return state
-	})
+	state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
+	}
+	rt.State().Create(state)
 	return &adt.EmptyValue{}
 }
 
@@ -125,7 +122,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
 		// This may replace another pending key change.
-		st.Info.PendingWorkerKey = WorkerKeyChange{
+		st.Info.PendingWorkerKey = &WorkerKeyChange{
 			NewWorker:   params.NewKey,
 			EffectiveAt: effectiveEpoch,
 		}
@@ -981,7 +978,7 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if (st.Info.PendingWorkerKey == WorkerKeyChange{}) {
+		if st.Info.PendingWorkerKey == nil {
 			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
 		}
 
@@ -990,7 +987,7 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 		}
 
 		st.Info.Worker = st.Info.PendingWorkerKey.NewWorker
-		st.Info.PendingWorkerKey = WorkerKeyChange{}
+		st.Info.PendingWorkerKey = nil
 
 		return nil
 	})

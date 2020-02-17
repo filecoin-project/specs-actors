@@ -219,8 +219,20 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
+		pb, err := br.PeekByte()
+		if err != nil {
 			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.PendingWorkerKey = new(WorkerKeyChange)
+			if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
+				return err
+			}
 		}
 
 	}
