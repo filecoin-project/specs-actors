@@ -1046,8 +1046,15 @@ func (t *ProveCommitSectorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Proof (abi.SealProof) (struct)
-	if err := t.Proof.MarshalCBOR(w); err != nil {
+	// t.Proof ([]uint8) (slice)
+	if len(t.Proof) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Proof was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Proof)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.Proof); err != nil {
 		return err
 	}
 	return nil
@@ -1078,14 +1085,22 @@ func (t *ProveCommitSectorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("wrong type for uint64 field")
 	}
 	t.SectorNumber = abi.SectorNumber(extra)
-	// t.Proof (abi.SealProof) (struct)
+	// t.Proof ([]uint8) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		if err := t.Proof.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Proof: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Proof = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Proof); err != nil {
+		return err
 	}
 	return nil
 }

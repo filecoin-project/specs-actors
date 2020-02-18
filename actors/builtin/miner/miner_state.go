@@ -7,6 +7,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
@@ -119,6 +120,7 @@ func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 	if err != nil {
 		return errors.Wrapf(err, "failed to store precommitment for %v", info)
 	}
+	st.PreCommittedSectors = precommitted.Root()
 	return nil
 }
 
@@ -138,6 +140,7 @@ func (st *State) DeletePrecommittedSector(store adt.Store, sectorNo abi.SectorNu
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
 	}
+	st.PreCommittedSectors = precommitted.Root()
 	return nil
 }
 
@@ -146,7 +149,7 @@ func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, 
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get sector %v", sectorNo)
+		return false, xerrors.Errorf("failed to get sector %v: %w", sectorNo, err)
 	}
 	return found, nil
 }
@@ -156,6 +159,7 @@ func (st *State) PutSector(store adt.Store, sector *SectorOnChainInfo) error {
 	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
+	st.Sectors = sectors.Root()
 	return nil
 }
 
@@ -174,6 +178,7 @@ func (st *State) DeleteSector(store adt.Store, sectorNo abi.SectorNumber) error 
 	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
 	}
+	st.Sectors = sectors.Root()
 	return nil
 }
 

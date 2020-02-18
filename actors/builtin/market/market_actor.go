@@ -1,6 +1,7 @@
 package market
 
 import (
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -156,22 +157,30 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
+
+		_, worker := builtin.RequestMinerControlAddrs(rt, params.Deals[0].Proposal.Provider)
+
 		for _, deal := range params.Deals {
-			if deal.Proposal.Provider != rt.Message().Caller() {
+
+			if worker != rt.Message().Caller() {
 				rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
 			}
 
 			validateDeal(rt, deal)
 
+			client, ok := rt.ResolveAddress(deal.Proposal.Client)
+			if !ok {
+				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
+			}
 			// Before any operations that check the balance tables for funds, execute all deferred
 			// deal state updates.
 			//
 			// Note: as an optimization, implementations may cache efficient data structures indicating
 			// which of the following set of updates are redundant and can be skipped.
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Client))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, client))
 			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Provider))
 
-			st.lockBalanceOrAbort(rt, deal.Proposal.Client, deal.Proposal.ClientBalanceRequirement())
+			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
 			st.lockBalanceOrAbort(rt, deal.Proposal.Provider, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
@@ -181,7 +190,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
-			if err = dbp.Put(deal.Proposal.Client, id); err != nil {
+			if err = dbp.Put(client, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set client deal id: %v", err)
 			}
 			if err = dbp.Put(deal.Proposal.Provider, id); err != nil {
@@ -198,6 +207,22 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &PublishStorageDealsReturn{newDealIds}
+}
+
+func resolveControlKeys(rt Runtime, deals []ClientDealProposal) map[address.Address][]address.Address {
+	out := make(map[address.Address][]address.Address)
+	for _, d := range deals {
+		_, ok := out[d.Proposal.Provider]
+		if ok {
+			continue
+		}
+
+		owner, worker := builtin.RequestMinerControlAddrs(rt, d.Proposal.Provider)
+
+		out[d.Proposal.Provider] = []address.Address{owner, worker}
+	}
+
+	return out
 }
 
 type VerifyDealsOnSectorProveCommitParams struct {
@@ -371,8 +396,8 @@ func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiratio
 }
 
 func validateDeal(rt Runtime, deal ClientDealProposal) {
-	if !dealProposalIsInternallyValid(rt, deal) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal.")
+	if err := dealProposalIsInternallyValid(rt, deal); err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal: %s", err)
 	}
 
 	proposal := deal.Proposal
