@@ -124,7 +124,7 @@ func (a *Array) Get(k uint64, out runtime.CBORUnmarshaler) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if _, nf := err.(amt.ErrNotFound); nf {
+	if _, nf := err.(*amt.ErrNotFound); nf {
 		return false, nil
 	}
 
