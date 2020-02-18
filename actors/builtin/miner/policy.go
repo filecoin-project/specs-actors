@@ -50,5 +50,3 @@ const MaxFaultsCount = 32 << 20
 
 // ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
 const ProvingPeriod = 300
-
-const PoRepMaxDelay = 1000 // PARAM_FINISH
