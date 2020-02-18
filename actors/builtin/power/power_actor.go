@@ -63,8 +63,8 @@ var _ abi.Invokee = Actor{}
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
 type MinerConstructorParams struct {
-	OwnerAddr  addr.Address
-	WorkerAddr addr.Address
+	OwnerAddr  addr.Address // Must be an ID-address.
+	WorkerAddr addr.Address // Must be an ID-address.
 	SectorSize abi.SectorSize
 	PeerId     peer.ID
 }
@@ -156,7 +156,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 }
 
 type CreateMinerParams struct {
-	Worker     addr.Address
+	Worker     addr.Address // Must be an ID-address.
 	SectorSize abi.SectorSize
 	Peer       peer.ID
 }
