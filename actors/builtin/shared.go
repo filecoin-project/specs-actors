@@ -29,6 +29,6 @@ func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (owner
 
 // This type duplicates the Miner.ControlAddresses return type, to work around a circular dependency between actors.
 type MinerAddrs struct {
-	Owner addr.Address
+	Owner  addr.Address
 	Worker addr.Address
 }

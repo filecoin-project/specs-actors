@@ -7,6 +7,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 )
@@ -116,7 +117,7 @@ func (a *Array) write(root *amt.Root) error {
 func (a *Array) Get(k uint64, out runtime.CBORUnmarshaler) (bool, error) {
 	root, err := amt.LoadAMT(a.store.Context(), a.store, a.root)
 	if err != nil {
-		return false, errors.Wrapf(err, "array get failed to load root %v", a.root)
+		return false, xerrors.Errorf("array get failed to load root %v: %w", a.root, err)
 	}
 
 	err = root.Get(a.store.Context(), k, out)

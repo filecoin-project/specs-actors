@@ -4,9 +4,11 @@ import (
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-amt-ipld/v2"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
@@ -119,6 +121,7 @@ func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 	if err != nil {
 		return errors.Wrapf(err, "failed to store precommitment for %v", info)
 	}
+	st.PreCommittedSectors = precommitted.Root()
 	return nil
 }
 
@@ -146,7 +149,12 @@ func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, 
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get sector %v", sectorNo)
+		var enf *amt.ErrNotFound
+		if xerrors.As(err, &enf) {
+			return false, nil
+		}
+
+		return false, xerrors.Errorf("failed to get sector %v: %w", sectorNo, err)
 	}
 	return found, nil
 }

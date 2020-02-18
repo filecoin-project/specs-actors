@@ -134,64 +134,6 @@ func (t *SectorID) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *SealProof) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{129}); err != nil {
-		return err
-	}
-
-	// t.ProofBytes ([]uint8) (slice)
-	if len(t.ProofBytes) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.ProofBytes was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.ProofBytes)))); err != nil {
-		return err
-	}
-	if _, err := w.Write(t.ProofBytes); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *SealProof) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.ProofBytes ([]uint8) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.ProofBytes: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-	t.ProofBytes = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.ProofBytes); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -363,8 +305,15 @@ func (t *OnChainSealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Proof (abi.SealProof) (struct)
-	if err := t.Proof.MarshalCBOR(w); err != nil {
+	// t.Proof ([]uint8) (slice)
+	if len(t.Proof) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Proof was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Proof)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.Proof); err != nil {
 		return err
 	}
 
@@ -477,14 +426,22 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 
 		t.RegisteredProof = RegisteredProof(extraI)
 	}
-	// t.Proof (abi.SealProof) (struct)
+	// t.Proof ([]uint8) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		if err := t.Proof.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Proof: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Proof = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Proof); err != nil {
+		return err
 	}
 	// t.DealIDs ([]abi.DealID) (slice)
 

@@ -26,7 +26,7 @@ const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
 // Lookback from the current epoch for state view for elections; for Election PoSt, same as the PoSt lookback.
 const ElectionLookback = PoStLookback // PARAM_FINISH
 
-// Number of sectors to be sampled as part of surprise PoSt
+// Number of sectors to be sampled as part of fallback PoSt
 const NumWindowedPoStSectors = 200 // PARAM_FINISH
 
 // Delay between declaration of a temporary sector fault and effectiveness of reducing the active proving set for PoSts.
@@ -50,3 +50,5 @@ const MaxFaultsCount = 32 << 20
 
 // ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
 const ProvingPeriod = 300
+
+const PoRepMaxDelay = 1000 // PARAM_FINISH

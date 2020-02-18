@@ -39,14 +39,14 @@ func (s *syscaller) ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces [
 	return cid.Undef, nil
 }
 
-func (s *syscaller) VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) bool {
+func (s *syscaller) VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) (bool, error) {
 	s.PanicOnUnsetFunc("SealVerifier")
-	return false
+	return false, nil
 }
 
-func (s *syscaller) VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool {
+func (s *syscaller) VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) (bool, error) {
 	s.PanicOnUnsetFunc("PoStVerifier")
-	return false
+	return false, nil
 }
 
 func (s *syscaller) VerifyConsensusFault(h1, h2 []byte) bool {

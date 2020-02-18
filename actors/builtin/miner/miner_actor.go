@@ -263,7 +263,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 type ProveCommitSectorParams struct {
 	SectorNumber abi.SectorNumber
-	Proof        abi.SealProof
+	Proof        []byte
 }
 
 func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
@@ -281,6 +281,15 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
+	if rt.CurrEpoch() > precommit.PreCommitEpoch+PoRepMaxDelay || rt.CurrEpoch() < precommit.PreCommitEpoch+PreCommitChallengeDelay {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch (cur=%d, pcepoch=%d)", rt.CurrEpoch(), precommit.PreCommitEpoch)
+	}
+
+	TODO()
+	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
+	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
+
+	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
@@ -921,7 +930,11 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	}
 
 	// Verify the PoSt Proof
-	if !rt.Syscalls().VerifyPoSt(sectorSize, pvInfo) {
+	ok, err := rt.Syscalls().VerifyPoSt(sectorSize, pvInfo)
+	if err != nil {
+		rt.Abortf(exitcode.SysErrInternal, "failed to verify post: %w", err)
+	}
+	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid PoSt %+v", pvInfo)
 	}
 }
@@ -951,7 +964,11 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
 		UnsealedCID:           commD,
 	}
-	if !rt.Syscalls().VerifySeal(sectorSize, svInfo) {
+	ok, err := rt.Syscalls().VerifySeal(sectorSize, svInfo)
+	if err != nil {
+		rt.Abortf(exitcode.SysErrInternal, "failed to verify seal: %w", err)
+	}
+	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "invalid seal %+v", svInfo)
 	}
 }
