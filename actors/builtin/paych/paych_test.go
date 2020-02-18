@@ -44,12 +44,12 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 	})
 
 	testCases := []struct {
-		desc         string
-		newActorAddr addr.Address
-		callerCode   cid.Cid
-		newActorCode cid.Cid
-		payerCode    cid.Cid
-		expExitCode  exitcode.ExitCode
+		desc               string
+		paymentChannelAddr addr.Address
+		callerCode         cid.Cid
+		newActorCode       cid.Cid
+		payerCode          cid.Cid
+		expExitCode        exitcode.ExitCode
 	}{
 		{"fails if target (to) is not account actor",
 			paychAddr,
@@ -64,9 +64,9 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			builtin.AccountActorCodeID,
 			exitcode.ErrIllegalArgument,
 		}, {"fails if addr is not ID type",
-			tutil.NewActorAddr(t, "beach blanket babylon"),
+			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
 			builtin.InitActorCodeID,
-			builtin.MultisigActorCodeID,
+			builtin.AccountActorCodeID,
 			builtin.AccountActorCodeID,
 			exitcode.ErrIllegalArgument,
 		},
@@ -75,15 +75,26 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			builder := mock.NewBuilder(ctx, paychAddr).
 				WithCaller(callerAddr, tc.callerCode).
-				WithActorType(paychAddr, tc.newActorCode).
+				WithActorType(tc.paymentChannelAddr, tc.newActorCode).
 				WithActorType(payerAddr, tc.payerCode)
 			rt := builder.Build(t)
 			rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 			rt.ExpectAbort(tc.expExitCode, func() {
-				rt.Call(actor.Constructor, &ConstructorParams{To: paychAddr})
+				rt.Call(actor.Constructor, &ConstructorParams{To: tc.paymentChannelAddr})
 			})
 		})
 	}
+
+	t.Run("fails if actor does not exist with: no code for address", func(t *testing.T) {
+		builder := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID)
+		rt := builder.Build(t)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{To: paychAddr})
+		})
+	})
 }
 
 func TestPaymentChannelActor_CreateLaneSuccess(t *testing.T) {
@@ -348,6 +359,42 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 
 		})
 	}
+	t.Run("When lane doesn't exist, fails with: voucher specifies invalid merge lane 999", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 2)
+
+		var st1 State
+		rt.GetState(&st1)
+		mergeTo := st1.LaneStates[0]
+		mergeFrom := LaneState{ ID:       999,  Nonce:    2,}
+
+		sv.Lane = mergeTo.ID
+		sv.Nonce = 10
+		merges := []Merge{{Lane: mergeFrom.ID, Nonce: sv.Nonce}}
+		sv.Merges = merges
+		ucp := &UpdateChannelStateParams{Sv: *sv}
+
+		rt.SetCaller(st1.From, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st1.From, st1.To)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.UpdateChannelState, ucp)
+		})
+	})
+
+	t.Run("Too many lanes, fails with: lane limit exceeded", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), LaneLimit)
+
+		var st1 State
+		rt.GetState(&st1)
+		sv.Lane++
+		sv.Nonce++
+		sv.Amount = abi.NewTokenAmount(100)
+		ucp := &UpdateChannelStateParams{Sv: *sv}
+		rt.SetCaller(st1.From, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st1.From, st1.To)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.UpdateChannelState, ucp)
+		})
+	})
 }
 
 func TestActor_UpdateChannelStateExtra(t *testing.T) {
@@ -551,7 +598,8 @@ func TestActor_Collect(t *testing.T) {
 		// "wait" for SettlingAt epoch
 		rt.SetEpoch(12)
 
-		sentToFrom := big.Sub(big.NewInt(100), st.ToSend)
+		bal := rt.GetBalance()
+		sentToFrom := big.Sub(bal, st.ToSend)
 		rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.Ok)
 		rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
 
@@ -571,9 +619,9 @@ func TestActor_Collect(t *testing.T) {
 		expSendToCode, expSendFromCode, expCollectExit exitcode.ExitCode
 		dontSettle                                    bool
 	}{
-		{name: "fails if not settling", expCollectExit: exitcode.ErrForbidden},
-		{name: "fails if can't send to From", expSendFromCode:exitcode.ErrPlaceholder},
-		{name: "fails if can't send to To", expSendToCode: exitcode.ErrPlaceholder},
+		{name: "fails if not settling with: payment channel not settling or settled", dontSettle: true, expCollectExit: exitcode.ErrForbidden},
+		{name: "fails if can't send to From", expSendFromCode:exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
+		{name: "fails if can't send to To", expSendToCode: exitcode.ErrPlaceholder, expCollectExit:exitcode.ErrPlaceholder},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -595,14 +643,14 @@ func TestActor_Collect(t *testing.T) {
 			// "wait" for SettlingAt epoch
 			rt.SetEpoch(12)
 
-			sentToFrom := big.Sub(big.NewInt(100), st.ToSend)
+			sentToFrom := big.Sub(rt.GetBalance(), st.ToSend)
 			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.ErrPlaceholder)
 			rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
 
 			// Collect.
 			rt.SetCaller(st.From, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(st.From, st.To)
-			rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+			rt.ExpectAbort(tc.expCollectExit, func() {
 				rt.Call(actor.Collect, &adt.EmptyValue{})
 			})
 		})
@@ -627,7 +675,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 	paychAddr := tutil.NewIDAddr(t, 100)
 	callerAddr := tutil.NewIDAddr(t, 101)
 	payerAddr := tutil.NewIDAddr(t, 102)
-	balance := abi.NewTokenAmount(100)
+	balance := abi.NewTokenAmount(100000)
 	received := abi.NewTokenAmount(0)
 	curEpoch := 2
 
