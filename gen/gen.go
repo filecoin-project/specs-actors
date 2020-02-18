@@ -1,6 +1,8 @@
 package main
 
 import (
+	gen "github.com/whyrusleeping/cbor-gen"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
@@ -12,9 +14,6 @@ import (
 	paych "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
-	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
-
-	gen "github.com/whyrusleeping/cbor-gen"
 )
 
 func main() {
@@ -36,12 +35,6 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},
-	); err != nil {
-		panic(err)
-	}
-
-	if err := gen.WriteTupleEncodersToFile("./actors/crypto/cbor_gen.go", "crypto",
-		crypto.Signature{},
 	); err != nil {
 		panic(err)
 	}
