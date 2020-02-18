@@ -83,3 +83,14 @@ func ActorNameByCode(code cid.Cid) string {
 	}
 	return name
 }
+
+// Tests whether a code CID represents an actor that can be an external principal: i.e. an account or multisig.
+// We could do something more sophisticated here: https://github.com/filecoin-project/specs-actors/issues/178
+func IsPrincipal(code cid.Cid) bool {
+	for _, c := range CallerTypesSignable {
+		if c.Equals(code) {
+			return true
+		}
+	}
+	return false
+}
