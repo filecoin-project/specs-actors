@@ -165,7 +165,7 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return tc.verifySig }
-			hasher := func(data []byte) []byte { return data }
+			hasher := func(data []byte) [8]byte { return [8]byte{} }
 
 			builder := mock.NewBuilder(ctx, paychAddr).
 				WithBalance(abi.NewTokenAmount(9), abi.NewTokenAmount(tc.received)).
@@ -365,7 +365,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		var st1 State
 		rt.GetState(&st1)
 		mergeTo := st1.LaneStates[0]
-		mergeFrom := LaneState{ ID:       999,  Nonce:    2,}
+		mergeFrom := LaneState{ID: 999, Nonce: 2,}
 
 		sv.Lane = mergeTo.ID
 		sv.Nonce = 10
@@ -447,7 +447,6 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 	require.Equal(t, expSettlingAt, st.SettlingAt)
 	require.Equal(t, abi.ChainEpoch(0), st.MinSettleHeight)
 
-
 	ucp := &UpdateChannelStateParams{Sv: *sv}
 
 	testCases := []struct {
@@ -483,10 +482,13 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 	var st State
 	rt.GetState(&st)
 
-	rt.SetHasher(func(data []byte) []byte {
-		return append(data, 'X')
+	rt.SetHasher(func(data []byte) [8]byte {
+		xform := append(data, 'X')
+		var res [8]byte
+		copy(res[:], xform)
+		return res
 	})
-	secret := []byte("Professor")
+	secret := []byte("Profesr")
 
 	ucp := &UpdateChannelStateParams{
 		Sv:     *sv,
@@ -494,7 +496,7 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		Proof:  nil,
 	}
 	t.Run("Succeeds with correct secret", func(t *testing.T) {
-		ucp.Sv.SecretPreimage = []byte("ProfessorX")
+		ucp.Sv.SecretPreimage = []byte("ProfesrX")
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.Call(actor.UpdateChannelState, ucp)
 	})
@@ -508,7 +510,7 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 	})
 }
 
-func TestActor_Settle(t *testing.T)                           {
+func TestActor_Settle(t *testing.T) {
 	t.Run("Settle adjusts SettlingAt", func(t *testing.T) {
 		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
 
@@ -554,7 +556,7 @@ func TestActor_Settle(t *testing.T)                           {
 		rt.GetState(&st)
 
 		// UpdateChannelState to increase MinSettleHeight only
-		ucp := &UpdateChannelStateParams{ Sv: *sv}
+		ucp := &UpdateChannelStateParams{Sv: *sv}
 		ucp.Sv.MinSettleHeight = (ep + SettleDelay) + 1
 
 		rt.ExpectValidateCallerAddr(st.From, st.To)
@@ -614,14 +616,14 @@ func TestActor_Collect(t *testing.T) {
 		assert.Equal(t, big.Zero(), newSt.ToSend)
 	})
 
-	testCases := []struct{
+	testCases := []struct {
 		name                                           string
 		expSendToCode, expSendFromCode, expCollectExit exitcode.ExitCode
-		dontSettle                                    bool
+		dontSettle                                     bool
 	}{
 		{name: "fails if not settling with: payment channel not settling or settled", dontSettle: true, expCollectExit: exitcode.ErrForbidden},
-		{name: "fails if can't send to From", expSendFromCode:exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
-		{name: "fails if can't send to To", expSendToCode: exitcode.ErrPlaceholder, expCollectExit:exitcode.ErrPlaceholder},
+		{name: "fails if can't send to From", expSendFromCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
+		{name: "fails if can't send to To", expSendToCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -680,7 +682,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 	curEpoch := 2
 
 	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
-	hasher := func(data []byte) []byte { return data }
+	hasher := func(data []byte) [8]byte { return [8]byte{} }
 
 	builder := mock.NewBuilder(ctx, paychAddr).
 		WithBalance(balance, received).
