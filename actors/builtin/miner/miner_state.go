@@ -33,9 +33,7 @@ type MinerInfo struct {
 	Owner addr.Address // Must be an ID-address.
 
 	// Worker account for this miner.
-	// This will be the key that is used to sign blocks created by this miner, and
-	// sign messages sent on behalf of this miner to commit sectors, submit PoSts, and
-	// other day to day miner activities.
+	// The associated pubkey-type address is used to sign blocks and messages on behalf of this miner.
 	Worker addr.Address // Must be an ID-address.
 
 	PendingWorkerKey *WorkerKeyChange
