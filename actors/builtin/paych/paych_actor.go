@@ -284,7 +284,6 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	}
 
 	// send remaining balance to "From"
-
 	_, codeFrom := rt.Send(
 		st.From,
 		builtin.MethodSend,
@@ -294,9 +293,8 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	builtin.RequireSuccess(rt, codeFrom, "Failed to send balance to `From`")
 
 	// send ToSend to "To"
-
 	_, codeTo := rt.Send(
-		st.From,
+		st.To,
 		builtin.MethodSend,
 		nil,
 		abi.NewTokenAmount(st.ToSend.Int64()),
