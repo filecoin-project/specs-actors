@@ -177,6 +177,7 @@ func main() {
 		// method params
 		// miner.ConstructorParams{},
 		miner.TerminateSectorsParams{},
+		miner.ChangePeerIDParams{},
 		miner.ProveCommitSectorParams{},
 		miner.OnDeferredCronEventParams{},
 		miner.ChangeWorkerAddressParams{},
