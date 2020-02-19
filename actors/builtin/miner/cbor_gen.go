@@ -1121,8 +1121,8 @@ func (t *ChangeWorkerAddressParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.NewKey (address.Address) (struct)
-	if err := t.NewKey.MarshalCBOR(w); err != nil {
+	// t.NewWorker (address.Address) (struct)
+	if err := t.NewWorker.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -1143,11 +1143,11 @@ func (t *ChangeWorkerAddressParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.NewKey (address.Address) (struct)
+	// t.NewWorker (address.Address) (struct)
 
 	{
 
-		if err := t.NewKey.UnmarshalCBOR(br); err != nil {
+		if err := t.NewWorker.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 

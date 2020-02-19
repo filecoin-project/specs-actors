@@ -61,6 +61,7 @@ func TestAccountactor(t *testing.T) {
 				rt.GetState(&st)
 				assert.Equal(t, tc.addr, st.Address)
 
+				rt.ExpectValidateCallerAny()
 				pubkeyAddress := rt.Call(actor.PubkeyAddress, &adt.EmptyValue{}).(address.Address)
 				assert.Equal(t, tc.addr, pubkeyAddress)
 			} else {
