@@ -40,13 +40,12 @@ func ConstructState(store adt.Store, networkName string) (*State, error) {
 //
 // Post-condition: all addresses succesfully returned by this method satisfy `addr.Protocol() == addr.ID`.
 func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Address, error) {
-	// short-circuit ID address resolution
-	// Note: ID addresses are not stored in the init actor
+	// Short-circuit ID address resolution.
 	if address.Protocol() == addr.ID {
 		return address, nil
 	}
 
-	// lookup address
+	// Lookup address.
 	m := adt.AsMap(store, s.AddressMap)
 	var actorID cbg.CborInt
 	found, err := m.Get(AddrKey(address), &actorID)
@@ -54,13 +53,13 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 		return addr.Undef, errors.Wrapf(err, "resolve address failed to look up map")
 	}
 	if found {
-		// reconstruct the address based on the ActorID
+		// Reconstruct address from the ActorID.
 		idAddr, err2 := addr.NewIDAddress(uint64(actorID))
 		autil.Assert(err2 == nil)
 		return idAddr, nil
 	}
 
-	// address was not found
+	// Not found.
 	return addr.Undef, errors.New("address not found")
 }
 
