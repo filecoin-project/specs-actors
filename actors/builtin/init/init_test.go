@@ -7,6 +7,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 
+	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -131,11 +132,11 @@ func TestExec(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIdAddr, actualIdAddr)
 
-		// should return the same address if not able to resolve
+		// returns error if not able to resolve
 		expUnknowAddr := tutil.NewActorAddr(t, "flurbo")
 		actualUnknownAddr, err := st.ResolveAddress(adt.AsStore(rt), expUnknowAddr)
-		assert.NoError(t, err)
-		assert.Equal(t, expUnknowAddr, actualUnknownAddr)
+		assert.Error(t, err)
+		assert.Equal(t, addr.Undef, actualUnknownAddr)
 	})
 
 	t.Run("sending to constructor failure", func(t *testing.T) {
@@ -162,12 +163,12 @@ func TestExec(t *testing.T) {
 			assert.Nil(t, execRet)
 		})
 
-		// since the send failed the uniqueAddr should resolve to itself instead of an ID address
+		// since the send failed the uniqueAddr not resolve
 		var st init_.State
 		rt.GetState(&st)
 		noResoAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
-		assert.NoError(t, err)
-		assert.Equal(t, uniqueAddr, noResoAddr)
+		assert.Error(t, err)
+		assert.Equal(t, addr.Undef, noResoAddr)
 
 	})
 
