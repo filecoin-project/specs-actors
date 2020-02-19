@@ -141,6 +141,7 @@ func (st *State) DeletePrecommittedSector(store adt.Store, sectorNo abi.SectorNu
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
 	}
+	st.PreCommittedSectors = precommitted.Root()
 	return nil
 }
 
@@ -164,6 +165,7 @@ func (st *State) PutSector(store adt.Store, sector *SectorOnChainInfo) error {
 	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
+	st.Sectors = sectors.Root()
 	return nil
 }
 
@@ -182,6 +184,7 @@ func (st *State) DeleteSector(store adt.Store, sectorNo abi.SectorNumber) error 
 	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
 	}
+	st.Sectors = sectors.Root()
 	return nil
 }
 
