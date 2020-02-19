@@ -410,6 +410,11 @@ func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
 }
 
+// Get balance outside of a runtime call for test purposes
+func (rt *Runtime) GetBalance() abi.TokenAmount {
+	return rt.balance
+}
+
 func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
 	rt.valueReceived = amt
 }
