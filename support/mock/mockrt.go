@@ -30,6 +30,7 @@ type Runtime struct {
 	callerType    cid.Cid
 	miner         addr.Address
 	valueReceived abi.TokenAmount
+	idAddresses   map[addr.Address]addr.Address
 	actorCodeCIDs map[addr.Address]cid.Cid
 	newActorAddr  addr.Address
 
@@ -142,6 +143,15 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
 	rt.requireInCall()
 	return rt.balance
+}
+
+func (rt *Runtime) ResolveAddress(address addr.Address) (ret addr.Address, ok bool) {
+	rt.requireInCall()
+	if address.Protocol() == addr.ID {
+		return address, true
+	}
+	resolved, ok := rt.idAddresses[address]
+	return resolved, ok
 }
 
 func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
@@ -406,6 +416,11 @@ func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
 
 func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
 	rt.epoch = epoch
+}
+
+func (rt *Runtime) AddIDAddress(src addr.Address, target addr.Address) {
+	rt.require(target.Protocol() == addr.ID, "target must use ID address protocol")
+	rt.idAddresses[src] = target
 }
 
 func (rt *Runtime) SetNewActorAddress(actAddr addr.Address) {
