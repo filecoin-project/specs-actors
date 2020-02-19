@@ -46,40 +46,38 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
 
 	// check that both parties are capable of signing vouchers
-	err := pca.validateActor(rt, params.To)
+	to, err := pca.resolveAccount(rt, params.To)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
 	}
-	err = pca.validateActor(rt, params.From)
+	from, err := pca.resolveAccount(rt, params.From)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
 	}
 
-	st := ConstructState(params.From, params.To)
+	st := ConstructState(from, to)
 	rt.State().Create(st)
 
 	return &adt.EmptyValue{}
 }
 
-// validateActor requires an actor to be an account actor and to have a canonical ID address.
-// The account actor constructor checks that the embedded address is associated
-// with an appropriate key.
+// Resolves an address to a canonical ID address and requires it to address an account actor.
+// The account actor constructor checks that the embedded address is associated with an appropriate key.
 // An alternative (more expensive) would be to send a message to the actor to fetch its key.
-func (pca *Actor) validateActor(rt vmr.Runtime, actorAddr addr.Address) error {
-	codeCID, ok := rt.GetActorCodeCID(actorAddr)
+func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error) {
+	resolved, ok := rt.ResolveAddress(raw)
 	if !ok {
-		return fmt.Errorf("no code for address %v", actorAddr)
+		return addr.Undef, fmt.Errorf("failed to resolve address %v", raw)
+	}
+
+	codeCID, ok := rt.GetActorCodeCID(resolved)
+	if !ok {
+		return addr.Undef,fmt.Errorf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
-		return fmt.Errorf("actor %v must be an account (%v), was %v",
-			actorAddr, builtin.AccountActorCodeID, codeCID)
+		return addr.Undef, fmt.Errorf("actor %v must be an account (%v), was %v", raw, builtin.AccountActorCodeID, codeCID)
 	}
-	// Check that target is a canonical ID address.
-	// This is required for consistent caller validation.
-	if actorAddr.Protocol() != addr.ID {
-		return fmt.Errorf("address must be an ID-address, %v is %v", actorAddr, actorAddr.Protocol())
-	}
-	return nil
+	return resolved, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
