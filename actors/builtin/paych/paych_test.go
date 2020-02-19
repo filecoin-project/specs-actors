@@ -2,6 +2,7 @@ package paych_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -35,12 +36,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			WithActorType(paychAddr, builtin.AccountActorCodeID).
 			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, payerAddr, paychAddr)
-		var st State
-		rt.GetState(&st)
-		assert.Equal(t, paychAddr, st.To)
-		assert.Equal(t, payerAddr, st.From)
-		assert.Empty(t, st.LaneStates)
+		actor.constructAndVerify(t, rt, payerAddr, paychAddr)
 	})
 
 	testCases := []struct {
@@ -97,25 +93,14 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 	})
 }
 
-func TestPaymentChannelActor_CreateLaneSuccess(t *testing.T) {
-	ctx := context.Background()
-	rt, _, sv := requireCreateChannelWithLanes(t, ctx, 1)
-	var st State
-	rt.GetState(&st)
-	assert.Len(t, st.LaneStates, 1)
-	ls := st.LaneStates[0]
-	assert.Equal(t, sv.Amount, ls.Redeemed)
-	assert.Equal(t, sv.Nonce, ls.Nonce)
-	assert.Equal(t, sv.Lane, ls.ID)
-}
-
-func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
+func TestPaymentChannelActor_CreateLane(t *testing.T) {
 	ctx := context.Background()
 	actor := pcActorHarness{Actor{}, t}
 
 	initActorAddr := tutil.NewIDAddr(t, 100)
 	paychAddr := tutil.NewIDAddr(t, 101)
 	payerAddr := tutil.NewIDAddr(t, 102)
+	payChBalance := abi.NewTokenAmount(9)
 
 	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
 
@@ -137,6 +122,10 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 		verifySig      bool
 		expExitCode    exitcode.ExitCode
 	}{
+		{desc: "succeeds", targetCode: builtin.AccountActorCodeID,
+			amt: 1, epoch: 1, tl: 1,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.Ok},
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
 			amt: 10, epoch: 1, tl: 1,
 			sig: sig, verifySig: true,
@@ -168,7 +157,7 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 			hasher := func(data []byte) [8]byte { return [8]byte{} }
 
 			builder := mock.NewBuilder(ctx, paychAddr).
-				WithBalance(abi.NewTokenAmount(9), abi.NewTokenAmount(tc.received)).
+				WithBalance(payChBalance, abi.NewTokenAmount(tc.received)).
 				WithEpoch(abi.ChainEpoch(tc.epoch)).
 				WithCaller(initActorAddr, builtin.InitActorCodeID).
 				WithActorType(paychAddr, builtin.AccountActorCodeID).
@@ -177,7 +166,7 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 				WithHasher(hasher)
 
 			rt := builder.Build(t)
-			actor.constructAndVerify(rt, payerAddr, paychAddr)
+			actor.constructAndVerify(t, rt, payerAddr, paychAddr)
 
 			sv := SignedVoucher{
 				TimeLock:       abi.ChainEpoch(tc.tl),
@@ -191,24 +180,35 @@ func TestPaymentChannelActor_CreateLaneFailure(t *testing.T) {
 
 			rt.SetCaller(payerAddr, tc.targetCode)
 			rt.ExpectValidateCallerAddr(payerAddr, paychAddr)
-			rt.ExpectAbort(tc.expExitCode, func() {
-				rt.Call(actor.UpdateChannelState, ucp)
-			})
 
-			// verify no lane was created
-			verifyInitialState(t, rt, payerAddr, paychAddr)
+			if tc.expExitCode == exitcode.Ok {
+				rt.Call(actor.UpdateChannelState, ucp)
+				var st State
+				rt.GetState(&st)
+				assert.Len(t, st.LaneStates, 1)
+				ls := st.LaneStates[0]
+				assert.Equal(t, sv.Amount, ls.Redeemed)
+				assert.Equal(t, sv.Nonce, ls.Nonce)
+				assert.Equal(t, sv.Lane, ls.ID)
+			} else {
+				rt.ExpectAbort(tc.expExitCode, func() {
+					rt.Call(actor.UpdateChannelState, ucp)
+				})
+				// verify state unchanged; no lane was created
+				verifyInitialState(t, rt, payerAddr, paychAddr)
+			}
 		})
 	}
 }
 func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 	ctx := context.Background()
+	newVoucherAmt := big.NewInt(9)
 
 	t.Run("redeeming voucher updates correctly with one lane", func(t *testing.T) {
 		rt, actor, sv := requireCreateChannelWithLanes(t, ctx, 1)
 		var st1 State
 		rt.GetState(&st1)
 
-		newVoucherAmt := big.NewInt(9)
 		ucp := &UpdateChannelStateParams{Sv: *sv}
 		ucp.Sv.Amount = newVoucherAmt
 
@@ -218,16 +218,20 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		require.Equal(t, adt.EmptyValue{}, *constructRet)
 		rt.Verify()
 
-		var st2 State
-		rt.GetState(&st2)
-		newLs := st2.LaneStates[0]
-
-		assert.Equal(t, st1.From, st2.From)
-		assert.Equal(t, st1.To, st2.To)
-		assert.Equal(t, st1.MinSettleHeight, st2.MinSettleHeight)
-		assert.Equal(t, st1.SettlingAt, st2.SettlingAt)
-		assert.Equal(t, newLs.Redeemed, st2.ToSend)
-		assert.Equal(t, newVoucherAmt, st2.ToSend)
+		expLs := LaneState{
+			ID:       0,
+			Redeemed: newVoucherAmt,
+			Nonce:    1,
+		}
+		expState := State{
+			From:            st1.From,
+			To:              st1.To,
+			ToSend:          newVoucherAmt,
+			SettlingAt:      st1.SettlingAt,
+			MinSettleHeight: st1.MinSettleHeight,
+			LaneStates:      []*LaneState{&expLs},
+		}
+		verifyState(t, rt, 1, expState)
 	})
 
 	t.Run("redeems voucher for correct lane", func(t *testing.T) {
@@ -237,7 +241,6 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 
 		initialAmt := st1.ToSend
 
-		newVoucherAmt := big.NewInt(9)
 		ucp := &UpdateChannelStateParams{Sv: *sv}
 		ucp.Sv.Amount = newVoucherAmt
 		ucp.Sv.Lane = 1
@@ -265,12 +268,11 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	// Check that a lane merge correctly updates lane states
 	numLanes := 3
 	rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), numLanes)
-	var st1 State
 
+	var st1 State
 	rt.GetState(&st1)
 	rt.SetCaller(st1.From, builtin.AccountActorCodeID)
 
-	var st2 State
 	mergeTo := st1.LaneStates[0]
 	mergeFrom := st1.LaneStates[1]
 
@@ -286,22 +288,19 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	_ = rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
 	rt.Verify()
 
-	rt.GetState(&st2)
-	newMergeTo := st2.LaneStates[0]
-	newMergeFrom := st2.LaneStates[1]
-	require.NotNil(t, newMergeTo)
-	require.NotNil(t, newMergeFrom)
+	expMergeTo := LaneState{ID: mergeTo.ID, Redeemed: sv.Amount, Nonce: sv.Nonce,}
+	expMergeFrom := LaneState{ID: mergeFrom.ID, Redeemed: mergeFrom.Redeemed, Nonce: mergeNonce}
 
-	assert.Equal(t, int(mergeNonce), int(newMergeFrom.Nonce))
-	assert.Equal(t, mergeFrom.Redeemed, newMergeFrom.Redeemed)
-	assert.Equal(t, int(sv.Nonce), int(newMergeTo.Nonce))
-	assert.Equal(t, sv.Amount, newMergeTo.Redeemed)
-
+	// calculate ToSend amount
 	redeemed := big.Add(mergeFrom.Redeemed, mergeTo.Redeemed)
 	expDelta := big.Sub(sv.Amount, redeemed)
 	expSendAmt := big.Add(st1.ToSend, expDelta)
-	assert.Equal(t, expSendAmt, st2.ToSend)
-	assert.Len(t, st2.LaneStates, numLanes)
+
+	// last lane should be unchanged
+	expState := st1
+	expState.ToSend = expSendAmt
+	expState.LaneStates = []*LaneState{&expMergeTo, &expMergeFrom, st1.LaneStates[2]}
+	verifyState(t, rt, numLanes, expState)
 }
 
 func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
@@ -511,10 +510,10 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 }
 
 func TestActor_Settle(t *testing.T) {
+	ep := abi.ChainEpoch(10)
+
 	t.Run("Settle adjusts SettlingAt", func(t *testing.T) {
 		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-
-		ep := abi.ChainEpoch(10)
 		rt.SetEpoch(ep)
 		var st State
 		rt.GetState(&st)
@@ -531,8 +530,6 @@ func TestActor_Settle(t *testing.T) {
 
 	t.Run("settle fails if called twice: channel already settling", func(t *testing.T) {
 		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-
-		ep := abi.ChainEpoch(10)
 		rt.SetEpoch(ep)
 		var st State
 		rt.GetState(&st)
@@ -549,8 +546,6 @@ func TestActor_Settle(t *testing.T) {
 
 	t.Run("Settle changes SettleHeight again if MinSettleHeight is less", func(t *testing.T) {
 		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
-
-		ep := abi.ChainEpoch(10)
 		rt.SetEpoch(ep)
 		var st State
 		rt.GetState(&st)
@@ -582,9 +577,7 @@ func TestActor_Settle(t *testing.T) {
 func TestActor_Collect(t *testing.T) {
 	t.Run("Happy path", func(t *testing.T) {
 		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-
-		ep := abi.ChainEpoch(10)
-		rt.SetEpoch(ep)
+		rt.SetEpoch(10)
 		var st State
 		rt.GetState(&st)
 
@@ -622,15 +615,13 @@ func TestActor_Collect(t *testing.T) {
 		dontSettle                                     bool
 	}{
 		{name: "fails if not settling with: payment channel not settling or settled", dontSettle: true, expCollectExit: exitcode.ErrForbidden},
-		{name: "fails if can't send to From", expSendFromCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
-		{name: "fails if can't send to To", expSendToCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
+		{name: "fails if Failed to send balance to `From`", expSendFromCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
+		{name: "fails if Failed to send funds to `To`", expSendToCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-
-			ep := abi.ChainEpoch(10)
-			rt.SetEpoch(ep)
+			rt.SetEpoch(10)
 			var st State
 			rt.GetState(&st)
 
@@ -646,8 +637,8 @@ func TestActor_Collect(t *testing.T) {
 			rt.SetEpoch(12)
 
 			sentToFrom := big.Sub(rt.GetBalance(), st.ToSend)
-			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.ErrPlaceholder)
-			rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
+			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, tc.expSendFromCode)
+			rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, tc.expSendToCode)
 
 			// Collect.
 			rt.SetCaller(st.From, builtin.AccountActorCodeID)
@@ -694,8 +685,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 		WithHasher(hasher)
 
 	rt := builder.Build(t)
-	actor.constructAndVerify(rt, payerAddr, paychAddr)
-	verifyInitialState(t, rt, payerAddr, paychAddr)
+	actor.constructAndVerify(t, rt, payerAddr, paychAddr)
 
 	var lastSv *SignedVoucher
 	for i := 0; i < numLanes; i++ {
@@ -726,31 +716,35 @@ func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, pa
 	return &sv
 }
 
-func (h *pcActorHarness) constructAndVerify(rt *mock.Runtime, sender, receiver addr.Address) {
+func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
 	params := &ConstructorParams{To: receiver, From: sender}
 
 	rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 	constructRet := rt.Call(h.Actor.Constructor, params).(*adt.EmptyValue)
 	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
 	rt.Verify()
-
-	var st State
-	rt.GetState(&st)
-	assert.Equal(h.t, receiver, st.To)
-	assert.Equal(h.t, sender, st.From)
-	assert.Equal(h.t, abi.NewTokenAmount(0), st.ToSend)
-	assert.Equal(h.t, abi.ChainEpoch(0), st.SettlingAt)
-	assert.Equal(h.t, abi.ChainEpoch(0), st.MinSettleHeight)
-	assert.Len(h.t, st.LaneStates, 0)
+	verifyInitialState(t, rt, sender, receiver)
 }
 
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
 	var st State
 	rt.GetState(&st)
-	assert.Equal(t, receiver, st.To)
-	assert.Equal(t, sender, st.From)
-	assert.Equal(t, abi.NewTokenAmount(0), st.ToSend)
-	assert.Equal(t, abi.ChainEpoch(0), st.SettlingAt)
-	assert.Equal(t, abi.ChainEpoch(0), st.MinSettleHeight)
-	assert.Len(t, st.LaneStates, 0)
+	expectedState := State{From: sender, To: receiver, ToSend: abi.NewTokenAmount(0)}
+	verifyState(t, rt, -1, expectedState)
+}
+
+func verifyState(t *testing.T, rt *mock.Runtime, expLanes int, expectedState State) {
+	var st State
+	rt.GetState(&st)
+	assert.Equal(t, expectedState.To, st.To)
+	assert.Equal(t, expectedState.From, st.From)
+	assert.Equal(t, expectedState.MinSettleHeight, st.MinSettleHeight)
+	assert.Equal(t, expectedState.SettlingAt, st.SettlingAt)
+	assert.Equal(t, expectedState.ToSend, st.ToSend)
+	if expLanes >= 0 {
+		require.Len(t, st.LaneStates, expLanes)
+		assert.True(t, reflect.DeepEqual(expectedState.LaneStates, st.LaneStates))
+	} else {
+		assert.Len(t, st.LaneStates, 0)
+	}
 }
