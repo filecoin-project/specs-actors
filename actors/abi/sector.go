@@ -32,25 +32,26 @@ type SectorWeight = big.Int
 type StoragePower = big.Int
 
 func NewStoragePower(n int64) StoragePower {
-	return StoragePower(big.NewInt(n))
+	return big.NewInt(n)
 }
 
 // This ordering, defines mappings to UInt in a way which MUST never change.
 type RegisteredProof int64
 
+//noinspection GoUnusedConst
 const (
-	RegisteredProof_WinStackedDRG32GiBSeal = RegisteredProof(1)
-	RegisteredProof_WinStackedDRG32GiBPoSt = RegisteredProof(2)
-	RegisteredProof_StackedDRG32GiBSeal    = RegisteredProof(3)
-	RegisteredProof_StackedDRG32GiBPoSt    = RegisteredProof(4)
-	RegisteredProof_StackedDRG1KiBSeal     = RegisteredProof(5)
-	RegisteredProof_StackedDRG1KiBPoSt     = RegisteredProof(6)
-	RegisteredProof_StackedDRG16MiBSeal    = RegisteredProof(7)
-	RegisteredProof_StackedDRG16MiBPoSt    = RegisteredProof(8)
-	RegisteredProof_StackedDRG256MiBSeal   = RegisteredProof(9)
-	RegisteredProof_StackedDRG256MiBPoSt   = RegisteredProof(10)
-	RegisteredProof_StackedDRG1GiBSeal     = RegisteredProof(11)
-	RegisteredProof_StackedDRG1GiBPoSt     = RegisteredProof(12)
+	RegisteredProofWinStackedDRG32GiBSeal = RegisteredProof(1)
+	RegisteredProofWinStackedDRG32GiBPoSt = RegisteredProof(2)
+	RegisteredProofStackedDRG32GiBSeal    = RegisteredProof(3)
+	RegisteredProofStackedDRG32GiBPoSt    = RegisteredProof(4)
+	RegisteredProofStackedDRG1KiBSeal     = RegisteredProof(5)
+	RegisteredProofStackedDRG1KiBPoSt     = RegisteredProof(6)
+	RegisteredProofStackedDRG16MiBSeal    = RegisteredProof(7)
+	RegisteredProofStackedDRG16MiBPoSt    = RegisteredProof(8)
+	RegisteredProofStackedDRG256MiBSeal   = RegisteredProof(9)
+	RegisteredProofStackedDRG256MiBPoSt   = RegisteredProof(10)
+	RegisteredProofStackedDRG1GiBSeal     = RegisteredProof(11)
+	RegisteredProofStackedDRG1GiBPoSt     = RegisteredProof(12)
 )
 
 ///
@@ -78,14 +79,10 @@ type OnChainSealVerifyInfo struct {
 	SealedCID        cid.Cid    // CommR
 	InteractiveEpoch ChainEpoch // Used to derive the interactive PoRep challenge.
 	RegisteredProof
-	Proof   SealProof
+	Proof   []byte
 	DealIDs []DealID
 	SectorNumber
 	SealEpoch ChainEpoch // Used to tie the seal to a chain.
-}
-
-type SealProof struct { //<curve, system> {
-	ProofBytes []byte
 }
 
 ///
@@ -101,7 +98,7 @@ type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
 	SealedCID       cid.Cid         // CommR
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
-	Proofs          []PoStProof
+	Proofs          [][]byte
 	EligibleSectors []SectorInfo
 }
 
@@ -114,14 +111,14 @@ type OnChainElectionPoStVerifyInfo struct {
 	// There should be one RegisteredProof for each PoSt Candidate
 	RegisteredProofs []RegisteredProof
 	Candidates       []PoStCandidate
-	Proofs           []PoStProof
+	Proofs           [][]byte
 	Randomness       PoStRandomness
 }
 
 type OnChainPoStVerifyInfo struct {
 	ProofType  RegisteredProof
 	Candidates []PoStCandidate
-	Proofs     []PoStProof
+	Proofs     [][]byte
 }
 
 type PoStCandidate struct {
@@ -130,10 +127,6 @@ type PoStCandidate struct {
 	PrivateProof   PrivatePoStCandidateProof // Optional — should be ommitted for verification.
 	SectorID       SectorID
 	ChallengeIndex int64
-}
-
-type PoStProof struct { //<curve, system> {
-	ProofBytes []byte
 }
 
 type PrivatePoStCandidateProof struct {

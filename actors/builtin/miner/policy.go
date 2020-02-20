@@ -19,8 +19,8 @@ const PoRepMaxDelay = abi.ChainEpoch(10) // PARAM_FINISH
 
 // Maximum duration to allow for the sealing process for seal algorithms.
 var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
-	abi.RegisteredProof_StackedDRG32GiBSeal:    abi.ChainEpoch(1), // PARAM_FINISH
-	abi.RegisteredProof_WinStackedDRG32GiBSeal: abi.ChainEpoch(1), // PARAM_FINISH
+	abi.RegisteredProofStackedDRG32GiBSeal:    abi.ChainEpoch(1), // PARAM_FINISH
+	abi.RegisteredProofWinStackedDRG32GiBSeal: abi.ChainEpoch(1), // PARAM_FINISH
 }
 
 // Lookback from the current epoch from which to obtain a PoSt challenge.
