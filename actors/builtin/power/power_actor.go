@@ -82,10 +82,12 @@ type SectorStorageWeightDesc struct {
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	st, err := ConstructState(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
 	}
+
+	st := ConstructState(emptyMap.Root())
 	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
