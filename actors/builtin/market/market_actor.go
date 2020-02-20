@@ -40,10 +40,23 @@ var _ abi.Invokee = Actor{}
 
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	st, err := ConstructState(adt.AsStore(rt))
+
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
 	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state map: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
 	}
+
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
+	}
+
+	emptyMSet, err := MakeEmptySetMultimap(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
+	}
+
+	st := ConstructState(emptyArray.Root(), emptyMap.Root(), emptyMSet.Root())
 	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
