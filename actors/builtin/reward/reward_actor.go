@@ -37,10 +37,13 @@ var _ abi.Invokee = Actor{}
 
 func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	st, err := ConstructState(adt.AsStore(rt))
+
+	rewards, err := adt.MakeEmptyMultiap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
+
+	st := ConstructState(rewards.Root())
 	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
