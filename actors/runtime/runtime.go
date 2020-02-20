@@ -30,6 +30,11 @@ type Runtime interface {
 	// The balance of the receiver.
 	CurrentBalance() abi.TokenAmount
 
+	// Resolves an address of any protocol to an ID address (via the Init actor's table).
+	// This allows resolution of externally-provided SECP, BLS, or actor addresses to the canonical form.
+	// If the argument is an ID address it is returned directly.
+	ResolveAddress(address addr.Address) (ret addr.Address, ok bool)
+
 	// Look up the code ID at an actor address.
 	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)
 
@@ -60,7 +65,7 @@ type Runtime interface {
 	// Always an ActorExec address.
 	NewActorAddress() addr.Address
 
-	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by InitActor.
+	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by Init actor.
 	CreateActor(codeId cid.Cid, address addr.Address)
 
 	// Deletes the executing actor from the state tree. May only be called by the actor itself.
@@ -88,10 +93,6 @@ type Store interface {
 
 // Message contains information available to the actor about the executing message.
 type Message interface {
-	// The actor who mined the block in which the current method was included.
-	// Always an ID-address.
-	BlockMiner() addr.Address
-
 	// The address of the immediate calling actor. Always an ID-address.
 	Caller() addr.Address
 

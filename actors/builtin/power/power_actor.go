@@ -82,10 +82,12 @@ type SectorStorageWeightDesc struct {
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	st, err := ConstructState(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
 	}
+
+	st := ConstructState(emptyMap.Root())
 	rt.State().Create(st)
 	return &adt.EmptyValue{}
 }
@@ -95,15 +97,20 @@ type AddBalanceParams struct {
 }
 
 func (a Actor) AddBalance(rt Runtime, params *AddBalanceParams) *adt.EmptyValue {
-	validatePledgeAccount(rt, params.Miner)
+	nominal, ok := rt.ResolveAddress(params.Miner)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", params.Miner)
+	}
 
-	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, params.Miner)
+	validatePledgeAccount(rt, nominal)
+
+	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
 	var err error
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.addMinerBalance(adt.AsStore(rt), params.Miner, rt.Message().ValueReceived())
+		err = st.addMinerBalance(adt.AsStore(rt), nominal, rt.Message().ValueReceived())
 		abortIfError(rt, err, "failed to add pledge balance")
 		return nil
 	})
@@ -116,8 +123,13 @@ type WithdrawBalanceParams struct {
 }
 
 func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
-	validatePledgeAccount(rt, params.Miner)
-	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, params.Miner)
+	nominal, ok := rt.ResolveAddress(params.Miner)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", params.Miner)
+	}
+
+	validatePledgeAccount(rt, nominal)
+	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
 	if params.Requested.LessThan(big.Zero()) {
@@ -127,9 +139,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	var amountExtracted abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		claim, found, err := st.getClaim(adt.AsStore(rt), params.Miner)
+		claim, found, err := st.getClaim(adt.AsStore(rt), nominal)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load claim for miner %v", params.Miner)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load claim for miner %v", nominal)
 			panic("can't get here") // Convince Go that claim will not be used while nil below
 		}
 		if !found {
@@ -137,13 +149,13 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 			// their previous requirements. This is consistent with the slashing routine burning it all.
 			// Alternatively, we could interpret a missing claim here as evidence of termination and allow
 			// withdrawal of any residual balance.
-			rt.Abortf(exitcode.ErrIllegalArgument, "no claim for miner %v", params.Miner)
+			rt.Abortf(exitcode.ErrIllegalArgument, "no claim for miner %v", nominal)
 		}
 
 		// Pledge for sectors in temporary fault has already been subtracted from the claim.
 		// If the miner has failed a scheduled PoSt, collateral remains locked for further penalization.
 		// Thus the current claimed pledge is the amount to keep locked.
-		subtracted, err := st.subtractMinerBalance(adt.AsStore(rt), params.Miner, params.Requested, claim.Pledge)
+		subtracted, err := st.subtractMinerBalance(adt.AsStore(rt), nominal, params.Requested, claim.Pledge)
 		abortIfError(rt, err, "failed to subtract pledge balance")
 		amountExtracted = subtracted
 		return nil
@@ -220,32 +232,37 @@ type DeleteMinerParams struct {
 }
 
 func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValue {
+	nominal, ok := rt.ResolveAddress(params.Miner)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", params.Miner)
+	}
+
 	var st State
 	rt.State().Readonly(&st)
 
-	balance, err := st.getMinerBalance(adt.AsStore(rt), params.Miner)
+	balance, err := st.getMinerBalance(adt.AsStore(rt), nominal)
 	abortIfError(rt, err, "failed to get pledge balance for deletion")
 
 	if balance.GreaterThan(abi.NewTokenAmount(0)) {
-		rt.Abortf(exitcode.ErrForbidden, "deletion requested for miner %v with pledge balance %v", params.Miner, balance)
+		rt.Abortf(exitcode.ErrForbidden, "deletion requested for miner %v with pledge balance %v", nominal, balance)
 	}
 
-	claim, found, err := st.getClaim(adt.AsStore(rt), params.Miner)
+	claim, found, err := st.getClaim(adt.AsStore(rt), nominal)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to load miner claim for deletion: %v", err)
 	}
 	if !found {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", params.Miner)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", nominal)
 	}
 	if claim.Power.GreaterThan(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", params.Miner, claim.Power)
+		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", nominal, claim.Power)
 	}
 
-	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, params.Miner)
+	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
 	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
 
-	err = a.deleteMinerActor(rt, params.Miner)
-	abortIfError(rt, err, "failed to delete miner %v", params.Miner)
+	err = a.deleteMinerActor(rt, nominal)
+	abortIfError(rt, err, "failed to delete miner %v", nominal)
 	return &adt.EmptyValue{}
 }
 
@@ -462,27 +479,32 @@ type ReportConsensusFaultParams struct {
 }
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
-	// TODO: jz, zx determine how to reward multiple reporters of the same fault within a single epoch.
-
+	// Note: only the first reporter of any fault is rewarded.
+	// Subsequent invocations fail because the miner has been removed.
 	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2)
 	if !isValidConsensusFault {
 		rt.Abortf(exitcode.ErrIllegalArgument, "reported consensus fault failed verification")
+	}
+
+	target, ok := rt.ResolveAddress(params.Target)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", params.Target)
 	}
 
 	reporter := rt.Message().Caller()
 	var st State
 	reward := rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		claim, powerOk, err := st.getClaim(store, params.Target)
+		claim, powerOk, err := st.getClaim(store, target)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
 		if !powerOk {
-			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", params.Target)
+			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", target)
 		}
 		Assert(claim.Power.GreaterThanEqual(big.Zero()))
 
-		currBalance, err := st.getMinerBalance(store, params.Target)
+		currBalance, err := st.getMinerBalance(store, target)
 		abortIfError(rt, err, "failed to get miner pledge balance")
 		Assert(currBalance.GreaterThanEqual(big.Zero()))
 
@@ -496,7 +518,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		collateralToSlash := pledgePenaltyForConsensusFault(currBalance, params.FaultType)
 		targetReward := rewardForConsensusSlashReport(elapsedEpoch, collateralToSlash)
 
-		availableReward, err := st.subtractMinerBalance(store, params.Target, targetReward, big.Zero())
+		availableReward, err := st.subtractMinerBalance(store, target, targetReward, big.Zero())
 		abortIfError(rt, err, "failed to subtract pledge for reward")
 		return availableReward
 	}).(abi.TokenAmount)
@@ -507,8 +529,8 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
-	err := a.deleteMinerActor(rt, params.Target)
-	abortIfError(rt, err, "failed to remove slashed miner %v", params.Target)
+	err := a.deleteMinerActor(rt, target)
+	abortIfError(rt, err, "failed to remove slashed miner %v", target)
 	return &adt.EmptyValue{}
 }
 

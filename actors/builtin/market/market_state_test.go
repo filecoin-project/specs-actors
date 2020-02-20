@@ -29,8 +29,7 @@ func TestConstruction(t *testing.T) {
 		emptyMultiMap, err := market.MakeEmptySetMultimap(store)
 		assert.NoError(t, err)
 
-		state, err := market.ConstructState(store)
-		assert.NoError(t, err)
+		state := market.ConstructState(emptyArray.Root(), emptyMap.Root(), emptyMultiMap.Root())
 
 		assert.Equal(t, emptyArray.Root(), state.Proposals)
 		assert.Equal(t, emptyArray.Root(), state.States)

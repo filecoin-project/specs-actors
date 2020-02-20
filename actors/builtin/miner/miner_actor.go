@@ -71,15 +71,20 @@ type ConstructorParams = power.MinerConstructorParams
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
-	// TODO: fix this, check that the account actor at the other end of this address has a BLS key.
-	if params.WorkerAddr.Protocol() != addr.BLS {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
-	}
+	owner := resolveOwnerAddress(rt, params.OwnerAddr)
+	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 
-	state, err := ConstructState(adt.AsStore(rt), params.OwnerAddr, params.WorkerAddr, params.PeerId, params.SectorSize)
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 	}
+
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
+	}
+
+	state := ConstructState(emptyArray.Root(), emptyMap.Root(), owner, worker, params.PeerId, params.SectorSize)
 	rt.State().Create(state)
 	return &adt.EmptyValue{}
 }
@@ -103,7 +108,7 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 }
 
 type ChangeWorkerAddressParams struct {
-	NewKey addr.Address
+	NewWorker addr.Address
 }
 
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
@@ -112,18 +117,13 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Owner)
 
-		// must be BLS since the worker key will be used alongside a BLS-VRF
-		// Specifically, this check isn't quite right
-		// TODO: check that the account actor at the other end of this address has a BLS key.
-		if params.NewKey.Protocol() != addr.BLS {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Worker Key must be BLS.")
-		}
+		worker := resolveWorkerAddress(rt, params.NewWorker)
 
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
 		// This may replace another pending key change.
 		st.Info.PendingWorkerKey = &WorkerKeyChange{
-			NewWorker:   params.NewKey,
+			NewWorker:   worker,
 			EffectiveAt: effectiveEpoch,
 		}
 		return nil
@@ -992,6 +992,60 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 		return nil
 	})
 	return &adt.EmptyValue{}
+}
+
+//
+// Helpers
+//
+
+// Resolves an address to an ID address and verifies that it is address of an account or multisig actor.
+func resolveOwnerAddress(rt Runtime, raw addr.Address) addr.Address {
+	resolved, ok := rt.ResolveAddress(raw)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
+	}
+	Assert(resolved.Protocol() == addr.ID)
+
+	ownerCode, ok := rt.GetActorCodeCID(resolved)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
+	}
+	if !builtin.IsPrincipal(ownerCode) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "owner actor type must be a principal, was %v", ownerCode)
+	}
+	return resolved
+}
+
+// Resolves an address to an ID address and verifies that it is address of an account actor with an associated BLS key.
+// The worker must be BLS since the worker key will be used alongside a BLS-VRF.
+func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
+	resolved, ok := rt.ResolveAddress(raw)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
+	}
+	Assert(resolved.Protocol() == addr.ID)
+
+	ownerCode, ok := rt.GetActorCodeCID(resolved)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
+	}
+	if ownerCode != builtin.AccountActorCodeID {
+		rt.Abortf(exitcode.ErrIllegalArgument, "worker actor type must be an account, was %v", ownerCode)
+	}
+
+	if raw.Protocol() != addr.BLS {
+		ret, code := rt.Send(resolved, builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero())
+		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %v", resolved)
+		var pubkey addr.Address
+		err := ret.Into(&pubkey)
+		if err != nil {
+			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize address result: %v", ret)
+		}
+		if pubkey.Protocol() != addr.BLS {
+			rt.Abortf(exitcode.ErrIllegalArgument, "worker account %v must have BLS pubkey, was %v", resolved, pubkey.Protocol())
+		}
+	}
+	return resolved
 }
 
 func confirmPaymentAndRefundChange(rt vmr.Runtime, expected abi.TokenAmount) {

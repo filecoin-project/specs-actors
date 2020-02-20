@@ -33,9 +33,7 @@ type MinerInfo struct {
 	Owner addr.Address // Must be an ID-address.
 
 	// Worker account for this miner.
-	// This will be the key that is used to sign blocks created by this miner, and
-	// sign messages sent on behalf of this miner to commit sectors, submit PoSts, and
-	// other day to day miner activities.
+	// The associated pubkey-type address is used to sign blocks and messages on behalf of this miner.
 	Worker addr.Address // Must be an ID-address.
 
 	PendingWorkerKey *WorkerKeyChange
@@ -86,21 +84,12 @@ type SectorOnChainInfo struct {
 	DeclaredFaultDuration abi.ChainEpoch  // -1 if not currently declared faulted.
 }
 
-func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) (*State, error) {
-	emptyMap, err := adt.MakeEmptyMap(store)
-	if err != nil {
-		return nil, err
-	}
-
-	emptyArray, err := adt.MakeEmptyArray(store)
-	if err != nil {
-		return nil, err
-	}
+func ConstructState(emptyArrayCid, emptyMapCid cid.Cid, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) *State {
 	return &State{
-		PreCommittedSectors: emptyMap.Root(),
-		Sectors:             emptyArray.Root(),
+		PreCommittedSectors: emptyMapCid,
+		Sectors:             emptyArrayCid,
 		FaultSet:            abi.NewBitField(),
-		ProvingSet:          emptyArray.Root(),
+		ProvingSet:          emptyArrayCid,
 		Info: MinerInfo{
 			Owner:            ownerAddr,
 			Worker:           workerAddr,
@@ -112,7 +101,7 @@ func ConstructState(store adt.Store, ownerAddr, workerAddr addr.Address, peerId 
 			ProvingPeriodStart:     epochUndefined,
 			NumConsecutiveFailures: 0,
 		},
-	}, nil
+	}
 }
 
 func (st *State) GetWorker() addr.Address {

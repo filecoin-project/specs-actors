@@ -945,6 +945,57 @@ func (t *TerminateSectorsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+func (t *ChangePeerIDParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.NewID (peer.ID) (string)
+	if len(t.NewID) > cbg.MaxLength {
+		return xerrors.Errorf("Value in field t.NewID was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.NewID)))); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(t.NewID)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *ChangePeerIDParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.NewID (peer.ID) (string)
+
+	{
+		sval, err := cbg.ReadString(br)
+		if err != nil {
+			return err
+		}
+
+		t.NewID = peer.ID(sval)
+	}
+	return nil
+}
+
 func (t *ProveCommitSectorParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -1070,8 +1121,8 @@ func (t *ChangeWorkerAddressParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.NewKey (address.Address) (struct)
-	if err := t.NewKey.MarshalCBOR(w); err != nil {
+	// t.NewWorker (address.Address) (struct)
+	if err := t.NewWorker.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -1092,11 +1143,11 @@ func (t *ChangeWorkerAddressParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.NewKey (address.Address) (struct)
+	// t.NewWorker (address.Address) (struct)
 
 	{
 
-		if err := t.NewKey.UnmarshalCBOR(br); err != nil {
+		if err := t.NewWorker.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
