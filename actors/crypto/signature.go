@@ -1,15 +1,93 @@
 package crypto
 
-type SigType int64
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"math"
+
+	cbg "github.com/whyrusleeping/cbor-gen"
+)
+
+type SigType byte
 
 const (
-	SigTypeUnknown = SigType(-1)
+	SigTypeUnknown = SigType(math.MaxUint8)
 
 	SigTypeSecp256k1 = SigType(iota)
 	SigTypeBLS
 )
 
+func (t SigType) Name() (string, error) {
+	switch t {
+	case SigTypeUnknown:
+		return "unknown", nil
+	case SigTypeSecp256k1:
+		return "secp256k1", nil
+	case SigTypeBLS:
+		return "bls", nil
+	default:
+		return "", fmt.Errorf("invalid signature type: %d", t)
+	}
+}
+
+const SignatureMaxLength = 200
+
 type Signature struct {
 	Type SigType
 	Data []byte
+}
+
+func (s *Signature) Equals(o *Signature) bool {
+	if s == nil || o == nil {
+		return s == o
+	}
+	return s.Type == o.Type && bytes.Equal(s.Data, o.Data)
+}
+
+func (s *Signature) MarshalCBOR(w io.Writer) error {
+	if s == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	header := cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(s.Data)+1))
+	if _, err := w.Write(header); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte{byte(s.Type)}); err != nil {
+		return err
+	}
+	if _, err := w.Write(s.Data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Signature) UnmarshalCBOR(br io.Reader) error {
+	maj, l, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("cbor input for signature was not a byte string")
+	}
+	if l > SignatureMaxLength {
+		return fmt.Errorf("cbor byte array for signature was too long")
+	}
+	buf := make([]byte, l)
+	if _, err = io.ReadFull(br, buf); err != nil {
+		return err
+	}
+	switch SigType(buf[0]) {
+	default:
+		return fmt.Errorf("invalid signature type in cbor input: %d", buf[0])
+	case SigTypeSecp256k1:
+		s.Type = SigTypeSecp256k1
+	case SigTypeBLS:
+		s.Type = SigTypeBLS
+	}
+	s.Data = buf[1:]
+	return nil
 }

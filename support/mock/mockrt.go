@@ -566,13 +566,11 @@ type ReturnWrapper struct {
 }
 
 func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
-	a := []byte{}
-	b := bytes.NewBuffer(a)
-
-	err := r.V.MarshalCBOR(b)
+	b := bytes.Buffer{}
+	err := r.V.MarshalCBOR(&b)
 	if err != nil {
 		return err
 	}
-	err = o.UnmarshalCBOR(b)
+	err = o.UnmarshalCBOR(&b)
 	return err
 }
