@@ -40,7 +40,7 @@ const WorkerKeyChangeDelay = 2 * ElectionLookback // PARAM_FINISH
 // Deposit per sector required at pre-commitment, refunded after the commitment is proven (else burned).
 func precommitDeposit(sectorSize abi.SectorSize, duration abi.ChainEpoch) abi.TokenAmount {
 	depositPerByte := abi.NewTokenAmount(0) // PARAM_FINISH
-	return big.Mul(depositPerByte, big.NewInt(int64(sectorSize)))
+	return big.Mul(depositPerByte, big.NewIntUnsigned(uint64(sectorSize)))
 }
 
 func temporaryFaultFee(weights []*power.SectorStorageWeightDesc, duration abi.ChainEpoch) abi.TokenAmount {

@@ -94,7 +94,7 @@ func (t *BalanceTable) SubtractWithMinimum(key addr.Address, req abi.TokenAmount
 }
 
 func (t *BalanceTable) MustSubtract(key addr.Address, req abi.TokenAmount) error {
-	subst, err := t.SubtractWithMinimum(key, req, big.NewInt(0))
+	subst, err := t.SubtractWithMinimum(key, req, big.Zero())
 	if err != nil {
 		return err
 	}

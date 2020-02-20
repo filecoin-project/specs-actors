@@ -20,6 +20,10 @@ func NewInt(i int64) Int {
 	return Int{big.NewInt(0).SetInt64(i)}
 }
 
+func NewIntUnsigned(i uint64) Int {
+	return Int{big.NewInt(0).SetUint64(i)}
+}
+
 func Zero() Int {
 	return NewInt(0)
 }
@@ -135,7 +139,7 @@ func (bi Int) Equals(o Int) bool {
 
 func (bi *Int) MarshalJSON() ([]byte, error) {
 	if bi.Int == nil {
-		zero := NewInt(0)
+		zero := Zero()
 		return json.Marshal(zero)
 	}
 	return json.Marshal(bi.String())
@@ -183,7 +187,7 @@ func FromBytes(buf []byte) (Int, error) {
 	case 1:
 		negative = true
 	default:
-		return NewInt(0), fmt.Errorf("big int prefix should be either 0 or 1, got %d", buf[0])
+		return Zero(), fmt.Errorf("big int prefix should be either 0 or 1, got %d", buf[0])
 	}
 
 	i := big.NewInt(0).SetBytes(buf[1:])
@@ -215,7 +219,7 @@ func (bi *Int) UnmarshalBinary(buf []byte) error {
 
 func (bi *Int) MarshalCBOR(w io.Writer) error {
 	if bi.Int == nil {
-		zero := NewInt(0)
+		zero := Zero()
 		return zero.MarshalCBOR(w)
 	}
 
