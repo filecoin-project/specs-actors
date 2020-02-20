@@ -10,6 +10,7 @@ import (
 const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
 
 // Maximum duration to allow for the sealing process for seal algorithms.
+// Dependent on algorithm and sector size
 var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
 	abi.RegisteredProof_StackedDRG32GiBSeal:    abi.ChainEpoch(1), // PARAM_FINISH
 	abi.RegisteredProof_WinStackedDRG32GiBSeal: abi.ChainEpoch(1), // PARAM_FINISH

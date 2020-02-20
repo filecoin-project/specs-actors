@@ -210,8 +210,7 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 ///////////////////////
 
 type PreCommitSectorParams struct {
-	Info            SectorPreCommitInfo
-	RegisteredProof abi.RegisteredProof
+	Info SectorPreCommitInfo
 }
 
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
@@ -254,9 +253,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	cronPayload := CronEventPayload{
 		EventType:       cronEventPreCommitExpiry,
 		Sectors:         &bf,
-		RegisteredProof: params.info.RegisteredProof,
+		RegisteredProof: params.Info.RegisteredProof,
 	}
-	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.RegisteredProof] + 1
+	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.Info.RegisteredProof] + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
