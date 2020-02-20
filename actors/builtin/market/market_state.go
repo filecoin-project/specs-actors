@@ -172,7 +172,10 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 
 	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	if err := dbp.Remove(dealP.Client, dealID); err != nil {
-		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
+		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal by client address from DealIDsByParty: %v", err)
+	}
+	if err := dbp.Remove(dealP.Provider, dealID); err != nil {
+		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal by provider address from DealIDsByParty: %v", err)
 	}
 	st.DealIDsByParty = dbp.Root()
 }

@@ -406,6 +406,10 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.actorCodeCIDs[address] = actorType
 }
 
+func (rt *Runtime) SetInCall(inCall bool) {
+	rt.inCall = inCall
+}
+
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
 }
