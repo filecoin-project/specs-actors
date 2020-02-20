@@ -51,20 +51,15 @@ type CronEvent struct {
 
 type AddrKey = adt.AddrKey
 
-func ConstructState(store adt.Store) (*State, error) {
-	emptyMap, err := adt.MakeEmptyMap(store)
-	if err != nil {
-		return nil, err
-	}
-
+func ConstructState(emptyMapCid cid.Cid) *State {
 	return &State{
 		TotalNetworkPower:        abi.NewStoragePower(0),
-		EscrowTable:              emptyMap.Root(),
-		CronEventQueue:           emptyMap.Root(),
-		PoStDetectedFaultMiners:  emptyMap.Root(),
-		Claims:                   emptyMap.Root(),
+		EscrowTable:              emptyMapCid,
+		CronEventQueue:           emptyMapCid,
+		PoStDetectedFaultMiners:  emptyMapCid,
+		Claims:                   emptyMapCid,
 		NumMinersMeetingMinPower: 0,
-	}, nil
+	}
 }
 
 // Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate

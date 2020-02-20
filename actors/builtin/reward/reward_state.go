@@ -12,7 +12,7 @@ import (
 )
 
 type State struct {
-	RewardMap   cid.Cid // HAMT[Address]AMT[Reward]
+	RewardMap   cid.Cid         // HAMT[Address]AMT[Reward]
 	RewardTotal abi.TokenAmount // Sum of un-withdrawn rewards.
 }
 
@@ -33,16 +33,11 @@ const (
 
 type AddrKey = adt.AddrKey
 
-func ConstructState(store adt.Store) (*State, error) {
-	rewards, err := adt.MakeEmptyMultiap(store)
-	if err != nil {
-		return nil, err
-	}
-
+func ConstructState(emptyMultiMapCid cid.Cid) *State {
 	return &State{
-		RewardMap: rewards.Root(),
+		RewardMap:   emptyMultiMapCid,
 		RewardTotal: big.Zero(),
-	}, nil
+	}
 }
 
 func (st *State) addReward(store adt.Store, owner addr.Address, reward *Reward) error {
