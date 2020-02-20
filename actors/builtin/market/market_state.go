@@ -37,30 +37,15 @@ type State struct {
 	DealIDsByParty cid.Cid // SetMultimap, HAMT[addr]Set
 }
 
-func ConstructState(store adt.Store) (*State, error) {
-	emptyArray, err := adt.MakeEmptyArray(store)
-	if err != nil {
-		return nil, err
-	}
-
-	emptyMap, err := adt.MakeEmptyMap(store)
-	if err != nil {
-		return nil, err
-	}
-
-	emptyMSet, err := MakeEmptySetMultimap(store)
-	if err != nil {
-		return nil, err
-	}
-
+func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 	return &State{
-		Proposals:      emptyArray.Root(),
-		States:         emptyArray.Root(),
-		EscrowTable:    emptyMap.Root(),
-		LockedTable:    emptyMap.Root(),
+		Proposals:      emptyArrayCid,
+		States:         emptyArrayCid,
+		EscrowTable:    emptyMapCid,
+		LockedTable:    emptyMapCid,
 		NextID:         abi.DealID(0),
-		DealIDsByParty: emptyMSet.Root(),
-	}, nil
+		DealIDsByParty: emptyMSetCid,
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

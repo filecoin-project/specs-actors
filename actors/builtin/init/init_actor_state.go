@@ -20,17 +20,12 @@ type State struct {
 	NetworkName string
 }
 
-func ConstructState(store adt.Store, networkName string) (*State, error) {
-	emptyMap, err := adt.MakeEmptyMap(store)
-	if err != nil {
-		return nil, err
-	}
-
+func ConstructState(addressMapRoot cid.Cid, networkName string) *State {
 	return &State{
-		AddressMap:  emptyMap.Root(),
+		AddressMap:  addressMapRoot,
 		NextID:      abi.ActorID(builtin.FirstNonSingletonActorId),
 		NetworkName: networkName,
-	}, nil
+	}
 }
 
 // ResolveAddress resolves an address to an ID-address, if possible.
