@@ -93,10 +93,6 @@ type Store interface {
 
 // Message contains information available to the actor about the executing message.
 type Message interface {
-	// The actor who mined the block in which the current method was included.
-	// Always an ID-address.
-	BlockMiner() addr.Address
-
 	// The address of the immediate calling actor. Always an ID-address.
 	Caller() addr.Address
 
