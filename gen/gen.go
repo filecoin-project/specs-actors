@@ -173,7 +173,6 @@ func main() {
 		miner.ProveCommitSectorParams{},
 		miner.OnDeferredCronEventParams{},
 		miner.ChangeWorkerAddressParams{},
-		miner.GetControlAddressesReturn{},
 		miner.ExtendSectorExpirationParams{},
 		miner.DeclareTemporaryFaultsParams{},
 		miner.GetControlAddressesReturn{},
