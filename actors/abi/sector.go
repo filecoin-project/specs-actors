@@ -1,6 +1,9 @@
 package abi
 
 import (
+	"fmt"
+	"strconv"
+
 	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -10,6 +13,10 @@ import (
 // SectorNumber is a numeric identifier for a sector. It is usually relative to a miner.
 type SectorNumber uint64
 
+func (s SectorNumber) String() string {
+	return strconv.FormatUint(uint64(s), 10)
+}
+
 // SectorSize indicates one of a set of possible sizes in the network.
 // Ideally, SectorSize would be an enum
 // type SectorSize enum {
@@ -18,22 +25,38 @@ type SectorNumber uint64
 //   1GiB = 1073741824
 //   1TiB = 1099511627776
 //   1PiB = 1125899906842624
+//   1EiB = 1152921504606846976
+//   max  = 18446744073709551615
 // }
 type SectorSize uint64
+
+// Formats the size as a decimal string.
+func (s SectorSize) String() string {
+	return strconv.FormatUint(uint64(s), 10)
+}
+
+// Abbreviates the size as a human-scale number.
+// This approximates (truncates) the size unless it is a power of 1024.
+func (s SectorSize) ShortString() string {
+	var biUnits = []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
+	unit := 0
+	for s >= 1024 && unit < len(biUnits)-1 {
+		s /= 1024
+		unit++
+	}
+	return fmt.Sprintf("%d%s", s, biUnits[unit])
+}
 
 type SectorID struct {
 	Miner  ActorID
 	Number SectorNumber
 }
 
-// The unit of sector weight (power-epochs)
-type SectorWeight = big.Int
-
 // The unit of storage power (measured in bytes)
 type StoragePower = big.Int
 
 func NewStoragePower(n int64) StoragePower {
-	return StoragePower(big.NewInt(n))
+	return big.NewInt(n)
 }
 
 // This ordering, defines mappings to UInt in a way which MUST never change.
