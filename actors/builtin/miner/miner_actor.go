@@ -74,10 +74,17 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 
-	state, err := ConstructState(adt.AsStore(rt), owner, worker, params.PeerId, params.SectorSize)
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 	}
+
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
+	}
+
+	state := ConstructState(emptyArray.Root(), emptyMap.Root(), owner, worker, params.PeerId, params.SectorSize)
 	rt.State().Create(state)
 	return &adt.EmptyValue{}
 }
