@@ -175,15 +175,19 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			validateDeal(rt, deal)
 
+			client, ok := rt.ResolveAddress(deal.Proposal.Client)
+			if !ok {
+				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
+			}
 			// Before any operations that check the balance tables for funds, execute all deferred
 			// deal state updates.
 			//
 			// Note: as an optimization, implementations may cache efficient data structures indicating
 			// which of the following set of updates are redundant and can be skipped.
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Client))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, client))
 			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Provider))
 
-			st.lockBalanceOrAbort(rt, deal.Proposal.Client, deal.Proposal.ClientBalanceRequirement())
+			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
 			st.lockBalanceOrAbort(rt, owner, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
@@ -193,7 +197,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
-			if err = dbp.Put(deal.Proposal.Client, id); err != nil {
+			if err = dbp.Put(client, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set client deal id: %v", err)
 			}
 			if err = dbp.Put(deal.Proposal.Provider, id); err != nil {
