@@ -6,22 +6,19 @@ import (
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 )
 
-// An approximation to chain state finality.
+// An approximation to chain state finality (should include message propagation time as well).
 const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
 
-// Lookback from current epoch from which to obtain a PoRep challenge.
-// TODO: HS why is this value unused?
-const PoRepLookback = ChainFinalityish // Should be approximately chain ~finality. PARAM_FINISH
-
-// Minimum and maximum delay (inclusive) between a sector pre-commitment and corresponding proof of commitment.
-const PoRepMinDelay = abi.ChainEpoch(5)  // PARAM_FINISH
-const PoRepMaxDelay = abi.ChainEpoch(10) // PARAM_FINISH
-
 // Maximum duration to allow for the sealing process for seal algorithms.
+// Dependent on algorithm and sector size
 var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
 	abi.RegisteredProof_StackedDRG32GiBSeal:    abi.ChainEpoch(1), // PARAM_FINISH
 	abi.RegisteredProof_WinStackedDRG32GiBSeal: abi.ChainEpoch(1), // PARAM_FINISH
 }
+
+// Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
+// used to ensure it is not predictable by miner.
+const PreCommitChallengeDelay = abi.ChainEpoch(10)
 
 // Lookback from the current epoch from which to obtain a PoSt challenge.
 const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH

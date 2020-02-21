@@ -473,13 +473,13 @@ func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.SealedCID: %w", err)
 	}
 
-	// t.SealEpoch (abi.ChainEpoch) (int64)
-	if t.SealEpoch >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealEpoch))); err != nil {
+	// t.SealRandEpoch (abi.ChainEpoch) (int64)
+	if t.SealRandEpoch >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealRandEpoch))); err != nil {
 			return err
 		}
 	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealEpoch)-1)); err != nil {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealRandEpoch)-1)); err != nil {
 			return err
 		}
 	}
@@ -548,7 +548,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 		t.SealedCID = c
 
 	}
-	// t.SealEpoch (abi.ChainEpoch) (int64)
+	// t.SealRandEpoch (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -571,7 +571,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.SealEpoch = abi.ChainEpoch(extraI)
+		t.SealRandEpoch = abi.ChainEpoch(extraI)
 	}
 	// t.DealIDs ([]abi.DealID) (slice)
 
