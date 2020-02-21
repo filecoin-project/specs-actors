@@ -81,7 +81,7 @@ type OnChainSealVerifyInfo struct {
 	Proof   SealProof
 	DealIDs []DealID
 	SectorNumber
-	SealEpoch ChainEpoch // Used to tie the seal to a chain.
+	SealRandEpoch ChainEpoch // Used to tie the seal to a chain.
 }
 
 type SealProof struct { //<curve, system> {

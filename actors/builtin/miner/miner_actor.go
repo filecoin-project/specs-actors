@@ -35,8 +35,9 @@ const (
 )
 
 type CronEventPayload struct {
-	EventType CronEventType
-	Sectors   *abi.BitField
+	EventType       CronEventType
+	Sectors         *abi.BitField
+	RegisteredProof abi.RegisteredProof // Used for PreCommitExpiry verification}
 }
 
 type Actor struct{}
@@ -131,7 +132,6 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 
 	cronPayload := CronEventPayload{
 		EventType: cronEventWorkerKeyChange,
-		Sectors:   nil,
 	}
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	return &adt.EmptyValue{}
@@ -209,6 +209,10 @@ func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 // Sector Commitment //
 ///////////////////////
 
+type PreCommitSectorParams struct {
+	Info SectorPreCommitInfo
+}
+
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
 func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
@@ -225,8 +229,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	depositReq := precommitDeposit(st.GetSectorSize(), params.Expiration-rt.CurrEpoch())
 	confirmPaymentAndRefundChange(rt, depositReq)
-
-	// TODO HS Check on valid SealEpoch
 
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
@@ -249,10 +251,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
-		EventType: cronEventPreCommitExpiry,
-		Sectors:   &bf,
+		EventType:       cronEventPreCommitExpiry,
+		Sectors:         &bf,
+		RegisteredProof: params.RegisteredProof,
 	}
-	expiryBound := rt.CurrEpoch() + PoRepMaxDelay + 1
+	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.RegisteredProof] + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
@@ -278,21 +281,13 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
-	if rt.CurrEpoch() > precommit.PreCommitEpoch+PoRepMaxDelay || rt.CurrEpoch() < precommit.PreCommitEpoch+PoRepMinDelay {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch")
-	}
-
-	TODO()
-	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
-	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
-
-	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
-		SealedCID:    precommit.Info.SealedCID,
-		SealEpoch:    precommit.Info.SealEpoch,
-		Proof:        params.Proof,
-		DealIDs:      precommit.Info.DealIDs,
-		SectorNumber: precommit.Info.SectorNumber,
+		SealedCID:        precommit.Info.SealedCID,
+		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
+		SealRandEpoch:    precommit.Info.SealRandEpoch,
+		Proof:            params.Proof,
+		DealIDs:          precommit.Info.DealIDs,
+		SectorNumber:     precommit.Info.SectorNumber,
 	})
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
@@ -554,7 +549,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 	}
 
 	if payload.EventType == cronEventPreCommitExpiry {
-		a.checkPrecommitExpiry(rt, payload.Sectors)
+		a.checkPrecommitExpiry(rt, payload.Sectors, payload.RegisteredProof)
 	}
 
 	if payload.EventType == cronEventSectorExpiry {
@@ -631,12 +626,13 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 	}
 }
 
-func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
+func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof abi.RegisteredProof) {
 	store := adt.AsStore(rt)
 	var st State
 
 	sectorNos := bitfieldToSectorNos(rt, sectors)
 
+	// initialize here to add together for all sectors and minimize calls across actors
 	depositToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
 		for _, sectorNo := range sectorNos {
@@ -644,14 +640,18 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNo, err)
 			}
-			if found && rt.CurrEpoch()-sector.PreCommitEpoch > PoRepMaxDelay {
-				err = st.DeletePrecommittedSector(store, sectorNo)
-				if err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
-				}
-				depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+			if !found || rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
+				// already deleted or not yet expired
+				return nil
 			}
-			// Else sector has been terminated.
+
+			// delete sector
+			err = st.DeletePrecommittedSector(store, sectorNo)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit %v: %v", sectorNo, err)
+			}
+			// increment deposit to burn
+			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
 		}
 		return nil
 	})
@@ -928,9 +928,9 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *abi.OnChainSealVerifyInfo) {
 	// Check randomness.
-	sealEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[abi.RegisteredProof_WinStackedDRG32GiBSeal]
-	if onChainInfo.SealEpoch < sealEarliest {
-		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealEpoch, sealEarliest)
+	sealRandEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[onChainInfo.RegisteredProof]
+	if onChainInfo.SealRandEpoch < sealRandEarliest {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, sealRandEarliest)
 	}
 
 	commD := a.requestUnsealedSectorCID(rt, sectorSize, onChainInfo.DealIDs)
@@ -938,7 +938,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
-	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealEpoch, nil)
+	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealRandEpoch, nil)
 	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, nil)
 
 	svInfo := abi.SealVerifyInfo{
