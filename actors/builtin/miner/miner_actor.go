@@ -253,9 +253,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	cronPayload := CronEventPayload{
 		EventType:       cronEventPreCommitExpiry,
 		Sectors:         &bf,
-		RegisteredProof: params.Info.RegisteredProof,
+		RegisteredProof: params.RegisteredProof,
 	}
-	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.Info.RegisteredProof] + 1
+	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.RegisteredProof] + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
@@ -361,9 +361,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	// Request deferred callback for sector expiry.
 	cronPayload := CronEventPayload{
-		EventType:       cronEventSectorExpiry,
-		Sectors:         &bf,
-		RegisteredProof: abi.RegisteredProof_Undefined,
+		EventType: cronEventSectorExpiry,
+		Sectors:   &bf,
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
 
@@ -643,7 +642,7 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof 
 			}
 			if !found || rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
 				// already deleted or not yet expired
-				return
+				return nil
 			}
 
 			// delete sector

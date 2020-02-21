@@ -10,10 +10,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
-<<<<<<< HEAD
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-=======
->>>>>>> rebase and slight refactoring
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
