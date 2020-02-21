@@ -252,10 +252,10 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalState, "failed to load miner claim for deletion: %v", err)
 	}
 	if !found {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", nominal)
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to find miner %v claim for deletion", nominal)
 	}
 	if claim.Power.GreaterThan(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", nominal, claim.Power)
+		rt.Abortf(exitcode.ErrForbidden, "deletion requested for miner %v with power %v", nominal, claim.Power)
 	}
 
 	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
