@@ -12,6 +12,8 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+var ErrAddressNotFound = errors.New("address not found")
+
 type AddrKey = adt.AddrKey
 
 type State struct {
@@ -55,7 +57,7 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 	}
 
 	// Not found.
-	return addr.Undef, errors.New("address not found")
+	return addr.Undef, ErrAddressNotFound
 }
 
 // Allocates a new ID address and stores a mapping of the argument address to it.
