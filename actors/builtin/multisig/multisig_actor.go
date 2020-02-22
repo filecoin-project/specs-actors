@@ -7,6 +7,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -321,6 +322,16 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 }
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
+	if address.Protocol() != addr.ID {
+		ret, code := rt.Send(address, builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero())
+		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %s", address)
+		var pubkey addr.Address
+		err := ret.Into(&pubkey)
+		if err != nil {
+			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize address result: %v", ret)
+		}
+	}
+
 	if !st.isSigner(address) {
 		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
 	}
