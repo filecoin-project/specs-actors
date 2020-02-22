@@ -154,7 +154,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return tc.verifySig }
-			hasher := func(data []byte) [8]byte { return [8]byte{} }
+			hasher := func(data []byte) [32]byte { return [32]byte{} }
 
 			builder := mock.NewBuilder(ctx, paychAddr).
 				WithBalance(payChBalance, abi.NewTokenAmount(tc.received)).
@@ -288,7 +288,7 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	_ = rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
 	rt.Verify()
 
-	expMergeTo := LaneState{ID: mergeTo.ID, Redeemed: sv.Amount, Nonce: sv.Nonce,}
+	expMergeTo := LaneState{ID: mergeTo.ID, Redeemed: sv.Amount, Nonce: sv.Nonce}
 	expMergeFrom := LaneState{ID: mergeFrom.ID, Redeemed: mergeFrom.Redeemed, Nonce: mergeNonce}
 
 	// calculate ToSend amount
@@ -364,7 +364,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		var st1 State
 		rt.GetState(&st1)
 		mergeTo := st1.LaneStates[0]
-		mergeFrom := LaneState{ID: 999, Nonce: 2,}
+		mergeFrom := LaneState{ID: 999, Nonce: 2}
 
 		sv.Lane = mergeTo.ID
 		sv.Nonce = 10
@@ -481,10 +481,11 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 	var st State
 	rt.GetState(&st)
 
-	rt.SetHasher(func(data []byte) [8]byte {
-		xform := append(data, 'X')
-		var res [8]byte
-		copy(res[:], xform)
+	rt.SetHasher(func(data []byte) [32]byte {
+		aux := []byte("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+		var res [32]byte
+		copy(res[:], aux)
+		copy(res[:], data)
 		return res
 	})
 	secret := []byte("Profesr")
@@ -495,7 +496,7 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		Proof:  nil,
 	}
 	t.Run("Succeeds with correct secret", func(t *testing.T) {
-		ucp.Sv.SecretPreimage = []byte("ProfesrX")
+		ucp.Sv.SecretPreimage = []byte("ProfesrXXXXXXXXXXXXXXXXXXXXXXXXX")
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.Call(actor.UpdateChannelState, ucp)
 	})
@@ -673,7 +674,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 	curEpoch := 2
 
 	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
-	hasher := func(data []byte) [8]byte { return [8]byte{} }
+	hasher := func(data []byte) [32]byte { return [32]byte{} }
 
 	builder := mock.NewBuilder(ctx, paychAddr).
 		WithBalance(balance, received).

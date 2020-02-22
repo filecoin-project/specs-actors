@@ -108,7 +108,7 @@ type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
 	// Hashes input data using blake2b with 256 bit output.
-	HashBlake2b(data []byte) [8]byte
+	HashBlake2b(data []byte) [32]byte
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.

@@ -12,7 +12,7 @@ import (
 )
 
 type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
-type HasherFunc func(data []byte) [8]byte
+type HasherFunc func(data []byte) [32]byte
 
 type syscaller struct {
 	SignatureVerifier VerifyFunc
@@ -27,7 +27,7 @@ func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, p
 	return s.SignatureVerifier(sig, signer, plaintext)
 }
 
-func (s *syscaller) HashBlake2b(data []byte) [8]byte {
+func (s *syscaller) HashBlake2b(data []byte) [32]byte {
 	if s.Hasher == nil {
 		s.PanicOnUnsetFunc("Hasher")
 	}
