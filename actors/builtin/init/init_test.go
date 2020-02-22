@@ -145,7 +145,7 @@ func TestExec(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// actor creating the multisig actor
-		someAccountActor := tutil.NewSECP256K1Addr(t, "pubbub")
+		someAccountActor := tutil.NewIDAddr(t, 1234)
 		rt.SetCaller(someAccountActor, builtin.AccountActorCodeID)
 
 		uniqueAddr := tutil.NewActorAddr(t, "multisig")
