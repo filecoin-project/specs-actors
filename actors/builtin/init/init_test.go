@@ -139,6 +139,29 @@ func TestExec(t *testing.T) {
 		assert.Equal(t, addr.Undef, actualUnknownAddr)
 	})
 
+	t.Run("happy path create multisig actor", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt)
+
+		// actor creating the multisig actor
+		someAccountActor := tutil.NewSECP256K1Addr(t, "pubbub")
+		rt.SetCaller(someAccountActor, builtin.AccountActorCodeID)
+
+		uniqueAddr := tutil.NewActorAddr(t, "multisig")
+		rt.SetNewActorAddress(uniqueAddr)
+
+		// next id address
+		expectedIdAddr := tutil.NewIDAddr(t, 100)
+		rt.ExpectCreateActor(builtin.MultisigActorCodeID, expectedIdAddr)
+
+		// expect a send to the multisig actor constructor
+		rt.ExpectSend(expectedIdAddr, builtin.MethodConstructor, fakeParams, big.Zero(), nil, exitcode.Ok)
+		execRet := actor.execAndVerify(rt, builtin.MultisigActorCodeID, fakeParams)
+		assert.Equal(t, uniqueAddr, execRet.RobustAddress)
+		assert.Equal(t, expectedIdAddr, execRet.IDAddress)
+	})
+
 	t.Run("sending to constructor failure", func(t *testing.T) {
 		rt := builder.Build(t)
 
