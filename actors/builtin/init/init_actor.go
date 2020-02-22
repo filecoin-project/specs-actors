@@ -92,8 +92,8 @@ func canExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
 		return false
 	}
 
-	// Anyone can create payment channels.
-	if execCodeID == builtin.PaymentChannelActorCodeID {
+	// Anyone can create payment channels and multi sig actors.
+	if execCodeID == builtin.PaymentChannelActorCodeID || execCodeID == builtin.MultisigActorCodeID {
 		return true
 	}
 
