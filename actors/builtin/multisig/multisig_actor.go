@@ -322,7 +322,8 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 }
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
-	if address.Protocol() != addr.ID {
+	// resolve address to a public key before verifying.
+	if address.Protocol() == addr.ID {
 		ret, code := rt.Send(address, builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero())
 		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %s", address)
 		var pubkey addr.Address
