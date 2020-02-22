@@ -78,6 +78,7 @@ func TestConstruction(t *testing.T) {
 	})
 }
 
+
 func TestVesting(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
 
@@ -106,6 +107,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetReceived(big.Zero())
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, darlene, multisigInitialBalance, builtin.MethodSend, fakeParams)
 		rt.Verify()
 
@@ -129,6 +131,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetReceived(big.Zero())
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, fakeParams)
 		rt.Verify()
 
@@ -151,6 +154,7 @@ func TestVesting(t *testing.T) {
 		// this propose will fail since it would send more than the required locked balance and num approvals == 1
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.propose(rt, darlene, abi.NewTokenAmount(100), builtin.MethodSend, fakeParams)
 		})
@@ -160,6 +164,7 @@ func TestVesting(t *testing.T) {
 		rt.SetEpoch(1)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, abi.NewTokenAmount(10), nil, 0)
 		actor.propose(rt, darlene, abi.NewTokenAmount(10), builtin.MethodSend, fakeParams)
 		rt.Verify()
@@ -174,6 +179,7 @@ func TestVesting(t *testing.T) {
 		rt.SetReceived(big.Zero())
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, fakeParams)
 		rt.Verify()
 
@@ -211,6 +217,7 @@ func TestPropose(t *testing.T) {
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 
 		// the transaction remains awaiting second approval
@@ -230,10 +237,11 @@ func TestPropose(t *testing.T) {
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
-		rt.ExpectSend(chuck, builtin.MethodSend, fakeParams, sendValue, nil, 0)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
+		rt.ExpectSend(chuck, builtin.MethodSend, fakeParams, sendValue, nil, 0)
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 
 		// the transaction has been sent and cleaned up
@@ -248,6 +256,7 @@ func TestPropose(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 		})
@@ -268,6 +277,7 @@ func TestPropose(t *testing.T) {
 
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 		})
@@ -303,6 +313,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
@@ -333,6 +344,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 		rt.Verify()
 
@@ -362,6 +374,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 		rt.Verify()
 
@@ -392,6 +405,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
 
 		// richard is going to approve a transaction they are not a signer for.
@@ -440,6 +454,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
@@ -461,6 +476,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
@@ -490,6 +506,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
@@ -520,6 +537,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction ID: 0
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(rt.Caller(), builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero(), &addrInto{rt.Caller()}, exitcode.Ok)
 		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
 		rt.Verify()
 
@@ -995,4 +1013,13 @@ func (s key) Key() string {
 
 func asKey(in string) adt.Keyer {
 	return key(in)
+}
+
+type addrInto struct {
+	a addr.Address
+}
+
+func (ai *addrInto) Into(unmarshaler runtime.CBORUnmarshaler) error {
+	unmarshaler = &ai.a
+	return nil
 }

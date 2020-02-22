@@ -94,7 +94,7 @@ type ProposeParams struct {
 
 func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.Message().Caller()
+	callerAddr := resolveToPubKey(rt, rt.Message().Caller())
 
 	var txnID TxnID
 	var st State
@@ -322,18 +322,20 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 }
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
+	if !st.isSigner(address) {
+		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
+	}
+}
+
+func resolveToPubKey(rt vmr.Runtime, address addr.Address) addr.Address {
 	// resolve address to a public key before verifying.
-	var pubkeyAddr = address
 	if address.Protocol() == addr.ID {
 		ret, code := rt.Send(address, builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero())
 		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %s", address)
-		err := ret.Into(&pubkeyAddr)
+		err := ret.Into(&address)
 		if err != nil {
 			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize address result: %v", ret)
 		}
 	}
-
-	if !st.isSigner(pubkeyAddr) {
-		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
-	}
+	return address
 }
