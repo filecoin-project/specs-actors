@@ -323,17 +323,17 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
 	// resolve address to a public key before verifying.
+	var pubkeyAddr = address
 	if address.Protocol() == addr.ID {
 		ret, code := rt.Send(address, builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero())
 		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %s", address)
-		var pubkey addr.Address
-		err := ret.Into(&pubkey)
+		err := ret.Into(&pubkeyAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize address result: %v", ret)
 		}
 	}
 
-	if !st.isSigner(address) {
+	if !st.isSigner(pubkeyAddr) {
 		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
 	}
 }
