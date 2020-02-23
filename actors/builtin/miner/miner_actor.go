@@ -298,6 +298,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		Proof:            params.Proof,
 		DealIDs:          precommit.Info.DealIDs,
 		SectorNumber:     precommit.Info.SectorNumber,
+		RegisteredProof:  precommit.Info.RegisteredProof,
 	})
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
