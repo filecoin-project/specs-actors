@@ -146,12 +146,24 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
+	newPower := big.Add(claim.Power, power)
+
+	if claim.Power.LessThan(ConsensusMinerMinPower) && newPower.GreaterThanEqual(ConsensusMinerMinPower) {
+		// just passed min miner size
+		st.NumMinersMeetingMinPower++
+	} else if claim.Power.GreaterThanEqual(ConsensusMinerMinPower) && newPower.LessThan(ConsensusMinerMinPower) {
+		// just went below min miner size
+		st.NumMinersMeetingMinPower--
+	}
+
 	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
 
-	claim.Power = big.Add(claim.Power, power)
+	claim.Power = newPower
 	claim.Pledge = big.Add(claim.Pledge, pledge)
+
 	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
 	AssertMsg(claim.Pledge.GreaterThanEqual(big.Zero()), "negative claimed pledge: %v", claim.Pledge)
+	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
 	return st.setClaim(s, miner, claim)
 }
 
