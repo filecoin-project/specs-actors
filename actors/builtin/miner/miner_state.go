@@ -4,7 +4,6 @@ import (
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-amt-ipld/v2"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
@@ -150,11 +149,6 @@ func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, 
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
-		var enf *amt.ErrNotFound
-		if xerrors.As(err, &enf) {
-			return false, nil
-		}
-
 		return false, xerrors.Errorf("failed to get sector %v: %w", sectorNo, err)
 	}
 	return found, nil
