@@ -155,12 +155,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	rt.State().Transaction(&st, func() interface{} {
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+		states := AsDealStateArray(adt.AsStore(rt), st.States)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			if deal.Proposal.Provider != rt.Message().Caller() {
 				rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
 			}
-
 			validateDeal(rt, deal)
 
 			// Before any operations that check the balance tables for funds, execute all deferred
@@ -175,7 +175,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			st.lockBalanceOrAbort(rt, deal.Proposal.Provider, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
-
 			err := proposals.Set(id, &deal.Proposal)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
@@ -187,11 +186,20 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			if err = dbp.Put(deal.Proposal.Provider, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set provider deal id: %v", err)
 			}
-
+			newDealState := &DealState{
+				SectorStartEpoch: epochUndefined,
+				LastUpdatedEpoch: epochUndefined,
+				SlashEpoch:       epochUndefined,
+			}
+			if err := states.Set(id, newDealState); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to set state", err)
+			}
 			newDealIds = append(newDealIds, id)
 		}
 		st.Proposals = proposals.Root()
 		st.DealIDsByParty = dbp.Root()
+		st.States = states.Root()
+
 		return nil
 	})
 
@@ -220,6 +228,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 	rt.State().Transaction(&st, func() interface{} {
 		// if there are no dealIDs, it is a CommittedCapacity sector
 		// and the totalWeight should be zero
+
 		states := AsDealStateArray(adt.AsStore(rt), st.States)
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 
