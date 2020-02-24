@@ -56,6 +56,7 @@ func (a Actor) Exports() []interface{} {
 		10:                        a.TerminateSectors,
 		11:                        a.DeclareTemporaryFaults,
 		12:                        a.OnDeferredCronEvent,
+		13:                        a.CheckSectorProven,
 	}
 }
 
@@ -388,6 +389,26 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, precommit.PreCommitDeposit)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
+	return &adt.EmptyValue{}
+}
+
+type CheckSectorProvenParams struct {
+	SectorNumber abi.SectorNumber
+}
+
+func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *adt.EmptyValue {
+	rt.ValidateImmediateCallerAcceptAny()
+
+	var st State
+	rt.State().Readonly(&st)
+	store := adt.AsStore(rt)
+	sectorNo := params.SectorNumber
+
+	_, found, _ := st.GetSector(store, sectorNo)
+	if !found {
+		rt.Abortf(exitcode.ErrNotFound, "Sector hasn't been proven %v", sectorNo)
+	}
+
 	return &adt.EmptyValue{}
 }
 
