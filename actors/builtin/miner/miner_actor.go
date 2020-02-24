@@ -274,7 +274,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	var st State
 	rt.State().Readonly(&st)
-	rt.ValidateImmediateCallerIs(st.Info.Worker)
+	rt.ValidateImmediateCallerAcceptAny()
 
 	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 	if err != nil {
