@@ -2,6 +2,7 @@ package abi
 
 import (
 	cid "github.com/ipfs/go-cid"
+	"github.com/pkg/errors"
 
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
@@ -52,6 +53,72 @@ const (
 	RegisteredProof_StackedDRG1GiBSeal     = RegisteredProof(11)
 	RegisteredProof_StackedDRG1GiBPoSt     = RegisteredProof(12)
 )
+
+// RegisteredPoStProof produces the PoSt-specific RegisteredProof corresponding
+// to the receiving RegisteredProof.
+func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
+	switch p {
+	case RegisteredProof_WinStackedDRG32GiBSeal:
+		return RegisteredProof_WinStackedDRG32GiBPoSt, nil
+	case RegisteredProof_WinStackedDRG32GiBPoSt:
+		return RegisteredProof_WinStackedDRG32GiBPoSt, nil
+	case RegisteredProof_StackedDRG32GiBSeal:
+		return RegisteredProof_StackedDRG32GiBPoSt, nil
+	case RegisteredProof_StackedDRG32GiBPoSt:
+		return RegisteredProof_StackedDRG32GiBPoSt, nil
+	case RegisteredProof_StackedDRG1KiBSeal:
+		return RegisteredProof_StackedDRG1KiBPoSt, nil
+	case RegisteredProof_StackedDRG1KiBPoSt:
+		return RegisteredProof_StackedDRG1KiBPoSt, nil
+	case RegisteredProof_StackedDRG16MiBSeal:
+		return RegisteredProof_StackedDRG16MiBPoSt, nil
+	case RegisteredProof_StackedDRG16MiBPoSt:
+		return RegisteredProof_StackedDRG16MiBPoSt, nil
+	case RegisteredProof_StackedDRG256MiBSeal:
+		return RegisteredProof_StackedDRG256MiBPoSt, nil
+	case RegisteredProof_StackedDRG256MiBPoSt:
+		return RegisteredProof_StackedDRG256MiBPoSt, nil
+	case RegisteredProof_StackedDRG1GiBSeal:
+		return RegisteredProof_StackedDRG1GiBPoSt, nil
+	case RegisteredProof_StackedDRG1GiBPoSt:
+		return RegisteredProof_StackedDRG1GiBPoSt, nil
+	default:
+		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
+	}
+}
+
+// RegisteredSealProof produces the seal-specific RegisteredProof corresponding
+// to the receiving RegisteredProof.
+func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
+	switch p {
+	case RegisteredProof_WinStackedDRG32GiBSeal:
+		return RegisteredProof_WinStackedDRG32GiBSeal, nil
+	case RegisteredProof_WinStackedDRG32GiBPoSt:
+		return RegisteredProof_WinStackedDRG32GiBSeal, nil
+	case RegisteredProof_StackedDRG32GiBSeal:
+		return RegisteredProof_StackedDRG32GiBSeal, nil
+	case RegisteredProof_StackedDRG32GiBPoSt:
+		return RegisteredProof_StackedDRG32GiBSeal, nil
+	case RegisteredProof_StackedDRG1KiBSeal:
+		return RegisteredProof_StackedDRG1KiBSeal, nil
+	case RegisteredProof_StackedDRG1KiBPoSt:
+		return RegisteredProof_StackedDRG1KiBSeal, nil
+	case RegisteredProof_StackedDRG16MiBSeal:
+		return RegisteredProof_StackedDRG16MiBSeal, nil
+	case RegisteredProof_StackedDRG16MiBPoSt:
+		return RegisteredProof_StackedDRG16MiBSeal, nil
+	case RegisteredProof_StackedDRG256MiBSeal:
+		return RegisteredProof_StackedDRG256MiBSeal, nil
+	case RegisteredProof_StackedDRG256MiBPoSt:
+		return RegisteredProof_StackedDRG256MiBSeal, nil
+	case RegisteredProof_StackedDRG1GiBSeal:
+		return RegisteredProof_StackedDRG1GiBSeal, nil
+	case RegisteredProof_StackedDRG1GiBPoSt:
+		return RegisteredProof_StackedDRG1GiBSeal, nil
+	default:
+		return 0, errors.Errorf("unsupported mapping from %+v to seal-specific RegisteredProof", p)
+	}
+}
 
 ///
 /// Sealing
