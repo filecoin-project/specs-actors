@@ -46,6 +46,7 @@ func (a Actor) Exports() []interface{} {
 		13:                        a.EnrollCronEvent,
 		14:                        a.ReportConsensusFault,
 		15:                        a.OnEpochTickEnd,
+		16:                        a.MinerNominalPowerMeetsConsensusMinimum,
 	}
 }
 
@@ -528,6 +529,19 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
 	return nil
+}
+
+func (a Actor) MinerNominalPowerMeetsConsensusMinimum(rt Runtime, _ *adt.EmptyValue) bool {
+	var st State
+	rt.State().Readonly(&st)
+	store := adt.AsStore(rt)
+	minerAddr := rt.Message().Receiver()
+
+	gtMinSize, err := st.minerNominalPowerMeetsConsensusMinimum(store, minerAddr)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "Failed to check miner %v meets min required size: %v", minerAddr, err)
+	}
+	return gtMinSize
 }
 
 ////////////////////////////////////////////////////////////////////////////////

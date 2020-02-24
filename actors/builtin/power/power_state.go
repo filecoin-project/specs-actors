@@ -64,9 +64,22 @@ func ConstructState(emptyMapCid cid.Cid) *State {
 
 // Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate
 // Election PoSt winners outside the chain state. We may remove it.
-func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
+func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) {
+	claim, ok, err := st.getClaim(s, miner)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, errors.Errorf("no claim for actor %v", miner)
+	}
+
+	minerNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	if err != nil {
+		return false, err
+	}
+
 	// if miner is larger than min power requirement, we're set
-	if minerPower.GreaterThanEqual(ConsensusMinerMinPower) {
+	if minerNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		return true, nil
 	}
 
@@ -100,7 +113,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 
 	// get size of MIN_MINER_SIZE_TARGth largest miner
 	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
-	return minerPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
+	return minerNominalPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
 }
 
 func (st *State) getMinerBalance(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
@@ -146,19 +159,28 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
-	newPower := big.Add(claim.Power, power)
+	oldNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	if err != nil {
+		return err
+	}
+	claim.Power = big.Add(claim.Power, power)
+	newNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	if err != nil {
+		return err
+	}
 
-	if claim.Power.LessThan(ConsensusMinerMinPower) && newPower.GreaterThanEqual(ConsensusMinerMinPower) {
+	claim.Pledge = big.Add(claim.Pledge, pledge)
+
+	if oldNominalPower.LessThan(ConsensusMinerMinPower) && newNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		// just passed min miner size
 		st.NumMinersMeetingMinPower++
-	} else if claim.Power.GreaterThanEqual(ConsensusMinerMinPower) && newPower.LessThan(ConsensusMinerMinPower) {
+	} else if oldNominalPower.GreaterThanEqual(ConsensusMinerMinPower) && newNominalPower.LessThan(ConsensusMinerMinPower) {
 		// just went below min miner size
 		st.NumMinersMeetingMinPower--
 	}
 
 	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
 
-	claim.Power = newPower
 	claim.Pledge = big.Add(claim.Pledge, pledge)
 
 	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
