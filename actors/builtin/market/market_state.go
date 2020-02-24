@@ -99,7 +99,7 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 
 	if state.SectorStartEpoch == epochUndefined {
 		// Not yet appeared in proven sector; check for timeout.
-		if deal.StartEpoch >= epoch {
+		if deal.StartEpoch < epoch {
 			return st.processDealInitTimedOut(rt, dealID)
 		}
 		return
