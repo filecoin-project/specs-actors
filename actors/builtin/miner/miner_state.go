@@ -236,13 +236,13 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 	return sectorInfos, nil
 }
 
-func (st *State) ComputePoStChallengeCount(store adt.Store) (uint64, error) {
+func (st *State) ComputeWindowedPoStChallengeCount(store adt.Store) (uint64, error) {
 	provingSet, err := st.ComputeProvingSet(store)
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to compute proving set: %v", err)
 	}
 
-	return uint64(len(provingSet)) * (PoStSampleRateNum / PoStSampleRateDenom), nil
+	return uint64(len(provingSet)) * (WindowedPoStSampleRateNum / WindowedPoStSampleRateDenom), nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {
