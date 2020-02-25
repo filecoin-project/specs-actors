@@ -51,9 +51,9 @@ const MaxFaultsCount = 32 << 20
 // ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
 const ProvingPeriod = 300
 
-// WindowedPoStSampleRateNum defines the numerator of the PoStSampleRate, used to compute challenge count for PoSt generation
+// WindowedPoStSampleRateNumer defines the numerator of the windowed PoSt sample rate, used to compute challenge count for PoSt generation
 // and verification.
-const WindowedPoStSampleRateNum = 1
+const WindowedPoStSampleRateNumer = 1
 
-// WindowedPoStSampleRateNum defines the denominator of the PoStSampleRate.
+// WindowedPoStSampleRateNumer defines the denominator of the windowed PoSt sample rate.
 const WindowedPoStSampleRateDenom = 25
