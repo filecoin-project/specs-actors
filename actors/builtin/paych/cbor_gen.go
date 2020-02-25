@@ -493,17 +493,28 @@ func (t *SignedVoucher) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{137}); err != nil {
+	if _, err := w.Write([]byte{138}); err != nil {
 		return err
 	}
 
-	// t.TimeLock (abi.ChainEpoch) (int64)
-	if t.TimeLock >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TimeLock))); err != nil {
+	// t.TimeLockMin (abi.ChainEpoch) (int64)
+	if t.TimeLockMin >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TimeLockMin))); err != nil {
 			return err
 		}
 	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.TimeLock)-1)); err != nil {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.TimeLockMin)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.TimeLockMax (abi.ChainEpoch) (int64)
+	if t.TimeLockMax >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TimeLockMax))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.TimeLockMax)-1)); err != nil {
 			return err
 		}
 	}
@@ -583,11 +594,11 @@ func (t *SignedVoucher) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 10 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.TimeLock (abi.ChainEpoch) (int64)
+	// t.TimeLockMin (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -610,7 +621,32 @@ func (t *SignedVoucher) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.TimeLock = abi.ChainEpoch(extraI)
+		t.TimeLockMin = abi.ChainEpoch(extraI)
+	}
+	// t.TimeLockMax (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.TimeLockMax = abi.ChainEpoch(extraI)
 	}
 	// t.SecretPreimage ([]uint8) (slice)
 
