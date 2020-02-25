@@ -169,6 +169,7 @@ type PoStVerifyInfo struct {
 	Proofs          []PoStProof
 	EligibleSectors []SectorInfo
 	Prover          ActorID // used to derive 32-byte prover ID
+	ChallengeCount  uint64
 }
 
 type SectorInfo struct {
