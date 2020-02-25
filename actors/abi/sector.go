@@ -40,26 +40,20 @@ func NewStoragePower(n int64) StoragePower {
 type RegisteredProof int64
 
 const (
-	RegisteredProof_WinStackedDRG32GiBSeal = RegisteredProof(1)
-	RegisteredProof_WinStackedDRG32GiBPoSt = RegisteredProof(2)
-	RegisteredProof_StackedDRG32GiBSeal    = RegisteredProof(3)
-	RegisteredProof_StackedDRG32GiBPoSt    = RegisteredProof(4)
-	RegisteredProof_StackedDRG2KiBSeal     = RegisteredProof(5)
-	RegisteredProof_StackedDRG2KiBPoSt     = RegisteredProof(6)
-	RegisteredProof_StackedDRG8MiBSeal     = RegisteredProof(7)
-	RegisteredProof_StackedDRG8MiBPoSt     = RegisteredProof(8)
-	RegisteredProof_StackedDRG512MiBSeal   = RegisteredProof(9)
-	RegisteredProof_StackedDRG512MiBPoSt   = RegisteredProof(10)
+	RegisteredProof_StackedDRG32GiBSeal  = RegisteredProof(1)
+	RegisteredProof_StackedDRG32GiBPoSt  = RegisteredProof(2)
+	RegisteredProof_StackedDRG2KiBSeal   = RegisteredProof(3)
+	RegisteredProof_StackedDRG2KiBPoSt   = RegisteredProof(4)
+	RegisteredProof_StackedDRG8MiBSeal   = RegisteredProof(5)
+	RegisteredProof_StackedDRG8MiBPoSt   = RegisteredProof(6)
+	RegisteredProof_StackedDRG512MiBSeal = RegisteredProof(7)
+	RegisteredProof_StackedDRG512MiBPoSt = RegisteredProof(8)
 )
 
 // RegisteredPoStProof produces the PoSt-specific RegisteredProof corresponding
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
 	switch p {
-	case RegisteredProof_WinStackedDRG32GiBSeal:
-		return RegisteredProof_WinStackedDRG32GiBPoSt, nil
-	case RegisteredProof_WinStackedDRG32GiBPoSt:
-		return RegisteredProof_WinStackedDRG32GiBPoSt, nil
 	case RegisteredProof_StackedDRG32GiBSeal:
 		return RegisteredProof_StackedDRG32GiBPoSt, nil
 	case RegisteredProof_StackedDRG32GiBPoSt:
@@ -85,10 +79,6 @@ func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
 	switch p {
-	case RegisteredProof_WinStackedDRG32GiBSeal:
-		return RegisteredProof_WinStackedDRG32GiBSeal, nil
-	case RegisteredProof_WinStackedDRG32GiBPoSt:
-		return RegisteredProof_WinStackedDRG32GiBSeal, nil
 	case RegisteredProof_StackedDRG32GiBSeal:
 		return RegisteredProof_StackedDRG32GiBSeal, nil
 	case RegisteredProof_StackedDRG32GiBPoSt:
