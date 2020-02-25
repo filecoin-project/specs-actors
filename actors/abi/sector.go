@@ -163,7 +163,6 @@ type ChallengeTicketsCommitment []byte
 type PoStRandomness Randomness
 type PartialTicket []byte // 32 bytes
 
-// TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
