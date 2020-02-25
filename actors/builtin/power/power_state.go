@@ -195,18 +195,15 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
 	// Currently, the nominal power may differ from claimed power because of
-	// collateral and faults (declared or detected)
+	// detected faults.
 	nominalPower := claimedPower
 	if found, err := st.hasDetectedFault(s, minerAddr); err != nil {
 		return abi.NewStoragePower(0), err
 	} else if found {
 		nominalPower = big.Zero()
-	} else {
-		// account for declared faults
-		// could just substract miner.faultset().count() * miner.info.sector_size
-		// But there may be some trickiness in how sector power is accounted TODO: ZX to confirm
-
 	}
+	// no need to account for declared faults, since they
+	// are already accounted for in "claimed" power
 
 	return nominalPower, nil
 }
@@ -226,6 +223,23 @@ func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
+
+	claim, ok, err := st.getClaim(s, a)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.Errorf("no claim for actor %v", a)
+	}
+	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
+	if err != nil {
+		return err
+	}
+	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+		// just lost a miner > min size
+		st.NumMinersMeetingMinPower--
+	}
+
 	return nil
 }
 
@@ -235,6 +249,23 @@ func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
+
+	claim, ok, err := st.getClaim(s, a)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.Errorf("no claim for actor %v", a)
+	}
+	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
+	if err != nil {
+		return err
+	}
+	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+		// just regained a miner > min size
+		st.NumMinersMeetingMinPower++
+	}
+
 	return nil
 }
 
