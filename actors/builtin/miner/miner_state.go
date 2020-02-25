@@ -242,7 +242,7 @@ func (st *State) ComputeWindowedPoStChallengeCount(store adt.Store) (uint64, err
 		return 0, errors.Wrapf(err, "failed to compute proving set: %v", err)
 	}
 
-	return uint64(len(provingSet)) * (WindowedPoStSampleRateNum / WindowedPoStSampleRateDenom), nil
+	return (uint64(len(provingSet))*WindowedPoStSampleRateNum)/WindowedPoStSampleRateDenom + 1, nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {
