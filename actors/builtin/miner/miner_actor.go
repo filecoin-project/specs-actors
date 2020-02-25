@@ -100,6 +100,7 @@ type GetControlAddressesReturn struct {
 }
 
 func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddressesReturn {
+	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
 	return &GetControlAddressesReturn{
