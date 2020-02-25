@@ -163,13 +163,15 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 	if err != nil {
 		return err
 	}
+
+	// update pledge and power
 	claim.Power = big.Add(claim.Power, power)
+	claim.Pledge = big.Add(claim.Pledge, pledge)
+
 	newNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
 	if err != nil {
 		return err
 	}
-
-	claim.Pledge = big.Add(claim.Pledge, pledge)
 
 	if oldNominalPower.LessThan(ConsensusMinerMinPower) && newNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		// just passed min miner size
@@ -192,13 +194,18 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
-	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
-	// from a SurprisePoSt challenge. TODO: hs update this
+	// Currently, the nominal power may differ from claimed power because of
+	// collateral and faults (declared or detected)
 	nominalPower := claimedPower
 	if found, err := st.hasDetectedFault(s, minerAddr); err != nil {
 		return abi.NewStoragePower(0), err
 	} else if found {
 		nominalPower = big.Zero()
+	} else {
+		// account for declared faults
+		// could just substract miner.faultset().count() * miner.info.sector_size
+		// But there may be some trickiness in how sector power is accounted TODO: ZX to confirm
+
 	}
 
 	return nominalPower, nil
