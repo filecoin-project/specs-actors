@@ -44,14 +44,12 @@ const (
 	RegisteredProof_WinStackedDRG32GiBPoSt = RegisteredProof(2)
 	RegisteredProof_StackedDRG32GiBSeal    = RegisteredProof(3)
 	RegisteredProof_StackedDRG32GiBPoSt    = RegisteredProof(4)
-	RegisteredProof_StackedDRG1KiBSeal     = RegisteredProof(5)
-	RegisteredProof_StackedDRG1KiBPoSt     = RegisteredProof(6)
-	RegisteredProof_StackedDRG16MiBSeal    = RegisteredProof(7)
-	RegisteredProof_StackedDRG16MiBPoSt    = RegisteredProof(8)
-	RegisteredProof_StackedDRG256MiBSeal   = RegisteredProof(9)
-	RegisteredProof_StackedDRG256MiBPoSt   = RegisteredProof(10)
-	RegisteredProof_StackedDRG1GiBSeal     = RegisteredProof(11)
-	RegisteredProof_StackedDRG1GiBPoSt     = RegisteredProof(12)
+	RegisteredProof_StackedDRG2KiBSeal     = RegisteredProof(5)
+	RegisteredProof_StackedDRG2KiBPoSt     = RegisteredProof(6)
+	RegisteredProof_StackedDRG8MiBSeal     = RegisteredProof(7)
+	RegisteredProof_StackedDRG8MiBPoSt     = RegisteredProof(8)
+	RegisteredProof_StackedDRG512MiBSeal   = RegisteredProof(9)
+	RegisteredProof_StackedDRG512MiBPoSt   = RegisteredProof(10)
 )
 
 // RegisteredPoStProof produces the PoSt-specific RegisteredProof corresponding
@@ -66,22 +64,18 @@ func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
 		return RegisteredProof_StackedDRG32GiBPoSt, nil
 	case RegisteredProof_StackedDRG32GiBPoSt:
 		return RegisteredProof_StackedDRG32GiBPoSt, nil
-	case RegisteredProof_StackedDRG1KiBSeal:
-		return RegisteredProof_StackedDRG1KiBPoSt, nil
-	case RegisteredProof_StackedDRG1KiBPoSt:
-		return RegisteredProof_StackedDRG1KiBPoSt, nil
-	case RegisteredProof_StackedDRG16MiBSeal:
-		return RegisteredProof_StackedDRG16MiBPoSt, nil
-	case RegisteredProof_StackedDRG16MiBPoSt:
-		return RegisteredProof_StackedDRG16MiBPoSt, nil
-	case RegisteredProof_StackedDRG256MiBSeal:
-		return RegisteredProof_StackedDRG256MiBPoSt, nil
-	case RegisteredProof_StackedDRG256MiBPoSt:
-		return RegisteredProof_StackedDRG256MiBPoSt, nil
-	case RegisteredProof_StackedDRG1GiBSeal:
-		return RegisteredProof_StackedDRG1GiBPoSt, nil
-	case RegisteredProof_StackedDRG1GiBPoSt:
-		return RegisteredProof_StackedDRG1GiBPoSt, nil
+	case RegisteredProof_StackedDRG2KiBSeal:
+		return RegisteredProof_StackedDRG2KiBPoSt, nil
+	case RegisteredProof_StackedDRG2KiBPoSt:
+		return RegisteredProof_StackedDRG2KiBPoSt, nil
+	case RegisteredProof_StackedDRG8MiBSeal:
+		return RegisteredProof_StackedDRG8MiBPoSt, nil
+	case RegisteredProof_StackedDRG8MiBPoSt:
+		return RegisteredProof_StackedDRG8MiBPoSt, nil
+	case RegisteredProof_StackedDRG512MiBSeal:
+		return RegisteredProof_StackedDRG512MiBPoSt, nil
+	case RegisteredProof_StackedDRG512MiBPoSt:
+		return RegisteredProof_StackedDRG512MiBPoSt, nil
 	default:
 		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
 	}
@@ -99,22 +93,18 @@ func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
 		return RegisteredProof_StackedDRG32GiBSeal, nil
 	case RegisteredProof_StackedDRG32GiBPoSt:
 		return RegisteredProof_StackedDRG32GiBSeal, nil
-	case RegisteredProof_StackedDRG1KiBSeal:
-		return RegisteredProof_StackedDRG1KiBSeal, nil
-	case RegisteredProof_StackedDRG1KiBPoSt:
-		return RegisteredProof_StackedDRG1KiBSeal, nil
-	case RegisteredProof_StackedDRG16MiBSeal:
-		return RegisteredProof_StackedDRG16MiBSeal, nil
-	case RegisteredProof_StackedDRG16MiBPoSt:
-		return RegisteredProof_StackedDRG16MiBSeal, nil
-	case RegisteredProof_StackedDRG256MiBSeal:
-		return RegisteredProof_StackedDRG256MiBSeal, nil
-	case RegisteredProof_StackedDRG256MiBPoSt:
-		return RegisteredProof_StackedDRG256MiBSeal, nil
-	case RegisteredProof_StackedDRG1GiBSeal:
-		return RegisteredProof_StackedDRG1GiBSeal, nil
-	case RegisteredProof_StackedDRG1GiBPoSt:
-		return RegisteredProof_StackedDRG1GiBSeal, nil
+	case RegisteredProof_StackedDRG2KiBSeal:
+		return RegisteredProof_StackedDRG2KiBSeal, nil
+	case RegisteredProof_StackedDRG2KiBPoSt:
+		return RegisteredProof_StackedDRG2KiBSeal, nil
+	case RegisteredProof_StackedDRG8MiBSeal:
+		return RegisteredProof_StackedDRG8MiBSeal, nil
+	case RegisteredProof_StackedDRG8MiBPoSt:
+		return RegisteredProof_StackedDRG8MiBSeal, nil
+	case RegisteredProof_StackedDRG512MiBSeal:
+		return RegisteredProof_StackedDRG512MiBSeal, nil
+	case RegisteredProof_StackedDRG512MiBPoSt:
+		return RegisteredProof_StackedDRG512MiBSeal, nil
 	default:
 		return 0, errors.Errorf("unsupported mapping from %+v to seal-specific RegisteredProof", p)
 	}
