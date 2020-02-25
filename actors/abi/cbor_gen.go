@@ -718,8 +718,19 @@ func (t *PoStProof) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
+	}
+
+	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	if t.RegisteredProof >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.RegisteredProof))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.RegisteredProof)-1)); err != nil {
+			return err
+		}
 	}
 
 	// t.ProofBytes ([]uint8) (slice)
@@ -747,10 +758,35 @@ func (t *PoStProof) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.RegisteredProof = RegisteredProof(extraI)
+	}
 	// t.ProofBytes ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -870,19 +906,8 @@ func (t *OnChainPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{131}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
-	}
-
-	// t.ProofType (abi.RegisteredProof) (int64)
-	if t.ProofType >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.ProofType))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ProofType)-1)); err != nil {
-			return err
-		}
 	}
 
 	// t.Candidates ([]abi.PoStCandidate) (slice)
@@ -926,35 +951,10 @@ func (t *OnChainPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.ProofType (abi.RegisteredProof) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.ProofType = RegisteredProof(extraI)
-	}
 	// t.Candidates ([]abi.PoStCandidate) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -1017,28 +1017,8 @@ func (t *OnChainElectionPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{132}); err != nil {
+	if _, err := w.Write([]byte{131}); err != nil {
 		return err
-	}
-
-	// t.RegisteredProofs ([]abi.RegisteredProof) (slice)
-	if len(t.RegisteredProofs) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.RegisteredProofs was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.RegisteredProofs)))); err != nil {
-		return err
-	}
-	for _, v := range t.RegisteredProofs {
-		if v >= 0 {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(v))); err != nil {
-				return err
-			}
-		} else {
-			if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-v)-1)); err != nil {
-				return err
-			}
-		}
 	}
 
 	// t.Candidates ([]abi.PoStCandidate) (slice)
@@ -1094,52 +1074,8 @@ func (t *OnChainElectionPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.RegisteredProofs ([]abi.RegisteredProof) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.RegisteredProofs: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-	if extra > 0 {
-		t.RegisteredProofs = make([]RegisteredProof, extra)
-	}
-	for i := 0; i < int(extra); i++ {
-		{
-			maj, extra, err := cbg.CborReadHeader(br)
-			var extraI int64
-			if err != nil {
-				return err
-			}
-			switch maj {
-			case cbg.MajUnsignedInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 positive overflow")
-				}
-			case cbg.MajNegativeInt:
-				extraI = int64(extra)
-				if extraI < 0 {
-					return fmt.Errorf("int64 negative oveflow")
-				}
-				extraI = -1 - extraI
-			default:
-				return fmt.Errorf("wrong type for int64 field: %d", maj)
-			}
-
-			t.RegisteredProofs[i] = RegisteredProof(extraI)
-		}
 	}
 
 	// t.Candidates ([]abi.PoStCandidate) (slice)

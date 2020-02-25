@@ -112,9 +112,9 @@ type Syscalls interface {
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
-	VerifySeal(sectorSize abi.SectorSize, vi abi.SealVerifyInfo) bool
+	VerifySeal(vi abi.SealVerifyInfo) bool
 	// Verifies a proof of spacetime.
-	VerifyPoSt(sectorSize abi.SectorSize, vi abi.PoStVerifyInfo) bool
+	VerifyPoSt(vi abi.PoStVerifyInfo) bool
 	// Verifies valid consensus fault committed with two block headers:
 	// - both headers mined by the same actor
 	// - headers are different
