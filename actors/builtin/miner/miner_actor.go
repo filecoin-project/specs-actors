@@ -879,10 +879,11 @@ func (a Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTer
 }
 
 func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChainPoStVerifyInfo) {
-	sectorSize := st.Info.SectorSize
-
 	// TODO: verifying no duplicates here seems wrong, we should be verifying
 	// that exactly what we expect is passed in (this isnt election post)
+
+	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
+	AssertNoError(err) // Runtime always provides ID-addresses
 
 	// verify no duplicate tickets
 	challengeIndices := make(map[int64]bool)
@@ -914,6 +915,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 	// Get public inputs
 	pvInfo := abi.PoStVerifyInfo{
+		Prover:          abi.ActorID(minerActorID),
 		Candidates:      onChainInfo.Candidates,
 		Proofs:          onChainInfo.Proofs,
 		Randomness:      abi.PoStRandomness(postRandomness),

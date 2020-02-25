@@ -169,6 +169,7 @@ type PoStVerifyInfo struct {
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
 	Proofs          []PoStProof
 	EligibleSectors []SectorInfo
+	Prover          ActorID // used to derive 32-byte prover ID
 }
 
 type SectorInfo struct {
