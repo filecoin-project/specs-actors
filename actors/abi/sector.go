@@ -163,13 +163,12 @@ type ChallengeTicketsCommitment []byte
 type PoStRandomness Randomness
 type PartialTicket []byte // 32 bytes
 
-// TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
-	SealedCID       cid.Cid         // CommR
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
 	Proofs          []PoStProof
 	EligibleSectors []SectorInfo
+	Prover          ActorID // used to derive 32-byte prover ID
 }
 
 type SectorInfo struct {
@@ -178,17 +177,14 @@ type SectorInfo struct {
 }
 
 type OnChainElectionPoStVerifyInfo struct {
-	// There should be one RegisteredProof for each PoSt Candidate
-	RegisteredProofs []RegisteredProof
-	Candidates       []PoStCandidate
-	Proofs           []PoStProof
-	Randomness       PoStRandomness
+	Candidates []PoStCandidate // each PoStCandidate has its own RegisteredProof
+	Proofs     []PoStProof     // each PoStProof has its own RegisteredProof
+	Randomness PoStRandomness
 }
 
 type OnChainPoStVerifyInfo struct {
-	ProofType  RegisteredProof
-	Candidates []PoStCandidate
-	Proofs     []PoStProof
+	Candidates []PoStCandidate // each PoStCandidate has its own RegisteredProof
+	Proofs     []PoStProof     // each PoStProof has its own RegisteredProof
 }
 
 type PoStCandidate struct {
@@ -200,6 +196,7 @@ type PoStCandidate struct {
 }
 
 type PoStProof struct { //<curve, system> {
+	RegisteredProof
 	ProofBytes []byte
 }
 
