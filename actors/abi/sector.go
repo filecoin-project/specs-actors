@@ -166,7 +166,6 @@ type PartialTicket []byte // 32 bytes
 // TODO Porcu: refactor these types to get rid of the squishy optional fields.
 type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
-	SealedCID       cid.Cid         // CommR
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
 	Proofs          []PoStProof
 	EligibleSectors []SectorInfo
