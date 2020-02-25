@@ -237,6 +237,8 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 }
 
 func (st *State) ComputeWindowedPoStChallengeCount(store adt.Store) (uint64, error) {
+	// TODO: This is too slow. Subtract fault count from sector count when these
+	// are maintained consistently.
 	provingSet, err := st.ComputeProvingSet(store)
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to compute proving set: %v", err)
