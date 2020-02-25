@@ -923,7 +923,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	}
 
 	// Verify the PoSt Proof
-	if !rt.Syscalls().VerifyPoSt(sectorSize, pvInfo) {
+	if !rt.Syscalls().VerifyPoSt(pvInfo) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid PoSt %+v", pvInfo)
 	}
 }
@@ -953,7 +953,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
 		UnsealedCID:           commD,
 	}
-	if !rt.Syscalls().VerifySeal(sectorSize, svInfo) {
+	if !rt.Syscalls().VerifySeal(svInfo) {
 		rt.Abortf(exitcode.ErrIllegalState, "invalid seal %+v", svInfo)
 	}
 }
