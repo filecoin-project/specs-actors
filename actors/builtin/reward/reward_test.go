@@ -21,8 +21,9 @@ import (
 func TestConstructor(t *testing.T) {
 	actor := rewardHarness{reward.Actor{}, t}
 
-	receiver := tutil.NewIDAddr(t, 1000)
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+
 	rt := builder.Build(t)
 	actor.constructAndVerify(rt)
 }
@@ -30,19 +31,34 @@ func TestConstructor(t *testing.T) {
 func TestAwardBlockReward(t *testing.T) {
 	actor := rewardHarness{reward.Actor{}, t}
 
-	receiver := tutil.NewIDAddr(t, 1000)
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("block reward with no payable reward", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
 		miner := tutil.NewIDAddr(t, 1000)
+
+		/*
+		 blockReward = MIN(100FIL, actor_balance - gasReward)
+		 0 = Min(100, 10 - 10)
+
+		 totalReward = blockReward + gasReward
+		 10 = 0 + 10
+
+		 totalPenalty = MIN(penalty, totalReward)
+		 10 = MIN(10, 10)
+
+		 payableReward = totalReward - totalPenalty
+		 0 = 10 - 10
+		*/
+		// there is no payable reward, expect the actor RewardMap empty
+
 		penalty := abi.NewTokenAmount(10)
 		gasreward := abi.NewTokenAmount(10)
-		nominalpwr := abi.NewStoragePower(10)
 		rt.SetBalance(gasreward)
-		actor.blockRewardAndVerify(rt, miner, penalty, gasreward, nominalpwr)
+		actor.blockRewardAndVerify(rt, miner, penalty, gasreward, big.Zero())
 
 		var st reward.State
 		rt.GetState(&st)
@@ -55,7 +71,6 @@ func TestAwardBlockReward(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err)
-		// there are 0 rewards in the actors state
 		assert.Equal(t, 0, len(r))
 	})
 
@@ -64,11 +79,26 @@ func TestAwardBlockReward(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		miner := tutil.NewIDAddr(t, 1000)
+
+		/*
+		 blockReward = MIN(100FIL, actor_balance - gasReward)
+		 10 = Min(100, 20 - 10)
+
+		 totalReward = blockReward + gasReward
+		 20 = 10 + 10
+
+		 totalPenalty = MIN(penalty, totalReward)
+		 10 = MIN(10, 20)
+
+		 payableReward = totalReward - totalPenalty
+		 10 = 20 - 10
+		*/
+		// there is a 10 FIL payable reward in the actor state
+
 		penalty := abi.NewTokenAmount(10)
 		gasreward := abi.NewTokenAmount(10)
-		nominalpwr := abi.NewStoragePower(10)
 		rt.SetBalance(big.NewInt(20))
-		actor.blockRewardAndVerify(rt, miner, penalty, gasreward, nominalpwr)
+		actor.blockRewardAndVerify(rt, miner, penalty, gasreward, big.Zero())
 
 		var st reward.State
 		rt.GetState(&st)
