@@ -67,7 +67,10 @@ type AwardBlockRewardParams struct {
 // - a penalty amount, provided as a parameter, which is burnt,
 func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	AssertMsg(params.Miner.Protocol() == addr.ID, "miner address must be ID-address (%d), was %d", addr.ID, params.Miner.Protocol())
+	AssertMsg(params.Miner.Protocol() == addr.ID,
+		"miner address must be ID-address protocol (%d), was protocol %d", addr.ID, params.Miner.Protocol())
+	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
+		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
 	priorBalance := rt.CurrentBalance()
 
 	var penalty abi.TokenAmount
