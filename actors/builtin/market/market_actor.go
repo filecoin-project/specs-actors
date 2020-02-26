@@ -111,10 +111,16 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 	rt.State().Transaction(&st, func() interface{} {
 		msgValue := rt.Message().ValueReceived()
 
-		st.AddEscrowBalance(rt, nominal, msgValue)
+		err := st.AddEscrowBalance(adt.AsStore(rt), nominal, msgValue)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
+		}
 
 		// ensure there is an entry in the locked table
-		st.AddLockedBalance(rt, nominal, big.Zero())
+		err = st.AddLockedBalance(adt.AsStore(rt), nominal, big.Zero())
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
+		}
 
 		return nil
 	})

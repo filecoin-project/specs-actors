@@ -76,7 +76,7 @@ func TestMarketState(t *testing.T) {
 		t.Run("AddEscrowBalance adds to escrow table, GetEscrowBalance returns balance", func(t *testing.T) {
 			rt, st := createTestState(t)
 			for _, tc := range testCases {
-				st.AddEscrowBalance(rt, provider, abi.NewTokenAmount(tc.delta))
+				st.AddEscrowBalance(adt.AsStore(rt), provider, abi.NewTokenAmount(tc.delta))
 				assert.Equal(t, abi.NewTokenAmount(tc.total), st.GetEscrowBalance(rt, provider))
 			}
 		})
@@ -84,7 +84,7 @@ func TestMarketState(t *testing.T) {
 		t.Run("AddLockedBalance adds to escrow table, GetLockedBalance returns balance", func(t *testing.T) {
 			rt, st := createTestState(t)
 			for _, tc := range testCases {
-				st.AddLockedBalance(rt, provider, abi.NewTokenAmount(tc.delta))
+				st.AddLockedBalance(adt.AsStore(rt), provider, abi.NewTokenAmount(tc.delta))
 				assert.Equal(t, abi.NewTokenAmount(tc.total), st.GetLockedBalance(rt, provider))
 			}
 		})
@@ -179,11 +179,15 @@ func TestMarketState(t *testing.T) {
 			addTestDeal(t, rt, st, dealId, dealProposal)
 			addTestDealState(t, rt, st, dealId, ds)
 
-			st.AddLockedBalance(rt, client, abi.NewTokenAmount(500))
-			st.AddEscrowBalance(rt, client, abi.NewTokenAmount(550))
+			err := st.AddLockedBalance(adt.AsStore(rt), client, abi.NewTokenAmount(500))
+			assert.NoError(t, err)
+			err = st.AddEscrowBalance(adt.AsStore(rt), client, abi.NewTokenAmount(550))
+			assert.NoError(t, err)
 
-			st.AddLockedBalance(rt, provider, abi.NewTokenAmount(7))
-			st.AddEscrowBalance(rt, provider, abi.NewTokenAmount(7))
+			err = st.AddLockedBalance(adt.AsStore(rt), provider, abi.NewTokenAmount(7))
+			assert.NoError(t, err)
+			err = st.AddEscrowBalance(adt.AsStore(rt), provider, abi.NewTokenAmount(7))
+			assert.NoError(t, err)
 
 			return rt, st, dealId
 		}
@@ -246,7 +250,9 @@ func TestMarketState(t *testing.T) {
 
 			// TODO: Find out about "payment remaining" calculation, is it correct
 			// this test fails if we don't add one more StoragePricePerEpoch to LockedBalance
-			st.AddLockedBalance(rt, client, abi.NewTokenAmount(5))
+			err := st.AddLockedBalance(adt.AsStore(rt), client, abi.NewTokenAmount(5))
+			assert.NoError(t, err)
+
 			assertBalances(t, rt, st, client, 550, 505)
 
 			assertBalances(t, rt, st, provider, 7, 7)
