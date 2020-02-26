@@ -149,8 +149,9 @@ type PoStVerifyInfo struct {
 }
 
 type SectorInfo struct {
-	SectorNumber SectorNumber
-	SealedCID    cid.Cid // CommR
+	RegisteredProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
+	SectorNumber    SectorNumber
+	SealedCID       cid.Cid // CommR
 }
 
 type OnChainElectionPoStVerifyInfo struct {
