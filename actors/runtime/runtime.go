@@ -33,7 +33,7 @@ type Runtime interface {
 	// Resolves an address of any protocol to an ID address (via the Init actor's table).
 	// This allows resolution of externally-provided SECP, BLS, or actor addresses to the canonical form.
 	// If the argument is an ID address it is returned directly.
-	ResolveAddress(address addr.Address) (ret addr.Address, ok bool)
+	ResolveAddress(address addr.Address) (addr.Address, bool)
 
 	// Look up the code ID at an actor address.
 	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)

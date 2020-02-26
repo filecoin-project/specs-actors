@@ -3,7 +3,7 @@ module github.com/filecoin-project/specs-actors
 go 1.13
 
 require (
-	github.com/filecoin-project/go-address v0.0.0-20200107215422-da8eea2842b5
+	github.com/filecoin-project/go-address v0.0.2-0.20200218010043-eb9bb40ed5be
 	github.com/filecoin-project/go-amt-ipld/v2 v2.0.1-0.20200131012142-05d80eeccc5e
 	github.com/ipfs/go-cid v0.0.4
 	github.com/ipfs/go-hamt-ipld v0.0.15-0.20200131012125-dd88a59d3f2e

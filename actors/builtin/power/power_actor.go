@@ -276,9 +276,9 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 	var pledge abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeight(&params.Weight)
-		pledge = pledgeForWeight(&params.Weight, st.TotalNetworkPower)
-		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), power, pledge)
+		power := ConsensusPowerForWeight(&params.Weight)
+		pledge = PledgeForWeight(&params.Weight, st.TotalNetworkPower)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), power, pledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 		}
@@ -301,7 +301,7 @@ func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *a
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		power := consensusPowerForWeights(params.Weights)
-		err := st.addToClaim(adt.AsStore(rt), minerAddr, power.Neg(), params.Pledge.Neg())
+		err := st.AddToClaim(adt.AsStore(rt), minerAddr, power.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
@@ -325,7 +325,7 @@ func (a Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSector
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		power := consensusPowerForWeights(params.Weights)
-		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), power.Neg(), params.Pledge.Neg())
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), power.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
@@ -346,7 +346,7 @@ func (a Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorTe
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		power := consensusPowerForWeights(params.Weights)
-		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), power, params.Pledge)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), power, params.Pledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add claimed power for sector: %v", err)
 		}
@@ -368,15 +368,15 @@ func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeight
 	var newPledge abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		prevPower := consensusPowerForWeight(&params.PrevWeight)
-		err := st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), prevPower.Neg(), params.PrevPledge.Neg())
+		prevPower := ConsensusPowerForWeight(&params.PrevWeight)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), prevPower.Neg(), params.PrevPledge.Neg())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
 
-		newPower := consensusPowerForWeight(&params.NewWeight)
-		newPledge = pledgeForWeight(&params.NewWeight, st.TotalNetworkPower)
-		err = st.addToClaim(adt.AsStore(rt), rt.Message().Caller(), newPower, newPledge)
+		newPower := ConsensusPowerForWeight(&params.NewWeight)
+		newPledge = PledgeForWeight(&params.NewWeight, st.TotalNetworkPower)
+		err = st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), newPower, newPledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add power for sector: %v", err)
 		}
@@ -656,7 +656,7 @@ func validatePledgeAccount(rt Runtime, addr addr.Address) {
 func consensusPowerForWeights(weights []SectorStorageWeightDesc) abi.StoragePower {
 	power := big.Zero()
 	for i := range weights {
-		power = big.Add(power, consensusPowerForWeight(&weights[i]))
+		power = big.Add(power, ConsensusPowerForWeight(&weights[i]))
 	}
 	return power
 }

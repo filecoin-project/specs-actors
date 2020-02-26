@@ -502,7 +502,7 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 	})
 
 	t.Run("If bad secret preimage, fails with: incorrect secret!", func(t *testing.T) {
-		ucp.Sv.SecretPreimage = []byte("Magneto")
+		ucp.Sv.SecretPreimage = append([]byte("Magneto"), make([]byte, 25)...)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.UpdateChannelState, ucp)

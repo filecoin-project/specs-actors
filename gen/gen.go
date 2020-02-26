@@ -21,7 +21,6 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
 		abi.PieceInfo{},
 		abi.SectorID{},
-		abi.SealProof{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
 		abi.PoStCandidate{},

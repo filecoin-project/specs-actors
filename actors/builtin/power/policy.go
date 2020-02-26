@@ -85,11 +85,11 @@ func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	return big.Min(big.Div(num, denom), collateral)
 }
 
-func consensusPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
+func ConsensusPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
 	return big.NewInt(int64(weight.SectorSize)) // PARAM_FINISH
 }
 
-func pledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePower) abi.TokenAmount {
+func PledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePower) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
 	numerator := bigProduct(

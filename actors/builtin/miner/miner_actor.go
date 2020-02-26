@@ -27,11 +27,11 @@ const epochUndefined = abi.ChainEpoch(-1)
 type CronEventType int64
 
 const (
-	cronEventWindowedPoStExpiration CronEventType = iota
-	cronEventWorkerKeyChange
-	cronEventPreCommitExpiry
-	cronEventSectorExpiry
-	cronEventTempFault
+	CronEventWindowedPoStExpiration CronEventType = iota
+	CronEventWorkerKeyChange
+	CronEventPreCommitExpiry
+	CronEventSectorExpiry
+	CronEventTempFault
 )
 
 type CronEventPayload struct {
@@ -132,7 +132,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	})
 
 	cronPayload := CronEventPayload{
-		EventType: cronEventWorkerKeyChange,
+		EventType: CronEventWorkerKeyChange,
 	}
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	return &adt.EmptyValue{}
@@ -252,7 +252,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
-		EventType:       cronEventPreCommitExpiry,
+		EventType:       CronEventPreCommitExpiry,
 		Sectors:         &bf,
 		RegisteredProof: params.RegisteredProof,
 	}
@@ -264,7 +264,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 type ProveCommitSectorParams struct {
 	SectorNumber abi.SectorNumber
-	Proof        abi.SealProof
+	Proof        []byte
 }
 
 func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
@@ -282,6 +282,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
+	if rt.CurrEpoch() > precommit.PreCommitEpoch+MaxSealDuration[precommit.Info.RegisteredProof] {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch (cur=%d, pcepoch=%d)", rt.CurrEpoch(), precommit.PreCommitEpoch)
+	}
+
+	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
@@ -289,6 +294,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		Proof:            params.Proof,
 		DealIDs:          precommit.Info.DealIDs,
 		SectorNumber:     precommit.Info.SectorNumber,
+		RegisteredProof:  precommit.Info.RegisteredProof,
 	})
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
@@ -362,7 +368,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	// Request deferred callback for sector expiry.
 	cronPayload := CronEventPayload{
-		EventType: cronEventSectorExpiry,
+		EventType: CronEventSectorExpiry,
 		Sectors:   &bf,
 	}
 	a.enrollCronEvent(rt, precommit.Info.Expiration, &cronPayload)
@@ -375,7 +381,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	if len == 1 {
 		// enroll expiration check
 		a.enrollCronEvent(rt, st.PoStState.ProvingPeriodStart+power.WindowedPostChallengeDuration, &CronEventPayload{
-			EventType: cronEventWindowedPoStExpiration,
+			EventType: CronEventWindowedPoStExpiration,
 		})
 	}
 
@@ -519,7 +525,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 	// Request deferred Cron invocation to update temporary fault state.
 	// TODO: cant we just lazily clean this up?
 	cronPayload := CronEventPayload{
-		EventType: cronEventTempFault,
+		EventType: CronEventTempFault,
 		Sectors:   &params.SectorNumbers,
 	}
 	// schedule cron event to start marking temp fault at BeginEpoch
@@ -545,23 +551,16 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
 	}
 
-	if payload.EventType == cronEventTempFault {
+	switch payload.EventType {
+	case CronEventTempFault:
 		a.checkTemporaryFaultEvents(rt, payload.Sectors)
-	}
-
-	if payload.EventType == cronEventPreCommitExpiry {
+	case CronEventPreCommitExpiry:
 		a.checkPrecommitExpiry(rt, payload.Sectors, payload.RegisteredProof)
-	}
-
-	if payload.EventType == cronEventSectorExpiry {
+	case CronEventSectorExpiry:
 		a.checkSectorExpiry(rt, payload.Sectors)
-	}
-
-	if payload.EventType == cronEventWindowedPoStExpiration {
+	case CronEventWindowedPoStExpiration:
 		a.checkPoStProvingPeriodExpiration(rt)
-	}
-
-	if payload.EventType == cronEventWorkerKeyChange {
+	case CronEventWorkerKeyChange:
 		a.commitWorkerKeyChange(rt)
 	}
 
@@ -781,8 +780,8 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 }
 
 func (a Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
-	var payload []byte
-	err := callbackPayload.MarshalCBOR(bytes.NewBuffer(payload))
+	payload := new(bytes.Buffer)
+	err := callbackPayload.MarshalCBOR(payload)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to serialize payload: %v", err)
 	}
@@ -791,7 +790,7 @@ func (a Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPa
 		builtin.MethodsPower.EnrollCronEvent,
 		&power.EnrollCronEventParams{
 			EventEpoch: eventEpoch,
-			Payload:    payload,
+			Payload:    payload.Bytes(),
 		},
 		abi.NewTokenAmount(0),
 	)
@@ -936,6 +935,11 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 }
 
 func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *abi.OnChainSealVerifyInfo) {
+
+	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
+		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
+	}
+
 	// Check randomness.
 	sealRandEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[onChainInfo.RegisteredProof]
 	if onChainInfo.SealRandEpoch < sealRandEarliest {

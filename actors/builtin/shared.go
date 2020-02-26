@@ -14,7 +14,7 @@ import (
 // Propagates a failed send by aborting the current method with the same exit code.
 func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ...interface{}) {
 	if !e.IsSuccess() {
-		rt.Abortf(e, msg, args)
+		rt.Abortf(e, msg, args...)
 	}
 }
 
@@ -29,6 +29,6 @@ func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (owner
 
 // This type duplicates the Miner.ControlAddresses return type, to work around a circular dependency between actors.
 type MinerAddrs struct {
-	Owner addr.Address
+	Owner  addr.Address
 	Worker addr.Address
 }
