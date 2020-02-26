@@ -2,6 +2,7 @@ package paych_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -159,7 +160,12 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return tc.verifySig }
+			versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) error {
+				if tc.verifySig {
+					return nil
+				}
+				return fmt.Errorf("bad signature")
+			}
 			hasher := func(data []byte) [32]byte { return [32]byte{} }
 
 			builder := mock.NewBuilder(ctx, paychAddr).
@@ -680,7 +686,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 	received := abi.NewTokenAmount(0)
 	curEpoch := 2
 
-	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) bool { return true }
+	versig := func(sig crypto.Signature, signer addr.Address, plaintext []byte) error { return nil }
 	hasher := func(data []byte) [32]byte { return [32]byte{} }
 
 	builder := mock.NewBuilder(ctx, paychAddr).

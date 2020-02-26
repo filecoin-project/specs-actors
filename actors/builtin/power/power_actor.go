@@ -481,9 +481,9 @@ type ReportConsensusFaultParams struct {
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
 	// Note: only the first reporter of any fault is rewarded.
 	// Subsequent invocations fail because the miner has been removed.
-	isValidConsensusFault := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2)
-	if !isValidConsensusFault {
-		rt.Abortf(exitcode.ErrIllegalArgument, "reported consensus fault failed verification")
+	err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "reported consensus fault failed verification: %s", err)
 	}
 
 	target, ok := rt.ResolveAddress(params.Target)
@@ -529,7 +529,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
-	err := a.deleteMinerActor(rt, target)
+	err = a.deleteMinerActor(rt, target)
 	abortIfError(rt, err, "failed to remove slashed miner %v", target)
 	return &adt.EmptyValue{}
 }

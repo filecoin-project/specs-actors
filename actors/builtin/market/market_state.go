@@ -363,9 +363,9 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 
 	// Note: we do not verify the provider signature here, since this is implicit in the
 	// authenticity of the on-chain message publishing the deal.
-	sigVerified := rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, m)
-	if !sigVerified {
-		return xerrors.Errorf("signature proposal invalid")
+	err := rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, m)
+	if err != nil {
+		return xerrors.Errorf("signature proposal invalid: %w", err)
 	}
 
 	return nil
