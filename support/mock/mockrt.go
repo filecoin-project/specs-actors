@@ -519,6 +519,33 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 	f()
 }
 
+func (rt *Runtime) ExpectAssertionFailure(expected string, f func()) {
+	prevState := rt.state
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			rt.t.Errorf("expected panic with message %v but call succeeded", expected)
+			return
+		}
+		a, ok := r.(abort)
+		if ok {
+			rt.t.Errorf("expected panic with message %v but got abort %v", expected, a)
+			return
+		}
+		p, ok := r.(string)
+		if !ok {
+			panic(r)
+		}
+		if p != expected {
+			rt.t.Errorf("expected panic with message \"%v\" but got message \"%v\"", expected, p)
+		}
+		// Roll back state change.
+		rt.state = prevState
+	}()
+	f()
+}
+
 func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	meth := reflect.ValueOf(method)
 	rt.verifyExportedMethodType(meth)
