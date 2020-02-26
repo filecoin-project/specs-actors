@@ -1,7 +1,6 @@
 package market
 
 import (
-	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -151,19 +150,30 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
-	newDealIds := []abi.DealID{}
+	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		if len(params.Deals) == 0 {
+			return nil
+		}
+
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 
 		_, worker := builtin.RequestMinerControlAddrs(rt, params.Deals[0].Proposal.Provider)
+		if worker != rt.Message().Caller() {
+			rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", params.Deals[0].Proposal.Provider)
+		}
+
+		firstDealProvider, ok := rt.ResolveAddress(params.Deals[0].Proposal.Provider)
+		if !ok {
+			rt.Abortf(exitcode.ErrNotFound, "failed to resolve provider address %v", params.Deals[0].Proposal.Provider)
+		}
 
 		for _, deal := range params.Deals {
-
-			if worker != rt.Message().Caller() {
-				rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", deal.Proposal.Provider)
+			if deal.Proposal.Provider != firstDealProvider {
+				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
 			}
 
 			validateDeal(rt, deal)
@@ -181,7 +191,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Provider))
 
 			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
-			st.lockBalanceOrAbort(rt, deal.Proposal.Provider, deal.Proposal.ProviderBalanceRequirement())
+			st.lockBalanceOrAbort(rt, firstDealProvider, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
 
@@ -207,22 +217,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &PublishStorageDealsReturn{newDealIds}
-}
-
-func resolveControlKeys(rt Runtime, deals []ClientDealProposal) map[address.Address][]address.Address {
-	out := make(map[address.Address][]address.Address)
-	for _, d := range deals {
-		_, ok := out[d.Proposal.Provider]
-		if ok {
-			continue
-		}
-
-		owner, worker := builtin.RequestMinerControlAddrs(rt, d.Proposal.Provider)
-
-		out[d.Proposal.Provider] = []address.Address{owner, worker}
-	}
-
-	return out
 }
 
 type VerifyDealsOnSectorProveCommitParams struct {

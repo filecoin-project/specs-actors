@@ -282,13 +282,9 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
-	if rt.CurrEpoch() > precommit.PreCommitEpoch+MaxSealDuration[precommit.Info.RegisteredProof] || rt.CurrEpoch() < precommit.PreCommitEpoch+PreCommitChallengeDelay {
+	if rt.CurrEpoch() > precommit.PreCommitEpoch+MaxSealDuration[precommit.Info.RegisteredProof] {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch (cur=%d, pcepoch=%d)", rt.CurrEpoch(), precommit.PreCommitEpoch)
 	}
-
-	TODO()
-	// TODO HS: How are SealEpoch, InteractiveEpoch determined (and intended to be used)?
-	// Presumably they cannot be derived from the SectorProveCommitInfo provided by an untrusted party.
 
 	// will abort if seal invalid
 	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
@@ -939,6 +935,11 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 }
 
 func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *abi.OnChainSealVerifyInfo) {
+
+	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
+		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
+	}
+
 	// Check randomness.
 	sealRandEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[onChainInfo.RegisteredProof]
 	if onChainInfo.SealRandEpoch < sealRandEarliest {
