@@ -227,8 +227,9 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 		// if not a temp fault sector, add to computed proving set
 		if !fault {
 			sectorInfos = append(sectorInfos, abi.SectorInfo{
-				SealedCID:    ssinfo.Info.SealedCID,
-				SectorNumber: ssinfo.Info.SectorNumber,
+				SealedCID:       ssinfo.Info.SealedCID,
+				SectorNumber:    ssinfo.Info.SectorNumber,
+				RegisteredProof: ssinfo.Info.RegisteredProof,
 			})
 		}
 		return nil
