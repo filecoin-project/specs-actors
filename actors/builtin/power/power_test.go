@@ -36,15 +36,16 @@ func TestConstruction(t *testing.T) {
 
 	t.Run("create miner", func(t *testing.T) {
 		createMinerParams := &power.CreateMinerParams{
+			Owner:      owner1,
 			Worker:     worker1,
 			SectorSize: abi.SectorSize(int64(32)),
 			Peer:       "miner1",
 		}
 		initCreateMinerParams := &power.MinerConstructorParams{
-			OwnerAddr:     owner1,
-			WorkerAddr:     worker1,
+			OwnerAddr:  owner1,
+			WorkerAddr: worker1,
 			SectorSize: abi.SectorSize(int64(32)),
-			PeerId:       "miner1",
+			PeerId:     "miner1",
 		}
 
 		rt := builder.Build(t)

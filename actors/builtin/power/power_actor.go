@@ -168,6 +168,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 }
 
 type CreateMinerParams struct {
+	Owner      addr.Address
 	Worker     addr.Address
 	SectorSize abi.SectorSize
 	Peer       peer.ID
@@ -180,10 +181,9 @@ type CreateMinerReturn struct {
 
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	ownerAddr := rt.Message().Caller()
 
 	ctorParams := MinerConstructorParams{
-		OwnerAddr:  ownerAddr,
+		OwnerAddr:  params.Owner,
 		WorkerAddr: params.Worker,
 		SectorSize: params.SectorSize,
 		PeerId:     params.Peer,
