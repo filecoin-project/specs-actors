@@ -150,6 +150,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
+	// all deals should have the same provider so get worker once
+	_, worker := builtin.RequestMinerControlAddrs(rt, params.Deals[0].Proposal.Provider)
+	if worker != rt.Message().Caller() {
+		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", params.Deals[0].Proposal.Provider)
+	}
+
 	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -160,12 +166,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
-
-		_, worker := builtin.RequestMinerControlAddrs(rt, params.Deals[0].Proposal.Provider)
-		if worker != rt.Message().Caller() {
-			rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", params.Deals[0].Proposal.Provider)
-		}
-
 		firstDealProvider, ok := rt.ResolveAddress(params.Deals[0].Proposal.Provider)
 		if !ok {
 			rt.Abortf(exitcode.ErrNotFound, "failed to resolve provider address %v", params.Deals[0].Proposal.Provider)
