@@ -941,9 +941,11 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 
 	// acquire the registered proof for each of the miner's sectors
 	registeredProofs := make(map[abi.SectorNumber]abi.RegisteredProof)
-	st.ForEachSector(store, func(info *SectorOnChainInfo) {
+	if err := st.ForEachSector(store, func(info *SectorOnChainInfo) {
 		registeredProofs[info.Info.SectorNumber] = info.Info.RegisteredProof
-	})
+	}); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for windowed PoSt verification: %v", err)
+	}
 
 	// convert to registered PoSt proof
 	for k, v := range registeredProofs {
