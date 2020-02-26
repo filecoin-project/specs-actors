@@ -11,7 +11,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
-type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
+type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext []byte) error
 type HasherFunc func(data []byte) [32]byte
 
 type syscaller struct {
@@ -20,7 +20,7 @@ type syscaller struct {
 }
 
 // Interface methods
-func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte) bool {
+func (s *syscaller) VerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte) error {
 	if s.SignatureVerifier == nil {
 		s.PanicOnUnsetFunc("SignatureVerifier")
 	}
@@ -39,19 +39,19 @@ func (s *syscaller) ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces [
 	return cid.Undef, nil
 }
 
-func (s *syscaller) VerifySeal(vi abi.SealVerifyInfo) bool {
+func (s *syscaller) VerifySeal(vi abi.SealVerifyInfo) error {
 	s.PanicOnUnsetFunc("SealVerifier")
-	return false
+	return nil
 }
 
-func (s *syscaller) VerifyPoSt(vi abi.PoStVerifyInfo) bool {
+func (s *syscaller) VerifyPoSt(vi abi.PoStVerifyInfo) error {
 	s.PanicOnUnsetFunc("PoStVerifier")
-	return false
+	return nil
 }
 
-func (s *syscaller) VerifyConsensusFault(h1, h2 []byte) bool {
+func (s *syscaller) VerifyConsensusFault(h1, h2 []byte) error {
 	s.PanicOnUnsetFunc("ConsensusFaultVerifier")
-	return false
+	return nil
 }
 
 func (s *syscaller) PanicOnUnsetFunc(unsetFuncName string) {

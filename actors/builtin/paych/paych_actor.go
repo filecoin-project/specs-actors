@@ -72,7 +72,7 @@ func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef,fmt.Errorf("no code for address %v", resolved)
+		return addr.Undef, fmt.Errorf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
 		return addr.Undef, fmt.Errorf("actor %v must be an account (%v), was %v", raw, builtin.AccountActorCodeID, codeCID)
@@ -153,8 +153,8 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 	}
 
-	if !rt.Syscalls().VerifySignature(*sv.Signature, signer, vb) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "voucher signature invalid")
+	if err := rt.Syscalls().VerifySignature(*sv.Signature, signer, vb); err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher signature invalid: %s", err)
 	}
 
 	if rt.CurrEpoch() < sv.TimeLockMin {
