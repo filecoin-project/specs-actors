@@ -93,8 +93,11 @@ type UpdateChannelStateParams struct {
 // A voucher is sent by `From` to `To` off-chain in order to enable
 // `To` to redeem payments on-chain in the future
 type SignedVoucher struct {
-	// TimeLock sets a min epoch before which the voucher cannot be redeemed
-	TimeLock abi.ChainEpoch
+	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
+	TimeLockMin abi.ChainEpoch
+	// TimeLockMax sets a max epoch beyond which the voucher cannot be redeemed
+	// TimeLockMax set to 0 means no timeout
+	TimeLockMax abi.ChainEpoch
 	// (optional) The SecretPreImage is used by `To` to validate
 	SecretPreimage []byte
 	// (optional) Extra can be specified by `From` to add a verification method to the voucher
@@ -154,8 +157,12 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher signature invalid")
 	}
 
-	if rt.CurrEpoch() < sv.TimeLock {
+	if rt.CurrEpoch() < sv.TimeLockMin {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot use this voucher yet!")
+	}
+
+	if sv.TimeLockMax != 0 && rt.CurrEpoch() > sv.TimeLockMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "this voucher has expired!")
 	}
 
 	if len(sv.SecretPreimage) > 0 {
