@@ -3,6 +3,7 @@ package market
 import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -351,13 +352,9 @@ func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.To
 // State utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) bool {
+func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) error {
 	if proposal.Proposal.EndEpoch <= proposal.Proposal.StartEpoch {
-		return false
-	}
-
-	if proposal.Proposal.Duration() != proposal.Proposal.EndEpoch-proposal.Proposal.StartEpoch {
-		return false
+		return xerrors.Errorf("proposal end epoch before start epoch")
 	}
 
 	TODO()
@@ -368,10 +365,10 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) bool
 	// authenticity of the on-chain message publishing the deal.
 	sigVerified := rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, m)
 	if !sigVerified {
-		return false
+		return xerrors.Errorf("signature proposal invalid")
 	}
 
-	return true
+	return nil
 }
 
 func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.TokenAmount {

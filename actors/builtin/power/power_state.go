@@ -137,7 +137,7 @@ func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amoun
 }
 
 // Parameters may be negative to subtract.
-func (st *State) addToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, pledge abi.TokenAmount) error {
+func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, pledge abi.TokenAmount) error {
 	claim, ok, err := st.getClaim(s, miner)
 	if err != nil {
 		return err

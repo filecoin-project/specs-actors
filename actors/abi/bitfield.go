@@ -202,7 +202,12 @@ func (bf BitField) AllMap(max uint64) (map[uint64]bool, error) {
 	return out, nil
 }
 
-func (bf BitField) MarshalCBOR(w io.Writer) error {
+func (bf *BitField) MarshalCBOR(w io.Writer) error {
+	if bf == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
 	s, err := bf.sum()
 	if err != nil {
 		return err

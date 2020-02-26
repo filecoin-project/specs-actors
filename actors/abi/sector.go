@@ -125,14 +125,10 @@ type OnChainSealVerifyInfo struct {
 	SealedCID        cid.Cid    // CommR
 	InteractiveEpoch ChainEpoch // Used to derive the interactive PoRep challenge.
 	RegisteredProof
-	Proof   SealProof
+	Proof   []byte
 	DealIDs []DealID
 	SectorNumber
 	SealRandEpoch ChainEpoch // Used to tie the seal to a chain.
-}
-
-type SealProof struct { //<curve, system> {
-	ProofBytes []byte
 }
 
 ///
