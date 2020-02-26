@@ -17,7 +17,6 @@ func (a Actor) Exports() []interface{} {
 
 var _ abi.Invokee = Actor{}
 
-
 func (a Actor) Constructor(rt runtime.Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
