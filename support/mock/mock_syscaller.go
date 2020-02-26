@@ -34,7 +34,7 @@ func (s *syscaller) HashBlake2b(data []byte) [32]byte {
 	return s.Hasher(data)
 }
 
-func (s *syscaller) ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error) {
+func (s *syscaller) ComputeUnsealedSectorCID(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error) {
 	s.PanicOnUnsetFunc("UnsealedSectorCIDComputer")
 	return cid.Undef, nil
 }

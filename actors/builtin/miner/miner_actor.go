@@ -288,7 +288,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	}
 
 	// will abort if seal invalid
-	a.verifySeal(rt, st.Info.SectorSize, &abi.OnChainSealVerifyInfo{
+	a.verifySeal(rt, &abi.OnChainSealVerifyInfo{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
 		SealRandEpoch:    precommit.Info.SealRandEpoch,
@@ -955,7 +955,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	}
 }
 
-func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *abi.OnChainSealVerifyInfo) {
+func (a Actor) verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 
 	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
@@ -967,7 +967,7 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, sealRandEarliest)
 	}
 
-	commD := a.requestUnsealedSectorCID(rt, sectorSize, onChainInfo.DealIDs)
+	commD := a.requestUnsealedSectorCID(rt, onChainInfo.RegisteredProof, onChainInfo.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
@@ -991,13 +991,13 @@ func (a Actor) verifySeal(rt Runtime, sectorSize abi.SectorSize, onChainInfo *ab
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
-func (a Actor) requestUnsealedSectorCID(rt Runtime, sectorSize abi.SectorSize, dealIDs []abi.DealID) cid.Cid {
+func (a Actor) requestUnsealedSectorCID(rt Runtime, st abi.RegisteredProof, dealIDs []abi.DealID) cid.Cid {
 	var unsealedCID cbg.CborCid
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.ComputeDataCommitment,
 		&market.ComputeDataCommitmentParams{
-			SectorSize: sectorSize,
+			SectorType: st,
 			DealIDs:    dealIDs,
 		},
 		abi.NewTokenAmount(0),
