@@ -106,21 +106,21 @@ type Message interface {
 // Pure functions implemented as primitives by the runtime.
 type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
-	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) bool
+	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) error
 	// Hashes input data using blake2b with 256 bit output.
 	HashBlake2b(data []byte) [32]byte
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(sectorSize abi.SectorSize, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
-	VerifySeal(vi abi.SealVerifyInfo) bool
+	VerifySeal(vi abi.SealVerifyInfo) error
 	// Verifies a proof of spacetime.
-	VerifyPoSt(vi abi.PoStVerifyInfo) bool
+	VerifyPoSt(vi abi.PoStVerifyInfo) error
 	// Verifies valid consensus fault committed with two block headers:
 	// - both headers mined by the same actor
 	// - headers are different
 	// - first header is of the same or lower epoch as the second
 	// - at least one of the headers appears in the current chain.
-	VerifyConsensusFault(h1, h2 []byte) bool
+	VerifyConsensusFault(h1, h2 []byte) error
 }
 
 // The return type from a message send from one actor to another. This abstracts over the internal representation of
