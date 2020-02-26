@@ -2,6 +2,7 @@ package paych_test
 
 import (
 	"context"
+	"math"
 	"reflect"
 	"testing"
 
@@ -112,7 +113,8 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		received int64
 		epoch    int64
 
-		tl    int64
+		tlmin int64
+		tlmax int64
 		lane  uint64
 		nonce uint64
 		amt   int64
@@ -123,30 +125,34 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		expExitCode    exitcode.ExitCode
 	}{
 		{desc: "succeeds", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tl: 1,
+			amt: 1, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.Ok},
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
-			amt: 10, epoch: 1, tl: 1,
+			amt: 10, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalState},
 		{desc: "fails if new send balance is negative", targetCode: builtin.AccountActorCodeID,
-			amt: -1, epoch: 1, tl: 1,
+			amt: -1, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalState},
 		{desc: "fails if signature not valid", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tl: 1,
+			amt: 1, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: nil, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if too early for voucher", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tl: 10,
+			amt: 1, epoch: 1, tlmin: 10, tlmax: 0,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.ErrIllegalArgument},
+		{desc: "fails if beyond TimeLockMax", targetCode: builtin.AccountActorCodeID,
+			amt: 1, epoch: 10, tlmin: 1, tlmax: 5,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if signature not verified", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tl: 1, sig: sig, verifySig: false,
+			amt: 1, epoch: 1, tlmin: 1, tlmax: 0, sig: sig, verifySig: false,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if SigningBytes fails", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tl: 1, sig: sig, verifySig: true,
+			amt: 1, epoch: 1, tlmin: 1, tlmax: 0, sig: sig, verifySig: true,
 			secretPreimage: make([]byte, 2<<21),
 			expExitCode:    exitcode.ErrIllegalArgument},
 	}
@@ -169,7 +175,8 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 			actor.constructAndVerify(t, rt, payerAddr, paychAddr)
 
 			sv := SignedVoucher{
-				TimeLock:       abi.ChainEpoch(tc.tl),
+				TimeLockMin:    abi.ChainEpoch(tc.tlmin),
+				TimeLockMax:    abi.ChainEpoch(tc.tlmax),
 				Lane:           tc.lane,
 				Nonce:          tc.nonce,
 				Amount:         big.NewInt(tc.amt),
@@ -706,7 +713,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, params laneParams) *SignedVoucher {
 	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("doesn't matter")}
 	tl := abi.ChainEpoch(params.epochNum)
-	sv := SignedVoucher{TimeLock: tl, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
+	sv := SignedVoucher{TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
 	ucp := &UpdateChannelStateParams{Sv: sv}
 
 	rt.SetCaller(params.from, builtin.AccountActorCodeID)
