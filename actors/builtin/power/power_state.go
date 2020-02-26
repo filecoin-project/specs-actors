@@ -204,6 +204,8 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 	}
 	// no need to account for declared faults, since they
 	// are already accounted for in "claimed" power
+	// Likewise miners will never be undercollateralized so no
+	// check needed here
 
 	return nominalPower, nil
 }
@@ -218,12 +220,8 @@ func (st *State) hasDetectedFault(s adt.Store, a addr.Address) (bool, error) {
 }
 
 func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
-	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err := faultyMiners.Put(AddrKey(a)); err != nil {
-		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
-	}
-	st.PoStDetectedFaultMiners = faultyMiners.Root()
 
+	// prior to making change verify whether we've lose a miner > min size
 	claim, ok, err := st.getClaim(s, a)
 	if err != nil {
 		return err
@@ -231,6 +229,8 @@ func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 	if !ok {
 		return errors.Errorf("no claim for actor %v", a)
 	}
+	// could be made more efficient by just taking claimed power given
+	// how computeNominal currently works, but that could change.
 	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
 	if err != nil {
 		return err
@@ -239,6 +239,12 @@ func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 		// just lost a miner > min size
 		st.NumMinersMeetingMinPower--
 	}
+
+	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err := faultyMiners.Put(AddrKey(a)); err != nil {
+		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
+	}
+	st.PoStDetectedFaultMiners = faultyMiners.Root()
 
 	return nil
 }
