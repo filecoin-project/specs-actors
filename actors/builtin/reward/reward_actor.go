@@ -20,8 +20,8 @@ const TokenPrecision = int64(1_000_000_000_000_000_000)
 // Target reward released to each block winner.
 var BlockRewardTarget = big.Mul(big.NewInt(100), big.NewInt(TokenPrecision))
 
-const rewardVestingFunction = None            // PARAM_FINISH
-const rewardVestingPeriod = abi.ChainEpoch(0) // PARAM_FINISH
+const RewardVestingFunction = None            // PARAM_FINISH
+const RewardVestingPeriod = abi.ChainEpoch(0) // PARAM_FINISH
 
 type Actor struct{}
 
@@ -92,10 +92,10 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		if rewardPayable.GreaterThan(abi.NewTokenAmount(0)) {
 			newReward := Reward{
 				StartEpoch:      rt.CurrEpoch(),
-				EndEpoch:        rt.CurrEpoch() + rewardVestingPeriod,
+				EndEpoch:        rt.CurrEpoch() + RewardVestingPeriod,
 				Value:           rewardPayable,
 				AmountWithdrawn: abi.NewTokenAmount(0),
-				VestingFunction: rewardVestingFunction,
+				VestingFunction: RewardVestingFunction,
 			}
 			return st.addReward(adt.AsStore(rt), params.Miner, &newReward)
 		}
