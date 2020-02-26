@@ -275,7 +275,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 
 type ComputeDataCommitmentParams struct {
 	DealIDs    []abi.DealID
-	SectorSize abi.SectorSize
+	SectorType abi.RegisteredProof
 }
 
 func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
@@ -294,7 +294,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 		return nil
 	})
 
-	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorSize, pieces)
+	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorType, pieces)
 	if err != nil {
 		rt.Abortf(exitcode.SysErrorIllegalArgument, "failed to compute unsealed sector CID: %s", err)
 	}
