@@ -143,19 +143,15 @@ type PoStVerifyInfo struct {
 	Randomness      PoStRandomness
 	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
 	Proofs          []PoStProof
-	EligibleSectors []PoStSectorInfo
+	EligibleSectors []SectorInfo
 	Prover          ActorID // used to derive 32-byte prover ID
 	ChallengeCount  uint64
 }
 
-type PoStSectorInfo struct {
-	SectorInfo
-	RegisteredPoStProof RegisteredProof
-}
-
 type SectorInfo struct {
-	SectorNumber SectorNumber
-	SealedCID    cid.Cid // CommR
+	RegisteredProof // RegisteredProof used when sealing
+	SectorNumber    SectorNumber
+	SealedCID       cid.Cid // CommR
 }
 
 type OnChainElectionPoStVerifyInfo struct {

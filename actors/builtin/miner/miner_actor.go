@@ -939,38 +939,13 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	AssertNoError(err)
 	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, st.PoStState.ProvingPeriodStart, addrBuf.Bytes())
 
-	// acquire the registered proof for each of the miner's sectors
-	registeredProofs := make(map[abi.SectorNumber]abi.RegisteredProof)
-	if err := st.ForEachSector(store, func(info *SectorOnChainInfo) {
-		registeredProofs[info.Info.SectorNumber] = info.Info.RegisteredProof
-	}); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for windowed PoSt verification: %v", err)
-	}
-
-	// convert to registered PoSt proof
-	for k, v := range registeredProofs {
-		rpp, err := v.RegisteredPoStProof()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Could not acquire registered PoSt proof.")
-		}
-		registeredProofs[k] = rpp
-	}
-
-	postSectorInfos := make([]abi.PoStSectorInfo, len(sectorInfos))
-	for idx := range postSectorInfos {
-		postSectorInfos[idx] = abi.PoStSectorInfo{
-			SectorInfo:          sectorInfos[idx],
-			RegisteredPoStProof: registeredProofs[sectorInfos[idx].SectorNumber],
-		}
-	}
-
 	// Get public inputs
 	pvInfo := abi.PoStVerifyInfo{
 		Prover:          abi.ActorID(minerActorID),
 		Candidates:      onChainInfo.Candidates,
 		Proofs:          onChainInfo.Proofs,
 		Randomness:      abi.PoStRandomness(postRandomness),
-		EligibleSectors: postSectorInfos,
+		EligibleSectors: sectorInfos,
 		ChallengeCount:  challengeCount,
 	}
 
