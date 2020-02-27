@@ -165,6 +165,7 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 	}
 
 	// update pledge and power
+	// TODO: ZX, update to ensure that pledge is appropriate for given power update
 	claim.Power = big.Add(claim.Power, power)
 	claim.Pledge = big.Add(claim.Pledge, pledge)
 
