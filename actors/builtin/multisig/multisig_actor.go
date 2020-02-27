@@ -59,6 +59,10 @@ type ConstructorParams struct {
 func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
+	if len(params.Signers) < 1 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "must have at least one signer")
+	}
+
 	var signers []addr.Address
 	for _, sa := range params.Signers {
 		signers = append(signers, sa)
@@ -200,6 +204,10 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 	rt.State().Transaction(&st, func() interface{} {
 		if !st.isSigner(params.Signer) {
 			rt.Abortf(exitcode.ErrNotFound, "Party not found")
+		}
+
+		if len(st.Signers) == 1 {
+			rt.Abortf(exitcode.ErrForbidden, "cannot remove only signer")
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))

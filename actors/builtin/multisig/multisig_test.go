@@ -77,30 +77,19 @@ func TestConstruction(t *testing.T) {
 		// assert no transactions
 	})
 
-	t.Run("simple construction with illegal params", func(t *testing.T) {
+	t.Run("fail to construct multisig actor with 0 signers", func(t *testing.T) {
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{},
-			NumApprovalsThreshold: -13,
-			UnlockDuration:        -100,
+			NumApprovalsThreshold: 1,
+			UnlockDuration:        1,
 		}
-
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
-		assert.Equal(t, adt.EmptyValue{}, *ret)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
 		rt.Verify()
 
-		var st multisig.MultiSigActorState
-		rt.GetState(&st)
-		assert.Equal(t, []addr.Address(nil), st.Signers)
-		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
-		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
-		assert.Equal(t, abi.ChainEpoch(-100), st.UnlockDuration)
-		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
-		txns := adt.AsMap(rt.Store(), st.PendingTxns)
-		keys, err := txns.CollectKeys()
-		require.NoError(t, err)
-		assert.Empty(t, keys)
 	})
 }
 
@@ -766,7 +755,6 @@ func TestRemoveSigner(t *testing.T) {
 			expectApprovals: int64(2),
 			code:            exitcode.Ok,
 		},
-		// TODO this is behaviour is poorly defined: https://github.com/filecoin-project/specs-actors/issues/72
 		{
 			desc: "remove signer from single singer list",
 
@@ -777,8 +765,8 @@ func TestRemoveSigner(t *testing.T) {
 			decrease:     false,
 
 			expectSigners:   nil,
-			expectApprovals: int64(1),
-			code:            exitcode.Ok,
+			expectApprovals: int64(2),
+			code:            exitcode.ErrForbidden,
 		},
 		{
 			desc: "fail to remove non-signer",
