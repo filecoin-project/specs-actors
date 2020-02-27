@@ -76,6 +76,21 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(1234), st.StartEpoch)
 		// assert no transactions
 	})
+
+	t.Run("fail to construct multisig actor with 0 signers", func(t *testing.T) {
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{},
+			NumApprovalsThreshold: 1,
+			UnlockDuration:        1,
+		}
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+
+	})
 }
 
 func TestVesting(t *testing.T) {
@@ -696,7 +711,6 @@ func TestRemoveSigner(t *testing.T) {
 			expectApprovals: int64(2),
 			code:            exitcode.Ok,
 		},
-		// TODO this is behaviour is poorly defined: https://github.com/filecoin-project/specs-actors/issues/72
 		{
 			desc: "remove signer from single singer list",
 
@@ -707,8 +721,8 @@ func TestRemoveSigner(t *testing.T) {
 			decrease:     false,
 
 			expectSigners:   nil,
-			expectApprovals: int64(1),
-			code:            exitcode.Ok,
+			expectApprovals: int64(2),
+			code:            exitcode.ErrForbidden,
 		},
 		{
 			desc: "fail to remove non-signer",
