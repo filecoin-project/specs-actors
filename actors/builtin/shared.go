@@ -7,6 +7,7 @@ import (
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 ///// Code shared by multiple built-in actors. /////
@@ -19,7 +20,7 @@ func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ..
 }
 
 func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
-	ret, code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0))
+	ret, code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, &adt.EmptyValue{}, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching control addresses")
 	var addrs MinerAddrs
 	autil.AssertNoError(ret.Into(&addrs))
