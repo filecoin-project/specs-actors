@@ -117,6 +117,17 @@ func (t *BalanceTable) Remove(key addr.Address) (abi.TokenAmount, error) {
 	return prev, nil
 }
 
+// Returns the total balance held by this BalanceTable
+func (t *BalanceTable) Total() (abi.TokenAmount, error) {
+	total := big.Zero()
+	var cur abi.TokenAmount
+	err := (*Map)(t).ForEach(&cur, func(key string) error {
+		total = big.Add(total, cur)
+		return nil
+	})
+	return total, err
+}
+
 // Error type returned when an expected key is absent.
 type ErrNotFound struct {
 	Root cid.Cid
