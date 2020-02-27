@@ -96,9 +96,12 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
-	_, code = rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
+	if amountSlashedTotal.GreaterThan(big.Zero()) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
+	}
+
+	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return &adt.EmptyValue{}
 }
