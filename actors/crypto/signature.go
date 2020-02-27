@@ -91,3 +91,26 @@ func (s *Signature) UnmarshalCBOR(br io.Reader) error {
 	s.Data = buf[1:]
 	return nil
 }
+
+func (s *Signature) MarshalBinary() ([]byte, error) {
+	bs := make([]byte, len(s.Data)+1)
+	bs[0] = byte(s.Type)
+	copy(bs[1:], s.Data)
+	return bs, nil
+}
+
+func (s *Signature) UnmarshalBinary(bs []byte) error {
+	if len(bs) == 0 {
+		return fmt.Errorf("invalid signature bytes of length 0")
+	}
+	switch SigType(bs[0]) {
+	default:
+		return fmt.Errorf("invalid signature type in cbor input: %d", bs[0])
+	case SigTypeSecp256k1:
+		s.Type = SigTypeSecp256k1
+	case SigTypeBLS:
+		s.Type = SigTypeBLS
+	}
+	s.Data = bs[1:]
+	return nil
+}
