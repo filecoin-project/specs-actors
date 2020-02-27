@@ -50,6 +50,22 @@ const (
 	RegisteredProof_StackedDRG512MiBPoSt = RegisteredProof(8)
 )
 
+func (p RegisteredProof) SectorSize() (SectorSize, error) {
+	switch p {
+	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBPoSt:
+		return 32 << 30, nil
+	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBPoSt:
+		return 2 << 10, nil
+	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBPoSt:
+		return 8 << 20, nil
+	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBPoSt:
+		return 512 << 20, nil
+	default:
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+
+}
+
 // RegisteredPoStProof produces the PoSt-specific RegisteredProof corresponding
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
