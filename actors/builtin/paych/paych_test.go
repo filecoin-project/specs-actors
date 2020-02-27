@@ -609,8 +609,8 @@ func TestActor_Collect(t *testing.T) {
 
 		bal := rt.GetBalance()
 		sentToFrom := big.Sub(bal, st.ToSend)
-		rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.Ok)
-		rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
+		rt.ExpectSend(st.From, builtin.MethodSend, &adt.EmptyValue{}, sentToFrom, nil, exitcode.Ok)
+		rt.ExpectSend(st.To, builtin.MethodSend, &adt.EmptyValue{}, st.ToSend, nil, exitcode.Ok)
 
 		// Collect.
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
@@ -651,8 +651,8 @@ func TestActor_Collect(t *testing.T) {
 			rt.SetEpoch(12)
 
 			sentToFrom := big.Sub(rt.GetBalance(), st.ToSend)
-			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, tc.expSendFromCode)
-			rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, tc.expSendToCode)
+			rt.ExpectSend(st.From, builtin.MethodSend, &adt.EmptyValue{}, sentToFrom, nil, tc.expSendFromCode)
+			rt.ExpectSend(st.To, builtin.MethodSend, &adt.EmptyValue{}, st.ToSend, nil, tc.expSendToCode)
 
 			// Collect.
 			rt.SetCaller(st.From, builtin.AccountActorCodeID)

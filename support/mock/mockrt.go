@@ -183,6 +183,9 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	if len(rt.expectSends) == 0 {
 		rt.t.Fatalf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
 	}
+	if params == nil {
+		rt.t.Fatalf("nil params to send")
+	}
 	expectedMsg := rt.expectSends[0]
 
 	if !expectedMsg.Equal(toAddr, methodNum, params, value) {
