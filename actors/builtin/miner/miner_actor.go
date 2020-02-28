@@ -257,7 +257,13 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		Sectors:         &bf,
 		RegisteredProof: params.RegisteredProof,
 	}
-	expiryBound := rt.CurrEpoch() + MaxSealDuration[params.RegisteredProof] + 1
+
+	msd, ok := MaxSealDuration[params.RegisteredProof]
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.RegisteredProof)
+	}
+
+	expiryBound := rt.CurrEpoch() + msd + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
 	return &adt.EmptyValue{}
@@ -283,7 +289,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
-	if rt.CurrEpoch() > precommit.PreCommitEpoch+MaxSealDuration[precommit.Info.RegisteredProof] {
+	msd, ok := MaxSealDuration[precommit.Info.RegisteredProof]
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalState, "No max seal duration for proof type: %d", precommit.Info.RegisteredProof)
+	}
+	if rt.CurrEpoch() > precommit.PreCommitEpoch+msd {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch (cur=%d, pcepoch=%d)", rt.CurrEpoch(), precommit.PreCommitEpoch)
 	}
 
@@ -560,17 +570,8 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 // Cron //
 //////////
 
-type OnDeferredCronEventParams struct {
-	CallbackPayload []byte
-}
-
-func (a Actor) OnDeferredCronEvent(rt Runtime, params *OnDeferredCronEventParams) *adt.EmptyValue {
+func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-
-	var payload CronEventPayload
-	if err := payload.UnmarshalCBOR(bytes.NewReader(params.CallbackPayload)); err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to deserialize event payload")
-	}
 
 	switch payload.EventType {
 	case CronEventTempFault:
