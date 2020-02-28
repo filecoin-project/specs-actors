@@ -97,7 +97,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	})
 
 	if amountSlashedTotal.GreaterThan(big.Zero()) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, amountSlashedTotal)
 		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
 	}
 
@@ -212,7 +212,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &PublishStorageDealsReturn{newDealIds}
 }
@@ -360,7 +360,7 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 
 	// TODO: award some small portion of slashed to caller as incentive
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, slashed)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &adt.EmptyValue{}
 }
