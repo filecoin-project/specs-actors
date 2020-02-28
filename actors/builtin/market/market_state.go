@@ -128,6 +128,7 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 	{
 		// Process deal payment for the elapsed epochs.
 		totalPayment := big.Mul(big.NewInt(int64(numEpochsElapsed)), deal.StoragePricePerEpoch)
+
 		st.transferBalance(rt, deal.Client, deal.Provider, totalPayment)
 	}
 
@@ -237,25 +238,24 @@ func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	return ret
 }
 
-func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) (lockBalanceOK bool) {
+func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	prevLocked := st.getLockedBalance(rt, addr)
+	escrowBalance := st.getEscrowBalance(rt, addr)
 	if big.Add(prevLocked, amount).GreaterThan(st.getEscrowBalance(rt, addr)) {
-		lockBalanceOK = false
-		return
+		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount)
 	}
 
 	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 	err := lt.Add(addr, amount)
 	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "adding locked balance: %v", err)
+		return xerrors.Errorf("adding locked balance: %w", err)
 	}
 
 	st.LockedTable = lt.Root()
 
-	lockBalanceOK = true
-	return
+	return nil
 }
 
 func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
@@ -343,8 +343,8 @@ func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.To
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", amount)
 	}
 
-	if !st.maybeLockBalance(rt, addr, amount) {
-		rt.Abortf(exitcode.ErrInsufficientFunds, "Insufficient funds available to lock")
+	if err := st.maybeLockBalance(rt, addr, amount); err != nil {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "Insufficient funds available to lock: %s", err)
 	}
 }
 
