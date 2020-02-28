@@ -99,7 +99,7 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 
 	if state.SectorStartEpoch == epochUndefined {
 		// Not yet appeared in proven sector; check for timeout.
-		if deal.StartEpoch >= epoch {
+		if epoch > deal.StartEpoch {
 			return st.processDealInitTimedOut(rt, dealID)
 		}
 		return
@@ -172,7 +172,10 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 
 	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 	if err := dbp.Remove(dealP.Client, dealID); err != nil {
-		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal from DealIDsByParty: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by client address from DealIDsByParty: %v", err)
+	}
+	if err := dbp.Remove(dealP.Provider, dealID); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by provider address from DealIDsByParty: %v", err)
 	}
 	st.DealIDsByParty = dbp.Root()
 }
@@ -222,7 +225,27 @@ func (st *State) generateStorageDealID() abi.DealID {
 // Balance table operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
+func (st *State) AddEscrowBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
+	et := adt.AsBalanceTable(s, st.EscrowTable)
+	err := et.AddCreate(a, amount)
+	if err != nil {
+		return err
+	}
+	st.EscrowTable = et.Root()
+	return nil
+}
+
+func (st *State) AddLockedBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
+	lt := adt.AsBalanceTable(s, st.LockedTable)
+	err := lt.AddCreate(a, amount)
+	if err != nil {
+		return err
+	}
+	st.LockedTable = lt.Root()
+	return nil
+}
+
+func (st *State) GetEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable).Get(a)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
@@ -230,7 +253,7 @@ func (st *State) getEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	return ret
 }
 
-func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
+func (st *State) GetLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable).Get(a)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
@@ -241,9 +264,9 @@ func (st *State) getLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	prevLocked := st.getLockedBalance(rt, addr)
-	escrowBalance := st.getEscrowBalance(rt, addr)
-	if big.Add(prevLocked, amount).GreaterThan(st.getEscrowBalance(rt, addr)) {
+	prevLocked := st.GetLockedBalance(rt, addr)
+	escrowBalance := st.GetEscrowBalance(rt, addr)
+	if big.Add(prevLocked, amount).GreaterThan(st.GetEscrowBalance(rt, addr)) {
 		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount)
 	}
 

@@ -83,7 +83,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		// deal state updates.
 		amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, nominal))
 
-		minBalance := st.getLockedBalance(rt, nominal)
+		minBalance := st.GetLockedBalance(rt, nominal)
 
 		et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 		ex, err := et.SubtractWithMinimum(nominal, params.Amount, minBalance)
@@ -96,37 +96,33 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
-	_, code = rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
+	if amountSlashedTotal.GreaterThan(big.Zero()) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, amountSlashedTotal)
+		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
+	}
+
+	_, code := rt.Send(recipient, builtin.MethodSend, adt.EmptyValue{}, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return &adt.EmptyValue{}
 }
 
 // Deposits the received value into the balance held in escrow.
-func (a Actor) AddBalance(rt Runtime, providerOrClientAdrress *addr.Address) *adt.EmptyValue {
-	nominal, _ := escrowAddress(rt, *providerOrClientAdrress)
+func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		msgValue := rt.Message().ValueReceived()
 
-		{
-			et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-			err := et.AddCreate(nominal, msgValue)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
-			}
-			st.EscrowTable = et.Root()
+		err := st.AddEscrowBalance(adt.AsStore(rt), nominal, msgValue)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
 		}
 
-		{
-			lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-			err := lt.AddCreate(nominal, big.NewInt(0))
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
-			}
-			st.LockedTable = lt.Root()
+		// ensure there is an entry in the locked table
+		err = st.AddLockedBalance(adt.AsStore(rt), nominal, big.Zero())
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
 		}
 
 		return nil
@@ -216,7 +212,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, amountSlashedTotal)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &PublishStorageDealsReturn{newDealIds}
 }
@@ -364,7 +360,7 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 
 	// TODO: award some small portion of slashed to caller as incentive
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, slashed)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &adt.EmptyValue{}
 }

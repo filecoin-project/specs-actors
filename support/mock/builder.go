@@ -18,12 +18,13 @@ type RuntimeBuilder struct {
 // Initializes a new builder with a receiving actor address.
 func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 	m := &Runtime{
-		ctx:        ctx,
-		epoch:      0,
-		receiver:   receiver,
-		caller:     addr.Address{},
-		callerType: cid.Undef,
-		miner:      addr.Address{},
+		ctx:         ctx,
+		epoch:       0,
+		receiver:    receiver,
+		caller:      addr.Address{},
+		callerType:  cid.Undef,
+		miner:       addr.Address{},
+		idAddresses: make(map[addr.Address]addr.Address),
 
 		state: cid.Undef,
 		store: make(map[cid.Cid][]byte),
