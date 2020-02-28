@@ -57,7 +57,7 @@ func (a *Array) Set(i uint64, value runtime.CBORMarshaler) error {
 	if err != nil {
 		return errors.Wrapf(err, "array set failed to load root %v", a.root)
 	}
-	if root.Set(a.store.Context(), i, value) != nil {
+	if err = root.Set(a.store.Context(), i, value); err != nil {
 		return errors.Wrapf(err, "array set failed to set index %v value %v in root %v, ", i, value, a.root)
 	}
 	return a.write(root)

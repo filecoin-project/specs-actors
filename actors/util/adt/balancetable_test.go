@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
@@ -40,5 +41,40 @@ func TestBalanceTable(t *testing.T) {
 		amount, err = bt.Get(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(30), amount)
+	})
+
+	t.Run("Total returns total amount tracked", func(t *testing.T) {
+		addr1 := tutil.NewIDAddr(t, 100)
+		addr2 := tutil.NewIDAddr(t, 101)
+
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		store := adt.AsStore(rt)
+		emptyMap, err := adt.MakeEmptyMap(store)
+		assert.NoError(t, err)
+
+		bt := adt.AsBalanceTable(store, emptyMap.Root())
+		total, err := bt.Total()
+		assert.NoError(t, err)
+		assert.Equal(t, big.Zero(), total)
+
+		testCases := []struct {
+			amount int64
+			addr   address.Address
+			total  int64
+		}{
+			{10, addr1, 10},
+			{20, addr1, 30},
+			{40, addr2, 70},
+			{50, addr2, 120},
+		}
+
+		for _, tc := range testCases {
+			err = bt.AddCreate(tc.addr, abi.NewTokenAmount(tc.amount))
+			assert.NoError(t, err)
+
+			total, err = bt.Total()
+			assert.NoError(t, err)
+			assert.Equal(t, abi.NewTokenAmount(tc.total), total)
+		}
 	})
 }
