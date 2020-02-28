@@ -171,7 +171,6 @@ func main() {
 		miner.TerminateSectorsParams{},
 		miner.ChangePeerIDParams{},
 		miner.ProveCommitSectorParams{},
-		miner.OnDeferredCronEventParams{},
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
 		miner.DeclareTemporaryFaultsParams{},
