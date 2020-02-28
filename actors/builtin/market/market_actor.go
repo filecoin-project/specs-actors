@@ -101,7 +101,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
 	}
 
-	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
+	_, code := rt.Send(recipient, builtin.MethodSend, adt.EmptyValue{}, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return &adt.EmptyValue{}
 }

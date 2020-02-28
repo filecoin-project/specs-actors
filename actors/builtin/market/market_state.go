@@ -265,7 +265,7 @@ func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.Toke
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	prevLocked := st.GetLockedBalance(rt, addr)
-	escrowBalance := st.getEscrowBalance(rt, addr)
+	escrowBalance := st.GetEscrowBalance(rt, addr)
 	if big.Add(prevLocked, amount).GreaterThan(st.GetEscrowBalance(rt, addr)) {
 		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount)
 	}
