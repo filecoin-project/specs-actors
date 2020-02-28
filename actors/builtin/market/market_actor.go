@@ -214,8 +214,10 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	builtin.RequireSuccess(rt, code, "failed to burn funds")
+	if amountSlashedTotal.GreaterThan(big.Zero()) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
+		builtin.RequireSuccess(rt, code, "failed to burn funds")
+	}
 	return &PublishStorageDealsReturn{newDealIds}
 }
 
