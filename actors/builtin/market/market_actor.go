@@ -182,6 +182,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			if !ok {
 				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
 			}
+			deal.Proposal.Client = client // normalize...
+
 			// Before any operations that check the balance tables for funds, execute all deferred
 			// deal state updates.
 			//
