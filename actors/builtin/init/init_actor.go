@@ -86,24 +86,14 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 }
 
 func canExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
-	if execCodeID == builtin.AccountActorCodeID {
-		// Special case: account actors must be created implicitly by sending value;
-		// cannot be created via exec.
-		return false
-	}
-
-	// Anyone can create payment channels and multi sig actors.
-	if execCodeID == builtin.PaymentChannelActorCodeID || execCodeID == builtin.MultisigActorCodeID {
-		return true
-	}
-
-	// Only the power actor may create miners
-	if execCodeID == builtin.StorageMinerActorCodeID {
-		if callerCodeID == builtin.StoragePowerActorCodeID {
+	switch execCodeID {
+	case builtin.AccountActorCodeID, builtin.InitActorCodeID, builtin.StoragePowerActorCodeID, builtin.StorageMarketActorCodeID, builtin.StorageMinerActorCodeID, cid.Undef:
+		if execCodeID == builtin.StorageMinerActorCodeID && callerCodeID == builtin.StoragePowerActorCodeID {
 			return true
 		}
-	}
 
-	// No other actors may be created dynamically.
-	return false
+		return false
+	default:
+		return true
+	}
 }

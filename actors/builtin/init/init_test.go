@@ -41,7 +41,7 @@ func TestExec(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.execAndVerify(rt, builtin.AccountActorCodeID, []byte{})
+			actor.execAndVerify(rt, builtin.StoragePowerActorCodeID, []byte{})
 		})
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.execAndVerify(rt, cid.Undef, []byte{})
