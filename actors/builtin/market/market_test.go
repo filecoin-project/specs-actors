@@ -2,6 +2,7 @@ package market_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -44,15 +45,6 @@ func TestMarketActor(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		return rt, &actor
-	}
-
-	fakeVerifier := func(valid bool) mock.VerifyFunc {
-		return func(signature crypto.Signature, signer address.Address, plaintext []byte) error {
-			if valid {
-				return nil
-			}
-			return xerrors.New("invalid signature")
-		}
 	}
 
 	t.Run("simple construction", func(t *testing.T) {
@@ -503,6 +495,111 @@ func TestMarketActor(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("VerifyDealsOnSectorProveCommit", func(t *testing.T) {
+		t.Run("fails if dealid for a different provider is sent", func(t *testing.T) {
+			rt, actor := setup()
+
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+
+			// have `wrongProvider` call the method with deals published by `provider`
+			wrongProvider := tutil.NewIDAddr(t, 1001)
+			rt.SetCaller(wrongProvider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			})
+
+			rt.Verify()
+
+		})
+
+		t.Run("fails if deal is already activated", func(t *testing.T) {
+			rt, actor := setup()
+
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+
+			// activate deals normally
+			rt.SetEpoch(99)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			rt.Verify()
+
+			// activate deal again
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			})
+
+			rt.Verify()
+
+		})
+
+		t.Run("fails if it is too late", func(t *testing.T) {
+			rt, actor := setup()
+
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+
+			// StartEpoch == 100
+			rt.SetEpoch(101)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			})
+
+			rt.Verify()
+		})
+
+		t.Run("fails if sector expires too early", func(t *testing.T) {
+			rt, actor := setup()
+
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+
+			// Deal EndEpoch == 200
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 199}
+
+			rt.SetEpoch(100)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			})
+
+			rt.Verify()
+		})
+
+		t.Run("returns the weight represented by the deals", func(t *testing.T) {
+			rt, actor := setup()
+
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 4)
+
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+
+			rt.SetEpoch(100)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+			ret := rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+
+			rt.Verify()
+
+			// 4 deals, 6 bytes each, duration == 100
+			assert.Equal(t, *(ret.(*abi.DealWeight)), big.NewInt(4*6*100))
+		})
+	})
 }
 
 type marketActorTestHarness struct {
@@ -583,5 +680,37 @@ func (h *marketActorTestHarness) testProposal(provider, client address.Address, 
 	return market.ClientDealProposal{
 		Proposal:        proposal,
 		ClientSignature: crypto.Signature{},
+	}
+}
+
+func (h *marketActorTestHarness) addTestProposals(rt *mock.Runtime, provider, owner, worker, client address.Address, count int64) []abi.DealID {
+	var proposals []market.ClientDealProposal
+	for i := int64(0); i < count; i++ {
+		proposals = append(proposals, h.testProposal(provider, client, fmt.Sprintf("data %d", count)))
+	}
+	params := market.PublishStorageDealsParams{Deals: proposals}
+
+	rt.SetVerifier(fakeVerifier(true))
+	h.addParticipantFunds(rt, client, abi.NewTokenAmount(550*count))
+	h.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(50*count))
+
+	rt.SetCaller(worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+	h.expectProviderControlAddresses(rt, provider, owner, worker)
+
+	ret := rt.Call(h.PublishStorageDeals, &params)
+
+	rt.Verify()
+
+	retval := ret.(*market.PublishStorageDealsReturn)
+	return retval.IDs
+}
+
+func fakeVerifier(valid bool) mock.VerifyFunc {
+	return func(signature crypto.Signature, signer address.Address, plaintext []byte) error {
+		if valid {
+			return nil
+		}
+		return xerrors.New("invalid signature")
 	}
 }
