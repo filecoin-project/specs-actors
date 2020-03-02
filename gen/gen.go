@@ -175,6 +175,7 @@ func main() {
 		miner.ExtendSectorExpirationParams{},
 		miner.DeclareTemporaryFaultsParams{},
 		miner.GetControlAddressesReturn{},
+		miner.CheckSectorProvenParams{},
 		// other types
 		miner.CronEventPayload{},
 	); err != nil {
