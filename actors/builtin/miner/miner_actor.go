@@ -768,7 +768,8 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 		window := power.WindowedPostChallengeDuration
 		if rt.CurrEpoch() < st.PoStState.ProvingPeriodStart+window {
 			// NB: We don't expect this to be possible, need to guarantee with tests
-			rt.Abortf(exitcode.ErrIllegalState, "should not be able to check post proving period expiration when not inside window")
+			return false // TODO: this is currently possible because you can't cancel Cron callbacks
+			//rt.Abortf(exitcode.ErrIllegalState, "should not be able to check post proving period expiration when not inside window (now=%d, pps=%d, window=%d)", rt.CurrEpoch(), st.PoStState.ProvingPeriodStart, window)
 		}
 
 		// Increment count of consecutive failures and provingPeriodStart.
