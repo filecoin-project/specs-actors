@@ -287,7 +287,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		for _, dealID := range params.DealIDs {
-			deal := st.mustGetDeal(rt, dealID)
+			deal := st.MustGetDeal(rt, dealID)
 			pieces = append(pieces, abi.PieceInfo{
 				PieceCID: deal.PieceCID,
 				Size:     deal.PieceSize,

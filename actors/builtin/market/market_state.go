@@ -87,8 +87,8 @@ func (st *State) updatePendingDealStates(rt Runtime, dealIDs []abi.DealID, epoch
 func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount) {
 	amountSlashed = abi.NewTokenAmount(0)
 
-	deal := st.mustGetDeal(rt, dealID)
-	state := st.mustGetDealState(rt, dealID)
+	deal := st.MustGetDeal(rt, dealID)
+	state := st.MustGetDealState(rt, dealID)
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
 	everSlashed := state.SlashEpoch != epochUndefined
@@ -164,7 +164,7 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 }
 
 func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
-	dealP := st.mustGetDeal(rt, dealID)
+	dealP := st.MustGetDeal(rt, dealID)
 
 	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	if err := proposals.Delete(uint64(dealID)); err != nil {
@@ -186,8 +186,8 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
 func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID) (amountSlashed abi.TokenAmount) {
-	deal := st.mustGetDeal(rt, dealID)
-	state := st.mustGetDealState(rt, dealID)
+	deal := st.MustGetDeal(rt, dealID)
+	state := st.MustGetDealState(rt, dealID)
 
 	Assert(state.SectorStartEpoch == epochUndefined)
 
@@ -205,8 +205,8 @@ func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID) (amountS
 
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
 func (st *State) processDealExpired(rt Runtime, dealID abi.DealID) {
-	deal := st.mustGetDeal(rt, dealID)
-	state := st.mustGetDealState(rt, dealID)
+	deal := st.MustGetDeal(rt, dealID)
+	state := st.MustGetDealState(rt, dealID)
 
 	Assert(state.SectorStartEpoch != epochUndefined)
 
@@ -343,7 +343,7 @@ func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmo
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
+func (st *State) MustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	proposal, err := proposals.Get(dealID)
 	if err != nil {
@@ -353,7 +353,7 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	return proposal
 }
 
-func (st *State) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
+func (st *State) MustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
 	states := AsDealStateArray(adt.AsStore(rt), st.States)
 	state, err := states.Get(dealID)
 	if err != nil {
