@@ -14,9 +14,14 @@ import (
 type VerifyFunc func(signature crypto.Signature, signer addr.Address, plaintext []byte) error
 type HasherFunc func(data []byte) [32]byte
 
+type ComputeUnsealedCID interface {
+	Compute(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error)
+}
+
 type syscaller struct {
 	SignatureVerifier VerifyFunc
 	Hasher            HasherFunc
+	ComputeCID        ComputeUnsealedCID
 }
 
 // Interface methods
@@ -35,8 +40,10 @@ func (s *syscaller) HashBlake2b(data []byte) [32]byte {
 }
 
 func (s *syscaller) ComputeUnsealedSectorCID(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error) {
-	s.PanicOnUnsetFunc("UnsealedSectorCIDComputer")
-	return cid.Undef, nil
+	if s.ComputeCID == nil {
+		s.PanicOnUnsetFunc("UnsealedSectorCIDComputer")
+	}
+	return s.ComputeCID.Compute(reg, pieces)
 }
 
 func (s *syscaller) VerifySeal(vi abi.SealVerifyInfo) error {

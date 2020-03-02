@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
+	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -500,7 +501,7 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if dealid for a different provider is sent", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -520,7 +521,7 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if deal is already activated", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -546,7 +547,7 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if it is too late", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -565,7 +566,7 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if sector expires too early", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 1)
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
 
 			// Deal EndEpoch == 200
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 199}
@@ -584,7 +585,7 @@ func TestMarketActor(t *testing.T) {
 		t.Run("returns the weight represented by the deals", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, 4)
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 4))
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -600,6 +601,53 @@ func TestMarketActor(t *testing.T) {
 			assert.Equal(t, *(ret.(*abi.DealWeight)), big.NewInt(4*6*100))
 		})
 	})
+
+	t.Run("ComputeDataCommitment", func(t *testing.T) {
+		rt, actor := setup()
+		returnedCid := testCid("commd")
+		computeCID := newFakeComputeCID(t, testCid("commd"))
+		rt.SetComputeUnsealedCID(computeCID)
+
+		proposals := actor.testProposals(provider, client, 4)
+		dealIds := actor.addTestProposals(rt, provider, owner, worker, client, proposals)
+
+		params := market.ComputeDataCommitmentParams{
+			DealIDs:    dealIds,
+			SectorType: abi.RegisteredProof_StackedDRG32GiBSeal,
+		}
+
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+		retval := rt.Call(actor.ComputeDataCommitment, &params)
+
+		// Ensure that the call to compute the commd was called with the correct params
+		assert.Equal(t, (*cbg.CborCid)(&returnedCid), retval)
+		assert.Equal(t, abi.RegisteredProof_StackedDRG32GiBSeal, computeCID.CallParamProof)
+		assert.Len(t, computeCID.CallParamPieces, 4)
+	})
+
+	t.Run("OnMinerSectorsTerminate", func(t *testing.T) {
+
+	})
+}
+
+type fakeComputeCID struct {
+	T               *testing.T
+	ReturnCID       cid.Cid
+	CallParamProof  abi.RegisteredProof
+	CallParamPieces []abi.PieceInfo
+}
+
+func newFakeComputeCID(t *testing.T, returnCid cid.Cid) *fakeComputeCID {
+	return &fakeComputeCID{T: t, ReturnCID: returnCid}
+}
+
+func (c *fakeComputeCID) Compute(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error) {
+	assert.Nil(c.T, c.CallParamPieces)
+	c.CallParamPieces = pieces
+	c.CallParamProof = reg
+	return c.ReturnCID, nil
 }
 
 type marketActorTestHarness struct {
@@ -660,14 +708,11 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 }
 
 func (h *marketActorTestHarness) testProposal(provider, client address.Address, data string) market.ClientDealProposal {
-	bytes := []byte(data)
-	cidHash, _ := mh.Sum(bytes, mh.SHA3, 4)
-
 	// ClientBalanceRequirement: 550
 	// ProviderBalanceRequirement: 50
 	proposal := market.DealProposal{
-		PieceCID:             cid.NewCidV1(cid.Raw, cidHash),
-		PieceSize:            abi.PaddedPieceSize(len(bytes)),
+		PieceCID:             testCid(data),
+		PieceSize:            abi.PaddedPieceSize(len(data)),
 		Client:               client,
 		Provider:             provider,
 		StartEpoch:           100,
@@ -683,16 +728,23 @@ func (h *marketActorTestHarness) testProposal(provider, client address.Address, 
 	}
 }
 
-func (h *marketActorTestHarness) addTestProposals(rt *mock.Runtime, provider, owner, worker, client address.Address, count int64) []abi.DealID {
-	var proposals []market.ClientDealProposal
-	for i := int64(0); i < count; i++ {
-		proposals = append(proposals, h.testProposal(provider, client, fmt.Sprintf("data %d", count)))
+func (h *marketActorTestHarness) testProposals(provider, client address.Address, count int) []market.ClientDealProposal {
+	var out []market.ClientDealProposal
+	for i := 0; i < count; i++ {
+		out = append(out, h.testProposal(provider, client, fmt.Sprintf("data %d", count)))
 	}
+	return out
+}
+
+func (h *marketActorTestHarness) addTestProposals(rt *mock.Runtime, provider, owner, worker, client address.Address, proposals []market.ClientDealProposal) []abi.DealID {
 	params := market.PublishStorageDealsParams{Deals: proposals}
 
 	rt.SetVerifier(fakeVerifier(true))
-	h.addParticipantFunds(rt, client, abi.NewTokenAmount(550*count))
-	h.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(50*count))
+
+	for _, proposal := range proposals {
+		h.addParticipantFunds(rt, client, proposal.Proposal.ClientBalanceRequirement())
+		h.addProviderFunds(rt, provider, owner, worker, proposal.Proposal.ProviderBalanceRequirement())
+	}
 
 	rt.SetCaller(worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
@@ -713,4 +765,10 @@ func fakeVerifier(valid bool) mock.VerifyFunc {
 		}
 		return xerrors.New("invalid signature")
 	}
+}
+
+func testCid(data string) cid.Cid {
+	bytes := []byte(data)
+	cidHash, _ := mh.Sum(bytes, mh.SHA3, 4)
+	return cid.NewCidV1(cid.Raw, cidHash)
 }

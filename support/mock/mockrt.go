@@ -567,6 +567,10 @@ func (rt *Runtime) SetHasher(f HasherFunc) {
 	rt.syscalls.Hasher = f
 }
 
+func (rt *Runtime) SetComputeUnsealedCID(f ComputeUnsealedCID) {
+	rt.syscalls.ComputeCID = f
+}
+
 func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
 	t := meth.Type()
 	rt.require(t.Kind() == reflect.Func, "%v is not a function", meth)
