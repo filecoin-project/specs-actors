@@ -36,7 +36,7 @@ func (a Actor) EpochTick(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	for _, entry := range st.Entries {
-		_, _ = rt.Send(entry.Receiver, entry.MethodNum, adt.EmptyValue{}, abi.NewTokenAmount(0))
+		_, _ = rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0))
 		// Any error and return value are ignored.
 	}
 
