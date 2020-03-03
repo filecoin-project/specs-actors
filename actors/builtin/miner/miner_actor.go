@@ -624,8 +624,6 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 			rt.Abortf(exitcode.ErrIllegalState, "too many faults")
 		}
 
-		unsets := make(map[uint64]struct{})
-
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.GetSector(store, sectorNo)
 			if err != nil {
@@ -649,7 +647,6 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 				sector.DeclaredFaultDuration = epochUndefined
 				endFaults = append(endFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
 				endFaultPledge = big.Add(endFaultPledge, sector.PledgeRequirement)
-				unsets[uint64(sectorNo)] = struct{}{}
 				st.FaultSet.Unset(uint64(sectorNo))
 				if err = st.PutSector(store, sector); err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
