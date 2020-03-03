@@ -105,7 +105,10 @@ func (s *Signature) UnmarshalBinary(bs []byte) error {
 	}
 	switch SigType(bs[0]) {
 	default:
-		return fmt.Errorf("invalid signature type in cbor input: %d", bs[0])
+		// Do not error during unmarshal but leave a standard value.
+		// unmarshal(marshal(zero valued sig)) is valuable for test
+		// and type needs to be checked by caller anyway.
+		s.Type = SigTypeUnknown
 	case SigTypeSecp256k1:
 		s.Type = SigTypeSecp256k1
 	case SigTypeBLS:
