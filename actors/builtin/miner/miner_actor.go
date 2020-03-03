@@ -930,11 +930,6 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set.")
 	}
 
-	challengeCount, err := st.ComputeWindowedPoStChallengeCount(store)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "Could not compute challenge count.")
-	}
-
 	var addrBuf bytes.Buffer
 	err = rt.Message().Receiver().MarshalCBOR(&addrBuf)
 	AssertNoError(err)
@@ -947,7 +942,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 		Proofs:          onChainInfo.Proofs,
 		Randomness:      abi.PoStRandomness(postRandomness),
 		EligibleSectors: sectorInfos,
-		ChallengeCount:  challengeCount,
+		ChallengeCount:  WindowedPoStChallengeCount,
 	}
 
 	// Verify the PoSt Proof
