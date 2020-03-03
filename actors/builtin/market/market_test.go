@@ -280,9 +280,6 @@ func TestMarketActor(t *testing.T) {
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, provider))
 		})
-
-		// TODO: withdraws limited by slashing
-		// TODO: withdraws limited by locked balance
 	})
 
 	t.Run("PublishStorageDeals", func(t *testing.T) {
@@ -603,34 +600,190 @@ func TestMarketActor(t *testing.T) {
 	})
 
 	t.Run("ComputeDataCommitment", func(t *testing.T) {
-		rt, actor := setup()
-		returnedCid := testCid("commd")
-		computeCID := newFakeComputeCID(t, testCid("commd"))
-		rt.SetComputeUnsealedCID(computeCID)
+		t.Run("executes the syscall with the correct parameters", func(t *testing.T) {
+			rt, actor := setup()
+			returnedCid := testCid("commd")
+			computeCID := newFakeComputeCID(t, testCid("commd"))
+			rt.SetComputeUnsealedCID(computeCID)
 
-		proposals := actor.testProposals(provider, client, 4)
-		dealIds := actor.addTestProposals(rt, provider, owner, worker, client, proposals)
+			proposals := actor.testProposals(provider, client, 4)
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, proposals)
 
-		params := market.ComputeDataCommitmentParams{
-			DealIDs:    dealIds,
-			SectorType: abi.RegisteredProof_StackedDRG32GiBSeal,
-		}
+			params := market.ComputeDataCommitmentParams{
+				DealIDs:    dealIds,
+				SectorType: abi.RegisteredProof_StackedDRG32GiBSeal,
+			}
 
-		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
-		retval := rt.Call(actor.ComputeDataCommitment, &params)
+			retval := rt.Call(actor.ComputeDataCommitment, &params)
 
-		// Ensure that the call to compute the commd was called with the correct params
-		assert.Equal(t, (*cbg.CborCid)(&returnedCid), retval)
-		assert.Equal(t, abi.RegisteredProof_StackedDRG32GiBSeal, computeCID.CallParamProof)
-		assert.Len(t, computeCID.CallParamPieces, 4)
+			// Ensure that the call to compute the commd was called with the correct params
+			assert.Equal(t, (*cbg.CborCid)(&returnedCid), retval)
+			assert.Equal(t, abi.RegisteredProof_StackedDRG32GiBSeal, computeCID.CallParamProof)
+			assert.Len(t, computeCID.CallParamPieces, 4)
+		})
 	})
 
 	t.Run("OnMinerSectorsTerminate", func(t *testing.T) {
+		t.Run("updates the SlashEpoch in the deal state", func(t *testing.T) {
+			rt, actor := setup()
 
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 4))
+
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.SetEpoch(42)
+
+			params := market.OnMinerSectorsTerminateParams{dealIds}
+			retval := rt.Call(actor.OnMinerSectorsTerminate, &params)
+
+			assert.IsType(t, &adt.EmptyValue{}, retval)
+
+			rt.GetState(&st)
+
+			// Only side-effect is setting the slash epoch
+			for _, id := range dealIds {
+				ds := st.MustGetDealState(rt, id)
+				assert.Equal(t, ds.SlashEpoch, abi.ChainEpoch(42))
+			}
+		})
+	})
+
+	t.Run("HandleExpiredDeals", func(t *testing.T) {
+		t.Run("unlocks collateral and transfers funds if deals have expired normally", func(t *testing.T) {
+			rt, actor := setup()
+
+			// Test deal parameters:
+			// Duration:             100
+			// StoragePricePerEpoch: 5
+			// ProviderCollateral:   50
+			// ClientCollateral:     50
+
+			// add a deal
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
+
+			// verify/activate deal
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+			rt.SetEpoch(100)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			rt.Verify()
+
+			// test deals expire at height 200
+			rt.SetEpoch(205)
+			rt.SetCaller(provider, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+			retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
+
+			assert.IsType(t, &adt.EmptyValue{}, retval)
+
+			// ensure balances have been transferred and funds unlocked
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
+		})
+
+		t.Run("burns collateral and unlocks balances if deal has timed-out", func(t *testing.T) {
+			rt, actor := setup()
+
+			// Test deal parameters:
+			// Duration:             100
+			// StoragePricePerEpoch: 5
+			// ProviderCollateral:   50
+			// ClientCollateral:     50
+
+			// add a deal
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
+
+			// let this deal "time out" (`SectorStartEpoch == epochUndefined`)
+
+			// test deals start at height 100
+			rt.SetEpoch(101)
+			thirdParty := tutil.NewIDAddr(t, 1001)
+			rt.SetCaller(thirdParty, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(50), nil, exitcode.Ok)
+
+			retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
+
+			assert.IsType(t, &adt.EmptyValue{}, retval)
+
+			// ensure balances have been transferred and funds unlocked
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
+		})
+
+		t.Run("burns collateral, transfers partial payment, and unlocks balances if deal has has been slashed", func(t *testing.T) {
+			rt, actor := setup()
+
+			// Test deal parameters:
+			// Duration:             100
+			// StoragePricePerEpoch: 5
+			// ProviderCollateral:   50
+			// ClientCollateral:     50
+
+			// add a deal
+			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
+
+			// verify/activate deal
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+			rt.SetEpoch(100)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			rt.Verify()
+
+			// terminate the deal early at height 150
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.SetEpoch(150)
+			rt.Call(actor.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{dealIds})
+			rt.Verify()
+
+			rt.SetEpoch(160)
+			rt.SetCaller(provider, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(50), nil, exitcode.Ok)
+
+			retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
+
+			assert.IsType(t, &adt.EmptyValue{}, retval)
+
+			// ensure balances have been transferred and funds unlocked
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(50*5), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50*5+50), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
+		})
 	})
 }
+
+// Support functions
 
 type fakeComputeCID struct {
 	T               *testing.T

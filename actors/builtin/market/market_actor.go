@@ -364,8 +364,10 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 
 	// TODO: award some small portion of slashed to caller as incentive
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
-	builtin.RequireSuccess(rt, code, "failed to burn funds")
+	if slashed.GreaterThan(big.Zero()) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
+		builtin.RequireSuccess(rt, code, "failed to burn funds")
+	}
 	return nil
 }
 
