@@ -11,7 +11,6 @@ require (
 	github.com/ipfs/go-ipld-cbor v0.0.4
 	github.com/libp2p/go-libp2p-core v0.3.0
 	github.com/multiformats/go-multihash v0.0.10
-	github.com/multiformats/go-varint v0.0.5
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20200206220010-03c9665e2a66
