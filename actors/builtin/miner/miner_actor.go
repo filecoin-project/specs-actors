@@ -519,18 +519,27 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 
 		store := adt.AsStore(rt)
 		storageWeightDescs := []*power.SectorStorageWeightDesc{}
-		sectors, err := params.SectorNumbers.All(MaxFaultsCount)
+		dfaults, err := params.SectorNumbers.All(MaxFaultsCount)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalArgument, "failed to enumerate faulted sector list")
 		}
 
-		for _, sectorNumber := range sectors {
+		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
+		if err != nil {
+			rt.Abortf(exitcode.SysErrInternal, "failed to get number of sectors")
+		}
+
+		faultsMap, err := st.FaultSet.AllMap(maxAllowedFaults)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "too many faults")
+		}
+
+		for _, sectorNumber := range dfaults {
 			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNumber))
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to load sector %v: %v", sectorNumber, err)
 			}
-			fault, err := st.FaultSet.Has(uint64(sectorNumber))
-			AssertNoError(err)
+			_, fault := faultsMap[uint64(sectorNumber)]
 			Assert(fault == (sector.DeclaredFaultEpoch != epochUndefined))
 			Assert(fault == (sector.DeclaredFaultDuration != epochUndefined))
 			if !found || fault {
@@ -605,6 +614,18 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 	sectorNos := bitfieldToSectorNos(rt, sectors)
 
 	rt.State().Transaction(&st, func() interface{} {
+
+		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
+		if err != nil {
+			rt.Abortf(exitcode.SysErrInternal, "failed to get number of sectors")
+		}
+		faultsMap, err := st.FaultSet.AllMap(maxAllowedFaults)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "too many faults")
+		}
+
+		unsets := make(map[uint64]struct{})
+
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.GetSector(store, sectorNo)
 			if err != nil {
@@ -613,8 +634,7 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 				continue // Sector has been terminated
 			}
 
-			hasFault, err := st.FaultSet.Has(uint64(sectorNo))
-			AssertNoError(err)
+			_, hasFault := faultsMap[uint64(sectorNo)]
 			Assert(hasFault == (sector.DeclaredFaultEpoch != epochUndefined))
 			Assert(hasFault == (sector.DeclaredFaultDuration != epochUndefined))
 
@@ -623,17 +643,23 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 				beginFaultPledge = big.Add(beginFaultPledge, sector.PledgeRequirement)
 				st.FaultSet.Set(uint64(sectorNo))
 			}
+
 			if hasFault && rt.CurrEpoch() >= sector.DeclaredFaultEpoch+sector.DeclaredFaultDuration {
 				sector.DeclaredFaultEpoch = epochUndefined
 				sector.DeclaredFaultDuration = epochUndefined
 				endFaults = append(endFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
 				endFaultPledge = big.Add(endFaultPledge, sector.PledgeRequirement)
-				if err = st.FaultSet.Unset(uint64(sectorNo)); err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to unset fault for %v: %v", sectorNo, err)
-				}
+				unsets[uint64(sectorNo)] = struct{}{}
+				st.FaultSet.Unset(uint64(sectorNo))
 				if err = st.PutSector(store, sector); err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
 				}
+			}
+
+			fCount, err := st.FaultSet.Count()
+			AssertNoError(err)
+			if fCount > maxAllowedFaults {
+				rt.Abortf(exitcode.ErrIllegalState, "too many faults: %d > %d", fCount, maxAllowedFaults)
 			}
 		}
 		return nil
@@ -715,6 +741,15 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 	var faultedWeights []*power.SectorStorageWeightDesc
 	faultPledge := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
+		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
+		if err != nil {
+			rt.Abortf(exitcode.SysErrInternal, "failed to get number of sectors")
+		}
+		faultsMap, err := st.FaultSet.AllMap(maxAllowedFaults)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "too many faults")
+		}
+
 		for _, sectorNo := range sectorNos {
 			sector, found, err := st.GetSector(store, sectorNo)
 			if err != nil {
@@ -729,7 +764,7 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 			allWeights = append(allWeights, weight)
 			allPledge = big.Add(allPledge, sector.PledgeRequirement)
 
-			fault, err := st.FaultSet.Has(uint64(sectorNo))
+			_, fault := faultsMap[uint64(sectorNo)]
 			AssertNoError(err)
 			Assert(fault == (sector.DeclaredFaultEpoch != epochUndefined))
 			Assert(fault == (sector.DeclaredFaultDuration != epochUndefined))

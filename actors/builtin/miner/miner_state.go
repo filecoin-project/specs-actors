@@ -114,6 +114,19 @@ func (st *State) GetSectorSize() abi.SectorSize {
 	return st.Info.SectorSize
 }
 
+func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
+	arr := adt.AsArray(store, st.Sectors)
+	return arr.Length()
+}
+
+func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
+	sectorCount, err := st.GetSectorCount(store)
+	if err != nil {
+		return 0, err
+	}
+	return 2 * sectorCount, nil
+}
+
 func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
 	precommitted := adt.AsMap(store, st.PreCommittedSectors)
 	err := precommitted.Put(sectorKey(info.Info.SectorNumber), info)
@@ -213,13 +226,17 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 
 	var sectorInfos []abi.SectorInfo
 	var ssinfo SectorOnChainInfo
+	maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
+	if err != nil {
+		return nil, err
+	}
+	faultsMap, err := st.FaultSet.AllMap(maxAllowedFaults)
+	if err != nil {
+		return nil, err
+	}
 
-	err := provingSet.ForEach(&ssinfo, func(sectorNum int64) error {
-		// TODO: touch up faults
-		fault, err := st.FaultSet.Has(uint64(sectorNum))
-		if err != nil {
-			return err
-		}
+	err = provingSet.ForEach(&ssinfo, func(sectorNum int64) error {
+		_, fault := faultsMap[uint64(sectorNum)]
 		if ssinfo.DeclaredFaultEpoch != epochUndefined || ssinfo.DeclaredFaultDuration != epochUndefined {
 			return errors.Errorf("sector faultEpoch or duration invalid %v", ssinfo.Info.SectorNumber)
 		}
