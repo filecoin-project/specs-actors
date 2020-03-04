@@ -205,7 +205,7 @@ type initHarness struct {
 func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 	ret := rt.Call(h.Constructor, &init_.ConstructorParams{NetworkName: "mock"}).(*adt.EmptyValue)
-	assert.Equal(h.t, &adt.EmptyValue{}, ret)
+	assert.Nil(h.t, ret)
 	rt.Verify()
 
 	var st init_.State

@@ -58,7 +58,7 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 	st := ConstructState(emptyArray.Root(), emptyMap.Root(), emptyMSet.Root())
 	rt.State().Create(st)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type WithdrawBalanceParams struct {
@@ -103,7 +103,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return &adt.EmptyValue{}
+	return nil
 }
 
 // Deposits the received value into the balance held in escrow.
@@ -127,7 +127,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type PublishStorageDealsParams struct {
@@ -344,7 +344,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 		st.States = states.Root()
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type HandleExpiredDealsParams struct {
@@ -364,7 +364,7 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
-	return &adt.EmptyValue{}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

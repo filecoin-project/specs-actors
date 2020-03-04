@@ -45,7 +45,7 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 	st := ConstructState(rewards.Root())
 	rt.State().Create(st)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type AwardBlockRewardParams struct {
@@ -110,7 +110,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
 	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.EmptyValue {
@@ -135,7 +135,7 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.Emp
 
 	_, code := rt.Send(owner, builtin.MethodSend, nil, withdrawableReward)
 	builtin.RequireSuccess(rt, code, "failed to send funds %v to owner %v", withdrawableReward, owner)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCount int64) abi.TokenAmount {

@@ -92,13 +92,13 @@ func (h *cronHarness) constructAndVerify(rt *mock.Runtime, entries ...cron.Entry
 	params := cron.ConstructorParams{Entries: entries}
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 	ret := rt.Call(h.Constructor, &params).(*adt.EmptyValue)
-	assert.Equal(h.t, &adt.EmptyValue{}, ret)
+	assert.Nil(h.t, ret)
 	rt.Verify()
 }
 
 func (h *cronHarness) epochTickAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 	ret := rt.Call(h.EpochTick, &adt.EmptyValue{}).(*adt.EmptyValue)
-	assert.Equal(h.t, &adt.EmptyValue{}, ret)
+	assert.Nil(h.t, ret)
 	rt.Verify()
 }

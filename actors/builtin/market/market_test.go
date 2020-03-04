@@ -54,8 +54,7 @@ func TestMarketActor(t *testing.T) {
 
 		params := adt.EmptyValue{}
 		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
-
-		assert.Equal(t, adt.EmptyValue{}, *ret)
+		assert.Nil(t, ret)
 		rt.Verify()
 
 		store := adt.AsStore(rt)
@@ -291,8 +290,8 @@ func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
 
 	params := adt.EmptyValue{}
 	ret := rt.Call(h.Constructor, &params).(*adt.EmptyValue)
+	assert.Nil(h.t, ret)
 
-	assert.Equal(h.t, adt.EmptyValue{}, *ret)
 	rt.Verify()
 }
 

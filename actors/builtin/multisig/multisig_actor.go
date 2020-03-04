@@ -85,7 +85,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 	}
 
 	rt.State().Create(&st)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type ProposeParams struct {
@@ -141,7 +141,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		return nil
 	})
 	a.approveTransaction(rt, params.ID)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
@@ -165,7 +165,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		}
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type AddSignerParams struct {
@@ -188,7 +188,7 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 		}
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type RemoveSignerParams struct {
@@ -223,7 +223,7 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 		return nil
 	})
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type SwapSignerParams struct {
@@ -256,7 +256,7 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 		return nil
 	})
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type ChangeNumApprovalsThresholdParams struct {
@@ -276,7 +276,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 		st.NumApprovalsThreshold = params.NewThreshold
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
