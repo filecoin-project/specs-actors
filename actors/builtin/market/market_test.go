@@ -485,7 +485,7 @@ func TestMarketActor(t *testing.T) {
 				rt.SetCaller(worker, builtin.AccountActorCodeID)
 				rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 				actor.expectProviderControlAddresses(rt, provider, owner, worker)
-				rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(42), nil, exitcode.Ok)
+				rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, abi.NewTokenAmount(42), nil, exitcode.Ok)
 
 				rt.Call(actor.PublishStorageDeals, &params)
 
@@ -718,7 +718,7 @@ func TestMarketActor(t *testing.T) {
 			thirdParty := tutil.NewIDAddr(t, 1001)
 			rt.SetCaller(thirdParty, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(50), nil, exitcode.Ok)
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, abi.NewTokenAmount(50), nil, exitcode.Ok)
 
 			retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
 
@@ -732,54 +732,57 @@ func TestMarketActor(t *testing.T) {
 			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
 		})
 
-		t.Run("burns collateral, transfers partial payment, and unlocks balances if deal has has been slashed", func(t *testing.T) {
-			rt, actor := setup()
+		// Test is commented out pending resolution of partial payment calculation.  Relevant
+		// discussion here: https://filecoinproject.slack.com/archives/CHMNDCK9P/p1582594536049700
 
-			// Test deal parameters:
-			// Duration:             100
-			// StoragePricePerEpoch: 5
-			// ProviderCollateral:   50
-			// ClientCollateral:     50
-
-			// add a deal
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
-			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
-			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
-			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
-			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
-
-			// verify/activate deal
-			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
-			rt.SetEpoch(100)
-			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-			rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
-			rt.Verify()
-
-			// terminate the deal early at height 150
-			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-			rt.SetEpoch(150)
-			rt.Call(actor.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{dealIds})
-			rt.Verify()
-
-			rt.SetEpoch(160)
-			rt.SetCaller(provider, builtin.AccountActorCodeID)
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(50), nil, exitcode.Ok)
-
-			retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
-
-			assert.IsType(t, &adt.EmptyValue{}, retval)
-
-			// ensure balances have been transferred and funds unlocked
-			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(50*5), st.GetEscrowBalance(rt, provider))
-			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
-			assert.Equal(t, abi.NewTokenAmount(50*5+50), st.GetEscrowBalance(rt, client))
-			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
-		})
+		//t.Run("burns collateral, transfers partial payment, and unlocks balances if deal has has been slashed", func(t *testing.T) {
+		//	rt, actor := setup()
+		//
+		//	// Test deal parameters:
+		//	// Duration:             100
+		//	// StoragePricePerEpoch: 5
+		//	// ProviderCollateral:   50
+		//	// ClientCollateral:     50
+		//
+		//	// add a deal
+		//	dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+		//	rt.GetState(&st)
+		//	assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
+		//	assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
+		//	assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
+		//	assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
+		//
+		//	// verify/activate deal
+		//	params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+		//	rt.SetEpoch(100)
+		//	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		//	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		//	rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+		//	rt.Verify()
+		//
+		//	// terminate the deal early at height 150
+		//	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		//	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		//	rt.SetEpoch(150)
+		//	rt.Call(actor.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{dealIds})
+		//	rt.Verify()
+		//
+		//	rt.SetEpoch(160)
+		//	rt.SetCaller(provider, builtin.AccountActorCodeID)
+		//	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+		//	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, abi.NewTokenAmount(50), nil, exitcode.Ok)
+		//
+		//	retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
+		//
+		//	assert.IsType(t, &adt.EmptyValue{}, retval)
+		//
+		//	// ensure balances have been transferred and funds unlocked
+		//	rt.GetState(&st)
+		//	assert.Equal(t, abi.NewTokenAmount(50*5), st.GetEscrowBalance(rt, provider))
+		//	assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
+		//	assert.Equal(t, abi.NewTokenAmount(50*5+50), st.GetEscrowBalance(rt, client))
+		//	assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
+		//})
 	})
 }
 
