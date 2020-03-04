@@ -38,7 +38,7 @@ var _ abi.Invokee = Actor{}
 func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	rewards, err := adt.MakeEmptyMultiap(adt.AsStore(rt))
+	rewards, err := adt.MakeEmptyMultimap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
@@ -49,10 +49,9 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 }
 
 type AwardBlockRewardParams struct {
-	Miner        addr.Address
-	Penalty      abi.TokenAmount // penalty for including bad messages in a block
-	GasReward    abi.TokenAmount // gas reward from all gas fees in a block
-	NominalPower abi.StoragePower
+	MinerOwner addr.Address
+	Penalty    abi.TokenAmount // penalty for including bad messages in a block
+	GasReward  abi.TokenAmount // gas reward from all gas fees in a block
 }
 
 // Awards a reward to a block producer, by accounting for it internally to be withdrawn later.
@@ -67,10 +66,14 @@ type AwardBlockRewardParams struct {
 // - a penalty amount, provided as a parameter, which is burnt,
 func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	AssertMsg(params.Miner.Protocol() == addr.ID,
-		"miner address must be ID-address protocol (%d), was protocol %d", addr.ID, params.Miner.Protocol())
 	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
 		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
+
+	owner, ok := rt.ResolveAddress(params.MinerOwner)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
+	}
+
 	priorBalance := rt.CurrentBalance()
 
 	var penalty abi.TokenAmount
@@ -97,7 +100,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 				AmountWithdrawn: abi.NewTokenAmount(0),
 				VestingFunction: rewardVestingFunction,
 			}
-			return st.addReward(adt.AsStore(rt), params.Miner, &newReward)
+			return st.addReward(adt.AsStore(rt), owner, &newReward)
 		}
 		return nil
 	})
