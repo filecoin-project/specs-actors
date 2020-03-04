@@ -1064,7 +1064,7 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	}
 
 	if raw.Protocol() != addr.BLS {
-		ret, code := rt.Send(resolved, builtin.MethodsAccount.PubkeyAddress, &adt.EmptyValue{}, big.Zero())
+		ret, code := rt.Send(resolved, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero())
 		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %v", resolved)
 		var pubkey addr.Address
 		err := ret.Into(&pubkey)
