@@ -86,17 +86,17 @@ func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 }
 
 func ConsensusPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
-	return big.NewInt(int64(weight.SectorSize)) // PARAM_FINISH
+	return big.NewIntUnsigned(uint64(weight.SectorSize)) // PARAM_FINISH
 }
 
 func PledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePower) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
 	numerator := bigProduct(
-		big.NewInt(int64(weight.SectorSize)), // bytes
-		big.NewInt(int64(weight.Duration)),   // epochs
-		EpochTotalExpectedReward,             // FIL/epoch
-		PledgeFactor,                         // unitless
+		big.NewIntUnsigned(uint64(weight.SectorSize)), // bytes
+		big.NewInt(int64(weight.Duration)),            // epochs
+		EpochTotalExpectedReward,                      // FIL/epoch
+		PledgeFactor,                                  // unitless
 	) // = bytes*FIL
 	denominator := networkPower // bytes
 

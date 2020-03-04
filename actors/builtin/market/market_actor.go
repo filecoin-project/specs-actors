@@ -260,7 +260,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 
 			// Compute deal weight
 			dur := big.NewInt(int64(proposal.Duration()))
-			siz := big.NewInt(int64(proposal.PieceSize))
+			siz := big.NewIntUnsigned(uint64(proposal.PieceSize))
 			weight := big.Mul(dur, siz)
 			totalWeight = big.Add(totalWeight, weight)
 		}
