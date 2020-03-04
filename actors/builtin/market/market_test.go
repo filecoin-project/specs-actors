@@ -183,7 +183,7 @@ func TestMarketActor(t *testing.T) {
 			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
 
 			withdrawAmount := abi.NewTokenAmount(1)
-			rt.ExpectSend(owner, builtin.MethodSend, adt.EmptyValue{}, withdrawAmount, nil, exitcode.Ok)
+			rt.ExpectSend(owner, builtin.MethodSend, nil, withdrawAmount, nil, exitcode.Ok)
 
 			params := market.WithdrawBalanceParams{
 				ProviderOrClientAddress: provider,
@@ -215,7 +215,7 @@ func TestMarketActor(t *testing.T) {
 				Amount:                  withdrawAmount,
 			}
 
-			rt.ExpectSend(client, builtin.MethodSend, adt.EmptyValue{}, withdrawAmount, nil, exitcode.Ok)
+			rt.ExpectSend(client, builtin.MethodSend, nil, withdrawAmount, nil, exitcode.Ok)
 
 			rt.Call(actor.WithdrawBalance, &params)
 
@@ -239,7 +239,7 @@ func TestMarketActor(t *testing.T) {
 				Amount:                  withdrawAmount,
 			}
 
-			rt.ExpectSend(client, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(20), nil, exitcode.Ok)
+			rt.ExpectSend(client, builtin.MethodSend, nil, abi.NewTokenAmount(20), nil, exitcode.Ok)
 
 			rt.Call(actor.WithdrawBalance, &params)
 
@@ -266,7 +266,7 @@ func TestMarketActor(t *testing.T) {
 			}
 
 			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
-			rt.ExpectSend(owner, builtin.MethodSend, adt.EmptyValue{}, abi.NewTokenAmount(20), nil, exitcode.Ok)
+			rt.ExpectSend(owner, builtin.MethodSend, nil, abi.NewTokenAmount(20), nil, exitcode.Ok)
 
 			rt.Call(actor.WithdrawBalance, &params)
 

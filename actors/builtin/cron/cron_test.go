@@ -74,10 +74,10 @@ func TestEpochTick(t *testing.T) {
 
 		actor.constructAndVerify(rt, entry1, entry2, entry3, entry4)
 		// exit code should not matter
-		rt.ExpectSend(entry1.Receiver, entry1.MethodNum, adt.EmptyValue{}, big.Zero(), nil, exitcode.Ok)
-		rt.ExpectSend(entry2.Receiver, entry2.MethodNum, adt.EmptyValue{}, big.Zero(), nil, exitcode.ErrIllegalArgument)
-		rt.ExpectSend(entry3.Receiver, entry3.MethodNum, adt.EmptyValue{}, big.Zero(), nil, exitcode.ErrInsufficientFunds)
-		rt.ExpectSend(entry4.Receiver, entry4.MethodNum, adt.EmptyValue{}, big.Zero(), nil, exitcode.ErrForbidden)
+		rt.ExpectSend(entry1.Receiver, entry1.MethodNum, nil, big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(entry2.Receiver, entry2.MethodNum, nil, big.Zero(), nil, exitcode.ErrIllegalArgument)
+		rt.ExpectSend(entry3.Receiver, entry3.MethodNum, nil, big.Zero(), nil, exitcode.ErrInsufficientFunds)
+		rt.ExpectSend(entry4.Receiver, entry4.MethodNum, nil, big.Zero(), nil, exitcode.ErrForbidden)
 		actor.epochTickAndVerify(rt)
 	})
 

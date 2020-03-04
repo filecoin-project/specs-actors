@@ -23,6 +23,7 @@ var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
 const PreCommitChallengeDelay = abi.ChainEpoch(10)
 
 // Lookback from the current epoch from which to obtain a PoSt challenge.
+// A lookback of 1 means consulting the immediate parent tipset/state.
 const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
 // Lookback from the current epoch for state view for elections; for Election PoSt, same as the PoSt lookback.
