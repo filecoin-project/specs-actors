@@ -1,6 +1,8 @@
 package abi
 
 import (
+	"strconv"
+
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
@@ -12,9 +14,17 @@ import (
 // Epoch number of the chain state, which acts as a proxy for time within the VM.
 type ChainEpoch int64
 
+func (e ChainEpoch) String() string {
+	return strconv.FormatInt(int64(e), 10)
+}
+
 // A sequential number assigned to an actor when created by the InitActor.
 // This ID is embedded in ID-type addresses.
 type ActorID uint64
+
+func (e ActorID) String() string {
+	return strconv.FormatInt(int64(e), 10)
+}
 
 // MethodNum is an integer that represents a particular method
 // in an actor's function table. These numbers are used to compress
@@ -31,6 +41,10 @@ type ActorID uint64
 // reused accidentally. The same should apply to the MethodNum
 // associated with methods in Filecoin VM Actors.
 type MethodNum uint64
+
+func (e MethodNum) String() string {
+	return strconv.FormatInt(int64(e), 10)
+}
 
 // TokenAmount is an amount of Filecoin tokens. This type is used within
 // the VM in message execution, to account movement of tokens, payment

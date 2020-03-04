@@ -195,7 +195,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 			}
 			ls = &LaneState{
 				ID:       sv.Lane,
-				Redeemed: big.NewInt(0),
+				Redeemed: big.Zero(),
 				Nonce:    0,
 			}
 			st.LaneStates = append(st.LaneStates[:laneIdx], append([]*LaneState{ls}, st.LaneStates[laneIdx:]...)...)
