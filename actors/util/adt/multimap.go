@@ -20,7 +20,7 @@ func AsMultimap(s Store, r cid.Cid) *Multimap {
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptyMultiap(s Store) (*Multimap, error) {
+func MakeEmptyMultimap(s Store) (*Multimap, error) {
 	m, err := MakeEmptyMap(s)
 	return &Multimap{m}, err
 }
