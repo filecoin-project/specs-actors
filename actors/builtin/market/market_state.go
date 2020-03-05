@@ -287,7 +287,7 @@ func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAm
 	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 	err := lt.MustSubtract(addr, amount)
 	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "subtracting from locked balance: %v", err)
+		rt.Abortf(exitcode.ErrIllegalState, "subtracting from locked balance (amt=%s, addr=%s): %v", amount, addr, err)
 	}
 	st.LockedTable = lt.Root()
 }

@@ -108,6 +108,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	rt.ValidateImmediateCallerAcceptAny()
 	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
@@ -435,12 +436,10 @@ func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipie
 
 	if codeID.Equals(builtin.StorageMinerActorCodeID) {
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
-		ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
-		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
+		ownerAddr, _ := builtin.RequestMinerControlAddrs(rt, nominal)
 		return nominal, ownerAddr
 	}
 
 	// Ordinary account-style actor entry; funds recipient is just the entry address itself.
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	return nominal, nominal
 }
