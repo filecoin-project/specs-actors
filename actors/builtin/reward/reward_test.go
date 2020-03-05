@@ -41,9 +41,9 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		rt.ExpectAssertionFailure("actor current balance 0 insufficient to pay gas reward 10", func() {
 			rt.Call(actor.AwardBlockReward, &reward.AwardBlockRewardParams{
-				MinerOwner: miner,
-				Penalty:    big.Zero(),
-				GasReward:  gasreward,
+				Miner:     miner,
+				Penalty:   big.Zero(),
+				GasReward: gasreward,
 			})
 		})
 		rt.Verify()

@@ -1,7 +1,7 @@
 package reward
 
 import (
-	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-address"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -49,9 +49,9 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 }
 
 type AwardBlockRewardParams struct {
-	MinerOwner addr.Address
-	Penalty    abi.TokenAmount // penalty for including bad messages in a block
-	GasReward  abi.TokenAmount // gas reward from all gas fees in a block
+	Miner     address.Address
+	Penalty   abi.TokenAmount // penalty for including bad messages in a block
+	GasReward abi.TokenAmount // gas reward from all gas fees in a block
 }
 
 // Awards a reward to a block producer, by accounting for it internally to be withdrawn later.
@@ -69,7 +69,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
 		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
 
-	owner, ok := rt.ResolveAddress(params.MinerOwner)
+	miner, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
 	}
@@ -100,7 +100,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 				AmountWithdrawn: abi.NewTokenAmount(0),
 				VestingFunction: rewardVestingFunction,
 			}
-			return st.addReward(adt.AsStore(rt), owner, &newReward)
+			return st.addReward(adt.AsStore(rt), miner, &newReward)
 		}
 		return nil
 	})
@@ -112,14 +112,20 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	return &adt.EmptyValue{}
 }
 
-func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	owner := rt.Message().Caller()
+
+	maddr, ok := rt.ResolveAddress(*minerin)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve input address")
+	}
+
+	owner, _ := builtin.RequestMinerControlAddrs(rt, maddr)
 
 	var st State
 	withdrawableReward := rt.State().Transaction(&st, func() interface{} {
 		// Withdraw all available funds
-		withdrawn, err := st.withdrawReward(adt.AsStore(rt), owner, rt.CurrEpoch())
+		withdrawn, err := st.withdrawReward(adt.AsStore(rt), maddr, rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to withdraw reward: %v", err)
 		}

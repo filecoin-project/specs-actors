@@ -83,8 +83,8 @@ func (t *AwardBlockRewardParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.MinerOwner (address.Address) (struct)
-	if err := t.MinerOwner.MarshalCBOR(w); err != nil {
+	// t.Miner (address.Address) (struct)
+	if err := t.Miner.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -115,11 +115,11 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.MinerOwner (address.Address) (struct)
+	// t.Miner (address.Address) (struct)
 
 	{
 
-		if err := t.MinerOwner.UnmarshalCBOR(br); err != nil {
+		if err := t.Miner.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
