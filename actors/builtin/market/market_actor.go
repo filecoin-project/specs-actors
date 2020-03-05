@@ -149,36 +149,38 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrIllegalArgument, "empty deals parameter")
 	}
 
-	// all deals should have the same provider so get worker once
-	_, worker := builtin.RequestMinerControlAddrs(rt, params.Deals[0].Proposal.Provider)
-	if worker != rt.Message().Caller() {
-		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", params.Deals[0].Proposal.Provider)
+	// All deals should have the same provider so get worker once
+	providerRaw := params.Deals[0].Proposal.Provider
+	provider, ok := rt.ResolveAddress(providerRaw)
+	if !ok {
+		rt.Abortf(exitcode.ErrNotFound, "failed to resolve provider address %v", providerRaw)
 	}
 
-	firstDealProvider, ok := rt.ResolveAddress(params.Deals[0].Proposal.Provider)
-	if !ok {
-		rt.Abortf(exitcode.ErrNotFound, "failed to resolve provider address %v", params.Deals[0].Proposal.Provider)
+	_, worker := builtin.RequestMinerControlAddrs(rt, provider)
+	if worker != rt.Message().Caller() {
+		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
 
 	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
-			if deal.Proposal.Provider != firstDealProvider {
+			validateDeal(rt, deal)
+
+			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
 			}
-
-			validateDeal(rt, deal)
 
 			client, ok := rt.ResolveAddress(deal.Proposal.Client)
 			if !ok {
 				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
 			}
-			deal.Proposal.Client = client // normalize...
+			// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
+			deal.Proposal.Provider = provider
+			deal.Proposal.Client = client
 
 			// Before any operations that check the balance tables for funds, execute all deferred
 			// deal state updates.
@@ -186,10 +188,10 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			// Note: as an optimization, implementations may cache efficient data structures indicating
 			// which of the following set of updates are redundant and can be skipped.
 			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, client))
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, deal.Proposal.Provider))
+			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, provider))
 
 			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
-			st.lockBalanceOrAbort(rt, firstDealProvider, deal.Proposal.ProviderBalanceRequirement())
+			st.lockBalanceOrAbort(rt, provider, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
 
@@ -201,7 +203,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			if err = dbp.Put(client, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set client deal id: %v", err)
 			}
-			if err = dbp.Put(deal.Proposal.Provider, id); err != nil {
+			if err = dbp.Put(provider, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set provider deal id: %v", err)
 			}
 
