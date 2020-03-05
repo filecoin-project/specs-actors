@@ -58,7 +58,7 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 	st := ConstructState(from, to)
 	rt.State().Create(st)
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 // Resolves an address to a canonical ID address and requires it to address an account actor.
@@ -258,7 +258,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		}
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
@@ -278,7 +278,7 @@ func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
@@ -312,7 +312,7 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		st.ToSend = big.Zero()
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 func (t *SignedVoucher) SigningBytes() ([]byte, error) {

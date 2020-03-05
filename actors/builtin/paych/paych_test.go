@@ -227,8 +227,8 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 
 		// Sending to same lane updates the lane with "new" state
 		rt.ExpectValidateCallerAddr(st1.From, st1.To)
-		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
-		require.Equal(t, adt.EmptyValue{}, *constructRet)
+		ret := rt.Call(actor.UpdateChannelState, ucp)
+		require.Nil(t, ret)
 		rt.Verify()
 
 		expLs := LaneState{
@@ -262,8 +262,8 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 
 		// Sending to same lane updates the lane with "new" state
 		rt.ExpectValidateCallerAddr(st1.From, st1.To)
-		constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
-		require.Equal(t, adt.EmptyValue{}, *constructRet)
+		ret := rt.Call(actor.UpdateChannelState, ucp)
+		require.Nil(t, ret)
 		rt.Verify()
 
 		rt.GetState(&st2)
@@ -298,7 +298,8 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 
 	ucp := &UpdateChannelStateParams{Sv: *sv}
 	rt.ExpectValidateCallerAddr(st1.From, st1.To)
-	_ = rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
+	ret := rt.Call(actor.UpdateChannelState, ucp)
+	require.Nil(t, ret)
 	rt.Verify()
 
 	expMergeTo := LaneState{ID: mergeTo.ID, Redeemed: sv.Amount, Nonce: sv.Nonce}
@@ -616,7 +617,7 @@ func TestActor_Collect(t *testing.T) {
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		res := rt.Call(actor.Collect, &adt.EmptyValue{})
-		require.Equal(t, &adt.EmptyValue{}, res)
+		assert.Nil(t, res)
 
 		var newSt State
 		rt.GetState(&newSt)
@@ -724,8 +725,8 @@ func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, pa
 
 	rt.SetCaller(params.from, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(params.from, params.to)
-	constructRet := rt.Call(actor.UpdateChannelState, ucp).(*adt.EmptyValue)
-	require.Equal(t, adt.EmptyValue{}, *constructRet)
+	ret := rt.Call(actor.UpdateChannelState, ucp)
+	require.Nil(t, ret)
 	rt.Verify()
 	return &sv
 }
@@ -734,8 +735,8 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 	params := &ConstructorParams{To: receiver, From: sender}
 
 	rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-	constructRet := rt.Call(h.Actor.Constructor, params).(*adt.EmptyValue)
-	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
+	ret := rt.Call(h.Actor.Constructor, params)
+	assert.Nil(h.t, ret)
 	rt.Verify()
 	verifyInitialState(t, rt, sender, receiver)
 }

@@ -89,7 +89,7 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 	st := ConstructState(emptyMap.Root())
 	rt.State().Create(st)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type AddBalanceParams struct {
@@ -114,7 +114,7 @@ func (a Actor) AddBalance(rt Runtime, params *AddBalanceParams) *adt.EmptyValue 
 		abortIfError(rt, err, "failed to add pledge balance")
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type WithdrawBalanceParams struct {
@@ -164,7 +164,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	// Balance is always withdrawn to the miner owner account.
 	_, code := rt.Send(ownerAddr, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type CreateMinerParams struct {
@@ -263,7 +263,7 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 
 	err = a.deleteMinerActor(rt, nominal)
 	abortIfError(rt, err, "failed to delete miner %v", nominal)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type OnSectorProveCommitParams struct {
@@ -312,7 +312,7 @@ func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *a
 		amountToSlash := pledgePenaltyForSectorTermination(params.Pledge, params.TerminationType)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash) // state transactions could be combined.
 	}
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type OnSectorTemporaryFaultEffectiveBeginParams struct {
@@ -332,7 +332,7 @@ func (a Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSector
 		return nil
 	})
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type OnSectorTemporaryFaultEffectiveEndParams struct {
@@ -353,7 +353,7 @@ func (a Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorTe
 		return nil
 	})
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type OnSectorModifyWeightDescParams struct {
@@ -404,7 +404,7 @@ func (a Actor) OnMinerWindowedPoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.Em
 
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type OnMinerWindowedPoStFailureParams struct {
@@ -443,7 +443,7 @@ func (a Actor) OnMinerWindowedPoStFailure(rt Runtime, params *OnMinerWindowedPoS
 		amountToSlash := pledgePenaltyForWindowedPoStFailure(claim.Pledge, params.NumConsecutiveFailures)
 		a.slashPledgeCollateral(rt, minerAddr, amountToSlash)
 	}
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type EnrollCronEventParams struct {
@@ -467,7 +467,7 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 		}
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type ReportConsensusFaultParams struct {
@@ -531,7 +531,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	// delete miner from power table
 	err = a.deleteMinerActor(rt, target)
 	abortIfError(rt, err, "failed to remove slashed miner %v", target)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 // Called by Cron.
@@ -541,7 +541,7 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	if err := a.processDeferredCronEvents(rt); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
-	return &adt.EmptyValue{}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

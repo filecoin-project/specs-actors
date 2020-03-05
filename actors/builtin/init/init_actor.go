@@ -37,7 +37,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.E
 	}
 	st := ConstructState(emptyMap.Root(), params.NetworkName)
 	rt.State().Create(st)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type ExecParams struct {

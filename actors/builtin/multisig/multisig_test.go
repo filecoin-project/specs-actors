@@ -38,8 +38,8 @@ func TestConstruction(t *testing.T) {
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
-		assert.Equal(t, adt.EmptyValue{}, *ret)
+		ret := rt.Call(actor.Constructor, &params)
+		assert.Nil(t, ret)
 		rt.Verify()
 
 		var st multisig.State
@@ -63,8 +63,8 @@ func TestConstruction(t *testing.T) {
 			UnlockDuration:        100,
 		}
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
-		assert.Equal(t, adt.EmptyValue{}, *ret)
+		ret := rt.Call(actor.Constructor, &params)
+		assert.Nil(t, ret)
 		rt.Verify()
 
 		var st multisig.State
@@ -927,8 +927,8 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-	constructRet := rt.Call(h.Actor.Constructor, &constructParams).(*adt.EmptyValue)
-	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
+	ret := rt.Call(h.Actor.Constructor, &constructParams)
+	assert.Nil(h.t, ret)
 	rt.Verify()
 }
 

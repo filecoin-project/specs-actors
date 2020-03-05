@@ -135,8 +135,8 @@ func (s key) Key() string {
 
 func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	constructRet := rt.Call(h.Actor.Constructor, &adt.EmptyValue{}).(*adt.EmptyValue)
-	assert.Equal(h.t, adt.EmptyValue{}, *constructRet)
+	ret := rt.Call(h.Actor.Constructor, &adt.EmptyValue{})
+	assert.Nil(h.t, ret)
 	rt.Verify()
 
 	var st power.State

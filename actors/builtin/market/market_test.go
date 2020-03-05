@@ -54,8 +54,7 @@ func TestMarketActor(t *testing.T) {
 
 		params := adt.EmptyValue{}
 		ret := rt.Call(actor.Constructor, &params).(*adt.EmptyValue)
-
-		assert.Equal(t, adt.EmptyValue{}, *ret)
+		assert.Nil(t, ret)
 		rt.Verify()
 
 		store := adt.AsStore(rt)
@@ -288,11 +287,9 @@ type marketActorTestHarness struct {
 
 func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-
 	params := adt.EmptyValue{}
-	ret := rt.Call(h.Constructor, &params).(*adt.EmptyValue)
-
-	assert.Equal(h.t, adt.EmptyValue{}, *ret)
+	ret := rt.Call(h.Constructor, &params)
+	assert.Nil(h.t, ret)
 	rt.Verify()
 }
 
