@@ -113,14 +113,14 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-
 	maddr, ok := rt.ResolveAddress(*minerin)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve input address")
 	}
 
-	owner, _ := builtin.RequestMinerControlAddrs(rt, maddr)
+	owner, worker := builtin.RequestMinerControlAddrs(rt, maddr)
+
+	rt.ValidateImmediateCallerIs(owner, worker)
 
 	var st State
 	withdrawableReward := rt.State().Transaction(&st, func() interface{} {
