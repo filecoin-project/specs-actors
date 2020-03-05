@@ -38,7 +38,7 @@ func (a Actor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValu
 	}
 	st := State{Address: *address}
 	rt.State().Create(&st)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 // Fetches the pubkey-type address from this actor.

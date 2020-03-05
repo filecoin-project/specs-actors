@@ -26,7 +26,7 @@ type ConstructorParams struct {
 func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	rt.State().Create(ConstructState(params.Entries))
-	return &adt.EmptyValue{}
+	return nil
 }
 
 // Invoked by the system after all other messages in the epoch have been processed.
@@ -40,5 +40,5 @@ func (a Actor) EpochTick(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		// Any error and return value are ignored.
 	}
 
-	return &adt.EmptyValue{}
+	return nil
 }

@@ -88,7 +88,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 
 	state := ConstructState(emptyArray.Root(), emptyMap.Root(), owner, worker, params.PeerId, params.SectorSize)
 	rt.State().Create(state)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 /////////////
@@ -136,7 +136,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		EventType: CronEventWorkerKeyChange,
 	}
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type ChangePeerIDParams struct {
@@ -149,7 +149,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 		st.Info.PeerId = params.NewID
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 //////////////////
@@ -197,14 +197,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 	)
 	builtin.RequireSuccess(rt, code, "failed to call OnMinerWindowedPoStSuccess in Power Actor")
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 // Called by Actor.
 func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	rt.DeleteActor()
-	return &adt.EmptyValue{}
+	return nil
 }
 
 ///////////////////////
@@ -266,7 +266,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	expiryBound := rt.CurrEpoch() + msd + 1
 	a.enrollCronEvent(rt, expiryBound, &cronPayload)
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type ProveCommitSectorParams struct {
@@ -399,7 +399,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	// Return PreCommit deposit to worker upon successful ProveCommit.
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, precommit.PreCommitDeposit)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type CheckSectorProvenParams struct {
@@ -419,7 +419,7 @@ func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "Sector hasn't been proven %v", sectorNo)
 	}
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 /////////////////////////
@@ -478,7 +478,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		}
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 type TerminateSectorsParams struct {
@@ -495,7 +495,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
 	a.terminateSectors(rt, sectorNos, power.SectorTerminationManual)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 ////////////
@@ -563,7 +563,7 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	// schedule cron event to end marking temp fault at EndEpoch
 	a.enrollCronEvent(rt, effectiveEpoch+params.Duration, &cronPayload)
-	return &adt.EmptyValue{}
+	return nil
 }
 
 //////////
@@ -586,7 +586,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 		a.commitWorkerKeyChange(rt)
 	}
 
-	return &adt.EmptyValue{}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1021,7 +1021,7 @@ func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 		return nil
 	})
-	return &adt.EmptyValue{}
+	return nil
 }
 
 //
