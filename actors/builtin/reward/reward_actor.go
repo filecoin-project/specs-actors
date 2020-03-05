@@ -1,7 +1,7 @@
 package reward
 
 import (
-	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-address"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -38,7 +38,7 @@ var _ abi.Invokee = Actor{}
 func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	rewards, err := adt.MakeEmptyMultiap(adt.AsStore(rt))
+	rewards, err := adt.MakeEmptyMultimap(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
@@ -49,10 +49,10 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 }
 
 type AwardBlockRewardParams struct {
-	Miner        addr.Address
-	Penalty      abi.TokenAmount // penalty for including bad messages in a block
-	GasReward    abi.TokenAmount // gas reward from all gas fees in a block
-	NominalPower abi.StoragePower
+	Miner       address.Address
+	Penalty     abi.TokenAmount // penalty for including bad messages in a block
+	GasReward   abi.TokenAmount // gas reward from all gas fees in a block
+	TicketCount int64
 }
 
 // Awards a reward to a block producer, by accounting for it internally to be withdrawn later.
@@ -67,16 +67,20 @@ type AwardBlockRewardParams struct {
 // - a penalty amount, provided as a parameter, which is burnt,
 func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	AssertMsg(params.Miner.Protocol() == addr.ID,
-		"miner address must be ID-address protocol (%d), was protocol %d", addr.ID, params.Miner.Protocol())
 	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
 		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
+
+	miner, ok := rt.ResolveAddress(params.Miner)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
+	}
+
 	priorBalance := rt.CurrentBalance()
 
 	var penalty abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward))
+		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward), params.TicketCount)
 		totalReward := big.Add(blockReward, params.GasReward)
 
 		// Cap the penalty at the total reward value.
@@ -97,7 +101,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 				AmountWithdrawn: abi.NewTokenAmount(0),
 				VestingFunction: rewardVestingFunction,
 			}
-			return st.addReward(adt.AsStore(rt), params.Miner, &newReward)
+			return st.addReward(adt.AsStore(rt), miner, &newReward)
 		}
 		return nil
 	})
@@ -109,14 +113,20 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	return &adt.EmptyValue{}
 }
 
-func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	owner := rt.Message().Caller()
+func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.EmptyValue {
+	maddr, ok := rt.ResolveAddress(*minerin)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve input address")
+	}
+
+	owner, worker := builtin.RequestMinerControlAddrs(rt, maddr)
+
+	rt.ValidateImmediateCallerIs(owner, worker)
 
 	var st State
 	withdrawableReward := rt.State().Transaction(&st, func() interface{} {
 		// Withdraw all available funds
-		withdrawn, err := st.withdrawReward(adt.AsStore(rt), owner, rt.CurrEpoch())
+		withdrawn, err := st.withdrawReward(adt.AsStore(rt), maddr, rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to withdraw reward: %v", err)
 		}
@@ -128,7 +138,7 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue
 	return &adt.EmptyValue{}
 }
 
-func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount) abi.TokenAmount {
+func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCount int64) abi.TokenAmount {
 	// TODO: this is definitely not the final form of the block reward function.
 	// The eventual form will be some kind of exponential decay.
 	treasury := big.Sub(balance, st.RewardTotal)
