@@ -146,6 +146,8 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
+	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
+
 	claim.Power = big.Add(claim.Power, power)
 	claim.Pledge = big.Add(claim.Pledge, pledge)
 	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
