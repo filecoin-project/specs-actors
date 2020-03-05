@@ -79,7 +79,7 @@ func (t *AwardBlockRewardParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{131}); err != nil {
+	if _, err := w.Write([]byte{132}); err != nil {
 		return err
 	}
 
@@ -97,6 +97,17 @@ func (t *AwardBlockRewardParams) MarshalCBOR(w io.Writer) error {
 	if err := t.GasReward.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.TicketCount (int64) (int64)
+	if t.TicketCount >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TicketCount))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.TicketCount)-1)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -111,7 +122,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -141,6 +152,31 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 			return err
 		}
 
+	}
+	// t.TicketCount (int64) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.TicketCount = int64(extraI)
 	}
 	return nil
 }

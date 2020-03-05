@@ -49,9 +49,10 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 }
 
 type AwardBlockRewardParams struct {
-	Miner     address.Address
-	Penalty   abi.TokenAmount // penalty for including bad messages in a block
-	GasReward abi.TokenAmount // gas reward from all gas fees in a block
+	Miner       address.Address
+	Penalty     abi.TokenAmount // penalty for including bad messages in a block
+	GasReward   abi.TokenAmount // gas reward from all gas fees in a block
+	TicketCount int64
 }
 
 // Awards a reward to a block producer, by accounting for it internally to be withdrawn later.
@@ -79,7 +80,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	var penalty abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward))
+		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward), params.TicketCount)
 		totalReward := big.Add(blockReward, params.GasReward)
 
 		// Cap the penalty at the total reward value.
@@ -137,7 +138,7 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.Emp
 	return &adt.EmptyValue{}
 }
 
-func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount) abi.TokenAmount {
+func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCount int64) abi.TokenAmount {
 	// TODO: this is definitely not the final form of the block reward function.
 	// The eventual form will be some kind of exponential decay.
 	treasury := big.Sub(balance, st.RewardTotal)
