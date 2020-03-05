@@ -1,6 +1,8 @@
 package market
 
 import (
+	"bytes"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
 	xerrors "golang.org/x/xerrors"
@@ -380,17 +382,17 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 		return xerrors.Errorf("proposal end epoch before start epoch")
 	}
 
-	TODO()
-	// Determine which subset of DealProposal to use as the message to be signed by the client.
-	var m []byte
-
 	// Note: we do not verify the provider signature here, since this is implicit in the
 	// authenticity of the on-chain message publishing the deal.
-	err := rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, m)
+	buf := bytes.Buffer{}
+	err := proposal.Proposal.MarshalCBOR(&buf)
+	if err != nil {
+		return xerrors.Errorf("proposal signature verification failed to marshal proposal: %w", err)
+	}
+	err = rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, buf.Bytes())
 	if err != nil {
 		return xerrors.Errorf("signature proposal invalid: %w", err)
 	}
-
 	return nil
 }
 
