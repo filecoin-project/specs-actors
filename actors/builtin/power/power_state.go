@@ -64,9 +64,22 @@ func ConstructState(emptyMapCid cid.Cid) *State {
 
 // Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate
 // Election PoSt winners outside the chain state. We may remove it.
-func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower abi.StoragePower) (bool, error) {
+func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) {
+	claim, ok, err := st.getClaim(s, miner)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, errors.Errorf("no claim for actor %v", miner)
+	}
+
+	minerNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	if err != nil {
+		return false, err
+	}
+
 	// if miner is larger than min power requirement, we're set
-	if minerPower.GreaterThanEqual(ConsensusMinerMinPower) {
+	if minerNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		return true, nil
 	}
 
@@ -100,7 +113,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, minerPower 
 
 	// get size of MIN_MINER_SIZE_TARGth largest miner
 	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
-	return minerPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
+	return minerNominalPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
 }
 
 func (st *State) getMinerBalance(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
@@ -146,26 +159,54 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
-	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
+	oldNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	if err != nil {
+		return err
+	}
 
+	// update pledge and power
+	// TODO: ZX, update to ensure that pledge is appropriate for given power update
 	claim.Power = big.Add(claim.Power, power)
 	claim.Pledge = big.Add(claim.Pledge, pledge)
+
+	newNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	if err != nil {
+		return err
+	}
+
+	if oldNominalPower.LessThan(ConsensusMinerMinPower) && newNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+		// just passed min miner size
+		st.NumMinersMeetingMinPower++
+	} else if oldNominalPower.GreaterThanEqual(ConsensusMinerMinPower) && newNominalPower.LessThan(ConsensusMinerMinPower) {
+		// just went below min miner size
+		st.NumMinersMeetingMinPower--
+	}
+
+	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
+
+	claim.Pledge = big.Add(claim.Pledge, pledge)
+
 	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
 	AssertMsg(claim.Pledge.GreaterThanEqual(big.Zero()), "negative claimed pledge: %v", claim.Pledge)
+	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
 	return st.setClaim(s, miner, claim)
 }
 
 func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
 	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
 	// PoSt queries), which may not be the same as the claimed power.
-	// Currently, the only reason for these to differ is if the miner is in DetectedFault state
-	// from a SurprisePoSt challenge. TODO: hs update this
+	// Currently, the nominal power may differ from claimed power because of
+	// detected faults.
 	nominalPower := claimedPower
 	if found, err := st.hasDetectedFault(s, minerAddr); err != nil {
 		return abi.NewStoragePower(0), err
 	} else if found {
 		nominalPower = big.Zero()
 	}
+	// no need to account for declared faults, since they
+	// are already accounted for in "claimed" power
+	// Likewise miners will never be undercollateralized so no
+	// check needed here
 
 	return nominalPower, nil
 }
@@ -180,11 +221,32 @@ func (st *State) hasDetectedFault(s adt.Store, a addr.Address) (bool, error) {
 }
 
 func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
+
+	// prior to making change verify whether we've lose a miner > min size
+	claim, ok, err := st.getClaim(s, a)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.Errorf("no claim for actor %v", a)
+	}
+	// could be made more efficient by just taking claimed power given
+	// how computeNominal currently works, but that could change.
+	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
+	if err != nil {
+		return err
+	}
+	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+		// just lost a miner > min size
+		st.NumMinersMeetingMinPower--
+	}
+
 	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
 	if err := faultyMiners.Put(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
+
 	return nil
 }
 
@@ -194,6 +256,23 @@ func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
 	}
 	st.PoStDetectedFaultMiners = faultyMiners.Root()
+
+	claim, ok, err := st.getClaim(s, a)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.Errorf("no claim for actor %v", a)
+	}
+	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
+	if err != nil {
+		return err
+	}
+	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+		// just regained a miner > min size
+		st.NumMinersMeetingMinPower++
+	}
+
 	return nil
 }
 
