@@ -900,7 +900,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{133}); err != nil {
+	if _, err := w.Write([]byte{131}); err != nil {
 		return err
 	}
 
@@ -928,31 +928,16 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Target (address.Address) (struct)
-	if err := t.Target.MarshalCBOR(w); err != nil {
+	// t.BlockHeaderExtra ([]uint8) (slice)
+	if len(t.BlockHeaderExtra) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.BlockHeaderExtra was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.BlockHeaderExtra)))); err != nil {
 		return err
 	}
-
-	// t.FaultEpoch (abi.ChainEpoch) (int64)
-	if t.FaultEpoch >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.FaultEpoch))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.FaultEpoch)-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.FaultType (power.ConsensusFaultType) (int64)
-	if t.FaultType >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.FaultType))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.FaultType)-1)); err != nil {
-			return err
-		}
+	if _, err := w.Write(t.BlockHeaderExtra); err != nil {
+		return err
 	}
 	return nil
 }
@@ -968,7 +953,7 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1006,64 +991,22 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if _, err := io.ReadFull(br, t.BlockHeader2); err != nil {
 		return err
 	}
-	// t.Target (address.Address) (struct)
+	// t.BlockHeaderExtra ([]uint8) (slice)
 
-	{
-
-		if err := t.Target.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
 	}
-	// t.FaultEpoch (abi.ChainEpoch) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
 
-		t.FaultEpoch = abi.ChainEpoch(extraI)
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.BlockHeaderExtra: byte array too large (%d)", extra)
 	}
-	// t.FaultType (power.ConsensusFaultType) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.FaultType = ConsensusFaultType(extraI)
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.BlockHeaderExtra = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.BlockHeaderExtra); err != nil {
+		return err
 	}
 	return nil
 }

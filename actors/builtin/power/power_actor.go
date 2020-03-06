@@ -20,15 +20,6 @@ import (
 
 type Runtime = vmr.Runtime
 
-type ConsensusFaultType int64
-
-const (
-	//ConsensusFaultUncommittedPower ConsensusFaultType = 0
-	ConsensusFaultDoubleForkMining ConsensusFaultType = 1
-	ConsensusFaultParentGrinding   ConsensusFaultType = 2
-	ConsensusFaultTimeOffsetMining ConsensusFaultType = 3
-)
-
 type SectorTermination int64
 
 const (
@@ -471,54 +462,47 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 }
 
 type ReportConsensusFaultParams struct {
-	BlockHeader1 []byte
-	BlockHeader2 []byte
-	Target       addr.Address
-	FaultEpoch   abi.ChainEpoch
-	FaultType    ConsensusFaultType
+	BlockHeader1     []byte
+	BlockHeader2     []byte
+	BlockHeaderExtra []byte
 }
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
 	// Note: only the first reporter of any fault is rewarded.
 	// Subsequent invocations fail because the miner has been removed.
-	err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2)
+	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra)
 	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "reported consensus fault failed verification: %s", err)
-	}
-
-	target, ok := rt.ResolveAddress(params.Target)
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", params.Target)
+		rt.Abortf(exitcode.ErrIllegalArgument, "fault not verified: %s", err)
 	}
 
 	reporter := rt.Message().Caller()
 	var st State
 	reward := rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		claim, powerOk, err := st.getClaim(store, target)
+		claim, powerOk, err := st.getClaim(store, fault.Target)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
 		if !powerOk {
-			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", target)
+			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", fault.Target)
 		}
 		Assert(claim.Power.GreaterThanEqual(big.Zero()))
 
-		currBalance, err := st.getMinerBalance(store, target)
+		currBalance, err := st.getMinerBalance(store, fault.Target)
 		abortIfError(rt, err, "failed to get miner pledge balance")
 		Assert(currBalance.GreaterThanEqual(big.Zero()))
 
 		// elapsed epoch from the latter block which committed the fault
-		elapsedEpoch := rt.CurrEpoch() - params.FaultEpoch
+		elapsedEpoch := rt.CurrEpoch() - fault.Epoch
 		if elapsedEpoch <= 0 {
-			rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", params.FaultEpoch, rt.CurrEpoch())
+			rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
 		}
 
 		// Note: this slashes the miner's whole balance, including any excess over the required claim.Pledge.
-		collateralToSlash := pledgePenaltyForConsensusFault(currBalance, params.FaultType)
+		collateralToSlash := pledgePenaltyForConsensusFault(currBalance, fault.Type)
 		targetReward := rewardForConsensusSlashReport(elapsedEpoch, collateralToSlash)
 
-		availableReward, err := st.subtractMinerBalance(store, target, targetReward, big.Zero())
+		availableReward, err := st.subtractMinerBalance(store, fault.Target, targetReward, big.Zero())
 		abortIfError(rt, err, "failed to subtract pledge for reward")
 		return availableReward
 	}).(abi.TokenAmount)
@@ -529,8 +513,8 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 
 	// burn the rest of pledge collateral
 	// delete miner from power table
-	err = a.deleteMinerActor(rt, target)
-	abortIfError(rt, err, "failed to remove slashed miner %v", target)
+	err = a.deleteMinerActor(rt, fault.Target)
+	abortIfError(rt, err, "failed to remove slashed miner %v", fault.Target)
 	return nil
 }
 
