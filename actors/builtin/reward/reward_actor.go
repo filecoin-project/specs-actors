@@ -142,6 +142,6 @@ func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCoun
 	// TODO: this is definitely not the final form of the block reward function.
 	// The eventual form will be some kind of exponential decay.
 	treasury := big.Sub(balance, st.RewardTotal)
-	targetReward := BlockRewardTarget
+	targetReward := big.Mul(BlockRewardTarget, big.NewInt(ticketCount))
 	return big.Min(targetReward, treasury)
 }
