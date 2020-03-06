@@ -25,7 +25,7 @@ var PledgeFactor = big.NewInt(3) // PARAM_FINISH
 var EpochTotalExpectedReward = big.Mul(reward.BlockRewardTarget, big.NewInt(5)) // PARAM_FINISH
 
 // Minimum power of an individual miner to meet the threshold for leader election.
-var ConsensusMinerMinPower = abi.NewStoragePower(100 * (1 << 40)) // placeholder, 100 TB
+var ConsensusMinerMinPower = abi.NewStoragePower(2 << 30) // placeholder
 
 // Maximum age of a block header used as proof of a consensus fault to appear in the chain.
 var ConsensusFaultReportingWindow = abi.ChainEpoch(2880) // 1 day @ 30 second epochs.
