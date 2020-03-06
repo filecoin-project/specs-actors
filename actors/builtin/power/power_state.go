@@ -174,15 +174,21 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return err
 	}
 
-	if oldNominalPower.LessThan(ConsensusMinerMinPower) && newNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+	prevBelow := oldNominalPower.LessThan(ConsensusMinerMinPower)
+	stillBelow := newNominalPower.LessThan(ConsensusMinerMinPower)
+
+	if prevBelow && !stillBelow {
 		// just passed min miner size
 		st.NumMinersMeetingMinPower++
-	} else if oldNominalPower.GreaterThanEqual(ConsensusMinerMinPower) && newNominalPower.LessThan(ConsensusMinerMinPower) {
+		st.TotalNetworkPower = big.Add(st.TotalNetworkPower, newNominalPower)
+	} else if !prevBelow && stillBelow {
 		// just went below min miner size
 		st.NumMinersMeetingMinPower--
+		st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, oldNominalPower)
+	} else if !prevBelow && !stillBelow {
+		// Was above the threshold, still above
+		st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
 	}
-
-	st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
 
 	claim.Pledge = big.Add(claim.Pledge, pledge)
 
