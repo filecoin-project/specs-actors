@@ -33,7 +33,7 @@ func (mm *Multimap) Root() cid.Cid {
 // Adds a value for a key.
 func (mm *Multimap) Add(key Keyer, value runtime.CBORMarshaler) error {
 	// Load the array under key, or initialize a new empty one if not found.
-	array, found, err := mm.get(key)
+	array, found, err := mm.Get(key)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (mm *Multimap) RemoveAll(key Keyer) error {
 // Iteration halts if the function returns an error.
 // If the output parameter is nil, deserialization is skipped.
 func (mm *Multimap) ForEach(key Keyer, out runtime.CBORUnmarshaler, fn func(i int64) error) error {
-	array, found, err := mm.get(key)
+	array, found, err := mm.Get(key)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (mm *Multimap) ForEach(key Keyer, out runtime.CBORUnmarshaler, fn func(i in
 	return nil
 }
 
-func (mm *Multimap) get(key Keyer) (*Array, bool, error) {
+func (mm *Multimap) Get(key Keyer) (*Array, bool, error) {
 	var arrayRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &arrayRoot)
 	if err != nil {
