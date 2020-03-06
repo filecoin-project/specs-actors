@@ -115,12 +115,17 @@ type Syscalls interface {
 	VerifySeal(vi abi.SealVerifyInfo) error
 	// Verifies a proof of spacetime.
 	VerifyPoSt(vi abi.PoStVerifyInfo) error
-	// Verifies valid consensus fault committed with two block headers:
+	// Verifies that two block headers provide proof of a consensus fault:
 	// - both headers mined by the same actor
 	// - headers are different
 	// - first header is of the same or lower epoch as the second
-	// - at least one of the headers appears in the current chain.
-	VerifyConsensusFault(h1, h2 []byte) error
+	// - at least one of the headers appears in the current chain
+	// - the headers provide evidence of a fault (see the spec for the different fault types).
+	// The parameters are all serialized block headers. The third "extra" parameter is consulted only for
+	// the "parent grinding fault", in which case it must be the sibling of h1 (same parent tipset) and one of the
+	// blocks in the parent of h2 (i.e. h2's grandparent).
+	// Returns nil and an error if the headers don't prove a fault.
+	VerifyConsensusFault(h1, h2, extra []byte) (*ConsensusFault, error)
 }
 
 // The return type from a message send from one actor to another. This abstracts over the internal representation of
@@ -171,6 +176,25 @@ type StateHandle interface {
 	// ```
 	Transaction(obj CBORer, f func() interface{}) interface{}
 }
+
+// Result of checking two headers for a consensus fault.
+type ConsensusFault struct {
+	// Address of the miner at fault (always an ID address).
+	Target addr.Address
+	// Epoch of the fault, which is the higher epoch of the two blocks causing it.
+	Epoch abi.ChainEpoch
+	// Type of fault.
+	Type ConsensusFaultType
+}
+
+type ConsensusFaultType int64
+
+const (
+	//ConsensusFaultNone             ConsensusFaultType = 0
+	ConsensusFaultDoubleForkMining ConsensusFaultType = 1
+	ConsensusFaultParentGrinding   ConsensusFaultType = 2
+	ConsensusFaultTimeOffsetMining ConsensusFaultType = 3
+)
 
 // These interfaces are intended to match those from whyrusleeping/cbor-gen, such that code generated from that
 // system is automatically usable here (but not mandatory).

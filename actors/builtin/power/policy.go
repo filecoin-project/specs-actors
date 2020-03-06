@@ -1,9 +1,12 @@
 package power
 
 import (
+	"fmt"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
 // The time a miner has to respond to a surprise PoSt challenge.
@@ -40,17 +43,17 @@ func pledgePenaltyForWindowedPoStFailure(pledge abi.TokenAmount, failures int64)
 }
 
 // Penalty to pledge collateral for a consensus fault.
-func pledgePenaltyForConsensusFault(pledge abi.TokenAmount, faultType ConsensusFaultType) abi.TokenAmount {
+func pledgePenaltyForConsensusFault(pledge abi.TokenAmount, faultType vmr.ConsensusFaultType) abi.TokenAmount {
 	// PARAM_FINISH: always penalise the entire pledge.
 	switch faultType {
-	case ConsensusFaultDoubleForkMining:
+	case vmr.ConsensusFaultDoubleForkMining:
 		return pledge
-	case ConsensusFaultParentGrinding:
+	case vmr.ConsensusFaultParentGrinding:
 		return pledge
-	case ConsensusFaultTimeOffsetMining:
+	case vmr.ConsensusFaultTimeOffsetMining:
 		return pledge
 	default:
-		panic("Unsupported case for pledge collateral consensus fault slashing")
+		panic(fmt.Sprintf("unknown fault type %d", faultType))
 	}
 }
 
