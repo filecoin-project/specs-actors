@@ -49,7 +49,7 @@ func (s *syscaller) VerifyPoSt(vi abi.PoStVerifyInfo) error {
 	return nil
 }
 
-func (s *syscaller) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
+func (s *syscaller) VerifyConsensusFault(h1, h2, extra []byte, earliest abi.ChainEpoch) (*runtime.ConsensusFault, error) {
 	s.PanicOnUnsetFunc("ConsensusFaultVerifier")
 	return nil, nil
 }

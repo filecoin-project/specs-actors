@@ -468,13 +468,15 @@ type ReportConsensusFaultParams struct {
 }
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
-	// Note: only the first reporter of any fault is rewarded.
-	// Subsequent invocations fail because the miner has been removed.
-	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra)
+	currEpoch := rt.CurrEpoch()
+	earliest := currEpoch - ConsensusFaultReportingWindow
+	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, earliest)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "fault not verified: %s", err)
 	}
 
+	// Note: only the first reporter of any fault is rewarded.
+	// Subsequent invocations fail because the target miner has been removed.
 	reporter := rt.Message().Caller()
 	var st State
 	reward := rt.State().Transaction(&st, func() interface{} {
@@ -492,15 +494,15 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		abortIfError(rt, err, "failed to get miner pledge balance")
 		Assert(currBalance.GreaterThanEqual(big.Zero()))
 
-		// elapsed epoch from the latter block which committed the fault
-		elapsedEpoch := rt.CurrEpoch() - fault.Epoch
-		if elapsedEpoch <= 0 {
-			rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
+		// Elapsed since the fault (i.e. since the higher of the two blocks)
+		faultAge := currEpoch - fault.Epoch
+		if faultAge <= 0 {
+			rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, currEpoch)
 		}
 
 		// Note: this slashes the miner's whole balance, including any excess over the required claim.Pledge.
 		collateralToSlash := pledgePenaltyForConsensusFault(currBalance, fault.Type)
-		targetReward := rewardForConsensusSlashReport(elapsedEpoch, collateralToSlash)
+		targetReward := rewardForConsensusSlashReport(faultAge, collateralToSlash)
 
 		availableReward, err := st.subtractMinerBalance(store, fault.Target, targetReward, big.Zero())
 		abortIfError(rt, err, "failed to subtract pledge for reward")
