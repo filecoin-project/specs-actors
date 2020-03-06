@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/filecoin-project/go-bitfield"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -35,7 +36,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.Sectors: %w", err)
 	}
 
-	// t.FaultSet (abi.BitField) (struct)
+	// t.FaultSet (bitfield.BitField) (struct)
 	if err := t.FaultSet.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -97,7 +98,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.Sectors = c
 
 	}
-	// t.FaultSet (abi.BitField) (struct)
+	// t.FaultSet (bitfield.BitField) (struct)
 
 	{
 
@@ -935,7 +936,7 @@ func (t *TerminateSectorsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Sectors (abi.BitField) (struct)
+	// t.Sectors (bitfield.BitField) (struct)
 	if err := t.Sectors.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -957,7 +958,7 @@ func (t *TerminateSectorsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Sectors (abi.BitField) (struct)
+	// t.Sectors (bitfield.BitField) (struct)
 
 	{
 
@@ -971,7 +972,7 @@ func (t *TerminateSectorsParams) UnmarshalCBOR(r io.Reader) error {
 				return err
 			}
 		} else {
-			t.Sectors = new(abi.BitField)
+			t.Sectors = new(bitfield.BitField)
 			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
 				return err
 			}
@@ -1237,7 +1238,7 @@ func (t *DeclareTemporaryFaultsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SectorNumbers (abi.BitField) (struct)
+	// t.SectorNumbers (bitfield.BitField) (struct)
 	if err := t.SectorNumbers.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -1270,7 +1271,7 @@ func (t *DeclareTemporaryFaultsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.SectorNumbers (abi.BitField) (struct)
+	// t.SectorNumbers (bitfield.BitField) (struct)
 
 	{
 
@@ -1428,7 +1429,7 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Sectors (abi.BitField) (struct)
+	// t.Sectors (bitfield.BitField) (struct)
 	if err := t.Sectors.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -1486,7 +1487,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 
 		t.EventType = CronEventType(extraI)
 	}
-	// t.Sectors (abi.BitField) (struct)
+	// t.Sectors (bitfield.BitField) (struct)
 
 	{
 
@@ -1500,7 +1501,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 				return err
 			}
 		} else {
-			t.Sectors = new(abi.BitField)
+			t.Sectors = new(bitfield.BitField)
 			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
 				return err
 			}
