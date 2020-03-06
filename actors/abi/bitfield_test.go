@@ -9,33 +9,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
-func TestBitFieldHas(t *testing.T) {
-	bf := abi.NewBitField()
-	bf.Set(1)
-	bf.Set(2)
-	bf.Set(3)
-	bf.Set(4)
-	bf.Set(5)
-
-	found, err := bf.Has(1)
-	assert.NoError(t, err)
-	assert.True(t, found)
-
-	found, err = bf.Has(6)
-	assert.NoError(t, err)
-	assert.False(t, found)
-
-	bf2 := roundtripMarshal(t, bf)
-
-	found, err = bf2.Has(1)
-	assert.NoError(t, err)
-	assert.True(t, found)
-
-	found, err = bf2.Has(6)
-	assert.NoError(t, err)
-	assert.False(t, found)
-}
-
 func TestBitFieldUnset(t *testing.T) {
 	bf := abi.NewBitField()
 	bf.Set(1)
@@ -44,11 +17,11 @@ func TestBitFieldUnset(t *testing.T) {
 	bf.Set(4)
 	bf.Set(5)
 
-	err := bf.Unset(3)
-	assert.NoError(t, err)
+	bf.Unset(3)
 
-	found, err := bf.Has(3)
+	m, err := bf.AllMap(100)
 	assert.NoError(t, err)
+	_, found := m[3]
 	assert.False(t, found)
 
 	cnt, err := bf.Count()
@@ -61,8 +34,9 @@ func TestBitFieldUnset(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(4), cnt)
 
-	found, err = bf2.Has(3)
+	m, err = bf.AllMap(100)
 	assert.NoError(t, err)
+	_, found = m[3]
 	assert.False(t, found)
 }
 
