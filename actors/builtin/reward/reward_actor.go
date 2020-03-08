@@ -101,7 +101,9 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 				AmountWithdrawn: abi.NewTokenAmount(0),
 				VestingFunction: rewardVestingFunction,
 			}
-			return st.addReward(adt.AsStore(rt), miner, &newReward)
+			if err := st.addReward(adt.AsStore(rt), miner, &newReward); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to add reward to rewards map: %w", err)
+			}
 		}
 		return nil
 	})
