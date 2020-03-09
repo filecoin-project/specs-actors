@@ -7,6 +7,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -177,17 +178,24 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 	prevBelow := oldNominalPower.LessThan(ConsensusMinerMinPower)
 	stillBelow := newNominalPower.LessThan(ConsensusMinerMinPower)
 
-	if prevBelow && !stillBelow {
-		// just passed min miner size
-		st.NumMinersMeetingMinPower++
-		st.TotalNetworkPower = big.Add(st.TotalNetworkPower, newNominalPower)
-	} else if !prevBelow && stillBelow {
-		// just went below min miner size
-		st.NumMinersMeetingMinPower--
-		st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, oldNominalPower)
-	} else if !prevBelow && !stillBelow {
-		// Was above the threshold, still above
-		st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
+	faulty, err := st.hasDetectedFault(s, miner)
+	if err != nil {
+		return xerrors.Errorf("Failed to check if miner was faulty: %w", err)
+	}
+
+	if !faulty {
+		if prevBelow && !stillBelow {
+			// just passed min miner size
+			st.NumMinersMeetingMinPower++
+			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, newNominalPower)
+		} else if !prevBelow && stillBelow {
+			// just went below min miner size
+			st.NumMinersMeetingMinPower--
+			st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, oldNominalPower)
+		} else if !prevBelow && !stillBelow {
+			// Was above the threshold, still above
+			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
+		}
 	}
 
 	claim.Pledge = big.Add(claim.Pledge, pledge)
@@ -277,6 +285,7 @@ func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		// just regained a miner > min size
 		st.NumMinersMeetingMinPower++
+		st.TotalNetworkPower = big.Add(st.TotalNetworkPower, claim.Power)
 	}
 
 	return nil

@@ -409,18 +409,31 @@ func (a Actor) OnMinerWindowedPoStFailure(rt Runtime, params *OnMinerWindowedPoS
 	var claim *Claim
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		faulty, err := st.hasDetectedFault(adt.AsStore(rt), minerAddr)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "Failed to check if miner was faulty already: %s", err)
+		}
+
+		if faulty {
+			return nil
+		}
+
 		if err := st.putDetectedFault(adt.AsStore(rt), minerAddr); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to put miner fault: %v", err)
 		}
 
 		var found bool
-		var err error
 		claim, found, err = st.getClaim(adt.AsStore(rt), minerAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to get miner power from claimed power table for surprise PoSt failure: %v", err)
 		}
 		if !found {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to find miner power in claimed power table for surprise PoSt failure")
+		}
+
+		if claim.Power.GreaterThanEqual(ConsensusMinerMinPower) {
+			// Ensure we only deduct this once...
+			st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, claim.Power)
 		}
 		return nil
 	})
