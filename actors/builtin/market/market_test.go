@@ -42,7 +42,15 @@ func TestMarketActor(t *testing.T) {
 
 		rt := builder.Build(t)
 
-		actor := marketActorTestHarness{t: t}
+		rt.SetVerifier(fakeVerifier(true))
+
+		actor := marketActorTestHarness{
+			t:        t,
+			owner:    owner,
+			provider: provider,
+			worker:   worker,
+			client:   client,
+		}
 		actor.constructAndVerify(rt)
 
 		return rt, &actor
@@ -178,7 +186,7 @@ func TestMarketActor(t *testing.T) {
 		t.Run("withdraws from provider escrow funds and sends to owner", func(t *testing.T) {
 			rt, actor := setup()
 
-			actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(20))
+			actor.addProviderFunds(rt, 20)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, provider))
@@ -205,7 +213,7 @@ func TestMarketActor(t *testing.T) {
 
 		t.Run("withdraws from non-provider escrow funds", func(t *testing.T) {
 			rt, actor := setup()
-			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20))
+			actor.addClientFunds(rt, 20)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, client))
@@ -232,7 +240,7 @@ func TestMarketActor(t *testing.T) {
 
 		t.Run("client withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
 			rt, actor := setup()
-			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20))
+			actor.addClientFunds(rt, 20)
 
 			// withdraw amount greater than escrow balance
 			withdrawAmount := abi.NewTokenAmount(25)
@@ -256,7 +264,7 @@ func TestMarketActor(t *testing.T) {
 
 		t.Run("worker withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
 			rt, actor := setup()
-			actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(20))
+			actor.addProviderFunds(rt, 20)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, provider))
@@ -299,19 +307,20 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if deal provider doesn't match the caller", func(t *testing.T) {
 			rt, actor := setup()
 
-			providerActor2 := tutil.NewActorAddr(t, "provider 2")
-			worker2 := tutil.NewIDAddr(t, 1002)
+			proposals := actor.testProposals(testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 1)
 
-			params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{
-				actor.testProposal(providerActor2, client, "test"),
-			}}
+			wrongCaller := tutil.NewIDAddr(t, 1001)
+			rt.SetCaller(wrongCaller, builtin.AccountActorCodeID)
 
-			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			actor.expectProviderControlAddresses(rt, providerActor2, owner, worker2)
+			actor.expectProviderControlAddresses(rt, provider, owner, worker)
 
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
-				rt.Call(actor.PublishStorageDeals, &params)
+				rt.Call(actor.PublishStorageDeals, &market.PublishStorageDealsParams{Deals: proposals})
 			})
 
 			rt.Verify()
@@ -320,10 +329,19 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails with invalid proposals", func(t *testing.T) {
 			assertInvalidProposal := func(mutateProposal func(rt *mock.Runtime, dp *market.ClientDealProposal)) {
 				rt, actor := setup()
-				rt.SetVerifier(fakeVerifier(true))
 
-				p := actor.testProposal(provider, client, "test")
+				baseProposal := testProposalParams{
+					Data:                 "data",
+					Client:               client,
+					Provider:             provider,
+					StartEpoch:           100,
+					EndEpoch:             200,
+					StoragePricePerEpoch: 5,
+					ProviderCollateral:   50,
+					ClientCollateral:     50,
+				}
 
+				p := actor.testProposal(baseProposal)
 				mutateProposal(rt, &p)
 
 				params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{p}}
@@ -377,88 +395,85 @@ func TestMarketActor(t *testing.T) {
 			})
 		})
 
-		t.Run("fails if it cannot lock client funds", func(t *testing.T) {
-			rt, actor := setup()
+		t.Run("different escrow balance scenarios", func(t *testing.T) {
+			testCases := []struct {
+				caseName        string
+				clientBalance   int64
+				providerBalance int64
+				success         bool
+			}{
+				{"fails with insufficient client escrow balance", 549, 50, false},
+				{"fails with insufficient provider escrow balance", 550, 49, false},
+				{"succeeds with insufficient client escrow balance", 550, 50, true},
+			}
 
-			params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{actor.testProposal(provider, client, "data")}}
+			for _, testCase := range testCases {
+				t.Run(testCase.caseName, func(t *testing.T) {
+					rt, actor := setup()
 
-			rt.SetVerifier(fakeVerifier(true))
-			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(500)) // need 550 for deal
+					proposalParams := testProposalParams{
+						StartEpoch:           100,
+						EndEpoch:             200,
+						StoragePricePerEpoch: 5,
+						ClientCollateral:     50,
+						ProviderCollateral:   50,
+					}
 
-			rt.SetCaller(worker, builtin.AccountActorCodeID)
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			actor.expectProviderControlAddresses(rt, provider, owner, worker)
+					proposals := actor.testProposals(proposalParams, 1)
 
-			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-				rt.Call(actor.PublishStorageDeals, &params)
-			})
+					actor.addClientFunds(rt, testCase.clientBalance)
+					actor.addProviderFunds(rt, testCase.providerBalance)
 
-			rt.Verify()
-		})
+					rt.SetCaller(worker, builtin.AccountActorCodeID)
+					rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+					actor.expectProviderControlAddresses(rt, provider, owner, worker)
 
-		t.Run("fails if it cannot lock provider funds", func(t *testing.T) {
-			rt, actor := setup()
+					if testCase.success {
 
-			params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{actor.testProposal(provider, client, "data")}}
+						ret := rt.Call(actor.PublishStorageDeals, &market.PublishStorageDealsParams{Deals: proposals})
 
-			rt.SetVerifier(fakeVerifier(true))
-			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(550))
-			actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(40)) // need 50 for deal
+						rt.Verify()
 
-			rt.SetCaller(worker, builtin.AccountActorCodeID)
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			actor.expectProviderControlAddresses(rt, provider, owner, worker)
+						retval := ret.(*market.PublishStorageDealsReturn)
+						assert.Equal(t, len(retval.IDs), len(proposals))
 
-			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-				rt.Call(actor.PublishStorageDeals, &params)
-			})
+						rt.GetState(&st)
+						assert.Equal(t, abi.NewTokenAmount(testCase.clientBalance), st.GetLockedBalance(rt, client))
+						assert.Equal(t, abi.NewTokenAmount(testCase.providerBalance), st.GetLockedBalance(rt, provider))
 
-			rt.Verify()
-		})
+					} else {
 
-		t.Run("returns deal ids of published deals and locks funds", func(t *testing.T) {
-			rt, actor := setup()
+						rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+							rt.Call(actor.PublishStorageDeals, &market.PublishStorageDealsParams{Deals: proposals})
+						})
 
-			params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{
-				actor.testProposal(provider, client, "data1"),
-				actor.testProposal(provider, client, "data2"),
-			}}
+					}
 
-			rt.SetVerifier(fakeVerifier(true))
-			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(550*2))
-			actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(50*2))
-
-			rt.SetCaller(worker, builtin.AccountActorCodeID)
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			actor.expectProviderControlAddresses(rt, provider, owner, worker)
-
-			ret := rt.Call(actor.PublishStorageDeals, &params)
-
-			rt.Verify()
-
-			retval := ret.(*market.PublishStorageDealsReturn)
-			assert.Equal(t, len(retval.IDs), 2)
-
-			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(550*2), st.GetLockedBalance(rt, client))
-			assert.Equal(t, abi.NewTokenAmount(50*2), st.GetLockedBalance(rt, provider))
+					rt.Verify()
+				})
+			}
 		})
 
 		t.Run("slashes funds if necessary", func(t *testing.T) {
 			rt, actor := setup()
-			rt.SetVerifier(fakeVerifier(true))
 
 			{
 				// publish a deal that will timeout
-				cdp := actor.testProposal(provider, client, "timed out")
-				cdp.Proposal.StartEpoch = 25
-				cdp.Proposal.EndEpoch = 75
-				cdp.Proposal.ProviderCollateral = abi.NewTokenAmount(42)
+				expiringProposalParams := testProposalParams{
+					Data:                 "data",
+					Client:               client,
+					Provider:             provider,
+					StartEpoch:           25,
+					EndEpoch:             75,
+					StoragePricePerEpoch: 5,
+					ProviderCollateral:   42,
+					ClientCollateral:     50,
+				}
 
-				params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{cdp}}
+				params := market.PublishStorageDealsParams{Deals: actor.testProposals(expiringProposalParams, 1)}
 
-				actor.addParticipantFunds(rt, client, abi.NewTokenAmount(300))
-				actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(42))
+				actor.addClientFunds(rt, 300)
+				actor.addProviderFunds(rt, 42)
 
 				rt.SetCaller(worker, builtin.AccountActorCodeID)
 				rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
@@ -472,15 +487,22 @@ func TestMarketActor(t *testing.T) {
 			{
 				// previously published deal had to be started by epoch 25,
 				// so set epoch to after the deadline so slashing will occur
-				rt.SetEpoch(30)
+				rt.SetEpoch(26)
 
-				params := market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{
-					actor.testProposal(provider, client, "data1"),
-					actor.testProposal(provider, client, "data2"),
-				}}
+				proposalParams := testProposalParams{
+					Data:                 "data",
+					Client:               client,
+					Provider:             provider,
+					StartEpoch:           100,
+					EndEpoch:             200,
+					StoragePricePerEpoch: 5,
+					ProviderCollateral:   50,
+					ClientCollateral:     50,
+				}
+				params := market.PublishStorageDealsParams{Deals: actor.testProposals(proposalParams, 2)}
 
-				actor.addParticipantFunds(rt, client, abi.NewTokenAmount(550*2))
-				actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(50*2))
+				actor.addClientFunds(rt, 550*2)
+				actor.addProviderFunds(rt, 50*2)
 
 				rt.SetCaller(worker, builtin.AccountActorCodeID)
 				rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
@@ -498,7 +520,11 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if dealid for a different provider is sent", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 1)
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -512,13 +538,16 @@ func TestMarketActor(t *testing.T) {
 			})
 
 			rt.Verify()
-
 		})
 
 		t.Run("fails if deal is already activated", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 1)
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -544,7 +573,11 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if it is too late", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 1)
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -563,7 +596,11 @@ func TestMarketActor(t *testing.T) {
 		t.Run("fails if sector expires too early", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 1)
 
 			// Deal EndEpoch == 200
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 199}
@@ -582,7 +619,14 @@ func TestMarketActor(t *testing.T) {
 		t.Run("returns the weight represented by the deals", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 4))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				Data:                 "123456",
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+				ClientCollateral:     50,
+				ProviderCollateral:   50,
+			}, 4)
 
 			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
 
@@ -606,8 +650,11 @@ func TestMarketActor(t *testing.T) {
 			computeCID := newFakeComputeCID(t, testCid("commd"))
 			rt.SetComputeUnsealedCID(computeCID)
 
-			proposals := actor.testProposals(provider, client, 4)
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, proposals)
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 4)
 
 			params := market.ComputeDataCommitmentParams{
 				DealIDs:    dealIds,
@@ -630,7 +677,11 @@ func TestMarketActor(t *testing.T) {
 		t.Run("updates the SlashEpoch in the deal state", func(t *testing.T) {
 			rt, actor := setup()
 
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 4))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+			}, 1)
 
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
@@ -655,14 +706,14 @@ func TestMarketActor(t *testing.T) {
 		t.Run("unlocks collateral and transfers funds if deals have expired normally", func(t *testing.T) {
 			rt, actor := setup()
 
-			// Test deal parameters:
-			// Duration:             100
-			// StoragePricePerEpoch: 5
-			// ProviderCollateral:   50
-			// ClientCollateral:     50
-
-			// add a deal
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			proposalParams := testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+				ProviderCollateral:   50,
+				ClientCollateral:     50,
+			}
+			dealIds := actor.addTestProposals(rt, proposalParams, 1)
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
 			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
@@ -677,8 +728,8 @@ func TestMarketActor(t *testing.T) {
 			rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
 			rt.Verify()
 
-			// test deals expire at height 200
-			rt.SetEpoch(205)
+			// fast forward to where deal has expired
+			rt.SetEpoch(201)
 			rt.SetCaller(provider, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
@@ -697,21 +748,21 @@ func TestMarketActor(t *testing.T) {
 		t.Run("burns collateral and unlocks balances if deal has timed-out", func(t *testing.T) {
 			rt, actor := setup()
 
-			// Test deal parameters:
-			// Duration:             100
-			// StoragePricePerEpoch: 5
-			// ProviderCollateral:   50
-			// ClientCollateral:     50
-
 			// add a deal
-			dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
+			dealIds := actor.addTestProposals(rt, testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+				ClientCollateral:     50,
+				ProviderCollateral:   50,
+			}, 1)
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
 			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
 			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
 			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
 
-			// let this deal "time out" (`SectorStartEpoch == epochUndefined`)
+			// let this deal time out (`SectorStartEpoch == epochUndefined`)
 
 			// test deals start at height 100
 			rt.SetEpoch(101)
@@ -734,55 +785,57 @@ func TestMarketActor(t *testing.T) {
 
 		// Test is commented out pending resolution of partial payment calculation.  Relevant
 		// discussion here: https://filecoinproject.slack.com/archives/CHMNDCK9P/p1582594536049700
+		t.Run("burns collateral, transfers partial payment, and unlocks balances if deal has has been slashed", func(t *testing.T) {
+			t.Skip("skipped pending spec resolution")
+			rt, actor := setup()
 
-		//t.Run("burns collateral, transfers partial payment, and unlocks balances if deal has has been slashed", func(t *testing.T) {
-		//	rt, actor := setup()
-		//
-		//	// Test deal parameters:
-		//	// Duration:             100
-		//	// StoragePricePerEpoch: 5
-		//	// ProviderCollateral:   50
-		//	// ClientCollateral:     50
-		//
-		//	// add a deal
-		//	dealIds := actor.addTestProposals(rt, provider, owner, worker, client, actor.testProposals(provider, client, 1))
-		//	rt.GetState(&st)
-		//	assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
-		//	assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
-		//	assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
-		//	assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
-		//
-		//	// verify/activate deal
-		//	params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
-		//	rt.SetEpoch(100)
-		//	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-		//	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		//	rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
-		//	rt.Verify()
-		//
-		//	// terminate the deal early at height 150
-		//	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-		//	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		//	rt.SetEpoch(150)
-		//	rt.Call(actor.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{dealIds})
-		//	rt.Verify()
-		//
-		//	rt.SetEpoch(160)
-		//	rt.SetCaller(provider, builtin.AccountActorCodeID)
-		//	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-		//	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, abi.NewTokenAmount(50), nil, exitcode.Ok)
-		//
-		//	retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
-		//
-		//	assert.IsType(t, &adt.EmptyValue{}, retval)
-		//
-		//	// ensure balances have been transferred and funds unlocked
-		//	rt.GetState(&st)
-		//	assert.Equal(t, abi.NewTokenAmount(50*5), st.GetEscrowBalance(rt, provider))
-		//	assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
-		//	assert.Equal(t, abi.NewTokenAmount(50*5+50), st.GetEscrowBalance(rt, client))
-		//	assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
-		//})
+			proposalParams := testProposalParams{
+				StartEpoch:           100,
+				EndEpoch:             200,
+				StoragePricePerEpoch: 5,
+				ProviderCollateral:   50,
+				ClientCollateral:     50,
+			}
+
+			// add a deal
+			dealIds := actor.addTestProposals(rt, proposalParams, 0)
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetLockedBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(100*5+50), st.GetEscrowBalance(rt, client))
+
+			// verify/activate deal
+			params := market.VerifyDealsOnSectorProveCommitParams{DealIDs: dealIds, SectorExpiry: 200}
+			rt.SetEpoch(100)
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.Call(actor.VerifyDealsOnSectorProveCommit, &params)
+			rt.Verify()
+
+			// terminate the deal early at height 150
+			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+			rt.SetEpoch(150)
+			rt.Call(actor.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{dealIds})
+			rt.Verify()
+
+			rt.SetEpoch(160)
+			rt.SetCaller(provider, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, abi.NewTokenAmount(50), nil, exitcode.Ok)
+
+			retval := rt.Call(actor.HandleExpiredDeals, &market.HandleExpiredDealsParams{dealIds})
+
+			assert.IsType(t, &adt.EmptyValue{}, retval)
+
+			// ensure balances have been transferred and funds unlocked
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(50*5), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(50*5+50), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(0), st.GetLockedBalance(rt, client))
+		})
 	})
 }
 
@@ -808,7 +861,11 @@ func (c *fakeComputeCID) Compute(reg abi.RegisteredProof, pieces []abi.PieceInfo
 
 type marketActorTestHarness struct {
 	market.Actor
-	t testing.TB
+	t        testing.TB
+	owner    address.Address
+	provider address.Address
+	worker   address.Address
+	client   address.Address
 }
 
 func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
@@ -820,29 +877,30 @@ func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
 }
 
 // addProviderFunds is a helper method to setup provider market funds
-func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, provider address.Address, owner address.Address, worker address.Address, amount abi.TokenAmount) {
-	rt.SetReceived(amount)
-	rt.SetCaller(owner, builtin.AccountActorCodeID)
-	h.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
+func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, amount int64) {
+	ta := abi.NewTokenAmount(amount)
+	rt.SetReceived(ta)
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	h.expectProviderControlAddressesAndValidateCaller(rt, h.provider, h.owner, h.worker)
 
-	rt.Call(h.AddBalance, &provider)
+	rt.Call(h.AddBalance, &h.provider)
 
 	rt.Verify()
 
-	rt.SetBalance(big.Add(rt.GetBalance(), amount))
+	rt.SetBalance(big.Add(rt.GetBalance(), ta))
 }
 
-// addParticipantFunds is a helper method to setup non-provider storage market participant funds
-func (h *marketActorTestHarness) addParticipantFunds(rt *mock.Runtime, addr address.Address, amount abi.TokenAmount) {
-	rt.SetReceived(amount)
-	rt.SetCaller(addr, builtin.AccountActorCodeID)
+func (h *marketActorTestHarness) addClientFunds(rt *mock.Runtime, amount int64) {
+	ta := abi.NewTokenAmount(amount)
+	rt.SetReceived(ta)
+	rt.SetCaller(h.client, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
-	rt.Call(h.AddBalance, &addr)
+	rt.Call(h.AddBalance, &h.client)
 
 	rt.Verify()
 
-	rt.SetBalance(big.Add(rt.GetBalance(), amount))
+	rt.SetBalance(big.Add(rt.GetBalance(), ta))
 }
 
 func (h *marketActorTestHarness) expectProviderControlAddresses(rt *mock.Runtime, provider address.Address, owner address.Address, worker address.Address) {
@@ -863,19 +921,40 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 	h.expectProviderControlAddresses(rt, provider, owner, worker)
 }
 
-func (h *marketActorTestHarness) testProposal(provider, client address.Address, data string) market.ClientDealProposal {
-	// ClientBalanceRequirement: 550
-	// ProviderBalanceRequirement: 50
+type testProposalParams struct {
+	Data                 string
+	Client               address.Address
+	Provider             address.Address
+	StartEpoch           int64
+	EndEpoch             int64
+	StoragePricePerEpoch int64
+	ProviderCollateral   int64
+	ClientCollateral     int64
+}
+
+func (h *marketActorTestHarness) testProposal(p testProposalParams) market.ClientDealProposal {
 	proposal := market.DealProposal{
-		PieceCID:             testCid(data),
-		PieceSize:            abi.PaddedPieceSize(len(data)),
-		Client:               client,
-		Provider:             provider,
-		StartEpoch:           100,
-		EndEpoch:             200,
-		StoragePricePerEpoch: abi.NewTokenAmount(5),
-		ProviderCollateral:   abi.NewTokenAmount(50),
-		ClientCollateral:     abi.NewTokenAmount(50),
+		Client:               p.Client,
+		Provider:             p.Provider,
+		StartEpoch:           abi.ChainEpoch(p.StartEpoch),
+		EndEpoch:             abi.ChainEpoch(p.EndEpoch),
+		StoragePricePerEpoch: abi.NewTokenAmount(p.StoragePricePerEpoch),
+		ProviderCollateral:   abi.NewTokenAmount(p.ProviderCollateral),
+		ClientCollateral:     abi.NewTokenAmount(p.ClientCollateral),
+	}
+
+	if p.Data == "" {
+		p.Data = "test data"
+	}
+	proposal.PieceCID = testCid(p.Data)
+	proposal.PieceSize = abi.UnpaddedPieceSize(len(p.Data)).Padded()
+
+	if proposal.Client == address.Undef {
+		proposal.Client = h.client
+	}
+
+	if proposal.Provider == address.Undef {
+		proposal.Provider = h.provider
 	}
 
 	return market.ClientDealProposal{
@@ -884,27 +963,31 @@ func (h *marketActorTestHarness) testProposal(provider, client address.Address, 
 	}
 }
 
-func (h *marketActorTestHarness) testProposals(provider, client address.Address, count int) []market.ClientDealProposal {
+func (h *marketActorTestHarness) testProposals(params testProposalParams, count int) []market.ClientDealProposal {
 	var out []market.ClientDealProposal
 	for i := 0; i < count; i++ {
-		out = append(out, h.testProposal(provider, client, fmt.Sprintf("data %d", count)))
+		p := params
+		if len(p.Data) == 0 {
+			p.Data = fmt.Sprintf("data %d", i)
+		}
+		out = append(out, h.testProposal(p))
 	}
 	return out
 }
 
-func (h *marketActorTestHarness) addTestProposals(rt *mock.Runtime, provider, owner, worker, client address.Address, proposals []market.ClientDealProposal) []abi.DealID {
+func (h *marketActorTestHarness) addTestProposals(rt *mock.Runtime, proposalParams testProposalParams, count int) []abi.DealID {
+	proposals := h.testProposals(proposalParams, count)
+
 	params := market.PublishStorageDealsParams{Deals: proposals}
 
-	rt.SetVerifier(fakeVerifier(true))
-
 	for _, proposal := range proposals {
-		h.addParticipantFunds(rt, client, proposal.Proposal.ClientBalanceRequirement())
-		h.addProviderFunds(rt, provider, owner, worker, proposal.Proposal.ProviderBalanceRequirement())
+		h.addClientFunds(rt, proposal.Proposal.ClientBalanceRequirement().Int64())
+		h.addProviderFunds(rt, proposal.Proposal.ProviderBalanceRequirement().Int64())
 	}
 
-	rt.SetCaller(worker, builtin.AccountActorCodeID)
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-	h.expectProviderControlAddresses(rt, provider, owner, worker)
+	h.expectProviderControlAddresses(rt, h.provider, h.owner, h.worker)
 
 	ret := rt.Call(h.PublishStorageDeals, &params)
 
