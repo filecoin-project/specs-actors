@@ -70,6 +70,8 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
 		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
 
+	AssertMsg(params.TicketCount > 0, "cannot give block reward for zero tickets")
+
 	miner, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
