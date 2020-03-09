@@ -46,7 +46,7 @@ func (a *Array) AppendContinuous(value runtime.CBORMarshaler) error {
 	if err != nil {
 		return errors.Wrapf(err, "array append failed to load root %v", a.root)
 	}
-	if root.Set(a.store.Context(), root.Count, value) != nil {
+	if err := root.Set(a.store.Context(), root.Count, value); err != nil {
 		return errors.Wrapf(err, "array append failed to set index %v value %v in root %v, ", root.Count, value, a.root)
 	}
 	return a.write(root)
@@ -57,7 +57,7 @@ func (a *Array) Set(i uint64, value runtime.CBORMarshaler) error {
 	if err != nil {
 		return errors.Wrapf(err, "array set failed to load root %v", a.root)
 	}
-	if err = root.Set(a.store.Context(), i, value); err != nil {
+	if err := root.Set(a.store.Context(), i, value); err != nil {
 		return errors.Wrapf(err, "array set failed to set index %v value %v in root %v, ", i, value, a.root)
 	}
 	return a.write(root)
@@ -68,7 +68,7 @@ func (a *Array) Delete(i uint64) error {
 	if err != nil {
 		return errors.Wrapf(err, "array delete failed to load root %v", a.root)
 	}
-	if root.Delete(a.store.Context(), i) != nil {
+	if err := root.Delete(a.store.Context(), i); err != nil {
 		return errors.Wrapf(err, "array delete failed to delete index %v in root %v, ", i, a.root)
 	}
 	return a.write(root)
