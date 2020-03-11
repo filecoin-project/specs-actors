@@ -563,9 +563,11 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 			cronEvents = append(cronEvents, epochEvents...)
 
-			err = st.clearCronEvents(store, epoch)
-			if err != nil {
-				return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
+			if len(epochEvents) > 0 {
+				err = st.clearCronEvents(store, epoch)
+				if err != nil {
+					return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
+				}
 			}
 		}
 
