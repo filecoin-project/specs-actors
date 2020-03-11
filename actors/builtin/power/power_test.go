@@ -24,7 +24,6 @@ import (
 
 func TestConstruction(t *testing.T) {
 	actor := spActorHarness{power.Actor{}, t}
-	powerActor := tutil.NewIDAddr(t, 100)
 
 	owner1 := tutil.NewIDAddr(t, 101)
 	worker1 := tutil.NewIDAddr(t, 102)
@@ -34,9 +33,9 @@ func TestConstruction(t *testing.T) {
 	worker2 := tutil.NewIDAddr(t, 105)
 	miner2 := tutil.NewIDAddr(t, 106)
 
-	unused := tutil.NewIDAddr(t, 107)
+	unused := tutil.NewIDAddr(t, 999)
 
-	builder := mock.NewBuilder(context.Background(), powerActor).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -44,45 +43,11 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("create miner", func(t *testing.T) {
-		createMinerParams := &power.CreateMinerParams{
-			Owner:      owner1,
-			Worker:     worker1,
-			SectorSize: abi.SectorSize(int64(32)),
-			Peer:       "miner1",
-		}
-		initCreateMinerParams := &power.MinerConstructorParams{
-			OwnerAddr:  owner1,
-			WorkerAddr: worker1,
-			SectorSize: abi.SectorSize(int64(32)),
-			PeerId:     "miner1",
-		}
-
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		// owner1 send CreateMiner to Actor
-		rt.SetCaller(owner1, builtin.AccountActorCodeID)
-		rt.SetReceived(abi.NewTokenAmount(1))
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.createMiner(rt, owner1, worker1, miner1, unused, "miner1", abi.SectorSize(int64(32)))
 
-		createMinerRet := &power.CreateMinerReturn{
-			IDAddress:     miner1, // miner actor id address
-			RobustAddress: unused, // should be long miner actor address
-		}
-		createMinerBuf := new(bytes.Buffer)
-		err := createMinerParams.MarshalCBOR(createMinerBuf)
-		require.NoError(t, err)
-
-		initCreateMinerBuf := new(bytes.Buffer)
-		err = initCreateMinerParams.MarshalCBOR(initCreateMinerBuf)
-		require.NoError(t, err)
-		msgParams := &initact.ExecParams{
-			CodeCID:           builtin.StorageMinerActorCodeID,
-			ConstructorParams: initCreateMinerBuf.Bytes(),
-		}
-		rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
-
-		rt.Call(actor.Actor.CreateMiner, createMinerParams)
 		rt.Verify()
 
 		var st power.State
@@ -119,46 +84,8 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		createMiner := func(owner, worker, miner, robust addr.Address, peer peer.ID) {
-			createMinerParams := &power.CreateMinerParams{
-				Owner:      owner,
-				Worker:     worker,
-				SectorSize: abi.SectorSize(int64(32)),
-				Peer:       peer,
-			}
-			initCreateMinerParams := &power.MinerConstructorParams{
-				OwnerAddr:  owner,
-				WorkerAddr: worker,
-				SectorSize: abi.SectorSize(int64(32)),
-				PeerId:     peer,
-			}
-
-			// owner send CreateMiner to Actor
-			rt.SetCaller(owner, builtin.AccountActorCodeID)
-			rt.SetReceived(abi.NewTokenAmount(1))
-			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-
-			createMinerRet := &power.CreateMinerReturn{
-				IDAddress:     miner,  // miner actor id address
-				RobustAddress: robust, // should be long miner actor address
-			}
-			createMinerBuf := new(bytes.Buffer)
-			err := createMinerParams.MarshalCBOR(createMinerBuf)
-			require.NoError(t, err)
-
-			initCreateMinerBuf := new(bytes.Buffer)
-			err = initCreateMinerParams.MarshalCBOR(initCreateMinerBuf)
-			require.NoError(t, err)
-			msgParams := &initact.ExecParams{
-				CodeCID:           builtin.StorageMinerActorCodeID,
-				ConstructorParams: initCreateMinerBuf.Bytes(),
-			}
-			rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
-			rt.Call(actor.Actor.CreateMiner, createMinerParams)
-		}
-
-		createMiner(owner1, worker1, miner1, unused, "miner1")
-		createMiner(owner2, worker2, miner2, unused, "miner2")
+		actor.createMiner(rt, owner1, worker1, miner1, unused, "miner1", abi.SectorSize(int64(32)))
+		actor.createMiner(rt, owner2, worker2, miner2, unused, "miner2", abi.SectorSize(int64(32)))
 
 		rt.Verify()
 
@@ -243,4 +170,44 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	verifyEmptyMap(h.t, rt, st.Claims)
 	verifyEmptyMap(h.t, rt, st.PoStDetectedFaultMiners)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
+}
+
+func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer peer.ID, sectorSize abi.SectorSize) {
+	createMinerParams := &power.CreateMinerParams{
+		Owner:      owner,
+		Worker:     worker,
+		SectorSize: sectorSize,
+		Peer:       peer,
+	}
+
+	// owner send CreateMiner to Actor
+	rt.SetCaller(owner, builtin.AccountActorCodeID)
+	rt.SetReceived(abi.NewTokenAmount(1))
+	rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+	createMinerRet := &power.CreateMinerReturn{
+		IDAddress:     miner,  // miner actor id address
+		RobustAddress: robust, // should be long miner actor address
+	}
+
+	msgParams := &initact.ExecParams{
+		CodeCID:           builtin.StorageMinerActorCodeID,
+		ConstructorParams: h.initCreateMinerBytes(owner, worker, peer, sectorSize),
+	}
+	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
+	rt.Call(h.Actor.CreateMiner, createMinerParams)
+}
+
+func (h *spActorHarness) initCreateMinerBytes(owner, worker addr.Address, peer peer.ID, sectorSize abi.SectorSize) []byte {
+	params := &power.MinerConstructorParams{
+		OwnerAddr:  owner,
+		WorkerAddr: worker,
+		SectorSize: sectorSize,
+		PeerId:     peer,
+	}
+
+	buf := new(bytes.Buffer)
+	require.NoError(h.t, params.MarshalCBOR(buf))
+
+	return buf.Bytes()
 }
