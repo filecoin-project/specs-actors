@@ -344,10 +344,12 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	// add sector to miner state
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
-			Info:              precommit.Info,
-			ActivationEpoch:   rt.CurrEpoch(),
-			DealWeight:        dealWeight,
-			PledgeRequirement: pledgeRequirement,
+			Info:                  precommit.Info,
+			ActivationEpoch:       rt.CurrEpoch(),
+			DealWeight:            dealWeight,
+			PledgeRequirement:     pledgeRequirement,
+			DeclaredFaultEpoch:    -1,
+			DeclaredFaultDuration: -1,
 		}
 
 		if err = st.PutSector(store, newSectorInfo); err != nil {
@@ -960,7 +962,7 @@ func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChai
 	store := adt.AsStore(rt)
 	sectorInfos, err := st.ComputeProvingSet(store)
 	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set.")
+		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set: %s", err)
 	}
 
 	var addrBuf bytes.Buffer
