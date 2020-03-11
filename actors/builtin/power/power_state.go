@@ -27,6 +27,9 @@ type State struct {
 	// A queue of events to be triggered by cron, indexed by epoch.
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
 
+	// Last chain epoch OnEpochTickEnd was called on
+	LastEpochTick abi.ChainEpoch
+
 	// Miners having failed to prove storage.
 	PoStDetectedFaultMiners cid.Cid // Set, HAMT[addr.Address]struct{}
 
