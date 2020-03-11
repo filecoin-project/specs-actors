@@ -548,26 +548,33 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 ////////////////////////////////////////////////////////////////////////////////
 
 func (a Actor) processDeferredCronEvents(rt Runtime) error {
-	epoch := rt.CurrEpoch()
+	rtEpoch := rt.CurrEpoch()
 
-	var epochEvents []CronEvent
+	var cronEvents []CronEvent
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		var err error
-		epochEvents, err = st.loadCronEvents(store, epoch)
-		if err != nil {
-			return errors.Wrapf(err, "failed to load cron events at %v", epoch)
+
+		for epoch := st.LastEpochTick + 1; epoch <= rtEpoch; epoch++ {
+			epochEvents, err := st.loadCronEvents(store, epoch)
+			if err != nil {
+				return errors.Wrapf(err, "failed to load cron events at %v", epoch)
+			}
+
+			cronEvents = append(cronEvents, epochEvents...)
+
+			err = st.clearCronEvents(store, epoch)
+			if err != nil {
+				return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
+			}
 		}
 
-		err = st.clearCronEvents(store, epoch)
-		if err != nil {
-			return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
-		}
+		st.LastEpochTick = rtEpoch
+
 		return nil
 	})
 
-	for _, event := range epochEvents {
+	for _, event := range cronEvents {
 		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
