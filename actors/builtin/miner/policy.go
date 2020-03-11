@@ -30,7 +30,7 @@ const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
 const ElectionLookback = PoStLookback // PARAM_FINISH
 
 // Number of sectors to be sampled as part of windowed PoSt
-const NumWindowedPoStSectors = 200 // PARAM_FINISH
+const NumWindowedPoStSectors = 1 // PARAM_FINISH
 
 // Delay between declaration of a temporary sector fault and effectiveness of reducing the active proving set for PoSts.
 const DeclaredFaultEffectiveDelay = abi.ChainEpoch(20) // PARAM_FINISH
