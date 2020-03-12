@@ -794,7 +794,6 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 }
 
 func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
-	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var st State
 	expired := rt.State().Transaction(&st, func() interface{} {
@@ -1039,7 +1038,6 @@ func (a Actor) requestUnsealedSectorCID(rt Runtime, st abi.RegisteredProof, deal
 }
 
 func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
