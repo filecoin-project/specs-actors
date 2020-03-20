@@ -637,10 +637,11 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 		return txErr
 	}
 
+	// Delete the actor, burning any balance it has (sector pre-commit deposits).
 	_, code := rt.Send(
 		miner,
 		builtin.MethodsMiner.OnDeleteMiner,
-		nil,
+		&builtin.BurntFundsActorAddr,
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to delete miner actor")
