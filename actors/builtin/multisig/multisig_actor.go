@@ -279,6 +279,32 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
+func (ahd *ApprovalHashData) Serialize() ([]byte, error) {
+        buf := new(bytes.Buffer)
+        if err := ahd.MarshalCBOR(buf); err != nil {
+                return nil, err
+        }
+        return buf.Bytes(), nil
+}
+
+func (a Actor) getApprovalHash(rt vmr.Runtime, txn Transaction) [32]byte {
+        hashData := ApprovalHashData {
+                MsigWallet: rt.Message().Receiver(),
+                Requester : txn.Approved[0],
+                To        : txn.To,
+                Value     : txn.Value,
+                Method    : txn.Method,
+                Params    : txn.Params,
+        }
+
+        data, err := hashData.Serialize()
+        if err != nil {
+                rt.Abortf(exitcode.ErrIllegalState, "failed to construct multisig approval hash: %v", err)
+        }
+
+        return blake2b.Sum256(data)
+}
+
 func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 	var st State
 	var txn Transaction

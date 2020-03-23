@@ -390,11 +390,11 @@ func TestApprove(t *testing.T) {
 
 		// Transaction was not removed from store.
 		actor.assertTransactions(rt, multisig.Transaction{
-			To:       chuck,
-			Value:    sendValue,
-			Method:   builtin.MethodSend,
-			Params:   fakeParams,
-			Approved: []addr.Address{anne},
+                        To:         chuck,
+                        Value:      sendValue,
+                        Method:     builtin.MethodSend,
+                        Params:     fakeParams,
+                        Approved:   []addr.Address{anne},
 		})
 	})
 
