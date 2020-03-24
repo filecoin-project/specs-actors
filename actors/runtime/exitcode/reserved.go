@@ -1,6 +1,9 @@
 package exitcode
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 type ExitCode int64
 
@@ -12,38 +15,62 @@ func (x ExitCode) IsError() bool {
 	return !x.IsSuccess()
 }
 
-// Implement error to trigger Go compiler checking of exit code return values.
-func (x ExitCode) Error() string {
+// Whether an exit code indicates a message send failure.
+// A send failure means that the caller's CallSeqNum is not incremented and the caller has not paid
+// gas fees for the message (because the caller doesn't exist or can't afford it).
+// A receipt with send failure does not indicate that the message (or another one carrying the same CallSeqNum)
+// could not apply in the future, against a different state.
+func (x ExitCode) IsSendFailure() bool {
+	return x == SysErrSenderInvalid || x == SysErrSenderStateInvalid
+}
+
+// A non-canonical string representation for human inspection.
+func (x ExitCode) String() string {
+	name, ok := names[x]
+	if ok {
+		return fmt.Sprintf("%s(%d)", name, x)
+	}
 	return strconv.FormatInt(int64(x), 10)
 }
 
+// Implement error to trigger Go compiler checking of exit code return values.
+func (x ExitCode) Error() string {
+	return x.String()
+}
+
+// The system error codes are reserved for use by the runtime.
+// No actor may use one explicitly. Correspondingly, no runtime invocation should abort with an exit
+// code outside this list.
+// We could move these definitions out of this package and into the runtime spec.
 const (
 	Ok = ExitCode(0)
-	// NOTE: none of the system error codes should ever be used by actors, so we could move their definition
-	// out of this package and into the runtime spec.
 
-	// Indicates failure to find an actor in the state tree.
-	SysErrActorNotFound = ExitCode(1)
+	// Indicates that the actor identified as the sender of a message is not valid as a message sender:
+	// - not present in the state tree
+	// - not an account actor (for top-level messages)
+	// - code CID is not found or invalid
+	// (not found in the state tree, not an account, has no code).
+	SysErrSenderInvalid = ExitCode(1)
 
-	// Indicates failure to find the code for an actor.
-	SysErrActorCodeNotFound = ExitCode(2)
+	// Indicates that the sender of a message is not in a state to send the message:
+	// - invocation out of sequence (mismatched CallSeqNum)
+	// - insufficient funds to cover execution
+	SysErrSenderStateInvalid = ExitCode(2)
 
 	// Indicates failure to find a method in an actor.
 	SysErrInvalidMethod = ExitCode(3)
 
-	// Indicates syntactically invalid parameters for a method.
+	// Indicates non-decodeable or syntactically invalid parameters for a method.
 	SysErrInvalidParameters = ExitCode(4)
 
-	// Indicates a message sender has insufficient funds for a message's execution.
-	SysErrInsufficientFunds = ExitCode(5)
-
-	// Indicates a message invocation out of sequence.
-	SysErrInvalidCallSeqNum = ExitCode(6)
+	// Reserved exit codes, do not use.
+	SysErrorReserved1 = ExitCode(5)
+	SysErrorReserved2 = ExitCode(6)
 
 	// Indicates message execution (including subcalls) used more gas than the specified limit.
 	SysErrOutOfGas = ExitCode(7)
 
-	// Indicates a message execution is forbidden for the caller.
+	// Indicates message execution is forbidden for the caller by runtime caller validation.
 	SysErrForbidden = ExitCode(8)
 
 	// Indicates actor code performed a disallowed operation. Disallowed operations include:
@@ -58,10 +85,9 @@ const (
 	// Indicates  an object failed to de/serialize for storage.
 	SysErrSerialization = ExitCode(11)
 
-	// Reserved exit codes, do not use.
-	SysErrorReserved1 = ExitCode(12)
-	SysErrorReserved2 = ExitCode(13)
-	SysErrorReserved3 = ExitCode(14)
+	SysErrorReserved3 = ExitCode(12)
+	SysErrorReserved4 = ExitCode(13)
+	SysErrorReserved5 = ExitCode(14)
 
 	// Indicates something broken within the VM.
 	SysErrInternal = ExitCode(15)
@@ -70,3 +96,22 @@ const (
 // The initial range of exit codes is reserved for system errors.
 // Actors may define codes starting with this one.
 const FirstActorErrorCode = ExitCode(16)
+
+var names = map[ExitCode]string{
+	Ok: "Ok",
+	SysErrSenderInvalid: "SysErrSenderInvalid",
+	SysErrSenderStateInvalid: "SysErrSenderStateInvalid",
+	SysErrInvalidMethod: "SysErrInvalidMethod",
+	SysErrInvalidParameters: "SysErrInvalidParameters",
+	//SysErrorReserved1: "SysErrorReserved1",
+	//SysErrorReserved2: "SysErrorReserved2",
+	SysErrOutOfGas: "SysErrOutOfGas",
+	SysErrForbidden: "SysErrForbidden",
+	SysErrorIllegalActor: "SysErrorIllegalActor",
+	SysErrorIllegalArgument: "SysErrorIllegalArgument",
+	SysErrSerialization: "SysErrSerialization",
+	//SysErrorReserved3: "SysErrorReserved3",
+	//SysErrorReserved4: "SysErrorReserved4",
+	//SysErrorReserved5: "SysErrorReserved5",
+	SysErrInternal: "SysErrInternal",
+}
