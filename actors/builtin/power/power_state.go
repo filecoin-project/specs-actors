@@ -201,8 +201,6 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		}
 	}
 
-	claim.Pledge = big.Add(claim.Pledge, pledge)
-
 	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
 	AssertMsg(claim.Pledge.GreaterThanEqual(big.Zero()), "negative claimed pledge: %v", claim.Pledge)
 	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
