@@ -136,10 +136,11 @@ func (st *State) setMinerBalance(store adt.Store, miner addr.Address, amount abi
 func (st *State) addMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 	table := adt.AsBalanceTable(store, st.EscrowTable)
-	if table.Add(miner, amount) == nil {
-		st.EscrowTable = table.Root()
+	if err := table.Add(miner, amount); err != nil {
+		return err
 	}
-	return table.Add(miner, amount)
+	st.EscrowTable = table.Root()
+	return nil
 }
 
 func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount,
@@ -200,8 +201,6 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
 		}
 	}
-
-	claim.Pledge = big.Add(claim.Pledge, pledge)
 
 	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
 	AssertMsg(claim.Pledge.GreaterThanEqual(big.Zero()), "negative claimed pledge: %v", claim.Pledge)
