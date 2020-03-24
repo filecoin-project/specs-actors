@@ -640,7 +640,7 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	_, code := rt.Send(
 		miner,
 		builtin.MethodsMiner.OnDeleteMiner,
-		&adt.EmptyValue{},
+		nil,
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to delete miner actor")

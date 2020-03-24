@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // A mock runtime for unit testing of actors in isolation.
@@ -554,7 +555,13 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	// If not expected, the panic will escape and cause the test to fail.
 
 	rt.inCall = true
-	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), reflect.ValueOf(params)})
+	var arg reflect.Value
+	if params != nil {
+		arg = reflect.ValueOf(params)
+	} else {
+		arg = reflect.ValueOf(adt.Empty)
+	}
+	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), arg})
 	rt.inCall = false
 	return ret[0].Interface()
 }

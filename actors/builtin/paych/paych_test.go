@@ -19,7 +19,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -453,7 +452,7 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 
 	rt.SetCaller(st.From, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(st.From, st.To)
-	rt.Call(actor.Settle, &adt.EmptyValue{})
+	rt.Call(actor.Settle, nil)
 
 	expSettlingAt := ep + SettleDelay
 	rt.GetState(&st)
@@ -535,7 +534,7 @@ func TestActor_Settle(t *testing.T) {
 
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
-		rt.Call(actor.Settle, &adt.EmptyValue{})
+		rt.Call(actor.Settle, nil)
 
 		expSettlingAt := ep + SettleDelay
 		rt.GetState(&st)
@@ -551,11 +550,11 @@ func TestActor_Settle(t *testing.T) {
 
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
-		rt.Call(actor.Settle, &adt.EmptyValue{})
+		rt.Call(actor.Settle, nil)
 
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			rt.Call(actor.Settle, &adt.EmptyValue{})
+			rt.Call(actor.Settle, nil)
 		})
 	})
 
@@ -581,7 +580,7 @@ func TestActor_Settle(t *testing.T) {
 		// Settle.
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
-		rt.Call(actor.Settle, &adt.EmptyValue{})
+		rt.Call(actor.Settle, nil)
 
 		// SettlingAt should = MinSettleHeight, not epoch + SettleDelay.
 		rt.GetState(&newSt)
@@ -599,7 +598,7 @@ func TestActor_Collect(t *testing.T) {
 		// Settle.
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
-		rt.Call(actor.Settle, &adt.EmptyValue{})
+		rt.Call(actor.Settle, nil)
 
 		rt.GetState(&st)
 		require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
@@ -616,7 +615,7 @@ func TestActor_Collect(t *testing.T) {
 		// Collect.
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
-		res := rt.Call(actor.Collect, &adt.EmptyValue{})
+		res := rt.Call(actor.Collect, nil)
 		assert.Nil(t, res)
 
 		var newSt State
@@ -643,7 +642,7 @@ func TestActor_Collect(t *testing.T) {
 			if !tc.dontSettle {
 				rt.SetCaller(st.From, builtin.AccountActorCodeID)
 				rt.ExpectValidateCallerAddr(st.From, st.To)
-				rt.Call(actor.Settle, &adt.EmptyValue{})
+				rt.Call(actor.Settle, nil)
 				rt.GetState(&st)
 				require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
 			}
@@ -659,7 +658,7 @@ func TestActor_Collect(t *testing.T) {
 			rt.SetCaller(st.From, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(st.From, st.To)
 			rt.ExpectAbort(tc.expCollectExit, func() {
-				rt.Call(actor.Collect, &adt.EmptyValue{})
+				rt.Call(actor.Collect, nil)
 			})
 		})
 	}

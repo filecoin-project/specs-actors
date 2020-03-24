@@ -32,7 +32,7 @@ func (h *Set) Root() cid.Cid {
 
 // Put adds `k` to the set.
 func (h *Set) Put(k Keyer) error {
-	return h.m.Put(k, EmptyValue{})
+	return h.m.Put(k, nil)
 }
 
 // Has returns true iff `k` is in the set.
@@ -48,7 +48,7 @@ func (h *Set) Delete(k Keyer) error {
 // ForEach iterates over all values in the set, calling the callback for each value.
 // Returning error from the callback stops the iteration.
 func (h *Set) ForEach(cb func(k string) error) error {
-	return h.m.ForEach(EmptyValue{}, cb)
+	return h.m.ForEach(nil, cb)
 }
 
 // Collects all the keys from the set into a slice of strings.
