@@ -57,7 +57,7 @@ type rewardHarness struct {
 
 func (h *rewardHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	ret := rt.Call(h.Constructor, &adt.EmptyValue{})
+	ret := rt.Call(h.Constructor, nil)
 	assert.Nil(h.t, ret)
 	rt.Verify()
 

@@ -10,7 +10,6 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -62,7 +61,7 @@ func TestAccountactor(t *testing.T) {
 				assert.Equal(t, tc.addr, st.Address)
 
 				rt.ExpectValidateCallerAny()
-				pubkeyAddress := rt.Call(actor.PubkeyAddress, &adt.EmptyValue{}).(address.Address)
+				pubkeyAddress := rt.Call(actor.PubkeyAddress, nil).(address.Address)
 				assert.Equal(t, tc.addr, pubkeyAddress)
 			} else {
 				rt.ExpectAbort(tc.exitCode, func() {

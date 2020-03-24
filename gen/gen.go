@@ -14,6 +14,7 @@ import (
 	paych "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	system "github.com/filecoin-project/specs-actors/actors/builtin/system"
 )
 
 func main() {
@@ -39,6 +40,13 @@ func main() {
 	}
 
 	// Actors
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/system/cbor_gen.go", "system",
+		// actor state
+		system.State{},
+	); err != nil {
+		panic(err)
+	}
+
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/account/cbor_gen.go", "account",
 		// actor state
 		account.State{},

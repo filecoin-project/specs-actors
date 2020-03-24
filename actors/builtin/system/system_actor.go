@@ -17,9 +17,11 @@ func (a Actor) Exports() []interface{} {
 
 var _ abi.Invokee = Actor{}
 
-func (a Actor) Constructor(rt runtime.Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	rt.State().Create(&adt.EmptyValue{})
+	rt.State().Create(&State{})
 	return nil
 }
+
+type State struct{}
