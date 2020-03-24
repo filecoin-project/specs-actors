@@ -17,7 +17,7 @@ func TestArrayNotFound(t *testing.T) {
 	arr, err := adt.MakeEmptyArray(store)
 	require.NoError(t, err)
 
-	found, err := arr.Get(7, adt.EmptyValue{})
+	found, err := arr.Get(7, nil)
 	require.NoError(t, err)
 	require.False(t, found)
 }

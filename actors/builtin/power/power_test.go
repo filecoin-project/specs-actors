@@ -122,7 +122,7 @@ func TestConstruction(t *testing.T) {
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(enrollCronEventParams1.Payload), abi.NewTokenAmount(0), nil, 0)
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(enrollCronEventParams2.Payload), abi.NewTokenAmount(0), nil, 0)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-		rt.Call(actor.Actor.OnEpochTickEnd, &adt.EmptyValue{})
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 
 	})
@@ -156,7 +156,7 @@ func (s key) Key() string {
 
 func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	ret := rt.Call(h.Actor.Constructor, &adt.EmptyValue{})
+	ret := rt.Call(h.Actor.Constructor, nil)
 	assert.Nil(h.t, ret)
 	rt.Verify()
 

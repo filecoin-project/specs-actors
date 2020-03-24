@@ -11,7 +11,6 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -98,7 +97,7 @@ func (h *cronHarness) constructAndVerify(rt *mock.Runtime, entries ...cron.Entry
 
 func (h *cronHarness) epochTickAndVerify(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	ret := rt.Call(h.EpochTick, &adt.EmptyValue{})
+	ret := rt.Call(h.EpochTick, nil)
 	assert.Nil(h.t, ret)
 	rt.Verify()
 }
