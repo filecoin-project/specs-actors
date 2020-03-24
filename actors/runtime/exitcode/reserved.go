@@ -66,8 +66,10 @@ const (
 	// Indicates that the receiver of a message is not valid (and cannot be implicitly created).
 	SysErrInvalidReceiver = ExitCode(5)
 
-	// Reserved exit code, do not use.
-	SysErrorReserved2 = ExitCode(6)
+	// Indicates that a message sender has insufficient balance for the value being sent.
+	// Note that this is distinct from SysErrSenderStateInvalid when a top-level sender can't cover
+	// value transfer + gas. This code is only expected to come from inter-actor sends.
+	SysErrInsufficientFunds = ExitCode(6)
 
 	// Indicates message execution (including subcalls) used more gas than the specified limit.
 	SysErrOutOfGas = ExitCode(7)
@@ -105,15 +107,15 @@ var names = map[ExitCode]string{
 	SysErrSenderStateInvalid: "SysErrSenderStateInvalid",
 	SysErrInvalidMethod: "SysErrInvalidMethod",
 	SysErrInvalidParameters: "SysErrInvalidParameters",
-	//SysErrorReserved1: "SysErrorReserved1",
-	//SysErrorReserved2: "SysErrorReserved2",
+	SysErrInvalidReceiver: "SysErrInvalidReceiver",
+	SysErrInsufficientFunds: "SysErrInsufficientFunds",
 	SysErrOutOfGas: "SysErrOutOfGas",
 	SysErrForbidden: "SysErrForbidden",
 	SysErrorIllegalActor: "SysErrorIllegalActor",
 	SysErrorIllegalArgument: "SysErrorIllegalArgument",
 	SysErrSerialization: "SysErrSerialization",
-	//SysErrorReserved3: "SysErrorReserved3",
-	//SysErrorReserved4: "SysErrorReserved4",
-	//SysErrorReserved5: "SysErrorReserved5",
+	SysErrorReserved3: "SysErrorReserved3",
+	SysErrorReserved4: "SysErrorReserved4",
+	SysErrorReserved5: "SysErrorReserved5",
 	SysErrInternal: "SysErrInternal",
 }
