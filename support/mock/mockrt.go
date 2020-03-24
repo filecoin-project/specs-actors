@@ -190,7 +190,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	}
 
 	if value.GreaterThan(rt.balance) {
-		rt.Abortf(exitcode.SysErrInsufficientFunds, "cannot send value: %v exceeds balance: %v", value, rt.balance)
+		rt.Abortf(exitcode.SysErrSenderStateInvalid, "cannot send value: %v exceeds balance: %v", value, rt.balance)
 	}
 
 	// pop the expectedMessage from the queue and modify the mockrt balance to reflect the send.
