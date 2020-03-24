@@ -136,11 +136,11 @@ func (st *State) setMinerBalance(store adt.Store, miner addr.Address, amount abi
 func (st *State) addMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 	table := adt.AsBalanceTable(store, st.EscrowTable)
-	err := table.Add(miner, amount)
-	if err == nil {
-		st.EscrowTable = table.Root()
+	if err := table.Add(miner, amount); err != nil {
+		return err
 	}
-	return err
+	st.EscrowTable = table.Root()
+	return nil
 }
 
 func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount,
