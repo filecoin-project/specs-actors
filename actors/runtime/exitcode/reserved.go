@@ -63,8 +63,10 @@ const (
 	// Indicates non-decodeable or syntactically invalid parameters for a method.
 	SysErrInvalidParameters = ExitCode(4)
 
-	// Reserved exit codes, do not use.
-	SysErrorReserved1 = ExitCode(5)
+	// Indicates that the receiver of a message is not valid (and cannot be implicitly created).
+	SysErrInvalidReceiver = ExitCode(5)
+
+	// Reserved exit code, do not use.
 	SysErrorReserved2 = ExitCode(6)
 
 	// Indicates message execution (including subcalls) used more gas than the specified limit.
