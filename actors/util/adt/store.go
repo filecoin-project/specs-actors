@@ -72,7 +72,7 @@ func IntKey(k int64) intKey {
 }
 
 func (k intKey) Key() string {
-	buf := make([]byte, 8)
+	buf := make([]byte, 10)
 	n := binary.PutVarint(buf, k.int64)
 	return string(buf[:n])
 }
@@ -97,7 +97,7 @@ func UIntKey (k uint64) uintKey {
 }
 
 func (k uintKey) Key() string {
-	buf := make([]byte, 8)
+	buf := make([]byte, 10)
 	n := binary.PutUvarint(buf, k.uint64)
 	return string(buf[:n])
 }

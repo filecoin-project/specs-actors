@@ -146,6 +146,7 @@ type ChangePeerIDParams struct {
 func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Worker)
 		st.Info.PeerId = params.NewID
 		return nil
 	})
