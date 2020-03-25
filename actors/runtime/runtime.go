@@ -68,8 +68,10 @@ type Runtime interface {
 	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by Init actor.
 	CreateActor(codeId cid.Cid, address addr.Address)
 
-	// Deletes the executing actor from the state tree. May only be called by the actor itself.
-	DeleteActor()
+	// Deletes the executing actor from the state tree, transferring any balance to beneficiary.
+	// Aborts if the beneficiary does not exist.
+	// May only be called by the actor itself.
+	DeleteActor(beneficiary addr.Address)
 
 	// Provides the system call interface.
 	Syscalls() Syscalls
