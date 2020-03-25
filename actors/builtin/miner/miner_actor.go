@@ -201,10 +201,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo)
 	return nil
 }
 
-// Called by Actor.
-func (a Actor) OnDeleteMiner(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) OnDeleteMiner(rt Runtime, beneficiary *addr.Address) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
-	rt.DeleteActor()
+	rt.DeleteActor(*beneficiary)
 	return nil
 }
 
