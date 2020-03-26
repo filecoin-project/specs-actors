@@ -55,6 +55,8 @@ type SectorID struct {
 // The unit of storage power (measured in bytes)
 type StoragePower = big.Int
 
+type SectorQuality = int64
+
 func NewStoragePower(n int64) StoragePower {
 	return big.NewInt(n)
 }

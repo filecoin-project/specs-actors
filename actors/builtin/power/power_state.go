@@ -16,8 +16,9 @@ import (
 )
 
 type State struct {
-	TotalNetworkPower abi.StoragePower
-	MinerCount        int64
+	TotalRawBytePower    abi.StoragePower
+	TotalQualityAdjPower abi.StoragePower
+	MinerCount           int64
 
 	// The balances of pledge collateral for each miner actually held by this actor.
 	// The sum of the values here should always equal the actor's balance.
@@ -43,7 +44,9 @@ type State struct {
 
 type Claim struct {
 	// Sum of power for a miner's sectors.
-	Power abi.StoragePower
+	QAPower abi.StoragePower
+
+	RawBytePower abi.StoragePower
 	// Sum of pledge requirement for a miner's sectors.
 	Pledge abi.TokenAmount
 }
@@ -57,7 +60,8 @@ type AddrKey = adt.AddrKey
 
 func ConstructState(emptyMapCid cid.Cid) *State {
 	return &State{
-		TotalNetworkPower:        abi.NewStoragePower(0),
+		TotalRawBytePower:        abi.NewStoragePower(0),
+		TotalQualityAdjPower:     abi.NewStoragePower(0),
 		EscrowTable:              emptyMapCid,
 		CronEventQueue:           emptyMapCid,
 		PoStDetectedFaultMiners:  emptyMapCid,
@@ -155,7 +159,7 @@ func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amoun
 }
 
 // Parameters may be negative to subtract.
-func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, pledge abi.TokenAmount) error {
+func (st *State) AddToClaim(s adt.Store, miner addr.Address, qapower abi.StoragePower, bpow abi.StoragePower, pledge abi.TokenAmount) error {
 	claim, ok, err := st.getClaim(s, miner)
 	if err != nil {
 		return err
@@ -171,7 +175,9 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 
 	// update pledge and power
 	// TODO: ZX, update to ensure that pledge is appropriate for given power update
-	claim.Power = big.Add(claim.Power, power)
+	claim.QAPower = big.Add(claim.QAPower, qapower)
+	// TODO: CE: raw byte power
+
 	claim.Pledge = big.Add(claim.Pledge, pledge)
 
 	newNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
@@ -191,11 +197,12 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		if prevBelow && !stillBelow {
 			// just passed min miner size
 			st.NumMinersMeetingMinPower++
-			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, newNominalPower)
+			st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newNominalPower)
+			st.TotalRawBytePower = big.Add(st.TotalRawBytePower, newRawBytePower)
 		} else if !prevBelow && stillBelow {
 			// just went below min miner size
 			st.NumMinersMeetingMinPower--
-			st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, oldNominalPower)
+			st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldNominalPower)
 		} else if !prevBelow && !stillBelow {
 			// Was above the threshold, still above
 			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)

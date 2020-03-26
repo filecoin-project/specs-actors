@@ -23,11 +23,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TotalNetworkPower (big.Int) (struct)
-	if err := t.TotalNetworkPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
 	// t.MinerCount (int64) (int64)
 	if t.MinerCount >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MinerCount))); err != nil {
@@ -105,10 +100,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	// t.TotalNetworkPower (big.Int) (struct)
 
 	{
-
-		if err := t.TotalNetworkPower.UnmarshalCBOR(br); err != nil {
-			return err
-		}
 
 	}
 	// t.MinerCount (int64) (int64)
@@ -247,9 +238,6 @@ func (t *Claim) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Power (big.Int) (struct)
-	if err := t.Power.MarshalCBOR(w); err != nil {
-		return err
-	}
 
 	// t.Pledge (big.Int) (struct)
 	if err := t.Pledge.MarshalCBOR(w); err != nil {
@@ -276,10 +264,6 @@ func (t *Claim) UnmarshalCBOR(r io.Reader) error {
 	// t.Power (big.Int) (struct)
 
 	{
-
-		if err := t.Power.UnmarshalCBOR(br); err != nil {
-			return err
-		}
 
 	}
 	// t.Pledge (big.Int) (struct)

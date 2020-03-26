@@ -30,6 +30,7 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
 		3:                         a.WithdrawReward,
+		4:                         a.PerEpochReward,
 	}
 }
 
@@ -140,6 +141,10 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.Emp
 	_, code := rt.Send(owner, builtin.MethodSend, nil, withdrawableReward)
 	builtin.RequireSuccess(rt, code, "failed to send funds %v to owner %v", withdrawableReward, owner)
 	return nil
+}
+
+func (a Actor) PerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
+	panic("todo: zx")
 }
 
 func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCount int64) abi.TokenAmount {

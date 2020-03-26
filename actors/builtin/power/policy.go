@@ -91,20 +91,21 @@ func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	return big.Min(big.Div(num, denom), collateral)
 }
 
-func ConsensusPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
-	return big.NewIntUnsigned(uint64(weight.SectorSize)) // PARAM_FINISH
+func SectorQualityFromWeight(weight *SectorStorageWeightDesc) abi.SectorQuality {
+	return 1_000_000
 }
 
-func PledgeForWeight(weight *SectorStorageWeightDesc, networkPower abi.StoragePower) abi.TokenAmount {
+func QAPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
+	qual := SectorQualityFromWeight(weight)
+	qap := (uint64(qual) * uint64(weight.SectorSize)) / 1_000_000
+	return big.NewIntUnsigned(qap) // PARAM_FINISH
+}
+
+func InitialPledgeForWeight(qapower abi.StoragePower, totqapower abi.StoragePower, circSupply abi.TokenAmount, totalPledge abi.TokenAmount, perEpochReward abi.TokenAmount) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
-	numerator := bigProduct(
-		big.NewIntUnsigned(uint64(weight.SectorSize)), // bytes
-		big.NewInt(int64(weight.Duration)),            // epochs
-		EpochTotalExpectedReward,                      // FIL/epoch
-		PledgeFactor,                                  // unitless
-	) // = bytes*FIL
-	denominator := networkPower // bytes
+	_ = circSupply  // TODO: ce use this
+	_ = totalPledge // TODO: ce use this
 
-	return big.Div(numerator, denominator) // FIL
+	return big.Div(big.Mul(qapower, perEpochReward), totqapower)
 }
