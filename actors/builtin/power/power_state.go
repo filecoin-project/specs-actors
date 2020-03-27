@@ -18,6 +18,7 @@ import (
 type State struct {
 	TotalRawBytePower    abi.StoragePower
 	TotalQualityAdjPower abi.StoragePower
+	TotalNetworkPower    abi.StoragePower
 	MinerCount           int64
 
 	// The balances of pledge collateral for each miner actually held by this actor.
@@ -44,9 +45,8 @@ type State struct {
 
 type Claim struct {
 	// Sum of power for a miner's sectors.
-	QAPower abi.StoragePower
+	Power abi.StoragePower
 
-	RawBytePower abi.StoragePower
 	// Sum of pledge requirement for a miner's sectors.
 	Pledge abi.TokenAmount
 }
@@ -159,7 +159,7 @@ func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amoun
 }
 
 // Parameters may be negative to subtract.
-func (st *State) AddToClaim(s adt.Store, miner addr.Address, qapower abi.StoragePower, bpow abi.StoragePower, pledge abi.TokenAmount) error {
+func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, pledge abi.TokenAmount) error {
 	claim, ok, err := st.getClaim(s, miner)
 	if err != nil {
 		return err
@@ -175,7 +175,7 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, qapower abi.Storage
 
 	// update pledge and power
 	// TODO: ZX, update to ensure that pledge is appropriate for given power update
-	claim.QAPower = big.Add(claim.QAPower, qapower)
+	claim.Power = big.Add(claim.Power, power)
 	// TODO: CE: raw byte power
 
 	claim.Pledge = big.Add(claim.Pledge, pledge)
@@ -197,12 +197,11 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, qapower abi.Storage
 		if prevBelow && !stillBelow {
 			// just passed min miner size
 			st.NumMinersMeetingMinPower++
-			st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newNominalPower)
-			st.TotalRawBytePower = big.Add(st.TotalRawBytePower, newRawBytePower)
+			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, newNominalPower)
 		} else if !prevBelow && stillBelow {
 			// just went below min miner size
 			st.NumMinersMeetingMinPower--
-			st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldNominalPower)
+			st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, oldNominalPower)
 		} else if !prevBelow && !stillBelow {
 			// Was above the threshold, still above
 			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)

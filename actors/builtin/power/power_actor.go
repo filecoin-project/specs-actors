@@ -205,7 +205,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		store := adt.AsStore(rt)
 		err = st.setMinerBalance(store, addresses.IDAddress, rt.Message().ValueReceived())
 		abortIfError(rt, err, "failed to set pledge balance")
-		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0), abi.NewTokenAmount(0)})
+		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewTokenAmount(0)})
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
 		}
@@ -245,8 +245,8 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 	if !found {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", nominal)
 	}
-	if claim.QAPower.GreaterThan(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", nominal, claim.QAPower)
+	if claim.Power.GreaterThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", nominal, claim.Power)
 	}
 
 	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
@@ -275,12 +275,12 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
-		rawBytePower := params.Weight.SectorSize
+		// rawBytePower := params.Weight.SectorSize
 		qapower := QAPowerForWeight(&params.Weight)
 
 		totalPledge := big.Zero() // TODO: get total pledge from somewhere
 		pledge = InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), totalPledge, epochReward)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), &params.Weight, pledge)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), qapower, pledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 		}
