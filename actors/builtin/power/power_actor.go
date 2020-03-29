@@ -574,6 +574,19 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	if err := a.processDeferredCronEvents(rt); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
+
+	var st State
+	rt.State().Readonly(&st)
+
+	// update network KPI in RewardActor
+	_, code := rt.Send(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.UpdateNetworkKPI,
+		&st.TotalRawBytePower,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to update network KPI with Reward Actor")
+
 	return nil
 }
 

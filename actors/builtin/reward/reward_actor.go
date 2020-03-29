@@ -31,6 +31,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.AwardBlockReward,
 		3:                         a.WithdrawReward,
 		4:                         a.PerEpochReward,
+		5:                         a.UpdateNetworkKPI,
 	}
 }
 
@@ -153,4 +154,33 @@ func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCoun
 	treasury := big.Sub(balance, st.RewardTotal)
 	targetReward := big.Mul(BlockRewardTarget, big.NewInt(ticketCount))
 	return big.Min(targetReward, treasury)
+}
+
+func (a Actor) newBaselinePower(st *State) abi.StoragePower {
+	// TODO: this is not the final baseline
+	return big.NewInt(1152921504606846976)
+}
+
+func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) abi.ChainEpoch {
+	// TODO: this function depends on the final baselin
+	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
+	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1152921504606846976)).Int64())
+}
+
+func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower abi.StoragePower) {
+	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		newBaselinePower := a.newBaselinePower(&st)
+		st.BaselinePower = newBaselinePower
+		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
+
+		st.RealizedPower = currRealizedPower
+		st.CumsumRealized = big.Add(st.CumsumRealized, currRealizedPower)
+
+		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
+
+		return nil
+	})
 }

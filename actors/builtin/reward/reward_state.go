@@ -12,6 +12,12 @@ import (
 )
 
 type State struct {
+	BaselinePower abi.StoragePower
+	RealizedPower abi.StoragePower
+	CumsumBaseline abi.Spacetime
+	CumsumRealized abi.Spacetime
+	EffectiveNetworkTime abi.ChainEpoch
+
 	RewardMap   cid.Cid         // HAMT[Address]AMT[Reward]
 	RewardTotal abi.TokenAmount // Sum of un-withdrawn rewards.
 }
