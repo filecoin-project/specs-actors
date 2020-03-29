@@ -1,8 +1,6 @@
 package reward
 
 import (
-	"fmt"
-
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
@@ -118,8 +116,8 @@ func (r *Reward) AmountVested(currEpoch abi.ChainEpoch) abi.TokenAmount {
 		}
 
 		// totalReward * elapsedEpoch / vestDuration
-		return big.Mul(r.Value, big.NewInt(int64(elapsed/vestDuration)))
+		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsed))), big.NewInt(int64(vestDuration)))
 	default:
-		panic(fmt.Sprintf("invalid vesting function %v", r.VestingFunction))
+		return abi.NewTokenAmount(0)
 	}
 }
