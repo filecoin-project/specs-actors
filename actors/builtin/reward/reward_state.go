@@ -112,7 +112,6 @@ func (r *Reward) AmountVested(currEpoch abi.ChainEpoch) abi.TokenAmount {
 		return r.Value
 	case Linear:
 		elapsed := currEpoch - r.StartEpoch
-
 		vestDuration := r.EndEpoch - r.StartEpoch
 		if elapsed >= vestDuration {
 			return r.Value
@@ -122,6 +121,5 @@ func (r *Reward) AmountVested(currEpoch abi.ChainEpoch) abi.TokenAmount {
 		return big.Mul(r.Value, big.NewInt(int64(elapsed/vestDuration)))
 	default:
 		panic(fmt.Sprintf("invalid vesting function %v", r.VestingFunction))
-
 	}
 }
