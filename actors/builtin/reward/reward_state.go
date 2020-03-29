@@ -115,7 +115,8 @@ func (r *Reward) AmountVested(currEpoch abi.ChainEpoch) abi.TokenAmount {
 			return r.Value
 		}
 
-		// totalReward * elapsedEpoch / vestDuration
+		// (totalReward * elapsedEpoch) / vestDuration
+		// Division must be done last to avoid precision loss with integer values
 		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsed))), big.NewInt(int64(vestDuration)))
 	default:
 		return abi.NewTokenAmount(0)
