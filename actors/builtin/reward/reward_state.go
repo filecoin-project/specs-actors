@@ -103,19 +103,21 @@ func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch a
 	return withdrawableSum, nil
 }
 
+// AmountVested returns the `TokenAmount` value of funds vested in the reward at an epoch
 func (r *Reward) AmountVested(currEpoch abi.ChainEpoch) abi.TokenAmount {
-	elapsed := currEpoch - r.StartEpoch
 	switch r.VestingFunction {
 	case None:
 		return r.Value
 	case Linear:
-		vestDuration := big.Sub(big.NewInt(int64(r.EndEpoch)), big.NewInt(int64(r.StartEpoch)))
-		if big.NewInt(int64(elapsed)).GreaterThanEqual(vestDuration) {
+		elapsed := currEpoch - r.StartEpoch
+		vestDuration := r.EndEpoch - r.StartEpoch
+		if elapsed >= vestDuration {
 			return r.Value
 		}
 
-		// totalReward * elapsedEpoch / vestDuration
-		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsed))), vestDuration)
+		// (totalReward * elapsedEpoch) / vestDuration
+		// Division must be done last to avoid precision loss with integer values
+		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsed))), big.NewInt(int64(vestDuration)))
 	default:
 		return abi.NewTokenAmount(0)
 	}
