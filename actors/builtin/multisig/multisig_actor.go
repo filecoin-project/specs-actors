@@ -1,6 +1,7 @@
 package multisig
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
@@ -288,13 +289,13 @@ func (ahd *ApprovalHashData) Serialize() ([]byte, error) {
 }
 
 func (a Actor) getApprovalHash(rt vmr.Runtime, txn Transaction) [32]byte {
-        hashData := ApprovalHashData {
+        hashData := ApprovalHashData{
                 MsigWallet: rt.Message().Receiver(),
-                Requester : txn.Approved[0],
-                To        : txn.To,
-                Value     : txn.Value,
-                Method    : txn.Method,
-                Params    : txn.Params,
+                Requester:  txn.Approved[0],
+                To:         txn.To,
+                Value:      txn.Value,
+                Method:     txn.Method,
+                Params:     txn.Params,
         }
 
         data, err := hashData.Serialize()
