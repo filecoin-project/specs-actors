@@ -161,6 +161,12 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
 		}
 
+                // confirm the hashes match
+                calculatedHash := a.getApprovalHash(rt, txn)
+                if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
+                        rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+                }
+
 		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
 		}
