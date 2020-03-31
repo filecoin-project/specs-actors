@@ -18,7 +18,6 @@ import (
 type State struct {
 	TotalRawBytePower    abi.StoragePower
 	TotalQualityAdjPower abi.StoragePower
-	TotalNetworkPower    abi.StoragePower
 	MinerCount           int64
 
 	// The balances of pledge collateral for each miner actually held by this actor.
@@ -44,8 +43,11 @@ type State struct {
 }
 
 type Claim struct {
-	// Sum of power for a miner's sectors.
-	Power abi.StoragePower
+	// Sum of raw byte power for a miner's sectors.
+	RawBytePower abi.StoragePower
+
+	// Sum of quality adjusted power for a miner's sectors.
+	QualityAdjPower abi.StoragePower
 
 	// Sum of pledge requirement for a miner's sectors.
 	Pledge abi.TokenAmount
@@ -81,7 +83,8 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return false, errors.Errorf("no claim for actor %v", miner)
 	}
 
-	minerNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	// nominal power will be in quality adjusted power
+	minerNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
 	if err != nil {
 		return false, err
 	}
@@ -109,7 +112,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		if err != nil {
 			return err
 		}
-		nominalPower, err := st.computeNominalPower(s, maddr, claimed.Power)
+		nominalPower, err := st.computeNominalPower(s, maddr, claimed.QualityAdjPower)
 		if err != nil {
 			return err
 		}
@@ -159,7 +162,7 @@ func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amoun
 }
 
 // Parameters may be negative to subtract.
-func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, pledge abi.TokenAmount) error {
+func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower, pledge abi.TokenAmount) error {
 	claim, ok, err := st.getClaim(s, miner)
 	if err != nil {
 		return err
@@ -168,19 +171,19 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
-	oldNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	oldNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
 	if err != nil {
 		return err
 	}
 
 	// update pledge and power
 	// TODO: ZX, update to ensure that pledge is appropriate for given power update
-	claim.Power = big.Add(claim.Power, power)
-	// TODO: CE: raw byte power
+	claim.RawBytePower = big.Add(claim.RawBytePower, power)
+	claim.QualityAdjPower = big.Add(claim.QualityAdjPower, qapower)
 
 	claim.Pledge = big.Add(claim.Pledge, pledge)
 
-	newNominalPower, err := st.computeNominalPower(s, miner, claim.Power)
+	newNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
 	if err != nil {
 		return err
 	}
@@ -197,18 +200,22 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		if prevBelow && !stillBelow {
 			// just passed min miner size
 			st.NumMinersMeetingMinPower++
-			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, newNominalPower)
+			st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newNominalPower)
+			st.TotalRawBytePower = big.Add(st.TotalRawBytePower, claim.RawBytePower)
 		} else if !prevBelow && stillBelow {
 			// just went below min miner size
 			st.NumMinersMeetingMinPower--
-			st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, oldNominalPower)
+			st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldNominalPower)
+			st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
 		} else if !prevBelow && !stillBelow {
 			// Was above the threshold, still above
-			st.TotalNetworkPower = big.Add(st.TotalNetworkPower, power)
+			st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, qapower)
+			st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
 		}
 	}
 
-	AssertMsg(claim.Power.GreaterThanEqual(big.Zero()), "negative claimed power: %v", claim.Power)
+	AssertMsg(claim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", claim.RawBytePower)
+	AssertMsg(claim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", claim.QualityAdjPower)
 	AssertMsg(claim.Pledge.GreaterThanEqual(big.Zero()), "negative claimed pledge: %v", claim.Pledge)
 	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
 	return st.setClaim(s, miner, claim)
@@ -254,7 +261,7 @@ func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 	}
 	// could be made more efficient by just taking claimed power given
 	// how computeNominal currently works, but that could change.
-	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
+	nominalPower, err := st.computeNominalPower(s, a, claim.QualityAdjPower)
 	if err != nil {
 		return err
 	}
@@ -286,14 +293,15 @@ func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 	if !ok {
 		return errors.Errorf("no claim for actor %v", a)
 	}
-	nominalPower, err := st.computeNominalPower(s, a, claim.Power)
+	nominalPower, err := st.computeNominalPower(s, a, claim.QualityAdjPower)
 	if err != nil {
 		return err
 	}
 	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
 		// just regained a miner > min size
 		st.NumMinersMeetingMinPower++
-		st.TotalNetworkPower = big.Add(st.TotalNetworkPower, claim.Power)
+		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, claim.RawBytePower)
+		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, claim.QualityAdjPower)
 	}
 
 	return nil
@@ -350,7 +358,8 @@ func (st *State) getClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
 }
 
 func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
-	Assert(claim.Power.GreaterThanEqual(big.Zero()))
+	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
+	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 	Assert(claim.Pledge.GreaterThanEqual(big.Zero()))
 
 	hm := adt.AsMap(s, st.Claims)
