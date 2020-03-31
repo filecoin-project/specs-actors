@@ -378,6 +378,14 @@ type OnSectorModifyWeightDescParams struct {
 // Returns new pledge collateral requirement, now committed in place of the old.
 func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
+
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.PerEpochReward, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
+	var epochReward abi.TokenAmount
+	if err := rwret.Into(&epochReward); err != nil {
+		rt.Abortf(exitcode.SysErrInternal, "failed to unmarshal epoch reward value: %s", err)
+	}
+
 	var newPledge abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -388,7 +396,6 @@ func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeight
 		}
 
 		totalPledge := big.Zero() // TODO:
-		epochReward := big.Zero() // TODO:
 
 		newPower := QAPowerForWeight(&params.NewWeight)
 		newPledge = InitialPledgeForWeight(newPower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), totalPledge, epochReward)
