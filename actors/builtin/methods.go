@@ -31,7 +31,8 @@ var MethodsReward = struct {
 	Constructor      abi.MethodNum
 	AwardBlockReward abi.MethodNum
 	WithdrawReward   abi.MethodNum
-}{MethodConstructor, 2, 3}
+	PerEpochReward   abi.MethodNum
+}{MethodConstructor, 2, 3, 4}
 
 var MethodsMultisig = struct {
 	Constructor                 abi.MethodNum

@@ -19,12 +19,17 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{136}); err != nil {
+	if _, err := w.Write([]byte{137}); err != nil {
 		return err
 	}
 
-	// t.TotalNetworkPower (big.Int) (struct)
-	if err := t.TotalNetworkPower.MarshalCBOR(w); err != nil {
+	// t.TotalRawBytePower (big.Int) (struct)
+	if err := t.TotalRawBytePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.TotalQualityAdjPower (big.Int) (struct)
+	if err := t.TotalQualityAdjPower.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -98,15 +103,24 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 8 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.TotalNetworkPower (big.Int) (struct)
+	// t.TotalRawBytePower (big.Int) (struct)
 
 	{
 
-		if err := t.TotalNetworkPower.UnmarshalCBOR(br); err != nil {
+		if err := t.TotalRawBytePower.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.TotalQualityAdjPower (big.Int) (struct)
+
+	{
+
+		if err := t.TotalQualityAdjPower.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
@@ -242,12 +256,17 @@ func (t *Claim) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{131}); err != nil {
 		return err
 	}
 
-	// t.Power (big.Int) (struct)
-	if err := t.Power.MarshalCBOR(w); err != nil {
+	// t.RawBytePower (big.Int) (struct)
+	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.QualityAdjPower (big.Int) (struct)
+	if err := t.QualityAdjPower.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -269,15 +288,24 @@ func (t *Claim) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Power (big.Int) (struct)
+	// t.RawBytePower (big.Int) (struct)
 
 	{
 
-		if err := t.Power.UnmarshalCBOR(br); err != nil {
+		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.QualityAdjPower (big.Int) (struct)
+
+	{
+
+		if err := t.QualityAdjPower.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 

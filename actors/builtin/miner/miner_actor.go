@@ -336,7 +336,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 				Duration:   precommit.Info.Expiration - rt.CurrEpoch(),
 			},
 		},
-		abi.NewTokenAmount(0),
+		rt.Message().ValueReceived(),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 	AssertNoError(ret.Into(&pledgeRequirement))
@@ -398,8 +398,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		})
 	}
 
+	pledgeRefund := big.Sub(rt.Message().ValueReceived(), pledgeRequirement)
+
 	// Return PreCommit deposit to worker upon successful ProveCommit.
-	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, precommit.PreCommitDeposit)
+	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, big.Add(precommit.PreCommitDeposit, pledgeRefund))
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
 }
