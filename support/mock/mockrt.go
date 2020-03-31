@@ -595,6 +595,10 @@ func (rt *Runtime) require(predicate bool, msg string, args ...interface{}) {
 	}
 }
 
+func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
+	panic("todo crypto econ")
+}
+
 type ReturnWrapper struct {
 	V runtime.CBORMarshaler
 }

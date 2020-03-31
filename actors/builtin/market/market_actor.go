@@ -221,6 +221,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 type VerifyDealsOnSectorProveCommitParams struct {
 	DealIDs      []abi.DealID
+	SectorSize   abi.SectorSize
 	SectorExpiry abi.ChainEpoch
 }
 
@@ -233,12 +234,13 @@ type VerifyDealsOnSectorProveCommitParams struct {
 func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *abi.DealWeight {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
-	totalWeight := big.Zero()
+	totalDealSpaceTime := big.Zero()
+	dealWeight := big.Zero()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		// if there are no dealIDs, it is a CommittedCapacity sector
-		// and the totalWeight should be zero
+		// and the totalDealSpaceTime should be zero
 		states := AsDealStateArray(adt.AsStore(rt), st.States)
 		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 
@@ -263,14 +265,18 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 			// Compute deal weight
 			dur := big.NewInt(int64(proposal.Duration()))
 			siz := big.NewIntUnsigned(uint64(proposal.PieceSize))
-			weight := big.Mul(dur, siz)
-			totalWeight = big.Add(totalWeight, weight)
+			dealSpaceTime := big.Mul(dur, siz)
+			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
 		}
 		st.States = states.Root()
 
+		sectorSpaceTime := big.Mul(big.NewInt(int64(params.SectorSize)), big.NewInt(int64(params.SectorExpiry-rt.CurrEpoch())))
+
+		dealWeight = big.Div(totalDealSpaceTime, sectorSpaceTime)
+
 		return nil
 	})
-	return &totalWeight
+	return &dealWeight
 }
 
 type ComputeDataCommitmentParams struct {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	bitfield "github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-bitfield"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"

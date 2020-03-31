@@ -205,7 +205,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		store := adt.AsStore(rt)
 		err = st.setMinerBalance(store, addresses.IDAddress, rt.Message().ValueReceived())
 		abortIfError(rt, err, "failed to set pledge balance")
-		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewTokenAmount(0)})
+		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0), abi.NewTokenAmount(0)})
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
 		}
@@ -245,8 +245,11 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 	if !found {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", nominal)
 	}
-	if claim.Power.GreaterThan(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with power %v", nominal, claim.Power)
+	if claim.RawBytePower.GreaterThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with raw byte power %v", nominal, claim.RawBytePower)
+	}
+	if claim.QualityAdjPower.GreaterThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with quality adjusted power %v", nominal, claim.QualityAdjPower)
 	}
 
 	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
@@ -266,15 +269,34 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var pledge abi.TokenAmount
 	var st State
+
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.PerEpochReward, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
+	var epochReward abi.TokenAmount
+	if err := rwret.Into(&epochReward); err != nil {
+		rt.Abortf(exitcode.SysErrInternal, "failed to unmarshal epoch reward value: %s", err)
+	}
+
 	rt.State().Transaction(&st, func() interface{} {
-		power := ConsensusPowerForWeight(&params.Weight)
-		pledge = PledgeForWeight(&params.Weight, st.TotalNetworkPower)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), power, pledge)
+		rbpower := big.NewIntUnsigned(uint64(params.Weight.SectorSize))
+		qapower := QAPowerForWeight(&params.Weight)
+
+		totalPledge := big.Zero() // TODO: get total pledge from somewhere
+		pledge = InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), totalPledge, epochReward)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower, qapower, pledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 		}
 		return nil
 	})
+
+	if big.Cmp(rt.Message().ValueReceived(), pledge) < 0 {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for pledge")
+	}
+
+	refund := big.Sub(rt.Message().ValueReceived(), pledge)
+	_, code = rt.Send(rt.Message().Caller(), 0, nil, refund) // TODO: maybe runtime should have a refund method to make this less obnoxious
+	builtin.RequireSuccess(rt, code, "failed to refund")
 
 	return &pledge
 }
@@ -291,8 +313,8 @@ func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *a
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeights(params.Weights)
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, power.Neg(), params.Pledge.Neg())
+		rbpower, qapower := powersForWeights(params.Weights)
+		err := st.AddToClaim(adt.AsStore(rt), minerAddr, rbpower.Neg(), qapower.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
@@ -315,8 +337,8 @@ func (a Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSector
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeights(params.Weights)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), power.Neg(), params.Pledge.Neg())
+		rbpower, qapower := powersForWeights(params.Weights)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower.Neg(), qapower.Neg(), params.Pledge.Neg())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
@@ -336,8 +358,8 @@ func (a Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorTe
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		power := consensusPowerForWeights(params.Weights)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), power, params.Pledge)
+		rbpower, qapower := powersForWeights(params.Weights)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower, qapower, params.Pledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add claimed power for sector: %v", err)
 		}
@@ -356,18 +378,28 @@ type OnSectorModifyWeightDescParams struct {
 // Returns new pledge collateral requirement, now committed in place of the old.
 func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
+
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.PerEpochReward, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
+	var epochReward abi.TokenAmount
+	if err := rwret.Into(&epochReward); err != nil {
+		rt.Abortf(exitcode.SysErrInternal, "failed to unmarshal epoch reward value: %s", err)
+	}
+
 	var newPledge abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		prevPower := ConsensusPowerForWeight(&params.PrevWeight)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), prevPower.Neg(), params.PrevPledge.Neg())
+		prevPower := QAPowerForWeight(&params.PrevWeight)
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), big.NewIntUnsigned(uint64(params.PrevWeight.SectorSize)).Neg(), prevPower.Neg(), params.PrevPledge.Neg())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
 		}
 
-		newPower := ConsensusPowerForWeight(&params.NewWeight)
-		newPledge = PledgeForWeight(&params.NewWeight, st.TotalNetworkPower)
-		err = st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), newPower, newPledge)
+		totalPledge := big.Zero() // TODO:
+
+		newPower := QAPowerForWeight(&params.NewWeight)
+		newPledge = InitialPledgeForWeight(newPower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), totalPledge, epochReward)
+		err = st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), big.NewIntUnsigned(uint64(params.NewWeight.SectorSize)), newPower, newPledge)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add power for sector: %v", err)
 		}
@@ -431,9 +463,10 @@ func (a Actor) OnMinerWindowedPoStFailure(rt Runtime, params *OnMinerWindowedPoS
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to find miner power in claimed power table for surprise PoSt failure")
 		}
 
-		if claim.Power.GreaterThanEqual(ConsensusMinerMinPower) {
+		if claim.QualityAdjPower.GreaterThanEqual(ConsensusMinerMinPower) {
 			// Ensure we only deduct this once...
-			st.TotalNetworkPower = big.Sub(st.TotalNetworkPower, claim.Power)
+			st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
+			st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
 		}
 		return nil
 	})
@@ -501,7 +534,8 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		if !powerOk {
 			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", fault.Target)
 		}
-		Assert(claim.Power.GreaterThanEqual(big.Zero()))
+		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
+		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
 		currBalance, err := st.getMinerBalance(store, fault.Target)
 		abortIfError(rt, err, "failed to get miner pledge balance")
@@ -662,12 +696,15 @@ func validatePledgeAccount(rt Runtime, addr addr.Address) {
 	}
 }
 
-func consensusPowerForWeights(weights []SectorStorageWeightDesc) abi.StoragePower {
-	power := big.Zero()
+func powersForWeights(weights []SectorStorageWeightDesc) (abi.StoragePower, abi.StoragePower) {
+	// returns (rbpower, qapower)
+	rbpower := big.Zero()
+	qapower := big.Zero()
 	for i := range weights {
-		power = big.Add(power, ConsensusPowerForWeight(&weights[i]))
+		rbpower = big.Add(rbpower, big.NewIntUnsigned(uint64(weights[i].SectorSize)))
+		qapower = big.Add(qapower, QAPowerForWeight(&weights[i]))
 	}
-	return power
+	return rbpower, qapower
 }
 
 func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {
