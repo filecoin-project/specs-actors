@@ -4,9 +4,10 @@ package abi
 
 import (
 	"fmt"
+	"io"
+
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
-	"io"
 )
 
 var _ = xerrors.Errorf

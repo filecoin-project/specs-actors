@@ -53,7 +53,8 @@ func TestConstruction(t *testing.T) {
 		var st power.State
 		rt.GetState(&st)
 		assert.Equal(t, int64(1), st.MinerCount)
-		assert.Equal(t, abi.NewStoragePower(0), st.TotalNetworkPower)
+		assert.Equal(t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
+		assert.Equal(t, abi.NewStoragePower(0), st.TotalRawBytePower)
 		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
 
 		claim := adt.AsMap(adt.AsStore(rt), st.Claims)
@@ -64,7 +65,7 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
+		assert.Equal(t, power.Claim{big.Zero(), big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		escrowTable := adt.AsMap(adt.AsStore(rt), st.EscrowTable)
 		keys, err = escrowTable.CollectKeys()
@@ -162,7 +163,8 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 
 	var st power.State
 	rt.GetState(&st)
-	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalNetworkPower)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePower)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
 
