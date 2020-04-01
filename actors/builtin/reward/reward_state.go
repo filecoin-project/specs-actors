@@ -11,19 +11,15 @@ import (
 )
 
 type State struct {
-	BaselinePower abi.StoragePower
-	RealizedPower abi.StoragePower
-	CumsumBaseline abi.Spacetime
-	CumsumRealized abi.Spacetime
+	BaselinePower        abi.StoragePower
+	RealizedPower        abi.StoragePower
+	CumsumBaseline       abi.Spacetime
+	CumsumRealized       abi.Spacetime
 	EffectiveNetworkTime abi.ChainEpoch
 
-	RewardMap   cid.Cid         // HAMT[Address]AMT[Reward]
+	RewardMap cid.Cid // HAMT[Address]AMT[Reward]
 
-	LambdaNum big.Int
-	LambdaDen	big.Int
-	SimpleTotal abi.TokenAmount // constant total
-	SimpleSupply abi.TokenAmount // current supply
-	BaselineTotal abi.TokenAmount // constant total
+	SimpleSupply   abi.TokenAmount // current supply
 	BaselineSupply abi.TokenAmount // current supply
 
 	LastPerEpochReward abi.TokenAmount
@@ -46,22 +42,26 @@ const (
 
 type AddrKey = adt.AddrKey
 
+const BlockTimeSeconds = 30
+
+var LambdaNum = big.NewInt(-69314718056 * BlockTimeSeconds)
+var LambdaDen = big.Mul(big.NewInt(6*365*24*60*60), big.NewInt(100000000000))
+
+var SimpleTotal = big.NewInt(1000000)
+var BaselineTotal = big.NewInt(1000000)
+
 func ConstructState(emptyMultiMapCid cid.Cid) *State {
 	return &State{
-		RewardMap:   emptyMultiMapCid,
-		BaselinePower: big.Zero(),
-		RealizedPower: big.Zero(),
-		CumsumBaseline: big.Zero(),
-		CumsumRealized: big.Zero(),
+		RewardMap:            emptyMultiMapCid,
+		BaselinePower:        big.Zero(),
+		RealizedPower:        big.Zero(),
+		CumsumBaseline:       big.Zero(),
+		CumsumRealized:       big.Zero(),
 		EffectiveNetworkTime: abi.ChainEpoch(int64(0)),
 
 		// MintRate: ln(0.5)/half_life_in_epoch
-		LambdaNum: big.NewInt(-69314718056),
-		LambdaDen: big.NewInt(6 * 365 * 24 * 60 * 2 * 100000000000),
 
-		SimpleTotal: big.NewInt(1000000),
-		SimpleSupply: big.Zero(),
-		BaselineTotal: big.NewInt(1000000),
+		SimpleSupply:   big.Zero(),
 		BaselineSupply: big.Zero(),
 	}
 }
@@ -74,12 +74,14 @@ func factorial(x int64) int64 {
 }
 
 // Return taylor series expansion of e^(-lambda*t)
-func (st *State) tsExpansion(t abi.ChainEpoch) big.Int {
+func (st *State) taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
 	ret := big.Zero()
+	bigt := big.NewInt(int64(t))
+
 	for n := int64(0); n < int64(5); n++ {
 		exponent := big.NewInt(n)
-		numerator := big.Mul(big.Exp(st.LambdaNum.Neg(), exponent), big.Exp(big.NewInt(int64(t)), exponent))
-		denominator := big.Mul(big.Exp(st.LambdaDen, exponent), big.NewInt(factorial(int64(n))))
+		numerator := big.Exp(big.Mul(LambdaNum.Neg(), bigt), exponent)
+		denominator := big.Mul(big.Exp(LambdaDen, exponent), big.NewInt(factorial(int64(n))))
 		ret = big.Add(ret, big.Div(numerator, denominator))
 	}
 

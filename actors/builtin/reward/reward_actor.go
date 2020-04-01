@@ -145,13 +145,16 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.Emp
 }
 
 func (a Actor) PerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
-	panic("todo: zx")
+	var st State
+	rt.State().Readonly(&st)
+
+	return st.LastPerEpochReward
 }
 
 func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
 	// TODO: PARAM_FINISH
-	newSimpleSupply := big.Mul(st.SimpleTotal, st.tsExpansion(clockTime))
-	newBaselineSupply := big.Mul(st.BaselineTotal, st.tsExpansion(networkTime))
+	newSimpleSupply := big.Mul(SimpleTotal, st.taylorSeriesExpansion(clockTime))
+	newBaselineSupply := big.Mul(BaselineTotal, st.taylorSeriesExpansion(networkTime))
 
 	newSimpleMinted := big.Sub(newSimpleSupply, st.SimpleSupply)
 	newBaselineMinted := big.Sub(newBaselineSupply, st.BaselineSupply)
@@ -173,7 +176,7 @@ func (a Actor) newBaselinePower(st *State) abi.StoragePower {
 func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) abi.ChainEpoch {
 	// TODO: this function depends on the final baselin
 	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
-	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1 << 60)).Int64())
+	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1<<60)).Int64())
 }
 
 func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower abi.StoragePower) {

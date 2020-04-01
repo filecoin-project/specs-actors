@@ -65,5 +65,4 @@ func (h *rewardHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.GetState(&st)
 	emptyMap := adt.AsMultimap(adt.AsStore(rt), st.RewardMap)
 	assert.Equal(h.t, emptyMap.Root(), st.RewardMap)
-	assert.Equal(h.t, big.Zero(), st.RewardTotal)
 }
