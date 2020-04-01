@@ -29,9 +29,9 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.RewardTotal (big.Int) (struct)
-	if err := t.RewardTotal.MarshalCBOR(w); err != nil {
-		return err
-	}
+	// if err := t.RewardTotal.MarshalCBOR(w); err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
@@ -66,9 +66,9 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		if err := t.RewardTotal.UnmarshalCBOR(br); err != nil {
-			return err
-		}
+		// if err := t.RewardTotal.UnmarshalCBOR(br); err != nil {
+		// 	return err
+		// }
 
 	}
 	return nil

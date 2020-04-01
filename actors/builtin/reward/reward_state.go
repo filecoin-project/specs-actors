@@ -7,7 +7,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -19,7 +18,15 @@ type State struct {
 	EffectiveNetworkTime abi.ChainEpoch
 
 	RewardMap   cid.Cid         // HAMT[Address]AMT[Reward]
-	RewardTotal abi.TokenAmount // Sum of un-withdrawn rewards.
+
+	LambdaNum big.Int
+	LambdaDen	big.Int
+	SimpleTotal abi.TokenAmount // constant total
+	SimpleSupply abi.TokenAmount // current supply
+	BaselineTotal abi.TokenAmount // constant total
+	BaselineSupply abi.TokenAmount // current supply
+
+	LastPerEpochReward abi.TokenAmount
 }
 
 type Reward struct {
@@ -42,8 +49,41 @@ type AddrKey = adt.AddrKey
 func ConstructState(emptyMultiMapCid cid.Cid) *State {
 	return &State{
 		RewardMap:   emptyMultiMapCid,
-		RewardTotal: big.Zero(),
+		BaselinePower: big.Zero(),
+		RealizedPower: big.Zero(),
+		CumsumBaseline: big.Zero(),
+		CumsumRealized: big.Zero(),
+		EffectiveNetworkTime: abi.ChainEpoch(int64(0)),
+
+		// MintRate: ln(0.5)/half_life_in_epoch
+		LambdaNum: big.NewInt(-69314718056),
+		LambdaDen: big.NewInt(6 * 365 * 24 * 60 * 2 * 100000000000),
+
+		SimpleTotal: big.NewInt(1000000),
+		SimpleSupply: big.Zero(),
+		BaselineTotal: big.NewInt(1000000),
+		BaselineSupply: big.Zero(),
 	}
+}
+
+func factorial(x int64) int64 {
+	if x == 0 {
+		return 1
+	}
+	return x * factorial(x-1)
+}
+
+// Return taylor series expansion of e^(-lambda*t)
+func (st *State) tsExpansion(t abi.ChainEpoch) big.Int {
+	ret := big.Zero()
+	for n := int64(0); n < int64(5); n++ {
+		exponent := big.NewInt(n)
+		numerator := big.Mul(big.Exp(st.LambdaNum.Neg(), exponent), big.Exp(big.NewInt(int64(t)), exponent))
+		denominator := big.Mul(big.Exp(st.LambdaDen, exponent), big.NewInt(factorial(int64(n))))
+		ret = big.Add(ret, big.Div(numerator, denominator))
+	}
+
+	return ret
 }
 
 func (st *State) addReward(store adt.Store, owner addr.Address, reward *Reward) error {
@@ -54,7 +94,6 @@ func (st *State) addReward(store adt.Store, owner addr.Address, reward *Reward) 
 		return errors.Wrap(err, "failed to add reward")
 	}
 	st.RewardMap = rewards.Root()
-	st.RewardTotal = big.Add(st.RewardTotal, reward.Value)
 	return nil
 }
 
@@ -92,9 +131,6 @@ func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch a
 		return big.Zero(), err
 	}
 
-	AssertMsg(withdrawableSum.LessThan(st.RewardTotal), "withdrawable %v exceeds recorded prior total %v",
-		withdrawableSum, st.RewardTotal)
-
 	// Replace old reward list for this key with the updated list.
 	if err := rewards.RemoveAll(key); err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to remove rewards")
@@ -105,7 +141,6 @@ func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch a
 		}
 	}
 	st.RewardMap = rewards.Root()
-	st.RewardTotal = big.Sub(st.RewardTotal, withdrawableSum)
 	return withdrawableSum, nil
 }
 

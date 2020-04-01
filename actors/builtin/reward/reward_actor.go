@@ -84,7 +84,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	var penalty abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward), params.TicketCount)
+		blockReward := a.computePerEpochReward(&st, rt.CurrEpoch(), st.EffectiveNetworkTime, params.TicketCount)
 		totalReward := big.Add(blockReward, params.GasReward)
 
 		// Cap the penalty at the total reward value.
@@ -148,23 +148,32 @@ func (a Actor) PerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount
 	panic("todo: zx")
 }
 
-func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCount int64) abi.TokenAmount {
-	// TODO: this is definitely not the final form of the block reward function.
-	// The eventual form will be some kind of exponential decay.
-	treasury := big.Sub(balance, st.RewardTotal)
-	targetReward := big.Mul(BlockRewardTarget, big.NewInt(ticketCount))
-	return big.Min(targetReward, treasury)
+func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
+	// TODO: PARAM_FINISH
+	newSimpleSupply := big.Mul(st.SimpleTotal, st.tsExpansion(clockTime))
+	newBaselineSupply := big.Mul(st.BaselineTotal, st.tsExpansion(networkTime))
+
+	newSimpleMinted := big.Sub(newSimpleSupply, st.SimpleSupply)
+	newBaselineMinted := big.Sub(newBaselineSupply, st.BaselineSupply)
+
+	st.SimpleSupply = newSimpleSupply
+	st.BaselineSupply = newBaselineSupply
+
+	perEpochReward := big.Add(newSimpleMinted, newBaselineMinted)
+	st.LastPerEpochReward = perEpochReward
+
+	return perEpochReward
 }
 
 func (a Actor) newBaselinePower(st *State) abi.StoragePower {
 	// TODO: this is not the final baseline
-	return big.NewInt(1152921504606846976)
+	return big.NewInt(1 << 60)
 }
 
 func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) abi.ChainEpoch {
 	// TODO: this function depends on the final baselin
 	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
-	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1152921504606846976)).Int64())
+	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1 << 60)).Int64())
 }
 
 func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower abi.StoragePower) {
