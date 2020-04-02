@@ -85,7 +85,6 @@ func Rsh(a Int, n uint) Int {
 	return Int{big.NewInt(0).Rsh(a.Int, n)}
 }
 
-// TODO: check this
 func BitLen(a Int) uint {
 	return uint(a.Int.BitLen())
 }
@@ -217,7 +216,7 @@ func (bi *Int) MarshalBinary() ([]byte, error) {
 	if bi.Int == nil {
 		zero := Zero()
 		return zero.Bytes()
-	}	
+	}
 	return bi.Bytes()
 }
 
