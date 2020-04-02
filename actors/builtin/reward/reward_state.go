@@ -46,13 +46,14 @@ const BlockTimeSeconds = 30
 const SecondsInYear = 31556925
 const FixedPoint = 97 // bit of precision for the minting function
 
-// TODO: load in the number here
-var LambdaNum = big.NewInt(-69314718056 * BlockTimeSeconds)
-var LambdaDen = big.Mul(big.NewInt(6 * SecondsInYear), big.NewInt(100000000000))
+var LambdaNumBase, _ = big.FromString("6931471805599453094172321215")
+var LambdaNum = big.Mul(big.NewInt(BlockTimeSeconds), LambdaNumBase)
+var LambdaDenBase, _ = big.FromString("10000000000000000000000000000")
+var LambdaDen = big.Mul(big.NewInt(6*SecondsInYear), LambdaDenBase)
 
-// TODO: placeholder but unit should be attoFIL
-var SimpleTotal = big.NewInt(1000000)
-var BaselineTotal = big.NewInt(1000000)
+// These numbers are placeholders, but should be in units of attoFIL
+var SimpleTotal, _ = big.FromString("1000000000000000000000000")
+var BaselineTotal, _ = big.FromString("1000000000000000000000000")
 
 func ConstructState(emptyMultiMapCid cid.Cid) *State {
 	return &State{
@@ -73,7 +74,7 @@ func ConstructState(emptyMultiMapCid cid.Cid) *State {
 // Return taylor series expansion of 1-e^(-lambda*t)
 // except that it is multiplied by 2^FixedPoint
 // divide by 2^FixedPoint before using the return value
-func (st *State) taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
+func taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
 	numeratorBase := big.Mul(LambdaNum.Neg(), big.NewInt(int64(t)))
 	numerator := numeratorBase.Neg()
 	denominator := LambdaDen
