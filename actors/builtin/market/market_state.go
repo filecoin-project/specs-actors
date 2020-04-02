@@ -2,6 +2,7 @@ package market
 
 import (
 	"bytes"
+	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
@@ -69,6 +70,7 @@ func (st *State) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) 
 		rt.Abortf(exitcode.ErrIllegalState, "foreach error %v", err)
 	}
 
+	fmt.Println("[updatePendingDealStatesForParty]")
 	amountSlashedTotal = st.updatePendingDealStates(rt, extractedDealIDs, epoch)
 	return
 }
@@ -90,6 +92,16 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 	deal := st.mustGetDeal(rt, dealID)
 	state := st.mustGetDealState(rt, dealID)
 
+	fmt.Println()
+	fmt.Println()
+	fmt.Println()
+	fmt.Println("deal.MarshalCBOR")
+	fmt.Println()
+	fmt.Printf("deal: %+v\n", deal)
+	fmt.Println()
+	fmt.Println()
+	fmt.Println()
+
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
 	everSlashed := state.SlashEpoch != epochUndefined
 
@@ -106,6 +118,14 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		}
 		return
 	}
+
+	fmt.Println("*************")
+	fmt.Println("")
+	fmt.Println("")
+	fmt.Printf("[updatePendingDealState] deal.StartEpoch=%d, epoch=%d\n", deal.StartEpoch, epoch)
+	fmt.Println("")
+	fmt.Println("")
+	fmt.Println("*************")
 
 	Assert(deal.StartEpoch <= epoch)
 

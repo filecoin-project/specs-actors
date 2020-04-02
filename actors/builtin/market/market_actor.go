@@ -1,6 +1,8 @@
 package market
 
 import (
+	"fmt"
+
 	addr "github.com/filecoin-project/go-address"
 
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -356,6 +358,7 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 	var slashed abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		fmt.Println("[HandleExpiredDeals]")
 		slashed = st.updatePendingDealStates(rt, params.Deals, rt.CurrEpoch())
 		return nil
 	})
