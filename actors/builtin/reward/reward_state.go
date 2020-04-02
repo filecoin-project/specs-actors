@@ -43,10 +43,14 @@ const (
 type AddrKey = adt.AddrKey
 
 const BlockTimeSeconds = 30
+const SecondsInYear = 31556925
+const FixedPoint = 97 // bit of precision for the minting function
 
+// TODO: load in the number here
 var LambdaNum = big.NewInt(-69314718056 * BlockTimeSeconds)
-var LambdaDen = big.Mul(big.NewInt(6*365*24*60*60), big.NewInt(100000000000))
+var LambdaDen = big.Mul(big.NewInt(6 * SecondsInYear), big.NewInt(100000000000))
 
+// TODO: placeholder but unit should be attoFIL
 var SimpleTotal = big.NewInt(1000000)
 var BaselineTotal = big.NewInt(1000000)
 
@@ -66,23 +70,31 @@ func ConstructState(emptyMultiMapCid cid.Cid) *State {
 	}
 }
 
-func factorial(x int64) int64 {
-	if x == 0 {
-		return 1
-	}
-	return x * factorial(x-1)
-}
-
-// Return taylor series expansion of e^(-lambda*t)
+// Return taylor series expansion of 1-e^(-lambda*t)
+// except that it is multiplied by 2^FixedPoint
+// divide by 2^FixedPoint before using the return value
 func (st *State) taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
+	numeratorBase := big.Mul(LambdaNum.Neg(), big.NewInt(int64(t)))
+	numerator := numeratorBase.Neg()
+	denominator := LambdaDen
 	ret := big.Zero()
-	bigt := big.NewInt(int64(t))
 
-	for n := int64(0); n < int64(5); n++ {
-		exponent := big.NewInt(n)
-		numerator := big.Exp(big.Mul(LambdaNum.Neg(), bigt), exponent)
-		denominator := big.Mul(big.Exp(LambdaDen, exponent), big.NewInt(factorial(int64(n))))
-		ret = big.Add(ret, big.Div(numerator, denominator))
+	for n := int64(1); n < int64(25); n++ {
+		denominator = big.Mul(denominator, big.NewInt(n))
+		term := big.Div(big.Lsh(numerator, FixedPoint), denominator)
+		ret = big.Add(ret, term)
+
+		denominator = big.Mul(denominator, LambdaDen)
+		numerator = big.Mul(numerator, numeratorBase)
+
+		denominatorLen := big.BitLen(denominator)
+		unnecessaryBits := denominatorLen - FixedPoint
+		if unnecessaryBits < 0 {
+			unnecessaryBits = 0
+		}
+
+		numerator = big.Rsh(numerator, unnecessaryBits)
+		denominator = big.Rsh(denominator, unnecessaryBits)
 	}
 
 	return ret

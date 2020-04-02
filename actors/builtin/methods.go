@@ -31,7 +31,7 @@ var MethodsReward = struct {
 	Constructor      abi.MethodNum
 	AwardBlockReward abi.MethodNum
 	WithdrawReward   abi.MethodNum
-	PerEpochReward   abi.MethodNum
+	LastPerEpochReward   abi.MethodNum
 	UpdateNetworkKPI abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5}
 

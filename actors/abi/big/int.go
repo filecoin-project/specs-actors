@@ -75,6 +75,21 @@ func Exp(a Int, e Int) Int {
 	return Int{big.NewInt(0).Exp(a.Int, e.Int, nil)}
 }
 
+// Returns x << n
+func Lsh(a Int, n uint) Int {
+	return Int{big.NewInt(0).Lsh(a.Int, n)}
+}
+
+// Returns x >> n
+func Rsh(a Int, n uint) Int {
+	return Int{big.NewInt(0).Rsh(a.Int, n)}
+}
+
+// TODO: check this
+func BitLen(a Int) uint {
+	return uint(a.Int.BitLen())
+}
+
 func Max(x, y Int) Int {
 	// taken from max.Max()
 	if x.Equals(Zero()) && x.Equals(y) {

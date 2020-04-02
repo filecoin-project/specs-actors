@@ -30,7 +30,7 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
 		3:                         a.WithdrawReward,
-		4:                         a.PerEpochReward,
+		4:                         a.LastPerEpochReward,
 		5:                         a.UpdateNetworkKPI,
 	}
 }
@@ -144,7 +144,7 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.Emp
 	return nil
 }
 
-func (a Actor) PerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
+func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
 	var st State
 	rt.State().Readonly(&st)
 
@@ -153,11 +153,11 @@ func (a Actor) PerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount
 
 func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
 	// TODO: PARAM_FINISH
-	newSimpleSupply := big.Mul(SimpleTotal, st.taylorSeriesExpansion(clockTime))
-	newBaselineSupply := big.Mul(BaselineTotal, st.taylorSeriesExpansion(networkTime))
+	newSimpleSupply := big.Rsh(big.Mul(SimpleTotal, st.taylorSeriesExpansion(clockTime)), FixedPoint)
+	newBaselineSupply := big.Rsh(big.Mul(BaselineTotal, st.taylorSeriesExpansion(networkTime)), FixedPoint)
 
-	newSimpleMinted := big.Sub(newSimpleSupply, st.SimpleSupply)
-	newBaselineMinted := big.Sub(newBaselineSupply, st.BaselineSupply)
+	newSimpleMinted := big.Max(big.Sub(newSimpleSupply, st.SimpleSupply), big.Zero())
+	newBaselineMinted := big.Max(big.Sub(newBaselineSupply, st.BaselineSupply), big.Zero())
 
 	st.SimpleSupply = newSimpleSupply
 	st.BaselineSupply = newBaselineSupply
