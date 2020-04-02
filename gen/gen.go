@@ -90,6 +90,7 @@ func main() {
 		// actor state
 		multisig.State{},
 		multisig.Transaction{},
+		multisig.ProposalHashData{},
 		// method params
 		multisig.ConstructorParams{},
 		multisig.ProposeParams{},

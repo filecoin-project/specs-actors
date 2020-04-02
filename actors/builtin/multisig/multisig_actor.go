@@ -33,6 +33,23 @@ type Transaction struct {
 	Approved []addr.Address
 }
 
+// Data for a BLAKE2B-256 to be attached to methods referencing proposals via TXIDs.
+// Ensures the existence of a cryptographic reference to the original proposal. Useful
+// for offline signers and for protection when reorgs change a multisig TXID.
+//
+// Requester - The requesting multisig wallet member.
+// All other fields - From the "Transaction" struct.
+//
+// Subtle point: The "To" field must be the multisig wallet address, otherwise the hash
+// loses much of its value, if not all of it.
+type ProposalHashData struct {
+        Requester addr.Address
+        To        addr.Address
+        Value     abi.TokenAmount
+        Method    abi.MethodNum
+        Params    []byte
+}
+
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
@@ -161,11 +178,11 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
 		}
 
-                // confirm the hashes match
-                calculatedHash := a.getApprovalHash(rt, txn)
-                if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
-                        rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
-                }
+		// confirm the hashes match
+		calculatedHash := a.getProposalHash(rt, txn)
+		if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
+			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+		}
 
 		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
@@ -286,30 +303,29 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (ahd *ApprovalHashData) Serialize() ([]byte, error) {
-        buf := new(bytes.Buffer)
-        if err := ahd.MarshalCBOR(buf); err != nil {
-                return nil, err
-        }
-        return buf.Bytes(), nil
+func (ahd *ProposalHashData) Serialize() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := ahd.MarshalCBOR(buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
-func (a Actor) getApprovalHash(rt vmr.Runtime, txn Transaction) [32]byte {
-        hashData := ApprovalHashData{
-                MsigWallet: rt.Message().Receiver(),
-                Requester:  txn.Approved[0],
-                To:         txn.To,
-                Value:      txn.Value,
-                Method:     txn.Method,
-                Params:     txn.Params,
-        }
+func (a Actor) getProposalHash(rt vmr.Runtime, txn Transaction) [32]byte {
+        hashData := ProposalHashData{
+                Requester: txn.Approved[0],
+                To:        txn.To,
+                Value:     txn.Value,
+                Method:    txn.Method,
+                Params:    txn.Params,
+	}
 
-        data, err := hashData.Serialize()
-        if err != nil {
-                rt.Abortf(exitcode.ErrIllegalState, "failed to construct multisig approval hash: %v", err)
-        }
+	data, err := hashData.Serialize()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct multisig approval hash: %v", err)
+	}
 
-        return blake2b.Sum256(data)
+	return blake2b.Sum256(data)
 }
 
 func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
@@ -354,6 +370,62 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {
 			if err := st.deletePendingTransaction(adt.AsStore(rt), txnID); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
+			}
+			return nil
+		})
+	}
+}
+
+func (a Actor) approveTransactionWithHash(rt vmr.Runtime, params *TxnIDParams) {
+	var st State
+	var txn Transaction
+	rt.State().Transaction(&st, func() interface{} {
+		var err error
+		txn, err = st.getPendingTransaction(adt.AsStore(rt), params.ID)
+		if err != nil {
+			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
+		}
+		// abort duplicate approval
+		for _, previousApprover := range txn.Approved {
+			if previousApprover == rt.Message().Caller() {
+				rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
+			}
+		}
+
+		// confirm the hashes match
+                calculatedHash := a.getProposalHash(rt, txn)
+		if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
+			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+		}
+
+		// update approved on the transaction
+		txn.Approved = append(txn.Approved, rt.Message().Caller())
+		if err = st.putPendingTransaction(adt.AsStore(rt), params.ID, txn); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
+		}
+		return nil
+	})
+
+	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
+	if thresholdMet {
+		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
+		}
+
+		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
+		_, code := rt.Send(
+			txn.To,
+			txn.Method,
+			vmr.CBORBytes(txn.Params),
+			txn.Value,
+		)
+		// The exit code is explicitly ignored. It's ok for the subcall to fail.
+		_ = code
+
+		// This could be rearranged to happen inside the first state transaction, before the send().
+		rt.State().Transaction(&st, func() interface{} {
+			if err := st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
 			return nil
