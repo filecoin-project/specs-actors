@@ -179,7 +179,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		}
 
 		// confirm the hashes match
-		calculatedHash := a.getProposalHash(rt, txn)
+                calculatedHash := a.GetProposalHash(rt, txn)
 		if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
 			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
 		}
@@ -308,10 +308,10 @@ func (ahd *ProposalHashData) Serialize() ([]byte, error) {
 	if err := ahd.MarshalCBOR(buf); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+        return buf.Bytes(), nil
 }
 
-func (a Actor) getProposalHash(rt vmr.Runtime, txn Transaction) [32]byte {
+func (a Actor) GetProposalHash(rt vmr.Runtime, txn Transaction) [32]byte {
         hashData := ProposalHashData{
                 Requester: txn.Approved[0],
                 To:        txn.To,
@@ -391,13 +391,13 @@ func (a Actor) approveTransactionWithHash(rt vmr.Runtime, params *TxnIDParams) {
 			if previousApprover == rt.Message().Caller() {
 				rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
 			}
-		}
+                }
 
-		// confirm the hashes match
-                calculatedHash := a.getProposalHash(rt, txn)
-		if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
-			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
-		}
+                // confirm the hashes match
+                calculatedHash := a.GetProposalHash(rt, txn)
+                if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
+                        rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+                }
 
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
