@@ -18,8 +18,39 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{137}); err != nil {
 		return err
+	}
+
+	// t.BaselinePower (big.Int) (struct)
+	if err := t.BaselinePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.RealizedPower (big.Int) (struct)
+	if err := t.RealizedPower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.CumsumBaseline (big.Int) (struct)
+	if err := t.CumsumBaseline.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.CumsumRealized (big.Int) (struct)
+	if err := t.CumsumRealized.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.EffectiveNetworkTime (abi.ChainEpoch) (int64)
+	if t.EffectiveNetworkTime >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.EffectiveNetworkTime))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.EffectiveNetworkTime)-1)); err != nil {
+			return err
+		}
 	}
 
 	// t.RewardMap (cid.Cid) (struct)
@@ -28,8 +59,18 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.RewardMap: %w", err)
 	}
 
-	// t.RewardTotal (big.Int) (struct)
-	if err := t.RewardTotal.MarshalCBOR(w); err != nil {
+	// t.SimpleSupply (big.Int) (struct)
+	if err := t.SimpleSupply.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.BaselineSupply (big.Int) (struct)
+	if err := t.BaselineSupply.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.LastPerEpochReward (big.Int) (struct)
+	if err := t.LastPerEpochReward.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -46,10 +87,71 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.BaselinePower (big.Int) (struct)
+
+	{
+
+		if err := t.BaselinePower.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.RealizedPower (big.Int) (struct)
+
+	{
+
+		if err := t.RealizedPower.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.CumsumBaseline (big.Int) (struct)
+
+	{
+
+		if err := t.CumsumBaseline.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.CumsumRealized (big.Int) (struct)
+
+	{
+
+		if err := t.CumsumRealized.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.EffectiveNetworkTime (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.EffectiveNetworkTime = abi.ChainEpoch(extraI)
+	}
 	// t.RewardMap (cid.Cid) (struct)
 
 	{
@@ -62,11 +164,29 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.RewardMap = c
 
 	}
-	// t.RewardTotal (big.Int) (struct)
+	// t.SimpleSupply (big.Int) (struct)
 
 	{
 
-		if err := t.RewardTotal.UnmarshalCBOR(br); err != nil {
+		if err := t.SimpleSupply.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.BaselineSupply (big.Int) (struct)
+
+	{
+
+		if err := t.BaselineSupply.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.LastPerEpochReward (big.Int) (struct)
+
+	{
+
+		if err := t.LastPerEpochReward.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 

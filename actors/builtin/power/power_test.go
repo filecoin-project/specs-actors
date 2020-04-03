@@ -118,10 +118,12 @@ func TestConstruction(t *testing.T) {
 
 		rt.Verify()
 
+		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(enrollCronEventParams1.Payload), abi.NewTokenAmount(0), nil, 0)
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(enrollCronEventParams2.Payload), abi.NewTokenAmount(0), nil, 0)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, abi.NewTokenAmount(0), nil, 0)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()

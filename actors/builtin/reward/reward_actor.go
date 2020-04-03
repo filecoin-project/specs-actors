@@ -30,7 +30,8 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
 		3:                         a.WithdrawReward,
-		4:                         a.PerEpochReward,
+		4:                         a.LastPerEpochReward,
+		5:                         a.UpdateNetworkKPI,
 	}
 }
 
@@ -83,7 +84,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	var penalty abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		blockReward := a.computeBlockReward(&st, big.Sub(priorBalance, params.GasReward), params.TicketCount)
+		blockReward := a.computePerEpochReward(&st, rt.CurrEpoch(), st.EffectiveNetworkTime, params.TicketCount)
 		totalReward := big.Add(blockReward, params.GasReward)
 
 		// Cap the penalty at the total reward value.
@@ -143,14 +144,55 @@ func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.Emp
 	return nil
 }
 
-func (a Actor) PerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
-	panic("todo: zx")
+func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
+	var st State
+	rt.State().Readonly(&st)
+
+	return st.LastPerEpochReward
 }
 
-func (a Actor) computeBlockReward(st *State, balance abi.TokenAmount, ticketCount int64) abi.TokenAmount {
-	// TODO: this is definitely not the final form of the block reward function.
-	// The eventual form will be some kind of exponential decay.
-	treasury := big.Sub(balance, st.RewardTotal)
-	targetReward := big.Mul(BlockRewardTarget, big.NewInt(ticketCount))
-	return big.Min(targetReward, treasury)
+func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
+	// TODO: PARAM_FINISH
+	newSimpleSupply := big.Rsh(big.Mul(SimpleTotal, taylorSeriesExpansion(clockTime)), FixedPoint)
+	newBaselineSupply := big.Rsh(big.Mul(BaselineTotal, taylorSeriesExpansion(networkTime)), FixedPoint)
+
+	newSimpleMinted := big.Max(big.Sub(newSimpleSupply, st.SimpleSupply), big.Zero())
+	newBaselineMinted := big.Max(big.Sub(newBaselineSupply, st.BaselineSupply), big.Zero())
+
+	st.SimpleSupply = newSimpleSupply
+	st.BaselineSupply = newBaselineSupply
+
+	perEpochReward := big.Add(newSimpleMinted, newBaselineMinted)
+	st.LastPerEpochReward = perEpochReward
+
+	return perEpochReward
+}
+
+func (a Actor) newBaselinePower(st *State) abi.StoragePower {
+	// TODO: this is not the final baseline
+	return big.NewInt(1 << 60)
+}
+
+func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) abi.ChainEpoch {
+	// TODO: this function depends on the final baseline
+	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
+	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1<<60)).Int64())
+}
+
+func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower abi.StoragePower) {
+	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		newBaselinePower := a.newBaselinePower(&st)
+		st.BaselinePower = newBaselinePower
+		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
+
+		st.RealizedPower = currRealizedPower
+		st.CumsumRealized = big.Add(st.CumsumRealized, currRealizedPower)
+
+		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
+
+		return nil
+	})
 }
