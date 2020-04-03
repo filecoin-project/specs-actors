@@ -18,10 +18,12 @@ import (
 // Balance of a Actor should equal exactly the sum of PreCommit deposits
 // that are not yet returned or burned.
 type State struct {
-	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
-	Sectors             cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
-	FaultSet            abi.BitField
-	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
+	PreCommitDeposits    abi.TokenAmount
+	PreCommittedSectors  cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
+	Sectors              cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
+	FaultSet             abi.BitField
+	ProvingSet           cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
+	CollateralMap        cid.Cid // AMT[abi.Reward]
 
 	Info      MinerInfo // TODO: this needs to be a cid of the miner Info struct
 	PoStState PoStState

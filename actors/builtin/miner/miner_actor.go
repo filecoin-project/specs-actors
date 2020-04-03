@@ -241,6 +241,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
+
+		st.PreCommitDeposits = big.Add(st.PreCommitDeposits, depositReq)
 		return nil
 	})
 
@@ -401,6 +403,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	pledgeRefund := big.Sub(rt.Message().ValueReceived(), pledgeRequirement)
 
 	// Return PreCommit deposit to worker upon successful ProveCommit.
+	Assert(st.PreCommitDeposits.GreaterThanEqual(precommit.PreCommitDeposit))
+	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, precommit.PreCommitDeposit)
 	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, big.Add(precommit.PreCommitDeposit, pledgeRefund))
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
