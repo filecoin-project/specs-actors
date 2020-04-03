@@ -86,7 +86,7 @@ func (st *State) withdrawReward(store adt.Store, owner addr.Address, currEpoch a
 		return big.Zero(), err
 	}
 
-	AssertMsg(withdrawableSum.LessThan(st.RewardTotal), "withdrawable %v exceeds recorded prior total %v",
+	AssertMsg(withdrawableSum.LessThanEqual(st.RewardTotal), "withdrawable %v exceeds recorded prior total %v",
 		withdrawableSum, st.RewardTotal)
 
 	// Replace old reward list for this key with the updated list.
