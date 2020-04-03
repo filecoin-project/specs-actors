@@ -65,17 +65,7 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{big.Zero(), big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
-
-		escrowTable := adt.AsMap(adt.AsStore(rt), st.EscrowTable)
-		keys, err = escrowTable.CollectKeys()
-		require.NoError(t, err)
-		assert.Equal(t, 1, len(keys))
-		var pledgeCollateral abi.TokenAmount
-		found, err_ = escrowTable.Get(asKey(keys[0]), &pledgeCollateral)
-		require.NoError(t, err_)
-		assert.True(t, found)
-		assert.Equal(t, abi.NewTokenAmount(1), pledgeCollateral) // miner has 1 FIL in EscrowTable
+		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.PoStDetectedFaultMiners)
 		verifyEmptyMap(t, rt, st.CronEventQueue)
@@ -170,7 +160,6 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
 
-	verifyEmptyMap(h.t, rt, st.EscrowTable)
 	verifyEmptyMap(h.t, rt, st.Claims)
 	verifyEmptyMap(h.t, rt, st.PoStDetectedFaultMiners)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)

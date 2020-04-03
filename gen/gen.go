@@ -81,7 +81,7 @@ func main() {
 		// method params
 		reward.AwardBlockRewardParams{},
 		// other types
-		reward.Reward{},
+		// reward.Reward{},
 	); err != nil {
 		panic(err)
 	}
@@ -182,6 +182,7 @@ func main() {
 		miner.DeclareTemporaryFaultsParams{},
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
+		miner.WithdrawBalanceParams{},
 		// other types
 		miner.CronEventPayload{},
 	); err != nil {

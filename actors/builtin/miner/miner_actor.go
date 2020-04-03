@@ -57,6 +57,9 @@ func (a Actor) Exports() []interface{} {
 		11:                        a.DeclareTemporaryFaults,
 		12:                        a.OnDeferredCronEvent,
 		13:                        a.CheckSectorProven,
+		14:                        a.AddPledgeCollateral,
+		15:                        a.SlashPledgeCollateral,
+		16:                        a.WithdrawBalance,
 	}
 }
 
@@ -326,7 +329,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	AssertNoError(ret.Into(&dealWeight))
 
 	// Request power for activated sector.
-	// Returns relevant pledge requirement.
+	// Return initial pledge requirement
 	var pledgeRequirement abi.TokenAmount
 	ret, code = rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -338,12 +341,16 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 				Duration:   precommit.Info.Expiration - rt.CurrEpoch(),
 			},
 		},
-		rt.Message().ValueReceived(),
+		big.Zero(),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
 	AssertNoError(ret.Into(&pledgeRequirement))
 
-	// add sector to miner state
+	if big.Cmp(rt.Message().ValueReceived(), pledgeRequirement) < 0 {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for initial pledge requirement")
+	}
+
+	// add sector and pledge to miner state
 	rt.State().Transaction(&st, func() interface{} {
 		newSectorInfo := &SectorOnChainInfo{
 			Info:                  precommit.Info,
@@ -375,6 +382,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		if !st.InChallengeWindow(rt) {
 			st.ProvingSet = st.Sectors
 		}
+
+		if err := st.addPledge(adt.AsStore(rt), rt.CurrEpoch(), pledgeRequirement); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge %w", err)
+		}
+
 		return nil
 	})
 
@@ -580,6 +592,61 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 	a.enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	// schedule cron event to end marking temp fault at EndEpoch
 	a.enrollCronEvent(rt, effectiveEpoch+params.Duration, &cronPayload)
+	return nil
+}
+
+///////////////////////
+// Pledge Collateral //
+///////////////////////
+
+func (a Actor) AddPledgeCollateral(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
+	pledgeAmount := rt.Message().ValueReceived()
+	Assert(pledgeAmount.GreaterThanEqual(big.Zero()))
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		if err := st.addPledge(adt.AsStore(rt), rt.CurrEpoch(), pledgeAmount); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledgeL %w", err)
+		}
+		return nil
+	})
+
+	rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.AddPledgeCollateral, &pledgeAmount, abi.NewTokenAmount(0))
+	return nil
+}
+
+func (a Actor) SlashPledgeCollateral(rt Runtime, amountToSlash abi.TokenAmount) {
+	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	var st State
+	amountSlashed := rt.State().Transaction(&st, func() interface{} {
+		// subtracted, err := st.subtractMinerBalance(adt.AsStore(rt), minerAddr, amountToSlash, big.Zero())
+		// abortIfError(rt, err, "failed to subtract collateral for slash")
+		return big.Zero()
+	}).(abi.TokenAmount)
+
+	amountSlashedUpdate := amountSlashed.Neg()
+	rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.AddPledgeCollateral, &amountSlashedUpdate, abi.NewTokenAmount(0))
+
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
+
+}
+
+type WithdrawBalanceParams struct {
+	AmountRequested abi.TokenAmount
+}
+
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Owner)
+
+		// TODO
+
+		return nil
+	})
 	return nil
 }
 

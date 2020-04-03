@@ -60,3 +60,19 @@ func NewTokenAmount(t int64) TokenAmount {
 
 // Randomness is a string of random bytes
 type Randomness []byte
+
+type Reward struct {
+	VestingFunction
+	StartEpoch      ChainEpoch
+	EndEpoch        ChainEpoch
+	Value           TokenAmount
+	AmountWithdrawn TokenAmount
+}
+
+type VestingFunction int64
+
+const (
+	Linear VestingFunction = iota
+	Other
+)
+

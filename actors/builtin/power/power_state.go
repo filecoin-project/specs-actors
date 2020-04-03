@@ -18,6 +18,7 @@ import (
 type State struct {
 	TotalRawBytePower    abi.StoragePower
 	TotalQualityAdjPower abi.StoragePower
+	TotalPledgeCollateral abi.TokenAmount
 	MinerCount           int64
 
 	// A queue of events to be triggered by cron, indexed by epoch.
@@ -29,7 +30,7 @@ type State struct {
 	// Miners having failed to prove storage.
 	PoStDetectedFaultMiners cid.Cid // Set, HAMT[addr.Address]struct{}
 
-	// Claimed power and associated pledge requirements for each miner.
+	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
 	// Number of miners having proven the minimum consensus power.

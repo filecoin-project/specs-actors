@@ -10,9 +10,11 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // Balance of a Actor should equal exactly the sum of PreCommit deposits
@@ -23,7 +25,7 @@ type State struct {
 	Sectors              cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 	FaultSet             abi.BitField
 	ProvingSet           cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
-	CollateralMap        cid.Cid // AMT[abi.Reward]
+	PledgeCollateralMap        cid.Cid // AMT[abi.Reward]
 
 	Info      MinerInfo // TODO: this needs to be a cid of the miner Info struct
 	PoStState PoStState
@@ -87,6 +89,11 @@ type SectorOnChainInfo struct {
 	DeclaredFaultEpoch    abi.ChainEpoch  // -1 if not currently declared faulted.
 	DeclaredFaultDuration abi.ChainEpoch  // -1 if not currently declared faulted.
 }
+
+const BlockTimeSeconds = 30
+const SecondsInYear = 31556925
+const PledgeCliff = abi.ChainEpoch(SecondsInYear * BlockTimeSeconds) // TODO: placeholder
+const PledgeVestingPeriod = abi.ChainEpoch(SecondsInYear * BlockTimeSeconds) // TODO: placeholder
 
 func ConstructState(emptyArrayCid, emptyMapCid cid.Cid, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) *State {
 	return &State{
@@ -259,6 +266,24 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 	}
 
 	return sectorInfos, nil
+}
+
+func (st *State) addPledge(store adt.Store, currEpoch abi.ChainEpoch, pledgeAmount abi.TokenAmount) error {
+	Assert(pledgeAmount.GreaterThanEqual(big.Zero()))
+
+	_ = abi.Reward{
+		StartEpoch: currEpoch + PledgeCliff,
+		EndEpoch: currEpoch + PledgeCliff + PledgeVestingPeriod,
+		Value: pledgeAmount,
+		AmountWithdrawn: abi.NewTokenAmount(0),
+		VestingFunction: abi.Linear,
+	}
+
+	_ = adt.AsMultimap(store, st.PledgeCollateralMap)
+
+	// TODO discuss the data struct here
+	
+	return nil
 }
 
 func (mps *PoStState) IsPoStOk() bool {

@@ -44,6 +44,7 @@ func (a Actor) Exports() []interface{} {
 		11:                        a.EnrollCronEvent,
 		12:                        a.ReportConsensusFault,
 		13:                        a.OnEpochTickEnd,
+		14:                        a.AddPledgeCollateral,
 	}
 }
 
@@ -190,7 +191,7 @@ type OnSectorProveCommitParams struct {
 // Returns the computed pledge collateral requirement, which is now committed.
 func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *big.Int {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	var pledge abi.TokenAmount
+	var pledgeReq abi.TokenAmount
 	var st State
 
 	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
@@ -204,24 +205,17 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 		rbpower := big.NewIntUnsigned(uint64(params.Weight.SectorSize))
 		qapower := QAPowerForWeight(&params.Weight)
 
-		// totalPledge := big.Zero() // TODO: get total pledge from somewhere
-		// pledge = InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), totalPledge, epochReward)
+		pledgeReq = InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), st.TotalPledgeCollateral, epochReward)
 		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower, qapower)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
 		}
+
+		st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, pledgeReq)
 		return nil
 	})
-
-	// if big.Cmp(rt.Message().ValueReceived(), pledge) < 0 {
-	// 	rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for pledge")
-	// }
-
-	// refund := big.Sub(rt.Message().ValueReceived(), pledge)
-	// _, code = rt.Send(rt.Message().Caller(), 0, nil, refund) // TODO: maybe runtime should have a refund method to make this less obnoxious
-	// builtin.RequireSuccess(rt, code, "failed to refund")
-
-	return &pledge
+	
+	return &pledgeReq
 }
 
 type OnSectorTerminateParams struct {
@@ -512,6 +506,21 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	)
 	builtin.RequireSuccess(rt, code, "failed to update network KPI with Reward Actor")
 
+	return nil
+}
+
+func (a Actor) AddPledgeCollateral(rt Runtime, pledgeAmount abi.TokenAmount) *adt.EmptyValue {
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
+	msgValue := rt.Message().ValueReceived()
+	Assert(msgValue.IsZero())
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, pledgeAmount)
+		Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
+
+		return nil
+	})
 	return nil
 }
 

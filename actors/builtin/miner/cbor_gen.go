@@ -52,10 +52,10 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.ProvingSet: %w", err)
 	}
 
-	// t.CollateralMap (cid.Cid) (struct)
+	// t.PledgeCollateralMap (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(w, t.CollateralMap); err != nil {
-		return xerrors.Errorf("failed to write cid field t.CollateralMap: %w", err)
+	if err := cbg.WriteCid(w, t.PledgeCollateralMap); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PledgeCollateralMap: %w", err)
 	}
 
 	// t.Info (miner.MinerInfo) (struct)
@@ -139,16 +139,16 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.ProvingSet = c
 
 	}
-	// t.CollateralMap (cid.Cid) (struct)
+	// t.PledgeCollateralMap (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.CollateralMap: %w", err)
+			return xerrors.Errorf("failed to read cid field t.PledgeCollateralMap: %w", err)
 		}
 
-		t.CollateralMap = c
+		t.PledgeCollateralMap = c
 
 	}
 	// t.Info (miner.MinerInfo) (struct)
@@ -1438,6 +1438,49 @@ func (t *CheckSectorProvenParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("wrong type for uint64 field")
 	}
 	t.SectorNumber = abi.SectorNumber(extra)
+	return nil
+}
+
+func (t *WithdrawBalanceParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.AmountRequested (big.Int) (struct)
+	if err := t.AmountRequested.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *WithdrawBalanceParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.AmountRequested (big.Int) (struct)
+
+	{
+
+		if err := t.AmountRequested.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
