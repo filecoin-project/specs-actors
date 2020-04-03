@@ -24,7 +24,7 @@ func TestSectorSizeShortString(t *testing.T) {
 	assert.Equal(t, "1B", abi.SectorSize(1).ShortString())
 	assert.Equal(t, "1023B", abi.SectorSize(1023).ShortString())
 	assert.Equal(t, "1KiB", abi.SectorSize(kib).ShortString())
-	assert.Equal(t, "1KiB", abi.SectorSize(kib+1).ShortString()) // truncated
+	assert.Equal(t, "1KiB", abi.SectorSize(kib+1).ShortString())   // truncated
 	assert.Equal(t, "1KiB", abi.SectorSize(kib*2-1).ShortString()) // truncated
 	assert.Equal(t, "2KiB", abi.SectorSize(kib*2).ShortString())
 	assert.Equal(t, "2KiB", abi.SectorSize(kib*2+1).ShortString()) // truncated

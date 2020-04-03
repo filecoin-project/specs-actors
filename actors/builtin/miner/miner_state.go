@@ -13,16 +13,23 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-// Balance of a Actor should equal exactly the sum of PreCommit deposits
-// that are not yet returned or burned.
+// Balance of Miner Actor should be greater than or equal to
+// the sum of PreCommitDeposits and LockedFunds.
+// Excess balance as computed by st.getAvailableBalance will be
+// withdrawable or usable for PreCommitDeposit.
 type State struct {
-	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
-	Sectors             cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
+	PreCommitDeposits   abi.TokenAmount // Total funds locked as PreCommitDeposits
+	LockedFunds         abi.TokenAmount // Total unvested funds locked as pledge collateral
+	VestingFunds        cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
+	PreCommittedSectors cid.Cid         // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
+	Sectors             cid.Cid         // Array, AMT[]SectorOnChainInfo (sparse)
 	FaultSet            abi.BitField
 	ProvingSet          cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 
@@ -84,11 +91,10 @@ type SectorPreCommitOnChainInfo struct {
 
 type SectorOnChainInfo struct {
 	Info                  SectorPreCommitInfo
-	ActivationEpoch       abi.ChainEpoch  // Epoch at which SectorProveCommit is accepted
-	DealWeight            abi.DealWeight  // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
-	PledgeRequirement     abi.TokenAmount // Fixed pledge collateral requirement determined at activation
-	DeclaredFaultEpoch    abi.ChainEpoch  // -1 if not currently declared faulted.
-	DeclaredFaultDuration abi.ChainEpoch  // -1 if not currently declared faulted.
+	ActivationEpoch       abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
+	DealWeight            abi.DealWeight // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
+	DeclaredFaultEpoch    abi.ChainEpoch // -1 if not currently declared faulted.
+	DeclaredFaultDuration abi.ChainEpoch // -1 if not currently declared faulted.
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid cid.Cid, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) *State {
@@ -97,6 +103,9 @@ func ConstructState(emptyArrayCid, emptyMapCid cid.Cid, ownerAddr, workerAddr ad
 		Sectors:             emptyArrayCid,
 		FaultSet:            abi.NewBitField(),
 		ProvingSet:          emptyArrayCid,
+		PreCommitDeposits:   abi.NewTokenAmount(0),
+		LockedFunds:         abi.NewTokenAmount(0),
+		VestingFunds:        emptyArrayCid,
 		Info: MinerInfo{
 			Owner:            ownerAddr,
 			Worker:           workerAddr,
@@ -264,6 +273,151 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 	return sectorInfos, nil
 }
 
+func computeVestAmount(total abi.TokenAmount, cliffStartEpoch abi.ChainEpoch, fullyVestedEpoch abi.ChainEpoch, quantizedEpoch abi.ChainEpoch) abi.TokenAmount {
+	// PARAM_FINISH linear vesting placeholder
+	numVestWindows := (fullyVestedEpoch - cliffStartEpoch) / VestIncrement
+	_ = (quantizedEpoch - cliffStartEpoch) / VestIncrement // number of VestIncrement elapsed for other vest functions
+	quantizedVestAmount := big.Div(total, big.NewInt(int64(numVestWindows)))
+	return quantizedVestAmount
+}
+
+func getQuantizedEpoch(e abi.ChainEpoch) abi.ChainEpoch {
+	// PARAM_FINISH
+	// default is the nearest next epoch that is multiple of QuantizedGranularity after a VestIncrement offset
+	// computeVestAmount can assume at least one VestIncrement has elapsed
+	offsetEpoch := e + VestIncrement
+	quantizedEpoch := offsetEpoch - (offsetEpoch % QuantizedGranularity) + QuantizedGranularity
+
+	return quantizedEpoch
+}
+
+func (st *State) addLockedFund(store adt.Store, currEpoch abi.ChainEpoch, pledgeAmount abi.TokenAmount) error {
+	Assert(pledgeAmount.GreaterThanEqual(big.Zero()))
+
+	vestingFunds := adt.AsArray(store, st.VestingFunds)
+
+	cliffStartEpoch := currEpoch + PledgeCliff
+	fullyVestedEpoch := currEpoch + PledgeCliff + PledgeVestingPeriod
+
+	// default vesting happens once a week at the quantized epoch.
+	for i := cliffStartEpoch; i < fullyVestedEpoch; i += VestIncrement {
+		lockedFundEntry := big.Zero()
+		quantizedVestEpoch := getQuantizedEpoch(i)
+		_, err := vestingFunds.Get(epochKey(quantizedVestEpoch), &lockedFundEntry)
+
+		if err != nil {
+			return err
+		}
+
+		vestAmount := computeVestAmount(pledgeAmount, cliffStartEpoch, fullyVestedEpoch, quantizedVestEpoch)
+		newLockedFundEntry := big.Add(lockedFundEntry, vestAmount)
+		vestingFunds.Set(epochKey(quantizedVestEpoch), &newLockedFundEntry)
+	}
+
+	st.VestingFunds = vestingFunds.Root()
+
+	return nil
+}
+
+func (st *State) slashLockedFund(store adt.Store, currEpoch abi.ChainEpoch, amountToSlash abi.TokenAmount) (abi.TokenAmount, error) {
+	var errorFinished = fmt.Errorf("finished")
+
+	vestingFunds := adt.AsArray(store, st.VestingFunds)
+	amountSlashed := big.Zero()
+
+	var lockedFund abi.TokenAmount
+	var toDelete []uint64
+	// vestingFunds are in order of release from vesting.
+	err := vestingFunds.ForEach(&lockedFund, func(k int64) error {
+		if amountSlashed.LessThan(amountToSlash) {
+			if k >= int64(currEpoch) {
+				// slashable
+				slashingAmount := big.Max(big.Sub(amountToSlash, amountSlashed), lockedFund)
+				lockedFund = big.Sub(lockedFund, slashingAmount)
+				amountSlashed = big.Add(amountSlashed, slashingAmount)
+
+				if lockedFund.IsZero() {
+					// we can delete this entry
+					toDelete = append(toDelete, uint64(k))
+				}
+			}
+			return nil
+		} else {
+			return errorFinished
+		}
+	})
+
+	if err != nil && err != errorFinished {
+		return big.Zero(), err
+	}
+
+	// If AMT exposed a batch delete, we could use that to save some writes here.
+	for _, i := range toDelete {
+		err = vestingFunds.Delete(i)
+		if err != nil {
+			return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during slash: %v", err)
+		}
+	}
+
+	st.VestingFunds = vestingFunds.Root()
+	return amountSlashed, nil
+}
+
+// iterate over LockedFunds and delete fully vested locked funds and return newly unlocked funds
+// update st.LockedFunds
+func (st *State) vestNewFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+	var errorFinished = fmt.Errorf("finished")
+
+	vestingFunds := adt.AsArray(store, st.VestingFunds)
+	newlyUnlockedFund := big.Zero()
+
+	var lockedFund abi.TokenAmount
+	var toDelete []uint64
+	// vestingFunds are in order of release from vesting.
+	err := vestingFunds.ForEach(&lockedFund, func(k int64) error {
+		if k < int64(currEpoch) {
+			// fully vested
+			newlyUnlockedFund = big.Add(newlyUnlockedFund, lockedFund)
+			toDelete = append(toDelete, uint64(k))
+		} else {
+			// stop iterating remaining funds
+			return errorFinished
+		}
+		return nil
+	})
+
+	if err != nil && err != errorFinished {
+		return big.Zero(), err
+	}
+
+	// If AMT exposed a batch delete, we could use that to save some writes here.
+	for _, i := range toDelete {
+		err = vestingFunds.Delete(i)
+		if err != nil {
+			return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest new fund: %v", err)
+		}
+	}
+
+	st.VestingFunds = vestingFunds.Root()
+	st.LockedFunds = big.Sub(st.LockedFunds, newlyUnlockedFund)
+	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+
+	return newlyUnlockedFund, nil
+}
+
+func (st *State) getAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
+	availableBal := big.Sub(big.Sub(actorBalance, st.LockedFunds), st.PreCommitDeposits)
+	Assert(availableBal.GreaterThanEqual(big.Zero()))
+
+	return availableBal
+}
+
+func (st *State) assertBalanceInvariants(balance abi.TokenAmount) {
+	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
+	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	Assert(balance.GreaterThanEqual(big.Add(st.PreCommitDeposits, st.LockedFunds)))
+}
+
 func (mps *PoStState) IsPoStOk() bool {
 	return !mps.HasFailedPost()
 }
@@ -282,6 +436,10 @@ func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInf
 
 func sectorKey(e abi.SectorNumber) adt.Keyer {
 	return adt.UIntKey(uint64(e))
+}
+
+func epochKey(e abi.ChainEpoch) uint64 {
+	return uint64(e)
 }
 
 func init() {

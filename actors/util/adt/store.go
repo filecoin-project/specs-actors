@@ -92,7 +92,7 @@ type uintKey struct {
 }
 
 //noinspection GoExportedFuncWithUnexportedType
-func UIntKey (k uint64) uintKey {
+func UIntKey(k uint64) uintKey {
 	return uintKey{k}
 }
 

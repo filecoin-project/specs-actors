@@ -57,6 +57,9 @@ func (a Actor) Exports() []interface{} {
 		11:                        a.DeclareTemporaryFaults,
 		12:                        a.OnDeferredCronEvent,
 		13:                        a.CheckSectorProven,
+		14:                        a.AwardReward,
+		15:                        a.ReportConsensusFault,
+		16:                        a.WithdrawBalance,
 	}
 }
 
@@ -230,10 +233,19 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	}
 
 	depositReq := precommitDeposit(st.GetSectorSize(), params.Expiration-rt.CurrEpoch())
-	confirmPaymentAndRefundChange(rt, depositReq)
 
-	rt.State().Transaction(&st, func() interface{} {
-		err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		newlyVestedFund, err := st.vestNewFunds(store, rt.CurrEpoch())
+		availableBalance := st.getAvailableBalance(rt.CurrentBalance())
+
+		if availableBalance.LessThan(depositReq) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for PreCommitDeposit: %v", depositReq)
+		}
+
+		st.PreCommitDeposits = big.Add(st.PreCommitDeposits, depositReq)
+		st.assertBalanceInvariants(rt.CurrentBalance())
+
+		err = st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:             *params,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
@@ -241,8 +253,14 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
-		return nil
-	})
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	if newlyVestedAmount.GreaterThan(big.Zero()) {
+		totalPledgeUpdate := newlyVestedAmount.Neg()
+		a.updateTotalPledge(rt, &totalPledgeUpdate)
+	}
 
 	if params.Expiration <= rt.CurrEpoch() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
@@ -324,8 +342,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	AssertNoError(ret.Into(&dealWeight))
 
 	// Request power for activated sector.
-	// Returns relevant pledge requirement.
-	var pledgeRequirement abi.TokenAmount
+	// Return initial pledge requirement.
+	var initialPledge abi.TokenAmount
 	ret, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnSectorProveCommit,
@@ -336,18 +354,35 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 				Duration:   precommit.Info.Expiration - rt.CurrEpoch(),
 			},
 		},
-		rt.Message().ValueReceived(),
+		big.Zero(),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
-	AssertNoError(ret.Into(&pledgeRequirement))
+	AssertNoError(ret.Into(&initialPledge))
 
-	// add sector to miner state
-	rt.State().Transaction(&st, func() interface{} {
+	// add sector and pledge to miner state
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+
+		newlyVestedFund, err := st.vestNewFunds(adt.AsStore(rt), rt.CurrEpoch())
+
+		// Unlock PreCommit deposit upon successful ProveCommit and PreCommitDeposit can be used for initial pledge.
+		Assert(st.PreCommitDeposits.GreaterThanEqual(precommit.PreCommitDeposit))
+		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, precommit.PreCommitDeposit)
+
+		availableBalance := st.getAvailableBalance(rt.CurrentBalance())
+		if availableBalance.LessThan(initialPledge) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for initial pledge requirement, required: %s, available: %s", initialPledge, availableBalance)
+		}
+
+		// Lock funds immediately after initial pledge is checked against available funds.
+		if err = st.addLockedFund(adt.AsStore(rt), rt.CurrEpoch(), initialPledge); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
+		}
+
+		st.assertBalanceInvariants(rt.CurrentBalance())
 		newSectorInfo := &SectorOnChainInfo{
 			Info:                  precommit.Info,
 			ActivationEpoch:       rt.CurrEpoch(),
 			DealWeight:            dealWeight,
-			PledgeRequirement:     pledgeRequirement,
 			DeclaredFaultEpoch:    -1,
 			DeclaredFaultDuration: -1,
 		}
@@ -373,8 +408,12 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		if !st.InChallengeWindow(rt) {
 			st.ProvingSet = st.Sectors
 		}
-		return nil
-	})
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	totalPledgeUpdate := big.Sub(initialPledge, newlyVestedAmount)
+	a.updateTotalPledge(rt, &totalPledgeUpdate)
 
 	bf := abi.NewBitField()
 	bf.Set(uint64(sectorNo))
@@ -398,11 +437,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		})
 	}
 
-	pledgeRefund := big.Sub(rt.Message().ValueReceived(), pledgeRequirement)
-
-	// Return PreCommit deposit to worker upon successful ProveCommit.
-	_, code = rt.Send(st.Info.Worker, builtin.MethodSend, nil, big.Add(precommit.PreCommitDeposit, pledgeRefund))
-	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
 }
 
@@ -450,7 +484,6 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	}
 
 	storageWeightDescPrev := asStorageWeightDesc(st.Info.SectorSize, sector)
-	pledgePrev := sector.PledgeRequirement
 
 	extensionLength := params.NewExpiration - sector.Info.Expiration
 	if extensionLength < 0 {
@@ -465,23 +498,39 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		builtin.MethodsPower.OnSectorModifyWeightDesc,
 		&power.OnSectorModifyWeightDescParams{
 			PrevWeight: *storageWeightDescPrev,
-			PrevPledge: pledgePrev,
 			NewWeight:  storageWeightDescNew,
 		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
-	var newPledgeRequirement abi.TokenAmount
-	AssertNoError(ret.Into(&newPledgeRequirement))
+	var newInitialPledge abi.TokenAmount
+	AssertNoError(ret.Into(&newInitialPledge))
 
-	rt.State().Transaction(&st, func() interface{} {
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+
+		newlyVestedFund, err := st.vestNewFunds(adt.AsStore(rt), rt.CurrEpoch())
+		availableBalance := st.getAvailableBalance(rt.CurrentBalance())
+
+		if availableBalance.LessThan(newInitialPledge) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for new initial pledge requirement, required: %s, available: %s", newInitialPledge, availableBalance)
+		}
+
+		// Lock funds immediately after new initial pledge is checked against available funds.
+		if err = st.addLockedFund(adt.AsStore(rt), rt.CurrEpoch(), newInitialPledge); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
+		}
+
 		sector.Info.Expiration = params.NewExpiration
-		sector.PledgeRequirement = newPledgeRequirement
 		if err = st.PutSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
-		return nil
-	})
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	totalPledgeUpdate := big.Sub(newInitialPledge, newlyVestedAmount)
+	a.updateTotalPledge(rt, &totalPledgeUpdate)
+
 	return nil
 }
 
@@ -579,6 +628,147 @@ func (a Actor) DeclareTemporaryFaults(rt Runtime, params *DeclareTemporaryFaults
 	return nil
 }
 
+///////////////////////
+// Pledge Collateral //
+///////////////////////
+
+func (a Actor) AwardReward(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
+	pledgeAmount := rt.Message().ValueReceived()
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		if err := st.addLockedFund(adt.AsStore(rt), rt.CurrEpoch(), pledgeAmount); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
+		}
+		return nil
+	})
+
+	a.updateTotalPledge(rt, &pledgeAmount)
+	return nil
+}
+
+func (a Actor) slashPledgeCollateral(rt Runtime, amountToSlash abi.TokenAmount) *abi.TokenAmount {
+	if amountToSlash.LessThanEqual(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "non positive amount to slash: %s", amountToSlash)
+	}
+
+	var st State
+	amountSlashed := rt.State().Transaction(&st, func() interface{} {
+		slashedPledge, err := st.slashLockedFund(adt.AsStore(rt), rt.CurrEpoch(), amountToSlash)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to slash pledge collateral: %v", err)
+		}
+		return slashedPledge
+	}).(abi.TokenAmount)
+
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
+
+	totalPledgeUpdate := amountSlashed.Neg()
+	a.updateTotalPledge(rt, &totalPledgeUpdate)
+
+	return &amountSlashed
+}
+
+type ReportConsensusFaultParams struct {
+	BlockHeader1     []byte
+	BlockHeader2     []byte
+	BlockHeaderExtra []byte
+}
+
+func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
+	// only another miner actor can report consensus fault
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
+
+	currEpoch := rt.CurrEpoch()
+	earliest := currEpoch - ConsensusFaultReportingWindow
+
+	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, earliest)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "fault not verified: %s", err)
+	}
+
+	// Elapsed since the fault (i.e. since the higher of the two blocks)
+	faultAge := rt.CurrEpoch() - fault.Epoch
+	if faultAge <= 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
+	}
+
+	// Note: only the first reporter of any fault is rewarded.
+	// Subsequent invocations fail because the target miner has been removed.
+	var st State
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		newlyVestedFund, err := st.vestNewFunds(adt.AsStore(rt), rt.CurrEpoch())
+		AssertNoError(err)
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	totalLockedFund := st.LockedFunds
+	Assert(totalLockedFund.GreaterThanEqual(big.Zero()))
+
+	// reward reporter
+	slasherReward := rewardForConsensusSlashReport(faultAge, totalLockedFund)
+	_, code := rt.Send(fault.Reporter, builtin.MethodsMiner.AwardReward, nil, slasherReward)
+	builtin.RequireSuccess(rt, code, "failed to reward reporter")
+
+	// TODO: clean up deals in market actor but not in this method, similar to HandleExpiredDeals
+
+	totalPledgeAmount := big.Add(totalLockedFund, newlyVestedAmount)
+	_, code = rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.OnConsensusFault,
+		&totalPledgeAmount,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
+
+	// Delete the actor and burn all remaining funds
+	rt.DeleteActor(builtin.BurntFundsActorAddr)
+
+	return nil
+}
+
+type WithdrawBalanceParams struct {
+	AmountRequested abi.TokenAmount
+}
+
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
+	var st State
+	currBalance := rt.CurrentBalance()
+
+	if params.AmountRequested.LessThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "negative fund requested for withdrawal: %s", params.AmountRequested)
+	}
+
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Owner)
+
+		newlyVestedFund, err := st.vestNewFunds(adt.AsStore(rt), rt.CurrEpoch())
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
+		}
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	availableBalance := st.getAvailableBalance(currBalance)
+	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
+	Assert(amountWithdrawn.LessThanEqual(currBalance))
+
+	_, code := rt.Send(st.Info.Owner, builtin.MethodSend, nil, amountWithdrawn)
+	builtin.RequireSuccess(rt, code, "failed to withdraw balance")
+
+	if newlyVestedAmount.GreaterThan(big.Zero()) {
+		totalPledgeUpdate := newlyVestedAmount.Neg()
+		a.updateTotalPledge(rt, &totalPledgeUpdate)
+	}
+
+	st.assertBalanceInvariants(rt.CurrentBalance())
+
+	return nil
+}
+
 //////////
 // Cron //
 //////////
@@ -606,13 +796,16 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
+func (a Actor) updateTotalPledge(rt Runtime, totalPledgeUpdate *abi.TokenAmount) {
+	_, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeCollateralTally, totalPledgeUpdate, abi.NewTokenAmount(0))
+	builtin.RequireSuccess(rt, code, "failed to update total pledge")
+}
+
 func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 	store := adt.AsStore(rt)
 
 	var beginFaults []*power.SectorStorageWeightDesc
 	var endFaults []*power.SectorStorageWeightDesc
-	beginFaultPledge := abi.NewTokenAmount(0)
-	endFaultPledge := abi.NewTokenAmount(0)
 	var st State
 
 	sectorNos := bitfieldToSectorNos(rt, sectors)
@@ -642,7 +835,6 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 
 			if !hasFault && rt.CurrEpoch() >= sector.DeclaredFaultEpoch {
 				beginFaults = append(beginFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
-				beginFaultPledge = big.Add(beginFaultPledge, sector.PledgeRequirement)
 				st.FaultSet.Set(uint64(sectorNo))
 			}
 
@@ -650,7 +842,6 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 				sector.DeclaredFaultEpoch = epochUndefined
 				sector.DeclaredFaultDuration = epochUndefined
 				endFaults = append(endFaults, asStorageWeightDesc(st.Info.SectorSize, sector))
-				endFaultPledge = big.Add(endFaultPledge, sector.PledgeRequirement)
 				st.FaultSet.Unset(uint64(sectorNo))
 				if err = st.PutSector(store, sector); err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v: %v", sectorNo, err)
@@ -667,11 +858,11 @@ func (a Actor) checkTemporaryFaultEvents(rt Runtime, sectors *abi.BitField) {
 	})
 
 	if len(beginFaults) > 0 {
-		a.requestBeginFaults(rt, beginFaults, beginFaultPledge)
+		a.requestBeginFaults(rt, beginFaults)
 	}
 
 	if len(endFaults) > 0 {
-		a.requestEndFaults(rt, endFaults, endFaultPledge)
+		a.requestEndFaults(rt, endFaults)
 	}
 }
 
@@ -702,6 +893,9 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof 
 			// increment deposit to burn
 			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
 		}
+
+		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
+		Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 		return nil
 	})
 
@@ -738,11 +932,13 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 
 	var dealIDs []abi.DealID
 	var allWeights []*power.SectorStorageWeightDesc
-	allPledge := abi.NewTokenAmount(0)
 	var faultedWeights []*power.SectorStorageWeightDesc
-	faultPledge := abi.NewTokenAmount(0)
+
 	rt.State().Transaction(&st, func() interface{} {
+
 		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
+		amountToSlash := big.Zero()
+
 		if err != nil {
 			rt.Abortf(exitcode.SysErrInternal, "failed to get number of sectors")
 		}
@@ -763,7 +959,6 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 			dealIDs = append(dealIDs, sector.Info.DealIDs...)
 			weight := asStorageWeightDesc(st.Info.SectorSize, sector)
 			allWeights = append(allWeights, weight)
-			allPledge = big.Add(allPledge, sector.PledgeRequirement)
 
 			_, fault := faultsMap[uint64(sectorNo)]
 			AssertNoError(err)
@@ -771,7 +966,8 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 			Assert(fault == (sector.DeclaredFaultDuration != epochUndefined))
 			if fault {
 				faultedWeights = append(faultedWeights, weight)
-				faultPledge = big.Add(faultPledge, sector.PledgeRequirement)
+			} else if terminationType != power.SectorTerminationExpired {
+				amountToSlash = big.Add(amountToSlash, pledgePenaltyForSectorTermination(terminationType, weight))
 			}
 
 			err = st.DeleteSector(store, sectorNo)
@@ -783,20 +979,21 @@ func (a Actor) terminateSectors(rt Runtime, sectorNos []abi.SectorNumber, termin
 				st.ProvingSet = st.Sectors
 			}
 		}
+
+		a.slashPledgeCollateral(rt, amountToSlash)
 		return nil
 	})
 
 	// End any fault state before terminating sector power.
 	if len(faultedWeights) > 0 {
-		a.requestEndFaults(rt, faultedWeights, faultPledge)
+		a.requestEndFaults(rt, faultedWeights)
 	}
 
 	a.requestTerminateDeals(rt, dealIDs)
-	a.requestTerminatePower(rt, terminationType, allWeights, allPledge)
+	a.requestTerminatePower(rt, terminationType, allWeights)
 }
 
 func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
-
 	var st State
 	expired := rt.State().Transaction(&st, func() interface{} {
 
@@ -825,6 +1022,11 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 		a.requestTerminateAllDeals(rt, &st)
 	}
 
+	if st.PoStState.NumConsecutiveFailures <= power.WindowedPostFailureLimit {
+		amountToSlash := pledgePenaltyForWindowedPoStFailure(st.PoStState.NumConsecutiveFailures)
+		a.slashPledgeCollateral(rt, amountToSlash)
+	}
+
 	// ... and pay penalty (possibly terminating and deleting the miner).
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -835,6 +1037,7 @@ func (a Actor) checkPoStProvingPeriodExpiration(rt Runtime) {
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
+
 }
 
 func (a Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
@@ -855,10 +1058,9 @@ func (a Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPa
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func (a Actor) requestBeginFaults(rt Runtime, weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+func (a Actor) requestBeginFaults(rt Runtime, weights []*power.SectorStorageWeightDesc) {
 	params := &power.OnSectorTemporaryFaultEffectiveBeginParams{
 		Weights: make([]power.SectorStorageWeightDesc, len(weights)),
-		Pledge:  pledge,
 	}
 	for i, w := range weights {
 		params.Weights[i] = *w
@@ -873,10 +1075,9 @@ func (a Actor) requestBeginFaults(rt Runtime, weights []*power.SectorStorageWeig
 	builtin.RequireSuccess(rt, code, "failed to request faults %v", weights)
 }
 
-func (a Actor) requestEndFaults(rt Runtime, weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+func (a Actor) requestEndFaults(rt Runtime, weights []*power.SectorStorageWeightDesc) {
 	params := &power.OnSectorTemporaryFaultEffectiveEndParams{
 		Weights: make([]power.SectorStorageWeightDesc, len(weights)),
-		Pledge:  pledge,
 	}
 	for i, w := range weights {
 		params.Weights[i] = *w
@@ -917,11 +1118,10 @@ func (a Actor) requestTerminateAllDeals(rt Runtime, st *State) {
 }
 
 func (a Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTermination,
-	weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
+	weights []*power.SectorStorageWeightDesc) {
 	params := &power.OnSectorTerminateParams{
 		TerminationType: terminationType,
 		Weights:         make([]power.SectorStorageWeightDesc, len(weights)),
-		Pledge:          pledge,
 	}
 	for i, w := range weights {
 		params.Weights[i] = *w
@@ -1021,7 +1221,6 @@ func (a Actor) requestUnsealedSectorCID(rt Runtime, st abi.RegisteredProof, deal
 }
 
 func (a Actor) commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
-
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		if st.Info.PendingWorkerKey == nil {

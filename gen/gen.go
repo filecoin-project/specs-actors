@@ -80,8 +80,6 @@ func main() {
 		reward.State{},
 		// method params
 		reward.AwardBlockRewardParams{},
-		// other types
-		reward.Reward{},
 	); err != nil {
 		panic(err)
 	}
@@ -123,15 +121,12 @@ func main() {
 		power.Claim{},
 		power.CronEvent{},
 		// method params
-		power.AddBalanceParams{},
 		power.CreateMinerParams{},
 		power.DeleteMinerParams{},
-		power.WithdrawBalanceParams{},
 		power.EnrollCronEventParams{},
 		power.OnSectorTerminateParams{},
 		power.OnSectorModifyWeightDescParams{},
 		power.OnSectorProveCommitParams{},
-		power.ReportConsensusFaultParams{},
 		power.OnMinerWindowedPoStFailureParams{},
 		power.OnSectorTemporaryFaultEffectiveEndParams{},
 		power.OnSectorTemporaryFaultEffectiveBeginParams{},
@@ -182,8 +177,10 @@ func main() {
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
 		miner.DeclareTemporaryFaultsParams{},
+		miner.ReportConsensusFaultParams{},
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
+		miner.WithdrawBalanceParams{},
 		// other types
 		miner.CronEventPayload{},
 	); err != nil {

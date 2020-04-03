@@ -20,16 +20,12 @@ const TokenPrecision = int64(1_000_000_000_000_000_000)
 // Target reward released to each block winner.
 var BlockRewardTarget = big.Mul(big.NewInt(100), big.NewInt(TokenPrecision))
 
-const rewardVestingFunction = None            // PARAM_FINISH
-const rewardVestingPeriod = abi.ChainEpoch(0) // PARAM_FINISH
-
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
-		3:                         a.WithdrawReward,
 		4:                         a.LastPerEpochReward,
 		5:                         a.UpdateNetworkKPI,
 	}
@@ -74,7 +70,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	AssertMsg(params.TicketCount > 0, "cannot give block reward for zero tickets")
 
-	miner, ok := rt.ResolveAddress(params.Miner)
+	minerAddr, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
 	}
@@ -83,7 +79,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	var penalty abi.TokenAmount
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rewardPayable := rt.State().Transaction(&st, func() interface{} {
 		blockReward := a.computePerEpochReward(&st, rt.CurrEpoch(), st.EffectiveNetworkTime, params.TicketCount)
 		totalReward := big.Add(blockReward, params.GasReward)
 
@@ -96,51 +92,15 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
 			"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
 
-		// Record new reward into reward map.
-		if rewardPayable.GreaterThan(abi.NewTokenAmount(0)) {
-			newReward := Reward{
-				StartEpoch:      rt.CurrEpoch(),
-				EndEpoch:        rt.CurrEpoch() + rewardVestingPeriod,
-				Value:           rewardPayable,
-				AmountWithdrawn: abi.NewTokenAmount(0),
-				VestingFunction: rewardVestingFunction,
-			}
-			if err := st.addReward(adt.AsStore(rt), miner, &newReward); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add reward to rewards map: %w", err)
-			}
-		}
-		return nil
-	})
-
-	// Burn the penalty amount.
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
-	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
-
-	return nil
-}
-
-func (a Actor) WithdrawReward(rt vmr.Runtime, minerin *address.Address) *adt.EmptyValue {
-	maddr, ok := rt.ResolveAddress(*minerin)
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve input address")
-	}
-
-	owner, worker := builtin.RequestMinerControlAddrs(rt, maddr)
-
-	rt.ValidateImmediateCallerIs(owner, worker)
-
-	var st State
-	withdrawableReward := rt.State().Transaction(&st, func() interface{} {
-		// Withdraw all available funds
-		withdrawn, err := st.withdrawReward(adt.AsStore(rt), maddr, rt.CurrEpoch())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to withdraw reward: %v", err)
-		}
-		return withdrawn
+		return rewardPayable
 	}).(abi.TokenAmount)
 
-	_, code := rt.Send(owner, builtin.MethodSend, nil, withdrawableReward)
-	builtin.RequireSuccess(rt, code, "failed to send funds %v to owner %v", withdrawableReward, owner)
+	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AwardReward, nil, rewardPayable)
+
+	// Burn the penalty amount.
+	_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
+	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
+
 	return nil
 }
 
