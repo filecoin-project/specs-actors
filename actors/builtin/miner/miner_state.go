@@ -25,10 +25,16 @@ type State struct {
 	Sectors              cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
 	FaultSet             abi.BitField
 	ProvingSet           cid.Cid // Array, AMT[]SectorOnChainInfo (sparse)
-	PledgeCollateralMap        cid.Cid // AMT[abi.Reward]
+	PledgeCollateral     cid.Cid // PledgeCollateral struct below
+
 
 	Info      MinerInfo // TODO: this needs to be a cid of the miner Info struct
 	PoStState PoStState
+}
+
+type PledgeCollateral struct {
+	LockedFunds  cid.Cid, // HAMT[AMT[abi.LockedFund]]
+	LockedIndices  abi.BitField
 }
 
 type MinerInfo struct {
@@ -268,10 +274,10 @@ func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 	return sectorInfos, nil
 }
 
-func (st *State) addPledge(store adt.Store, currEpoch abi.ChainEpoch, pledgeAmount abi.TokenAmount) error {
+func (st *State) addPledge(store runtime.Store, currEpoch abi.ChainEpoch, pledgeAmount abi.TokenAmount) {
 	Assert(pledgeAmount.GreaterThanEqual(big.Zero()))
 
-	_ = abi.Reward{
+	pledge = abi.Reward{
 		StartEpoch: currEpoch + PledgeCliff,
 		EndEpoch: currEpoch + PledgeCliff + PledgeVestingPeriod,
 		Value: pledgeAmount,
@@ -279,11 +285,167 @@ func (st *State) addPledge(store adt.Store, currEpoch abi.ChainEpoch, pledgeAmou
 		VestingFunction: abi.Linear,
 	}
 
-	_ = adt.AsMultimap(store, st.PledgeCollateralMap)
+	var pc PledgeCollateral
+	store.Get(st.PledgeCollateral, &pc)
 
-	// TODO discuss the data struct here
-	
-	return nil
+	pledges = adt.AsMultimap(store, pc.LockedFunds)
+	lockedFunds, found, err := pledges.Get(pledge.StartEpoch)
+	if err != nil{
+		rt.Abortf
+	}
+
+	if !found {
+		lockedFunds, err = adt.MakeEmptyArray(store)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIlegalState, "")
+		}
+	}
+
+	lockedFunds.AppendContinuous(pledge)
+	// update the bitfield
+	pc.LockedIndices.Set(pledge.StartEpoch)
+	pc.LockedFunds = lockedFunds.Root()
+
+	newCid := store.Put(pc)
+	st.PledgeCollateral = newCid
+}
+
+func (st *State) slashPledge(store runtime.Store, currEpoch abi.ChainEpoch, amountToSlash abi.TokenAmount) abi.TokenAmount {
+
+	// TODO check caller
+
+	var pc PledgeCollateral
+	store.Get(st.PledgeCollateral, &pc)
+
+	pledges = adt.AsMultimap(store, pc.LockedFunds)
+	indices, err := pc.LockedIndices.All(32 << 20)
+	if err !=  nil {
+
+	}
+
+	amountSlashed := big.Zero()
+	remainToSlash := amountToSlash
+
+	for _, index := range indices {
+		// AMT[LockedFund]
+		lockedFunds := pledges.Get(index)
+		var lf abi.LockedFund
+		var toDelete []uint64
+
+
+		lockedFunds.ForEach(&lf, func(i uint64) error {
+			if remainToSlash.GreatThan(big.Zero()) {
+				slashableAmount := big.Sub(big.Sub(lf.Value, lf.AmountVested(currEpoch)), lf.AmountSlashed)
+				if slashableAmount.GreatThan(big.Zero()) {
+					// do some slashing
+					slashingAmount := big.Max(remainToSlash, slashableAmount)
+					lf.AmountSlashed = big.Add(lf.AmountSlashed, slashingAmount)
+
+					amountSlashed = big.Add(amountSlashed, slashingAmount)
+					remainToSlash = big.Sub(remainToSlash, slashingAmount)
+
+					amountDisposed := big.Add(lf.AmountSlashed, lf.AmountWithdrawn)
+					if amountDisposed.GreaterThanEqual(lf.Value) {
+						// we can delete this entry as fund either has been slashed or withdrawn
+						toDelete = append(toDelete, i)
+					}
+				}
+			} else {
+				// TODO: break out
+			}
+		})
+
+		for _, i := range toDelete {
+			err = lockedFunds.Delete(i)
+			if err != nil {
+
+			}
+		}
+
+		if lockedFunds.Length() == 0 {
+			pledges.Delete(index)
+			pc.LockedIndices.Unset(index)
+		}
+
+		Assert(remainToSlash.GreaterThanEqual(big.Zero()))
+		if remainToSlash.IsZero()) {
+			break
+		}
+	}
+
+	pc.LockedFunds = lockedFunds.Root()
+	newCid := store.Put(pc)
+	st.PledgeCollateral = newCid
+
+	return &amountSlashed
+}
+
+func (st *State) withdrawLockedFund(store runtime.Store, currEpoch abi.ChainEpoch, amountRequested abi.TokenAmount) abi.TokenAmount {
+
+
+	// TODO check caller
+
+	var pc PledgeCollateral
+	store.Get(st.PledgeCollateral, &pc)
+
+	pledges = adt.AsMultimap(store, pc.LockedFunds)
+	indices, err := pc.LockedIndices.All(32 << 20)
+	if err !=  nil {
+
+	}
+
+	amountWithdrawn := big.Zero()
+	remainToWithdraw := amountRequested
+
+	for _, index := range indices {
+		// AMT[LockedFund]
+		lockedFunds := pledges.Get(index)
+		var lf abi.LockedFund
+		var toDelete []uint64
+
+		lockedFunds.ForEach(&lf, func(i uint64) error {
+			if remainToWithdraw.GreatThan(big.Zero()) {
+				// withdrableAmount can potentially be negative as more fund is slashed than vested and hench unwithdrawable
+				withdrawableAmount := big.Sub(big.Sub(lf.AmountVested(currEpoch), lf.AmountWithdrawn), lf.AmountSlashed)
+				if withdrawableAmount.GreatThan(big.Zero()) {
+					// do some slashing
+					withdrawingAmount := big.Max(remainToWithdraw, withdrawableAmount)
+					lf.AmountWithdrawn = big.Add(lf.AmountWithdrawn, withdrawingAmount)
+
+					amountWithdrawn = big.Add(amountWithdrawn, withdrawingAmount)
+					remainToWithdraw = big.Sub(remainToWithdraw, withdrawingAmount)
+
+					amountDisposed := big.Add(lf.AmountSlashed, lf.AmountWithdrawn)
+					if amountDisposed.GreaterThanEqual(lf.Value) {
+						// we can delete this entry as fund either has been slashed or withdrawn
+						toDelete = append(toDelete, i)
+					}
+				}
+			} else {
+				// TODO: break out
+			}
+		})
+
+		for _, i := range toDelete {
+			err = lockedFunds.Delete(i)
+			if err != nil {
+
+			}
+		}
+
+		if lockedFunds.Length() == 0 {
+			pledges.Delete(index)
+			pc.LockedIndices.Unset(index)
+		}
+
+		Assert(remainToWithdraw.GreaterThanEqual(big.Zero()))
+		if remainToWithdraw.IsZero()) {
+			break
+		}
+	}
+
+	return &amountWithdrawn
+
 }
 
 func (mps *PoStState) IsPoStOk() bool {

@@ -61,12 +61,13 @@ func NewTokenAmount(t int64) TokenAmount {
 // Randomness is a string of random bytes
 type Randomness []byte
 
-type Reward struct {
+type LockedFund struct {
 	VestingFunction
-	StartEpoch      ChainEpoch
-	EndEpoch        ChainEpoch
+	CliffStartEpoch      ChainEpoch // StartEpoch of the Un
+	FullyVestedEpoch        ChainEpoch
 	Value           TokenAmount
 	AmountWithdrawn TokenAmount
+	AmountSlashed TokenAmount
 }
 
 type VestingFunction int64
@@ -75,4 +76,25 @@ const (
 	Linear VestingFunction = iota
 	Other
 )
+
+// AmountVested returns the `TokenAmount` value of funds vested in the reward at an epoch
+func (r *LockedFund) AmountVested(currEpoch abi.ChainEpoch) abi.TokenAmount {
+	switch r.VestingFunction {
+	case None:
+		return r.Value
+	case Linear:
+		elapsed := currEpoch - r.StartEpoch
+		vestDuration := r.EndEpoch - r.StartEpoch
+		if elapsed >= vestDuration {
+			return r.Value
+		}
+
+		// (totalReward * elapsedEpoch) / vestDuration
+		// Division must be done last to avoid precision loss with integer values
+		return big.Div(big.Mul(r.Value, big.NewInt(int64(elapsed))), big.NewInt(int64(vestDuration)))
+	default:
+		return abi.NewTokenAmount(0)
+	}
+}
+
 
