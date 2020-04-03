@@ -270,7 +270,7 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 	var pledge abi.TokenAmount
 	var st State
 
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.PerEpochReward, nil, big.Zero())
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
 	var epochReward abi.TokenAmount
 	if err := rwret.Into(&epochReward); err != nil {
@@ -379,7 +379,7 @@ type OnSectorModifyWeightDescParams struct {
 func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.PerEpochReward, nil, big.Zero())
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
 	var epochReward abi.TokenAmount
 	if err := rwret.Into(&epochReward); err != nil {
@@ -574,6 +574,19 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	if err := a.processDeferredCronEvents(rt); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
+
+	var st State
+	rt.State().Readonly(&st)
+
+	// update network KPI in RewardActor
+	_, code := rt.Send(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.UpdateNetworkKPI,
+		&st.TotalRawBytePower,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to update network KPI with Reward Actor")
+
 	return nil
 }
 
