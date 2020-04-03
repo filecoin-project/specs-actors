@@ -450,7 +450,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	}
 
 	storageWeightDescPrev := asStorageWeightDesc(st.Info.SectorSize, sector)
-	pledgePrev := sector.PledgeRequirement
+	// pledgePrev := sector.PledgeRequirement
 
 	extensionLength := params.NewExpiration - sector.Info.Expiration
 	if extensionLength < 0 {
@@ -465,7 +465,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		builtin.MethodsPower.OnSectorModifyWeightDesc,
 		&power.OnSectorModifyWeightDescParams{
 			PrevWeight: *storageWeightDescPrev,
-			PrevPledge: pledgePrev,
+			// PrevPledge: pledgePrev,
 			NewWeight:  storageWeightDescNew,
 		},
 		abi.NewTokenAmount(0),
@@ -858,7 +858,7 @@ func (a Actor) enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPa
 func (a Actor) requestBeginFaults(rt Runtime, weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
 	params := &power.OnSectorTemporaryFaultEffectiveBeginParams{
 		Weights: make([]power.SectorStorageWeightDesc, len(weights)),
-		Pledge:  pledge,
+		// Pledge:  pledge,
 	}
 	for i, w := range weights {
 		params.Weights[i] = *w
@@ -876,7 +876,7 @@ func (a Actor) requestBeginFaults(rt Runtime, weights []*power.SectorStorageWeig
 func (a Actor) requestEndFaults(rt Runtime, weights []*power.SectorStorageWeightDesc, pledge abi.TokenAmount) {
 	params := &power.OnSectorTemporaryFaultEffectiveEndParams{
 		Weights: make([]power.SectorStorageWeightDesc, len(weights)),
-		Pledge:  pledge,
+		// Pledge:  pledge,
 	}
 	for i, w := range weights {
 		params.Weights[i] = *w
@@ -921,7 +921,7 @@ func (a Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTer
 	params := &power.OnSectorTerminateParams{
 		TerminationType: terminationType,
 		Weights:         make([]power.SectorStorageWeightDesc, len(weights)),
-		Pledge:          pledge,
+		// Pledge:          pledge,
 	}
 	for i, w := range weights {
 		params.Weights[i] = *w

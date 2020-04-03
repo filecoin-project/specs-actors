@@ -123,10 +123,8 @@ func main() {
 		power.Claim{},
 		power.CronEvent{},
 		// method params
-		power.AddBalanceParams{},
 		power.CreateMinerParams{},
 		power.DeleteMinerParams{},
-		power.WithdrawBalanceParams{},
 		power.EnrollCronEventParams{},
 		power.OnSectorTerminateParams{},
 		power.OnSectorModifyWeightDescParams{},

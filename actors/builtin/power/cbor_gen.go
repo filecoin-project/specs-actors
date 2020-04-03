@@ -19,7 +19,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{137}); err != nil {
+	if _, err := w.Write([]byte{136}); err != nil {
 		return err
 	}
 
@@ -42,12 +42,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.MinerCount)-1)); err != nil {
 			return err
 		}
-	}
-
-	// t.EscrowTable (cid.Cid) (struct)
-
-	if err := cbg.WriteCid(w, t.EscrowTable); err != nil {
-		return xerrors.Errorf("failed to write cid field t.EscrowTable: %w", err)
 	}
 
 	// t.CronEventQueue (cid.Cid) (struct)
@@ -103,7 +97,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 8 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -149,18 +143,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.MinerCount = int64(extraI)
-	}
-	// t.EscrowTable (cid.Cid) (struct)
-
-	{
-
-		c, err := cbg.ReadCid(br)
-		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.EscrowTable: %w", err)
-		}
-
-		t.EscrowTable = c
-
 	}
 	// t.CronEventQueue (cid.Cid) (struct)
 
@@ -256,7 +238,7 @@ func (t *Claim) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{131}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
@@ -267,11 +249,6 @@ func (t *Claim) MarshalCBOR(w io.Writer) error {
 
 	// t.QualityAdjPower (big.Int) (struct)
 	if err := t.QualityAdjPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.Pledge (big.Int) (struct)
-	if err := t.Pledge.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -288,7 +265,7 @@ func (t *Claim) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -306,15 +283,6 @@ func (t *Claim) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.QualityAdjPower.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.Pledge (big.Int) (struct)
-
-	{
-
-		if err := t.Pledge.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
@@ -390,49 +358,6 @@ func (t *CronEvent) UnmarshalCBOR(r io.Reader) error {
 	t.CallbackPayload = make([]byte, extra)
 	if _, err := io.ReadFull(br, t.CallbackPayload); err != nil {
 		return err
-	}
-	return nil
-}
-
-func (t *AddBalanceParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{129}); err != nil {
-		return err
-	}
-
-	// t.Miner (address.Address) (struct)
-	if err := t.Miner.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *AddBalanceParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Miner (address.Address) (struct)
-
-	{
-
-		if err := t.Miner.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
 	}
 	return nil
 }
@@ -574,63 +499,6 @@ func (t *DeleteMinerParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *WithdrawBalanceParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{130}); err != nil {
-		return err
-	}
-
-	// t.Miner (address.Address) (struct)
-	if err := t.Miner.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.Requested (big.Int) (struct)
-	if err := t.Requested.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *WithdrawBalanceParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Miner (address.Address) (struct)
-
-	{
-
-		if err := t.Miner.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.Requested (big.Int) (struct)
-
-	{
-
-		if err := t.Requested.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
 func (t *EnrollCronEventParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -730,7 +598,7 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{131}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
@@ -758,11 +626,6 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.Pledge (big.Int) (struct)
-	if err := t.Pledge.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -777,7 +640,7 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -833,15 +696,6 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		t.Weights[i] = v
 	}
 
-	// t.Pledge (big.Int) (struct)
-
-	{
-
-		if err := t.Pledge.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
 	return nil
 }
 
@@ -850,17 +704,12 @@ func (t *OnSectorModifyWeightDescParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{131}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
 	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
 	if err := t.PrevWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.PrevPledge (big.Int) (struct)
-	if err := t.PrevPledge.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -882,7 +731,7 @@ func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -891,15 +740,6 @@ func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.PrevWeight.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.PrevPledge (big.Int) (struct)
-
-	{
-
-		if err := t.PrevPledge.UnmarshalCBOR(br); err != nil {
 			return err
 		}
 
@@ -1145,7 +985,7 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) MarshalCBOR(w io.Writer) erro
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
 		return err
 	}
 
@@ -1161,11 +1001,6 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) MarshalCBOR(w io.Writer) erro
 		if err := v.MarshalCBOR(w); err != nil {
 			return err
 		}
-	}
-
-	// t.Pledge (big.Int) (struct)
-	if err := t.Pledge.MarshalCBOR(w); err != nil {
-		return err
 	}
 	return nil
 }
@@ -1181,7 +1016,7 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) UnmarshalCBOR(r io.Reader) er
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1212,15 +1047,6 @@ func (t *OnSectorTemporaryFaultEffectiveEndParams) UnmarshalCBOR(r io.Reader) er
 		t.Weights[i] = v
 	}
 
-	// t.Pledge (big.Int) (struct)
-
-	{
-
-		if err := t.Pledge.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
 	return nil
 }
 
@@ -1229,7 +1055,7 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) MarshalCBOR(w io.Writer) er
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{129}); err != nil {
 		return err
 	}
 
@@ -1246,11 +1072,6 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) MarshalCBOR(w io.Writer) er
 			return err
 		}
 	}
-
-	// t.Pledge (big.Int) (struct)
-	if err := t.Pledge.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1265,7 +1086,7 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) UnmarshalCBOR(r io.Reader) 
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1296,15 +1117,6 @@ func (t *OnSectorTemporaryFaultEffectiveBeginParams) UnmarshalCBOR(r io.Reader) 
 		t.Weights[i] = v
 	}
 
-	// t.Pledge (big.Int) (struct)
-
-	{
-
-		if err := t.Pledge.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
 	return nil
 }
 

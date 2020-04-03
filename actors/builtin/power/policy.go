@@ -41,7 +41,7 @@ func pledgePenaltyForSectorTermination(pledge abi.TokenAmount, termType SectorTe
 }
 
 // Penalty to pledge collateral for repeated failure to prove storage.
-func pledgePenaltyForWindowedPoStFailure(pledge abi.TokenAmount, failures int64) abi.TokenAmount {
+func pledgePenaltyForWindowedPoStFailure(failures int64) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 

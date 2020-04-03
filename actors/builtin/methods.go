@@ -68,8 +68,6 @@ var MethodsMarket = struct {
 
 var MethodsPower = struct {
 	Constructor                          abi.MethodNum
-	AddBalance                           abi.MethodNum
-	WithdrawBalance                      abi.MethodNum
 	CreateMiner                          abi.MethodNum
 	DeleteMiner                          abi.MethodNum
 	OnSectorProveCommit                  abi.MethodNum
@@ -82,7 +80,7 @@ var MethodsPower = struct {
 	EnrollCronEvent                      abi.MethodNum
 	ReportConsensusFault                 abi.MethodNum
 	OnEpochTickEnd                       abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
 
 var MethodsMiner = struct {
 	Constructor            abi.MethodNum
