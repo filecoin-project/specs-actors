@@ -1,12 +1,15 @@
 package miner
 
 import (
+	"fmt"
+	"io"
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
+	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -45,6 +48,8 @@ type MinerInfo struct {
 	// Amount of space in each sector committed to the network by this miner.
 	SectorSize abi.SectorSize
 }
+
+type PeerID peer.ID
 
 type PoStState struct {
 	// Epoch that starts the current proving period
@@ -299,4 +304,38 @@ func bitfieldToSectorNos(rt Runtime, bf *abi.BitField) []abi.SectorNumber {
 	}
 
 	return snums
+}
+
+func (p *PeerID) MarshalCBOR(w io.Writer) error {
+	if err := cbg.CborWriteHeader(w, cbg.MajByteString, uint64(len([]byte(*p)))); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(*p)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *PeerID) UnmarshalCBOR(r io.Reader) error {
+	t, l, err := cbg.CborReadHeader(r)
+	if err != nil {
+		return err
+	}
+
+	if t != cbg.MajByteString {
+		return fmt.Errorf("expected MajByteString when reading peer ID, got %d instead", t)
+	}
+
+	if l > cbg.MaxLength {
+		return fmt.Errorf("peer ID in input was too long")
+	}
+
+	buf := make([]byte, l)
+	_, err = io.ReadFull(r, buf)
+	if err != nil {
+		return fmt.Errorf("failed to read full peer ID: %w", err)
+	}
+
+	*p = PeerID(buf)
+	return nil
 }
