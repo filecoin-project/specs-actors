@@ -22,13 +22,13 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
 		abi.PieceInfo{},
 		abi.SectorID{},
+		abi.SectorInfo{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
-		abi.PoStCandidate{},
 		abi.PoStProof{},
-		abi.PrivatePoStCandidateProof{},
-		abi.OnChainPoStVerifyInfo{},
-		abi.OnChainElectionPoStVerifyInfo{},
+		abi.WindowPoStVerifyInfo{},
+		abi.WinningPoStVerifyInfo{},
+		abi.OnChainWindowPoStVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}
