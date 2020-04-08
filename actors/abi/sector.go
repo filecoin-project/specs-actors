@@ -221,7 +221,6 @@ type WinningPoStVerifyInfo struct {
 	Randomness        PoStRandomness
 	Proofs            []PoStProof
 	ChallengedSectors []SectorInfo
-	EligibleSectors   []SectorNumber
 	Prover            ActorID // used to derive 32-byte prover ID
 }
 
