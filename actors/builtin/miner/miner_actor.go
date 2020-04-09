@@ -158,7 +158,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 //////////////////
 
 // Invoked by miner's worker address to submit their fallback post
-func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainPoStVerifyInfo) *adt.EmptyValue {
+func (a Actor) SubmitWindowedPoSt(rt Runtime, params *abi.OnChainWindowPoStVerifyInfo) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
@@ -936,53 +936,34 @@ func (a Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTer
 	builtin.RequireSuccess(rt, code, "failed to terminate sector power type %v, weights %v", terminationType, weights)
 }
 
-func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChainPoStVerifyInfo) {
-	// TODO: verifying no duplicates here seems wrong, we should be verifying
-	// that exactly what we expect is passed in (this isnt election post)
-
+func (a Actor) verifyWindowedPost(rt Runtime, st *State, onChainInfo *abi.OnChainWindowPoStVerifyInfo) {
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
-	// verify no duplicate tickets
-	challengeIndices := make(map[int64]bool)
-	for _, tix := range onChainInfo.Candidates {
-		if _, ok := challengeIndices[tix.ChallengeIndex]; ok {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Windowed PoSt. Duplicate ticket included.")
-		}
-		challengeIndices[tix.ChallengeIndex] = true
-	}
-
-	// verify appropriate number of tickets is present
-	if int64(len(onChainInfo.Candidates)) != NumWindowedPoStSectors {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid Windowed PoSt. Too few tickets included.")
-	}
-
-	// regenerate randomness used. The PoSt Verification below will fail if
-	// the same was not used to generate the proof
-
+	// Expect a proof over all sectors.
+	// This will be changed so that an individual submission can prove only a subset at a time.
 	store := adt.AsStore(rt)
 	sectorInfos, err := st.ComputeProvingSet(store)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "Could not compute proving set: %s", err)
 	}
 
+	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
 	err = rt.Message().Receiver().MarshalCBOR(&addrBuf)
 	AssertNoError(err)
 	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, st.PoStState.ProvingPeriodStart, addrBuf.Bytes())
 
 	// Get public inputs
-	pvInfo := abi.PoStVerifyInfo{
-		Prover:          abi.ActorID(minerActorID),
-		Candidates:      onChainInfo.Candidates,
-		Proofs:          onChainInfo.Proofs,
-		Randomness:      abi.PoStRandomness(postRandomness),
-		EligibleSectors: sectorInfos,
-		ChallengeCount:  WindowedPoStChallengeCount,
+	pvInfo := abi.WindowPoStVerifyInfo{
+		Randomness:        abi.PoStRandomness(postRandomness),
+		Proofs:            onChainInfo.Proofs,
+		ChallengedSectors: sectorInfos,
+		Prover:            abi.ActorID(minerActorID),
 	}
 
 	// Verify the PoSt Proof
-	if err := rt.Syscalls().VerifyPoSt(pvInfo); err != nil {
+	if err = rt.Syscalls().VerifyPoSt(pvInfo); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid PoSt %+v: %s", pvInfo, err)
 	}
 }

@@ -44,7 +44,7 @@ func (s *syscaller) VerifySeal(vi abi.SealVerifyInfo) error {
 	return nil
 }
 
-func (s *syscaller) VerifyPoSt(vi abi.PoStVerifyInfo) error {
+func (s *syscaller) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
 	s.PanicOnUnsetFunc("PoStVerifier")
 	return nil
 }

@@ -118,7 +118,7 @@ type Syscalls interface {
 	// Verifies a sector seal proof.
 	VerifySeal(vi abi.SealVerifyInfo) error
 	// Verifies a proof of spacetime.
-	VerifyPoSt(vi abi.PoStVerifyInfo) error
+	VerifyPoSt(vi abi.WindowPoStVerifyInfo) error
 	// Verifies that two block headers provide proof of a consensus fault:
 	// - both headers mined by the same actor
 	// - headers are different
