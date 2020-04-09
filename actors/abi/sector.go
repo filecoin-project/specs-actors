@@ -144,12 +144,6 @@ func (p RegisteredProof) RegisteredWindowPoStProof() (RegisteredProof, error) {
 	}
 }
 
-// RegisteredPoStProof produces the PoSt-specific RegisteredProof corresponding
-// to the receiving RegisteredProof.
-func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
-	panic("unsupported method")
-}
-
 // RegisteredSealProof produces the seal-specific RegisteredProof corresponding
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
