@@ -16,14 +16,10 @@ import (
 )
 
 type State struct {
-	TotalRawBytePower    abi.StoragePower
-	TotalQualityAdjPower abi.StoragePower
-	MinerCount           int64
-
-	// The balances of pledge collateral for each miner actually held by this actor.
-	// The sum of the values here should always equal the actor's balance.
-	// See Claim for the pledge *requirements* for each actor.
-	EscrowTable cid.Cid // BalanceTable (HAMT[address]TokenAmount)
+	TotalRawBytePower     abi.StoragePower
+	TotalQualityAdjPower  abi.StoragePower
+	TotalPledgeCollateral abi.TokenAmount
+	MinerCount            int64
 
 	// A queue of events to be triggered by cron, indexed by epoch.
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
@@ -34,11 +30,10 @@ type State struct {
 	// Miners having failed to prove storage.
 	PoStDetectedFaultMiners cid.Cid // Set, HAMT[addr.Address]struct{}
 
-	// Claimed power and associated pledge requirements for each miner.
+	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
 	// Number of miners having proven the minimum consensus power.
-	// TODO: actually update this value.
 	NumMinersMeetingMinPower int64
 }
 
@@ -48,9 +43,6 @@ type Claim struct {
 
 	// Sum of quality adjusted power for a miner's sectors.
 	QualityAdjPower abi.StoragePower
-
-	// Sum of pledge requirement for a miner's sectors.
-	Pledge abi.TokenAmount
 }
 
 type CronEvent struct {
@@ -64,7 +56,7 @@ func ConstructState(emptyMapCid cid.Cid) *State {
 	return &State{
 		TotalRawBytePower:        abi.NewStoragePower(0),
 		TotalQualityAdjPower:     abi.NewStoragePower(0),
-		EscrowTable:              emptyMapCid,
+		TotalPledgeCollateral:    abi.NewTokenAmount(0),
 		CronEventQueue:           emptyMapCid,
 		PoStDetectedFaultMiners:  emptyMapCid,
 		Claims:                   emptyMapCid,
@@ -127,42 +119,8 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	return minerNominalPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
 }
 
-func (st *State) getMinerBalance(store adt.Store, miner addr.Address) (abi.TokenAmount, error) {
-	table := adt.AsBalanceTable(store, st.EscrowTable)
-	return table.Get(miner)
-}
-
-func (st *State) setMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
-	table := adt.AsBalanceTable(store, st.EscrowTable)
-	if table.Set(miner, amount) == nil {
-		st.EscrowTable = table.Root()
-	}
-	return nil
-}
-
-func (st *State) addMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount) error {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-	table := adt.AsBalanceTable(store, st.EscrowTable)
-	if err := table.Add(miner, amount); err != nil {
-		return err
-	}
-	st.EscrowTable = table.Root()
-	return nil
-}
-
-func (st *State) subtractMinerBalance(store adt.Store, miner addr.Address, amount abi.TokenAmount,
-	balanceFloor abi.TokenAmount) (abi.TokenAmount, error) {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-	table := adt.AsBalanceTable(store, st.EscrowTable)
-	subtracted, err := table.SubtractWithMinimum(miner, amount, balanceFloor)
-	if err == nil {
-		st.EscrowTable = table.Root()
-	}
-	return subtracted, err
-}
-
 // Parameters may be negative to subtract.
-func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower, pledge abi.TokenAmount) error {
+func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
 	claim, ok, err := st.getClaim(s, miner)
 	if err != nil {
 		return err
@@ -176,12 +134,9 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return err
 	}
 
-	// update pledge and power
-	// TODO: ZX, update to ensure that pledge is appropriate for given power update
+	// update power
 	claim.RawBytePower = big.Add(claim.RawBytePower, power)
 	claim.QualityAdjPower = big.Add(claim.QualityAdjPower, qapower)
-
-	claim.Pledge = big.Add(claim.Pledge, pledge)
 
 	newNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
 	if err != nil {
@@ -216,9 +171,13 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 
 	AssertMsg(claim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", claim.RawBytePower)
 	AssertMsg(claim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", claim.QualityAdjPower)
-	AssertMsg(claim.Pledge.GreaterThanEqual(big.Zero()), "negative claimed pledge: %v", claim.Pledge)
 	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
 	return st.setClaim(s, miner, claim)
+}
+
+func (st *State) addPledgeTotal(amount abi.TokenAmount) {
+	st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, amount)
+	Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
 }
 
 func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
@@ -360,7 +319,6 @@ func (st *State) getClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
 func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
 	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-	Assert(claim.Pledge.GreaterThanEqual(big.Zero()))
 
 	hm := adt.AsMap(s, st.Claims)
 
@@ -378,6 +336,7 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 		return errors.Wrapf(err, "failed to delete claim at address %s from store %s", a, st.Claims)
 	}
 	st.Claims = hm.Root()
+
 	return nil
 }
 

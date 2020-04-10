@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -60,9 +59,4 @@ func (h *rewardHarness) constructAndVerify(rt *mock.Runtime) {
 	ret := rt.Call(h.Constructor, nil)
 	assert.Nil(h.t, ret)
 	rt.Verify()
-
-	var st reward.State
-	rt.GetState(&st)
-	emptyMap := adt.AsMultimap(adt.AsStore(rt), st.RewardMap)
-	assert.Equal(h.t, emptyMap.Root(), st.RewardMap)
 }

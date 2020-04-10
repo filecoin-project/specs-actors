@@ -50,3 +50,75 @@ const MaxFaultsCount = 32 << 20
 
 // ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
 const ProvingPeriod = 300
+
+type BigFrac struct {
+	numerator   big.Int
+	denominator big.Int
+}
+
+// Penalty to pledge collateral for the termination of an individual sector.
+func pledgePenaltyForSectorTermination(termType power.SectorTermination, desc *power.SectorStorageWeightDesc) abi.TokenAmount {
+	return big.Zero() // PARAM_FINISH
+}
+
+// Penalty to pledge collateral for repeated failure to prove storage.
+// TODO: this should take in desc power.SectorStorageWeightDesc
+func pledgePenaltyForWindowedPoStFailure(failures int64) abi.TokenAmount {
+	return big.Zero() // PARAM_FINISH
+}
+
+// Maximum age of a block header used as proof of a consensus fault to appear in the chain.
+var ConsensusFaultReportingWindow = abi.ChainEpoch(2880) // 1 day @ 30 second epochs.
+
+var consensusFaultReporterInitialShare = BigFrac{
+	// PARAM_FINISH
+	numerator:   big.NewInt(1),
+	denominator: big.NewInt(1000),
+}
+var consensusFaultReporterShareGrowthRate = BigFrac{
+	// PARAM_FINISH
+	numerator:   big.NewInt(101251),
+	denominator: big.NewInt(100000),
+}
+
+const EpochDurationSeconds = 30
+const SecondsInYear = 31556925
+const SecondsInDay = 86400
+
+// Specification for a linear vesting schedule.
+type VestSpec struct {
+	InitialDelay abi.ChainEpoch // Delay before any amount starts vesting.
+	VestPeriod   abi.ChainEpoch // Period over which the total should vest, after the initial delay.
+	StepDuration abi.ChainEpoch // Duration between successive incremental vests (independent of vesting period).
+	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
+}
+
+var PledgeVestingSpec = VestSpec{
+	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
+	StepDuration: abi.ChainEpoch(7 * SecondsInDay / EpochDurationSeconds), // 1 week, PARAM_FINISH
+	Quantization: SecondsInDay / EpochDurationSeconds, // 1 day, PARAM_FINISH
+}
+
+func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
+	// PARAM_FINISH
+	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
+	// var multiplier = growthRate^elapsedEpoch
+	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
+	// return collateral * slasherProportion
+
+	// BigInt Operation
+	// NUM = SLASHER_SHARE_GROWTH_RATE_NUM^elapsedEpoch * INITIAL_SLASHER_SHARE_NUM * collateral
+	// DENOM = SLASHER_SHARE_GROWTH_RATE_DENOM^elapsedEpoch * INITIAL_SLASHER_SHARE_DENOM
+	// slasher_amount = min(NUM/DENOM, collateral)
+	maxReporterShareNum := big.NewInt(1)
+	maxReporterShareDen := big.NewInt(2)
+
+	elapsed := big.NewInt(int64(elapsedEpoch))
+	slasherShareNumerator := big.Exp(consensusFaultReporterShareGrowthRate.numerator, elapsed)
+	slasherShareDenominator := big.Exp(consensusFaultReporterShareGrowthRate.denominator, elapsed)
+
+	num := big.Mul(big.Mul(slasherShareNumerator, consensusFaultReporterInitialShare.numerator), collateral)
+	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.denominator)
+	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, maxReporterShareNum), maxReporterShareDen))
+}
