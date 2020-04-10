@@ -43,7 +43,7 @@ func (a Actor) Exports() []interface{} {
 		10:                        a.OnMinerWindowedPoStFailure,
 		11:                        a.EnrollCronEvent,
 		12:                        a.OnEpochTickEnd,
-		13:                        a.UpdatePledgeCollateralTally,
+		13:                        a.UpdatePledgeTotal,
 		14:                        a.OnConsensusFault,
 	}
 }
@@ -186,7 +186,7 @@ type OnSectorProveCommitParams struct {
 	Weight SectorStorageWeightDesc
 }
 
-// Returns the initial pledge collateral
+// Returns the initial pledge collateral requirement.
 func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	initialPledge := a.computeInitialPledge(rt, &params.Weight)
@@ -414,39 +414,28 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func (a Actor) updatePledgeCollateralTally(rt Runtime, pledgeAmount abi.TokenAmount) error {
+func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta abi.TokenAmount) *adt.EmptyValue {
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, pledgeAmount)
-		Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
-
+		st.addPledgeTotal(pledgeDelta)
 		return nil
 	})
 	return nil
 }
 
-func (a Actor) UpdatePledgeCollateralTally(rt Runtime, pledgeAmount abi.TokenAmount) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	a.updatePledgeCollateralTally(rt, pledgeAmount)
-	return nil
-}
-
 func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount abi.TokenAmount) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-
 	minerAddr := rt.Message().Caller()
-	nominal, ok := rt.ResolveAddress(minerAddr)
-	Assert(ok)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-
-		claim, powerOk, err := st.getClaim(adt.AsStore(rt), nominal)
+		claim, powerOk, err := st.getClaim(adt.AsStore(rt), minerAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
 		if !powerOk {
-			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", nominal)
+			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", minerAddr)
 		}
 		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
@@ -454,12 +443,11 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount abi.TokenAmount) *adt.E
 		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
 		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
 
-		st.TotalPledgeCollateral = big.Sub(st.TotalPledgeCollateral, pledgeAmount)
-		Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
+		st.addPledgeTotal(pledgeAmount.Neg())
 		return nil
 	})
 
-	err := a.deleteMinerActor(rt, nominal)
+	err := a.deleteMinerActor(rt, minerAddr)
 	AssertNoError(err)
 
 	return nil

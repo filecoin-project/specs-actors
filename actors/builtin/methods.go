@@ -78,7 +78,7 @@ var MethodsPower = struct {
 	OnMinerWindowedPoStFailure           abi.MethodNum
 	EnrollCronEvent                      abi.MethodNum
 	OnEpochTickEnd                       abi.MethodNum
-	UpdatePledgeCollateralTally          abi.MethodNum
+	UpdatePledgeTotal                    abi.MethodNum
 	OnConsensusFault                     abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 

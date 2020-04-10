@@ -183,8 +183,6 @@ type StateHandle interface {
 
 // Result of checking two headers for a consensus fault.
 type ConsensusFault struct {
-	// Address of the slasher who reported the fault.
-	Reporter addr.Address
 	// Address of the miner at fault (always an ID address).
 	Target addr.Address
 	// Epoch of the fault, which is the higher epoch of the two blocks causing it.

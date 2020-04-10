@@ -34,7 +34,6 @@ type State struct {
 	Claims cid.Cid // Map, HAMT[address]Claim
 
 	// Number of miners having proven the minimum consensus power.
-	// TODO: actually update this value.
 	NumMinersMeetingMinPower int64
 }
 
@@ -57,6 +56,7 @@ func ConstructState(emptyMapCid cid.Cid) *State {
 	return &State{
 		TotalRawBytePower:        abi.NewStoragePower(0),
 		TotalQualityAdjPower:     abi.NewStoragePower(0),
+		TotalPledgeCollateral:    abi.NewTokenAmount(0),
 		CronEventQueue:           emptyMapCid,
 		PoStDetectedFaultMiners:  emptyMapCid,
 		Claims:                   emptyMapCid,
@@ -173,6 +173,11 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 	AssertMsg(claim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", claim.QualityAdjPower)
 	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
 	return st.setClaim(s, miner, claim)
+}
+
+func (st *State) addPledgeTotal(amount abi.TokenAmount) {
+	st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, amount)
+	Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
 }
 
 func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {

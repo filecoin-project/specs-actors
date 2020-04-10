@@ -84,10 +84,21 @@ var consensusFaultReporterShareGrowthRate = BigFrac{
 const EpochDurationSeconds = 30
 const SecondsInYear = 31556925
 const SecondsInDay = 86400
-const QuantizedGranularity = SecondsInDay / EpochDurationSeconds                 // per day
-const PledgeCliff = abi.ChainEpoch(SecondsInYear / EpochDurationSeconds)         // PARAM_FINISH
-const PledgeVestingPeriod = abi.ChainEpoch(SecondsInYear / EpochDurationSeconds) // PARAM_FINISH
-const VestIncrement = abi.ChainEpoch(7 * SecondsInDay / EpochDurationSeconds)    // PARAM_FINISH
+
+// Specification for a linear vesting schedule.
+type VestSpec struct {
+	InitialDelay abi.ChainEpoch // Delay before any amount starts vesting.
+	VestPeriod   abi.ChainEpoch // Period over which the total should vest, after the initial delay.
+	StepDuration abi.ChainEpoch // Duration between successive incremental vests (independent of vesting period).
+	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
+}
+
+var PledgeVestingSpec = VestSpec{
+	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
+	StepDuration: abi.ChainEpoch(7 * SecondsInDay / EpochDurationSeconds), // 1 week, PARAM_FINISH
+	Quantization: SecondsInDay / EpochDurationSeconds, // 1 day, PARAM_FINISH
+}
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
 	// PARAM_FINISH
