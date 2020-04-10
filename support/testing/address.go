@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
 )
 
 func NewIDAddr(t *testing.T, id uint64) addr.Address {
@@ -43,4 +44,17 @@ func NewActorAddr(t *testing.T, data string) addr.Address {
 		t.Fatal(err)
 	}
 	return address
+}
+
+type rooter interface {
+	Root() (cid.Cid, error)
+}
+
+func MustRoot(t testing.TB, r rooter) cid.Cid {
+	t.Helper()
+	c, err := r.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

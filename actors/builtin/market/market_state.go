@@ -59,9 +59,13 @@ func (st *State) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) 
 	// For consistency with HandleExpiredDeals, only process updates up to the end of the _previous_ epoch.
 	epoch := rt.CurrEpoch() - 1
 
-	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+	dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load dead ids set: %s", err)
+	}
+
 	var extractedDealIDs []abi.DealID
-	err := dbp.ForEach(addr, func(id abi.DealID) error {
+	err = dbp.ForEach(addr, func(id abi.DealID) error {
 		extractedDealIDs = append(extractedDealIDs, id)
 		return nil
 	})
@@ -155,31 +159,70 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 
 	state.LastUpdatedEpoch = epoch
 
-	states := AsDealStateArray(adt.AsStore(rt), st.States)
-	if err := states.Set(dealID, state); err != nil {
-		rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
-	}
-	st.States = states.Root()
+	st.mutateDealStates(rt, func(states *DealMetaArray) {
+		if err := states.Set(dealID, state); err != nil {
+			rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
+		}
+	})
 	return
 }
 
+func (st *State) mutateDealStates(rt Runtime, f func(*DealMetaArray)) {
+	states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal states: %s", err)
+	}
+
+	f(states)
+
+	rcid, err := states.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "flushing deal states failed: %s", err)
+	}
+
+	st.States = rcid
+}
+
+func (st *State) mutateDealProposals(rt Runtime, f func(*DealArray)) {
+	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal proposals array: %s", err)
+	}
+
+	f(proposals)
+
+	rcid, err := proposals.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "flushing deal proposals set failed: %s", err)
+	}
+
+	st.Proposals = rcid
+}
+
 func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
-	dealP := st.mustGetDeal(rt, dealID)
 
-	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-	if err := proposals.Delete(uint64(dealID)); err != nil {
-		rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
-	}
-	st.Proposals = proposals.Root()
+	var dealP *DealProposal
+	st.mutateDealProposals(rt, func(proposals *DealArray) {
+		p, err := proposals.Get(dealID)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to get deal before deleting it: %s", err)
+		}
+		dealP = p
 
-	dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
-	if err := dbp.Remove(dealP.Client, dealID); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by client address from DealIDsByParty: %v", err)
-	}
-	if err := dbp.Remove(dealP.Provider, dealID); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by provider address from DealIDsByParty: %v", err)
-	}
-	st.DealIDsByParty = dbp.Root()
+		if err := proposals.Delete(uint64(dealID)); err != nil {
+			rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
+		}
+	})
+
+	st.MutateDealIDs(rt, func(dbp *SetMultimap) error {
+		if err := dbp.Remove(dealP.Client, dealID); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by client address from DealIDsByParty: %v", err)
+		}
+		if err := dbp.Remove(dealP.Provider, dealID); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by provider address from DealIDsByParty: %v", err)
+		}
+		return nil
+	})
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.
@@ -227,28 +270,51 @@ func (st *State) generateStorageDealID() abi.DealID {
 // Balance table operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) AddEscrowBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
-	et := adt.AsBalanceTable(s, st.EscrowTable)
-	err := et.AddCreate(a, amount)
+func (st *State) MutateBalanceTable(s adt.Store, c *cid.Cid, f func(t *adt.BalanceTable) error) error {
+	t, err := adt.AsBalanceTable(s, *c)
 	if err != nil {
 		return err
 	}
-	st.EscrowTable = et.Root()
+
+	if err := f(t); err != nil {
+		return err
+	}
+
+	rc, err := t.Root()
+	if err != nil {
+		return err
+	}
+
+	*c = rc
 	return nil
+}
+
+func (st *State) AddEscrowBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
+	return st.MutateBalanceTable(s, &st.EscrowTable, func(et *adt.BalanceTable) error {
+		err := et.AddCreate(a, amount)
+		if err != nil {
+			return xerrors.Errorf("failed to add %s to balance table: %w", a, err)
+		}
+		return nil
+	})
 }
 
 func (st *State) AddLockedBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
-	lt := adt.AsBalanceTable(s, st.LockedTable)
-	err := lt.AddCreate(a, amount)
-	if err != nil {
-		return err
-	}
-	st.LockedTable = lt.Root()
-	return nil
+	return st.MutateBalanceTable(s, &st.LockedTable, func(lt *adt.BalanceTable) error {
+		err := lt.AddCreate(a, amount)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (st *State) GetEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
-	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable).Get(a)
+	bt, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
+	}
+	ret, err := bt.Get(a)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
 	}
@@ -256,7 +322,11 @@ func (st *State) GetEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 }
 
 func (st *State) GetLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
-	ret, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable).Get(a)
+	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
+	}
+	ret, err := lt.Get(a)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
 	}
@@ -272,61 +342,78 @@ func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.Toke
 		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount)
 	}
 
-	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-	err := lt.Add(addr, amount)
-	if err != nil {
-		return xerrors.Errorf("adding locked balance: %w", err)
-	}
-
-	st.LockedTable = lt.Root()
-
-	return nil
+	return st.MutateBalanceTable(adt.AsStore(rt), &st.LockedTable, func(lt *adt.BalanceTable) error {
+		err := lt.Add(addr, amount)
+		if err != nil {
+			return xerrors.Errorf("adding locked balance: %w", err)
+		}
+		return nil
+	})
 }
 
 func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-	err := lt.MustSubtract(addr, amount)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "subtracting from locked balance: %v", err)
-	}
-	st.LockedTable = lt.Root()
+	st.MutateBalanceTable(adt.AsStore(rt), &st.LockedTable, func(lt *adt.BalanceTable) error {
+		err := lt.MustSubtract(addr, amount)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "subtracting from locked balance: %v", err)
+		}
+		return nil
+	})
 }
 
 // move funds from locked in client to available in provider
 func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-
-	err := et.MustSubtract(fromAddr, amount)
+	et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
+	}
+	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+	}
+
+	if err := et.MustSubtract(fromAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
 	}
 
-	err = lt.MustSubtract(fromAddr, amount)
-	if err != nil {
+	if err := lt.MustSubtract(fromAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
 	}
 
-	err = et.Add(toAddr, amount)
-	if err != nil {
+	if err := et.Add(toAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "add to escrow: %v", err)
 	}
 
-	st.LockedTable = lt.Root()
-	st.EscrowTable = et.Root()
+	ltc, err := lt.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
+	}
+	etc, err := et.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
+	}
+
+	st.LockedTable = ltc
+	st.EscrowTable = etc
 }
 
 func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-	lt := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+	et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
+	}
+	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+	}
 
-	err := et.MustSubtract(addr, amount)
+	err = et.MustSubtract(addr, amount)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
 	}
@@ -335,8 +422,17 @@ func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmo
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
 	}
 
-	st.LockedTable = lt.Root()
-	st.EscrowTable = et.Root()
+	ltc, err := lt.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
+	}
+	etc, err := et.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
+	}
+
+	st.LockedTable = ltc
+	st.EscrowTable = etc
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -344,7 +440,11 @@ func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmo
 ////////////////////////////////////////////////////////////////////////////////
 
 func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
-	proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
+	}
+
 	proposal, err := proposals.Get(dealID)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
@@ -354,7 +454,10 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 }
 
 func (st *State) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
-	states := AsDealStateArray(adt.AsStore(rt), st.States)
+	states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
+	}
 	state, err := states.Get(dealID)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
@@ -403,4 +506,22 @@ func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.Token
 	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
+}
+
+func (st *State) MutateDealIDs(rt Runtime, f func(dbp *SetMultimap) error) {
+	dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids map: %s", err)
+	}
+
+	if err := f(dbp); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to manipulate dead ids map: %s", err)
+	}
+
+	dipc, err := dbp.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
+	}
+
+	st.DealIDsByParty = dipc
 }

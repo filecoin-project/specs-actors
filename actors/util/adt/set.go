@@ -10,24 +10,26 @@ type Set struct {
 }
 
 // AsSet interprets a store as a HAMT-based set with root `r`.
-func AsSet(s Store, r cid.Cid) *Set {
-	return &Set{
-		m: AsMap(s, r),
-	}
-}
-
-// NewSet creates a new HAMT with root `r` and store `s`.
-func MakeEmptySet(s Store) (*Set, error) {
-	m, err := MakeEmptyMap(s)
+func AsSet(s Store, r cid.Cid) (*Set, error) {
+	m, err := AsMap(s, r)
 	if err != nil {
 		return nil, err
 	}
-	return &Set{m}, nil
+
+	return &Set{
+		m: m,
+	}, nil
+}
+
+// NewSet creates a new HAMT with root `r` and store `s`.
+func MakeEmptySet(s Store) *Set {
+	m := MakeEmptyMap(s)
+	return &Set{m}
 }
 
 // Root return the root cid of HAMT.
-func (h *Set) Root() cid.Cid {
-	return h.m.root
+func (h *Set) Root() (cid.Cid, error) {
+	return h.m.Root()
 }
 
 // Put adds `k` to the set.

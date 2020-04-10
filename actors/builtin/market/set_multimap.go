@@ -7,6 +7,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	xerrors "golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -18,18 +19,22 @@ type SetMultimap struct {
 }
 
 // Interprets a store as a HAMT-based map of HAMT-based sets with root `r`.
-func AsSetMultimap(s adt.Store, r cid.Cid) *SetMultimap {
-	return &SetMultimap{mp: adt.AsMap(s, r), store: s}
+func AsSetMultimap(s adt.Store, r cid.Cid) (*SetMultimap, error) {
+	m, err := adt.AsMap(s, r)
+	if err != nil {
+		return nil, err
+	}
+	return &SetMultimap{mp: m, store: s}, nil
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptySetMultimap(s adt.Store) (*SetMultimap, error) {
-	m, err := adt.MakeEmptyMap(s)
-	return &SetMultimap{m, s}, err
+func MakeEmptySetMultimap(s adt.Store) *SetMultimap {
+	m := adt.MakeEmptyMap(s)
+	return &SetMultimap{m, s}
 }
 
 // Returns the root cid of the underlying HAMT.
-func (mm *SetMultimap) Root() cid.Cid {
+func (mm *SetMultimap) Root() (cid.Cid, error) {
 	return mm.mp.Root()
 }
 
@@ -41,10 +46,7 @@ func (mm *SetMultimap) Put(key address.Address, v abi.DealID) error {
 		return err
 	}
 	if !found {
-		set, err = adt.MakeEmptySet(mm.store)
-		if err != nil {
-			return errors.Wrapf(err, "failed to initialize set under root %v", mm.mp.Root())
-		}
+		set = adt.MakeEmptySet(mm.store)
 	}
 
 	// Add to the set.
@@ -52,8 +54,12 @@ func (mm *SetMultimap) Put(key address.Address, v abi.DealID) error {
 		return errors.Wrapf(err, "failed to add key to set %v", key)
 	}
 
+	src, err := set.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to flush set root: %w", err)
+	}
 	// Store the new set root under key.
-	newSetRoot := cbg.CborCid(set.Root())
+	newSetRoot := cbg.CborCid(src)
 	err = mm.mp.Put(k, &newSetRoot)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store set")
@@ -79,7 +85,12 @@ func (mm *SetMultimap) Remove(key address.Address, v abi.DealID) error {
 	}
 
 	// Store the new set root under key.
-	newSetRoot := cbg.CborCid(set.Root())
+	src, err := set.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to flush set root: %w", err)
+	}
+
+	newSetRoot := cbg.CborCid(src)
 	err = mm.mp.Put(k, &newSetRoot)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store set root")
@@ -91,7 +102,7 @@ func (mm *SetMultimap) Remove(key address.Address, v abi.DealID) error {
 func (mm *SetMultimap) RemoveAll(key address.Address) error {
 	err := mm.mp.Delete(adt.AddrKey(key))
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete set key %v root %v", key, mm.mp.Root())
+		return xerrors.Errorf("failed to delete set key %v: %w", key, err)
 	}
 	return nil
 }
@@ -122,7 +133,10 @@ func (mm *SetMultimap) get(key adt.Keyer) (*adt.Set, bool, error) {
 	}
 	var set *adt.Set
 	if found {
-		set = adt.AsSet(mm.store, cid.Cid(setRoot))
+		set, err = adt.AsSet(mm.store, cid.Cid(setRoot))
+		if err != nil {
+			return nil, false, err
+		}
 	}
 	return set, found, nil
 }

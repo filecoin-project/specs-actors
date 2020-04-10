@@ -55,7 +55,8 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
 		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
 		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
-		txns := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		txns, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		assert.NoError(t, err)
 		keys, err := txns.CollectKeys()
 		require.NoError(t, err)
 		assert.Empty(t, keys)
@@ -993,7 +994,8 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 	var st multisig.State
 	rt.GetState(&st)
 
-	txns := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+	txns, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+	assert.NoError(h.t, err)
 	keys, err := txns.CollectKeys()
 	assert.NoError(h.t, err)
 
