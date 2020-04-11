@@ -23,6 +23,10 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+func TestExports(t *testing.T) {
+	mock.CheckActorExports(t, Actor{})
+}
+
 func TestPaymentChannelActor_Constructor(t *testing.T) {
 	ctx := context.Background()
 	actor := pcActorHarness{Actor{}, t}
