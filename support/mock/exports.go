@@ -12,6 +12,10 @@ func CheckActorExports(t *testing.T, act interface{ Exports() []interface{} }) {
 			continue
 		}
 
+		if m == nil {
+			continue
+		}
+
 		t.Run(fmt.Sprintf("metdod%d", i), func(t *testing.T) {
 			mrt := Runtime{t: t}
 			mrt.verifyExportedMethodType(reflect.ValueOf(m))
