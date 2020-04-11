@@ -104,11 +104,11 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	return nil
 }
 
-func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) abi.TokenAmount {
+func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmount {
 	var st State
 	rt.State().Readonly(&st)
 
-	return st.LastPerEpochReward
+	return &st.LastPerEpochReward
 }
 
 func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
@@ -139,7 +139,7 @@ func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, 
 	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1<<60)).Int64())
 }
 
-func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower abi.StoragePower) {
+func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var st State
@@ -148,11 +148,13 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower abi.StoragePow
 		st.BaselinePower = newBaselinePower
 		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
 
-		st.RealizedPower = currRealizedPower
-		st.CumsumRealized = big.Add(st.CumsumRealized, currRealizedPower)
+		st.RealizedPower = *currRealizedPower
+		st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
 
 		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
 		return nil
 	})
+
+	return nil
 }

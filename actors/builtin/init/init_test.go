@@ -19,6 +19,10 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+func TestExports(t *testing.T) {
+	mock.CheckActorExports(t, init_.Actor{})
+}
+
 func TestConstructor(t *testing.T) {
 	actor := initHarness{init_.Actor{}, t}
 

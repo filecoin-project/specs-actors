@@ -19,6 +19,12 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+func TestExports(t *testing.T) {
+	t.Skip("missing method 5")
+
+	mock.CheckActorExports(t, multisig.Actor{})
+}
+
 func TestConstruction(t *testing.T) {
 	actor := multisig.Actor{}
 

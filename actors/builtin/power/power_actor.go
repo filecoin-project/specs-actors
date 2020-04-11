@@ -414,17 +414,17 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta abi.TokenAmount) *adt.EmptyValue {
+func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		st.addPledgeTotal(pledgeDelta)
+		st.addPledgeTotal(*pledgeDelta)
 		return nil
 	})
 	return nil
 }
 
-func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount abi.TokenAmount) *adt.EmptyValue {
+func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 
