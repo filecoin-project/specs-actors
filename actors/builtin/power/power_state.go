@@ -97,9 +97,14 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return true, nil
 	}
 
+	m, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return false, err
+	}
+
 	var minerSizes []abi.StoragePower
 	var claimed Claim
-	if err := adt.AsMap(s, st.Claims).ForEach(&claimed, func(k string) error {
+	if err := m.ForEach(&claimed, func(k string) error {
 		maddr, err := addr.NewFromBytes([]byte(k))
 		if err != nil {
 			return err
@@ -200,7 +205,11 @@ func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claime
 }
 
 func (st *State) hasDetectedFault(s adt.Store, a addr.Address) (bool, error) {
-	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	faultyMiners, err := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err != nil {
+		return false, err
+	}
+
 	found, err := faultyMiners.Has(AddrKey(a))
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to get detected faults for address %v from set %s", a, st.PoStDetectedFaultMiners)
@@ -229,21 +238,36 @@ func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
 		st.NumMinersMeetingMinPower--
 	}
 
-	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	faultyMiners, err := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err != nil {
+		return err
+	}
+
 	if err := faultyMiners.Put(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
 	}
-	st.PoStDetectedFaultMiners = faultyMiners.Root()
+	st.PoStDetectedFaultMiners, err = faultyMiners.Root()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
-	faultyMiners := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	faultyMiners, err := adt.AsSet(s, st.PoStDetectedFaultMiners)
+	if err != nil {
+		return err
+	}
+
 	if err := faultyMiners.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
 	}
-	st.PoStDetectedFaultMiners = faultyMiners.Root()
+
+	st.PoStDetectedFaultMiners, err = faultyMiners.Root()
+	if err != nil {
+		return err
+	}
 
 	claim, ok, err := st.getClaim(s, a)
 	if err != nil {
@@ -267,20 +291,31 @@ func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
 }
 
 func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
-	mmap := adt.AsMultimap(store, st.CronEventQueue)
-	err := mmap.Add(epochKey(epoch), event)
+	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
+	if err != nil {
+		return err
+	}
+
+	err = mmap.Add(epochKey(epoch), event)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
 	}
-	st.CronEventQueue = mmap.Root()
+	st.CronEventQueue, err = mmap.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEvent, error) {
-	mmap := adt.AsMultimap(store, st.CronEventQueue)
+	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
+	if err != nil {
+		return nil, err
+	}
+
 	var events []CronEvent
 	var ev CronEvent
-	err := mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
+	err = mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
 		// Ignore events for defunct miners.
 		if _, found, err := st.getClaim(store, ev.MinerAddr); err != nil {
 			return errors.Wrapf(err, "failed to find claimed power for %v for cron event", ev.MinerAddr)
@@ -293,17 +328,27 @@ func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEv
 }
 
 func (st *State) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
-	mmap := adt.AsMultimap(store, st.CronEventQueue)
-	err := mmap.RemoveAll(epochKey(epoch))
+	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
+	if err != nil {
+		return err
+	}
+
+	err = mmap.RemoveAll(epochKey(epoch))
 	if err != nil {
 		return errors.Wrapf(err, "failed to clear cron events")
 	}
-	st.CronEventQueue = mmap.Root()
+	st.CronEventQueue, err = mmap.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) getClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
-	hm := adt.AsMap(s, st.Claims)
+	hm, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return nil, false, err
+	}
 
 	var out Claim
 	found, err := hm.Get(AddrKey(a), &out)
@@ -320,23 +365,35 @@ func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
 	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
-	hm := adt.AsMap(s, st.Claims)
+	hm, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return err
+	}
 
 	if err := hm.Put(AddrKey(a), claim); err != nil {
 		return errors.Wrapf(err, "failed to put claim with address %s power %v in store %s", a, claim, st.Claims)
 	}
-	st.Claims = hm.Root()
+
+	st.Claims, err = hm.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
-	hm := adt.AsMap(s, st.Claims)
+	hm, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return err
+	}
 
 	if err := hm.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete claim at address %s from store %s", a, st.Claims)
 	}
-	st.Claims = hm.Root()
-
+	st.Claims, err = hm.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -79,17 +79,17 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 	}
 
-	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 	}
 
-	state := ConstructState(emptyArray.Root(), emptyMap.Root(), owner, worker, params.PeerId, params.SectorSize)
+	state := ConstructState(emptyArray, emptyMap, owner, worker, params.PeerId, params.SectorSize)
 	rt.State().Create(state)
 	return nil
 }
@@ -298,10 +298,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	rt.State().Readonly(&st)
 
-	priorSectorCount, err := adt.AsArray(store, st.Sectors).Length()
+	sectors, err := adt.AsArray(store, st.Sectors)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to check miner sectors sizes: %v", err)
 	}
+	priorSectorCount := sectors.Length()
 	isFirstSector := priorSectorCount == 0
 
 	sectorNo := params.SectorNumber

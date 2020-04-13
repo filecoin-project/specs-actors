@@ -68,7 +68,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		signers = append(signers, sa)
 	}
 
-	pending, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	pending, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
 	}
@@ -76,7 +76,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 	var st State
 	st.Signers = signers
 	st.NumApprovalsThreshold = params.NumApprovalsThreshold
-	st.PendingTxns = pending.Root()
+	st.PendingTxns = pending
 	st.InitialBalance = abi.NewTokenAmount(0)
 	if params.UnlockDuration != 0 {
 		st.InitialBalance = rt.Message().ValueReceived()

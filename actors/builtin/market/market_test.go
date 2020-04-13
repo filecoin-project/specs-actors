@@ -62,24 +62,24 @@ func TestMarketActor(t *testing.T) {
 
 		store := adt.AsStore(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(store)
+		emptyMap, err := adt.MakeEmptyMap(store).Root()
 		assert.NoError(t, err)
 
-		emptyArray, err := adt.MakeEmptyArray(store)
+		emptyArray, err := adt.MakeEmptyArray(store).Root()
 		assert.NoError(t, err)
 
-		emptyMultiMap, err := market.MakeEmptySetMultimap(store)
+		emptyMultiMap, err := market.MakeEmptySetMultimap(store).Root()
 		assert.NoError(t, err)
 
 		var state market.State
 		rt.GetState(&state)
 
-		assert.Equal(t, emptyArray.Root(), state.Proposals)
-		assert.Equal(t, emptyArray.Root(), state.States)
-		assert.Equal(t, emptyMap.Root(), state.EscrowTable)
-		assert.Equal(t, emptyMap.Root(), state.LockedTable)
+		assert.Equal(t, emptyArray, state.Proposals)
+		assert.Equal(t, emptyArray, state.States)
+		assert.Equal(t, emptyMap, state.EscrowTable)
+		assert.Equal(t, emptyMap, state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
-		assert.Equal(t, emptyMultiMap.Root(), state.DealIDsByParty)
+		assert.Equal(t, emptyMultiMap, state.DealIDsByParty)
 	})
 
 	t.Run("AddBalance", func(t *testing.T) {
