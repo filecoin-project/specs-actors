@@ -15,6 +15,7 @@ import (
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	system "github.com/filecoin-project/specs-actors/actors/builtin/system"
+	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 )
 
 func main() {
@@ -186,6 +187,20 @@ func main() {
 		miner.CronEventPayload{},
 		miner.FaultDeclaration{},
 		miner.RecoveryDeclaration{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/verifreg/cbor_gen.go", "verifreg",
+		// actor state
+		verifreg.State{},
+		verifreg.DataCap{},
+		// method params
+		verifreg.AddVerifierParams{},
+		verifreg.AddVerifiedClientParams{},
+		verifreg.UseBytesParams{},
+		verifreg.RestoreBytesParams{},
+		// other types
 	); err != nil {
 		panic(err)
 	}

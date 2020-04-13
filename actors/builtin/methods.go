@@ -97,3 +97,12 @@ var MethodsMiner = struct {
 	ReportConsensusFault   abi.MethodNum
 	WithdrawBalance        abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+
+var MethodsVerifiedRegistry = struct {
+	Constructor       abi.MethodNum
+	AddVerifier       abi.MethodNum
+	RemoveVerifier    abi.MethodNum
+	AddVerifiedClient abi.MethodNum
+	UseBytes          abi.MethodNum
+	RestoreBytes      abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6}

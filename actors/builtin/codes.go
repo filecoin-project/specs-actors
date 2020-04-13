@@ -7,17 +7,18 @@ import (
 
 // The built-in actor code IDs
 var (
-	SystemActorCodeID         cid.Cid
-	InitActorCodeID           cid.Cid
-	CronActorCodeID           cid.Cid
-	AccountActorCodeID        cid.Cid
-	StoragePowerActorCodeID   cid.Cid
-	StorageMinerActorCodeID   cid.Cid
-	StorageMarketActorCodeID  cid.Cid
-	PaymentChannelActorCodeID cid.Cid
-	MultisigActorCodeID       cid.Cid
-	RewardActorCodeID         cid.Cid
-	CallerTypesSignable       []cid.Cid
+	SystemActorCodeID           cid.Cid
+	InitActorCodeID             cid.Cid
+	CronActorCodeID             cid.Cid
+	AccountActorCodeID          cid.Cid
+	StoragePowerActorCodeID     cid.Cid
+	StorageMinerActorCodeID     cid.Cid
+	StorageMarketActorCodeID    cid.Cid
+	PaymentChannelActorCodeID   cid.Cid
+	MultisigActorCodeID         cid.Cid
+	RewardActorCodeID           cid.Cid
+	VerifiedRegistryActorCodeID cid.Cid
+	CallerTypesSignable         []cid.Cid
 )
 
 func init() {
@@ -40,6 +41,7 @@ func init() {
 	PaymentChannelActorCodeID = makeBuiltin("fil/1/paymentchannel")
 	MultisigActorCodeID = makeBuiltin("fil/1/multisig")
 	RewardActorCodeID = makeBuiltin("fil/1/reward")
+	VerifiedRegistryActorCodeID = makeBuiltin("fil/1/verifiedregistry")
 
 	// Set of actor code types that can represent external signing parties.
 	CallerTypesSignable = []cid.Cid{AccountActorCodeID, MultisigActorCodeID}
@@ -56,7 +58,8 @@ func IsBuiltinActor(code cid.Cid) bool {
 		code.Equals(StorageMarketActorCodeID) ||
 		code.Equals(PaymentChannelActorCodeID) ||
 		code.Equals(MultisigActorCodeID) ||
-		code.Equals(RewardActorCodeID)
+		code.Equals(RewardActorCodeID) ||
+		code.Equals(VerifiedRegistryActorCodeID)
 }
 
 // ActorNameByCode returns the (string) name of the actor given a cid code.
