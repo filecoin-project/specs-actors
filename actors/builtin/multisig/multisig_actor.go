@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/minio/blake2b-simd"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -328,7 +329,8 @@ func (a Actor) GetProposalHash(rt vmr.Runtime, txn Transaction) []byte {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct multisig approval hash: %v", err)
 	}
 
-	hashResult := rt.Syscalls().HashBlake2b(data)
+	// TODO: Use syscalls for this (it currently breaks tests for some weird reason)
+	hashResult := blake2b.Sum256(data)
 	return hashResult[:]
 }
 
