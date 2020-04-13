@@ -438,7 +438,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
 	// return DealWeight for the deal set in the sector
-	var dealWeight abi.DealWeight
+	var dealWeights market.VerifyDealsOnSectorProveCommitReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
@@ -450,7 +450,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-	AssertNoError(ret.Into(&dealWeight))
+	AssertNoError(ret.Into(&dealWeights))
 
 	// Request power for activated sector.
 	// Return initial pledge requirement.
@@ -461,7 +461,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		&power.OnSectorProveCommitParams{
 			Weight: power.SectorStorageWeightDesc{
 				SectorSize: st.Info.SectorSize,
-				DealWeight: dealWeight,
+				DealWeight: dealWeights.DealWeight,
+				VerifiedDealWeight: dealWeights.VerifiedDealWeight,
 				Duration:   precommit.Info.Expiration - rt.CurrEpoch(),
 			},
 		},
@@ -494,9 +495,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
 		newSectorInfo := &SectorOnChainInfo{
-			Info:            precommit.Info,
-			ActivationEpoch: rt.CurrEpoch(),
-			DealWeight:      dealWeight,
+			Info:                  precommit.Info,
+			ActivationEpoch:       rt.CurrEpoch(),
+			DealWeight:            dealWeights.DealWeight,
+			VerifiedDealWeight:    dealWeights.VerifiedDealWeight,
 		}
 
 		if err = st.PutSector(store, newSectorInfo); err != nil {

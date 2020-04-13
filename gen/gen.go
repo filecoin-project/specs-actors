@@ -150,6 +150,7 @@ func main() {
 		market.ComputeDataCommitmentParams{},
 		market.OnMinerSectorsTerminateParams{},
 		market.HandleExpiredDealsParams{},
+		market.HandleInitTimeoutDealsParams{},
 		// method returns
 		market.PublishStorageDealsReturn{},
 		// other types

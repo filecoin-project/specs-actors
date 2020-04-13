@@ -18,10 +18,11 @@ import (
 // Note: ClientCollateralPerEpoch may not be needed and removed pending future confirmation.
 // There will be a Minimum value for both client and provider deal collateral.
 type DealProposal struct {
-	PieceCID  cid.Cid // CommP
-	PieceSize abi.PaddedPieceSize
-	Client    addr.Address
-	Provider  addr.Address
+	PieceCID     cid.Cid // CommP
+	PieceSize    abi.PaddedPieceSize
+	Client       addr.Address
+	VerifiedDeal bool
+	Provider     addr.Address
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,
 	// with total amount StoragePricePerEpoch * (EndEpoch - StartEpoch).

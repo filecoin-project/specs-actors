@@ -9,8 +9,13 @@ import (
 const ConsensusMinerMinMiners = 3
 
 // Minimum power of an individual miner to meet the threshold for leader election.
-var ConsensusMinerMinPower = abi.NewStoragePower(2 << 30) // placeholder
+var ConsensusMinerMinPower = abi.NewStoragePower(2 << 30) // PARAM_FINISH
 
+const VerifiedClientQualityMultiplier = 10 // PARAM_FINISH
+
+// Sector quality is a scalar with 6 decimal points.
+// Sectors with verified deal weight of 0 have a sector quality of 1.
+// Sectors with verified deal weight of 1 should have a sector quality of VerifedClientQualityMutliplier.
 func SectorQualityFromWeight(weight *SectorStorageWeightDesc) abi.SectorQuality {
 	return 1_000_000
 }

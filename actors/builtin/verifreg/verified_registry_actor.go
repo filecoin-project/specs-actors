@@ -59,6 +59,7 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add verifier: %v", err)
 		}
+		return nil
 	})
 
 	return nil
@@ -74,6 +75,7 @@ func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr addr.Address) *adt.Em
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete verifier: %v", err)
 		}
+		return nil
 	})
 
 	return nil
@@ -126,6 +128,7 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to add verified client %v with cap %d", params.Address, params.Allowance)
 		}
+		return nil
 	})
 
 	return nil
@@ -201,6 +204,7 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 
 		newVcCap := big.Add(vcCap, params.NumBytes)
 		err = st.PutVerifiedClient(adt.AsStore(rt), params.Address, newVcCap)
+		return nil
 	})
 
 	return nil

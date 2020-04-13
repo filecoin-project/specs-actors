@@ -61,7 +61,7 @@ var MethodsMarket = struct {
 	VerifyDealsOnSectorProveCommit abi.MethodNum
 	OnMinerSectorsTerminate        abi.MethodNum
 	ComputeDataCommitment          abi.MethodNum
-	GetWeightForDealSet            abi.MethodNum
+	HandleInitTimeoutDeals         abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
 var MethodsPower = struct {

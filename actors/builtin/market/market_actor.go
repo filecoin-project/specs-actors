@@ -8,6 +8,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
@@ -28,7 +29,7 @@ func (a Actor) Exports() []interface{} {
 		6:                         a.VerifyDealsOnSectorProveCommit,
 		7:                         a.OnMinerSectorsTerminate,
 		8:                         a.ComputeDataCommitment,
-		//9: a.GetWeightForDealSet,
+		9:                         a.HandleInitTimeoutDeals,
 	}
 }
 
@@ -168,6 +169,22 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
 
+	// TODO review this
+	for _, deal := range params.Deals {
+		if deal.VerifiedDeal {
+			_, code := rt.Send(
+				builtin.VerifiedRegistryActorAddr,
+				builtin.MethodsVerifiedRegistry.UseBytes,
+				&verifreg.UseBytesParams{
+					Address:  deal.Client,
+					NumBytes: deal.PieceSize,
+				},
+				abi.NewTokenAmount(0),
+			)
+			builtin.RequireSuccess(rt, code, "failed add verified deal")
+		}
+	}
+
 	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -250,17 +267,24 @@ type VerifyDealsOnSectorProveCommitParams struct {
 	SectorExpiry abi.ChainEpoch
 }
 
+type VerifyDealsOnSectorProveCommitReturn struct {
+	DealWeight abi.DealWeight
+	VerifiedDealWeight abi.DealWeight
+}
+
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // update the market's internal state accordingly, and return DealWeight of the set of storage deals given.
 // Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
 // The weight is defined as the sum, over all deals in the set, of the product of its size
 // with its duration. This quantity may be an input into the functions specifying block reward,
 // sector power, collateral, and/or other parameters.
-func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *abi.DealWeight {
+func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *VerifyDealsOnSectorProveCommitReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 	totalDealSpaceTime := big.Zero()
+	totalVerifiedDealSpaceTime := big.Zero()
 	dealWeight := big.Zero()
+	verifiedDealWeight := big.Zero()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -298,6 +322,11 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 			dur := big.NewInt(int64(proposal.Duration()))
 			siz := big.NewIntUnsigned(uint64(proposal.PieceSize))
 			dealSpaceTime := big.Mul(dur, siz)
+
+			if proposal.VerifiedDeal {
+				verifiedSpaceTime := big.Mul(dur, siz)
+				totalVerifiedDealSpaceTime = big.Add(totalVerifiedDealSpaceTime, verifiedSpaceTime)
+			}
 			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
 		}
 		st.States, err = states.Root()
@@ -308,10 +337,14 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		sectorSpaceTime := big.Mul(big.NewInt(int64(params.SectorSize)), big.NewInt(int64(params.SectorExpiry-rt.CurrEpoch())))
 
 		dealWeight = big.Div(totalDealSpaceTime, sectorSpaceTime)
+		verifiedDealWeight = big.Div(totalVerifiedDealSpaceTime, sectorSpaceTime)
 
 		return nil
 	})
-	return &dealWeight
+	return &VerifyDealsOnSectorProveCommitReturn{
+		DealWeight: dealWeight,
+		VerifiedDealWeight: verifiedDealWeight,
+	}
 }
 
 type ComputeDataCommitmentParams struct {
@@ -414,6 +447,57 @@ func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) 
 	// TODO: award some small portion of slashed to caller as incentive
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
+	builtin.RequireSuccess(rt, code, "failed to burn funds")
+	return nil
+}
+
+type HandleInitTimeoutDealsParams struct {
+	Deals []abi.DealID // TODO: RLE
+}
+
+func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDeals) *adt.EmptyValue {
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	var st State
+	var verifiedDeals []abi.Deal
+	slashedAmount := rt.State().Transaction(&st, func() interface{} {
+		slashed := abi.NewTokenAmount(0)
+		for _, dealID := range params.Deals {
+			deal := st.mustGetDeal(rt, dealID)
+			state := st.mustGetDealState(rt, dealID)
+
+			if state.SectorStartEpoch == epochUndefined {
+				if rt.CurrEpoch() > deal.StartEpoch {
+					if deal.VerifiedDeal {
+						verifiedDeals = append(verifiedDeals, deal)
+					}
+					newlySlashed := st.processDealInitTimedOut(rt, dealID)
+					big.Add(slashed, newlySlashed)
+				} else {
+					// All deals must have timed out.
+					rt.Abortf(exitcode.ErrIllegalArgument, "not all deals have timed out: %d", dealID)
+				}
+			}
+		}
+
+		return &slashed
+	}).(abi.TokenAmount)
+
+	// TODO: award some small portion of slashed to caller as incentive
+
+	// Restore verified dataset allowance for verified clients.
+	for _, deal := range verifiedDeals {
+		rt.Send(
+			builtin.VerifiedRegistryActorAddr,
+			builtin.MethodsVerifiedRegistry.UseBytes,
+			&verifreg.RestoreBytesParams{
+				Address:  deal.Client,
+				NumBytes: deal.PieceSize,
+			},
+			abi.NewTokenAmount(0),
+		)
+	}
+
+	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashedAmount)
 	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return nil
 }

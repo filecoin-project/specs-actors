@@ -59,9 +59,10 @@ type MinerConstructorParams struct {
 }
 
 type SectorStorageWeightDesc struct {
-	SectorSize abi.SectorSize
-	Duration   abi.ChainEpoch
-	DealWeight abi.DealWeight
+	SectorSize         abi.SectorSize
+	Duration           abi.ChainEpoch
+	DealWeight         abi.DealWeight
+	VerifiedDealWeight abi.DealWeight
 }
 
 ////////////////////////////////////////////////////////////////////////////////
