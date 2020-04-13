@@ -1,6 +1,8 @@
 package verifreg
 
 import (
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
@@ -28,6 +30,14 @@ type State struct {
 	VerifiedClients cid.Cid // HAMT[addr.Address]DataCap
 }
 
+func (s *State) MarshalCBOR(w io.Writer) error {
+	panic("delete me")
+}
+
+func (s *State) UnmarshalCBOR(r io.Reader) error {
+	panic("delete me")
+}
+
 func ConstructState(emptyMapCid cid.Cid) *State {
 	return &State{
 		// TODO initialize RootKey
@@ -40,7 +50,7 @@ func (st *State) PutVerifier(store adt.Store, verifierAddr addr.Address, verifie
 	verifiers := adt.AsMap(store, st.Verifiers)
 	err := verifiers.Put(AddrKey(verifierAddr), &verifierCap)
 	if err != nil {
-		return errors.Wrapf(err, "failed to put verifier %v with a cap of ", verifierAddr, verifierCap)
+		return errors.Wrapf(err, "failed to put verifier %v with a cap of %v", verifierAddr, verifierCap)
 	}
 	st.Verifiers = verifiers.Root()
 	return nil
