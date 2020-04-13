@@ -41,22 +41,22 @@ var _ abi.Invokee = Actor{}
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
 	}
 
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
 	}
 
-	emptyMSet, err := MakeEmptySetMultimap(adt.AsStore(rt))
+	emptyMSet, err := MakeEmptySetMultimap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
 	}
 
-	st := ConstructState(emptyArray.Root(), emptyMap.Root(), emptyMSet.Root())
+	st := ConstructState(emptyArray, emptyMap, emptyMSet)
 	rt.State().Create(st)
 	return nil
 }
@@ -85,13 +85,20 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 		minBalance := st.GetLockedBalance(rt, nominal)
 
-		et := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "load escrow table: %v", err)
+		}
 		ex, err := et.SubtractWithMinimum(nominal, params.Amount, minBalance)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "subtract form escrow table: %v", err)
 		}
 
-		st.EscrowTable = et.Root()
+		etc, err := et.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %w", err)
+		}
+		st.EscrowTable = etc
 		amountExtracted = ex
 		return nil
 	})
@@ -164,8 +171,16 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		dbp := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load proposals array: %s", err)
+		}
+
+		dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids set: %s", err)
+		}
+
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for _, deal := range params.Deals {
 			validateDeal(rt, deal)
@@ -209,8 +224,18 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			newDealIds = append(newDealIds, id)
 		}
-		st.Proposals = proposals.Root()
-		st.DealIDsByParty = dbp.Root()
+		propc, err := proposals.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proposal set: %w", err)
+		}
+		st.Proposals = propc
+
+		dipc, err := dbp.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
+		}
+
+		st.DealIDsByParty = dipc
 		return nil
 	})
 
@@ -241,8 +266,15 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 	rt.State().Transaction(&st, func() interface{} {
 		// if there are no dealIDs, it is a CommittedCapacity sector
 		// and the totalDealSpaceTime should be zero
-		states := AsDealStateArray(adt.AsStore(rt), st.States)
-		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "load states %v", err)
+		}
+
+		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "load proposals %v", err)
+		}
 
 		for _, dealID := range params.DealIDs {
 			deal, err := states.Get(dealID)
@@ -268,7 +300,10 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 			dealSpaceTime := big.Mul(dur, siz)
 			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
 		}
-		st.States = states.Root()
+		st.States, err = states.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
+		}
 
 		sectorSpaceTime := big.Mul(big.NewInt(int64(params.SectorSize)), big.NewInt(int64(params.SectorExpiry-rt.CurrEpoch())))
 
@@ -321,8 +356,15 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		proposals := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		states := AsDealStateArray(adt.AsStore(rt), st.States)
+		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "load proposals: %v", err)
+		}
+
+		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "load states: %v", err)
+		}
 
 		for _, dealID := range params.DealIDs {
 			deal, err := proposals.Get(dealID)
@@ -347,7 +389,10 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 		}
 
-		st.States = states.Root()
+		st.States, err = states.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush states: %s", err)
+		}
 		return nil
 	})
 	return nil

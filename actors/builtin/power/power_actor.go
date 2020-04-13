@@ -72,12 +72,12 @@ type SectorStorageWeightDesc struct {
 func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
 	}
 
-	st := ConstructState(emptyMap.Root())
+	st := ConstructState(emptyMap)
 	rt.State().Create(st)
 	return nil
 }
@@ -530,11 +530,13 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 		st.MinerCount -= 1
 		hasFault, err := st.hasDetectedFault(adt.AsStore(rt), miner)
 		if err != nil {
-			return err
+			txErr = err
+			return big.Zero()
 		}
 		if hasFault {
 			if err := st.deleteDetectedFault(adt.AsStore(rt), miner); err != nil {
-				return err
+				txErr = err
+				return big.Zero()
 			}
 		}
 

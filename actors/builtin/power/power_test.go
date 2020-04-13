@@ -61,7 +61,8 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalRawBytePower)
 		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
 
-		claim := adt.AsMap(adt.AsStore(rt), st.Claims)
+		claim, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		assert.NoError(t, err)
 		keys, err := claim.CollectKeys()
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(keys))
@@ -136,7 +137,8 @@ func asKey(in string) adt.Keyer {
 }
 
 func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
-	mapChecked := adt.AsMap(adt.AsStore(rt), cid)
+	mapChecked, err := adt.AsMap(adt.AsStore(rt), cid)
+	assert.NoError(t, err)
 	keys, err := mapChecked.CollectKeys()
 	require.NoError(t, err)
 	assert.Empty(t, keys)

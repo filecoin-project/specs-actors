@@ -4,6 +4,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 )
@@ -15,18 +16,23 @@ type Multimap struct {
 }
 
 // Interprets a store as a HAMT-based map of AMTs with root `r`.
-func AsMultimap(s Store, r cid.Cid) *Multimap {
-	return &Multimap{AsMap(s, r)}
+func AsMultimap(s Store, r cid.Cid) (*Multimap, error) {
+	m, err := AsMap(s, r)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Multimap{m}, nil
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptyMultimap(s Store) (*Multimap, error) {
-	m, err := MakeEmptyMap(s)
-	return &Multimap{m}, err
+func MakeEmptyMultimap(s Store) *Multimap {
+	m := MakeEmptyMap(s)
+	return &Multimap{m}
 }
 
 // Returns the root cid of the underlying HAMT.
-func (mm *Multimap) Root() cid.Cid {
+func (mm *Multimap) Root() (cid.Cid, error) {
 	return mm.mp.Root()
 }
 
@@ -38,10 +44,7 @@ func (mm *Multimap) Add(key Keyer, value runtime.CBORMarshaler) error {
 		return err
 	}
 	if !found {
-		array, err = MakeEmptyArray(mm.mp.store)
-		if err != nil {
-			return errors.Wrapf(err, "failed to initialize multimap array value under root %v", mm.mp.root)
-		}
+		array = MakeEmptyArray(mm.mp.store)
 	}
 
 	// Append to the array.
@@ -49,8 +52,13 @@ func (mm *Multimap) Add(key Keyer, value runtime.CBORMarshaler) error {
 		return errors.Wrapf(err, "failed to add multimap key %v value %v", key, value)
 	}
 
+	c, err := array.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to flush child array: %w", err)
+	}
+
 	// Store the new array root under key.
-	newArrayRoot := cbg.CborCid(array.root)
+	newArrayRoot := cbg.CborCid(c)
 	err = mm.mp.Put(key, &newArrayRoot)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store multimap values")
@@ -90,7 +98,10 @@ func (mm *Multimap) Get(key Keyer) (*Array, bool, error) {
 	}
 	var array *Array
 	if found {
-		array = AsArray(mm.mp.store, cid.Cid(arrayRoot))
+		array, err = AsArray(mm.mp.store, cid.Cid(arrayRoot))
+		if err != nil {
+			return nil, false, xerrors.Errorf("failed to load value %v as an array: %w", key, err)
+		}
 	}
 	return array, found, nil
 }

@@ -19,10 +19,10 @@ func TestBalanceTable(t *testing.T) {
 		addr := tutil.NewIDAddr(t, 100)
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		store := adt.AsStore(rt)
-		emptyMap, err := adt.MakeEmptyMap(store)
-		assert.NoError(t, err)
+		emptyMap := adt.MakeEmptyMap(store)
 
-		bt := adt.AsBalanceTable(store, emptyMap.Root())
+		bt, err := adt.AsBalanceTable(store, tutil.MustRoot(t, emptyMap))
+		assert.NoError(t, err)
 
 		has, err := bt.Has(addr)
 		assert.NoError(t, err)
@@ -49,10 +49,10 @@ func TestBalanceTable(t *testing.T) {
 
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		store := adt.AsStore(rt)
-		emptyMap, err := adt.MakeEmptyMap(store)
-		assert.NoError(t, err)
+		emptyMap := adt.MakeEmptyMap(store)
 
-		bt := adt.AsBalanceTable(store, emptyMap.Root())
+		bt, err := adt.AsBalanceTable(store, tutil.MustRoot(t, emptyMap))
+		assert.NoError(t, err)
 		total, err := bt.Total()
 		assert.NoError(t, err)
 		assert.Equal(t, big.Zero(), total)

@@ -5,6 +5,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -43,7 +44,11 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 	}
 
 	// Lookup address.
-	m := adt.AsMap(store, s.AddressMap)
+	m, err := adt.AsMap(store, s.AddressMap)
+	if err != nil {
+		return addr.Undef, xerrors.Errorf("failed to load address map: %w", err)
+	}
+
 	var actorID cbg.CborInt
 	found, err := m.Get(AddrKey(address), &actorID)
 	if err != nil {
@@ -66,12 +71,19 @@ func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.A
 	actorID := cbg.CborInt(s.NextID)
 	s.NextID++
 
-	m := adt.AsMap(store, s.AddressMap)
-	err := m.Put(AddrKey(address), &actorID)
+	m, err := adt.AsMap(store, s.AddressMap)
 	if err != nil {
-		return addr.Undef, errors.Wrapf(err, "map address failed to store entry")
+		return addr.Undef, xerrors.Errorf("failed to load address map: %w", err)
 	}
-	s.AddressMap = m.Root()
+	err = m.Put(AddrKey(address), &actorID)
+	if err != nil {
+		return addr.Undef, xerrors.Errorf("map address failed to store entry: %w", err)
+	}
+	amr, err := m.Root()
+	if err != nil {
+		return addr.Undef, xerrors.Errorf("failed to get address map root: %w", err)
+	}
+	s.AddressMap = amr
 
 	idAddr, err := addr.NewIDAddress(uint64(actorID))
 	autil.Assert(err == nil)

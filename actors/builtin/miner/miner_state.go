@@ -100,9 +100,9 @@ type SectorOnChainInfo struct {
 
 func ConstructState(emptyArrayCid, emptyMapCid cid.Cid, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize) *State {
 	return &State{
-		PreCommitDeposits:   abi.NewTokenAmount(0),
-		LockedFunds:         abi.NewTokenAmount(0),
-		VestingFunds:        emptyArrayCid,
+		PreCommitDeposits: abi.NewTokenAmount(0),
+		LockedFunds:       abi.NewTokenAmount(0),
+		VestingFunds:      emptyArrayCid,
 
 		PreCommittedSectors: emptyMapCid,
 		Sectors:             emptyArrayCid,
@@ -132,8 +132,12 @@ func (st *State) GetSectorSize() abi.SectorSize {
 }
 
 func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
-	arr := adt.AsArray(store, st.Sectors)
-	return arr.Length()
+	arr, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return 0, err
+	}
+
+	return arr.Length(), nil
 }
 
 func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
@@ -145,17 +149,28 @@ func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
 }
 
 func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
-	precommitted := adt.AsMap(store, st.PreCommittedSectors)
-	err := precommitted.Put(sectorKey(info.Info.SectorNumber), info)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	if err != nil {
+		return err
+	}
+
+	err = precommitted.Put(sectorKey(info.Info.SectorNumber), info)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store precommitment for %v", info)
 	}
-	st.PreCommittedSectors = precommitted.Root()
+	st.PreCommittedSectors, err = precommitted.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
-	precommitted := adt.AsMap(store, st.PreCommittedSectors)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	if err != nil {
+		return nil, false, err
+	}
+
 	var info SectorPreCommitOnChainInfo
 	found, err := precommitted.Get(sectorKey(sectorNo), &info)
 	if err != nil {
@@ -165,17 +180,28 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 }
 
 func (st *State) DeletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
-	precommitted := adt.AsMap(store, st.PreCommittedSectors)
-	err := precommitted.Delete(sectorKey(sectorNo))
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	if err != nil {
+		return err
+	}
+
+	err = precommitted.Delete(sectorKey(sectorNo))
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
 	}
-	st.PreCommittedSectors = precommitted.Root()
+	st.PreCommittedSectors, err = precommitted.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, error) {
-	sectors := adt.AsArray(store, st.Sectors)
+	sectors, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return false, err
+	}
+
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
@@ -185,16 +211,27 @@ func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, 
 }
 
 func (st *State) PutSector(store adt.Store, sector *SectorOnChainInfo) error {
-	sectors := adt.AsArray(store, st.Sectors)
+	sectors, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return err
+	}
+
 	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
-	st.Sectors = sectors.Root()
+	st.Sectors, err = sectors.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
-	sectors := adt.AsArray(store, st.Sectors)
+	sectors, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return nil, false, err
+	}
+
 	var info SectorOnChainInfo
 	found, err := sectors.Get(uint64(sectorNo), &info)
 	if err != nil {
@@ -204,16 +241,25 @@ func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorO
 }
 
 func (st *State) DeleteSector(store adt.Store, sectorNo abi.SectorNumber) error {
-	sectors := adt.AsArray(store, st.Sectors)
+	sectors, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return err
+	}
 	if err := sectors.Delete(uint64(sectorNo)); err != nil {
 		return errors.Wrapf(err, "failed to delete sector %v", sectorNo)
 	}
-	st.Sectors = sectors.Root()
+	st.Sectors, err = sectors.Root()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
-	sectors := adt.AsArray(store, st.Sectors)
+	sectors, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return err
+	}
 	var sector SectorOnChainInfo
 	return sectors.ForEach(&sector, func(idx int64) error {
 		f(&sector)
@@ -239,7 +285,10 @@ func (st *State) InChallengeWindow(rt Runtime) bool {
 func (st *State) ComputeProvingSet(store adt.Store) ([]abi.SectorInfo, error) {
 	// ProvingSet is a snapshot of the Sectors AMT, must subtract sectors in the FaultSet
 
-	provingSet := adt.AsArray(store, st.ProvingSet)
+	provingSet, err := adt.AsArray(store, st.ProvingSet)
+	if err != nil {
+		return nil, err
+	}
 
 	var sectorInfos []abi.SectorInfo
 	var ssinfo SectorOnChainInfo
@@ -285,7 +334,10 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
 	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
-	vestingFunds := adt.AsArray(store, st.VestingFunds)
+	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	if err != nil {
+		return err
+	}
 
 	// Nothing unlocks here, this is just the start of the clock.
 	vestBegin := currEpoch + spec.InitialDelay
@@ -322,14 +374,22 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		}
 	}
 
-	st.VestingFunds = vestingFunds.Root()
+	st.VestingFunds, err = vestingFunds.Root()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // Unlocks an amount of funds that have *not yet vested*, if possible.
 // The soonest-vesting entries are unlocked first.
 func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
-	vestingFunds := adt.AsArray(store, st.VestingFunds)
+	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	if err != nil {
+		return abi.TokenAmount{}, err
+	}
+
 	amountUnlocked := big.Zero()
 
 	var lockedEntry abi.TokenAmount
@@ -337,7 +397,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 	var finished = fmt.Errorf("finished")
 
 	// Iterate vestingFunds are in order of release.
-	err := vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
 		if amountUnlocked.LessThan(target) {
 			if k >= int64(currEpoch) {
 				unlockAmount := big.Max(big.Sub(target, amountUnlocked), lockedEntry)
@@ -365,7 +425,10 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds = vestingFunds.Root()
+	st.VestingFunds, err = vestingFunds.Root()
+	if err != nil {
+		return big.Zero(), err
+	}
 
 	return amountUnlocked, nil
 }
@@ -373,7 +436,11 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 // Unlocks all vesting funds that have vested before the provided epoch.
 // Returns the amount unlocked.
 func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
-	vestingFunds := adt.AsArray(store, st.VestingFunds)
+	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	if err != nil {
+		return abi.TokenAmount{}, err
+	}
+
 	amountUnlocked := big.Zero()
 
 	var lockedEntry abi.TokenAmount
@@ -381,7 +448,7 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 	var finished = fmt.Errorf("finished")
 
 	// Iterate vestingFunds  in order of release.
-	err := vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
 		if k < int64(currEpoch) {
 			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
 			toDelete = append(toDelete, uint64(k))
@@ -402,7 +469,10 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds = vestingFunds.Root()
+	st.VestingFunds, err = vestingFunds.Root()
+	if err != nil {
+		return big.Zero(), err
+	}
 
 	return amountUnlocked, nil
 }

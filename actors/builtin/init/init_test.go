@@ -214,8 +214,9 @@ func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
 
 	var st init_.State
 	rt.GetState(&st)
-	emptyMap := adt.AsMap(adt.AsStore(rt), st.AddressMap)
-	assert.Equal(h.t, emptyMap.Root(), st.AddressMap)
+	emptyMap, err := adt.AsMap(adt.AsStore(rt), st.AddressMap)
+	assert.NoError(h.t, err)
+	assert.Equal(h.t, tutil.MustRoot(h.t, emptyMap), st.AddressMap)
 	assert.Equal(h.t, abi.ActorID(builtin.FirstNonSingletonActorId), st.NextID)
 	assert.Equal(h.t, "mock", st.NetworkName)
 }

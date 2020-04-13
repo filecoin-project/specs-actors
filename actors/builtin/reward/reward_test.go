@@ -63,4 +63,5 @@ func (h *rewardHarness) constructAndVerify(rt *mock.Runtime) {
 	ret := rt.Call(h.Constructor, nil)
 	assert.Nil(h.t, ret)
 	rt.Verify()
+
 }
