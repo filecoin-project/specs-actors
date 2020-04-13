@@ -1,6 +1,7 @@
 package multisig
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
@@ -30,6 +31,23 @@ type Transaction struct {
 
 	// This address at index 0 is the transaction proposer, order of this slice must be preserved.
 	Approved []addr.Address
+}
+
+// Data for a BLAKE2B-256 to be attached to methods referencing proposals via TXIDs.
+// Ensures the existence of a cryptographic reference to the original proposal. Useful
+// for offline signers and for protection when reorgs change a multisig TXID.
+//
+// Requester - The requesting multisig wallet member.
+// All other fields - From the "Transaction" struct.
+//
+// Subtle point: The "To" field must be the multisig wallet address, otherwise the hash
+// loses much of its value, if not all of it.
+type ProposalHashData struct {
+	Requester addr.Address
+	To        addr.Address
+	Value     abi.TokenAmount
+	Method    abi.MethodNum
+	Params    []byte
 }
 
 type Actor struct{}
@@ -118,8 +136,10 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 		return nil
 	})
 
-	// Proposal implicitly includes approval of a transaction.
-	a.approveTransaction(rt, txnID)
+	// Proposal implicitly includes approval of a transaction. Bypass hash check
+	// because PROPOSE is the reference point for other approvers.
+	var emptyArray []byte
+	a.approveTransaction(rt, txnID, emptyArray, false)
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
@@ -129,7 +149,8 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 }
 
 type TxnIDParams struct {
-	ID TxnID
+	ID           TxnID
+	ProposalHash []byte
 }
 
 func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
@@ -140,7 +161,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		a.validateSigner(rt, &st, callerAddr)
 		return nil
 	})
-	a.approveTransaction(rt, params.ID)
+	a.approveTransaction(rt, params.ID, params.ProposalHash, true)
 	return nil
 }
 
@@ -158,6 +179,12 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		proposer := txn.Approved[0]
 		if proposer != callerAddr {
 			rt.Abortf(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
+		}
+
+		// confirm the hashes match
+		calculatedHash := a.GetProposalHash(rt, txn)
+		if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
+			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
 		}
 
 		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
@@ -279,7 +306,33 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
+func (ahd *ProposalHashData) Serialize() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := ahd.MarshalCBOR(buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (a Actor) GetProposalHash(rt vmr.Runtime, txn Transaction) []byte {
+	hashData := ProposalHashData{
+		Requester: txn.Approved[0],
+		To:        txn.To,
+		Value:     txn.Value,
+		Method:    txn.Method,
+		Params:    txn.Params,
+	}
+
+	data, err := hashData.Serialize()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to construct multisig approval hash: %v", err)
+	}
+
+	hashResult := rt.Syscalls().HashBlake2b(data)
+	return hashResult[:]
+}
+
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) {
 	var st State
 	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
@@ -294,6 +347,15 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID) {
 				rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
 			}
 		}
+
+		// confirm the hashes match
+		if checkHash {
+			calculatedHash := a.GetProposalHash(rt, txn)
+			if proposalHash != nil && bytes.Compare(proposalHash, calculatedHash[:]) != 0 {
+				rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+			}
+		}
+
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
 		if err = st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {

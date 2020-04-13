@@ -138,7 +138,14 @@ func TestVesting(t *testing.T) {
 		// expect darlene to receive the transaction proposed by anne.
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, multisigInitialBalance, nil, exitcode.Ok)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.approve(rt, 0)
+		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			To:       darlene,
+			Value:    multisigInitialBalance,
+			Method:   builtin.MethodSend,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+		actor.approve(rt, 0, proposalHashData)
 		rt.Verify()
 
 	})
@@ -159,7 +166,16 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.approve(rt, 0)
+
+		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			To:       darlene,
+			Value:    big.Div(multisigInitialBalance, big.NewInt(2)),
+			Method:   builtin.MethodSend,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		actor.approve(rt, 0, proposalHashData)
 		rt.Verify()
 
 	})
@@ -204,7 +220,14 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.approve(rt, 0)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       darlene,
+				Value:    big.Div(multisigInitialBalance, big.NewInt(2)),
+				Method:   builtin.MethodSend,
+				Params:   fakeParams,
+				Approved: []addr.Address{anne},
+			})
+			actor.approve(rt, 0, proposalHashData)
 		})
 		rt.Verify()
 	})
@@ -340,11 +363,55 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
-		actor.approve(rt, txnID)
+
+		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		actor.approve(rt, txnID, proposalHashData)
 		rt.Verify()
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+	})
+
+	t.Run("fail approval with bad proposal hash", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		actor.assertTransactions(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		rt.SetBalance(sendValue)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   fakeMethod,
+				Params:   fakeParams,
+				Approved: []addr.Address{bob},
+			})
+			actor.approve(rt, txnID, proposalHashData)
+		})
 	})
 
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
@@ -362,7 +429,14 @@ func TestApprove(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		// TODO replace with correct exit code when multisig actor breaks the AbortStateMsg pattern.
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			actor.approve(rt, txnID)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   builtin.MethodSend,
+				Params:   fakeParams,
+				Approved: []addr.Address{anne},
+			})
+			actor.approve(rt, txnID, proposalHashData)
 		})
 		rt.Verify()
 
@@ -391,7 +465,14 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			actor.approve(rt, dneTxnID)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   builtin.MethodSend,
+				Params:   fakeParams,
+				Approved: []addr.Address{bob},
+			})
+			actor.approve(rt, dneTxnID, proposalHashData)
 		})
 		rt.Verify()
 
@@ -420,7 +501,14 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.approve(rt, txnID)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   builtin.MethodSend,
+				Params:   fakeParams,
+				Approved: []addr.Address{richard},
+			})
+			actor.approve(rt, txnID, proposalHashData)
 		})
 		rt.Verify()
 
@@ -468,11 +556,46 @@ func TestCancel(t *testing.T) {
 		// anne cancels their transaction
 		rt.SetBalance(sendValue)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.cancel(rt, txnID)
+
+		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+		actor.cancel(rt, txnID, proposalHashData)
 		rt.Verify()
 
 		// Transaction should be removed from actor state after cancel
 		actor.assertTransactions(rt)
+	})
+
+	t.Run("fail cancel with bad proposal hash", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		rt.Verify()
+
+		// anne cancels their transaction
+		rt.SetBalance(sendValue)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       bob,
+				Value:    sendValue,
+				Method:   fakeMethod,
+				Params:   fakeParams,
+				Approved: []addr.Address{chuck},
+			})
+			actor.cancel(rt, txnID, proposalHashData)
+		})
 	})
 
 	t.Run("signer fails to cancel transaction from another signer", func(t *testing.T) {
@@ -490,7 +613,14 @@ func TestCancel(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.cancel(rt, txnID)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   fakeMethod,
+				Params:   fakeParams,
+				Approved: []addr.Address{anne},
+			})
+			actor.cancel(rt, txnID, proposalHashData)
 		})
 		rt.Verify()
 
@@ -519,7 +649,14 @@ func TestCancel(t *testing.T) {
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.cancel(rt, txnID)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   fakeMethod,
+				Params:   fakeParams,
+				Approved: []addr.Address{anne},
+			})
+			actor.cancel(rt, txnID, proposalHashData)
 		})
 		rt.Verify()
 
@@ -548,7 +685,14 @@ func TestCancel(t *testing.T) {
 		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			actor.cancel(rt, dneTxnID)
+			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+				To:       chuck,
+				Value:    sendValue,
+				Method:   fakeMethod,
+				Params:   fakeParams,
+				Approved: []addr.Address{anne},
+			})
+			actor.cancel(rt, dneTxnID, proposalHashData)
 		})
 		rt.Verify()
 
@@ -1005,7 +1149,7 @@ func TestChangeThreshold(t *testing.T) {
 //
 
 type msActorHarness struct {
-	multisig.Actor
+	a multisig.Actor
 	t testing.TB
 }
 
@@ -1017,7 +1161,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
-	ret := rt.Call(h.Actor.Constructor, &constructParams)
+	ret := rt.Call(h.a.Constructor, &constructParams)
 	assert.Nil(h.t, ret)
 	rt.Verify()
 }
@@ -1029,19 +1173,19 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Method: method,
 		Params: params,
 	}
-	rt.Call(h.Actor.Propose, proposeParams)
+	rt.Call(h.a.Propose, proposeParams)
 }
 
 // TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
 // exercise both un/successful sends.
-func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64) {
-	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	rt.Call(h.Actor.Approve, approveParams)
+func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte) {
+	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
+	rt.Call(h.a.Approve, approveParams)
 }
 
-func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64) {
-	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID)}
-	rt.Call(h.Actor.Cancel, cancelParams)
+func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64, proposalParams []byte) {
+	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
+	rt.Call(h.a.Cancel, cancelParams)
 }
 
 func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increase bool) {
@@ -1049,7 +1193,7 @@ func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increa
 		Signer:   signer,
 		Increase: increase,
 	}
-	rt.Call(h.Actor.AddSigner, addSignerParams)
+	rt.Call(h.a.AddSigner, addSignerParams)
 }
 
 func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, decrease bool) {
@@ -1057,7 +1201,7 @@ func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, dec
 		Signer:   signer,
 		Decrease: decrease,
 	}
-	rt.Call(h.Actor.RemoveSigner, rmSignerParams)
+	rt.Call(h.a.RemoveSigner, rmSignerParams)
 }
 
 func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr.Address) {
@@ -1065,12 +1209,12 @@ func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr
 		From: oldSigner,
 		To:   newSigner,
 	}
-	rt.Call(h.Actor.SwapSigner, swpParams)
+	rt.Call(h.a.SwapSigner, swpParams)
 }
 
 func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold int64) {
 	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
-	rt.Call(h.Actor.ChangeNumApprovalsThreshold, thrshParams)
+	rt.Call(h.a.ChangeNumApprovalsThreshold, thrshParams)
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.Transaction) {
