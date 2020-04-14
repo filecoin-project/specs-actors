@@ -147,6 +147,7 @@ func main() {
 		market.WithdrawBalanceParams{},
 		market.PublishStorageDealsParams{},
 		market.VerifyDealsOnSectorProveCommitParams{},
+		market.VerifyDealsOnSectorProveCommitReturn{},
 		market.ComputeDataCommitmentParams{},
 		market.OnMinerSectorsTerminateParams{},
 		market.HandleExpiredDealsParams{},
@@ -195,7 +196,6 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/verifreg/cbor_gen.go", "verifreg",
 		// actor state
 		verifreg.State{},
-		verifreg.DataCap{},
 		// method params
 		verifreg.AddVerifierParams{},
 		verifreg.AddVerifiedClientParams{},

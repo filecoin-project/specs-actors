@@ -31,15 +31,15 @@ var _ abi.Invokee = Actor{}
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) Constructor(rt vmr.Runtime, rootKey *addr.Address) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create verified registry state: %v", err)
 	}
 
-	st := ConstructState(emptyMap.Root())
+	st := ConstructState(emptyMap, *rootKey)
 	rt.State().Create(st)
 	return nil
 }
@@ -52,7 +52,7 @@ type AddVerifierParams struct {
 func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
-	rt.ValidateImmediateCallerIs(st.RootKey) // why: do we need a resolve address here?
+	rt.ValidateImmediateCallerIs(st.RootKey) // TODO: do we need a resolve address here?
 
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.PutVerifier(adt.AsStore(rt), params.Address, params.Allowance)
@@ -68,7 +68,7 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr addr.Address) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
-	rt.ValidateImmediateCallerIs(st.RootKey) // why: do we need a resolve address here?
+	rt.ValidateImmediateCallerIs(st.RootKey) // TODO: do we need a resolve address here?
 
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.DeleteVerifier(adt.AsStore(rt), verifierAddr)
@@ -87,8 +87,8 @@ type AddVerifiedClientParams struct {
 }
 
 func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
-	if params.Allowance.LessThanEqual(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Non-positive allowance %d for add verified client %v", params.Allowance, params.Address)
+	if params.Allowance.LessThanEqual(MinVerifiedDealSize) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
 	}
 
 	var st State
@@ -135,19 +135,22 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 }
 
 type UseBytesParams struct {
-	Address  addr.Address // Address of verified client.
-	NumBytes DataCap      // Number of bytes to use.
+	Address  addr.Address     // Address of verified client.
+	DealSize abi.StoragePower // Number of bytes to use.
 }
 
-func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *abi.StoragePower {
+// Called by StorageMarketActor during PublishStorageDeals.
+// Do not allow partially verified deals (DealSize must be greater than equal to allowed cap).
+// Delete VerifiedClient if remaining DataCap is smaller than minimum VerifiedDealSize.
+func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
-	if params.NumBytes.LessThanEqual(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Negative bytes requested in UseBytes: %d", params.NumBytes)
+	if params.DealSize.LessThan(MinVerifiedDealSize) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "VerifiedDealSize: %d below minimum in UseBytes", params.DealSize)
 	}
 
 	var st State
-	usedBytes := rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() interface{} {
 		vcCap, found, err := st.GetVerifiedClient(adt.AsStore(rt), params.Address)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to get verified client state for %v", params.Address)
@@ -156,39 +159,43 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *abi.StoragePowe
 		}
 		Assert(vcCap.GreaterThanEqual(big.Zero()))
 
-		bytesToUse := big.Min(vcCap, params.NumBytes)
-		newVcCap := big.Sub(vcCap, bytesToUse)
-		// TODO: review this
-		if newVcCap.LessThanEqual(big.Zero()) {
-			// Delete entry if all DataCap is used.
+		if params.DealSize.GreaterThan(vcCap) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "DealSize %d exceeds allowable cap: %d for VerifiedClient %v", params.DealSize, vcCap, params.Address)
+		}
+
+		newVcCap := big.Sub(vcCap, params.DealSize)
+		if newVcCap.LessThan(MinVerifiedDealSize) {
+			// Delete entry if remaining DataCap is less than MinVerifiedDealSize.
 			// Will be restored if the deal did not go through.
 			err = st.DeleteVerifiedClient(adt.AsStore(rt), params.Address)
 			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "Failed to delete verified client %v with cap %d when %d bytes are used.", params.Address, vcCap, params.NumBytes)
+				rt.Abortf(exitcode.ErrIllegalState, "Failed to delete verified client %v with cap %d when %d bytes are used.", params.Address, vcCap, params.DealSize)
 			}
 		} else {
 			err = st.PutVerifiedClient(adt.AsStore(rt), params.Address, newVcCap)
 			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "Failed to update verified client %v when %d bytes are used.", params.Address, params.NumBytes)
+				rt.Abortf(exitcode.ErrIllegalState, "Failed to update verified client %v when %d bytes are used.", params.Address, params.DealSize)
 			}
 		}
 
-		return bytesToUse
-	}).(abi.StoragePower)
+		return nil
+	})
 
-	return &usedBytes
+	return nil
 }
 
 type RestoreBytesParams struct {
 	Address  addr.Address
-	NumBytes DataCap
+	DealSize abi.StoragePower
 }
 
+// Called by HandleInitTimeoutDeals from StorageMarketActor when a VerifiedDeal fails to init.
+// Restore allowable cap for the client, creating new entry if the client has been deleted.
 func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
-	if params.NumBytes.LessThanEqual(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Negative bytes requested in RestoreBytes: %d", params.NumBytes)
+	if params.DealSize.LessThan(MinVerifiedDealSize) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Below minimum VerifiedDealSize requested in RestoreBytes: %d", params.DealSize)
 	}
 
 	var st State
@@ -202,7 +209,7 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 			vcCap = big.Zero()
 		}
 
-		newVcCap := big.Add(vcCap, params.NumBytes)
+		newVcCap := big.Add(vcCap, params.DealSize)
 		err = st.PutVerifiedClient(adt.AsStore(rt), params.Address, newVcCap)
 		return nil
 	})

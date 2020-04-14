@@ -169,19 +169,19 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
 
-	// TODO review this
 	for _, deal := range params.Deals {
-		if deal.VerifiedDeal {
+		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
+		if deal.Proposal.VerifiedDeal {
 			_, code := rt.Send(
 				builtin.VerifiedRegistryActorAddr,
 				builtin.MethodsVerifiedRegistry.UseBytes,
 				&verifreg.UseBytesParams{
-					Address:  deal.Client,
-					NumBytes: deal.PieceSize,
+					Address:  deal.Proposal.Client,
+					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
 				},
 				abi.NewTokenAmount(0),
 			)
-			builtin.RequireSuccess(rt, code, "failed add verified deal")
+			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
 		}
 	}
 
@@ -268,7 +268,7 @@ type VerifyDealsOnSectorProveCommitParams struct {
 }
 
 type VerifyDealsOnSectorProveCommitReturn struct {
-	DealWeight abi.DealWeight
+	DealWeight         abi.DealWeight
 	VerifiedDealWeight abi.DealWeight
 }
 
@@ -283,8 +283,6 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 	minerAddr := rt.Message().Caller()
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedDealSpaceTime := big.Zero()
-	dealWeight := big.Zero()
-	verifiedDealWeight := big.Zero()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -319,31 +317,27 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 			}
 
 			// Compute deal weight
-			dur := big.NewInt(int64(proposal.Duration()))
-			siz := big.NewIntUnsigned(uint64(proposal.PieceSize))
-			dealSpaceTime := big.Mul(dur, siz)
+			dealDuration := big.NewInt(int64(proposal.Duration()))
+			dealSize := big.NewIntUnsigned(uint64(proposal.PieceSize))
+			dealSpaceTime := big.Mul(dealDuration, dealSize)
 
 			if proposal.VerifiedDeal {
-				verifiedSpaceTime := big.Mul(dur, siz)
-				totalVerifiedDealSpaceTime = big.Add(totalVerifiedDealSpaceTime, verifiedSpaceTime)
+				totalVerifiedDealSpaceTime = big.Add(totalVerifiedDealSpaceTime, dealSpaceTime)
+			} else {
+				totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
 			}
-			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
+
 		}
+
 		st.States, err = states.Root()
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
 		}
-
-		sectorSpaceTime := big.Mul(big.NewInt(int64(params.SectorSize)), big.NewInt(int64(params.SectorExpiry-rt.CurrEpoch())))
-
-		dealWeight = big.Div(totalDealSpaceTime, sectorSpaceTime)
-		verifiedDealWeight = big.Div(totalVerifiedDealSpaceTime, sectorSpaceTime)
-
 		return nil
 	})
 	return &VerifyDealsOnSectorProveCommitReturn{
-		DealWeight: dealWeight,
-		VerifiedDealWeight: verifiedDealWeight,
+		DealWeight:         totalDealSpaceTime,
+		VerifiedDealWeight: totalVerifiedDealSpaceTime,
 	}
 }
 
@@ -455,10 +449,10 @@ type HandleInitTimeoutDealsParams struct {
 	Deals []abi.DealID // TODO: RLE
 }
 
-func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDeals) *adt.EmptyValue {
+func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDealsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	var st State
-	var verifiedDeals []abi.Deal
+	var verifiedDeals []*DealProposal
 	slashedAmount := rt.State().Transaction(&st, func() interface{} {
 		slashed := abi.NewTokenAmount(0)
 		for _, dealID := range params.Deals {
@@ -467,6 +461,7 @@ func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDeals
 
 			if state.SectorStartEpoch == epochUndefined {
 				if rt.CurrEpoch() > deal.StartEpoch {
+					// Store VerifiedDeal to restore bytes for VerifiedClient.
 					if deal.VerifiedDeal {
 						verifiedDeals = append(verifiedDeals, deal)
 					}
@@ -486,15 +481,16 @@ func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDeals
 
 	// Restore verified dataset allowance for verified clients.
 	for _, deal := range verifiedDeals {
-		rt.Send(
+		_, code := rt.Send(
 			builtin.VerifiedRegistryActorAddr,
-			builtin.MethodsVerifiedRegistry.UseBytes,
+			builtin.MethodsVerifiedRegistry.RestoreBytes,
 			&verifreg.RestoreBytesParams{
 				Address:  deal.Client,
-				NumBytes: deal.PieceSize,
+				DealSize: big.NewIntUnsigned(uint64(deal.PieceSize)),
 			},
 			abi.NewTokenAmount(0),
 		)
+		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", deal.Client)
 	}
 
 	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashedAmount)

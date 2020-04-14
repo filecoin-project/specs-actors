@@ -414,6 +414,63 @@ func (t *VerifyDealsOnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error 
 	return nil
 }
 
+func (t *VerifyDealsOnSectorProveCommitReturn) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{130}); err != nil {
+		return err
+	}
+
+	// t.DealWeight (big.Int) (struct)
+	if err := t.DealWeight.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.VerifiedDealWeight (big.Int) (struct)
+	if err := t.VerifiedDealWeight.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *VerifyDealsOnSectorProveCommitReturn) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.DealWeight (big.Int) (struct)
+
+	{
+
+		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	// t.VerifiedDealWeight (big.Int) (struct)
+
+	{
+
+		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
 func (t *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -678,6 +735,80 @@ func (t *HandleExpiredDealsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+func (t *HandleInitTimeoutDealsParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.Deals ([]abi.DealID) (slice)
+	if len(t.Deals) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Deals was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Deals)))); err != nil {
+		return err
+	}
+	for _, v := range t.Deals {
+		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *HandleInitTimeoutDealsParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Deals ([]abi.DealID) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Deals: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+	if extra > 0 {
+		t.Deals = make([]abi.DealID, extra)
+	}
+	for i := 0; i < int(extra); i++ {
+
+		maj, val, err := cbg.CborReadHeader(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read uint64 for t.Deals slice: %w", err)
+		}
+
+		if maj != cbg.MajUnsignedInt {
+			return xerrors.Errorf("value read for array t.Deals was not a uint, instead got %d", maj)
+		}
+
+		t.Deals[i] = abi.DealID(val)
+	}
+
+	return nil
+}
+
 func (t *PublishStorageDealsReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -759,7 +890,7 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{137}); err != nil {
+	if _, err := w.Write([]byte{138}); err != nil {
 		return err
 	}
 
@@ -772,6 +903,11 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 	// t.PieceSize (abi.PaddedPieceSize) (uint64)
 
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.PieceSize))); err != nil {
+		return err
+	}
+
+	// t.VerifiedDeal (bool) (bool)
+	if err := cbg.WriteBool(w, t.VerifiedDeal); err != nil {
 		return err
 	}
 
@@ -835,7 +971,7 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 10 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -864,6 +1000,25 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 		}
 		t.PieceSize = abi.PaddedPieceSize(extra)
 
+	}
+
+	t.PieceSize = abi.PaddedPieceSize(extra)
+	// t.VerifiedDeal (bool) (bool)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.VerifiedDeal = false
+	case 21:
+		t.VerifiedDeal = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
 	}
 	// t.Client (address.Address) (struct)
 

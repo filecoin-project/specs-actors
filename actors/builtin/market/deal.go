@@ -20,8 +20,8 @@ import (
 type DealProposal struct {
 	PieceCID     cid.Cid // CommP
 	PieceSize    abi.PaddedPieceSize
-	Client       addr.Address
 	VerifiedDeal bool
+	Client       addr.Address
 	Provider     addr.Address
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,

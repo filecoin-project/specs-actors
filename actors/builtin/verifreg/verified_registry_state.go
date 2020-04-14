@@ -1,8 +1,6 @@
 package verifreg
 
 import (
-	"io"
-
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
@@ -30,34 +28,39 @@ type State struct {
 	VerifiedClients cid.Cid // HAMT[addr.Address]DataCap
 }
 
-func (s *State) MarshalCBOR(w io.Writer) error {
-	panic("delete me")
-}
+var MinVerifiedDealSize abi.StoragePower = big.NewInt(1 << 20) // PARAM_FINISH
 
-func (s *State) UnmarshalCBOR(r io.Reader) error {
-	panic("delete me")
-}
-
-func ConstructState(emptyMapCid cid.Cid) *State {
+// rootKeyAddress comes from genesis.
+func ConstructState(emptyMapCid cid.Cid, rootKeyAddress addr.Address) *State {
 	return &State{
-		// TODO initialize RootKey
+		RootKey:         rootKeyAddress,
 		Verifiers:       emptyMapCid,
 		VerifiedClients: emptyMapCid,
 	}
 }
 
 func (st *State) PutVerifier(store adt.Store, verifierAddr addr.Address, verifierCap DataCap) error {
-	verifiers := adt.AsMap(store, st.Verifiers)
-	err := verifiers.Put(AddrKey(verifierAddr), &verifierCap)
+	verifiers, err := adt.AsMap(store, st.Verifiers)
 	if err != nil {
+		return err
+	}
+
+	if err := verifiers.Put(AddrKey(verifierAddr), &verifierCap); err != nil {
 		return errors.Wrapf(err, "failed to put verifier %v with a cap of %v", verifierAddr, verifierCap)
 	}
-	st.Verifiers = verifiers.Root()
+	st.Verifiers, err = verifiers.Root()
+	if err != nil {
+		return errors.Wrapf(err, "failed to flush Verifiers in PutVerifier")
+	}
 	return nil
 }
 
 func (st *State) GetVerifier(store adt.Store, address addr.Address) (*DataCap, bool, error) {
-	verifiers := adt.AsMap(store, st.Verifiers)
+	verifiers, err := adt.AsMap(store, st.Verifiers)
+	if err != nil {
+		return nil, false, err
+	}
+
 	var allowance DataCap
 	found, err := verifiers.Get(AddrKey(address), &allowance)
 	if err != nil {
@@ -67,27 +70,43 @@ func (st *State) GetVerifier(store adt.Store, address addr.Address) (*DataCap, b
 }
 
 func (st *State) DeleteVerifier(store adt.Store, address addr.Address) error {
-	verifiers := adt.AsMap(store, st.Verifiers)
-	err := verifiers.Delete(AddrKey(address))
-	if err != nil {
-		return errors.Wrapf(err, "failed to delete verifier for address %v", address)
-	}
-	st.Verifiers = verifiers.Root()
-	return nil
-}
-
-func (st *State) PutVerifiedClient(store adt.Store, vcAddress addr.Address, vcCap DataCap) error {
-	vc := adt.AsMap(store, st.VerifiedClients)
-	err := vc.Put(AddrKey(vcAddress), &vcCap)
+	verifiers, err := adt.AsMap(store, st.Verifiers)
 	if err != nil {
 		return err
 	}
 
+	if err := verifiers.Delete(AddrKey(address)); err != nil {
+		return errors.Wrapf(err, "failed to delete verifier for address %v", address)
+	}
+	st.Verifiers, err = verifiers.Root()
+	if err != nil {
+		return errors.Wrapf(err, "failed to flush Verifiers in DeleteVerifier")
+	}
+	return nil
+}
+
+func (st *State) PutVerifiedClient(store adt.Store, vcAddress addr.Address, vcCap DataCap) error {
+	vc, err := adt.AsMap(store, st.VerifiedClients)
+	if err != nil {
+		return err
+	}
+
+	if err := vc.Put(AddrKey(vcAddress), &vcCap); err != nil {
+		return err
+	}
+	st.VerifiedClients, err = vc.Root()
+	if err != nil {
+		return errors.Wrapf(err, "failed to flush VerifiedClients in PutVerifiedClient")
+	}
 	return nil
 }
 
 func (st *State) GetVerifiedClient(store adt.Store, vcAddress addr.Address) (DataCap, bool, error) {
-	vc := adt.AsMap(store, st.VerifiedClients)
+	vc, err := adt.AsMap(store, st.VerifiedClients)
+	if err != nil {
+		return big.Zero(), false, err
+	}
+
 	var allowance DataCap
 	found, err := vc.Get(AddrKey(vcAddress), &allowance)
 	if err != nil {
@@ -97,11 +116,17 @@ func (st *State) GetVerifiedClient(store adt.Store, vcAddress addr.Address) (Dat
 }
 
 func (st *State) DeleteVerifiedClient(store adt.Store, vcAddress addr.Address) error {
-	vc := adt.AsMap(store, st.VerifiedClients)
-	err := vc.Delete(AddrKey(vcAddress))
+	vc, err := adt.AsMap(store, st.VerifiedClients)
 	if err != nil {
+		return err
+	}
+
+	if err := vc.Delete(AddrKey(vcAddress)); err != nil {
 		return errors.Wrapf(err, "failed to delete verified client for address %v", vcAddress)
 	}
-	st.VerifiedClients = vc.Root()
+	st.VerifiedClients, err = vc.Root()
+	if err != nil {
+		return errors.Wrapf(err, "failed to flush VerifiedClients in DeleteVerifiedClient")
+	}
 	return nil
 }

@@ -460,10 +460,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		builtin.MethodsPower.OnSectorProveCommit,
 		&power.OnSectorProveCommitParams{
 			Weight: power.SectorStorageWeightDesc{
-				SectorSize: st.Info.SectorSize,
-				DealWeight: dealWeights.DealWeight,
+				SectorSize:         st.Info.SectorSize,
+				DealWeight:         dealWeights.DealWeight,
 				VerifiedDealWeight: dealWeights.VerifiedDealWeight,
-				Duration:   precommit.Info.Expiration - rt.CurrEpoch(),
+				Duration:           precommit.Info.Expiration - rt.CurrEpoch(),
 			},
 		},
 		big.Zero(),
