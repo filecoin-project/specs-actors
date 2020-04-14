@@ -61,7 +61,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.RootKey.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.RootKey: %w", err)
 		}
 
 	}
@@ -133,7 +133,7 @@ func (t *AddVerifierParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Address.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Address: %w", err)
 		}
 
 	}
@@ -142,7 +142,7 @@ func (t *AddVerifierParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Allowance.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Allowance: %w", err)
 		}
 
 	}
@@ -190,7 +190,7 @@ func (t *AddVerifiedClientParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Address.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Address: %w", err)
 		}
 
 	}
@@ -199,7 +199,7 @@ func (t *AddVerifiedClientParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Allowance.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Allowance: %w", err)
 		}
 
 	}
@@ -247,7 +247,7 @@ func (t *UseBytesParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Address.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Address: %w", err)
 		}
 
 	}
@@ -256,7 +256,7 @@ func (t *UseBytesParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.DealSize.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.DealSize: %w", err)
 		}
 
 	}
@@ -304,7 +304,7 @@ func (t *RestoreBytesParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Address.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Address: %w", err)
 		}
 
 	}
@@ -313,7 +313,7 @@ func (t *RestoreBytesParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.DealSize.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.DealSize: %w", err)
 		}
 
 	}

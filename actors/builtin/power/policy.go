@@ -3,7 +3,6 @@ package power
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 
 	. "github.com/filecoin-project/specs-actors/actors/util"
 )
@@ -17,6 +16,7 @@ var ConsensusMinerMinPower = abi.NewStoragePower(2 << 30) // PARAM_FINISH
 var BaseMultiplier = big.NewInt(10)                // PARAM_FINISH
 var DealWeightMultiplier = big.NewInt(11)          // PARAM_FINISH
 var VerifiedDealWeightMultiplier = big.NewInt(100) // PARAM_FINISH
+const SectorQualityPrecision = 20
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
 // Sum of DealWeight and VerifiedDealWeight should be less than or equal to total SpaceTime of a sector.
@@ -33,14 +33,14 @@ func SectorQualityFromWeight(weight *SectorStorageWeightDesc) abi.SectorQuality 
 	weightedDealSpaceTime := big.Mul(weight.DealWeight, DealWeightMultiplier)
 	weightedVerifiedSpaceTime := big.Mul(weight.VerifiedDealWeight, VerifiedDealWeightMultiplier)
 	weightedSumSpaceTime := big.Add(weightedBaseSpaceTime, big.Add(weightedDealSpaceTime, weightedVerifiedSpaceTime))
-	weightedAverageQuality := big.Div(weightedSumSpaceTime, sectorSpaceTime)
+	scaledUpWeightedSumSpaceTime := big.Lsh(weightedSumSpaceTime, SectorQualityPrecision)
 
-	return big.Div(big.Mul(weightedAverageQuality, big.NewInt(1_000_000)), BaseMultiplier)
+	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), BaseMultiplier)
 }
 
 func QAPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
 	qual := SectorQualityFromWeight(weight)
-	return big.Div(big.Mul(big.NewInt(int64(weight.SectorSize)), qual), big.NewInt(1_000_000))
+	return big.Rsh(big.Mul(big.NewInt(int64(weight.SectorSize)), qual), SectorQualityPrecision)
 }
 
 func InitialPledgeForWeight(qapower abi.StoragePower, totqapower abi.StoragePower, circSupply abi.TokenAmount, totalPledge abi.TokenAmount, perEpochReward abi.TokenAmount) abi.TokenAmount {

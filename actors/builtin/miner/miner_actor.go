@@ -236,7 +236,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, deadline.Index, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
-				deadline.Index, params.Partitions)
+			deadline.Index, params.Partitions)
 
 		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
@@ -495,10 +495,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
 		newSectorInfo := &SectorOnChainInfo{
-			Info:                  precommit.Info,
-			ActivationEpoch:       rt.CurrEpoch(),
-			DealWeight:            dealWeights.DealWeight,
-			VerifiedDealWeight:    dealWeights.VerifiedDealWeight,
+			Info:               precommit.Info,
+			ActivationEpoch:    rt.CurrEpoch(),
+			DealWeight:         dealWeights.DealWeight,
+			VerifiedDealWeight: dealWeights.VerifiedDealWeight,
 		}
 
 		if err = st.PutSector(store, newSectorInfo); err != nil {
@@ -911,7 +911,7 @@ func handleProvingPeriod(rt Runtime) {
 	currEpoch := rt.CurrEpoch()
 	var deadline *DeadlineInfo
 	var periodEnd, nextPeriodStart abi.ChainEpoch
-	var  fullPeriod bool
+	var fullPeriod bool
 	{
 		// Vest locked funds.
 		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
@@ -990,7 +990,7 @@ func handleProvingPeriod(rt Runtime) {
 	{
 		// Establish new proving sets and clear proofs.
 		rt.State().Transaction(&st, func() interface{} {
-			deadlines, err := st.LoadDeadlines(store,)
+			deadlines, err := st.LoadDeadlines(store)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 			// Assign new sectors to deadlines.
@@ -1634,7 +1634,6 @@ func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declare
 	}
 	return nil
 }
-
 
 // Computes a fee for a collection of sectors and unlocks it from unvested funds (for burning).
 // The fee computation is a parameter.

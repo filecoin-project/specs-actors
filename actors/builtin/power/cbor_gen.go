@@ -1208,7 +1208,7 @@ func (t *SectorStorageWeightDesc) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
 		}
 
 	}

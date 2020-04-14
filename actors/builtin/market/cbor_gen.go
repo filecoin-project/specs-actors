@@ -455,7 +455,7 @@ func (t *VerifyDealsOnSectorProveCommitReturn) UnmarshalCBOR(r io.Reader) error 
 	{
 
 		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.DealWeight: %w", err)
 		}
 
 	}
@@ -464,7 +464,7 @@ func (t *VerifyDealsOnSectorProveCommitReturn) UnmarshalCBOR(r io.Reader) error 
 	{
 
 		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
 		}
 
 	}
@@ -789,9 +789,11 @@ func (t *HandleInitTimeoutDealsParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Deals = make([]abi.DealID, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		maj, val, err := cbg.CborReadHeader(br)
@@ -1001,8 +1003,6 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 		t.PieceSize = abi.PaddedPieceSize(extra)
 
 	}
-
-	t.PieceSize = abi.PaddedPieceSize(extra)
 	// t.VerifiedDeal (bool) (bool)
 
 	maj, extra, err = cbg.CborReadHeader(br)
