@@ -171,6 +171,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	for _, deal := range params.Deals {
 		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
+		// Either the DealSize is within the available DataCap of the VerifiedClient
+		// or this message will fail. We do not allow a deal that is partially verified.
 		if deal.Proposal.VerifiedDeal {
 			_, code := rt.Send(
 				builtin.VerifiedRegistryActorAddr,
@@ -459,7 +461,9 @@ func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDeals
 			deal := st.mustGetDeal(rt, dealID)
 			state := st.mustGetDealState(rt, dealID)
 
+			// Deal has not been activated.
 			if state.SectorStartEpoch == epochUndefined {
+				// Now is after StartEpoch when the Deal should have been activated, hence clean up.
 				if rt.CurrEpoch() > deal.StartEpoch {
 					// Store VerifiedDeal to restore bytes for VerifiedClient.
 					if deal.VerifiedDeal {
