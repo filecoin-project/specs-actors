@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -67,9 +67,11 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Entries = make([]Entry, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v Entry
@@ -98,9 +100,11 @@ func (t *Entry) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.MethodNum (abi.MethodNum) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MethodNum))); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -124,20 +128,24 @@ func (t *Entry) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Receiver.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Receiver: %w", err)
 		}
 
 	}
 	// t.MethodNum (abi.MethodNum) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.MethodNum = abi.MethodNum(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.MethodNum = abi.MethodNum(extra)
 	return nil
 }
 
@@ -195,9 +203,11 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Entries = make([]Entry, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v Entry

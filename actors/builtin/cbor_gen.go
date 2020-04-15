@@ -53,7 +53,7 @@ func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Owner.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Owner: %w", err)
 		}
 
 	}
@@ -62,7 +62,7 @@ func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Worker.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Worker: %w", err)
 		}
 
 	}
