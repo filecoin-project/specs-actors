@@ -3,7 +3,6 @@ package miner
 import (
 	"bytes"
 	"fmt"
-
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -215,7 +214,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// TODO WPOST: traverse earlier submissions and enact detected faults
 
-		deadlines := LoadDeadlines(rt, &st)
+		deadlines, err := LoadDeadlines(adt.AsStore(rt), &st)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := st.ComputePartitionsSectors(deadlines, deadlineIndex, params.Partitions)
@@ -651,7 +651,8 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		// The proving period start may be negative for low epochs, but all the arithmetic should work out
 		// correctly in order to declare faults for an upcoming deadline or the next period.
 		provingPeriodStart, _ := st.ProvingPeriodStart(currEpoch)
-		deadlines := LoadDeadlines(rt, &st)
+		deadlines, err := LoadDeadlines(adt.AsStore(rt), &st)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		var decaredSectors []abi.BitField
 		for _, decl := range params.Faults {
@@ -718,7 +719,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 		provingPeriodStart, _ := st.ProvingPeriodStart(currEpoch)
-		deadlines := LoadDeadlines(rt, &st)
+		deadlines, err := LoadDeadlines(adt.AsStore(rt), &st)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		var declaredSectors []abi.BitField
 		for _, decl := range params.Recoveries {
@@ -1332,13 +1334,13 @@ func unlockEarlyTerminationFee(store adt.Store, st *State, currEpoch abi.ChainEp
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func LoadDeadlines(rt Runtime, st *State) *Deadlines {
+func LoadDeadlines(store adt.Store, st *State) (*Deadlines, error) {
 	var deadlines Deadlines
-	ok := rt.Store().Get(st.Deadlines, &deadlines)
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to load deadlines as %s", st.Deadlines)
+	if err := store.Get(store.Context(), st.Deadlines, &deadlines); err != nil {
+		return nil, fmt.Errorf("failed to load deadlines (%s): %w", st.Deadlines, err)
 	}
-	return &deadlines
+
+	return &deadlines, nil
 }
 
 func min(a, b uint64) uint64 {
