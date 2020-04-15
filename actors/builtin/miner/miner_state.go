@@ -931,11 +931,8 @@ func deleteMany(arr *adt.Array, keys []uint64) error {
 }
 
 // Rounds e to the nearest exact multiple of the quantization unit, rounding up.
+// Precondition: unit >= 0 else behaviour is undefined
 func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
-	// FIXME panics when unit (epoch) is 0
-	if unit == 0 {
-		return 0
-	}
 	remainder := e % unit
 	if remainder == 0 {
 		return e
@@ -944,11 +941,8 @@ func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
 }
 
 // Rounds e to the nearest exact multiple of the quantization unit, rounding down.
+// Precondition: unit >= 0 else behaviour is undefined
 func quantizeDown(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
-	// FIXME panics when unit (epoch) is 0
-	if unit == 0 {
-		return 0
-	}
 	remainder := e % unit
 	if remainder == 0 {
 		return e
