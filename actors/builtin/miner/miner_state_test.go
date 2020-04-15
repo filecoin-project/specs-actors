@@ -11,6 +11,8 @@ import (
 )
 
 func TestProvingPeriodStart(t *testing.T) {
+	// A miner's current proving period start is always the highest multiple of its proving period boundary <= the current epoch.
+
 	t.Run("returns 0 when epoch is 0", func(t *testing.T) {
 		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(0)}}
 		currentEpoch := abi.ChainEpoch(0)
@@ -21,17 +23,17 @@ func TestProvingPeriodStart(t *testing.T) {
 		assert.True(t, started)
 	})
 
-	t.Run("returns 0 when epoch is less than proving period", func(t *testing.T) {
+	t.Run("returns negative when epoch is less than proving period and no smaller factors exist", func(t *testing.T) {
 		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(7)}}
 		currentEpoch := abi.ChainEpoch(6)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
 
 		// expect a multiple of ProvingPeriodBoundary
-		assert.Equal(t, abi.ChainEpoch(0), ppStart)
+		assert.Equal(t, abi.ChainEpoch(-1), ppStart)
 		assert.True(t, started)
 	})
 
-	t.Run("returns multiple of proving period start when epoch is greater than proving period start", func(t *testing.T) {
+	t.Run("returns multiple of proving period when epoch is greater than proving period start", func(t *testing.T) {
 		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(25)}}
 		currentEpoch := abi.ChainEpoch(72)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
@@ -41,7 +43,7 @@ func TestProvingPeriodStart(t *testing.T) {
 		assert.True(t, started)
 	})
 
-	t.Run("returns 0 when epoch is factor of proving period", func(t *testing.T) {
+	t.Run("returns multiple of proving period when proving period is factor of epoch", func(t *testing.T) {
 		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(12)}}
 		currentEpoch := abi.ChainEpoch(144)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
