@@ -204,7 +204,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Every epoch is during some deadline's challenge window.
 		// Rather than require it in the parameters, compute it from the current epoch.
 		// If the submission was intended for a different window, the partitions won't match and it will be rejected.
-		deadlineIndex, challengeEpoch := computeCurrentDeadline(provingPeriodStart, rt.CurrEpoch())
+		deadlineIndex, challengeEpoch := ComputeCurrentDeadline(provingPeriodStart, rt.CurrEpoch())
 
 		// Verify locked funds are are at least the sum of sector initial pledges.
 		// Note that this call does not actually compute recent vesting, so the reported locked funds may be
@@ -215,7 +215,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// TODO WPOST: traverse earlier submissions and enact detected faults
 
-		deadlines := loadDeadlines(rt, &st)
+		deadlines := LoadDeadlines(rt, &st)
 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := st.ComputePartitionsSectors(deadlines, deadlineIndex, params.Partitions)
@@ -551,7 +551,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	}
 
 	oldExpiration := sector.Info.Expiration
-	storageWeightDescPrev := asStorageWeightDesc(st.Info.SectorSize, sector)
+	storageWeightDescPrev := AsStorageWeightDesc(st.Info.SectorSize, sector)
 	extensionLength := params.NewExpiration - oldExpiration
 	if extensionLength < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration")
@@ -651,7 +651,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		// The proving period start may be negative for low epochs, but all the arithmetic should work out
 		// correctly in order to declare faults for an upcoming deadline or the next period.
 		provingPeriodStart, _ := st.ProvingPeriodStart(currEpoch)
-		deadlines := loadDeadlines(rt, &st)
+		deadlines := LoadDeadlines(rt, &st)
 
 		var decaredSectors []abi.BitField
 		for _, decl := range params.Faults {
@@ -718,7 +718,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
 		provingPeriodStart, _ := st.ProvingPeriodStart(currEpoch)
-		deadlines := loadDeadlines(rt, &st)
+		deadlines := LoadDeadlines(rt, &st)
 
 		var declaredSectors []abi.BitField
 		for _, decl := range params.Recoveries {
@@ -1015,7 +1015,7 @@ func (a Actor) requestBeginFaults(rt Runtime, sectorSize abi.SectorSize, sectors
 		Weights: make([]power.SectorStorageWeightDesc, len(sectors)),
 	}
 	for i, s := range sectors {
-		params.Weights[i] = *asStorageWeightDesc(sectorSize, s)
+		params.Weights[i] = *AsStorageWeightDesc(sectorSize, s)
 	}
 
 	_, code := rt.Send(
@@ -1032,7 +1032,7 @@ func (a Actor) requestEndFaults(rt Runtime, sectorSize abi.SectorSize, sectors [
 		Weights: make([]power.SectorStorageWeightDesc, len(sectors)),
 	}
 	for i, s := range sectors {
-		params.Weights[i] = *asStorageWeightDesc(sectorSize, s)
+		params.Weights[i] = *AsStorageWeightDesc(sectorSize, s)
 	}
 
 	_, code := rt.Send(
@@ -1075,7 +1075,7 @@ func (a Actor) requestTerminatePower(rt Runtime, terminationType power.SectorTer
 		Weights:         make([]power.SectorStorageWeightDesc, len(sectors)),
 	}
 	for i, s := range sectors {
-		params.Weights[i] = *asStorageWeightDesc(sectorSize, s)
+		params.Weights[i] = *AsStorageWeightDesc(sectorSize, s)
 	}
 
 	_, code := rt.Send(
@@ -1274,7 +1274,7 @@ func validateFaultDeclaration(currEpoch, periodStart abi.ChainEpoch, deadlines *
 	}
 
 	// Check if this declaration is before the fault declaration cutoff for this deadline.
-	deadlineEpoch, faultCutoff := faultDeclarationCutoff(currEpoch, periodStart, deadlineIdx)
+	deadlineEpoch, faultCutoff := ComputeFaultDeclarationCutoff(currEpoch, periodStart, deadlineIdx)
 	if currEpoch > faultCutoff {
 		return fmt.Errorf("invalid fault declaration for deadline %d (epoch %d) in epoch %d, cutoff %d",
 			deadlineIdx, deadlineEpoch, currEpoch, faultCutoff)
@@ -1293,7 +1293,7 @@ func validateFaultDeclaration(currEpoch, periodStart abi.ChainEpoch, deadlines *
 }
 
 // Computes the current deadline index and challenge epoch for that deadline.
-func computeCurrentDeadline(provingPeriodStart, currEpoch abi.ChainEpoch) (deadlineIdx uint64, challengeEpoch abi.ChainEpoch) {
+func ComputeCurrentDeadline(provingPeriodStart, currEpoch abi.ChainEpoch) (deadlineIdx uint64, challengeEpoch abi.ChainEpoch) {
 	challengeEpoch = quantizeDown(currEpoch, WPoStChallengeWindow)
 	AssertMsg(challengeEpoch >= provingPeriodStart, "invalid challenge epoch %d, proving period %d", challengeEpoch, provingPeriodStart)
 	deadlineIdx = uint64((challengeEpoch - provingPeriodStart) / WPoStChallengeWindow)
@@ -1302,7 +1302,7 @@ func computeCurrentDeadline(provingPeriodStart, currEpoch abi.ChainEpoch) (deadl
 
 // Computes the last epoch that a fault declaration may be submitted for a deadline in the current proving period.
 // If the deadline has already passed in this period, the cutoff is for the subsequent period instead.
-func faultDeclarationCutoff(currEpoch, periodStart abi.ChainEpoch, deadlineIdx uint64) (deadlineEpoch, faultCutoff abi.ChainEpoch) {
+func ComputeFaultDeclarationCutoff(currEpoch, periodStart abi.ChainEpoch, deadlineIdx uint64) (deadlineEpoch, faultCutoff abi.ChainEpoch) {
 	deadlineEpoch = periodStart + abi.ChainEpoch(deadlineIdx+1)*WPoStChallengeWindow
 	if currEpoch > deadlineEpoch {
 		// Deadline has already passed in this period, so the declaration targets the next period instead.
@@ -1332,7 +1332,7 @@ func unlockEarlyTerminationFee(store adt.Store, st *State, currEpoch abi.ChainEp
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func loadDeadlines(rt Runtime, st *State) *Deadlines {
+func LoadDeadlines(rt Runtime, st *State) *Deadlines {
 	var deadlines Deadlines
 	ok := rt.Store().Get(st.Deadlines, &deadlines)
 	if !ok {

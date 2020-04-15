@@ -193,7 +193,7 @@ func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 		return err
 	}
 
-	err = precommitted.Put(sectorKey(info.Info.SectorNumber), info)
+	err = precommitted.Put(SectorKey(info.Info.SectorNumber), info)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store precommitment for %v", info)
 	}
@@ -211,7 +211,7 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	}
 
 	var info SectorPreCommitOnChainInfo
-	found, err := precommitted.Get(sectorKey(sectorNo), &info)
+	found, err := precommitted.Get(SectorKey(sectorNo), &info)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "failed to load precommitment for %v", sectorNo)
 	}
@@ -224,7 +224,7 @@ func (st *State) DeletePrecommittedSector(store adt.Store, sectorNo abi.SectorNu
 		return err
 	}
 
-	err = precommitted.Delete(sectorKey(sectorNo))
+	err = precommitted.Delete(SectorKey(sectorNo))
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
 	}
@@ -765,7 +765,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		vestedSoFar = targetVest
 
 		// Load existing entry, else set a new one
-		key := epochKey(vestEpoch)
+		key := EpochKey(vestEpoch)
 		lockedFundEntry := big.Zero()
 		_, err = vestingFunds.Get(key, &lockedFundEntry)
 		if err != nil {
@@ -907,7 +907,7 @@ func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 	}
 }
 
-func asStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *power.SectorStorageWeightDesc {
+func AsStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *power.SectorStorageWeightDesc {
 	return &power.SectorStorageWeightDesc{
 		SectorSize: sectorSize,
 		DealWeight: sectorInfo.DealWeight,
@@ -948,16 +948,16 @@ func quantizeDown(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
 	return e - remainder
 }
 
-func sectorKey(e abi.SectorNumber) adt.Keyer {
+func SectorKey(e abi.SectorNumber) adt.Keyer {
 	return adt.UIntKey(uint64(e))
 }
 
-func epochKey(e abi.ChainEpoch) uint64 {
+func EpochKey(e abi.ChainEpoch) uint64 {
 	return uint64(e)
 }
 
 func init() {
-	// Check that ChainEpoch is indeed an unsigned integer to confirm that sectorKey is making the right interpretation.
+	// Check that ChainEpoch is indeed an unsigned integer to confirm that SectorKey is making the right interpretation.
 	var e abi.SectorNumber
 	if reflect.TypeOf(e).Kind() != reflect.Uint64 {
 		panic("incorrect sector number encoding")
