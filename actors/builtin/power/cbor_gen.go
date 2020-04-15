@@ -820,7 +820,7 @@ func (t *OnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnFaultEndParams) MarshalCBOR(w io.Writer) error {
+func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -845,7 +845,7 @@ func (t *OnFaultEndParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *OnFaultEndParams) UnmarshalCBOR(r io.Reader) error {
+func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -892,7 +892,7 @@ func (t *OnFaultEndParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
+func (t *OnFaultEndParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -917,7 +917,7 @@ func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
+func (t *OnFaultEndParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
