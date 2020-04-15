@@ -67,9 +67,6 @@ func pledgePenaltyForWindowedPoStFailure(failures int64) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
-// Maximum age of a block header used as proof of a consensus fault to appear in the chain.
-var ConsensusFaultReportingWindow = abi.ChainEpoch(2880) // 1 day @ 30 second epochs.
-
 var consensusFaultReporterInitialShare = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(1),
@@ -94,10 +91,10 @@ type VestSpec struct {
 }
 
 var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds),    // 1 year, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds),    // 1 year, PARAM_FINISH
 	StepDuration: abi.ChainEpoch(7 * SecondsInDay / EpochDurationSeconds), // 1 week, PARAM_FINISH
-	Quantization: SecondsInDay / EpochDurationSeconds, // 1 day, PARAM_FINISH
+	Quantization: SecondsInDay / EpochDurationSeconds,                     // 1 day, PARAM_FINISH
 }
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
