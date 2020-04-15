@@ -28,7 +28,6 @@ func main() {
 		abi.PoStProof{},
 		abi.WindowPoStVerifyInfo{},
 		abi.WinningPoStVerifyInfo{},
-		abi.OnChainWindowPoStVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}
@@ -128,9 +127,8 @@ func main() {
 		power.OnSectorTerminateParams{},
 		power.OnSectorModifyWeightDescParams{},
 		power.OnSectorProveCommitParams{},
-		power.OnMinerWindowedPoStFailureParams{},
-		power.OnSectorTemporaryFaultEffectiveEndParams{},
-		power.OnSectorTemporaryFaultEffectiveBeginParams{},
+		power.OnFaultBeginParams{},
+		power.OnFaultEndParams{},
 		// method returns
 		power.CreateMinerReturn{},
 		// other types
@@ -165,25 +163,29 @@ func main() {
 		// actor state
 		miner.State{},
 		miner.MinerInfo{},
-		miner.PoStState{},
+		miner.Deadlines{},
 		miner.SectorPreCommitOnChainInfo{},
 		miner.SectorPreCommitInfo{},
 		miner.SectorOnChainInfo{},
 		miner.WorkerKeyChange{},
 		// method params
 		// miner.ConstructorParams{},
+		miner.SubmitWindowedPoStParams{},
 		miner.TerminateSectorsParams{},
 		miner.ChangePeerIDParams{},
 		miner.ProveCommitSectorParams{},
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
-		miner.DeclareTemporaryFaultsParams{},
+		miner.DeclareFaultsParams{},
+		miner.DeclareFaultsRecoveredParams{},
 		miner.ReportConsensusFaultParams{},
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
 		miner.WithdrawBalanceParams{},
 		// other types
 		miner.CronEventPayload{},
+		miner.FaultDeclaration{},
+		miner.RecoveryDeclaration{},
 	); err != nil {
 		panic(err)
 	}

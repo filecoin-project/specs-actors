@@ -6,6 +6,31 @@ import (
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 )
 
+// The duration of a chain epoch.
+// This is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
+const EpochDurationSeconds = 25
+const SecondsInYear = 31556925
+const SecondsInDay = 86400
+
+// The period over which all a miner's active sectors will be challenged.
+const WPoStProvingPeriod = abi.ChainEpoch(SecondsInDay / EpochDurationSeconds)
+
+// The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
+const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // Half an hour (=48 per day)
+
+// The number of non-overlapping PoSt deadlines in each proving period.
+const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
+
+// The maximum number of sectors in a single window PoSt proof.
+const WPoStPartitionSectors = 2350
+
+// The maximum number of partitions that may be submitted in a single message.
+// This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
+const WPoStPartitionsMax = 100_000 / WPoStPartitionSectors
+
+// TODO WPOST
+// an init() check that the divisions above don't truncate
+
 // An approximation to chain state finality (should include message propagation time as well).
 const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
 
@@ -29,8 +54,8 @@ const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
 // Lookback from the current epoch for state view for elections; for Election PoSt, same as the PoSt lookback.
 const ElectionLookback = PoStLookback // PARAM_FINISH
 
-// Delay between declaration of a temporary sector fault and effectiveness of reducing the active proving set for PoSts.
-const DeclaredFaultEffectiveDelay = abi.ChainEpoch(20) // PARAM_FINISH
+// Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
+const FaultDeclarationCutoff = abi.ChainEpoch(20) // PARAM_FINISH
 
 // Staging period for a miner worker key change.
 const WorkerKeyChangeDelay = 2 * ElectionLookback // PARAM_FINISH
@@ -48,22 +73,18 @@ func temporaryFaultFee(weights []*power.SectorStorageWeightDesc, duration abi.Ch
 // MaxFaultsCount is the maximum number of faults that can be declared
 const MaxFaultsCount = 32 << 20
 
-// ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
-const ProvingPeriod = 300
-
 type BigFrac struct {
 	numerator   big.Int
 	denominator big.Int
 }
 
-// Penalty to pledge collateral for the termination of an individual sector.
-func pledgePenaltyForSectorTermination(termType power.SectorTermination, desc *power.SectorStorageWeightDesc) abi.TokenAmount {
+// Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
+func pledgePenaltyForSectorTermination(sector *SectorOnChainInfo) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
-// Penalty to pledge collateral for repeated failure to prove storage.
-// TODO: this should take in desc power.SectorStorageWeightDesc
-func pledgePenaltyForWindowedPoStFailure(failures int64) abi.TokenAmount {
+// Penalty to locked pledge collateral for a declared or on-going sector fault.
+func pledgePenaltyForSectorFault(sector *SectorOnChainInfo) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
@@ -81,10 +102,6 @@ var consensusFaultReporterShareGrowthRate = BigFrac{
 	denominator: big.NewInt(100000),
 }
 
-const EpochDurationSeconds = 30
-const SecondsInYear = 31556925
-const SecondsInDay = 86400
-
 // Specification for a linear vesting schedule.
 type VestSpec struct {
 	InitialDelay abi.ChainEpoch // Delay before any amount starts vesting.
@@ -94,10 +111,10 @@ type VestSpec struct {
 }
 
 var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds), // 1 year, PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds),    // 1 year, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds),    // 1 year, PARAM_FINISH
 	StepDuration: abi.ChainEpoch(7 * SecondsInDay / EpochDurationSeconds), // 1 week, PARAM_FINISH
-	Quantization: SecondsInDay / EpochDurationSeconds, // 1 day, PARAM_FINISH
+	Quantization: SecondsInDay / EpochDurationSeconds,                     // 1 day, PARAM_FINISH
 }
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
