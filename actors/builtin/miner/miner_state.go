@@ -33,12 +33,6 @@ type State struct {
 	LockedFunds       abi.TokenAmount // Total unvested funds locked as pledge collateral
 	VestingFunds      cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
 
-	// The offset of this miner's proving period from zero.
-	// An un-changing number in range [0, proving period).
-	// A miner's current proving period start is the highest multiple of this boundary <= the current epoch.
-	// TODO REVIEW: should we put this in MinerInfo, since immutable?
-	ProvingPeriodBoundary abi.ChainEpoch
-
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
@@ -93,6 +87,11 @@ type MinerInfo struct {
 
 	// Amount of space in each sector committed to the network by this miner.
 	SectorSize abi.SectorSize
+
+	// The offset of this miner's proving period from zero.
+	// An un-changing number in range [0, proving period).
+	// A miner's current proving period start is the highest multiple of this boundary <= the current epoch.
+	ProvingPeriodBoundary abi.ChainEpoch
 }
 
 type PeerID peer.ID
@@ -129,14 +128,16 @@ type SectorOnChainInfo struct {
 	DealWeight      abi.DealWeight // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
 }
 
-func ConstructState(emptyArrayCid, emptyMapCid cid.Cid, ownerAddr, workerAddr addr.Address, peerId peer.ID, sectorSize abi.SectorSize, emptyDeadlinesCid cid.Cid) *State {
+func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
+	peerId peer.ID, sectorSize abi.SectorSize, periodBoundary abi.ChainEpoch) *State {
 	return &State{
 		Info: MinerInfo{
-			Owner:            ownerAddr,
-			Worker:           workerAddr,
-			PendingWorkerKey: nil,
-			PeerId:           peerId,
-			SectorSize:       sectorSize,
+			Owner:                 ownerAddr,
+			Worker:                workerAddr,
+			PendingWorkerKey:      nil,
+			PeerId:                peerId,
+			SectorSize:            sectorSize,
+			ProvingPeriodBoundary: periodBoundary,
 		},
 
 		PreCommitDeposits: abi.NewTokenAmount(0),
@@ -164,9 +165,11 @@ func (st *State) GetSectorSize() abi.SectorSize {
 }
 
 // Returns the epoch that starts the current proving period, and whether that period starts on or after epoch 0.
-// The period start can be negative during the first proving period of the chain.
-func (st *State) ProvingPeriodStart(currEpoch abi.ChainEpoch) (abi.ChainEpoch, bool) {
-	periodStart := quantizeDown(currEpoch, st.ProvingPeriodBoundary)
+// The result must be <= the current epoch.
+// The result can be negative during the first proving period of the chain, indicated by a `false` isAfterZero.
+func (st *State) ProvingPeriodStart(currEpoch abi.ChainEpoch) (period abi.ChainEpoch, isAfterZero bool) {
+	// FIXME this is wrong, boundary can by zero
+	periodStart := quantizeDown(currEpoch, st.Info.ProvingPeriodBoundary)
 	return periodStart, periodStart >= 0
 }
 
@@ -566,7 +569,7 @@ func (st *State) ComputePartitionsSectors(deadlines *Deadlines, deadlineIndex ui
 	for _, pIdx := range partitions {
 		if pIdx < deadlineFirstPartition || pIdx >= deadlineFirstPartition+deadlinePartitionCount {
 			return nil, fmt.Errorf("invalid partition %d at deadline %d with first %d, count %d, period %d",
-				pIdx, deadlineIndex, deadlineFirstPartition, deadlinePartitionCount, st.ProvingPeriodBoundary)
+				pIdx, deadlineIndex, deadlineFirstPartition, deadlinePartitionCount, st.Info.ProvingPeriodBoundary)
 		}
 
 		// Slice out the sectors corresponding to this partition from the deadline's sector bitfield.

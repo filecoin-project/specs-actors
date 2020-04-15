@@ -2,7 +2,9 @@ package miner
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -22,17 +24,11 @@ import (
 
 type Runtime = vmr.Runtime
 
-const epochUndefined = abi.ChainEpoch(-1)
-
 type CronEventType int64
-
 const (
-	//CronEventWindowedPoStExpiration CronEventType = iota
 	CronEventWorkerKeyChange CronEventType = iota
 	CronEventPreCommitExpiry
-	//CronEventSectorExpiry
 	CronEventProvingPeriod
-	//CronEventTempFault
 )
 
 type CronEventPayload struct {
@@ -93,11 +89,18 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	var emptyDeadlines Deadlines
 	emptyDeadlinesCid := rt.Store().Put(&emptyDeadlines)
 
-	// TODO WPOST: assign proving period boundary using chain randomness
-	// TODO WPOST: register cron callback on proving period boundary
+	ppBoundary, err := assignProvingPeriodBoundary(rt.Message().Receiver(), rt.CurrEpoch(), rt.Syscalls().HashBlake2b)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period boundary")
 
-	state := ConstructState(emptyArray, emptyMap, owner, worker, params.PeerId, params.SectorSize, emptyDeadlinesCid)
+	state := ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, params.PeerId, params.SectorSize, ppBoundary)
 	rt.State().Create(state)
+
+	// Register cron callback for the next proving period boundary.
+	currPeriodStart, _ := state.ProvingPeriodStart(rt.CurrEpoch())
+	a.enrollCronEvent(rt, currPeriodStart+WPoStProvingPeriod, &CronEventPayload{
+		EventType: CronEventProvingPeriod,
+	})
+
 	return nil
 }
 
@@ -329,9 +332,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		// Check expiry is on proving period boundary
 		expiryMod := params.Expiration % WPoStProvingPeriod
-		if expiryMod != st.ProvingPeriodBoundary {
+		if expiryMod != st.Info.ProvingPeriodBoundary {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, must be on proving period boundary %d mod %d",
-				params.Expiration, st.ProvingPeriodBoundary, WPoStProvingPeriod)
+				params.Expiration, st.Info.ProvingPeriodBoundary, WPoStProvingPeriod)
 		}
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
@@ -1266,6 +1269,31 @@ func notifyPledgeChanged(rt Runtime, pledgeDelta *abi.TokenAmount) {
 		_, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, pledgeDelta, big.Zero())
 		builtin.RequireSuccess(rt, code, "failed to update total pledge")
 	}
+}
+
+// Assigns proving period boundary randomly in the range [0, WPoStProvingPeriod) by hashing
+// the actor's address and current epoch.
+func assignProvingPeriodBoundary(myAddr addr.Address, currEpoch abi.ChainEpoch, hash func(data []byte) [32]byte) (abi.ChainEpoch, error) {
+	ppBoundarySeed := bytes.Buffer{}
+	err := myAddr.MarshalCBOR(&ppBoundarySeed)
+	if err != nil {
+		return 0, fmt.Errorf("failed to serialize address: %w", err)
+	}
+
+	err = binary.Write(&ppBoundarySeed, binary.BigEndian, currEpoch)
+	if err != nil {
+		return 0, fmt.Errorf("failed to serialize epoch: %w", err)
+	}
+
+	digest := hash(ppBoundarySeed.Bytes())
+	var ppBoundary uint64
+	err = binary.Read(bytes.NewBuffer(digest[:]), binary.BigEndian, &ppBoundary)
+	if err != nil {
+		return 0, fmt.Errorf("failed to interpret digest: %w", err)
+	}
+
+	ppBoundary = ppBoundary % uint64(WPoStProvingPeriod)
+	return abi.ChainEpoch(ppBoundary), nil
 }
 
 // Checks that a fault or recovery declaration of sectors at a specific deadline is valid and not within
