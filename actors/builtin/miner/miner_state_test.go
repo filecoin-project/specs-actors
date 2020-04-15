@@ -12,7 +12,7 @@ import (
 
 func TestProvingPeriodStart(t *testing.T) {
 	t.Run("returns 0 when epoch is 0", func(t *testing.T) {
-		minerState := miner.State{ProvingPeriodBoundary: abi.ChainEpoch(0)}
+		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(0)}}
 		currentEpoch := abi.ChainEpoch(0)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
 
@@ -22,7 +22,7 @@ func TestProvingPeriodStart(t *testing.T) {
 	})
 
 	t.Run("returns 0 when epoch is less than proving period", func(t *testing.T) {
-		minerState := miner.State{ProvingPeriodBoundary: abi.ChainEpoch(7)}
+		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(7)}}
 		currentEpoch := abi.ChainEpoch(6)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
 
@@ -32,7 +32,7 @@ func TestProvingPeriodStart(t *testing.T) {
 	})
 
 	t.Run("returns multiple of proving period start when epoch is greater than proving period start", func(t *testing.T) {
-		minerState := miner.State{ProvingPeriodBoundary: abi.ChainEpoch(25)}
+		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(25)}}
 		currentEpoch := abi.ChainEpoch(72)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
 
@@ -42,7 +42,7 @@ func TestProvingPeriodStart(t *testing.T) {
 	})
 
 	t.Run("returns 0 when epoch is factor of proving period", func(t *testing.T) {
-		minerState := miner.State{ProvingPeriodBoundary: abi.ChainEpoch(12)}
+		minerState := miner.State{Info: miner.MinerInfo{ProvingPeriodBoundary: abi.ChainEpoch(12)}}
 		currentEpoch := abi.ChainEpoch(144)
 		ppStart, started := minerState.ProvingPeriodStart(currentEpoch)
 
@@ -78,7 +78,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 		assert.Equal(t, partSize, sectorCount)
 	})
 
-	t.Run("deadline with some partition indexs containing full partitions with others containing partial", func(t *testing.T) {
+	t.Run("deadline with some partition indexes containing full partitions with others containing partial", func(t *testing.T) {
 		dl := newDeadlineWithPartitions(t, [miner.WPoStPeriodDeadlines]uint64{
 			0: partSize - 1,
 			1: partSize,
