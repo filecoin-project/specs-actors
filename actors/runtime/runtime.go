@@ -123,13 +123,12 @@ type Syscalls interface {
 	// - both headers mined by the same actor
 	// - headers are different
 	// - first header is of the same or lower epoch as the second
-	// - at least one of the headers appears in the current chain at or after epoch `earliest`
 	// - the headers provide evidence of a fault (see the spec for the different fault types).
 	// The parameters are all serialized block headers. The third "extra" parameter is consulted only for
 	// the "parent grinding fault", in which case it must be the sibling of h1 (same parent tipset) and one of the
-	// blocks in the parent of h2 (i.e. h2's grandparent).
+	// blocks in an ancestor of h2.
 	// Returns nil and an error if the headers don't prove a fault.
-	VerifyConsensusFault(h1, h2, extra []byte, earliest abi.ChainEpoch) (*ConsensusFault, error)
+	VerifyConsensusFault(h1, h2, extra []byte) (*ConsensusFault, error)
 }
 
 // The return type from a message send from one actor to another. This abstracts over the internal representation of
