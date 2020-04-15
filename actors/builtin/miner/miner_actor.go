@@ -681,7 +681,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	currEpoch := rt.CurrEpoch()
 	earliest := currEpoch - ConsensusFaultReportingWindow
 
-	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, earliest)
+	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "fault not verified: %s", err)
 	}
