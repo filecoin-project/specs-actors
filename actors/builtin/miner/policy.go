@@ -13,13 +13,13 @@ const SecondsInYear = 31556925
 const SecondsInDay = 86400
 
 // The period over which all a miner's active sectors will be challenged.
-const WPoStProvingPeriod = abi.ChainEpoch(SecondsInDay / EpochDurationSeconds)
+const WPoStProvingPeriod = abi.ChainEpoch(SecondsInDay / EpochDurationSeconds) // (= 3456 epochs in a proving period)
 
 // The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
-const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // Half an hour (=48 per day)
+const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // (=72)
 
 // The number of non-overlapping PoSt deadlines in each proving period.
-const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
+const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow) // (= 48 PoSt's)
 
 // The maximum number of sectors in a single window PoSt proof.
 const WPoStPartitionSectors = 2350

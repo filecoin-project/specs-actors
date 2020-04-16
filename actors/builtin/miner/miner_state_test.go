@@ -150,6 +150,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 
 const partSize = uint64(miner.WPoStPartitionSectors)
 
+// TODO(frrist) replace with a loop replace this with a l
 var fullSinglePartitionGen = [miner.WPoStPeriodDeadlines]uint64{
 	partSize, partSize, partSize, partSize,
 	partSize, partSize, partSize, partSize,

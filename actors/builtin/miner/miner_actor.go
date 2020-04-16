@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
@@ -25,6 +26,7 @@ import (
 type Runtime = vmr.Runtime
 
 type CronEventType int64
+
 const (
 	CronEventWorkerKeyChange CronEventType = iota
 	CronEventPreCommitExpiry
@@ -1324,10 +1326,14 @@ func validateFaultDeclaration(currEpoch, periodStart abi.ChainEpoch, deadlines *
 
 // Computes the current deadline index and challenge epoch for that deadline.
 func ComputeCurrentDeadline(provingPeriodStart, currEpoch abi.ChainEpoch) (deadlineIdx uint64, challengeEpoch abi.ChainEpoch) {
-	challengeEpoch = quantizeDown(currEpoch, WPoStChallengeWindow)
-	AssertMsg(challengeEpoch >= provingPeriodStart, "invalid challenge epoch %d, proving period %d", challengeEpoch, provingPeriodStart)
-	deadlineIdx = uint64((challengeEpoch - provingPeriodStart) / WPoStChallengeWindow)
-	return deadlineIdx, challengeEpoch
+	// first calculate how many epochs we are from the first deadline
+	floorEpochPps := math.Floor(float64(currEpoch)/float64(provingPeriodStart)) - 1
+	epochsFromFirstDeadline := int64(currEpoch%provingPeriodStart) + int64(160*floorEpochPps)
+
+	middle := float64(epochsFromFirstDeadline) / float64(WPoStChallengeWindow)
+	deadlineIdx = uint64(math.Floor(middle)) % WPoStPeriodDeadlines
+	challengeEpoch = abi.ChainEpoch(int64(currEpoch) - (epochsFromFirstDeadline)%int64(WPoStChallengeWindow))
+	return
 }
 
 // Computes the last epoch that a fault declaration may be submitted for a deadline in the current proving period.

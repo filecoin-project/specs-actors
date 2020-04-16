@@ -45,3 +45,81 @@ func TestAssignProvingPeriodBoundary(t *testing.T) {
 
 	}
 }
+
+// NB: WPoStChallengeWindow = 72
+func TestComputeCurrentDeadline(t *testing.T) {
+	// Every epoch is during some deadline's challenge window.
+	t.Run("simple case", func(t *testing.T) {
+		ppperiodStart := abi.ChainEpoch(160)
+		currentEpoch := abi.ChainEpoch(160)
+
+		actualDeadlineIdx, actualChallengeEpoch := ComputeCurrentDeadline(ppperiodStart, currentEpoch)
+
+		expectedDeadlineIdx := uint64(0)
+		expectedChallengeEpoch := abi.ChainEpoch(160)
+		assert.Equal(t, expectedDeadlineIdx, actualDeadlineIdx, "Expected: %v, Actual: %v", expectedDeadlineIdx, actualDeadlineIdx)
+		assert.Equal(t, expectedChallengeEpoch, actualChallengeEpoch, "Expected: %v, Actual: %v", expectedChallengeEpoch, actualChallengeEpoch)
+	})
+
+	t.Run("Middle Point", func(t *testing.T) {
+		ppperiodStart := abi.ChainEpoch(160)
+		currentEpoch := abi.ChainEpoch(1888)
+
+		actualDeadlineIdx, actualChallengeEpoch := ComputeCurrentDeadline(ppperiodStart, currentEpoch)
+
+		expectedDeadlineIdx := uint64(24)
+		expectedChallengeEpoch := abi.ChainEpoch(1888)
+		assert.Equal(t, expectedDeadlineIdx, actualDeadlineIdx, "Expected: %v, Actual: %v", expectedDeadlineIdx, actualDeadlineIdx)
+		assert.Equal(t, expectedChallengeEpoch, actualChallengeEpoch, "Expected: %v, Actual: %v", expectedChallengeEpoch, actualChallengeEpoch)
+	})
+
+	t.Run("Last epoch in proving period", func(t *testing.T) {
+		ppperiodStart := abi.ChainEpoch(160)
+		currentEpoch := abi.ChainEpoch(3615)
+
+		actualDeadlineIdx, actualChallengeEpoch := ComputeCurrentDeadline(ppperiodStart, currentEpoch)
+
+		expectedDeadlineIdx := uint64(47)
+		expectedChallengeEpoch := abi.ChainEpoch(3544)
+		assert.Equal(t, expectedDeadlineIdx, actualDeadlineIdx, "Expected: %v, Actual: %v", expectedDeadlineIdx, actualDeadlineIdx)
+		assert.Equal(t, expectedChallengeEpoch, actualChallengeEpoch, "Expected: %v, Actual: %v", expectedChallengeEpoch, actualChallengeEpoch)
+	})
+
+	t.Run("Rollover to new proving period", func(t *testing.T) {
+		ppperiodStart := abi.ChainEpoch(160)
+		currentEpoch := abi.ChainEpoch(3616)
+
+		actualDeadlineIdx, actualChallengeEpoch := ComputeCurrentDeadline(ppperiodStart, currentEpoch)
+
+		expectedDeadlineIdx := uint64(0)
+		expectedChallengeEpoch := abi.ChainEpoch(3616)
+		assert.Equal(t, expectedDeadlineIdx, actualDeadlineIdx, "Expected: %v, Actual: %v", expectedDeadlineIdx, actualDeadlineIdx)
+		assert.Equal(t, expectedChallengeEpoch, actualChallengeEpoch, "Expected: %v, Actual: %v", expectedChallengeEpoch, actualChallengeEpoch)
+	})
+
+	t.Run("Negative challenge epoch", func(t *testing.T) {
+		ppperiodStart := abi.ChainEpoch(160)
+		currentEpoch := abi.ChainEpoch(15)
+
+		actualDeadlineIdx, actualChallengeEpoch := ComputeCurrentDeadline(ppperiodStart, currentEpoch)
+
+		expectedDeadlineIdx := uint64(45)
+		expectedChallengeEpoch := abi.ChainEpoch(-56)
+		assert.Equal(t, expectedDeadlineIdx, actualDeadlineIdx, "Expected: %v, Actual: %v", expectedDeadlineIdx, actualDeadlineIdx)
+		assert.Equal(t, expectedChallengeEpoch, actualChallengeEpoch, "Expected: %v, Actual: %v", expectedChallengeEpoch, actualChallengeEpoch)
+	})
+
+	t.Run("Rollover from negative to positive", func(t *testing.T) {
+		ppperiodStart := abi.ChainEpoch(160)
+		currentEpoch := abi.ChainEpoch(16)
+
+		actualDeadlineIdx, actualChallengeEpoch := ComputeCurrentDeadline(ppperiodStart, currentEpoch)
+
+		expectedDeadlineIdx := uint64(46)
+		expectedChallengeEpoch := abi.ChainEpoch(16)
+		assert.Equal(t, expectedDeadlineIdx, actualDeadlineIdx, "Expected: %v, Actual: %v", expectedDeadlineIdx, actualDeadlineIdx)
+		assert.Equal(t, expectedChallengeEpoch, actualChallengeEpoch, "Expected: %v, Actual: %v", expectedChallengeEpoch, actualChallengeEpoch)
+
+	})
+
+}
