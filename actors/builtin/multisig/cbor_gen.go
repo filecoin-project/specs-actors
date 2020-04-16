@@ -124,9 +124,11 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Signers = make([]address.Address, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
@@ -192,7 +194,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.InitialBalance.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.InitialBalance: %w", err)
 		}
 
 	}
@@ -281,6 +283,7 @@ func (t *Transaction) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Method (abi.MethodNum) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
 		return err
 	}
@@ -333,7 +336,7 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}
@@ -342,20 +345,24 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Value.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Value: %w", err)
 		}
 
 	}
 	// t.Method (abi.MethodNum) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Method = abi.MethodNum(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Method = abi.MethodNum(extra)
 	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -387,9 +394,11 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Approved = make([]address.Address, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
@@ -428,6 +437,7 @@ func (t *ProposalHashData) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Method (abi.MethodNum) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
 		return err
 	}
@@ -466,7 +476,7 @@ func (t *ProposalHashData) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Requester.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Requester: %w", err)
 		}
 
 	}
@@ -475,7 +485,7 @@ func (t *ProposalHashData) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}
@@ -484,20 +494,24 @@ func (t *ProposalHashData) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Value.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Value: %w", err)
 		}
 
 	}
 	// t.Method (abi.MethodNum) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Method = abi.MethodNum(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Method = abi.MethodNum(extra)
 	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -594,9 +608,11 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Signers = make([]address.Address, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
@@ -680,6 +696,7 @@ func (t *ProposeParams) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Method (abi.MethodNum) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
 		return err
 	}
@@ -718,7 +735,7 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}
@@ -727,20 +744,24 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Value.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Value: %w", err)
 		}
 
 	}
 	// t.Method (abi.MethodNum) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Method = abi.MethodNum(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Method = abi.MethodNum(extra)
 	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -802,7 +823,7 @@ func (t *AddSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Signer.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Signer: %w", err)
 		}
 
 	}
@@ -867,7 +888,7 @@ func (t *RemoveSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Signer.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Signer: %w", err)
 		}
 
 	}
@@ -1091,7 +1112,7 @@ func (t *SwapSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.From.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.From: %w", err)
 		}
 
 	}
@@ -1100,7 +1121,7 @@ func (t *SwapSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}
