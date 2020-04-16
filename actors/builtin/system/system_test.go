@@ -10,4 +10,3 @@ import (
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, system.Actor{})
 }
-

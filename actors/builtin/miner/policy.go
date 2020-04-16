@@ -1,10 +1,54 @@
 package miner
 
 import (
+	"fmt"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 )
+
+// The duration of a chain epoch.
+// This is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
+const EpochDurationSeconds = 25
+const SecondsInYear = 31556925
+const SecondsInDay = 86400
+
+// The period over which all a miner's active sectors will be challenged.
+const WPoStProvingPeriod = abi.ChainEpoch(SecondsInDay / EpochDurationSeconds)
+
+// The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
+const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // Half an hour (=48 per day)
+
+// The number of non-overlapping PoSt deadlines in each proving period.
+const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
+
+// The maximum number of sectors in a single window PoSt proof.
+const WPoStPartitionSectors = uint64(2350)
+
+// The maximum number of partitions that may be submitted in a single message.
+// This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
+const WPoStMessagePartitionsMax = 100_000 / WPoStPartitionSectors
+
+func init() {
+	// Check that the challenge windows divide the proving period evenly.
+	if WPoStProvingPeriod % WPoStChallengeWindow != 0 {
+		panic(fmt.Sprintf("incompatible proving period %d and challenge window %d", WPoStProvingPeriod, WPoStChallengeWindow))
+	}
+	if abi.ChainEpoch(WPoStPeriodDeadlines) * WPoStChallengeWindow != WPoStProvingPeriod {
+		panic(fmt.Sprintf("incompatible proving period %d and challenge window %d", WPoStProvingPeriod, WPoStChallengeWindow))
+	}
+}
+
+// The maximum number of sectors that a miner can have simultaneously active.
+// This also bounds the number of faults that can be declared, etc.
+// TODO raise this number, carefully
+const SectorsMax = 32 << 20 // PARAM_FINISH
+
+// The maximum number of proving partitions a miner can have simultaneously active.
+const PartitionsMax = (SectorsMax / WPoStPartitionSectors) + WPoStPeriodDeadlines
+
+// The maximum number of new sectors that may be staged by a miner during a single proving period.
+const NewSectorsPerPeriodMax = 128 << 10
 
 // An approximation to chain state finality (should include message propagation time as well).
 const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
@@ -22,15 +66,19 @@ var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
 // used to ensure it is not predictable by miner.
 const PreCommitChallengeDelay = abi.ChainEpoch(10)
 
-// Lookback from the current epoch from which to obtain a PoSt challenge.
-// A lookback of 1 means consulting the immediate parent tipset/state.
-const PoStLookback = abi.ChainEpoch(1) // PARAM_FINISH
+// Lookback from the current epoch for state view for leader elections.
+const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
-// Lookback from the current epoch for state view for elections; for Election PoSt, same as the PoSt lookback.
-const ElectionLookback = PoStLookback // PARAM_FINISH
+// Lookback from the deadline's challenge window opening from which to sample chain randomness for the challenge seed.
+const WPoStChallengeLookback = abi.ChainEpoch(20) // PARAM_FINISH
 
-// Delay between declaration of a temporary sector fault and effectiveness of reducing the active proving set for PoSts.
-const DeclaredFaultEffectiveDelay = abi.ChainEpoch(20) // PARAM_FINISH
+// Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
+// A fault declaration may appear in the challenge epoch, since it must have been posted before the
+// epoch completed, and hence before the challenge was knowable.
+const FaultDeclarationCutoff = WPoStChallengeLookback // PARAM_FINISH
+
+// The maximum age of a fault before the sector is terminated.
+const FaultMaxAge = WPoStProvingPeriod*14 - 1
 
 // Staging period for a miner worker key change.
 const WorkerKeyChangeDelay = 2 * ElectionLookback // PARAM_FINISH
@@ -41,29 +89,23 @@ func precommitDeposit(sectorSize abi.SectorSize, duration abi.ChainEpoch) abi.To
 	return big.Mul(depositPerByte, big.NewIntUnsigned(uint64(sectorSize)))
 }
 
-func temporaryFaultFee(weights []*power.SectorStorageWeightDesc, duration abi.ChainEpoch) abi.TokenAmount {
-	return big.Zero() // PARAM_FINISH
-}
-
-// MaxFaultsCount is the maximum number of faults that can be declared
-const MaxFaultsCount = 32 << 20
-
-// ProvingPeriod defines the frequency of PoSt challenges that a miner will have to respond to
-const ProvingPeriod = 300
-
 type BigFrac struct {
 	numerator   big.Int
 	denominator big.Int
 }
 
-// Penalty to pledge collateral for the termination of an individual sector.
-func pledgePenaltyForSectorTermination(termType power.SectorTermination, desc *power.SectorStorageWeightDesc) abi.TokenAmount {
+// Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
+func pledgePenaltyForSectorTermination(sector *SectorOnChainInfo) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
-// Penalty to pledge collateral for repeated failure to prove storage.
-// TODO: this should take in desc power.SectorStorageWeightDesc
-func pledgePenaltyForWindowedPoStFailure(failures int64) abi.TokenAmount {
+// Penalty to locked pledge collateral for a "skipped" sector or missing PoSt fault.
+func pledgePenaltyForSectorUndeclaredFault(sector *SectorOnChainInfo) abi.TokenAmount {
+	return big.Zero() // PARAM_FINISH
+}
+
+// Penalty to locked pledge collateral for a declared or on-going sector fault.
+func pledgePenaltyForSectorDeclaredFault(sector *SectorOnChainInfo) abi.TokenAmount {
 	return big.Zero() // PARAM_FINISH
 }
 
@@ -77,10 +119,6 @@ var consensusFaultReporterShareGrowthRate = BigFrac{
 	numerator:   big.NewInt(101251),
 	denominator: big.NewInt(100000),
 }
-
-const EpochDurationSeconds = 30
-const SecondsInYear = 31556925
-const SecondsInDay = 86400
 
 // Specification for a linear vesting schedule.
 type VestSpec struct {
