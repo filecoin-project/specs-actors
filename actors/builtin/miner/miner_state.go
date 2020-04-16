@@ -160,7 +160,7 @@ func (st *State) GetSectorSize() abi.SectorSize {
 
 // Computes the current proving period and deadline, and whether that period is whole.
 func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) (*DeadlineInfo, bool) {
-	return ComputeProvingPeriodDeadline(currEpoch, st.Info.ProvingPeriodBoundary)
+	return ComputeProvingPeriodDeadline(st.Info.ProvingPeriodBoundary, currEpoch)
 }
 
 func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
