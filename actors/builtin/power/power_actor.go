@@ -25,6 +25,7 @@ type SectorTermination int64
 const (
 	SectorTerminationExpired SectorTermination = iota // Implicit termination after all deals expire
 	SectorTerminationManual                           // Unscheduled explicit termination by the miner
+	SectorTerminationFaulty                           // Implicit termination due to unrecovered fault
 )
 
 type Actor struct{}
@@ -36,15 +37,13 @@ func (a Actor) Exports() []interface{} {
 		3:                         a.DeleteMiner,
 		4:                         a.OnSectorProveCommit,
 		5:                         a.OnSectorTerminate,
-		6:                         a.OnSectorTemporaryFaultEffectiveBegin,
-		7:                         a.OnSectorTemporaryFaultEffectiveEnd,
+		6:                         a.OnFaultBegin,
+		7:                         a.OnFaultEnd,
 		8:                         a.OnSectorModifyWeightDesc,
-		9:                         a.OnMinerWindowedPoStSuccess,
-		10:                        a.OnMinerWindowedPoStFailure,
-		11:                        a.EnrollCronEvent,
-		12:                        a.OnEpochTickEnd,
-		13:                        a.UpdatePledgeTotal,
-		14:                        a.OnConsensusFault,
+		9:                         a.EnrollCronEvent,
+		10:                        a.OnEpochTickEnd,
+		11:                        a.UpdatePledgeTotal,
+		12:                        a.OnConsensusFault,
 	}
 }
 
@@ -228,11 +227,11 @@ func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *a
 	return nil
 }
 
-type OnSectorTemporaryFaultEffectiveBeginParams struct {
+type OnFaultBeginParams struct {
 	Weights []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
 }
 
-func (a Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSectorTemporaryFaultEffectiveBeginParams) *adt.EmptyValue {
+func (a Actor) OnFaultBegin(rt Runtime, params *OnFaultBeginParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -243,15 +242,14 @@ func (a Actor) OnSectorTemporaryFaultEffectiveBegin(rt Runtime, params *OnSector
 		}
 		return nil
 	})
-
 	return nil
 }
 
-type OnSectorTemporaryFaultEffectiveEndParams struct {
+type OnFaultEndParams struct {
 	Weights []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner
 }
 
-func (a Actor) OnSectorTemporaryFaultEffectiveEnd(rt Runtime, params *OnSectorTemporaryFaultEffectiveEndParams) *adt.EmptyValue {
+func (a Actor) OnFaultEnd(rt Runtime, params *OnFaultEndParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	var st State
@@ -295,76 +293,6 @@ func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeight
 	})
 
 	return &newInitialPledge
-}
-
-func (a Actor) OnMinerWindowedPoStSuccess(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Message().Caller()
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		hasFault, err := st.hasDetectedFault(adt.AsStore(rt), minerAddr)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to check miner for detected fault: %v", err)
-		}
-		if hasFault {
-			if err := st.deleteDetectedFault(adt.AsStore(rt), minerAddr); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "Failed to delete miner detected fault: %v", err)
-			}
-		}
-
-		return nil
-	})
-	return nil
-}
-
-type OnMinerWindowedPoStFailureParams struct {
-	NumConsecutiveFailures int64
-}
-
-func (a Actor) OnMinerWindowedPoStFailure(rt Runtime, params *OnMinerWindowedPoStFailureParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Message().Caller()
-
-	var claim *Claim
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		faulty, err := st.hasDetectedFault(adt.AsStore(rt), minerAddr)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to check if miner was faulty already: %s", err)
-		}
-
-		if faulty {
-			return nil
-		}
-
-		if err := st.putDetectedFault(adt.AsStore(rt), minerAddr); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to put miner fault: %v", err)
-		}
-
-		var found bool
-		claim, found, err = st.getClaim(adt.AsStore(rt), minerAddr)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to get miner power from claimed power table for surprise PoSt failure: %v", err)
-		}
-		if !found {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to find miner power in claimed power table for surprise PoSt failure")
-		}
-
-		if claim.QualityAdjPower.GreaterThanEqual(ConsensusMinerMinPower) {
-			// Ensure we only deduct this once...
-			st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
-			st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
-		}
-		return nil
-	})
-
-	if params.NumConsecutiveFailures > WindowedPostFailureLimit {
-		err := a.deleteMinerActor(rt, minerAddr)
-		abortIfError(rt, err, "failed to delete failed miner %v", minerAddr)
-	}
-
-	return nil
 }
 
 type EnrollCronEventParams struct {

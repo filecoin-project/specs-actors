@@ -40,7 +40,7 @@ func TestBitFieldUnset(t *testing.T) {
 	assert.False(t, found)
 }
 
-func roundtripMarshal(t *testing.T, in abi.BitField) abi.BitField {
+func roundtripMarshal(t *testing.T, in *abi.BitField) *abi.BitField {
 	buf := new(bytes.Buffer)
 	err := in.MarshalCBOR(buf)
 	assert.NoError(t, err)

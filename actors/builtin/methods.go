@@ -66,21 +66,19 @@ var MethodsMarket = struct {
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
 var MethodsPower = struct {
-	Constructor                          abi.MethodNum
-	CreateMiner                          abi.MethodNum
-	DeleteMiner                          abi.MethodNum
-	OnSectorProveCommit                  abi.MethodNum
-	OnSectorTerminate                    abi.MethodNum
-	OnSectorTemporaryFaultEffectiveBegin abi.MethodNum
-	OnSectorTemporaryFaultEffectiveEnd   abi.MethodNum
-	OnSectorModifyWeightDesc             abi.MethodNum
-	OnMinerWindowedPoStSuccess           abi.MethodNum
-	OnMinerWindowedPoStFailure           abi.MethodNum
-	EnrollCronEvent                      abi.MethodNum
-	OnEpochTickEnd                       abi.MethodNum
-	UpdatePledgeTotal                    abi.MethodNum
-	OnConsensusFault                     abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
+	Constructor              abi.MethodNum
+	CreateMiner              abi.MethodNum
+	DeleteMiner              abi.MethodNum
+	OnSectorProveCommit      abi.MethodNum
+	OnSectorTerminate        abi.MethodNum
+	OnFaultBegin             abi.MethodNum
+	OnFaultEnd               abi.MethodNum
+	OnSectorModifyWeightDesc abi.MethodNum
+	EnrollCronEvent          abi.MethodNum
+	OnEpochTickEnd           abi.MethodNum
+	UpdatePledgeTotal        abi.MethodNum
+	OnConsensusFault         abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 
 var MethodsMiner = struct {
 	Constructor            abi.MethodNum
@@ -88,12 +86,12 @@ var MethodsMiner = struct {
 	ChangeWorkerAddress    abi.MethodNum
 	ChangePeerID           abi.MethodNum
 	SubmitWindowedPoSt     abi.MethodNum
-	OnDeleteMiner          abi.MethodNum
 	PreCommitSector        abi.MethodNum
 	ProveCommitSector      abi.MethodNum
 	ExtendSectorExpiration abi.MethodNum
 	TerminateSectors       abi.MethodNum
-	DeclareTemporaryFaults abi.MethodNum
+	DeclareFaults          abi.MethodNum
+	DeclareFaultsRecovered abi.MethodNum
 	OnDeferredCronEvent    abi.MethodNum
 	CheckSectorProven      abi.MethodNum
 	AwardReward            abi.MethodNum
