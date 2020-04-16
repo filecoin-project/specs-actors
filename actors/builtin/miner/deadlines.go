@@ -38,7 +38,7 @@ func (d *DeadlineInfo) FaultCutoffPassed() bool {
 // The proving period start is the largest number <= the current epoch that has remainder mod WPoStProvingPeriod
 // equal to ProvingPeriodBoundary.
 // The period start can be negative during the first WPoStProvingPeriod of the chain, indicated by a `false` final result value.
-func ComputeProvingPeriodDeadline(currEpoch abi.ChainEpoch, boundary abi.ChainEpoch) (*DeadlineInfo, bool) {
+func ComputeProvingPeriodDeadline(boundary abi.ChainEpoch, currEpoch abi.ChainEpoch) (*DeadlineInfo, bool) {
 	currModulus := currEpoch % WPoStProvingPeriod
 	var periodProgress abi.ChainEpoch // How far ahead is currEpoch from previous boundary.
 	if currModulus >= boundary {
@@ -49,7 +49,7 @@ func ComputeProvingPeriodDeadline(currEpoch abi.ChainEpoch, boundary abi.ChainEp
 
 	periodStart := currEpoch - periodProgress
 	deadlineIdx := uint64(periodProgress / WPoStChallengeWindow)
-	deadlineOpen := currEpoch + (abi.ChainEpoch(deadlineIdx) * WPoStChallengeWindow)
+	deadlineOpen := periodStart + (abi.ChainEpoch(deadlineIdx) * WPoStChallengeWindow)
 
 	return &DeadlineInfo{
 		CurrentEpoch: currEpoch,
