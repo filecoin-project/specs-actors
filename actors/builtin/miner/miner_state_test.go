@@ -252,9 +252,128 @@ func TestNewSectorsBitField(t *testing.T) {
 
 		// sanity check nothing was added
 		// FIXME this is either a bug in code or an incorrect test, if AddNewSectors errors I would expect NewSectors
-		// bitfield to remain unmodified.
+		// bitfield to remain unmodified, unless of course the runtime is just going to abort on this error, still kinda ugly
 		harness.assertNewSectorsCount(0)
 	})
+}
+
+func TestSectorExpirationStore(t *testing.T) {
+	builder := mock.NewBuilder(context.Background(), address.Undef)
+
+	exp1 := abi.ChainEpoch(10)
+	exp2 := abi.ChainEpoch(20)
+
+	sectorExpirations := make(map[abi.ChainEpoch][]uint64)
+	sectorExpirations[exp1] = []uint64{1, 2, 3, 4, 5}
+	sectorExpirations[exp2] = []uint64{6, 7, 8, 9, 10}
+
+	t.Run("Round trip add get sector expirations", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		harness.assertAddSectorExpiration(rt, exp1, sectorExpirations[exp1]...)
+		harness.assertAddSectorExpiration(rt, exp2, sectorExpirations[exp2]...)
+
+		out1 := harness.assertGetSectorExpirations(rt, exp1)
+		assert.Equal(t, sectorExpirations[exp1], out1)
+
+		out2 := harness.assertGetSectorExpirations(rt, exp2)
+		assert.Equal(t, sectorExpirations[exp2], out2)
+
+		// return nothing if there are no sectors at the epoch
+		out3 := harness.assertGetSectorExpirations(rt, abi.ChainEpoch(0))
+		assert.Empty(t, out3)
+	})
+
+	t.Run("Round trip add remove sector expirations", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		harness.assertAddSectorExpiration(rt, exp1, sectorExpirations[exp1]...)
+		harness.assertAddSectorExpiration(rt, exp2, sectorExpirations[exp2]...)
+
+		// remove the first sector from expiration set 1
+		harness.assertRemoveSectorExpiration(rt, exp1, sectorExpirations[exp1][0])
+		out1 := harness.assertGetSectorExpirations(rt, exp1)
+		assert.Equal(t, sectorExpirations[exp1][1:], out1)
+
+		// remove all sectors from expiration set 2
+		harness.assertRemoveSectorExpiration(rt, exp2, sectorExpirations[exp2]...)
+		out2 := harness.assertGetSectorExpirations(rt, exp2)
+		assert.Empty(t, out2)
+	})
+
+	t.Run("Iteration by expiration", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		harness.assertAddSectorExpiration(rt, exp1, sectorExpirations[exp1]...)
+		harness.assertAddSectorExpiration(rt, exp2, sectorExpirations[exp2]...)
+
+		exp1Hit, exp2Hit := false, false
+		err := harness.s.ForEachSectorExpiration(adt.AsStore(rt), func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
+			if expiry == exp1 {
+				sectors, err := sectors.All(miner.SectorsMax)
+				assert.NoError(t, err)
+				assert.Equal(t, sectorExpirations[expiry], sectors)
+				exp1Hit = true
+			}
+			if expiry == exp2 {
+				sectors, err := sectors.All(miner.SectorsMax)
+				assert.NoError(t, err)
+				assert.Equal(t, sectorExpirations[expiry], sectors)
+				exp2Hit = true
+			}
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.True(t, exp1Hit)
+		assert.True(t, exp2Hit)
+	})
+
+	t.Run("Adding sectors at expiry merges to existing and clear expirations", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		mergedSectors := []uint64{21, 22, 23, 24, 25}
+		harness.assertAddSectorExpiration(rt, exp1, sectorExpirations[exp1]...)
+		harness.assertAddSectorExpiration(rt, exp1, mergedSectors...)
+
+		merged := harness.assertGetSectorExpirations(rt, exp1)
+		assert.Equal(t, append(sectorExpirations[exp1], mergedSectors...), merged)
+	})
+
+	t.Run("clear sectors by expirations", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		harness.assertAddSectorExpiration(rt, exp1, sectorExpirations[exp1]...)
+		harness.assertAddSectorExpiration(rt, exp2, sectorExpirations[exp2]...)
+
+		// ensure clearing works
+		harness.assertClearSectorExpiration(rt, exp1, exp2)
+		empty1 := harness.assertGetSectorExpirations(rt, exp1)
+		assert.Empty(t, empty1)
+
+		empty2 := harness.assertGetSectorExpirations(rt, exp2)
+		assert.Empty(t, empty2)
+	})
+
+	t.Run("fail to add more than SectorsMax number of sectors", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		tooManySectors := make([]uint64, miner.SectorsMax+1)
+
+		for i := uint64(0); i < miner.SectorsMax+1; i++ {
+			tooManySectors[i] = i
+		}
+
+		err := harness.s.AddSectorExpirations(adt.AsStore(rt), 1, tooManySectors...)
+		assert.Error(t, err)
+
+	})
+
 }
 
 type minerStateHarness struct {
@@ -263,6 +382,34 @@ type minerStateHarness struct {
 
 	cidGetter func() cid.Cid
 	seed      uint64
+}
+
+//
+// Sector Expiration Store
+//
+
+// internall converst the bit field to slice of uint64
+func (h *minerStateHarness) assertGetSectorExpirations(rt runtime.Runtime, expiry abi.ChainEpoch) []uint64 {
+	bf, err := h.s.GetSectorExpirations(adt.AsStore(rt), expiry)
+	assert.NoError(h.t, err)
+	sectors, err := bf.All(miner.SectorsMax)
+	assert.NoError(h.t, err)
+	return sectors
+}
+
+func (h *minerStateHarness) assertAddSectorExpiration(rt runtime.Runtime, expiry abi.ChainEpoch, sectors ...uint64) {
+	err := h.s.AddSectorExpirations(adt.AsStore(rt), expiry, sectors...)
+	assert.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) assertRemoveSectorExpiration(rt runtime.Runtime, expiry abi.ChainEpoch, sectors ...uint64) {
+	err := h.s.RemoveSectorExpirations(adt.AsStore(rt), expiry, sectors...)
+	assert.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) assertClearSectorExpiration(rt runtime.Runtime, excitations ...abi.ChainEpoch) {
+	err := h.s.ClearSectorExpirations(adt.AsStore(rt), excitations...)
+	assert.NoError(h.t, err)
 }
 
 //
