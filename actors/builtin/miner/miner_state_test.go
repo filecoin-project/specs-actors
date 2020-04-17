@@ -6,8 +6,6 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	cbor "github.com/ipfs/go-ipld-cbor"
-	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -112,7 +110,7 @@ func constructStateHarness(t *testing.T, rt runtime.Runtime, periodBoundary abi.
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
 	state := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, "peer", SectorSize, periodBoundary)
-	return &minerStateHarness{s: state, t: t, cidGetter: NewCidForTestGetter(), seed: 0}
+	return &minerStateHarness{s: state, t: t, cidGetter: tutils.NewCidForTestGetter(), seed: 0}
 }
 
 type minerStateHarness struct {
@@ -160,20 +158,5 @@ func (h *minerStateHarness) makeSectorPreCommitOnChainInfo(sectorNo abi.SectorNu
 		},
 		PreCommitDeposit: abi.NewTokenAmount(1),
 		PreCommitEpoch:   abi.ChainEpoch(h.seed),
-	}
-}
-
-// NewCidForTestGetter returns a closure that returns a Cid unique to that invocation.
-// The Cid is unique wrt the closure returned, not globally. You can use this function
-// in tests.
-func NewCidForTestGetter() func() cid.Cid {
-	i := 31337
-	return func() cid.Cid {
-		obj, err := cbor.WrapObject([]int{i}, uint64(mh.BLAKE2B_MIN+31), -1)
-		if err != nil {
-			panic(err)
-		}
-		i++
-		return obj.Cid()
 	}
 }
