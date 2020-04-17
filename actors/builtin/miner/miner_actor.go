@@ -56,7 +56,7 @@ func (a Actor) Exports() []interface{} {
 		11:                        a.DeclareFaultsRecovered,
 		12:                        a.OnDeferredCronEvent,
 		13:                        a.CheckSectorProven,
-		14:                        a.AwardReward,
+		14:                        a.AddLockedFund,
 		15:                        a.ReportConsensusFault,
 		16:                        a.WithdrawBalance,
 	}
@@ -777,19 +777,27 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 // Pledge Collateral //
 ///////////////////////
 
-func (a Actor) AwardReward(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
-	pledgeAmount := rt.Message().ValueReceived()
+func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.EmptyValue {
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), pledgeAmount, &PledgeVestingSpec); err != nil {
+		_, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock vested funds: %v", err)
+		}
+		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		if availableBalance.LessThan(*amountToLock) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
+		}
+
+		if err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *amountToLock, &PledgeVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
 		}
 		return nil
 	})
 
-	notifyPledgeChanged(rt, &pledgeAmount)
+	notifyPledgeChanged(rt, amountToLock)
 	return nil
 }
 
