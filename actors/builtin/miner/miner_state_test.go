@@ -165,15 +165,27 @@ func TestSectorsStore(t *testing.T) {
 		harness.assertSectorNotFound(rt, sectorNo)
 	})
 
-	t.Run("Delete more than a single sector", func(t *testing.T) {
+	t.Run("Iterate and Delete multiple sector", func(t *testing.T) {
 		rt := builder.Build(t)
 		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
 
+		// set of sectors, the larger numbers here are not significant
 		sectorNos := []abi.SectorNumber{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
 
+		// put all the sectors in the store
 		for _, s := range sectorNos {
 			harness.assertPutSector(rt, harness.newSectorOnChainInfo(s))
 		}
+
+		sectorNoIdx := 0
+		err := harness.s.ForEachSector(adt.AsStore(rt), func(si *miner.SectorOnChainInfo) {
+			require.Equal(t, sectorNos[sectorNoIdx], si.Info.SectorNumber)
+			sectorNoIdx++
+		})
+		assert.NoError(t, err)
+
+		// ensure we iterated over the expected number of sectors
+		assert.Equal(t, len(sectorNos), sectorNoIdx)
 
 		harness.assertDeleteSectors(rt, sectorNos...)
 
@@ -184,12 +196,99 @@ func TestSectorsStore(t *testing.T) {
 
 }
 
+func TestNewSectorsBitField(t *testing.T) {
+	builder := mock.NewBuilder(context.Background(), address.Undef)
+
+	t.Run("Add new sectors happy path", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		// set of sectors, the larger numbers here are not significant
+		sectorNos := []abi.SectorNumber{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
+		harness.assertAddNewSectors(sectorNos...)
+		harness.assertNewSectorsCount(uint64(len(sectorNos)))
+	})
+
+	t.Run("Add new sectors excludes duplicates", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		sectorNos := []abi.SectorNumber{1, 1, 2, 2, 3, 4, 5}
+		harness.assertAddNewSectors(sectorNos...)
+		harness.assertNewSectorsCount(5)
+	})
+
+	t.Run("Remove sectors happy path", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		sectorNos := []abi.SectorNumber{1, 2, 3, 4, 5}
+		harness.assertAddNewSectors(sectorNos...)
+		harness.assertNewSectorsCount(uint64(len(sectorNos)))
+
+		harness.assertRemoveNewSectors(1, 3, 5)
+		harness.assertNewSectorsCount(2)
+
+		sm, err := harness.s.NewSectors.AllMap(uint64(len(sectorNos)))
+		assert.NoError(t, err)
+		assert.True(t, sm[2])
+		assert.True(t, sm[4])
+		assert.False(t, sm[1])
+		assert.False(t, sm[3])
+		assert.False(t, sm[5])
+	})
+
+	t.Run("Add New sectors errors when adding too many new sectors", func(t *testing.T) {
+		rt := builder.Build(t)
+		harness := constructStateHarness(t, rt, abi.ChainEpoch(0))
+
+		tooManySectors := make([]abi.SectorNumber, miner.NewSectorsPerPeriodMax+1)
+		for i := uint64(0); i < miner.NewSectorsPerPeriodMax+1; i++ {
+			tooManySectors[i] = abi.SectorNumber(i)
+		}
+
+		err := harness.s.AddNewSectors(tooManySectors...)
+		assert.Error(t, err)
+
+		// sanity check nothing was added
+		// FIXME this is either a bug in code or an incorrect test, if AddNewSectors errors I would expect NewSectors
+		// bitfield to remain unmodified.
+		harness.assertNewSectorsCount(0)
+	})
+}
+
 type minerStateHarness struct {
 	s *miner.State
 	t testing.TB
 
 	cidGetter func() cid.Cid
 	seed      uint64
+}
+
+//
+// NewSectors BitField Assertions
+//
+
+func (h *minerStateHarness) assertAddNewSectors(sectorNos ...abi.SectorNumber) {
+	err := h.s.AddNewSectors(sectorNos...)
+	assert.NoError(h.t, err)
+}
+
+// makes a bit field from the passed sector numbers
+func (h *minerStateHarness) assertRemoveNewSectors(sectorNos ...abi.SectorNumber) {
+	bf := newBitFieldFromSectorNos(sectorNos...)
+	err := h.s.RemoveNewSectors(bf)
+	assert.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) assertClearNewSectors() {
+	h.assertNewSectorsCount(0)
+}
+
+func (h *minerStateHarness) assertNewSectorsCount(count uint64) {
+	sectorCount, err := h.s.NewSectors.Count()
+	assert.NoError(h.t, err)
+	assert.Equal(h.t, count, sectorCount)
 }
 
 //
@@ -229,10 +328,7 @@ func (h *minerStateHarness) assertGetSector(rt runtime.Runtime, sectorNo abi.Sec
 
 // makes a bit field from the passed sector numbers
 func (h *minerStateHarness) assertDeleteSectors(rt runtime.Runtime, sectorNos ...abi.SectorNumber) {
-	bf := abi.NewBitField()
-	for _, sn := range sectorNos {
-		bf.Set(uint64(sn))
-	}
+	bf := newBitFieldFromSectorNos(sectorNos...)
 	err := h.s.DeleteSectors(adt.AsStore(rt), bf)
 	assert.NoError(h.t, err)
 }
@@ -322,8 +418,23 @@ func constructStateHarness(t *testing.T, rt runtime.Runtime, periodBoundary abi.
 	emptyDeadlines := miner.ConstructDeadlines()
 	emptyDeadlinesCid := rt.Store().Put(emptyDeadlines)
 
+	// state field init
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
 	state := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, "peer", SectorSize, periodBoundary)
+
+	// assert NewSectors bitfield was constructed correctly (empty)
+	newSectorsCount, err := state.NewSectors.Count()
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), newSectorsCount)
+
 	return &minerStateHarness{s: state, t: t, cidGetter: tutils.NewCidForTestGetter(), seed: 0}
+}
+
+func newBitFieldFromSectorNos(sectorNos ...abi.SectorNumber) *abi.BitField {
+	bf := abi.NewBitField()
+	for _, sn := range sectorNos {
+		bf.Set(uint64(sn))
+	}
+	return bf
 }
