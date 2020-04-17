@@ -579,7 +579,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	storageWeightDescNew := *storageWeightDescPrev
 	storageWeightDescNew.Duration = storageWeightDescPrev.Duration + extensionLength
 
-	ret, code := rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnSectorModifyWeightDesc,
 		&power.OnSectorModifyWeightDescParams{
@@ -589,42 +589,16 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
-	var newInitialPledge abi.TokenAmount
-	AssertNoError(ret.Into(&newInitialPledge))
 
-	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to vest funds: %s", err)
-		}
-
-		// Lock up a new initial pledge. This locks a whole new amount because the pledge provided when the sector
-		// was first committed may have vested.
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		if availableBalance.LessThan(newInitialPledge) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for new initial pledge requirement %s, available: %s", newInitialPledge, availableBalance)
-		}
-		if err = st.AddLockedFunds(store, rt.CurrEpoch(), newInitialPledge, &PledgeVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
-		}
-
-		// Store new sector expiry.
+	// Store new sector expiry.
+	rt.State().Transaction(&st, func() interface{} {
 		sector.Info.Expiration = params.NewExpiration
 		if err = st.PutSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
+		return nil
+	})
 
-		// Update sector expiration queue.
-		err = st.RemoveSectorExpirations(store, oldExpiration, uint64(sectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector %d from expiry %d", sectorNo, oldExpiration)
-		err = st.AddSectorExpirations(store, params.NewExpiration, uint64(sectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add sector %d to expiry %d", sectorNo, params.NewExpiration)
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
-
-	pledgeDelta := big.Sub(newInitialPledge, newlyVestedAmount)
-	notifyPledgeChanged(rt, &pledgeDelta)
 	return nil
 }
 
