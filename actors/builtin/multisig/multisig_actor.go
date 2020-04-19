@@ -40,9 +40,6 @@ type Transaction struct {
 //
 // Requester - The requesting multisig wallet member.
 // All other fields - From the "Transaction" struct.
-//
-// Subtle point: The "To" field must be the multisig wallet address, otherwise the hash
-// loses much of its value, if not all of it.
 type ProposalHashData struct {
 	Requester addr.Address
 	To        addr.Address
