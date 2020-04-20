@@ -686,6 +686,24 @@ func (st *State) ClearPoStSubmissions() error {
 	return nil
 }
 
+func (st *State) LoadDeadlines(store adt.Store) (*Deadlines, error) {
+	var deadlines Deadlines
+	if err := store.Get(store.Context(), st.Deadlines, &deadlines); err != nil {
+		return nil, fmt.Errorf("failed to load deadlines (%s): %w", st.Deadlines, err)
+	}
+
+	return &deadlines, nil
+}
+
+func (st *State) SaveDeadlines(store adt.Store, deadlines *Deadlines) error {
+	c, err := store.Put(store.Context(), deadlines)
+	if err != nil {
+		return err
+	}
+	st.Deadlines = c
+	return nil
+}
+
 //
 // PoSt Deadlines and partitions
 //
