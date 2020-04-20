@@ -8,7 +8,7 @@ func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.C
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
-	return abi.NewTokenAmount(0), abi.NewTokenAmount(1 << 20) // PARAM_FINISH
+	return abi.NewTokenAmount(0), abi.NewTokenAmount(1 << 40) // PARAM_FINISH
 }
 
 func dealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
