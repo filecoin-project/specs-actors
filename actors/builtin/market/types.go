@@ -15,12 +15,16 @@ type DealArray struct {
 }
 
 // Interprets a store as balance table with root `r`.
-func AsDealProposalArray(s Store, r cid.Cid) *DealArray {
-	return &DealArray{AsArray(s, r)}
+func AsDealProposalArray(s Store, r cid.Cid) (*DealArray, error) {
+	a, err := AsArray(s, r)
+	if err != nil {
+		return nil, err
+	}
+	return &DealArray{a}, nil
 }
 
 // Returns the root cid of underlying AMT.
-func (t *DealArray) Root() cid.Cid {
+func (t *DealArray) Root() (cid.Cid, error) {
 	return t.Array.Root()
 }
 
@@ -52,12 +56,17 @@ type DealMetaArray struct {
 }
 
 // Interprets a store as balance table with root `r`.
-func AsDealStateArray(s Store, r cid.Cid) *DealMetaArray {
-	return &DealMetaArray{AsArray(s, r)}
+func AsDealStateArray(s Store, r cid.Cid) (*DealMetaArray, error) {
+	dsa, err := AsArray(s, r)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DealMetaArray{dsa}, nil
 }
 
 // Returns the root cid of underlying AMT.
-func (t *DealMetaArray) Root() cid.Cid {
+func (t *DealMetaArray) Root() (cid.Cid, error) {
 	return t.Array.Root()
 }
 

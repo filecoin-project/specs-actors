@@ -15,6 +15,10 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+func TestExports(t *testing.T) {
+	mock.CheckActorExports(t, cron.Actor{})
+}
+
 func TestConstructor(t *testing.T) {
 	actor := cronHarness{cron.Actor{}, t}
 

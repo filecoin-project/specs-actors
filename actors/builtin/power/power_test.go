@@ -22,6 +22,10 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+func TestExports(t *testing.T) {
+	mock.CheckActorExports(t, power.Actor{})
+}
+
 func TestConstruction(t *testing.T) {
 	actor := spActorHarness{power.Actor{}, t}
 
@@ -57,7 +61,8 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalRawBytePower)
 		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
 
-		claim := adt.AsMap(adt.AsStore(rt), st.Claims)
+		claim, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		assert.NoError(t, err)
 		keys, err := claim.CollectKeys()
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(keys))
@@ -65,17 +70,7 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{big.Zero(), big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
-
-		escrowTable := adt.AsMap(adt.AsStore(rt), st.EscrowTable)
-		keys, err = escrowTable.CollectKeys()
-		require.NoError(t, err)
-		assert.Equal(t, 1, len(keys))
-		var pledgeCollateral abi.TokenAmount
-		found, err_ = escrowTable.Get(asKey(keys[0]), &pledgeCollateral)
-		require.NoError(t, err_)
-		assert.True(t, found)
-		assert.Equal(t, abi.NewTokenAmount(1), pledgeCollateral) // miner has 1 FIL in EscrowTable
+		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.PoStDetectedFaultMiners)
 		verifyEmptyMap(t, rt, st.CronEventQueue)
@@ -142,7 +137,8 @@ func asKey(in string) adt.Keyer {
 }
 
 func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
-	mapChecked := adt.AsMap(adt.AsStore(rt), cid)
+	mapChecked, err := adt.AsMap(adt.AsStore(rt), cid)
+	assert.NoError(t, err)
 	keys, err := mapChecked.CollectKeys()
 	require.NoError(t, err)
 	assert.Empty(t, keys)
@@ -170,7 +166,6 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
 
-	verifyEmptyMap(h.t, rt, st.EscrowTable)
 	verifyEmptyMap(h.t, rt, st.Claims)
 	verifyEmptyMap(h.t, rt, st.PoStDetectedFaultMiners)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
@@ -198,7 +193,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 		CodeCID:           builtin.StorageMinerActorCodeID,
 		ConstructorParams: h.initCreateMinerBytes(owner, worker, peer, sectorSize),
 	}
-	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
+	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
 }
 

@@ -20,6 +20,10 @@ type constructorTestCase struct {
 	exitCode exitcode.ExitCode
 }
 
+func TestExports(t *testing.T) {
+	mock.CheckActorExports(t, account.Actor{})
+}
+
 func TestAccountactor(t *testing.T) {
 	actor := account.Actor{}
 

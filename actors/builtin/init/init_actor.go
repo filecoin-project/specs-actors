@@ -31,11 +31,12 @@ type ConstructorParams struct {
 
 func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt))
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
-	st := ConstructState(emptyMap.Root(), params.NetworkName)
+
+	st := ConstructState(emptyMap, params.NetworkName)
 	rt.State().Create(st)
 	return nil
 }

@@ -18,6 +18,10 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+func TestExports(t *testing.T) {
+	mock.CheckActorExports(t, market.Actor{})
+}
+
 func TestMarketActor(t *testing.T) {
 	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
@@ -58,24 +62,24 @@ func TestMarketActor(t *testing.T) {
 
 		store := adt.AsStore(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(store)
+		emptyMap, err := adt.MakeEmptyMap(store).Root()
 		assert.NoError(t, err)
 
-		emptyArray, err := adt.MakeEmptyArray(store)
+		emptyArray, err := adt.MakeEmptyArray(store).Root()
 		assert.NoError(t, err)
 
-		emptyMultiMap, err := market.MakeEmptySetMultimap(store)
+		emptyMultiMap, err := market.MakeEmptySetMultimap(store).Root()
 		assert.NoError(t, err)
 
 		var state market.State
 		rt.GetState(&state)
 
-		assert.Equal(t, emptyArray.Root(), state.Proposals)
-		assert.Equal(t, emptyArray.Root(), state.States)
-		assert.Equal(t, emptyMap.Root(), state.EscrowTable)
-		assert.Equal(t, emptyMap.Root(), state.LockedTable)
+		assert.Equal(t, emptyArray, state.Proposals)
+		assert.Equal(t, emptyArray, state.States)
+		assert.Equal(t, emptyMap, state.EscrowTable)
+		assert.Equal(t, emptyMap, state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
-		assert.Equal(t, emptyMultiMap.Root(), state.DealIDsByParty)
+		assert.Equal(t, emptyMultiMap, state.DealIDsByParty)
 	})
 
 	t.Run("AddBalance", func(t *testing.T) {
@@ -327,7 +331,7 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 		builtin.MethodsMiner.ControlAddresses,
 		nil,
 		big.Zero(),
-		&mock.ReturnWrapper{V: expectRet},
+		expectRet,
 		exitcode.Ok,
 	)
 }
