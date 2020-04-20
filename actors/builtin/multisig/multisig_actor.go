@@ -3,9 +3,9 @@ package multisig
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/minio/blake2b-simd"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -180,7 +180,10 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		}
 
 		// confirm the hashes match
-		calculatedHash := a.GetProposalHash(rt, txn)
+		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
+		}
 		if params.ProposalHash != nil && bytes.Compare(params.ProposalHash, calculatedHash[:]) != 0 {
 			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
 		}
@@ -304,33 +307,6 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (ahd *ProposalHashData) Serialize() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	if err := ahd.MarshalCBOR(buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (a Actor) GetProposalHash(rt vmr.Runtime, txn Transaction) []byte {
-	hashData := ProposalHashData{
-		Requester: txn.Approved[0],
-		To:        txn.To,
-		Value:     txn.Value,
-		Method:    txn.Method,
-		Params:    txn.Params,
-	}
-
-	data, err := hashData.Serialize()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to construct multisig approval hash: %v", err)
-	}
-
-	// TODO: Use syscalls for this (it currently breaks tests for some weird reason)
-	hashResult := blake2b.Sum256(data)
-	return hashResult[:]
-}
-
 func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) {
 	var st State
 	var txn Transaction
@@ -349,7 +325,10 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 
 		// confirm the hashes match
 		if checkHash {
-			calculatedHash := a.GetProposalHash(rt, txn)
+			calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
+			}
 			if proposalHash != nil && bytes.Compare(proposalHash, calculatedHash[:]) != 0 {
 				rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
 			}
@@ -393,4 +372,32 @@ func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
 	if !st.isSigner(address) {
 		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
 	}
+}
+
+// Computes a digest of a proposed transaction. This digest is used to confirm identity of the transaction
+// associated with an ID, which might change under chain re-orgs.
+func ComputeProposalHash(txn *Transaction, hash func([]byte) [32]byte) ([]byte, error) {
+	hashData := ProposalHashData{
+		Requester: txn.Approved[0],
+		To:        txn.To,
+		Value:     txn.Value,
+		Method:    txn.Method,
+		Params:    txn.Params,
+	}
+
+	data, err := hashData.Serialize()
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct multisig approval hash: %w", err)
+	}
+
+	hashResult := hash(data)
+	return hashResult[:], nil
+}
+
+func (phd *ProposalHashData) Serialize() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := phd.MarshalCBOR(buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
