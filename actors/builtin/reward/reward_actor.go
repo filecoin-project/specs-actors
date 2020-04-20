@@ -92,7 +92,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		return rewardPayable
 	}).(abi.TokenAmount)
 
-	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AwardReward, nil, rewardPayable)
+	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
 
 	// Burn the penalty amount.
 	_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
