@@ -6,6 +6,8 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
@@ -17,6 +19,25 @@ import (
 type Store interface {
 	Context() context.Context
 	cbor.IpldStore
+}
+
+var _ Store = &cstore{}
+
+type cstore struct {
+	ctx context.Context
+	cbor.IpldStore
+}
+
+func (s *cstore) Context() context.Context {
+	return s.ctx
+}
+
+func NewStore(ctx context.Context) Store {
+	bs := blockstore.NewBlockstore(datastore.NewMapDatastore())
+	return &cstore{
+		ctx:       ctx,
+		IpldStore: cbor.NewCborStore(bs),
+	}
 }
 
 // AsStore allows Runtime to satisfy the adt.Store interface.
