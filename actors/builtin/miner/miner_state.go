@@ -698,7 +698,7 @@ type Deadlines struct {
 
 func ConstructDeadlines() *Deadlines {
 	d := &Deadlines{Due: [WPoStPeriodDeadlines]*abi.BitField{}}
-	for i, _ := range d.Due {
+	for i := range d.Due {
 		d.Due[i] = abi.NewBitField()
 	}
 	return d
