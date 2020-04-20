@@ -434,6 +434,61 @@ func TestFaultStore(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func TestRecoveriesBitfield(t *testing.T) {
+	t.Run("Add new recoveries happy path", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		// set of sectors, the larger numbers here are not significant
+		sectorNos := []uint64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
+		harness.addRecoveries(sectorNos...)
+		assert.Equal(t, uint64(len(sectorNos)), harness.getNewSectorCount())
+	})
+
+	t.Run("Add new recoveries excludes duplicates", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		sectorNos := []uint64{1, 1, 2, 2, 3, 4, 5}
+		harness.addRecoveries(sectorNos...)
+		assert.Equal(t, uint64(5), harness.getNewSectorCount())
+	})
+
+	t.Run("Remove sectors happy path", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		sectorNos := []uint64{1, 2, 3, 4, 5}
+		harness.addRecoveries(sectorNos...)
+		assert.Equal(t, uint64(len(sectorNos)), harness.getNewSectorCount())
+
+		harness.removeRecoveries(1, 3, 5)
+		assert.Equal(t, uint64(2), harness.getNewSectorCount())
+
+		sm, err := harness.s.Recoveries.All(uint64(len(sectorNos)))
+		assert.NoError(t, err)
+		assert.Equal(t, []uint64{2, 4}, sm)
+	})
+
+	t.Run("Add New sectors errors when adding too many new sectors", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		tooManyRecoveries := make([]uint64, miner.SectorsMax+1)
+		for i := uint64(0); i < miner.SectorsMax+1; i++ {
+			tooManyRecoveries[i] = i
+		}
+
+		err := harness.s.AddRecoveries(bitfield.NewFromSet(tooManyRecoveries))
+		assert.Error(t, err)
+
+		// sanity check nothing was added
+		// For omission reason see: https://github.com/filecoin-project/specs-actors/issues/300
+		// recoveriesCount, err := harness.s.Recoveries.Count()
+		// assert.Equal(t, uint64(0), recoveriesCount)
+	})
 
 }
 
@@ -442,6 +497,22 @@ type minerStateHarness struct {
 
 	s     *miner.State
 	store adt.Store
+}
+
+//
+// Recoveries Bitfield
+//
+
+func (h *minerStateHarness) addRecoveries(sectorNos ...uint64) {
+	bf := bitfield.NewFromSet(sectorNos)
+	err := h.s.AddRecoveries(bf)
+	require.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) removeRecoveries(sectorNos ...uint64) {
+	bf := bitfield.NewFromSet(sectorNos)
+	err := h.s.RemoveRecoveries(bf)
+	require.NoError(h.t, err)
 }
 
 //
