@@ -39,12 +39,11 @@ var MethodsMultisig = struct {
 	Propose                     abi.MethodNum
 	Approve                     abi.MethodNum
 	Cancel                      abi.MethodNum
-	ClearCompleted              abi.MethodNum
 	AddSigner                   abi.MethodNum
 	RemoveSigner                abi.MethodNum
 	SwapSigner                  abi.MethodNum
 	ChangeNumApprovalsThreshold abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8}
 
 var MethodsPaych = struct {
 	Constructor        abi.MethodNum
