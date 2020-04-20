@@ -361,8 +361,8 @@ func TestFaultStore(t *testing.T) {
 	store := adt.NewStore(context.Background())
 	harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 
-	harness.addFaults(fault1, sectorFaults[fault1]...)
-	harness.addFaults(fault2, sectorFaults[fault2]...)
+	harness.addFaults(fault1, faultSet1...)
+	harness.addFaults(fault2, faultSet2...)
 
 	fault1Hit, fault2Hit := false, false
 	err := harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
@@ -394,13 +394,14 @@ func TestFaultStore(t *testing.T) {
 		if epoch == fault1 {
 			sectors, err := faults.All(uint64(len(faultSet1)))
 			require.NoError(t, err)
-			assert.Equal(t, faultSet1[1:], sectors, "expected: %v, actual: %v", faultSet1[1:], sectors)
+			assert.Equal(t, faultSet1[:1], sectors, "expected: %v, actual: %v", faultSet1[:1], sectors)
 			fault1Hit = true
 		} else if epoch == fault2 {
 			sectors, err := faults.All(uint64(len(faultSet2)))
 			require.NoError(t, err)
-			assert.Equal(t, faultSet2[2:], sectors, "expected: %v, actual: %v", faultSet2[2:], sectors)
+			assert.Equal(t, faultSet2[:2], sectors, "expected: %v, actual: %v", faultSet2[:2], sectors)
 			fault2Hit = true
+
 		} else {
 			t.Fatalf("unexpected fault epoch: %v", epoch)
 		}
