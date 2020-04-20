@@ -9,12 +9,13 @@ import (
 // Addresses for singleton system actors.
 var (
 	// Distinguished AccountActor that is the source of system implicit messages.
-	SystemActorAddr        = mustMakeAddress(0)
-	InitActorAddr          = mustMakeAddress(1)
-	RewardActorAddr        = mustMakeAddress(2)
-	CronActorAddr          = mustMakeAddress(3)
-	StoragePowerActorAddr  = mustMakeAddress(4)
-	StorageMarketActorAddr = mustMakeAddress(5)
+	SystemActorAddr           = mustMakeAddress(0)
+	InitActorAddr             = mustMakeAddress(1)
+	RewardActorAddr           = mustMakeAddress(2)
+	CronActorAddr             = mustMakeAddress(3)
+	StoragePowerActorAddr     = mustMakeAddress(4)
+	StorageMarketActorAddr    = mustMakeAddress(5)
+	VerifiedRegistryActorAddr = mustMakeAddress(6)
 	// Distinguished AccountActor that is the destination of all burnt funds.
 	BurntFundsActorAddr = mustMakeAddress(99)
 )
@@ -34,5 +35,6 @@ func IsSingletonActor(code cid.Cid) bool {
 		code.Equals(RewardActorCodeID) ||
 		code.Equals(CronActorCodeID) ||
 		code.Equals(StoragePowerActorCodeID) ||
-		code.Equals(StorageMarketActorCodeID)
+		code.Equals(StorageMarketActorCodeID) ||
+		code.Equals(VerifiedRegistryActorCodeID)
 }

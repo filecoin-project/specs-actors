@@ -53,9 +53,9 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 	})
 
 	t.Run("boundary non-zero", func(t *testing.T) {
-		boundary := CW * 2 + 2 // Arbitrary not aligned with challenge window.
+		boundary := CW*2 + 2 // Arbitrary not aligned with challenge window.
 		initialPPStart := boundary - PP
-		firstDlIndex := miner.WPoStPeriodDeadlines - uint64(boundary / CW) - 1
+		firstDlIndex := miner.WPoStPeriodDeadlines - uint64(boundary/CW) - 1
 		firstDlOpen := initialPPStart + CW*abi.ChainEpoch(firstDlIndex)
 
 		require.True(t, boundary < PP)
@@ -273,7 +273,7 @@ const partSize = miner.WPoStPartitionSectors
 func deadlinesWithFullPartitions(t *testing.T, n uint64) *miner.Deadlines {
 	gen := [miner.WPoStPeriodDeadlines]uint64{}
 	for i := range gen {
-		gen[i] = partSize*n
+		gen[i] = partSize * n
 	}
 	return deadlineWithSectors(t, gen)
 }

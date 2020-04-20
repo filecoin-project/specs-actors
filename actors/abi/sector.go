@@ -55,7 +55,7 @@ type SectorID struct {
 // The unit of storage power (measured in bytes)
 type StoragePower = big.Int
 
-type SectorQuality = int64
+type SectorQuality = big.Int
 
 // The unit of spacetime committed to the network
 type Spacetime = big.Int

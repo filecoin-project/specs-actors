@@ -58,7 +58,7 @@ func ComputeProvingPeriodDeadline(boundary abi.ChainEpoch, currEpoch abi.ChainEp
 		Open:         deadlineOpen,
 		Close:        deadlineOpen + WPoStChallengeWindow,
 		Challenge:    deadlineOpen - WPoStChallengeLookback,
-		FaultCutoff: deadlineOpen - FaultDeclarationCutoff,
+		FaultCutoff:  deadlineOpen - FaultDeclarationCutoff,
 	}, periodStart >= 0
 }
 
