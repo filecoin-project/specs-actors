@@ -445,37 +445,15 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
-	var txErr error
-	rt.State().Transaction(&st, func() interface{} {
-		var err error
-
-		err = st.deleteClaim(adt.AsStore(rt), miner)
-		if err != nil {
-			txErr = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
-			return big.Zero()
+	err := rt.State().Transaction(&st, func() interface{} {
+		if err := st.deleteClaim(adt.AsStore(rt), miner); err != nil {
+			return errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
 		}
 
 		st.MinerCount -= 1
-		hasFault, err := st.hasDetectedFault(adt.AsStore(rt), miner)
-		if err != nil {
-			txErr = err
-			return big.Zero()
-		}
-		if hasFault {
-			if err := st.deleteDetectedFault(adt.AsStore(rt), miner); err != nil {
-				txErr = err
-				return big.Zero()
-			}
-		}
-
 		return nil
-	})
-
-	if txErr != nil {
-		return txErr
-	}
-
-	return nil
+	}).(error)
+	return err
 }
 
 func powersForWeights(weights []SectorStorageWeightDesc) (abi.StoragePower, abi.StoragePower) {
@@ -498,11 +476,4 @@ func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {
 		fmtmst := fmt.Sprintf(msg, args...)
 		rt.Abortf(code, "%s: %v", fmtmst, err)
 	}
-}
-
-func bigProduct(p big.Int, rest ...big.Int) big.Int {
-	for _, r := range rest {
-		p = big.Mul(p, r)
-	}
-	return p
 }
