@@ -31,10 +31,10 @@ const WPoStMessagePartitionsMax = 100_000 / WPoStPartitionSectors
 
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
-	if WPoStProvingPeriod % WPoStChallengeWindow != 0 {
+	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {
 		panic(fmt.Sprintf("incompatible proving period %d and challenge window %d", WPoStProvingPeriod, WPoStChallengeWindow))
 	}
-	if abi.ChainEpoch(WPoStPeriodDeadlines) * WPoStChallengeWindow != WPoStProvingPeriod {
+	if abi.ChainEpoch(WPoStPeriodDeadlines)*WPoStChallengeWindow != WPoStProvingPeriod {
 		panic(fmt.Sprintf("incompatible proving period %d and challenge window %d", WPoStProvingPeriod, WPoStChallengeWindow))
 	}
 }

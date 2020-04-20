@@ -117,9 +117,10 @@ type SectorPreCommitOnChainInfo struct {
 }
 
 type SectorOnChainInfo struct {
-	Info            SectorPreCommitInfo
-	ActivationEpoch abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
-	DealWeight      abi.DealWeight // Integral of active deals over sector lifetime, 0 if CommittedCapacity sector
+	Info               SectorPreCommitInfo
+	ActivationEpoch    abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
+	DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
+	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
