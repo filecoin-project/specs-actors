@@ -331,7 +331,7 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 		builtin.MethodsMiner.ControlAddresses,
 		nil,
 		big.Zero(),
-		&mock.ReturnWrapper{V: expectRet},
+		expectRet,
 		exitcode.Ok,
 	)
 }

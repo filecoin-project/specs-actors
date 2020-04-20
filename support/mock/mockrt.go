@@ -448,14 +448,14 @@ func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
 	rt.expectValidateCallerType = types[:]
 }
 
-func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount, sendReturn runtime.SendReturn, exitCode exitcode.ExitCode) {
+func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount, ret runtime.CBORMarshaler, exitCode exitcode.ExitCode) {
 	// append to the send queue
 	rt.expectSends = append(rt.expectSends, &expectedMessage{
 		to:         toAddr,
 		method:     methodNum,
 		params:     params,
 		value:      value,
-		sendReturn: sendReturn,
+		sendReturn: ReturnWrapper{ret},
 		exitCode:   exitCode,
 	})
 }

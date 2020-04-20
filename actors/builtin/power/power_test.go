@@ -193,7 +193,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 		CodeCID:           builtin.StorageMinerActorCodeID,
 		ConstructorParams: h.initCreateMinerBytes(owner, worker, peer, sectorSize),
 	}
-	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), &mock.ReturnWrapper{createMinerRet}, 0)
+	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
 }
 

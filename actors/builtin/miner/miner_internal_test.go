@@ -18,10 +18,12 @@ func TestAssignProvingPeriodBoundary(t *testing.T) {
 	// ensure the values are different for different addresses
 	b1, err := assignProvingPeriodBoundary(addr1, startEpoch, blake2b.Sum256)
 	assert.NoError(t, err)
+	assert.True(t, b1 >= 0)
 	assert.True(t, b1 < WPoStProvingPeriod)
 
 	b2, err := assignProvingPeriodBoundary(addr2, startEpoch, blake2b.Sum256)
 	assert.NoError(t, err)
+	assert.True(t, b2 >= 0)
 	assert.True(t, b2 < WPoStProvingPeriod)
 
 	assert.NotEqual(t, b1, b2)
@@ -30,6 +32,7 @@ func TestAssignProvingPeriodBoundary(t *testing.T) {
 	for i := 0; i < 10_000; i++ {
 		boundary, err := assignProvingPeriodBoundary(addr1, abi.ChainEpoch(i), blake2b.Sum256)
 		assert.NoError(t, err)
+		assert.True(t, boundary >= 0)
 		assert.True(t, boundary < WPoStProvingPeriod)
 	}
 }

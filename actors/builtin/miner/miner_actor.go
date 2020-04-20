@@ -56,7 +56,7 @@ func (a Actor) Exports() []interface{} {
 		11:                        a.DeclareFaultsRecovered,
 		12:                        a.OnDeferredCronEvent,
 		13:                        a.CheckSectorProven,
-		14:                        a.AwardReward,
+		14:                        a.AddLockedFund,
 		15:                        a.ReportConsensusFault,
 		16:                        a.WithdrawBalance,
 	}
@@ -374,8 +374,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
-	pledgeDelta := newlyVestedAmount.Neg()
-	notifyPledgeChanged(rt, &pledgeDelta)
+	notifyPledgeChanged(rt, newlyVestedAmount.Neg())
 
 	bf := abi.NewBitField()
 	bf.Set(uint64(params.SectorNumber))
@@ -520,8 +519,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
-	pledgeDelta := big.Sub(initialPledge, newlyVestedAmount)
-	notifyPledgeChanged(rt, &pledgeDelta)
+	notifyPledgeChanged(rt, big.Sub(initialPledge, newlyVestedAmount))
 
 	return nil
 }
@@ -579,7 +577,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	storageWeightDescNew := *storageWeightDescPrev
 	storageWeightDescNew.Duration = storageWeightDescPrev.Duration + extensionLength
 
-	ret, code := rt.Send(
+	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnSectorModifyWeightDesc,
 		&power.OnSectorModifyWeightDescParams{
@@ -589,42 +587,16 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
-	var newInitialPledge abi.TokenAmount
-	AssertNoError(ret.Into(&newInitialPledge))
 
-	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to vest funds: %s", err)
-		}
-
-		// Lock up a new initial pledge. This locks a whole new amount because the pledge provided when the sector
-		// was first committed may have vested.
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		if availableBalance.LessThan(newInitialPledge) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "not enough funds for new initial pledge requirement %s, available: %s", newInitialPledge, availableBalance)
-		}
-		if err = st.AddLockedFunds(store, rt.CurrEpoch(), newInitialPledge, &PledgeVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
-		}
-
-		// Store new sector expiry.
+	// Store new sector expiry.
+	rt.State().Transaction(&st, func() interface{} {
 		sector.Info.Expiration = params.NewExpiration
 		if err = st.PutSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
+		return nil
+	})
 
-		// Update sector expiration queue.
-		err = st.RemoveSectorExpirations(store, oldExpiration, uint64(sectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector %d from expiry %d", sectorNo, oldExpiration)
-		err = st.AddSectorExpirations(store, params.NewExpiration, uint64(sectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add sector %d to expiry %d", sectorNo, params.NewExpiration)
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
-
-	pledgeDelta := big.Sub(newInitialPledge, newlyVestedAmount)
-	notifyPledgeChanged(rt, &pledgeDelta)
 	return nil
 }
 
@@ -803,19 +775,28 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 // Pledge Collateral //
 ///////////////////////
 
-func (a Actor) AwardReward(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
-	rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
-	pledgeAmount := rt.Message().ValueReceived()
-
+// Locks up some amount of a the miner's unlocked balance (including any received alongside the invoking message).
+func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.EmptyValue {
+	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		if err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), pledgeAmount, &PledgeVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
-		}
-		return nil
-	})
+	newlyVested := rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Worker, st.Info.Owner, builtin.RewardActorAddr)
 
-	notifyPledgeChanged(rt, &pledgeAmount)
+		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+
+		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		if availableBalance.LessThan(*amountToLock) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
+		}
+
+		if err = st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &PledgeVestingSpec); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to lock pledge: %v", err)
+		}
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
 	return nil
 }
 
@@ -893,7 +874,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 
 	pledgeDelta := newlyVestedAmount.Neg()
-	notifyPledgeChanged(rt, &pledgeDelta)
+	notifyPledgeChanged(rt, pledgeDelta)
 
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 	return nil
@@ -933,8 +914,7 @@ func (a Actor) handleProvingPeriod(rt Runtime) {
 			return newlyVestedFund
 		}).(abi.TokenAmount)
 
-		pledgeDelta := newlyVestedAmount.Neg()
-		notifyPledgeChanged(rt, &pledgeDelta)
+		notifyPledgeChanged(rt, newlyVestedAmount.Neg())
 	}
 
 	{
@@ -1472,8 +1452,12 @@ func (a Actor) verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
-	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealRandEpoch, nil)
-	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, nil)
+	buf := new(bytes.Buffer)
+	err = rt.Message().Receiver().MarshalCBOR(buf)
+	AssertNoError(err)
+
+	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealRandEpoch, buf.Bytes())
+	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, buf.Bytes())
 
 	svInfo := abi.SealVerifyInfo{
 		SectorID: abi.SectorID{
@@ -1587,8 +1571,7 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 
 func burnFundsAndNotifyPledgeChange(rt Runtime, amt abi.TokenAmount) {
 	burnFunds(rt, amt)
-	pledgeDelta := amt.Neg()
-	notifyPledgeChanged(rt, &pledgeDelta)
+	notifyPledgeChanged(rt, amt.Neg())
 }
 
 func burnFunds(rt Runtime, amt abi.TokenAmount) {
@@ -1598,9 +1581,9 @@ func burnFunds(rt Runtime, amt abi.TokenAmount) {
 	}
 }
 
-func notifyPledgeChanged(rt Runtime, pledgeDelta *abi.TokenAmount) {
+func notifyPledgeChanged(rt Runtime, pledgeDelta abi.TokenAmount) {
 	if !pledgeDelta.IsZero() {
-		_, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, pledgeDelta, big.Zero())
+		_, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero())
 		builtin.RequireSuccess(rt, code, "failed to update total pledge")
 	}
 }
