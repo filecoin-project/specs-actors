@@ -22,13 +22,12 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
 		abi.PieceInfo{},
 		abi.SectorID{},
+		abi.SectorInfo{},
 		abi.SealVerifyInfo{},
 		abi.OnChainSealVerifyInfo{},
-		abi.PoStCandidate{},
 		abi.PoStProof{},
-		abi.PrivatePoStCandidateProof{},
-		abi.OnChainPoStVerifyInfo{},
-		abi.OnChainElectionPoStVerifyInfo{},
+		abi.WindowPoStVerifyInfo{},
+		abi.WinningPoStVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}
@@ -80,8 +79,6 @@ func main() {
 		reward.State{},
 		// method params
 		reward.AwardBlockRewardParams{},
-		// other types
-		reward.Reward{},
 	); err != nil {
 		panic(err)
 	}
@@ -90,6 +87,7 @@ func main() {
 		// actor state
 		multisig.State{},
 		multisig.Transaction{},
+		multisig.ProposalHashData{},
 		// method params
 		multisig.ConstructorParams{},
 		multisig.ProposeParams{},
@@ -123,18 +121,14 @@ func main() {
 		power.Claim{},
 		power.CronEvent{},
 		// method params
-		power.AddBalanceParams{},
 		power.CreateMinerParams{},
 		power.DeleteMinerParams{},
-		power.WithdrawBalanceParams{},
 		power.EnrollCronEventParams{},
 		power.OnSectorTerminateParams{},
 		power.OnSectorModifyWeightDescParams{},
 		power.OnSectorProveCommitParams{},
-		power.ReportConsensusFaultParams{},
-		power.OnMinerWindowedPoStFailureParams{},
-		power.OnSectorTemporaryFaultEffectiveEndParams{},
-		power.OnSectorTemporaryFaultEffectiveBeginParams{},
+		power.OnFaultBeginParams{},
+		power.OnFaultEndParams{},
 		// method returns
 		power.CreateMinerReturn{},
 		// other types
@@ -169,23 +163,29 @@ func main() {
 		// actor state
 		miner.State{},
 		miner.MinerInfo{},
-		miner.PoStState{},
+		miner.Deadlines{},
 		miner.SectorPreCommitOnChainInfo{},
 		miner.SectorPreCommitInfo{},
 		miner.SectorOnChainInfo{},
 		miner.WorkerKeyChange{},
 		// method params
 		// miner.ConstructorParams{},
+		miner.SubmitWindowedPoStParams{},
 		miner.TerminateSectorsParams{},
 		miner.ChangePeerIDParams{},
 		miner.ProveCommitSectorParams{},
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
-		miner.DeclareTemporaryFaultsParams{},
+		miner.DeclareFaultsParams{},
+		miner.DeclareFaultsRecoveredParams{},
+		miner.ReportConsensusFaultParams{},
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
+		miner.WithdrawBalanceParams{},
 		// other types
 		miner.CronEventPayload{},
+		miner.FaultDeclaration{},
+		miner.RecoveryDeclaration{},
 	); err != nil {
 		panic(err)
 	}

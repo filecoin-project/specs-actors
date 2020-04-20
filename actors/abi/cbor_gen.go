@@ -22,6 +22,7 @@ func (t *PieceInfo) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Size (abi.PaddedPieceSize) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Size))); err != nil {
 		return err
 	}
@@ -52,14 +53,18 @@ func (t *PieceInfo) UnmarshalCBOR(r io.Reader) error {
 
 	// t.Size (abi.PaddedPieceSize) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Size = PaddedPieceSize(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Size = PaddedPieceSize(extra)
 	// t.PieceCID (cid.Cid) (struct)
 
 	{
@@ -85,14 +90,17 @@ func (t *SectorID) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Miner (abi.ActorID) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Miner))); err != nil {
 		return err
 	}
 
 	// t.Number (abi.SectorNumber) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Number))); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -113,24 +121,136 @@ func (t *SectorID) UnmarshalCBOR(r io.Reader) error {
 
 	// t.Miner (abi.ActorID) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Miner = ActorID(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Miner = ActorID(extra)
 	// t.Number (abi.SectorNumber) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Number = SectorNumber(extra)
+
+	}
+	return nil
+}
+
+func (t *SectorInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{131}); err != nil {
+		return err
+	}
+
+	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	if t.RegisteredProof >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.RegisteredProof))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.RegisteredProof)-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.SectorNumber (abi.SectorNumber) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorNumber))); err != nil {
+		return err
+	}
+
+	// t.SealedCID (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.SealedCID); err != nil {
+		return xerrors.Errorf("failed to write cid field t.SealedCID: %w", err)
+	}
+
+	return nil
+}
+
+func (t *SectorInfo) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
 	if err != nil {
 		return err
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
 	}
-	t.Number = SectorNumber(extra)
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.RegisteredProof = RegisteredProof(extraI)
+	}
+	// t.SectorNumber (abi.SectorNumber) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.SectorNumber = SectorNumber(extra)
+
+	}
+	// t.SealedCID (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.SealedCID: %w", err)
+		}
+
+		t.SealedCID = c
+
+	}
 	return nil
 }
 
@@ -206,7 +326,7 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.SectorID.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.SectorID: %w", err)
 		}
 
 	}
@@ -215,7 +335,7 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.OnChain.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.OnChain: %w", err)
 		}
 
 	}
@@ -332,6 +452,7 @@ func (t *OnChainSealVerifyInfo) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.SectorNumber (abi.SectorNumber) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorNumber))); err != nil {
 		return err
 	}
@@ -457,9 +578,11 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.DealIDs = make([]DealID, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		maj, val, err := cbg.CborReadHeader(br)
@@ -476,14 +599,18 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 
 	// t.SectorNumber (abi.SectorNumber) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.SectorNumber = SectorNumber(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.SectorNumber = SectorNumber(extra)
 	// t.SealRandEpoch (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
@@ -508,164 +635,6 @@ func (t *OnChainSealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.SealRandEpoch = ChainEpoch(extraI)
-	}
-	return nil
-}
-
-func (t *PoStCandidate) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{133}); err != nil {
-		return err
-	}
-
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
-	if t.RegisteredProof >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.RegisteredProof))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.RegisteredProof)-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.PartialTicket (abi.PartialTicket) (slice)
-	if len(t.PartialTicket) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.PartialTicket was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.PartialTicket)))); err != nil {
-		return err
-	}
-	if _, err := w.Write(t.PartialTicket); err != nil {
-		return err
-	}
-
-	// t.PrivateProof (abi.PrivatePoStCandidateProof) (struct)
-	if err := t.PrivateProof.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.SectorID (abi.SectorID) (struct)
-	if err := t.SectorID.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.ChallengeIndex (int64) (int64)
-	if t.ChallengeIndex >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.ChallengeIndex))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ChallengeIndex)-1)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *PoStCandidate) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 5 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.RegisteredProof = RegisteredProof(extraI)
-	}
-	// t.PartialTicket (abi.PartialTicket) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.PartialTicket: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-	t.PartialTicket = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.PartialTicket); err != nil {
-		return err
-	}
-	// t.PrivateProof (abi.PrivatePoStCandidateProof) (struct)
-
-	{
-
-		if err := t.PrivateProof.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.SectorID (abi.SectorID) (struct)
-
-	{
-
-		if err := t.SectorID.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-	}
-	// t.ChallengeIndex (int64) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.ChallengeIndex = int64(extraI)
 	}
 	return nil
 }
@@ -764,246 +733,13 @@ func (t *PoStProof) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *PrivatePoStCandidateProof) MarshalCBOR(w io.Writer) error {
+func (t *WindowPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{132}); err != nil {
 		return err
-	}
-
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
-	if t.RegisteredProof >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.RegisteredProof))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.RegisteredProof)-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.Externalized ([]uint8) (slice)
-	if len(t.Externalized) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Externalized was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Externalized)))); err != nil {
-		return err
-	}
-	if _, err := w.Write(t.Externalized); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *PrivatePoStCandidateProof) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.RegisteredProof = RegisteredProof(extraI)
-	}
-	// t.Externalized ([]uint8) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Externalized: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-	t.Externalized = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Externalized); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *OnChainPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{130}); err != nil {
-		return err
-	}
-
-	// t.Candidates ([]abi.PoStCandidate) (slice)
-	if len(t.Candidates) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Candidates was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Candidates)))); err != nil {
-		return err
-	}
-	for _, v := range t.Candidates {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
-	}
-
-	// t.Proofs ([]abi.PoStProof) (slice)
-	if len(t.Proofs) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Proofs was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Proofs)))); err != nil {
-		return err
-	}
-	for _, v := range t.Proofs {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *OnChainPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Candidates ([]abi.PoStCandidate) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Candidates: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-	if extra > 0 {
-		t.Candidates = make([]PoStCandidate, extra)
-	}
-	for i := 0; i < int(extra); i++ {
-
-		var v PoStCandidate
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-		t.Candidates[i] = v
-	}
-
-	// t.Proofs ([]abi.PoStProof) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Proofs: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-	if extra > 0 {
-		t.Proofs = make([]PoStProof, extra)
-	}
-	for i := 0; i < int(extra); i++ {
-
-		var v PoStProof
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-		t.Proofs[i] = v
-	}
-
-	return nil
-}
-
-func (t *OnChainElectionPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{131}); err != nil {
-		return err
-	}
-
-	// t.Candidates ([]abi.PoStCandidate) (slice)
-	if len(t.Candidates) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Candidates was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Candidates)))); err != nil {
-		return err
-	}
-	for _, v := range t.Candidates {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
-	}
-
-	// t.Proofs ([]abi.PoStProof) (slice)
-	if len(t.Proofs) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Proofs was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Proofs)))); err != nil {
-		return err
-	}
-	for _, v := range t.Proofs {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
 	}
 
 	// t.Randomness (abi.PoStRandomness) (slice)
@@ -1017,10 +753,45 @@ func (t *OnChainElectionPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
 	if _, err := w.Write(t.Randomness); err != nil {
 		return err
 	}
+
+	// t.Proofs ([]abi.PoStProof) (slice)
+	if len(t.Proofs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Proofs was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Proofs)))); err != nil {
+		return err
+	}
+	for _, v := range t.Proofs {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
+	}
+
+	// t.ChallengedSectors ([]abi.SectorInfo) (slice)
+	if len(t.ChallengedSectors) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ChallengedSectors was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.ChallengedSectors)))); err != nil {
+		return err
+	}
+	for _, v := range t.ChallengedSectors {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
+	}
+
+	// t.Prover (abi.ActorID) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Prover))); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (t *OnChainElectionPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
+func (t *WindowPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -1031,62 +802,8 @@ func (t *OnChainElectionPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Candidates ([]abi.PoStCandidate) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Candidates: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-	if extra > 0 {
-		t.Candidates = make([]PoStCandidate, extra)
-	}
-	for i := 0; i < int(extra); i++ {
-
-		var v PoStCandidate
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-		t.Candidates[i] = v
-	}
-
-	// t.Proofs ([]abi.PoStProof) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Proofs: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-	if extra > 0 {
-		t.Proofs = make([]PoStProof, extra)
-	}
-	for i := 0; i < int(extra); i++ {
-
-		var v PoStProof
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-		t.Proofs[i] = v
 	}
 
 	// t.Randomness (abi.PoStRandomness) (slice)
@@ -1105,6 +822,243 @@ func (t *OnChainElectionPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	t.Randomness = make([]byte, extra)
 	if _, err := io.ReadFull(br, t.Randomness); err != nil {
 		return err
+	}
+	// t.Proofs ([]abi.PoStProof) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Proofs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.Proofs = make([]PoStProof, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v PoStProof
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.Proofs[i] = v
+	}
+
+	// t.ChallengedSectors ([]abi.SectorInfo) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ChallengedSectors: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.ChallengedSectors = make([]SectorInfo, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v SectorInfo
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.ChallengedSectors[i] = v
+	}
+
+	// t.Prover (abi.ActorID) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Prover = ActorID(extra)
+
+	}
+	return nil
+}
+
+func (t *WinningPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{132}); err != nil {
+		return err
+	}
+
+	// t.Randomness (abi.PoStRandomness) (slice)
+	if len(t.Randomness) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Randomness was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Randomness)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.Randomness); err != nil {
+		return err
+	}
+
+	// t.Proofs ([]abi.PoStProof) (slice)
+	if len(t.Proofs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Proofs was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Proofs)))); err != nil {
+		return err
+	}
+	for _, v := range t.Proofs {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
+	}
+
+	// t.ChallengedSectors ([]abi.SectorInfo) (slice)
+	if len(t.ChallengedSectors) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ChallengedSectors was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.ChallengedSectors)))); err != nil {
+		return err
+	}
+	for _, v := range t.ChallengedSectors {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
+	}
+
+	// t.Prover (abi.ActorID) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Prover))); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *WinningPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 4 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Randomness (abi.PoStRandomness) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Randomness: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Randomness = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Randomness); err != nil {
+		return err
+	}
+	// t.Proofs ([]abi.PoStProof) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Proofs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.Proofs = make([]PoStProof, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v PoStProof
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.Proofs[i] = v
+	}
+
+	// t.ChallengedSectors ([]abi.SectorInfo) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ChallengedSectors: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.ChallengedSectors = make([]SectorInfo, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v SectorInfo
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.ChallengedSectors[i] = v
+	}
+
+	// t.Prover (abi.ActorID) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Prover = ActorID(extra)
+
 	}
 	return nil
 }

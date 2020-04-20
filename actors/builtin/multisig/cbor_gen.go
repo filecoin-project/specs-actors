@@ -124,9 +124,11 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Signers = make([]address.Address, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
@@ -192,7 +194,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.InitialBalance.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.InitialBalance: %w", err)
 		}
 
 	}
@@ -281,6 +283,7 @@ func (t *Transaction) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Method (abi.MethodNum) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
 		return err
 	}
@@ -333,7 +336,7 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}
@@ -342,20 +345,24 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Value.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Value: %w", err)
 		}
 
 	}
 	// t.Method (abi.MethodNum) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Method = abi.MethodNum(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Method = abi.MethodNum(extra)
 	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -387,9 +394,11 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Approved = make([]address.Address, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
@@ -400,6 +409,126 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 		t.Approved[i] = v
 	}
 
+	return nil
+}
+
+func (t *ProposalHashData) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{133}); err != nil {
+		return err
+	}
+
+	// t.Requester (address.Address) (struct)
+	if err := t.Requester.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.To (address.Address) (struct)
+	if err := t.To.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Value (big.Int) (struct)
+	if err := t.Value.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Method (abi.MethodNum) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
+		return err
+	}
+
+	// t.Params ([]uint8) (slice)
+	if len(t.Params) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Params was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Params)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.Params); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *ProposalHashData) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 5 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Requester (address.Address) (struct)
+
+	{
+
+		if err := t.Requester.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Requester: %w", err)
+		}
+
+	}
+	// t.To (address.Address) (struct)
+
+	{
+
+		if err := t.To.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
+		}
+
+	}
+	// t.Value (big.Int) (struct)
+
+	{
+
+		if err := t.Value.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Value: %w", err)
+		}
+
+	}
+	// t.Method (abi.MethodNum) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Method = abi.MethodNum(extra)
+
+	}
+	// t.Params ([]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Params: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Params = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Params); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -479,9 +608,11 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajArray {
 		return fmt.Errorf("expected cbor array")
 	}
+
 	if extra > 0 {
 		t.Signers = make([]address.Address, extra)
 	}
+
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
@@ -565,6 +696,7 @@ func (t *ProposeParams) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.Method (abi.MethodNum) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.Method))); err != nil {
 		return err
 	}
@@ -603,7 +735,7 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}
@@ -612,20 +744,24 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Value.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Value: %w", err)
 		}
 
 	}
 	// t.Method (abi.MethodNum) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Method = abi.MethodNum(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.Method = abi.MethodNum(extra)
 	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -687,7 +823,7 @@ func (t *AddSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Signer.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Signer: %w", err)
 		}
 
 	}
@@ -752,7 +888,7 @@ func (t *RemoveSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Signer.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Signer: %w", err)
 		}
 
 	}
@@ -781,7 +917,7 @@ func (t *TxnIDParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
@@ -794,6 +930,18 @@ func (t *TxnIDParams) MarshalCBOR(w io.Writer) error {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.ID)-1)); err != nil {
 			return err
 		}
+	}
+
+	// t.ProposalHash ([]uint8) (slice)
+	if len(t.ProposalHash) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.ProposalHash was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.ProposalHash)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.ProposalHash); err != nil {
+		return err
 	}
 	return nil
 }
@@ -809,7 +957,7 @@ func (t *TxnIDParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -837,6 +985,23 @@ func (t *TxnIDParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.ID = TxnID(extraI)
+	}
+	// t.ProposalHash ([]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.ProposalHash: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.ProposalHash = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.ProposalHash); err != nil {
+		return err
 	}
 	return nil
 }
@@ -947,7 +1112,7 @@ func (t *SwapSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.From.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.From: %w", err)
 		}
 
 	}
@@ -956,7 +1121,7 @@ func (t *SwapSignerParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
 	}

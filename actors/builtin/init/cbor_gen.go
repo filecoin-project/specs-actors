@@ -29,6 +29,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.NextID (abi.ActorID) (uint64)
+
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NextID))); err != nil {
 		return err
 	}
@@ -76,14 +77,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	}
 	// t.NextID (abi.ActorID) (uint64)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
+	{
+
+		maj, extra, err = cbg.CborReadHeader(br)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.NextID = abi.ActorID(extra)
+
 	}
-	if maj != cbg.MajUnsignedInt {
-		return fmt.Errorf("wrong type for uint64 field")
-	}
-	t.NextID = abi.ActorID(extra)
 	// t.NetworkName (string) (string)
 
 	{
@@ -265,7 +270,7 @@ func (t *ExecReturn) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.IDAddress.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.IDAddress: %w", err)
 		}
 
 	}
@@ -274,7 +279,7 @@ func (t *ExecReturn) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.RobustAddress.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.RobustAddress: %w", err)
 		}
 
 	}

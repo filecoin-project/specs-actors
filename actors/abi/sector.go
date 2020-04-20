@@ -69,51 +69,76 @@ type RegisteredProof int64
 
 const (
 	RegisteredProof_StackedDRG32GiBSeal  = RegisteredProof(1)
-	RegisteredProof_StackedDRG32GiBPoSt  = RegisteredProof(2)
+	RegisteredProof_StackedDRG32GiBPoSt  = RegisteredProof(2) // No longer used
 	RegisteredProof_StackedDRG2KiBSeal   = RegisteredProof(3)
-	RegisteredProof_StackedDRG2KiBPoSt   = RegisteredProof(4)
+	RegisteredProof_StackedDRG2KiBPoSt   = RegisteredProof(4) // No longer used
 	RegisteredProof_StackedDRG8MiBSeal   = RegisteredProof(5)
-	RegisteredProof_StackedDRG8MiBPoSt   = RegisteredProof(6)
+	RegisteredProof_StackedDRG8MiBPoSt   = RegisteredProof(6) // No longer used
 	RegisteredProof_StackedDRG512MiBSeal = RegisteredProof(7)
-	RegisteredProof_StackedDRG512MiBPoSt = RegisteredProof(8)
+	RegisteredProof_StackedDRG512MiBPoSt = RegisteredProof(8) // No longer used
+
+	RegisteredProof_StackedDRG2KiBWinningPoSt = RegisteredProof(9)
+	RegisteredProof_StackedDRG2KiBWindowPoSt  = RegisteredProof(10)
+
+	RegisteredProof_StackedDRG8MiBWinningPoSt = RegisteredProof(11)
+	RegisteredProof_StackedDRG8MiBWindowPoSt  = RegisteredProof(12)
+
+	RegisteredProof_StackedDRG512MiBWinningPoSt = RegisteredProof(13)
+	RegisteredProof_StackedDRG512MiBWindowPoSt  = RegisteredProof(14)
+
+	RegisteredProof_StackedDRG32GiBWinningPoSt = RegisteredProof(15)
+	RegisteredProof_StackedDRG32GiBWindowPoSt  = RegisteredProof(16)
 )
 
 func (p RegisteredProof) SectorSize() (SectorSize, error) {
-	switch p {
-	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBPoSt:
+	// Resolve to seal proof and then compute size from that.
+	sp, err := p.RegisteredSealProof()
+	if err != nil {
+		return 0, err
+	}
+	switch sp {
+	case RegisteredProof_StackedDRG32GiBSeal:
 		return 32 << 30, nil
-	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBPoSt:
+	case RegisteredProof_StackedDRG2KiBSeal:
 		return 2 << 10, nil
-	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBPoSt:
+	case RegisteredProof_StackedDRG8MiBSeal:
 		return 8 << 20, nil
-	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBPoSt:
+	case RegisteredProof_StackedDRG512MiBSeal:
 		return 512 << 20, nil
 	default:
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
-
 }
 
-// RegisteredPoStProof produces the PoSt-specific RegisteredProof corresponding
+// RegisteredWinningPoStProof produces the PoSt-specific RegisteredProof corresponding
 // to the receiving RegisteredProof.
-func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
+func (p RegisteredProof) RegisteredWinningPoStProof() (RegisteredProof, error) {
 	switch p {
-	case RegisteredProof_StackedDRG32GiBSeal:
-		return RegisteredProof_StackedDRG32GiBPoSt, nil
-	case RegisteredProof_StackedDRG32GiBPoSt:
-		return RegisteredProof_StackedDRG32GiBPoSt, nil
-	case RegisteredProof_StackedDRG2KiBSeal:
-		return RegisteredProof_StackedDRG2KiBPoSt, nil
-	case RegisteredProof_StackedDRG2KiBPoSt:
-		return RegisteredProof_StackedDRG2KiBPoSt, nil
-	case RegisteredProof_StackedDRG8MiBSeal:
-		return RegisteredProof_StackedDRG8MiBPoSt, nil
-	case RegisteredProof_StackedDRG8MiBPoSt:
-		return RegisteredProof_StackedDRG8MiBPoSt, nil
-	case RegisteredProof_StackedDRG512MiBSeal:
-		return RegisteredProof_StackedDRG512MiBPoSt, nil
-	case RegisteredProof_StackedDRG512MiBPoSt:
-		return RegisteredProof_StackedDRG512MiBPoSt, nil
+	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWinningPoSt:
+		return RegisteredProof_StackedDRG32GiBWinningPoSt, nil
+	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWinningPoSt:
+		return RegisteredProof_StackedDRG2KiBWinningPoSt, nil
+	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBWinningPoSt:
+		return RegisteredProof_StackedDRG8MiBWinningPoSt, nil
+	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBWinningPoSt:
+		return RegisteredProof_StackedDRG512MiBWinningPoSt, nil
+	default:
+		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
+	}
+}
+
+// RegisteredWindowPoStProof produces the PoSt-specific RegisteredProof corresponding
+// to the receiving RegisteredProof.
+func (p RegisteredProof) RegisteredWindowPoStProof() (RegisteredProof, error) {
+	switch p {
+	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWindowPoSt:
+		return RegisteredProof_StackedDRG32GiBWindowPoSt, nil
+	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWindowPoSt:
+		return RegisteredProof_StackedDRG2KiBWindowPoSt, nil
+	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBWindowPoSt:
+		return RegisteredProof_StackedDRG8MiBWindowPoSt, nil
+	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBWindowPoSt:
+		return RegisteredProof_StackedDRG512MiBWindowPoSt, nil
 	default:
 		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
 	}
@@ -123,21 +148,13 @@ func (p RegisteredProof) RegisteredPoStProof() (RegisteredProof, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
 	switch p {
-	case RegisteredProof_StackedDRG32GiBSeal:
+	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBPoSt, RegisteredProof_StackedDRG32GiBWindowPoSt, RegisteredProof_StackedDRG32GiBWinningPoSt:
 		return RegisteredProof_StackedDRG32GiBSeal, nil
-	case RegisteredProof_StackedDRG32GiBPoSt:
-		return RegisteredProof_StackedDRG32GiBSeal, nil
-	case RegisteredProof_StackedDRG2KiBSeal:
+	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBPoSt, RegisteredProof_StackedDRG2KiBWindowPoSt, RegisteredProof_StackedDRG2KiBWinningPoSt:
 		return RegisteredProof_StackedDRG2KiBSeal, nil
-	case RegisteredProof_StackedDRG2KiBPoSt:
-		return RegisteredProof_StackedDRG2KiBSeal, nil
-	case RegisteredProof_StackedDRG8MiBSeal:
+	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBPoSt, RegisteredProof_StackedDRG8MiBWindowPoSt, RegisteredProof_StackedDRG8MiBWinningPoSt:
 		return RegisteredProof_StackedDRG8MiBSeal, nil
-	case RegisteredProof_StackedDRG8MiBPoSt:
-		return RegisteredProof_StackedDRG8MiBSeal, nil
-	case RegisteredProof_StackedDRG512MiBSeal:
-		return RegisteredProof_StackedDRG512MiBSeal, nil
-	case RegisteredProof_StackedDRG512MiBPoSt:
+	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBPoSt, RegisteredProof_StackedDRG512MiBWindowPoSt, RegisteredProof_StackedDRG512MiBWinningPoSt:
 		return RegisteredProof_StackedDRG512MiBSeal, nil
 	default:
 		return 0, errors.Errorf("unsupported mapping from %+v to seal-specific RegisteredProof", p)
@@ -151,11 +168,10 @@ func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
 type SealRandomness Randomness
 type InteractiveSealRandomness Randomness
 
-// SealVerifyInfo is the structure of all the information a verifier
-// needs to verify a Seal.
+// Information needed to verify a seal proof.
 type SealVerifyInfo struct {
 	SectorID
-	OnChain               OnChainSealVerifyInfo
+	OnChain               OnChainSealVerifyInfo // TODO: don't embed this https://github.com/filecoin-project/specs-actors/issues/276
 	Randomness            SealRandomness
 	InteractiveRandomness InteractiveSealRandomness
 	UnsealedCID           cid.Cid // CommD
@@ -179,50 +195,33 @@ type OnChainSealVerifyInfo struct {
 /// PoSting
 ///
 
-type ChallengeTicketsCommitment []byte
 type PoStRandomness Randomness
-type PartialTicket []byte // 32 bytes
 
-type PoStVerifyInfo struct {
-	Randomness      PoStRandomness
-	Candidates      []PoStCandidate // From OnChain*PoStVerifyInfo
-	Proofs          []PoStProof
-	EligibleSectors []SectorInfo
-	Prover          ActorID // used to derive 32-byte prover ID
-	ChallengeCount  uint64
-}
-
+// Information about a sector necessary for PoSt verification.
 type SectorInfo struct {
 	RegisteredProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
 	SectorNumber    SectorNumber
 	SealedCID       cid.Cid // CommR
 }
 
-type OnChainElectionPoStVerifyInfo struct {
-	Candidates []PoStCandidate // each PoStCandidate has its own RegisteredProof
-	Proofs     []PoStProof     // each PoStProof has its own RegisteredProof
-	Randomness PoStRandomness
-}
-
-type OnChainPoStVerifyInfo struct {
-	Candidates []PoStCandidate // each PoStCandidate has its own RegisteredProof
-	Proofs     []PoStProof     // each PoStProof has its own RegisteredProof
-}
-
-type PoStCandidate struct {
-	RegisteredProof
-	PartialTicket  PartialTicket             // Optional —  will eventually be omitted for SurprisePoSt verification, needed for now.
-	PrivateProof   PrivatePoStCandidateProof // Optional — should be ommitted for verification.
-	SectorID       SectorID
-	ChallengeIndex int64
-}
-
-type PoStProof struct { //<curve, system> {
+type PoStProof struct {
 	RegisteredProof
 	ProofBytes []byte
 }
 
-type PrivatePoStCandidateProof struct {
-	RegisteredProof
-	Externalized []byte
+// Information needed to verify a Winning PoSt attached to a block header.
+// Note: this is not used within the state machine, but by the consensus/election mechanisms.
+type WinningPoStVerifyInfo struct {
+	Randomness        PoStRandomness
+	Proofs            []PoStProof
+	ChallengedSectors []SectorInfo
+	Prover            ActorID // used to derive 32-byte prover ID
+}
+
+// Information needed to verify a Window PoSt submitted directly to a miner actor.
+type WindowPoStVerifyInfo struct {
+	Randomness        PoStRandomness
+	Proofs            []PoStProof
+	ChallengedSectors []SectorInfo
+	Prover            ActorID // used to derive 32-byte prover ID
 }

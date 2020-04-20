@@ -48,7 +48,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Address.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Address: %w", err)
 		}
 
 	}

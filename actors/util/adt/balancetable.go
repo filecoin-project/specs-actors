@@ -15,16 +15,21 @@ import (
 type BalanceTable Map
 
 // Interprets a store as balance table with root `r`.
-func AsBalanceTable(s Store, r cid.Cid) *BalanceTable {
-	return &BalanceTable{
-		root:  r,
-		store: s,
+func AsBalanceTable(s Store, r cid.Cid) (*BalanceTable, error) {
+	m, err := AsMap(s, r)
+	if err != nil {
+		return nil, err
 	}
+
+	return &BalanceTable{
+		root:  m.root,
+		store: s,
+	}, nil
 }
 
 // Returns the root cid of underlying HAMT.
-func (t *BalanceTable) Root() cid.Cid {
-	return t.root
+func (t *BalanceTable) Root() (cid.Cid, error) {
+	return (*Map)(t).Root()
 }
 
 // Gets the balance for a key. The entry must have been previously initialized.
@@ -35,7 +40,7 @@ func (t *BalanceTable) Get(key addr.Address) (abi.TokenAmount, error) {
 		return big.Zero(), err // The errors from Map carry good information, no need to wrap here.
 	}
 	if !found {
-		return big.Zero(), ErrNotFound{t.root, key}
+		return big.Zero(), ErrNotFound{t.lastCid, key}
 	}
 	return value, nil
 }
