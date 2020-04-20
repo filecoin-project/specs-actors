@@ -19,7 +19,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{137}); err != nil {
+	if _, err := w.Write([]byte{136}); err != nil {
 		return err
 	}
 
@@ -66,12 +66,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.PoStDetectedFaultMiners (cid.Cid) (struct)
-
-	if err := cbg.WriteCid(w, t.PoStDetectedFaultMiners); err != nil {
-		return xerrors.Errorf("failed to write cid field t.PoStDetectedFaultMiners: %w", err)
-	}
-
 	// t.Claims (cid.Cid) (struct)
 
 	if err := cbg.WriteCid(w, t.Claims); err != nil {
@@ -102,7 +96,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 8 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -194,18 +188,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.LastEpochTick = abi.ChainEpoch(extraI)
-	}
-	// t.PoStDetectedFaultMiners (cid.Cid) (struct)
-
-	{
-
-		c, err := cbg.ReadCid(br)
-		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.PoStDetectedFaultMiners: %w", err)
-		}
-
-		t.PoStDetectedFaultMiners = c
-
 	}
 	// t.Claims (cid.Cid) (struct)
 
