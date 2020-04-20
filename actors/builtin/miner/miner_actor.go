@@ -928,6 +928,7 @@ func handleProvingPeriod(rt Runtime) {
 		rt.State().Transaction(&st, func() interface{} {
 			deadline, fullPeriod = st.DeadlineInfo(currEpoch)
 			if !fullPeriod {
+				penalty = big.Zero()
 				return nil // Skip checking faults on the first, incomplete period.
 			}
 			nextPeriodStart = deadline.PeriodStart + WPoStProvingPeriod
