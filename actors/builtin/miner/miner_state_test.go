@@ -17,8 +17,6 @@ import (
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
 
-const SectorSize = abi.SectorSize(32 << 20)
-
 func TestPrecommittedSectorsStore(t *testing.T) {
 	t.Run("Round Trip put get", func(t *testing.T) {
 		store := adt.NewStore(context.Background())
@@ -503,9 +501,10 @@ func (h *minerStateHarness) newSectorPreCommitOnChainInfo(sectorNo abi.SectorNum
 func (h *minerStateHarness) newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
 	info := h.newSectorPreCommitInfo(sectorNo, sealed)
 	return &miner.SectorOnChainInfo{
-		Info:            *info,
-		ActivationEpoch: activation,
-		DealWeight:      weight,
+		Info:               *info,
+		ActivationEpoch:    activation,
+		DealWeight:         weight,
+		VerifiedDealWeight: weight,
 	}
 }
 
