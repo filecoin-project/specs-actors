@@ -2,6 +2,7 @@ package miner_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -24,7 +25,7 @@ func TestPrecommittedSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 
-		expect := harness.newSectorPreCommitOnChainInfo(sectorNo, abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		expect := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(expect)
 		actual := harness.getPreCommit(sectorNo)
 
@@ -36,10 +37,10 @@ func TestPrecommittedSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 
-		firstPut := harness.newSectorPreCommitOnChainInfo(sectorNo, abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		firstPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(firstPut)
 
-		secondPut := harness.newSectorPreCommitOnChainInfo(sectorNo, abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		secondPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "2"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(secondPut)
 
 		actual := harness.getPreCommit(sectorNo)
@@ -52,7 +53,7 @@ func TestPrecommittedSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 
-		expect := harness.newSectorPreCommitOnChainInfo(sectorNo, abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		expect := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(expect)
 
 		harness.deletePreCommit(sectorNo)
@@ -64,10 +65,10 @@ func TestPrecommittedSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 
-		firstPut := harness.newSectorPreCommitOnChainInfo(sectorNo, abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		firstPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(firstPut)
 
-		secondPut := harness.newSectorPreCommitOnChainInfo(sectorNo, abi.NewTokenAmount(2), abi.ChainEpoch(2))
+		secondPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "2"), abi.NewTokenAmount(2), abi.ChainEpoch(2))
 		harness.putPreCommit(secondPut)
 
 		harness.deletePreCommit(sectorNo)
@@ -97,7 +98,7 @@ func TestSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		sectorInfo := harness.newSectorOnChainInfo(sectorNo, big.NewInt(1), abi.ChainEpoch(1))
+		sectorInfo := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), big.NewInt(1), abi.ChainEpoch(1))
 
 		harness.putSector(sectorInfo)
 		harness.hasSectorNo(sectorNo)
@@ -111,7 +112,7 @@ func TestSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		sectorInfo := harness.newSectorOnChainInfo(sectorNo, big.NewInt(1), abi.ChainEpoch(1))
+		sectorInfo := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), big.NewInt(1), abi.ChainEpoch(1))
 
 		harness.putSector(sectorInfo)
 		harness.hasSectorNo(sectorNo)
@@ -125,8 +126,8 @@ func TestSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		sectorInfo1 := harness.newSectorOnChainInfo(sectorNo, big.NewInt(1), abi.ChainEpoch(1))
-		sectorInfo2 := harness.newSectorOnChainInfo(sectorNo, big.NewInt(2), abi.ChainEpoch(2))
+		sectorInfo1 := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), big.NewInt(1), abi.ChainEpoch(1))
+		sectorInfo2 := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "2"), big.NewInt(2), abi.ChainEpoch(2))
 
 		harness.putSector(sectorInfo1)
 		harness.putSector(sectorInfo2)
@@ -169,7 +170,7 @@ func TestSectorsStore(t *testing.T) {
 		// put all the sectors in the store
 		for _, s := range sectorNos {
 			i := int64(0)
-			harness.putSector(harness.newSectorOnChainInfo(abi.SectorNumber(s), big.NewInt(i), abi.ChainEpoch(i)))
+			harness.putSector(harness.newSectorOnChainInfo(abi.SectorNumber(s), tutils.CidFromString(t, fmt.Sprintf("%d", i)), big.NewInt(i), abi.ChainEpoch(i)))
 			i++
 		}
 
@@ -369,9 +370,6 @@ type minerStateHarness struct {
 
 	s     *miner.State
 	store adt.Store
-
-	cidGetter func() cid.Cid
-	seed      uint64
 }
 
 //
@@ -492,8 +490,8 @@ func (h *minerStateHarness) deletePreCommit(sectorNo abi.SectorNumber) {
 //
 
 // returns a unique SectorPreCommitOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
-func (h *minerStateHarness) newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
-	info := h.newSectorPreCommitInfo(sectorNo)
+func (h *minerStateHarness) newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
+	info := h.newSectorPreCommitInfo(sectorNo, sealed)
 	return &miner.SectorPreCommitOnChainInfo{
 		Info:             *info,
 		PreCommitDeposit: deposit,
@@ -502,8 +500,8 @@ func (h *minerStateHarness) newSectorPreCommitOnChainInfo(sectorNo abi.SectorNum
 }
 
 // returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
-func (h *minerStateHarness) newSectorOnChainInfo(sectorNo abi.SectorNumber, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
-	info := h.newSectorPreCommitInfo(sectorNo)
+func (h *minerStateHarness) newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
+	info := h.newSectorPreCommitInfo(sectorNo, sealed)
 	return &miner.SectorOnChainInfo{
 		Info:            *info,
 		ActivationEpoch: activation,
@@ -517,20 +515,15 @@ const (
 )
 
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
-func (h *minerStateHarness) newSectorPreCommitInfo(sectorNo abi.SectorNumber) *miner.SectorPreCommitInfo {
+func (h *minerStateHarness) newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
 		RegisteredProof: abi.RegisteredProof_StackedDRG32GiBPoSt,
 		SectorNumber:    sectorNo,
-		SealedCID:       h.cidGetter(),
+		SealedCID:       sealed,
 		SealRandEpoch:   sectorSealRandEpochValue,
 		DealIDs:         nil,
 		Expiration:      sectorExpiration,
 	}
-}
-
-func (h *minerStateHarness) getSeed() uint64 {
-	defer func() { h.seed += 1 }()
-	return h.seed
 }
 
 func constructStateHarness(t *testing.T, store adt.Store, periodBoundary abi.ChainEpoch) *minerStateHarness {
@@ -556,10 +549,9 @@ func constructStateHarness(t *testing.T, store adt.Store, periodBoundary abi.Cha
 	assert.Equal(t, uint64(0), newSectorsCount)
 
 	return &minerStateHarness{
-		s:         state,
-		t:         t,
-		store:     store,
-		cidGetter: tutils.NewCidForTestGetter(),
-		seed:      0,
+		t: t,
+
+		s:     state,
+		store: store,
 	}
 }
