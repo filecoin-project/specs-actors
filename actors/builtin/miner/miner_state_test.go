@@ -346,21 +346,6 @@ func TestSectorExpirationStore(t *testing.T) {
 		assert.Empty(t, empty2)
 	})
 
-	t.Run("fail to add more than SectorsMax number of sectors", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-
-		tooManySectors := make([]uint64, miner.SectorsMax+1)
-
-		for i := uint64(0); i < miner.SectorsMax+1; i++ {
-			tooManySectors[i] = i
-		}
-
-		err := harness.s.AddSectorExpirations(store, 1, tooManySectors...)
-		assert.Error(t, err)
-
-	})
-
 }
 
 func TestFaultStore(t *testing.T) {
@@ -444,7 +429,7 @@ func TestRecoveriesBitfield(t *testing.T) {
 		// set of sectors, the larger numbers here are not significant
 		sectorNos := []uint64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
 		harness.addRecoveries(sectorNos...)
-		assert.Equal(t, uint64(len(sectorNos)), harness.getNewSectorCount())
+		assert.Equal(t, uint64(len(sectorNos)), harness.getRecoveriesCount())
 	})
 
 	t.Run("Add new recoveries excludes duplicates", func(t *testing.T) {
@@ -453,43 +438,24 @@ func TestRecoveriesBitfield(t *testing.T) {
 
 		sectorNos := []uint64{1, 1, 2, 2, 3, 4, 5}
 		harness.addRecoveries(sectorNos...)
-		assert.Equal(t, uint64(5), harness.getNewSectorCount())
+		assert.Equal(t, uint64(5), harness.getRecoveriesCount())
 	})
 
-	t.Run("Remove sectors happy path", func(t *testing.T) {
+	t.Run("Remove recoveries happy path", func(t *testing.T) {
 		store := adt.NewStore(context.Background())
 		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 
 		sectorNos := []uint64{1, 2, 3, 4, 5}
 		harness.addRecoveries(sectorNos...)
-		assert.Equal(t, uint64(len(sectorNos)), harness.getNewSectorCount())
+		assert.Equal(t, uint64(len(sectorNos)), harness.getRecoveriesCount())
 
 		harness.removeRecoveries(1, 3, 5)
-		assert.Equal(t, uint64(2), harness.getNewSectorCount())
+		assert.Equal(t, uint64(2), harness.getRecoveriesCount())
 
-		sm, err := harness.s.Recoveries.All(uint64(len(sectorNos)))
+		recoveries, err := harness.s.Recoveries.All(uint64(len(sectorNos)))
 		assert.NoError(t, err)
-		assert.Equal(t, []uint64{2, 4}, sm)
+		assert.Equal(t, []uint64{2, 4}, recoveries)
 	})
-
-	t.Run("Add New sectors errors when adding too many new sectors", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-
-		tooManyRecoveries := make([]uint64, miner.SectorsMax+1)
-		for i := uint64(0); i < miner.SectorsMax+1; i++ {
-			tooManyRecoveries[i] = i
-		}
-
-		err := harness.s.AddRecoveries(bitfield.NewFromSet(tooManyRecoveries))
-		assert.Error(t, err)
-
-		// sanity check nothing was added
-		// For omission reason see: https://github.com/filecoin-project/specs-actors/issues/300
-		// recoveriesCount, err := harness.s.Recoveries.Count()
-		// assert.Equal(t, uint64(0), recoveriesCount)
-	})
-
 }
 
 type minerStateHarness struct {
@@ -513,6 +479,12 @@ func (h *minerStateHarness) removeRecoveries(sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.RemoveRecoveries(bf)
 	require.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) getRecoveriesCount() uint64 {
+	count, err := h.s.Recoveries.Count()
+	require.NoError(h.t, err)
+	return count
 }
 
 //
