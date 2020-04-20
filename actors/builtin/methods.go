@@ -94,7 +94,7 @@ var MethodsMiner = struct {
 	DeclareFaultsRecovered abi.MethodNum
 	OnDeferredCronEvent    abi.MethodNum
 	CheckSectorProven      abi.MethodNum
-	AwardReward            abi.MethodNum
+	AddLockedFund          abi.MethodNum
 	ReportConsensusFault   abi.MethodNum
 	WithdrawBalance        abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
