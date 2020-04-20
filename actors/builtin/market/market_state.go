@@ -111,7 +111,9 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		return
 	}
 
-	Assert(deal.StartEpoch <= epoch)
+	if deal.StartEpoch > epoch {
+		return
+	}
 
 	dealEnd := deal.EndEpoch
 	if everSlashed {
