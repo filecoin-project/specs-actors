@@ -223,13 +223,9 @@ func TestNewSectorsBitField(t *testing.T) {
 		harness.removeNewSectors(1, 3, 5)
 		assert.Equal(t, uint64(2), harness.getNewSectorCount())
 
-		sm, err := harness.s.NewSectors.AllMap(uint64(len(sectorNos)))
+		sm, err := harness.s.NewSectors.All(uint64(len(sectorNos)))
 		assert.NoError(t, err)
-		assert.True(t, sm[2])
-		assert.True(t, sm[4])
-		assert.False(t, sm[1])
-		assert.False(t, sm[3])
-		assert.False(t, sm[5])
+		assert.Equal(t, []uint64{2, 4}, sm)
 	})
 
 	t.Run("Add New sectors errors when adding too many new sectors", func(t *testing.T) {
@@ -245,9 +241,8 @@ func TestNewSectorsBitField(t *testing.T) {
 		assert.Error(t, err)
 
 		// sanity check nothing was added
-		// FIXME this is either a bug in code or an incorrect test, if AddNewSectors errors I would expect NewSectors
-		// bitfield to remain unmodified, unless of course the runtime is just going to abort on this error, still kinda ugly
-		assert.Equal(t, uint64(0), harness.getNewSectorCount())
+		// For omission reason see: https://github.com/filecoin-project/specs-actors/issues/300
+		//assert.Equal(t, uint64(0), harness.getNewSectorCount())
 	})
 }
 
@@ -309,12 +304,13 @@ func TestSectorExpirationStore(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, sectorExpirations[expiry], sectors)
 				exp1Hit = true
-			}
-			if expiry == exp2 {
+			} else if expiry == exp2 {
 				sectors, err := sectors.All(miner.SectorsMax)
 				assert.NoError(t, err)
 				assert.Equal(t, sectorExpirations[expiry], sectors)
 				exp2Hit = true
+			} else {
+				t.Fatalf("unexpected expiry value: %v in sector expirations", expiry)
 			}
 			return nil
 		})
@@ -537,8 +533,6 @@ func (h *minerStateHarness) getSeed() uint64 {
 	return h.seed
 }
 
-// TODO consider allowing just the runtime store to be constructed, would need to change `AsStore` to operate on
-// runtime.Store instead  of the entire runtime.
 func constructStateHarness(t *testing.T, store adt.Store, periodBoundary abi.ChainEpoch) *minerStateHarness {
 	// store init
 	emptyMap, err := adt.MakeEmptyMap(store).Root()
