@@ -18,6 +18,16 @@ func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ..
 	}
 }
 
+// Aborts with a formatted message if err is not nil.
+// The provided message will be suffixed by ": %s" and the provided args suffixed by the err.
+func RequireNoErr(rt runtime.Runtime, err error, code exitcode.ExitCode, msg string, args ...interface{}) {
+	if err != nil {
+		newMsg := msg + ": %s"
+		newArgs := append(args, err)
+		rt.Abortf(code, newMsg, newArgs...)
+	}
+}
+
 func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
 	ret, code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching control addresses")

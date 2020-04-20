@@ -225,8 +225,3 @@ type WindowPoStVerifyInfo struct {
 	ChallengedSectors []SectorInfo
 	Prover            ActorID // used to derive 32-byte prover ID
 }
-
-// Information submitted by a miner to provide a Window PoSt.
-type OnChainWindowPoStVerifyInfo struct {
-	Proofs            []PoStProof
-}
