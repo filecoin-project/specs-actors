@@ -90,7 +90,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.BaselinePower.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.BaselinePower: %w", err)
 		}
 
 	}
@@ -99,7 +99,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.RealizedPower.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.RealizedPower: %w", err)
 		}
 
 	}
@@ -108,7 +108,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.CumsumBaseline.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.CumsumBaseline: %w", err)
 		}
 
 	}
@@ -117,7 +117,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.CumsumRealized.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.CumsumRealized: %w", err)
 		}
 
 	}
@@ -151,7 +151,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.SimpleSupply.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.SimpleSupply: %w", err)
 		}
 
 	}
@@ -160,7 +160,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.BaselineSupply.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.BaselineSupply: %w", err)
 		}
 
 	}
@@ -169,7 +169,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.LastPerEpochReward.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.LastPerEpochReward: %w", err)
 		}
 
 	}
@@ -233,7 +233,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Miner.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Miner: %w", err)
 		}
 
 	}
@@ -242,7 +242,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.Penalty.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.Penalty: %w", err)
 		}
 
 	}
@@ -251,7 +251,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	{
 
 		if err := t.GasReward.UnmarshalCBOR(br); err != nil {
-			return err
+			return xerrors.Errorf("unmarshaling t.GasReward: %w", err)
 		}
 
 	}
