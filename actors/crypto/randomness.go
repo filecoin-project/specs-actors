@@ -9,4 +9,5 @@ const (
 	DomainSeparationTag_WindowedPoStChallengeSeed
 	DomainSeparationTag_SealRandomness
 	DomainSeparationTag_InteractiveSealChallengeSeed
+	DomainSeparationTag_WindowedPoStDeadlineAssignment
 )

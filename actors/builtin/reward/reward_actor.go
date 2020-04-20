@@ -17,17 +17,14 @@ import (
 // human-friendly scale.
 const TokenPrecision = int64(1_000_000_000_000_000_000)
 
-// Target reward released to each block winner.
-var BlockRewardTarget = big.Mul(big.NewInt(100), big.NewInt(TokenPrecision))
-
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
-		4:                         a.LastPerEpochReward,
-		5:                         a.UpdateNetworkKPI,
+		3:                         a.LastPerEpochReward,
+		4:                         a.UpdateNetworkKPI,
 	}
 }
 
