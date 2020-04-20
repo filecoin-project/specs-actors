@@ -393,7 +393,7 @@ func (a Actor) computeInitialPledge(rt Runtime, desc *SectorStorageWeightDesc) a
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
 	var epochReward abi.TokenAmount
 	if err := rwret.Into(&epochReward); err != nil {
-		rt.Abortf(exitcode.SysErrInternal, "failed to unmarshal epoch reward value: %s", err)
+		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal epoch reward value: %s", err)
 	}
 
 	qapower := QAPowerForWeight(desc)
