@@ -56,11 +56,10 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.Propose,
 		3:                         a.Approve,
 		4:                         a.Cancel,
-		//5: msa.ClearCompleted, //TODO: sync with spec
-		6: a.AddSigner,
-		7: a.RemoveSigner,
-		8: a.SwapSigner,
-		9: a.ChangeNumApprovalsThreshold,
+		5:                         a.AddSigner,
+		6:                         a.RemoveSigner,
+		7:                         a.SwapSigner,
+		8:                         a.ChangeNumApprovalsThreshold,
 	}
 }
 
