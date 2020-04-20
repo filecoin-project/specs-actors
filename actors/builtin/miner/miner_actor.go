@@ -36,7 +36,6 @@ const (
 type CronEventPayload struct {
 	EventType       CronEventType
 	Sectors         *abi.BitField
-	RegisteredProof abi.RegisteredProof // Used for PreCommitExpiry verification}
 }
 
 type Actor struct{}
@@ -99,8 +98,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 
 	// Register cron callback for epoch before the next proving period starts.
 	deadline, _ := state.DeadlineInfo(rt.CurrEpoch())
-	periodEnd := deadline.PeriodStart + WPoStProvingPeriod - 1
-	a.enrollCronEvent(rt, periodEnd, &CronEventPayload{
+	a.enrollCronEvent(rt, deadline.PeriodEnd(), &CronEventPayload{
 		EventType: CronEventProvingPeriod,
 	})
 
@@ -236,7 +234,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, deadline.Index, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
-				deadline.Index, params.Partitions)
+			deadline.Index, params.Partitions)
 
 		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
@@ -324,10 +322,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 // Sector Commitment //
 ///////////////////////
 
-type PreCommitSectorParams struct {
-	Info SectorPreCommitInfo
-}
-
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
 func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
@@ -339,6 +333,12 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
+		} else if found {
+			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already precommitted", params.SectorNumber)
+		}
+
 		if found, err := st.HasSectorNo(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 		} else if found {
@@ -383,7 +383,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	cronPayload := CronEventPayload{
 		EventType:       CronEventPreCommitExpiry,
 		Sectors:         bf,
-		RegisteredProof: params.RegisteredProof,
 	}
 
 	msd, ok := MaxSealDuration[params.RegisteredProof]
@@ -419,10 +418,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	msd, ok := MaxSealDuration[precommit.Info.RegisteredProof]
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "No max seal duration for proof type: %d", precommit.Info.RegisteredProof)
+		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.RegisteredProof)
 	}
 	if rt.CurrEpoch() > precommit.PreCommitEpoch+msd {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch (cur=%d, pcepoch=%d)", rt.CurrEpoch(), precommit.PreCommitEpoch)
+		rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d)", sectorNo, rt.CurrEpoch(), precommit.PreCommitEpoch+msd)
 	}
 
 	// will abort if seal invalid
@@ -891,7 +890,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	case CronEventWorkerKeyChange:
 		a.commitWorkerKeyChange(rt)
 	case CronEventPreCommitExpiry:
-		a.checkPrecommitExpiry(rt, payload.Sectors, payload.RegisteredProof)
+		a.checkPrecommitExpiry(rt, payload.Sectors)
 	case CronEventProvingPeriod:
 		a.handleProvingPeriod(rt)
 	}
@@ -905,7 +904,7 @@ func (a Actor) handleProvingPeriod(rt Runtime) {
 	currEpoch := rt.CurrEpoch()
 	var deadline *DeadlineInfo
 	var periodEnd, nextPeriodStart abi.ChainEpoch
-	var  fullPeriod bool
+	var fullPeriod bool
 	{
 		// Vest locked funds.
 		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
@@ -1162,7 +1161,7 @@ func popExpiredFaults(st State, store adt.Store, latestTermination abi.ChainEpoc
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof abi.RegisteredProof) {
+func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 	store := adt.AsStore(rt)
 	var st State
 
@@ -1175,8 +1174,8 @@ func (a Actor) checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof 
 			if err != nil {
 				return err
 			}
-			if !found || rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
-				// already deleted or not yet expired
+			if !found {
+				// already committed/deleted
 				return nil
 			}
 
@@ -1637,7 +1636,6 @@ func validateFRDeclaration(deadline *DeadlineInfo, deadlines *Deadlines, declare
 	}
 	return nil
 }
-
 
 // Computes a fee for a collection of sectors and unlocks it from unvested funds (for burning).
 // The fee computation is a parameter.

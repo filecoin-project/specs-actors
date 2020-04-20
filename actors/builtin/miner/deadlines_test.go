@@ -93,7 +93,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 }
 
 func assertDeadlineInfo(t *testing.T, boundary, current, periodStart abi.ChainEpoch, index uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
-	expected := deadline(current, periodStart, index, deadlineOpen)
+	expected := makeDeadline(current, periodStart, index, deadlineOpen)
 	actual, started := miner.ComputeProvingPeriodDeadline(boundary, current)
 	assert.Equal(t, actual.PeriodStart >= 0, started)
 	assert.True(t, actual.IsOpen())
@@ -102,7 +102,7 @@ func assertDeadlineInfo(t *testing.T, boundary, current, periodStart abi.ChainEp
 	return actual
 }
 
-func deadline(currEpoch, periodStart abi.ChainEpoch, deadline uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
+func makeDeadline(currEpoch, periodStart abi.ChainEpoch, deadline uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
 	return &miner.DeadlineInfo{
 		CurrentEpoch: currEpoch,
 		PeriodStart:  periodStart,

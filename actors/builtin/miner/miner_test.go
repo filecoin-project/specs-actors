@@ -3,16 +3,22 @@ package miner_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
+	"github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
+	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -53,7 +59,7 @@ func TestConstruction(t *testing.T) {
 		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
 		// Register proving period cron.
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-			provingPeriodCronPayload(t, provingPeriodBoundary-1), big.Zero(), nil, exitcode.Ok)
+			makeProvingPeriodCronPayload(t, provingPeriodBoundary-1), big.Zero(), nil, exitcode.Ok)
 		ret := rt.Call(actor.Constructor, &params)
 		assert.Nil(t, ret)
 		rt.Verify()
@@ -86,49 +92,151 @@ func TestConstruction(t *testing.T) {
 	})
 }
 
+// Tests for fetching and manipulating miner addresses.
 func TestControlAddresses(t *testing.T) {
-	actor := harness{miner.Actor{}, t}
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
+	actor := newHarness(t, owner, worker, workerKey)
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(blake2b.Sum256).
+		WithHasher(fixedHasher(0)).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("get addresses", func(t *testing.T) {
 		rt := builder.Build(t)
-
-		actor.constructAndVerify(rt, owner, worker, workerKey)
+		actor.constructAndVerify(rt, miner.WPoStProvingPeriod)
 
 		o, w := actor.controlAddresses(rt)
 		assert.Equal(t, owner, o)
 		assert.Equal(t, worker, w)
 	})
+
+	// TODO: test changing worker (with delay), changing peer id
+}
+
+// Test for sector precommitment and proving.
+func TestCommitments(t *testing.T) {
+	owner := tutil.NewIDAddr(t, 100)
+	worker := tutil.NewIDAddr(t, 101)
+	workerKey := tutil.NewBLSAddr(t, 0)
+	receiver := tutil.NewIDAddr(t, 1000)
+	actor := newHarness(t, owner, worker, workerKey)
+	periodBoundary := abi.ChainEpoch(100)
+	builder := mock.NewBuilder(context.Background(), receiver).
+		WithActorType(owner, builtin.AccountActorCodeID).
+		WithActorType(worker, builtin.AccountActorCodeID).
+		WithHasher(fixedHasher(uint64(periodBoundary))).
+		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+	t.Run("invalid pre-commit rejected", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
+		precommitEpoch := periodBoundary + 1
+		rt.SetEpoch(precommitEpoch)
+		st := getState(rt)
+		deadline, _ := st.DeadlineInfo(precommitEpoch)
+
+		// Good commitment.
+		actor.preCommitSector(rt, makePreCommit(100, precommitEpoch-100, deadline.PeriodEnd()), big.Zero())
+
+		// Duplicate sector ID
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, makePreCommit(100, precommitEpoch-100, deadline.PeriodEnd()), big.Zero())
+		})
+
+		// Expires at current epoch
+		rt.SetEpoch(deadline.PeriodEnd())
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, makePreCommit(111, precommitEpoch-100, deadline.PeriodEnd()), big.Zero())
+		})
+		rt.SetEpoch(precommitEpoch)
+
+		// Expires before current epoch
+		rt.SetEpoch(deadline.PeriodEnd() +1)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, makePreCommit(112, precommitEpoch-100, deadline.PeriodEnd()), big.Zero())
+		})
+		rt.SetEpoch(precommitEpoch)
+
+		// Expires not on period end
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, makePreCommit(113, precommitEpoch-100, deadline.PeriodEnd()-1), big.Zero())
+		})
+
+		// TODO: test insufficient funds when the precommit deposit is set above zero
+	})
+
+	t.Run("invalid proof rejected", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
+		precommitEpoch := periodBoundary + 1
+		st := getState(rt)
+		deadline, _ := st.DeadlineInfo(precommitEpoch)
+
+		// Good commitment.
+		rt.SetEpoch(precommitEpoch)
+		sectorNo := abi.SectorNumber(100)
+		precommit := makePreCommit(sectorNo, precommitEpoch-100, deadline.PeriodEnd())
+		actor.preCommitSector(rt, precommit, big.Zero())
+
+		// Sector pre-commitment missing
+		rt.SetEpoch(precommitEpoch+miner.PreCommitChallengeDelay+1)
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
+			actor.proveCommitSector(rt, precommit, makeProveCommit(sectorNo+1))
+		})
+		rt.Reset()
+
+		// Too late
+		rt.SetEpoch(precommitEpoch+miner.MaxSealDuration[precommit.RegisteredProof]+1)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.proveCommitSector(rt, precommit, makeProveCommit(sectorNo))
+		})
+		rt.Reset()
+
+		// TODO: invalid deals (market VerifyDealsOnSectorProveCommit aborts)
+		// TODO: insufficient funds for initial pledge when pledge is set non-zero
+
+		// TODO: Good proof
+		rt.SetEpoch(precommitEpoch+miner.PreCommitChallengeDelay+1)
+		actor.proveCommitSector(rt, precommit, makeProveCommit(sectorNo))
+
+	})
+	
+	// already proven
+	// commitment expires before proof
+	// commitment proven ok
 }
 
 type harness struct {
 	a miner.Actor
 	t testing.TB
+
+	owner  addr.Address
+	worker addr.Address
+	key    addr.Address
 }
 
-func (h *harness) constructAndVerify(rt *mock.Runtime, owner, worker, key addr.Address) {
+func newHarness(t testing.TB, owner, worker, key addr.Address) *harness {
+	return &harness{miner.Actor{}, t, owner, worker, key}
+}
+
+func (h *harness) constructAndVerify(rt *mock.Runtime, nextPPStart abi.ChainEpoch) {
 	params := miner.ConstructorParams{
-		OwnerAddr:  owner,
-		WorkerAddr: worker,
+		OwnerAddr:  h.owner,
+		WorkerAddr: h.worker,
 		SectorSize: SectorSize,
 		PeerId:     "peer",
 	}
 
-	provingPeriodBoundary := abi.ChainEpoch(2386) // This is just set from running the code.
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 	// Fetch worker pubkey.
-	rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &key, exitcode.Ok)
+	rt.ExpectSend(h.worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 	// Register proving period cron.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		provingPeriodCronPayload(h.t, provingPeriodBoundary-1), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronPayload(h.t, nextPPStart-1), big.Zero(), nil, exitcode.Ok)
 	ret := rt.Call(h.a.Constructor, &params)
 	assert.Nil(h.t, ret)
 	rt.Verify()
@@ -138,10 +246,57 @@ func (h *harness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address
 	rt.ExpectValidateCallerAny()
 	ret := rt.Call(h.a.ControlAddresses, nil).(*miner.GetControlAddressesReturn)
 	require.NotNil(h.t, ret)
+	rt.Verify()
 	return ret.Owner, ret.Worker
 }
 
-func provingPeriodCronPayload(t testing.TB, epoch abi.ChainEpoch) *power.EnrollCronEventParams {
+func (h *harness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo, pledgeDelta abi.TokenAmount) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(h.worker)
+	if !pledgeDelta.IsZero() {
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+	}
+
+	{
+		eventPayload := miner.CronEventPayload{
+			EventType: miner.CronEventPreCommitExpiry,
+			Sectors:   bitfield.NewFromSet([]uint64{uint64(params.SectorNumber)}),
+		}
+		buf := bytes.Buffer{}
+		err := eventPayload.MarshalCBOR(&buf)
+		require.NoError(h.t, err)
+		cronParams := power.EnrollCronEventParams{
+			EventEpoch: rt.GetEpoch() + miner.MaxSealDuration[params.RegisteredProof] + 1,
+			Payload:    buf.Bytes(),
+		}
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
+	}
+
+	rt.Call(h.a.PreCommitSector, params)
+	rt.Verify()
+}
+
+func (h *harness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, params *miner.ProveCommitSectorParams) {
+	rt.ExpectValidateCallerAny()
+	commd := cbg.CborCid(makeCid("commd"))
+	{
+		cdcParams := market.ComputeDataCommitmentParams{
+			DealIDs:    precommit.DealIDs,
+			SectorType: precommit.RegisteredProof,
+		}
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &commd, exitcode.Ok)
+	}
+	rt.Call(h.a.ProveCommitSector, params)
+	rt.Verify()
+}
+
+func getState(rt *mock.Runtime) *miner.State {
+	var st miner.State
+	rt.GetState(&st)
+	return &st
+}
+
+func makeProvingPeriodCronPayload(t testing.TB, epoch abi.ChainEpoch) *power.EnrollCronEventParams {
 	eventPayload := miner.CronEventPayload{EventType: miner.CronEventProvingPeriod}
 	buf := bytes.Buffer{}
 	err := eventPayload.MarshalCBOR(&buf)
@@ -152,9 +307,52 @@ func provingPeriodCronPayload(t testing.TB, epoch abi.ChainEpoch) *power.EnrollC
 	}
 }
 
+func makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch) *miner.SectorPreCommitInfo {
+	return &miner.SectorPreCommitInfo{
+		RegisteredProof: abi.RegisteredProof_StackedDRG2KiBSeal,
+		SectorNumber:    sectorNo,
+		SealedCID:       makeCid("commr"),
+		SealRandEpoch:   challenge,
+		DealIDs:         nil,
+		Expiration:      expiration,
+	}
+}
+
+func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
+	return &miner.ProveCommitSectorParams{
+		SectorNumber: sectorNo,
+		Proof:        []byte("proof"),
+	}
+}
+
+var cidBuilder = cid.V1Builder{Codec: cid.DagCBOR, MhType: mh.IDENTITY}
+
+func makeCid(input string) cid.Cid {
+	c, err := cidBuilder.Sum([]byte(input))
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
 func assertEmptyBitfield(t *testing.T, b *abi.BitField) {
 	empty, err := b.IsEmpty()
 	require.NoError(t, err)
 	assert.True(t, empty)
 
+}
+
+// Returns a fake hashing function that always arranges the first 8 bytes of the digest to be the binary
+// encoding of a target uint64.
+func fixedHasher(target uint64) func([]byte) [32]byte {
+	return func(_ []byte) [32]byte {
+		var buf bytes.Buffer
+		err := binary.Write(&buf, binary.BigEndian, target)
+		if err != nil {
+			panic(err)
+		}
+		var digest [32]byte
+		copy(digest[:], buf.Bytes())
+		return digest
+	}
 }

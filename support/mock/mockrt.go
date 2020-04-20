@@ -338,9 +338,9 @@ func (rt *Runtime) Transaction(st runtime.CBORer, f func() interface{}) interfac
 	}
 	rt.Readonly(st)
 	rt.inTransaction = true
+	defer func() { rt.inTransaction = false }()
 	ret := f()
 	rt.state = rt.Put(st)
-	rt.inTransaction = false
 	return ret
 }
 
@@ -379,6 +379,14 @@ func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
 	}
 }
 
+func (rt *Runtime) GetBalance() abi.TokenAmount {
+	return rt.balance
+}
+
+func (rt *Runtime) GetEpoch() abi.ChainEpoch {
+	return rt.epoch
+}
+
 ///// Mocking facilities /////
 
 type expectedMessage struct {
@@ -409,11 +417,6 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
-}
-
-// Get balance outside of a runtime call for test purposes
-func (rt *Runtime) GetBalance() abi.TokenAmount {
-	return rt.balance
 }
 
 func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
@@ -555,6 +558,7 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	// If not expected, the panic will escape and cause the test to fail.
 
 	rt.inCall = true
+	defer func() { rt.inCall = false }()
 	var arg reflect.Value
 	if params != nil {
 		arg = reflect.ValueOf(params)
@@ -562,7 +566,6 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 		arg = reflect.ValueOf(adt.Empty)
 	}
 	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), arg})
-	rt.inCall = false
 	return ret[0].Interface()
 }
 
