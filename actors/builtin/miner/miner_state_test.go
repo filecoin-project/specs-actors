@@ -458,11 +458,64 @@ func TestRecoveriesBitfield(t *testing.T) {
 	})
 }
 
+func TestPostSubmissionsBitfield(t *testing.T) {
+	t.Run("Add new submission happy path", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		// set of sectors, the larger numbers here are not significant
+		sectorNos := []uint64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
+		harness.addPoStSubmissions(sectorNos...)
+		assert.Equal(t, uint64(len(sectorNos)), harness.getPoStSubmissionsCount())
+	})
+
+	t.Run("Add new submission excludes duplicates", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		sectorNos := []uint64{1, 1, 2, 2, 3, 4, 5}
+		harness.addPoStSubmissions(sectorNos...)
+		assert.Equal(t, uint64(5), harness.getPoStSubmissionsCount())
+	})
+
+	t.Run("Clear submission happy path", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		sectorNos := []uint64{1, 2, 3, 4, 5}
+		harness.addPoStSubmissions(sectorNos...)
+		assert.Equal(t, uint64(len(sectorNos)), harness.getPoStSubmissionsCount())
+
+		harness.clearPoStSubmissions()
+		assert.Equal(t, uint64(0), harness.getPoStSubmissionsCount())
+	})
+}
+
 type minerStateHarness struct {
 	t testing.TB
 
 	s     *miner.State
 	store adt.Store
+}
+
+//
+// PostSubmissions Bitfield
+//
+
+func (h *minerStateHarness) addPoStSubmissions(partitionNos ...uint64) {
+	err := h.s.AddPoStSubmissions(bitfield.NewFromSet(partitionNos))
+	require.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) clearPoStSubmissions() {
+	err := h.s.ClearPoStSubmissions()
+	require.NoError(h.t, err)
+}
+
+func (h *minerStateHarness) getPoStSubmissionsCount() uint64 {
+	count, err := h.s.PostSubmissions.Count()
+	require.NoError(h.t, err)
+	return count
 }
 
 //
