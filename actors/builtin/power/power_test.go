@@ -72,7 +72,6 @@ func TestConstruction(t *testing.T) {
 		assert.True(t, found)
 		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
-		verifyEmptyMap(t, rt, st.PoStDetectedFaultMiners)
 		verifyEmptyMap(t, rt, st.CronEventQueue)
 	})
 
@@ -167,7 +166,6 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
 
 	verifyEmptyMap(h.t, rt, st.Claims)
-	verifyEmptyMap(h.t, rt, st.PoStDetectedFaultMiners)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
 }
 
