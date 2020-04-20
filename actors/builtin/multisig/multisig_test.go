@@ -21,8 +21,6 @@ import (
 )
 
 func TestExports(t *testing.T) {
-	t.Skip("missing method 5")
-
 	mock.CheckActorExports(t, multisig.Actor{})
 }
 
