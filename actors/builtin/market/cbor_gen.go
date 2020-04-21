@@ -18,7 +18,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{134}); err != nil {
+	if _, err := w.Write([]byte{135}); err != nil {
 		return err
 	}
 
@@ -52,12 +52,22 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.DealIDsByParty (cid.Cid) (struct)
+	// t.DealOpsByEpoch (cid.Cid) (struct)
 
 	if err := cbg.WriteCid(w, t.DealOpsByEpoch); err != nil {
-		return xerrors.Errorf("failed to write cid field t.DealIDsByParty: %w", err)
+		return xerrors.Errorf("failed to write cid field t.DealOpsByEpoch: %w", err)
 	}
 
+	// t.LastCron (abi.ChainEpoch) (int64)
+	if t.LastCron >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.LastCron))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.LastCron)-1)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -72,7 +82,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 6 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -138,17 +148,42 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.NextID = abi.DealID(extra)
 
 	}
-	// t.DealIDsByParty (cid.Cid) (struct)
+	// t.DealOpsByEpoch (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.DealIDsByParty: %w", err)
+			return xerrors.Errorf("failed to read cid field t.DealOpsByEpoch: %w", err)
 		}
 
 		t.DealOpsByEpoch = c
 
+	}
+	// t.LastCron (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.LastCron = abi.ChainEpoch(extraI)
 	}
 	return nil
 }
