@@ -138,7 +138,7 @@ func TestCommitments(t *testing.T) {
 		st := getState(rt)
 		deadline, _ := st.DeadlineInfo(precommitEpoch)
 
-		challengeEpoch := precommitEpoch - 20
+		challengeEpoch := precommitEpoch - miner.PreCommitChallengeDelay
 
 		// Good commitment.
 		actor.preCommitSector(rt, makePreCommit(100, challengeEpoch, deadline.PeriodEnd()), big.Zero())
@@ -153,16 +153,15 @@ func TestCommitments(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(111, challengeEpoch, deadline.PeriodEnd()), big.Zero())
 		})
-		rt.SetEpoch(precommitEpoch)
 
 		// Expires before current epoch
 		rt.SetEpoch(deadline.PeriodEnd() + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(112, challengeEpoch, deadline.PeriodEnd()), big.Zero())
 		})
-		rt.SetEpoch(precommitEpoch)
 
 		// Expires not on period end
+		rt.SetEpoch(precommitEpoch)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(113, challengeEpoch, deadline.PeriodEnd()-1), big.Zero())
 		})

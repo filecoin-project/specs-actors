@@ -420,8 +420,9 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.RegisteredProof)
 	}
-	if rt.CurrEpoch() > precommit.PreCommitEpoch+msd {
-		rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d)", sectorNo, rt.CurrEpoch(), precommit.PreCommitEpoch+msd)
+	proveCommitDue := precommit.PreCommitEpoch + msd
+	if rt.CurrEpoch() > proveCommitDue {
+		rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", sectorNo, rt.CurrEpoch(), proveCommitDue)
 	}
 
 	// will abort if seal invalid
