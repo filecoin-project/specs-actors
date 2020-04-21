@@ -14,6 +14,8 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+const DealUpdatesInterval = 100
+
 const epochUndefined = abi.ChainEpoch(-1)
 
 // Market mutations
@@ -37,7 +39,8 @@ type State struct {
 	NextID abi.DealID
 
 	// Metadata cached for efficient iteration over deals.
-	DealIDsByParty cid.Cid // SetMultimap, HAMT[addr]Set
+	DealOpsByEpoch cid.Cid // SetMultimap, HAMT[epoch]Set
+	LastCron       abi.ChainEpoch
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
@@ -47,7 +50,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 		EscrowTable:    emptyMapCid,
 		LockedTable:    emptyMapCid,
 		NextID:         abi.DealID(0),
-		DealIDsByParty: emptyMSetCid,
+		DealOpsByEpoch: emptyMSetCid,
 	}
 }
 
@@ -55,43 +58,9 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealStatesForParty(rt Runtime, addr addr.Address) (amountSlashedTotal abi.TokenAmount) {
-	// For consistency with HandleExpiredDeals, only process updates up to the end of the _previous_ epoch.
-	epoch := rt.CurrEpoch() - 1
+func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
+	amountSlashed := abi.NewTokenAmount(0)
 
-	dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to load dead ids set: %s", err)
-	}
-
-	var extractedDealIDs []abi.DealID
-	err = dbp.ForEach(addr, func(id abi.DealID) error {
-		extractedDealIDs = append(extractedDealIDs, id)
-		return nil
-	})
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "foreach error %v", err)
-	}
-
-	amountSlashedTotal = st.updatePendingDealStates(rt, extractedDealIDs, epoch)
-	return
-}
-
-func (st *State) updatePendingDealStates(rt Runtime, dealIDs []abi.DealID, epoch abi.ChainEpoch) abi.TokenAmount {
-	amountSlashedTotal := abi.NewTokenAmount(0)
-
-	for _, dealID := range dealIDs {
-		amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealState(rt, dealID, epoch))
-	}
-
-	return amountSlashedTotal
-}
-
-// TODO: This does waaaay too many redundant hamt reads
-func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount) {
-	amountSlashed = abi.NewTokenAmount(0)
-
-	deal := st.mustGetDeal(rt, dealID)
 	state := st.mustGetDealState(rt, dealID)
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
@@ -99,20 +68,18 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 
 	Assert(!everUpdated || (state.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
 
-	if state.LastUpdatedEpoch == epoch { // TODO: This looks fishy, check all places that set LastUpdatedEpoch
-		return
-	}
+	deal := st.mustGetDeal(rt, dealID)
 
 	if state.SectorStartEpoch == epochUndefined {
 		// Not yet appeared in proven sector; check for timeout.
 		if epoch > deal.StartEpoch {
-			return st.processDealInitTimedOut(rt, dealID)
+			return st.processDealInitTimedOut(rt, dealID, deal, state), 0
 		}
-		return
+		return amountSlashed, 0
 	}
 
 	if deal.StartEpoch > epoch {
-		return
+		return amountSlashed, 0
 	}
 
 	dealEnd := deal.EndEpoch
@@ -151,14 +118,20 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		st.slashBalance(rt, deal.Provider, amountSlashed)
 
 		st.deleteDeal(rt, dealID)
-		return
+		return amountSlashed, 0
 	}
 
 	if epoch >= deal.EndEpoch {
 		st.processDealExpired(rt, dealID)
-		return
+		return amountSlashed, 0
 	}
 
+	next := epoch + DealUpdatesInterval
+	if next > deal.EndEpoch {
+		next = deal.EndEpoch
+	}
+
+	// TODO: can we avoid having this field?
 	state.LastUpdatedEpoch = epoch
 
 	st.mutateDealStates(rt, func(states *DealMetaArray) {
@@ -166,7 +139,8 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 			rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
 		}
 	})
-	return
+
+	return amountSlashed, next
 }
 
 func (st *State) mutateDealStates(rt Runtime, f func(*DealMetaArray)) {
@@ -202,38 +176,17 @@ func (st *State) mutateDealProposals(rt Runtime, f func(*DealArray)) {
 }
 
 func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
-
-	var dealP *DealProposal
 	st.mutateDealProposals(rt, func(proposals *DealArray) {
-		p, err := proposals.Get(dealID)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to get deal before deleting it: %s", err)
-		}
-		dealP = p
-
 		if err := proposals.Delete(uint64(dealID)); err != nil {
 			rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
 		}
-	})
-
-	st.MutateDealIDs(rt, func(dbp *SetMultimap) error {
-		if err := dbp.Remove(dealP.Client, dealID); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by client address from DealIDsByParty: %v", err)
-		}
-		if err := dbp.Remove(dealP.Provider, dealID); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal by provider address from DealIDsByParty: %v", err)
-		}
-		return nil
 	})
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID) (amountSlashed abi.TokenAmount) {
-	deal := st.mustGetDeal(rt, dealID)
-	state := st.mustGetDealState(rt, dealID)
-
+func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID, deal *DealProposal, state *DealState) (amountSlashed abi.TokenAmount) {
 	Assert(state.SectorStartEpoch == epochUndefined)
 
 	st.unlockBalance(rt, deal.Client, deal.ClientBalanceRequirement())
@@ -353,6 +306,7 @@ func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.Toke
 	})
 }
 
+// TODO: all these balance table mutations need to happen at the top level and be batched (no flushing after each!)
 func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
@@ -511,7 +465,7 @@ func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.Token
 }
 
 func (st *State) MutateDealIDs(rt Runtime, f func(dbp *SetMultimap) error) {
-	dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+	dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids map: %s", err)
 	}
@@ -525,5 +479,5 @@ func (st *State) MutateDealIDs(rt Runtime, f func(dbp *SetMultimap) error) {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
 	}
 
-	st.DealIDsByParty = dipc
+	st.DealOpsByEpoch = dipc
 }
