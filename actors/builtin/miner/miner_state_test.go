@@ -442,6 +442,8 @@ func TestVestingFundsStore(t *testing.T) {
 	assert.Equal(t, abi.NewTokenAmount(51), vested)
 }
 
+// TODO make top level tests for vested, unvested and then together.
+
 func TestVestingFunds(t *testing.T) {
 	t.Run("Linear Vesting Unlock Vested tokens in 2 steps half now, half in following.", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
@@ -471,6 +473,8 @@ func TestVestingFunds(t *testing.T) {
 		// ensure no more funds are returned
 		amountVested = harness.unlockVestedFunds(testAtEpoch)
 		assert.Equal(t, int64(0), amountVested.Int64())
+
+		// TODO accumulate the amount vesting, take it to the end, sum the array and assits its ewual to vested sum
 	})
 
 	t.Run("Linear Vesting Unlock Vested tokens consistent across step durations", func(t *testing.T) {
@@ -489,6 +493,8 @@ func TestVestingFunds(t *testing.T) {
 		amountVested := harness.unlockVestedFunds(vestStart)
 		assert.Equal(t, big.Zero(), amountVested)
 
+		// TODO use epochs, not maths
+		// TODO show things don't vest at quantization boundary.
 		amountVested = harness.unlockVestedFunds(vestStart + vspec.StepDuration + vspec.Quantization)
 		assert.Equal(t, big.NewInt(100), amountVested)
 
@@ -497,6 +503,9 @@ func TestVestingFunds(t *testing.T) {
 
 		amountVested = harness.unlockVestedFunds(vestStart + vspec.StepDuration*3 + vspec.Quantization)
 		assert.Equal(t, big.NewInt(100), amountVested)
+
+		// TODO accumulate the amount vesting, take it to the end, sum the array and assits its ewual to vested sum
+		// TODO demonstate that epoch 100 still hasn't vested everything due to the step and quantize bits
 	})
 
 	t.Run("Unlock unvested funds leaving bucket with modified amount", func(t *testing.T) {
@@ -524,10 +533,19 @@ func TestVestingFunds(t *testing.T) {
 		//epoch 136: locked Funds = 80
 		amountVested := harness.unlockVestedFunds(118 + 1)
 		assert.Equal(t, big.NewInt(1), amountVested)
-
 	})
-
 }
+
+// TODO vest period and quantization are co-prime
+// TODO add a test that adds to locked funds twice and ensures the sum is correct.
+// TODO add a test that asserts things are deleted from the store when their funds are zero for both the unlock methods
+// TODO everything vests at once
+// TODO add a test that unlocks unvested funds and then a vested that returns zero
+// TODO check when vesting window and  quantize are co-prime (non-mults)
+// TODO quantize something like 3 and units of 5 and then a remainder than hasn't vested
+// TODO make it so it a really unbalanced table and then a balanced table.
+// TODO ensure double unlocks are noops
+// TODO non zero initial delay
 
 type stateHarness struct {
 	t testing.TB
