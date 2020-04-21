@@ -24,11 +24,11 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AddBalance,
 		3:                         a.WithdrawBalance,
-		5:                         a.PublishStorageDeals,
-		6:                         a.VerifyDealsOnSectorProveCommit,
-		7:                         a.OnMinerSectorsTerminate,
-		8:                         a.ComputeDataCommitment,
-		10:                        a.CronTick,
+		4:                         a.PublishStorageDeals,
+		5:                         a.VerifyDealsOnSectorProveCommit,
+		6:                         a.OnMinerSectorsTerminate,
+		7:                         a.ComputeDataCommitment,
+		8:                         a.CronTick,
 	}
 }
 
