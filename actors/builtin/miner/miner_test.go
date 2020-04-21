@@ -87,7 +87,7 @@ func TestConstruction(t *testing.T) {
 }
 
 func TestControlAddresses(t *testing.T) {
-	actor := harness{miner.Actor{}, t}
+	actor := actorHarness{miner.Actor{}, t}
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
@@ -109,12 +109,12 @@ func TestControlAddresses(t *testing.T) {
 	})
 }
 
-type harness struct {
+type actorHarness struct {
 	a miner.Actor
 	t testing.TB
 }
 
-func (h *harness) constructAndVerify(rt *mock.Runtime, owner, worker, key addr.Address) {
+func (h *actorHarness) constructAndVerify(rt *mock.Runtime, owner, worker, key addr.Address) {
 	params := miner.ConstructorParams{
 		OwnerAddr:  owner,
 		WorkerAddr: worker,
@@ -134,7 +134,7 @@ func (h *harness) constructAndVerify(rt *mock.Runtime, owner, worker, key addr.A
 	rt.Verify()
 }
 
-func (h *harness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address) {
+func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address) {
 	rt.ExpectValidateCallerAny()
 	ret := rt.Call(h.a.ControlAddresses, nil).(*miner.GetControlAddressesReturn)
 	require.NotNil(h.t, ret)

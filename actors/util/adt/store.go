@@ -19,16 +19,37 @@ type Store interface {
 	cbor.IpldStore
 }
 
-// AsStore allows Runtime to satisfy the adt.Store interface.
+// Adapts a vanilla IPLD store as an ADT store.
+func WrapStore(ctx context.Context, store cbor.IpldStore) Store {
+	return &wstore{
+		ctx:       ctx,
+		IpldStore: store,
+	}
+}
+
+type wstore struct {
+	ctx context.Context
+	cbor.IpldStore
+}
+
+var _ Store = &wstore{}
+
+func (s *wstore) Context() context.Context {
+	return s.ctx
+}
+
+// Adapter for a Runtime as an ADT Store.
+
+// Adapts a Runtime as an ADT store.
 func AsStore(rt vmr.Runtime) Store {
 	return rtStore{rt}
 }
 
-var _ Store = &rtStore{}
-
 type rtStore struct {
 	vmr.Runtime
 }
+
+var _ Store = &rtStore{}
 
 func (r rtStore) Context() context.Context {
 	return r.Runtime.Context()
