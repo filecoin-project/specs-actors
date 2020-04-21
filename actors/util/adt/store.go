@@ -6,8 +6,6 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
@@ -21,35 +19,37 @@ type Store interface {
 	cbor.IpldStore
 }
 
-var _ Store = &cstore{}
+// Adapts a vanilla IPLD store as an ADT store.
+func WrapStore(ctx context.Context, store cbor.IpldStore) Store {
+	return &wstore{
+		ctx:       ctx,
+		IpldStore: store,
+	}
+}
 
-type cstore struct {
+type wstore struct {
 	ctx context.Context
 	cbor.IpldStore
 }
 
-func (s *cstore) Context() context.Context {
+var _ Store = &wstore{}
+
+func (s *wstore) Context() context.Context {
 	return s.ctx
 }
 
-func NewStore(ctx context.Context) Store {
-	bs := blockstore.NewBlockstore(datastore.NewMapDatastore())
-	return &cstore{
-		ctx:       ctx,
-		IpldStore: cbor.NewCborStore(bs),
-	}
-}
+// Adapter for a Runtime as an ADT Store.
 
-// AsStore allows Runtime to satisfy the adt.Store interface.
+// Adapts a Runtime as an ADT store.
 func AsStore(rt vmr.Runtime) Store {
 	return rtStore{rt}
 }
 
-var _ Store = &rtStore{}
-
 type rtStore struct {
 	vmr.Runtime
 }
+
+var _ Store = &rtStore{}
 
 func (r rtStore) Context() context.Context {
 	return r.Runtime.Context()

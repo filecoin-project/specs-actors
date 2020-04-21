@@ -14,153 +14,81 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/support/ipld"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
 
 func TestPrecommittedSectorsStore(t *testing.T) {
-	t.Run("Round Trip put get", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+	t.Run("Put, get and delete", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 
-		expect := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(expect)
-		actual := harness.getPreCommit(sectorNo)
+		pc1 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		harness.putPreCommit(pc1)
+		assert.Equal(t, pc1, harness.getPreCommit(sectorNo))
 
-		assert.Equal(t, expect, actual)
-	})
-
-	t.Run("Subsequent puts with same sector number overrides previous value", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-
-		firstPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(firstPut)
-
-		secondPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "2"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(secondPut)
-
-		actual := harness.getPreCommit(sectorNo)
-		assert.NotEqual(t, firstPut, actual)
-		assert.Equal(t, secondPut, actual)
-	})
-
-	t.Run("Round Trip put delete", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-
-		expect := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(expect)
-
-		harness.deletePreCommit(sectorNo)
-		assert.False(t, harness.hasPreCommit(sectorNo))
-	})
-
-	t.Run("Subsequent puts with same sector number and a delete result in not found", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-
-		firstPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(firstPut)
-
-		secondPut := harness.newSectorPreCommitOnChainInfo(sectorNo, tutils.CidFromString(t, "2"), abi.NewTokenAmount(2), abi.ChainEpoch(2))
-		harness.putPreCommit(secondPut)
+		pc2 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("2"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		harness.putPreCommit(pc2)
+		assert.Equal(t, pc2, harness.getPreCommit(sectorNo))
 
 		harness.deletePreCommit(sectorNo)
 		assert.False(t, harness.hasPreCommit(sectorNo))
 	})
 
 	t.Run("Delete nonexistent value returns an error", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
-		err := harness.s.DeletePrecommittedSector(store, sectorNo)
+		err := harness.s.DeletePrecommittedSector(harness.store, sectorNo)
 		assert.Error(t, err)
 	})
 
 	t.Run("Get nonexistent value returns false", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 		assert.False(t, harness.hasPreCommit(sectorNo))
 	})
-
 }
 
 func TestSectorsStore(t *testing.T) {
-	t.Run("Round Trip put get", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+	t.Run("Put get and delete", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		sectorInfo := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), big.NewInt(1), abi.ChainEpoch(1))
-
-		harness.putSector(sectorInfo)
-		harness.hasSectorNo(sectorNo)
-
-		out := harness.getSector(sectorNo)
-		assert.Equal(t, sectorInfo, out)
-	})
-
-	t.Run("Round Trip put delete", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-
-		sectorNo := abi.SectorNumber(1)
-		sectorInfo := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), big.NewInt(1), abi.ChainEpoch(1))
-
-		harness.putSector(sectorInfo)
-		harness.hasSectorNo(sectorNo)
-
-		harness.deleteSectors(uint64(sectorNo))
-		assert.False(t, harness.hasSectorNo(sectorNo))
-	})
-
-	t.Run("Subsequent puts override previous values", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-
-		sectorNo := abi.SectorNumber(1)
-		sectorInfo1 := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "1"), big.NewInt(1), abi.ChainEpoch(1))
-		sectorInfo2 := harness.newSectorOnChainInfo(sectorNo, tutils.CidFromString(t, "2"), big.NewInt(2), abi.ChainEpoch(2))
+		sectorInfo1 := newSectorOnChainInfo(sectorNo, tutils.MakeCID("1"), big.NewInt(1), abi.ChainEpoch(1))
+		sectorInfo2 := newSectorOnChainInfo(sectorNo, tutils.MakeCID("2"), big.NewInt(2), abi.ChainEpoch(2))
 
 		harness.putSector(sectorInfo1)
-		harness.putSector(sectorInfo2)
+		assert.True(t, harness.hasSectorNo(sectorNo))
+		out := harness.getSector(sectorNo)
+		assert.Equal(t, sectorInfo1, out)
 
-		actual := harness.getSector(sectorNo)
-		assert.Equal(t, sectorInfo2, actual)
-		assert.NotEqual(t, sectorInfo1, actual)
+		harness.putSector(sectorInfo2)
+		out = harness.getSector(sectorNo)
+		assert.Equal(t, sectorInfo2, out)
 
 		harness.deleteSectors(uint64(sectorNo))
 		assert.False(t, harness.hasSectorNo(sectorNo))
 	})
 
 	t.Run("Delete nonexistent value returns an error", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
 		bf := abi.NewBitField()
 		bf.Set(uint64(sectorNo))
 
-		err := harness.s.DeleteSectors(store, bf)
-		assert.Error(t, err)
+		assert.Error(t, harness.s.DeleteSectors(harness.store, bf))
 	})
 
 	t.Run("Get nonexistent value returns false", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
 		assert.False(t, harness.hasSectorNo(sectorNo))
 	})
 
 	t.Run("Iterate and Delete multiple sector", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		// set of sectors, the larger numbers here are not significant
 		sectorNos := []uint64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
@@ -168,12 +96,12 @@ func TestSectorsStore(t *testing.T) {
 		// put all the sectors in the store
 		for _, s := range sectorNos {
 			i := int64(0)
-			harness.putSector(harness.newSectorOnChainInfo(abi.SectorNumber(s), tutils.CidFromString(t, fmt.Sprintf("%d", i)), big.NewInt(i), abi.ChainEpoch(i)))
+			harness.putSector(newSectorOnChainInfo(abi.SectorNumber(s), tutils.MakeCID(fmt.Sprintf("%d", i)), big.NewInt(i), abi.ChainEpoch(i)))
 			i++
 		}
 
 		sectorNoIdx := 0
-		err := harness.s.ForEachSector(store, func(si *miner.SectorOnChainInfo) {
+		err := harness.s.ForEachSector(harness.store, func(si *miner.SectorOnChainInfo) {
 			require.Equal(t, abi.SectorNumber(sectorNos[sectorNoIdx]), si.Info.SectorNumber)
 			sectorNoIdx++
 		})
@@ -183,18 +111,15 @@ func TestSectorsStore(t *testing.T) {
 		assert.Equal(t, len(sectorNos), sectorNoIdx)
 
 		harness.deleteSectors(sectorNos...)
-
 		for _, s := range sectorNos {
 			assert.False(t, harness.hasSectorNo(abi.SectorNumber(s)))
 		}
 	})
-
 }
 
 func TestNewSectorsBitField(t *testing.T) {
 	t.Run("Add new sectors happy path", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		// set of sectors, the larger numbers here are not significant
 		sectorNos := []abi.SectorNumber{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
@@ -203,8 +128,7 @@ func TestNewSectorsBitField(t *testing.T) {
 	})
 
 	t.Run("Add new sectors excludes duplicates", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNos := []abi.SectorNumber{1, 1, 2, 2, 3, 4, 5}
 		harness.addNewSectors(sectorNos...)
@@ -212,8 +136,7 @@ func TestNewSectorsBitField(t *testing.T) {
 	})
 
 	t.Run("Remove sectors happy path", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNos := []abi.SectorNumber{1, 2, 3, 4, 5}
 		harness.addNewSectors(sectorNos...)
@@ -228,12 +151,11 @@ func TestNewSectorsBitField(t *testing.T) {
 	})
 
 	t.Run("Add New sectors errors when adding too many new sectors", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		tooManySectors := make([]abi.SectorNumber, miner.NewSectorsPerPeriodMax+1)
-		for i := uint64(0); i < miner.NewSectorsPerPeriodMax+1; i++ {
-			tooManySectors[i] = abi.SectorNumber(i)
+		for i := abi.SectorNumber(0); i < miner.NewSectorsPerPeriodMax+1; i++ {
+			tooManySectors[i] = i
 		}
 
 		err := harness.s.AddNewSectors(tooManySectors...)
@@ -241,7 +163,7 @@ func TestNewSectorsBitField(t *testing.T) {
 
 		// sanity check nothing was added
 		// For omission reason see: https://github.com/filecoin-project/specs-actors/issues/300
-		//assert.Equal(t, uint64(0), harness.getNewSectorCount())
+		//assert.Equal(t, uint64(0), actorHarness.getNewSectorCount())
 	})
 }
 
@@ -254,59 +176,44 @@ func TestSectorExpirationStore(t *testing.T) {
 	sectorExpirations[exp2] = []uint64{6, 7, 8, 9, 10}
 
 	t.Run("Round trip add get sector expirations", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
 		harness.addSectorExpiration(exp2, sectorExpirations[exp2]...)
 
-		out1 := harness.getSectorExpirations(exp1)
-		assert.Equal(t, sectorExpirations[exp1], out1)
-
-		out2 := harness.getSectorExpirations(exp2)
-		assert.Equal(t, sectorExpirations[exp2], out2)
+		assert.Equal(t, sectorExpirations[exp1], harness.getSectorExpirations(exp1))
+		assert.Equal(t, sectorExpirations[exp2], harness.getSectorExpirations(exp2))
 
 		// return nothing if there are no sectors at the epoch
-		out3 := harness.getSectorExpirations(abi.ChainEpoch(0))
-		assert.Empty(t, out3)
-	})
-
-	t.Run("Round trip add remove sector expirations", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
-
-		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
-		harness.addSectorExpiration(exp2, sectorExpirations[exp2]...)
+		assert.Empty(t, harness.getSectorExpirations(abi.ChainEpoch(0)))
 
 		// remove the first sector from expiration set 1
 		harness.removeSectorExpiration(exp1, sectorExpirations[exp1][0])
-		out1 := harness.getSectorExpirations(exp1)
-		assert.Equal(t, sectorExpirations[exp1][1:], out1)
+		assert.Equal(t, sectorExpirations[exp1][1:], harness.getSectorExpirations(exp1))
+		assert.Equal(t, sectorExpirations[exp2], harness.getSectorExpirations(exp2)) // No change
 
 		// remove all sectors from expiration set 2
 		harness.removeSectorExpiration(exp2, sectorExpirations[exp2]...)
-		out2 := harness.getSectorExpirations(exp2)
-		assert.Empty(t, out2)
+		assert.Empty(t, harness.getSectorExpirations(exp2))
 	})
 
 	t.Run("Iteration by expiration", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
 		harness.addSectorExpiration(exp2, sectorExpirations[exp2]...)
 
 		exp1Hit, exp2Hit := false, false
-		err := harness.s.ForEachSectorExpiration(store, func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
+		err := harness.s.ForEachSectorExpiration(harness.store, func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
 			if expiry == exp1 {
-				sectors, err := sectors.All(miner.SectorsMax)
+				sectorSlice, err := sectors.All(miner.SectorsMax)
 				assert.NoError(t, err)
-				assert.Equal(t, sectorExpirations[expiry], sectors)
+				assert.Equal(t, sectorExpirations[expiry], sectorSlice)
 				exp1Hit = true
 			} else if expiry == exp2 {
-				sectors, err := sectors.All(miner.SectorsMax)
+				sectorSlice, err := sectors.All(miner.SectorsMax)
 				assert.NoError(t, err)
-				assert.Equal(t, sectorExpirations[expiry], sectors)
+				assert.Equal(t, sectorExpirations[expiry], sectorSlice)
 				exp2Hit = true
 			} else {
 				t.Fatalf("unexpected expiry value: %v in sector expirations", expiry)
@@ -318,9 +225,8 @@ func TestSectorExpirationStore(t *testing.T) {
 		assert.True(t, exp2Hit)
 	})
 
-	t.Run("Adding sectors at expiry merges to existing and clear expirations", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+	t.Run("Adding sectors at expiry merges with existing", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		mergedSectors := []uint64{21, 22, 23, 24, 25}
 		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
@@ -331,8 +237,7 @@ func TestSectorExpirationStore(t *testing.T) {
 	})
 
 	t.Run("clear sectors by expirations", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
 		harness.addSectorExpiration(exp2, sectorExpirations[exp2]...)
@@ -345,7 +250,6 @@ func TestSectorExpirationStore(t *testing.T) {
 		empty2 := harness.getSectorExpirations(exp2)
 		assert.Empty(t, empty2)
 	})
-
 }
 
 func TestFaultStore(t *testing.T) {
@@ -359,14 +263,13 @@ func TestFaultStore(t *testing.T) {
 	sectorFaults[fault2] = faultSet2
 
 	t.Run("Round trip add remove", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		harness.addFaults(fault1, faultSet1...)
 		harness.addFaults(fault2, faultSet2...)
 
 		fault1Hit, fault2Hit := false, false
-		err := harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+		err := harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
 			if epoch == fault1 {
 				sectors, err := faults.All(uint64(len(faultSet1)))
 				require.NoError(t, err)
@@ -391,7 +294,7 @@ func TestFaultStore(t *testing.T) {
 		harness.removeFaults(faultSet2[2:]...)
 
 		fault1Hit, fault2Hit = false, false
-		err = harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+		err = harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
 			if epoch == fault1 {
 				sectors, err := faults.All(uint64(len(faultSet1)))
 				require.NoError(t, err)
@@ -414,30 +317,26 @@ func TestFaultStore(t *testing.T) {
 	})
 
 	t.Run("Clear all", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		harness.addFaults(fault1, faultSet1...)
 		harness.addFaults(fault2, faultSet2...)
 
 		// now clear all the faults
-		err := harness.s.ClearFaultEpochs(store, fault1, fault2)
+		err := harness.s.ClearFaultEpochs(harness.store, fault1, fault2)
 		require.NoError(t, err)
 
-		err = harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+		err = harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
 			t.Fatalf("unexpected fault epoch: %v", epoch)
 			return nil
 		})
 		require.NoError(t, err)
-
 	})
-
 }
 
 func TestRecoveriesBitfield(t *testing.T) {
 	t.Run("Add new recoveries happy path", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		// set of sectors, the larger numbers here are not significant
 		sectorNos := []uint64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
@@ -446,8 +345,7 @@ func TestRecoveriesBitfield(t *testing.T) {
 	})
 
 	t.Run("Add new recoveries excludes duplicates", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNos := []uint64{1, 1, 2, 2, 3, 4, 5}
 		harness.addRecoveries(sectorNos...)
@@ -455,8 +353,7 @@ func TestRecoveriesBitfield(t *testing.T) {
 	})
 
 	t.Run("Remove recoveries happy path", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNos := []uint64{1, 2, 3, 4, 5}
 		harness.addRecoveries(sectorNos...)
@@ -473,18 +370,16 @@ func TestRecoveriesBitfield(t *testing.T) {
 
 func TestPostSubmissionsBitfield(t *testing.T) {
 	t.Run("Add new submission happy path", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		// set of sectors, the larger numbers here are not significant
-		sectorNos := []uint64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000}
-		harness.addPoStSubmissions(sectorNos...)
-		assert.Equal(t, uint64(len(sectorNos)), harness.getPoStSubmissionsCount())
+		partitionNos := []uint64{10, 20, 30, 40}
+		harness.addPoStSubmissions(partitionNos...)
+		assert.Equal(t, uint64(len(partitionNos)), harness.getPoStSubmissionsCount())
 	})
 
 	t.Run("Add new submission excludes duplicates", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNos := []uint64{1, 1, 2, 2, 3, 4, 5}
 		harness.addPoStSubmissions(sectorNos...)
@@ -492,8 +387,7 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 	})
 
 	t.Run("Clear submission happy path", func(t *testing.T) {
-		store := adt.NewStore(context.Background())
-		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNos := []uint64{1, 2, 3, 4, 5}
 		harness.addPoStSubmissions(sectorNos...)
@@ -504,7 +398,7 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 	})
 }
 
-type minerStateHarness struct {
+type stateHarness struct {
 	t testing.TB
 
 	s     *miner.State
@@ -515,17 +409,17 @@ type minerStateHarness struct {
 // PostSubmissions Bitfield
 //
 
-func (h *minerStateHarness) addPoStSubmissions(partitionNos ...uint64) {
+func (h *stateHarness) addPoStSubmissions(partitionNos ...uint64) {
 	err := h.s.AddPoStSubmissions(bitfield.NewFromSet(partitionNos))
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) clearPoStSubmissions() {
+func (h *stateHarness) clearPoStSubmissions() {
 	err := h.s.ClearPoStSubmissions()
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) getPoStSubmissionsCount() uint64 {
+func (h *stateHarness) getPoStSubmissionsCount() uint64 {
 	count, err := h.s.PostSubmissions.Count()
 	require.NoError(h.t, err)
 	return count
@@ -535,19 +429,19 @@ func (h *minerStateHarness) getPoStSubmissionsCount() uint64 {
 // Recoveries Bitfield
 //
 
-func (h *minerStateHarness) addRecoveries(sectorNos ...uint64) {
+func (h *stateHarness) addRecoveries(sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.AddRecoveries(bf)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) removeRecoveries(sectorNos ...uint64) {
+func (h *stateHarness) removeRecoveries(sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.RemoveRecoveries(bf)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) getRecoveriesCount() uint64 {
+func (h *stateHarness) getRecoveriesCount() uint64 {
 	count, err := h.s.Recoveries.Count()
 	require.NoError(h.t, err)
 	return count
@@ -557,13 +451,13 @@ func (h *minerStateHarness) getRecoveriesCount() uint64 {
 // Faults Store
 //
 
-func (h *minerStateHarness) addFaults(epoch abi.ChainEpoch, sectorNos ...uint64) {
+func (h *stateHarness) addFaults(epoch abi.ChainEpoch, sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.AddFaults(h.store, bf, epoch)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) removeFaults(sectorNos ...uint64) {
+func (h *stateHarness) removeFaults(sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.RemoveFaults(h.store, bf)
 	require.NoError(h.t, err)
@@ -573,7 +467,7 @@ func (h *minerStateHarness) removeFaults(sectorNos ...uint64) {
 // Sector Expiration Store
 //
 
-func (h *minerStateHarness) getSectorExpirations(expiry abi.ChainEpoch) []uint64 {
+func (h *stateHarness) getSectorExpirations(expiry abi.ChainEpoch) []uint64 {
 	bf, err := h.s.GetSectorExpirations(h.store, expiry)
 	require.NoError(h.t, err)
 	sectors, err := bf.All(miner.SectorsMax)
@@ -581,17 +475,17 @@ func (h *minerStateHarness) getSectorExpirations(expiry abi.ChainEpoch) []uint64
 	return sectors
 }
 
-func (h *minerStateHarness) addSectorExpiration(expiry abi.ChainEpoch, sectors ...uint64) {
+func (h *stateHarness) addSectorExpiration(expiry abi.ChainEpoch, sectors ...uint64) {
 	err := h.s.AddSectorExpirations(h.store, expiry, sectors...)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) removeSectorExpiration(expiry abi.ChainEpoch, sectors ...uint64) {
+func (h *stateHarness) removeSectorExpiration(expiry abi.ChainEpoch, sectors ...uint64) {
 	err := h.s.RemoveSectorExpirations(h.store, expiry, sectors...)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) clearSectorExpiration(excitations ...abi.ChainEpoch) {
+func (h *stateHarness) clearSectorExpiration(excitations ...abi.ChainEpoch) {
 	err := h.s.ClearSectorExpirations(h.store, excitations...)
 	require.NoError(h.t, err)
 }
@@ -600,19 +494,19 @@ func (h *minerStateHarness) clearSectorExpiration(excitations ...abi.ChainEpoch)
 // NewSectors BitField Assertions
 //
 
-func (h *minerStateHarness) addNewSectors(sectorNos ...abi.SectorNumber) {
+func (h *stateHarness) addNewSectors(sectorNos ...abi.SectorNumber) {
 	err := h.s.AddNewSectors(sectorNos...)
 	require.NoError(h.t, err)
 }
 
 // makes a bit field from the passed sector numbers
-func (h *minerStateHarness) removeNewSectors(sectorNos ...uint64) {
+func (h *stateHarness) removeNewSectors(sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.RemoveNewSectors(bf)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) getNewSectorCount() uint64 {
+func (h *stateHarness) getNewSectorCount() uint64 {
 	out, err := h.s.NewSectors.Count()
 	require.NoError(h.t, err)
 	return out
@@ -622,24 +516,24 @@ func (h *minerStateHarness) getNewSectorCount() uint64 {
 // Sector Store Assertion Operations
 //
 
-func (h *minerStateHarness) getSectorCount() uint64 {
+func (h *stateHarness) getSectorCount() uint64 {
 	out, err := h.s.GetSectorCount(h.store)
 	require.NoError(h.t, err)
 	return out
 }
 
-func (h *minerStateHarness) hasSectorNo(sectorNo abi.SectorNumber) bool {
+func (h *stateHarness) hasSectorNo(sectorNo abi.SectorNumber) bool {
 	found, err := h.s.HasSectorNo(h.store, sectorNo)
 	require.NoError(h.t, err)
 	return found
 }
 
-func (h *minerStateHarness) putSector(sector *miner.SectorOnChainInfo) {
+func (h *stateHarness) putSector(sector *miner.SectorOnChainInfo) {
 	err := h.s.PutSector(h.store, sector)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) getSector(sectorNo abi.SectorNumber) *miner.SectorOnChainInfo {
+func (h *stateHarness) getSector(sectorNo abi.SectorNumber) *miner.SectorOnChainInfo {
 	sectors, found, err := h.s.GetSector(h.store, sectorNo)
 	require.NoError(h.t, err)
 	assert.True(h.t, found)
@@ -648,7 +542,7 @@ func (h *minerStateHarness) getSector(sectorNo abi.SectorNumber) *miner.SectorOn
 }
 
 // makes a bit field from the passed sector numbers
-func (h *minerStateHarness) deleteSectors(sectorNos ...uint64) {
+func (h *stateHarness) deleteSectors(sectorNos ...uint64) {
 	bf := bitfield.NewFromSet(sectorNos)
 	err := h.s.DeleteSectors(h.store, bf)
 	require.NoError(h.t, err)
@@ -658,73 +552,32 @@ func (h *minerStateHarness) deleteSectors(sectorNos ...uint64) {
 // Precommit Store Operations
 //
 
-func (h *minerStateHarness) putPreCommit(info *miner.SectorPreCommitOnChainInfo) {
+func (h *stateHarness) putPreCommit(info *miner.SectorPreCommitOnChainInfo) {
 	err := h.s.PutPrecommittedSector(h.store, info)
 	require.NoError(h.t, err)
 }
 
-func (h *minerStateHarness) getPreCommit(sectorNo abi.SectorNumber) *miner.SectorPreCommitOnChainInfo {
+func (h *stateHarness) getPreCommit(sectorNo abi.SectorNumber) *miner.SectorPreCommitOnChainInfo {
 	out, found, err := h.s.GetPrecommittedSector(h.store, sectorNo)
 	require.NoError(h.t, err)
 	assert.True(h.t, found)
 	return out
 }
 
-func (h *minerStateHarness) hasPreCommit(sectorNo abi.SectorNumber) bool {
+func (h *stateHarness) hasPreCommit(sectorNo abi.SectorNumber) bool {
 	_, found, err := h.s.GetPrecommittedSector(h.store, sectorNo)
 	require.NoError(h.t, err)
 	return found
 }
 
-func (h *minerStateHarness) deletePreCommit(sectorNo abi.SectorNumber) {
+func (h *stateHarness) deletePreCommit(sectorNo abi.SectorNumber) {
 	err := h.s.DeletePrecommittedSector(h.store, sectorNo)
 	require.NoError(h.t, err)
 }
 
-//
-// Type Construction Methods
-//
-
-// returns a unique SectorPreCommitOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
-func (h *minerStateHarness) newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
-	info := h.newSectorPreCommitInfo(sectorNo, sealed)
-	return &miner.SectorPreCommitOnChainInfo{
-		Info:             *info,
-		PreCommitDeposit: deposit,
-		PreCommitEpoch:   epoch,
-	}
-}
-
-// returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
-func (h *minerStateHarness) newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
-	info := h.newSectorPreCommitInfo(sectorNo, sealed)
-	return &miner.SectorOnChainInfo{
-		Info:               *info,
-		ActivationEpoch:    activation,
-		DealWeight:         weight,
-		VerifiedDealWeight: weight,
-	}
-}
-
-const (
-	sectorSealRandEpochValue = abi.ChainEpoch(1)
-	sectorExpiration         = abi.ChainEpoch(1)
-)
-
-// returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
-func (h *minerStateHarness) newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
-	return &miner.SectorPreCommitInfo{
-		RegisteredProof: abi.RegisteredProof_StackedDRG32GiBPoSt,
-		SectorNumber:    sectorNo,
-		SealedCID:       sealed,
-		SealRandEpoch:   sectorSealRandEpochValue,
-		DealIDs:         nil,
-		Expiration:      sectorExpiration,
-	}
-}
-
-func constructStateHarness(t *testing.T, store adt.Store, periodBoundary abi.ChainEpoch) *minerStateHarness {
+func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHarness {
 	// store init
+	store := ipld.NewADTStore(context.Background())
 	emptyMap, err := adt.MakeEmptyMap(store).Root()
 	require.NoError(t, err)
 
@@ -745,10 +598,53 @@ func constructStateHarness(t *testing.T, store adt.Store, periodBoundary abi.Cha
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(0), newSectorsCount)
 
-	return &minerStateHarness{
+	return &stateHarness{
 		t: t,
 
 		s:     state,
 		store: store,
 	}
 }
+
+//
+// Type Construction Methods
+//
+
+// returns a unique SectorPreCommitOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
+func newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
+	info := newSectorPreCommitInfo(sectorNo, sealed)
+	return &miner.SectorPreCommitOnChainInfo{
+		Info:             *info,
+		PreCommitDeposit: deposit,
+		PreCommitEpoch:   epoch,
+	}
+}
+
+// returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
+func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
+	info := newSectorPreCommitInfo(sectorNo, sealed)
+	return &miner.SectorOnChainInfo{
+		Info:               *info,
+		ActivationEpoch:    activation,
+		DealWeight:         weight,
+		VerifiedDealWeight: weight,
+	}
+}
+
+const (
+	sectorSealRandEpochValue = abi.ChainEpoch(1)
+	sectorExpiration         = abi.ChainEpoch(1)
+)
+
+// returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
+func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
+	return &miner.SectorPreCommitInfo{
+		RegisteredProof: abi.RegisteredProof_StackedDRG32GiBPoSt,
+		SectorNumber:    sectorNo,
+		SealedCID:       sealed,
+		SealRandEpoch:   sectorSealRandEpochValue,
+		DealIDs:         nil,
+		Expiration:      sectorExpiration,
+	}
+}
+

@@ -7,10 +7,9 @@ require (
 	github.com/filecoin-project/go-amt-ipld/v2 v2.0.1-0.20200131012142-05d80eeccc5e
 	github.com/filecoin-project/go-bitfield v0.0.0-20200416002808-b3ee67ec9060
 	github.com/gopherjs/gopherjs v0.0.0-20190812055157-5d271430af9f // indirect
+	github.com/ipfs/go-block-format v0.0.2
 	github.com/ipfs/go-cid v0.0.5
-	github.com/ipfs/go-datastore v0.4.1
 	github.com/ipfs/go-hamt-ipld v0.0.15-0.20200131012125-dd88a59d3f2e
-	github.com/ipfs/go-ipfs-blockstore v1.0.0
 	github.com/ipfs/go-ipld-cbor v0.0.4
 	github.com/ipfs/go-ipld-format v0.0.2 // indirect
 	github.com/ipfs/go-log v1.0.0 // indirect
