@@ -513,28 +513,27 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) (err err
 
 	changed := map[uint64]*abi.BitField{}
 
-	bf := &abi.BitField{}
-	err = arr.ForEach(bf, func(i int64) error {
-		c1, err := bf.Count()
+	bf1 := &abi.BitField{}
+	err = arr.ForEach(bf1, func(i int64) error {
+		c1, err := bf1.Count()
 		if err != nil {
 			return err
 		}
 
-		bf, err = bitfield.SubtractBitField(bf, sectorNos)
+		bf2, err := bitfield.SubtractBitField(bf1, sectorNos)
 		if err != nil {
 			return err
 		}
 
-		c2, err := bf.Count()
+		c2, err := bf2.Count()
 		if err != nil {
 			return err
 		}
 
 		if c1 != c2 {
-			changed[uint64(i)] = bf
+			changed[uint64(i)] = bf2
 		}
 
-		bf = &abi.BitField{}
 		return nil
 	})
 	if err != nil {

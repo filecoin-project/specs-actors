@@ -358,68 +358,80 @@ func TestFaultStore(t *testing.T) {
 	sectorFaults[fault1] = faultSet1
 	sectorFaults[fault2] = faultSet2
 
-	store := adt.NewStore(context.Background())
-	harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+	t.Run("Round trip add remove", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
 
-	harness.addFaults(fault1, faultSet1...)
-	harness.addFaults(fault2, faultSet2...)
+		harness.addFaults(fault1, faultSet1...)
+		harness.addFaults(fault2, faultSet2...)
 
-	fault1Hit, fault2Hit := false, false
-	err := harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
-		if epoch == fault1 {
-			sectors, err := faults.All(uint64(len(faultSet1)))
-			require.NoError(t, err)
-			assert.Equal(t, faultSet1, sectors)
-			fault1Hit = true
-		} else if epoch == fault2 {
-			sectors, err := faults.All(uint64(len(faultSet2)))
-			require.NoError(t, err)
-			assert.Equal(t, faultSet2, sectors)
-			fault2Hit = true
-		} else {
+		fault1Hit, fault2Hit := false, false
+		err := harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+			if epoch == fault1 {
+				sectors, err := faults.All(uint64(len(faultSet1)))
+				require.NoError(t, err)
+				assert.Equal(t, faultSet1, sectors)
+				fault1Hit = true
+			} else if epoch == fault2 {
+				sectors, err := faults.All(uint64(len(faultSet2)))
+				require.NoError(t, err)
+				assert.Equal(t, faultSet2, sectors)
+				fault2Hit = true
+			} else {
+				t.Fatalf("unexpected fault epoch: %v", epoch)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		assert.True(t, fault1Hit)
+		assert.True(t, fault2Hit)
+
+		// remove the faults
+		harness.removeFaults(faultSet1[1:]...)
+		harness.removeFaults(faultSet2[2:]...)
+
+		fault1Hit, fault2Hit = false, false
+		err = harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+			if epoch == fault1 {
+				sectors, err := faults.All(uint64(len(faultSet1)))
+				require.NoError(t, err)
+				assert.Equal(t, faultSet1[:1], sectors, "expected: %v, actual: %v", faultSet1[:1], sectors)
+				fault1Hit = true
+			} else if epoch == fault2 {
+				sectors, err := faults.All(uint64(len(faultSet2)))
+				require.NoError(t, err)
+				assert.Equal(t, faultSet2[:2], sectors, "expected: %v, actual: %v", faultSet2[:2], sectors)
+				fault2Hit = true
+
+			} else {
+				t.Fatalf("unexpected fault epoch: %v", epoch)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		assert.True(t, fault1Hit)
+		assert.True(t, fault2Hit)
+	})
+
+	t.Run("Clear all", func(t *testing.T) {
+		store := adt.NewStore(context.Background())
+		harness := constructStateHarness(t, store, abi.ChainEpoch(0))
+
+		harness.addFaults(fault1, faultSet1...)
+		harness.addFaults(fault2, faultSet2...)
+
+		// now clear all the faults
+		err := harness.s.ClearFaultEpochs(store, fault1, fault2)
+		require.NoError(t, err)
+
+		err = harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
 			t.Fatalf("unexpected fault epoch: %v", epoch)
-		}
-		return nil
+			return nil
+		})
+		require.NoError(t, err)
+
 	})
-	require.NoError(t, err)
-	assert.True(t, fault1Hit)
-	assert.True(t, fault2Hit)
 
-	// remove the faults
-	harness.removeFaults(faultSet1[1:]...)
-	harness.removeFaults(faultSet2[2:]...)
-
-	fault1Hit, fault2Hit = false, false
-	err = harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
-		if epoch == fault1 {
-			sectors, err := faults.All(uint64(len(faultSet1)))
-			require.NoError(t, err)
-			assert.Equal(t, faultSet1[:1], sectors, "expected: %v, actual: %v", faultSet1[:1], sectors)
-			fault1Hit = true
-		} else if epoch == fault2 {
-			sectors, err := faults.All(uint64(len(faultSet2)))
-			require.NoError(t, err)
-			assert.Equal(t, faultSet2[:2], sectors, "expected: %v, actual: %v", faultSet2[:2], sectors)
-			fault2Hit = true
-
-		} else {
-			t.Fatalf("unexpected fault epoch: %v", epoch)
-		}
-		return nil
-	})
-	require.NoError(t, err)
-	assert.True(t, fault1Hit)
-	assert.True(t, fault2Hit)
-
-	// now clear all the faults
-	err = harness.s.ClearFaultEpochs(store, fault1, fault2)
-	require.NoError(t, err)
-
-	err = harness.s.ForEachFaultEpoch(store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
-		t.Fatalf("unexpected fault epoch: %v", epoch)
-		return nil
-	})
-	require.NoError(t, err)
 }
 
 func TestRecoveriesBitfield(t *testing.T) {
