@@ -36,7 +36,6 @@ const (
 type CronEventPayload struct {
 	EventType       CronEventType
 	Sectors         *abi.BitField
-	RegisteredProof abi.RegisteredProof // Used for PreCommitExpiry verification}
 }
 
 type Actor struct{}
@@ -99,8 +98,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 
 	// Register cron callback for epoch before the next proving period starts.
 	deadline, _ := state.DeadlineInfo(rt.CurrEpoch())
-	periodEnd := deadline.PeriodStart + WPoStProvingPeriod - 1
-	enrollCronEvent(rt, periodEnd, &CronEventPayload{
+	enrollCronEvent(rt, deadline.PeriodEnd(), &CronEventPayload{
 		EventType: CronEventProvingPeriod,
 	})
 
@@ -324,10 +322,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 // Sector Commitment //
 ///////////////////////
 
-type PreCommitSectorParams struct {
-	Info SectorPreCommitInfo
-}
-
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
 func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
@@ -339,6 +333,12 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
+		} else if found {
+			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already precommitted", params.SectorNumber)
+		}
+
 		if found, err := st.HasSectorNo(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 		} else if found {
@@ -383,7 +383,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	cronPayload := CronEventPayload{
 		EventType:       CronEventPreCommitExpiry,
 		Sectors:         bf,
-		RegisteredProof: params.RegisteredProof,
 	}
 
 	msd, ok := MaxSealDuration[params.RegisteredProof]
@@ -419,10 +418,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	msd, ok := MaxSealDuration[precommit.Info.RegisteredProof]
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "No max seal duration for proof type: %d", precommit.Info.RegisteredProof)
+		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.RegisteredProof)
 	}
-	if rt.CurrEpoch() > precommit.PreCommitEpoch+msd {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid ProveCommitSector epoch (cur=%d, pcepoch=%d)", rt.CurrEpoch(), precommit.PreCommitEpoch)
+	proveCommitDue := precommit.PreCommitEpoch + msd
+	if rt.CurrEpoch() > proveCommitDue {
+		rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", sectorNo, rt.CurrEpoch(), proveCommitDue)
 	}
 
 	// will abort if seal invalid
@@ -893,7 +893,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	case CronEventProvingPeriod:
 		handleProvingPeriod(rt)
 	case CronEventPreCommitExpiry:
-		checkPrecommitExpiry(rt, payload.Sectors, payload.RegisteredProof)
+		checkPrecommitExpiry(rt, payload.Sectors)
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
 	}
@@ -910,7 +910,6 @@ func handleProvingPeriod(rt Runtime) {
 	var st State
 	currEpoch := rt.CurrEpoch()
 	var deadline *DeadlineInfo
-	var periodEnd, nextPeriodStart abi.ChainEpoch
 	var fullPeriod bool
 	{
 		// Vest locked funds.
@@ -924,23 +923,17 @@ func handleProvingPeriod(rt Runtime) {
 	}
 
 	{
-		// Detect and penalize missing faults.
+		// Detect and penalize missing proofs.
 		var detectedFaultSectors []*SectorOnChainInfo
-		var penalty abi.TokenAmount
+		penalty := big.Zero()
 		rt.State().Transaction(&st, func() interface{} {
 			deadline, fullPeriod = st.DeadlineInfo(currEpoch)
-			if !fullPeriod {
-				penalty = big.Zero()
-				return nil // Skip checking faults on the first, incomplete period.
+			AssertMsg(currEpoch == deadline.PeriodEnd(), "proving period cron at epoch %d, period ends at %d", currEpoch, deadline.PeriodEnd())
+			if fullPeriod { // Skip checking faults on the first, incomplete period.
+				deadlines, err := st.LoadDeadlines(store)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+				detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, currEpoch)
 			}
-			nextPeriodStart = deadline.PeriodStart + WPoStProvingPeriod
-			periodEnd = nextPeriodStart - 1
-			AssertMsg(currEpoch == periodEnd, "proving period cron at epoch %d, period ends at %d", currEpoch, periodEnd)
-
-			deadlines, err := st.LoadDeadlines(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-
-			detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, currEpoch)
 			return nil
 		})
 
@@ -997,13 +990,15 @@ func handleProvingPeriod(rt Runtime) {
 			newSectors, err := st.NewSectors.All(NewSectorsPerPeriodMax)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expand new sectors")
 
-			assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, currEpoch-1, nil)
-			err = AssignNewSectors(deadlines, newSectors, assignmentSeed)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
+			if len(newSectors) > 0 {
+				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, currEpoch-1, nil)
+				err = AssignNewSectors(deadlines, newSectors, assignmentSeed)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
-			// Store updated deadline state.
-			err = st.SaveDeadlines(store, deadlines)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
+				// Store updated deadline state.
+				err = st.SaveDeadlines(store, deadlines)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
+			}
 
 			// Reset PoSt submissions for next period.
 			err = st.ClearPoStSubmissions()
@@ -1013,7 +1008,7 @@ func handleProvingPeriod(rt Runtime) {
 	}
 
 	// Schedule cron callback for next period
-	nextPeriodEnd := nextPeriodStart + WPoStProvingPeriod - 1
+	nextPeriodEnd := deadline.PeriodEnd() + WPoStProvingPeriod
 	enrollCronEvent(rt, nextPeriodEnd, &CronEventPayload{
 		EventType: CronEventProvingPeriod,
 	})
@@ -1164,7 +1159,7 @@ func popExpiredFaults(st *State, store adt.Store, latestTermination abi.ChainEpo
 	return allExpiries, allOngoing, err
 }
 
-func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof abi.RegisteredProof) {
+func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 	store := adt.AsStore(rt)
 	var st State
 
@@ -1177,8 +1172,8 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField, regProof abi.Regist
 			if err != nil {
 				return err
 			}
-			if !found || rt.CurrEpoch()-sector.PreCommitEpoch <= MaxSealDuration[regProof] {
-				// already deleted or not yet expired
+			if !found {
+				// already committed/deleted
 				return nil
 			}
 

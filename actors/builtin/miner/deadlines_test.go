@@ -3,12 +3,15 @@ package miner_test
 import (
 	"testing"
 
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 )
+
+const partSize = miner.WPoStPartitionSectors
 
 func TestProvingPeriodDeadlines(t *testing.T) {
 	PP := miner.WPoStProvingPeriod
@@ -93,7 +96,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 }
 
 func assertDeadlineInfo(t *testing.T, boundary, current, periodStart abi.ChainEpoch, index uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
-	expected := deadline(current, periodStart, index, deadlineOpen)
+	expected := makeDeadline(current, periodStart, index, deadlineOpen)
 	actual, started := miner.ComputeProvingPeriodDeadline(boundary, current)
 	assert.Equal(t, actual.PeriodStart >= 0, started)
 	assert.True(t, actual.IsOpen())
@@ -102,7 +105,7 @@ func assertDeadlineInfo(t *testing.T, boundary, current, periodStart abi.ChainEp
 	return actual
 }
 
-func deadline(currEpoch, periodStart abi.ChainEpoch, deadline uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
+func makeDeadline(currEpoch, periodStart abi.ChainEpoch, deadline uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
 	return &miner.DeadlineInfo{
 		CurrentEpoch: currEpoch,
 		PeriodStart:  periodStart,
@@ -264,11 +267,130 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 }
 
+func TestComputePartitionsSectors(t *testing.T) {
+	t.Run("no partitions due at empty deadline", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 1)
+
+		// No partitions at deadline 0
+		_, err := miner.ComputePartitionsSectors(dls, 0, []uint64{0})
+		require.Error(t, err)
+
+		// No partitions at deadline 2
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{0})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{1})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{2})
+		require.Error(t, err)
+	})
+	t.Run("single sector", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 1)
+		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0})
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(0, 1), partitions[0])
+	})
+	t.Run("full partition", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[10] = bf(1234, partSize)
+		partitions, err := miner.ComputePartitionsSectors(dls, 10, []uint64{0})
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(1234, partSize), partitions[0])
+	})
+	t.Run("full plus partial partition", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[10] = bf(5555, partSize+1)
+		partitions, err := miner.ComputePartitionsSectors(dls, 10, []uint64{0}) // First partition
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(5555, partSize), partitions[0])
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 10, []uint64{1}) // Second partition
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(5555+partSize, 1), partitions[0])
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 10, []uint64{0, 1}) // Both partitions
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(partitions))
+		assertBfEqual(t, bf(5555, partSize), partitions[0])
+		assertBfEqual(t, bf(5555+partSize, 1), partitions[1])
+	})
+	t.Run("multiple partitions", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 3*partSize+1)
+		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0, 1, 2, 3})
+		require.NoError(t, err)
+		assert.Equal(t, 4, len(partitions))
+		assertBfEqual(t, bf(0, partSize), partitions[0])
+		assertBfEqual(t, bf(1*partSize, partSize), partitions[1])
+		assertBfEqual(t, bf(2*partSize, partSize), partitions[2])
+		assertBfEqual(t, bf(3*partSize, 1), partitions[3])
+	})
+	t.Run("partitions numbered across deadlines", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 3*partSize+1)
+		dls.Due[3] = bf(3*partSize+1, 1)
+		dls.Due[5] = bf(3*partSize+1+1, 2*partSize)
+
+		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0, 1, 2, 3})
+		require.NoError(t, err)
+		assert.Equal(t, 4, len(partitions))
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 3, []uint64{4})
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(3*partSize+1, 1), partitions[0])
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 5, []uint64{5, 6})
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(partitions))
+		assertBfEqual(t, bf(3*partSize+1+1, partSize), partitions[0])
+		assertBfEqual(t, bf(3*partSize+1+1+partSize, partSize), partitions[1])
+
+		// Mismatched deadline/partition pairs
+		_, err = miner.ComputePartitionsSectors(dls, 1, []uint64{4})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{4})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{0})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{3})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{5})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 4, []uint64{5})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 5, []uint64{0})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 5, []uint64{7})
+		require.Error(t, err)
+	})
+}
+
 //
 // Deadlines Utils
 //
 
-const partSize = miner.WPoStPartitionSectors
+func assertBfEqual(t *testing.T, expected, actual *bitfield.BitField) {
+	ex, err := expected.All(1 << 20)
+	require.NoError(t, err)
+	ac, err := actual.All(1 << 20)
+	require.NoError(t, err)
+	assert.Equal(t, ex, ac)
+}
+
+// Creates a bitfield with a contiguous run of `count` values from `first.
+func bf(first uint64, count uint64) *abi.BitField {
+	values := make([]uint64, count)
+	for i := range values {
+		values[i] = first + uint64(i)
+	}
+	return bitfield.NewFromSet(values)
+}
 
 func deadlinesWithFullPartitions(t *testing.T, n uint64) *miner.Deadlines {
 	gen := [miner.WPoStPeriodDeadlines]uint64{}

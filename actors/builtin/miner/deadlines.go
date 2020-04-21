@@ -33,6 +33,14 @@ func (d *DeadlineInfo) FaultCutoffPassed() bool {
 	return d.CurrentEpoch >= d.FaultCutoff
 }
 
+func (d *DeadlineInfo) PeriodEnd() abi.ChainEpoch {
+	return d.PeriodStart + WPoStProvingPeriod - 1
+}
+
+func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
+	return d.PeriodStart + WPoStProvingPeriod
+}
+
 // Returns the epoch that starts the current proving period, the current deadline index,
 // and whether the proving period starts on or after epoch 0 (i.e. is a whole period).
 // The proving period start is the largest number <= the current epoch that has remainder mod WPoStProvingPeriod
@@ -104,7 +112,8 @@ func ComputePartitionsSectors(d *Deadlines, deadlineIndex uint64, partitions []u
 	if err != nil {
 		return nil, fmt.Errorf("failed to count partitions for deadline %d: %w", deadlineIndex, err)
 	}
-	deadlinePartitionCount := deadlineSectorCount / WPoStPartitionSectors
+	// ceil(deadlineSectorCount / WPoStPartitionSectors)
+	deadlinePartitionCount := (deadlineSectorCount + WPoStPartitionSectors - 1) / WPoStPartitionSectors
 
 	// Work out which sector numbers the partitions correspond to.
 	deadlineSectors := d.Due[deadlineIndex]
