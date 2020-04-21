@@ -112,7 +112,8 @@ func ComputePartitionsSectors(d *Deadlines, deadlineIndex uint64, partitions []u
 	if err != nil {
 		return nil, fmt.Errorf("failed to count partitions for deadline %d: %w", deadlineIndex, err)
 	}
-	deadlinePartitionCount := deadlineSectorCount / WPoStPartitionSectors
+	// ceil(deadlineSectorCount / WPoStPartitionSectors)
+	deadlinePartitionCount := (deadlineSectorCount + WPoStPartitionSectors - 1) / WPoStPartitionSectors
 
 	// Work out which sector numbers the partitions correspond to.
 	deadlineSectors := d.Due[deadlineIndex]
