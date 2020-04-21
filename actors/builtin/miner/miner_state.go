@@ -798,6 +798,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	if err != nil {
 		return err
 	}
+	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
 	return nil
 }
