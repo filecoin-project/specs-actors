@@ -1914,7 +1914,7 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{131}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
@@ -1933,17 +1933,6 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 	if err := t.Sectors.MarshalCBOR(w); err != nil {
 		return err
 	}
-
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
-	if t.RegisteredProof >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.RegisteredProof))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.RegisteredProof)-1)); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -1958,7 +1947,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2007,31 +1996,6 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 			}
 		}
 
-	}
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.RegisteredProof = abi.RegisteredProof(extraI)
 	}
 	return nil
 }
