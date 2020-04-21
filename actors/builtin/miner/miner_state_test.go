@@ -3,6 +3,7 @@ package miner_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -399,6 +400,7 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 }
 
 func TestVestingFunds_AddLockedFunds(t *testing.T) {
+	// TODO(frrist): merge these top-level methods into fewer
 	t.Run("LockedFunds increases with sequential calls", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		vspec := &miner.VestSpec{
@@ -440,6 +442,93 @@ func TestVestingFundsStore(t *testing.T) {
 	assert.Equal(t, abi.NewTokenAmount(51), vested)
 }
 
+func TestVestingFunds(t *testing.T) {
+	t.Run("Linear Vesting Unlock Vested tokens in 2 steps half now, half in following.", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   100,
+			StepDuration: 1,
+			Quantization: 2,
+		}
+		vestStart := abi.ChainEpoch(100)
+		vestSum := abi.NewTokenAmount(1000)
+
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+
+		// just past the half way point.
+		testAtEpoch := vestStart + (vspec.VestPeriod / 2) + 1
+
+		// unlock half the amount vested
+		amountVested := harness.unlockVestedFunds(testAtEpoch)
+		assert.Equal(t, vestSum.Int64()/2, amountVested.Int64())
+
+		// unlock the other half
+		testAtEpoch = vestStart + vspec.VestPeriod + 1
+		amountVested = harness.unlockVestedFunds(testAtEpoch)
+		assert.Equal(t, vestSum.Int64()/2, amountVested.Int64())
+
+		// ensure no more funds are returned
+		amountVested = harness.unlockVestedFunds(testAtEpoch)
+		assert.Equal(t, int64(0), amountVested.Int64())
+	})
+
+	t.Run("Linear Vesting Unlock Vested tokens consistent across step durations", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   100,
+			StepDuration: 9,
+			Quantization: 2,
+		}
+		vestStart := abi.ChainEpoch(100)
+		vestSum := abi.NewTokenAmount(1000)
+
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+
+		amountVested := harness.unlockVestedFunds(vestStart)
+		assert.Equal(t, big.Zero(), amountVested)
+
+		amountVested = harness.unlockVestedFunds(vestStart + vspec.StepDuration + vspec.Quantization)
+		assert.Equal(t, big.NewInt(100), amountVested)
+
+		amountVested = harness.unlockVestedFunds(vestStart + vspec.StepDuration*2 + vspec.Quantization)
+		assert.Equal(t, big.NewInt(80), amountVested)
+
+		amountVested = harness.unlockVestedFunds(vestStart + vspec.StepDuration*3 + vspec.Quantization)
+		assert.Equal(t, big.NewInt(100), amountVested)
+	})
+
+	t.Run("Unlock unvested funds leaving bucket with modified amount", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   100,
+			StepDuration: 9,
+			Quantization: 2,
+		}
+		vestStart := abi.ChainEpoch(100)
+		vestSum := abi.NewTokenAmount(1000)
+
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+		//epoch 110: locked Funds = 100
+		//epoch 118: locked Funds = 80
+		//epoch 128: locked Funds = 100
+		//epoch 136: locked Funds = 80
+		amountUnlocked := harness.unlockUnvestedFunds(vestStart, big.NewInt(179))
+		assert.Equal(t, big.NewInt(179), amountUnlocked)
+
+		//epoch 110: locked Funds = 0 (deleted)
+		//epoch 118: locked Funds = 1
+		//epoch 128: locked Funds = 100
+		//epoch 136: locked Funds = 80
+		amountVested := harness.unlockVestedFunds(118 + 1)
+		assert.Equal(t, big.NewInt(1), amountVested)
+
+	})
+
+}
+
 type stateHarness struct {
 	t testing.TB
 
@@ -466,6 +555,21 @@ func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
 	amount, err := h.s.UnlockVestedFunds(h.store, epoch)
 	require.NoError(h.t, err)
 	return amount
+}
+
+// utility to print the contents of the vesting store.
+func (h *stateHarness) debugVestingStore() string {
+	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
+	if err != nil {
+		panic(err)
+	}
+	var sb strings.Builder
+	var lockedEntry abi.TokenAmount
+	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+		sb.WriteString(fmt.Sprintf("Entry: %d Funds: %s\n", k, lockedEntry.String()))
+		return nil
+	})
+	return sb.String()
 }
 
 //
