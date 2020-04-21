@@ -420,6 +420,26 @@ func TestVestingFunds_AddLockedFunds(t *testing.T) {
 
 }
 
+func TestVestingFundsStore(t *testing.T) {
+	harness := constructStateHarness(t, abi.ChainEpoch(0))
+	vspec := &miner.VestSpec{
+		InitialDelay: 0,
+		VestPeriod:   1,
+		StepDuration: 1,
+		Quantization: 1,
+	}
+
+	vestStart := abi.ChainEpoch(10)
+	vestSum := abi.NewTokenAmount(100)
+
+	harness.addLockedFunds(vestStart, vestSum, vspec)
+	unvestedFunds := harness.unlockUnvestedFunds(vestStart, abi.NewTokenAmount(49))
+	assert.Equal(t, abi.NewTokenAmount(49), unvestedFunds)
+
+	vestedFunds := harness.unlockVestedFunds(vestStart + 2)
+	assert.Equal(t, abi.NewTokenAmount(51), vestedFunds)
+}
+
 type stateHarness struct {
 	t testing.TB
 
