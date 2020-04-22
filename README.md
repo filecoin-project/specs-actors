@@ -1,4 +1,6 @@
 # Filecoin actors
+[![CircleCI](https://circleci.com/gh/filecoin-project/specs-actors.svg?style=svg)](https://circleci.com/gh/filecoin-project/specs-actors)
+[![codecov](https://codecov.io/gh/filecoin-project/specs-actors/branch/master/graph/badge.svg)](https://codecov.io/gh/filecoin-project/specs-actors)
 
 This repo is the specification of the Filecoin builtin actors, in the form of executable code.
 
