@@ -3,7 +3,6 @@ package miner_test
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
