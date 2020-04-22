@@ -476,6 +476,16 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 			vepocs: []int64{0, 0, 0, 40, 0, 40, 0, 20, 0},
 		},
 		{
+			desc: "vest funds with delay=1 period=5 step=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 1,
+				VestPeriod:   5,
+				StepDuration: 2,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 0, 0, 40, 0, 40, 0, 20, 0},
+		},
+		{
 			desc: "vest funds with period=5 step=2 quantization=2",
 			vspec: &miner.VestSpec{
 				InitialDelay: 0,
@@ -523,7 +533,7 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 				StepDuration: 1,
 				Quantization: 1,
 			},
-			vepocs: []int64{0, 0, 20, 20, 20, 20, 20, 0},
+			vepocs: []int64{0, 0, 0, 0, 0, 0, 0, 20, 20, 20, 20, 20, 0},
 		},
 	}
 	for _, tc := range testcase {
@@ -535,7 +545,7 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 
 			var totalVested int64
 			for e, v := range tc.vepocs {
-				assert.Equal(t, abi.NewTokenAmount(v), harness.unlockVestedFunds(vestStart+tc.vspec.InitialDelay+abi.ChainEpoch(e)))
+				assert.Equal(t, abi.NewTokenAmount(v), harness.unlockVestedFunds(vestStart+abi.ChainEpoch(e)))
 				totalVested += v
 				assert.Equal(t, vestSum-totalVested, harness.s.LockedFunds.Int64())
 			}
