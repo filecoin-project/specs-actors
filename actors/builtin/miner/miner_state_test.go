@@ -399,26 +399,6 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 	})
 }
 
-func TestVestingFundsStore(t *testing.T) {
-	harness := constructStateHarness(t, abi.ChainEpoch(0))
-	vspec := &miner.VestSpec{
-		InitialDelay: 0,
-		VestPeriod:   1,
-		StepDuration: 1,
-		Quantization: 1,
-	}
-
-	vestStart := abi.ChainEpoch(10)
-	vestSum := abi.NewTokenAmount(100)
-
-	harness.addLockedFunds(vestStart, vestSum, vspec)
-	unlocked := harness.unlockUnvestedFunds(vestStart, abi.NewTokenAmount(49))
-	assert.Equal(t, abi.NewTokenAmount(49), unlocked)
-
-	vested := harness.unlockVestedFunds(vestStart + 2)
-	assert.Equal(t, abi.NewTokenAmount(51), vested)
-}
-
 func TestVesting_AddLockedFunds_Table(t *testing.T) {
 	vestStart := abi.ChainEpoch(10)
 	vestSum := int64(100)
