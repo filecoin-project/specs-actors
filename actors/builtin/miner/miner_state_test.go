@@ -398,11 +398,74 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 	})
 }
 
+func TestVestingFunds_AddLockedFunds(t *testing.T) {
+	t.Run("LockedFunds increases with sequential calls", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   1,
+			StepDuration: 1,
+			Quantization: 1,
+		}
+
+		vestStart := abi.ChainEpoch(10)
+		vestSum := abi.NewTokenAmount(100)
+
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+		assert.Equal(t, vestSum, harness.s.LockedFunds)
+
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+		assert.Equal(t, big.Mul(vestSum, big.NewInt(2)), harness.s.LockedFunds)
+	})
+
+}
+
+func TestVestingFundsStore(t *testing.T) {
+	harness := constructStateHarness(t, abi.ChainEpoch(0))
+	vspec := &miner.VestSpec{
+		InitialDelay: 0,
+		VestPeriod:   1,
+		StepDuration: 1,
+		Quantization: 1,
+	}
+
+	vestStart := abi.ChainEpoch(10)
+	vestSum := abi.NewTokenAmount(100)
+
+	harness.addLockedFunds(vestStart, vestSum, vspec)
+	unlocked := harness.unlockUnvestedFunds(vestStart, abi.NewTokenAmount(49))
+	assert.Equal(t, abi.NewTokenAmount(49), unlocked)
+
+	vested := harness.unlockVestedFunds(vestStart + 2)
+	assert.Equal(t, abi.NewTokenAmount(51), vested)
+}
+
 type stateHarness struct {
 	t testing.TB
 
 	s     *miner.State
 	store adt.Store
+}
+
+//
+// Vesting Store
+//
+
+func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
+	err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
+	require.NoError(h.t, err)
+}
+
+func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.TokenAmount) abi.TokenAmount {
+	amount, err := h.s.UnlockUnvestedFunds(h.store, epoch, target)
+	require.NoError(h.t, err)
+	return amount
+}
+
+func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
+	amount, err := h.s.UnlockVestedFunds(h.store, epoch)
+	require.NoError(h.t, err)
+	return amount
 }
 
 //
@@ -647,4 +710,3 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 		Expiration:      sectorExpiration,
 	}
 }
-
