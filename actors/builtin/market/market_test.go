@@ -305,7 +305,7 @@ func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, provider add
 
 	rt.Verify()
 
-	rt.SetBalance(big.Add(rt.GetBalance(), amount))
+	rt.SetBalance(big.Add(rt.Balance(), amount))
 }
 
 // addParticipantFunds is a helper method to setup non-provider storage market participant funds
@@ -318,7 +318,7 @@ func (h *marketActorTestHarness) addParticipantFunds(rt *mock.Runtime, addr addr
 
 	rt.Verify()
 
-	rt.SetBalance(big.Add(rt.GetBalance(), amount))
+	rt.SetBalance(big.Add(rt.Balance(), amount))
 }
 
 func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller(rt *mock.Runtime, provider address.Address, owner address.Address, worker address.Address) {
