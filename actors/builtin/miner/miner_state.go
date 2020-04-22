@@ -823,15 +823,15 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 		if amountUnlocked.LessThan(target) {
 			if k >= int64(currEpoch) {
 				unlockAmount := big.Min(big.Sub(target, amountUnlocked), lockedEntry)
-
-				lockedEntry = big.Sub(lockedEntry, unlockAmount)
-				if err := vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
-					return err
-				}
 				amountUnlocked = big.Add(amountUnlocked, unlockAmount)
+				lockedEntry = big.Sub(lockedEntry, unlockAmount)
 
 				if lockedEntry.IsZero() {
 					toDelete = append(toDelete, uint64(k))
+				} else {
+					if err = vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
+						return err
+					}
 				}
 			}
 			return nil

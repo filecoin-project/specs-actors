@@ -433,11 +433,11 @@ func TestVestingFundsStore(t *testing.T) {
 	vestSum := abi.NewTokenAmount(100)
 
 	harness.addLockedFunds(vestStart, vestSum, vspec)
-	unvestedFunds := harness.unlockUnvestedFunds(vestStart, abi.NewTokenAmount(49))
-	assert.Equal(t, abi.NewTokenAmount(49), unvestedFunds)
+	unlocked := harness.unlockUnvestedFunds(vestStart, abi.NewTokenAmount(49))
+	assert.Equal(t, abi.NewTokenAmount(49), unlocked)
 
-	vestedFunds := harness.unlockVestedFunds(vestStart + 2)
-	assert.Equal(t, abi.NewTokenAmount(51), vestedFunds)
+	vested := harness.unlockVestedFunds(vestStart + 2)
+	assert.Equal(t, abi.NewTokenAmount(51), vested)
 }
 
 type stateHarness struct {
