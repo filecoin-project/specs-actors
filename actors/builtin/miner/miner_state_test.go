@@ -399,29 +399,6 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 	})
 }
 
-func TestVestingFunds_AddLockedFunds(t *testing.T) {
-	// TODO(frrist): merge these top-level methods into fewer
-	t.Run("LockedFunds increases with sequential calls", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		vspec := &miner.VestSpec{
-			InitialDelay: 0,
-			VestPeriod:   1,
-			StepDuration: 1,
-			Quantization: 1,
-		}
-
-		vestStart := abi.ChainEpoch(10)
-		vestSum := abi.NewTokenAmount(100)
-
-		harness.addLockedFunds(vestStart, vestSum, vspec)
-		assert.Equal(t, vestSum, harness.s.LockedFunds)
-
-		harness.addLockedFunds(vestStart, vestSum, vspec)
-		assert.Equal(t, big.Mul(vestSum, big.NewInt(2)), harness.s.LockedFunds)
-	})
-
-}
-
 func TestVestingFundsStore(t *testing.T) {
 	harness := constructStateHarness(t, abi.ChainEpoch(0))
 	vspec := &miner.VestSpec{
@@ -442,10 +419,158 @@ func TestVestingFundsStore(t *testing.T) {
 	assert.Equal(t, abi.NewTokenAmount(51), vested)
 }
 
-// TODO make top level tests for vested, unvested and then together.
+func TestVesting_AddLockedFunds_Table(t *testing.T) {
+	vestStart := abi.ChainEpoch(10)
+	vestSum := int64(100)
 
-func TestVestingFunds(t *testing.T) {
-	t.Run("Vest all funds in single epoch", func(t *testing.T) {
+	testcase := []struct {
+		desc   string
+		vspec  *miner.VestSpec
+		vepocs []int64
+	}{
+		{
+			desc: "vest funds in a single epoch",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   1,
+				StepDuration: 1,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 100, 0},
+		},
+		{
+			desc: "vest funds with period=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   2,
+				StepDuration: 1,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 50, 50, 0},
+		},
+		{
+			desc: "vest funds with period=2 quantization=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   2,
+				StepDuration: 1,
+				Quantization: 2,
+			},
+			vepocs: []int64{0, 0, 0, 100, 0},
+		},
+		{
+			desc: "vest funds with period=3",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   3,
+				StepDuration: 1,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 33, 33, 34, 0},
+		},
+		{
+			desc: "vest funds with period=3 quantization=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   3,
+				StepDuration: 1,
+				Quantization: 2,
+			},
+			vepocs: []int64{0, 0, 0, 66, 0, 34, 0},
+		},
+		{desc: "vest funds with period=2 step=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   2,
+				StepDuration: 2,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 0, 100, 0},
+		},
+		{
+			desc: "vest funds with period=5 step=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   5,
+				StepDuration: 2,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 0, 40, 0, 40, 0, 20, 0},
+		},
+		{
+			desc: "vest funds with period=5 step=2 quantization=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   5,
+				StepDuration: 2,
+				Quantization: 2,
+			},
+			vepocs: []int64{0, 0, 0, 40, 0, 40, 0, 20, 0},
+		},
+		{
+			desc: "vest funds with period=5 step=3 quantization=1",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   5,
+				StepDuration: 3,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 0, 0, 60, 0, 0, 40, 0},
+		},
+		{
+			desc: "vest funds with period=5 step=3 quantization=2",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   5,
+				StepDuration: 3,
+				Quantization: 2,
+			},
+			vepocs: []int64{0, 0, 0, 0, 0, 80, 0, 20, 0},
+		},
+		{
+			desc: "(step greater than period) vest funds with period=5 step=6 quantization=1",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   5,
+				StepDuration: 6,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 0, 0, 0, 0, 0, 100, 0},
+		},
+		{
+			desc: "vest funds with delay=5 period=5 step=1 quantization=1",
+			vspec: &miner.VestSpec{
+				InitialDelay: 5,
+				VestPeriod:   5,
+				StepDuration: 1,
+				Quantization: 1,
+			},
+			vepocs: []int64{0, 0, 20, 20, 20, 20, 20, 0},
+		},
+	}
+	for _, tc := range testcase {
+		t.Run(tc.desc, func(t *testing.T) {
+			harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+			harness.addLockedFunds(vestStart, abi.NewTokenAmount(vestSum), tc.vspec)
+			assert.Equal(t, abi.NewTokenAmount(vestSum), harness.s.LockedFunds)
+
+			var totalVested int64
+			for e, v := range tc.vepocs {
+				assert.Equal(t, abi.NewTokenAmount(v), harness.unlockVestedFunds(vestStart+tc.vspec.InitialDelay+abi.ChainEpoch(e)))
+				totalVested += v
+				assert.Equal(t, vestSum-totalVested, harness.s.LockedFunds.Int64())
+			}
+
+			assert.Equal(t, abi.NewTokenAmount(vestSum), abi.NewTokenAmount(totalVested))
+			assert.True(t, harness.vestingFundsStoreEmpty())
+			assert.Zero(t, harness.s.LockedFunds.Int64())
+		})
+	}
+}
+
+func TestVestingFunds_AddLockedFunds(t *testing.T) {
+	t.Run("LockedFunds increases with sequential calls", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		vspec := &miner.VestSpec{
 			InitialDelay: 0,
@@ -453,80 +578,15 @@ func TestVestingFunds(t *testing.T) {
 			StepDuration: 1,
 			Quantization: 1,
 		}
+
 		vestStart := abi.ChainEpoch(10)
 		vestSum := abi.NewTokenAmount(100)
+
 		harness.addLockedFunds(vestStart, vestSum, vspec)
-		amountVested := harness.unlockVestedFunds(vestStart + 2)
-		assert.Equal(t, vestSum, amountVested)
-		assert.Zero(t, harness.s.LockedFunds.Int64())
-		assert.True(t, harness.vestingFundsStoreEmpty())
-		// subsequent calls to unlock return 0
-		amountVested = harness.unlockVestedFunds(vestStart + 2)
-		assert.Zero(t, amountVested)
+		assert.Equal(t, vestSum, harness.s.LockedFunds)
 
-	})
-	t.Run("Sum of all entries in vesting store is equal to vested sum", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		vspec := &miner.VestSpec{
-			InitialDelay: 0,
-			VestPeriod:   10,
-			StepDuration: 1,
-			Quantization: 2,
-		}
-		vestStart := abi.ChainEpoch(10)
-		vestSum := abi.NewTokenAmount(100)
 		harness.addLockedFunds(vestStart, vestSum, vspec)
-		// Entry: 12 Funds: 20
-		// Entry: 14 Funds: 20
-		// Entry: 16 Funds: 20
-		// Entry: 18 Funds: 20
-		// Entry: 20 Funds: 20
-
-		totalVested := abi.NewTokenAmount(0)
-		for e := vestStart; e <= vestStart+vspec.VestPeriod+1; e++ {
-			amountVested := harness.unlockVestedFunds(e)
-			if e == 13 || e == 15 || e == 17 || e == 19 || e == 21 {
-				assert.Equal(t, abi.NewTokenAmount(20), amountVested)
-				totalVested = big.Add(totalVested, amountVested)
-			} else {
-				assert.Equal(t, abi.NewTokenAmount(0), amountVested)
-			}
-		}
-		assert.Equal(t, vestSum, totalVested)
-		assert.Zero(t, harness.s.LockedFunds.Int64())
-		assert.True(t, harness.vestingFundsStoreEmpty())
-	})
-
-	t.Run("Vesting with non-zero initial delay", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		vspec := &miner.VestSpec{
-			InitialDelay: 10,
-			VestPeriod:   10,
-			StepDuration: 1,
-			Quantization: 2,
-		}
-		vestStart := abi.ChainEpoch(10)
-		vestSum := abi.NewTokenAmount(100)
-		harness.addLockedFunds(vestStart, vestSum, vspec)
-		// Entry: 22 Funds: 20
-		// Entry: 24 Funds: 20
-		// Entry: 26 Funds: 20
-		// Entry: 28 Funds: 20
-		// Entry: 30 Funds: 20
-
-		totalVested := abi.NewTokenAmount(0)
-		for e := vestStart; e <= vestStart+vspec.VestPeriod+vspec.InitialDelay+1; e++ {
-			amountVested := harness.unlockVestedFunds(e)
-			if e == 23 || e == 25 || e == 27 || e == 29 || e == 31 {
-				assert.Equal(t, abi.NewTokenAmount(20), amountVested)
-				totalVested = big.Add(totalVested, amountVested)
-			} else {
-				assert.Equal(t, abi.NewTokenAmount(0), amountVested)
-			}
-		}
-		assert.Equal(t, vestSum, totalVested)
-		assert.Zero(t, harness.s.LockedFunds.Int64())
-		assert.True(t, harness.vestingFundsStoreEmpty())
+		assert.Equal(t, big.Mul(vestSum, big.NewInt(2)), harness.s.LockedFunds)
 	})
 
 	t.Run("Vests when quantize, step duration, and vesting period are coprime", func(t *testing.T) {
@@ -540,10 +600,8 @@ func TestVestingFunds(t *testing.T) {
 		vestStart := abi.ChainEpoch(10)
 		vestSum := abi.NewTokenAmount(100)
 		harness.addLockedFunds(vestStart, vestSum, vspec)
-		// Entry: 21 Funds: 40
-		// Entry: 28 Funds: 26
-		// Entry: 35 Funds: 26
-		// Entry: 42 Funds: 8
+		assert.Equal(t, vestSum, harness.s.LockedFunds)
+
 		totalVested := abi.NewTokenAmount(0)
 		for e := vestStart; e <= 43; e++ {
 			amountVested := harness.unlockVestedFunds(e)
@@ -568,107 +626,95 @@ func TestVestingFunds(t *testing.T) {
 		assert.Zero(t, harness.s.LockedFunds.Int64())
 		assert.True(t, harness.vestingFundsStoreEmpty())
 	})
+}
 
-	t.Run("Vests alternating amounts", func(t *testing.T) {
+func TestVestingFunds_UnvestedFunds(t *testing.T) {
+	t.Run("Unlock unvested funds leaving bucket with non-zero tokens", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		vspec := &miner.VestSpec{
 			InitialDelay: 0,
-			VestPeriod:   100,
-			StepDuration: 9,
-			Quantization: 2,
+			VestPeriod:   5,
+			StepDuration: 1,
+			Quantization: 1,
 		}
 		vestStart := abi.ChainEpoch(100)
-		vestSum := abi.NewTokenAmount(1000)
+		vestSum := abi.NewTokenAmount(100)
+
 		harness.addLockedFunds(vestStart, vestSum, vspec)
-		/*
-			Entry: 110 Funds: 100
-			Entry: 118 Funds: 80
-			Entry: 128 Funds: 100
-			Entry: 136 Funds: 80
-			Entry: 146 Funds: 100
-			Entry: 154 Funds: 80
-			Entry: 164 Funds: 100
-			Entry: 172 Funds: 80
-			Entry: 182 Funds: 100
-			Entry: 190 Funds: 80
-			Entry: 200 Funds: 100
-		*/
-		// mapping of epochs to value vested at it, epochs are all incremented by 1 since vesting occurs after them
-		vestEpochs := map[abi.ChainEpoch]int64{
-			111: 100, 119: 80, 129: 100, 137: 80, 147: 100,
-			155: 80, 165: 100, 173: 80, 183: 100, 191: 80, 201: 100,
-		}
-		totalVested := abi.NewTokenAmount(0)
-		for e := vestStart; e < vestStart+vspec.VestPeriod+2; e++ {
-			amountVested := harness.unlockVestedFunds(e)
-			if a, vests := vestEpochs[e]; vests {
-				assert.Equal(t, abi.NewTokenAmount(a), amountVested)
-				totalVested = big.Add(totalVested, amountVested)
-			} else {
-				assert.Equal(t, abi.NewTokenAmount(0), amountVested)
-			}
-		}
-		assert.Equal(t, vestSum, totalVested)
+
+		amountUnlocked := harness.unlockUnvestedFunds(vestStart, big.NewInt(39))
+		assert.Equal(t, big.NewInt(39), amountUnlocked)
+
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart))
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+1))
+
+		// expected to be zero due to unlocking of UNvested funds
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+2))
+		// expected to be non-zero due to unlocking of UNvested funds
+		assert.Equal(t, abi.NewTokenAmount(1), harness.unlockVestedFunds(vestStart+3))
+
+		assert.Equal(t, abi.NewTokenAmount(20), harness.unlockVestedFunds(vestStart+4))
+		assert.Equal(t, abi.NewTokenAmount(20), harness.unlockVestedFunds(vestStart+5))
+		assert.Equal(t, abi.NewTokenAmount(20), harness.unlockVestedFunds(vestStart+6))
+
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+7))
+
 		assert.Zero(t, harness.s.LockedFunds.Int64())
 		assert.True(t, harness.vestingFundsStoreEmpty())
-	})
-
-	t.Run("Unlock unvested funds leaving bucket with modified amount", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		vspec := &miner.VestSpec{
-			InitialDelay: 0,
-			VestPeriod:   100,
-			StepDuration: 9,
-			Quantization: 2,
-		}
-		vestStart := abi.ChainEpoch(100)
-		vestSum := abi.NewTokenAmount(1000)
-
-		harness.addLockedFunds(vestStart, vestSum, vspec)
-		//epoch 110: locked Funds = 100
-		//epoch 118: locked Funds = 80
-		//epoch 128: locked Funds = 100
-		//epoch 136: locked Funds = 80
-		amountUnlocked := harness.unlockUnvestedFunds(vestStart, big.NewInt(179))
-		assert.Equal(t, big.NewInt(179), amountUnlocked)
-
-		//epoch 110: locked Funds = 0 (deleted)
-		//epoch 118: locked Funds = 1 (modified amount)
-		//epoch 128: locked Funds = 100
-		//epoch 136: locked Funds = 80
-		amountVested := harness.unlockVestedFunds(118 + 1)
-		assert.Equal(t, big.NewInt(1), amountVested)
 	})
 
 	t.Run("Unlock unvested funds leaving bucket with zero tokens", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		vspec := &miner.VestSpec{
 			InitialDelay: 0,
-			VestPeriod:   100,
-			StepDuration: 9,
-			Quantization: 2,
+			VestPeriod:   5,
+			StepDuration: 1,
+			Quantization: 1,
 		}
 		vestStart := abi.ChainEpoch(100)
-		vestSum := abi.NewTokenAmount(1000)
+		vestSum := abi.NewTokenAmount(100)
 
 		harness.addLockedFunds(vestStart, vestSum, vspec)
-		//epoch 110: locked Funds = 100
-		//epoch 118: locked Funds = 80
-		//epoch 128: locked Funds = 100
-		//epoch 136: locked Funds = 80
-		amountUnlocked := harness.unlockUnvestedFunds(vestStart, big.NewInt(180))
-		assert.Equal(t, big.NewInt(180), amountUnlocked)
 
-		//epoch 110: locked Funds = 0 (deleted)
-		//epoch 118: locked Funds = 0 (deleted)
-		//epoch 128: locked Funds = 100
-		//epoch 136: locked Funds = 80
-		amountVested := harness.unlockVestedFunds(118 + 1)
-		assert.Equal(t, big.NewInt(0), amountVested)
+		amountUnlocked := harness.unlockUnvestedFunds(vestStart, big.NewInt(40))
+		assert.Equal(t, big.NewInt(40), amountUnlocked)
 
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart))
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+1))
+
+		// expected to be zero due to unlocking of UNvested funds
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+2))
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+3))
+
+		assert.Equal(t, abi.NewTokenAmount(20), harness.unlockVestedFunds(vestStart+4))
+		assert.Equal(t, abi.NewTokenAmount(20), harness.unlockVestedFunds(vestStart+5))
+		assert.Equal(t, abi.NewTokenAmount(20), harness.unlockVestedFunds(vestStart+6))
+
+		assert.Equal(t, abi.NewTokenAmount(0), harness.unlockVestedFunds(vestStart+7))
+
+		assert.Zero(t, harness.s.LockedFunds.Int64())
+		assert.True(t, harness.vestingFundsStoreEmpty())
 	})
 
 	t.Run("Unlock all unvested funds", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   5,
+			StepDuration: 1,
+			Quantization: 1,
+		}
+		vestStart := abi.ChainEpoch(10)
+		vestSum := abi.NewTokenAmount(100)
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+		unvestedFunds := harness.unlockUnvestedFunds(vestStart, vestSum)
+		assert.Equal(t, vestSum, unvestedFunds)
+
+		assert.Zero(t, harness.s.LockedFunds.Int64())
+		assert.True(t, harness.vestingFundsStoreEmpty())
+	})
+
+	t.Run("Unlock unvested funds value greater than LockedFunds", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		vspec := &miner.VestSpec{
 			InitialDelay: 0,
@@ -679,8 +725,9 @@ func TestVestingFunds(t *testing.T) {
 		vestStart := abi.ChainEpoch(10)
 		vestSum := abi.NewTokenAmount(100)
 		harness.addLockedFunds(vestStart, vestSum, vspec)
-		unvestedFunds := harness.unlockUnvestedFunds(vestStart, vestSum)
+		unvestedFunds := harness.unlockUnvestedFunds(vestStart, abi.NewTokenAmount(200))
 		assert.Equal(t, vestSum, unvestedFunds)
+
 		assert.Zero(t, harness.s.LockedFunds.Int64())
 		assert.True(t, harness.vestingFundsStoreEmpty())
 
@@ -698,6 +745,10 @@ type stateHarness struct {
 //
 // Vesting Store
 //
+
+func (h *stateHarness) assertZeroTokens(token abi.TokenAmount) {
+	assert.Equal(h.t, big.Zero(), token)
+}
 
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
 	err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
