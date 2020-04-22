@@ -438,8 +438,7 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 			},
 			vepocs: []int64{0, 0, 0, 100, 0},
 		},
-		{
-			desc: "vest funds with period=3",
+		{desc: "vest funds with period=3",
 			vspec: &miner.VestSpec{
 				InitialDelay: 0,
 				VestPeriod:   3,
@@ -726,10 +725,6 @@ type stateHarness struct {
 // Vesting Store
 //
 
-func (h *stateHarness) assertZeroTokens(token abi.TokenAmount) {
-	assert.Equal(h.t, big.Zero(), token)
-}
-
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
 	err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
 	require.NoError(h.t, err)
@@ -758,21 +753,6 @@ func (h *stateHarness) vestingFundsStoreEmpty() bool {
 	})
 	require.NoError(h.t, err)
 	return empty
-}
-
-// utility to print the contents of the vesting store.
-func (h *stateHarness) debugVestingStore() string {
-	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
-	if err != nil {
-		panic(err)
-	}
-	var sb strings.Builder
-	var lockedEntry abi.TokenAmount
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		sb.WriteString(fmt.Sprintf("Entry: %d Funds: %s\n", k, lockedEntry.String()))
-		return nil
-	})
-	return sb.String()
 }
 
 //
