@@ -18,3 +18,8 @@ Releases of this repo follow semantic versioning rules interpreted for distribut
   (which would require a major version change for this too).
 - A patch version change indicates a backward compatible fix or improvement that doesn't change state evaluation
   semantics or exported interfaces.
+
+## License
+This repository is dual-licensed under Apache 2.0 and MIT terms.
+
+Copyright 2019-2020. Protocol Labs, Inc.
