@@ -798,6 +798,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	if err != nil {
 		return err
 	}
+	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
 	return nil
 }
@@ -821,12 +822,16 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
 		if amountUnlocked.LessThan(target) {
 			if k >= int64(currEpoch) {
-				unlockAmount := big.Max(big.Sub(target, amountUnlocked), lockedEntry)
-				lockedEntry = big.Sub(lockedEntry, unlockAmount)
+				unlockAmount := big.Min(big.Sub(target, amountUnlocked), lockedEntry)
 				amountUnlocked = big.Add(amountUnlocked, unlockAmount)
+				lockedEntry = big.Sub(lockedEntry, unlockAmount)
 
 				if lockedEntry.IsZero() {
 					toDelete = append(toDelete, uint64(k))
+				} else {
+					if err = vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
