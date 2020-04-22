@@ -5,7 +5,8 @@ type DomainSeparationTag int
 
 const (
 	DomainSeparationTag_TicketProduction DomainSeparationTag = 1 + iota
-	DomainSeparationTag_ElectionPoStChallengeSeed
+	DomainSeparationTag_ElectionProofProduction
+	DomainSeparationTag_WinningPoStChallengeSeed
 	DomainSeparationTag_WindowedPoStChallengeSeed
 	DomainSeparationTag_SealRandomness
 	DomainSeparationTag_InteractiveSealChallengeSeed
