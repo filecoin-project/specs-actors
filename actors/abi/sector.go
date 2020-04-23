@@ -114,13 +114,13 @@ func (p RegisteredProof) SectorSize() (SectorSize, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredWinningPoStProof() (RegisteredProof, error) {
 	switch p {
-	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWinningPoSt:
+	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWindowPoSt, RegisteredProof_StackedDRG32GiBWinningPoSt:
 		return RegisteredProof_StackedDRG32GiBWinningPoSt, nil
-	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWinningPoSt:
+	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWindowPoSt, RegisteredProof_StackedDRG2KiBWinningPoSt:
 		return RegisteredProof_StackedDRG2KiBWinningPoSt, nil
-	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBWinningPoSt:
+	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBWindowPoSt, RegisteredProof_StackedDRG8MiBWinningPoSt:
 		return RegisteredProof_StackedDRG8MiBWinningPoSt, nil
-	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBWinningPoSt:
+	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBWindowPoSt, RegisteredProof_StackedDRG512MiBWinningPoSt:
 		return RegisteredProof_StackedDRG512MiBWinningPoSt, nil
 	default:
 		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
@@ -131,13 +131,13 @@ func (p RegisteredProof) RegisteredWinningPoStProof() (RegisteredProof, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredWindowPoStProof() (RegisteredProof, error) {
 	switch p {
-	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWindowPoSt:
+	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWinningPoSt, RegisteredProof_StackedDRG32GiBWindowPoSt:
 		return RegisteredProof_StackedDRG32GiBWindowPoSt, nil
-	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWindowPoSt:
+	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWinningPoSt, RegisteredProof_StackedDRG2KiBWindowPoSt:
 		return RegisteredProof_StackedDRG2KiBWindowPoSt, nil
-	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBWindowPoSt:
+	case RegisteredProof_StackedDRG8MiBSeal, RegisteredProof_StackedDRG8MiBWinningPoSt, RegisteredProof_StackedDRG8MiBWindowPoSt:
 		return RegisteredProof_StackedDRG8MiBWindowPoSt, nil
-	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBWindowPoSt:
+	case RegisteredProof_StackedDRG512MiBSeal, RegisteredProof_StackedDRG512MiBWinningPoSt, RegisteredProof_StackedDRG512MiBWindowPoSt:
 		return RegisteredProof_StackedDRG512MiBWindowPoSt, nil
 	default:
 		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
