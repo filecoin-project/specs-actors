@@ -6,6 +6,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
+	"github.com/minio/blake2b-simd"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 )
@@ -26,8 +27,9 @@ func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 		miner:       addr.Address{},
 		idAddresses: make(map[addr.Address]addr.Address),
 
-		state: cid.Undef,
-		store: make(map[cid.Cid][]byte),
+		state:    cid.Undef,
+		store:    make(map[cid.Cid][]byte),
+		hashfunc: blake2b.Sum256,
 
 		balance:       abi.NewTokenAmount(0),
 		valueReceived: abi.NewTokenAmount(0),
@@ -87,12 +89,7 @@ func (b *RuntimeBuilder) WithActorType(addr addr.Address, code cid.Cid) *Runtime
 	return b
 }
 
-func (b *RuntimeBuilder) WithVerifiesSig(f VerifyFunc) *RuntimeBuilder {
-	b.rt.SetVerifier(f)
-	return b
-}
-
-func (b *RuntimeBuilder) WithHasher(f HasherFunc) *RuntimeBuilder {
-	b.rt.SetHasher(f)
+func (b *RuntimeBuilder) WithHasher(f func(data []byte) [32]byte) *RuntimeBuilder {
+	b.rt.hashfunc = f
 	return b
 }

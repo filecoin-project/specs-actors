@@ -257,7 +257,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		err := eventPayload.MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		cronParams := power.EnrollCronEventParams{
-			EventEpoch: rt.GetEpoch() + miner.MaxSealDuration[params.RegisteredProof] + 1,
+			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.RegisteredProof] + 1,
 			Payload:    buf.Bytes(),
 		}
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
@@ -279,7 +279,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	}
 	{
 		var buf bytes.Buffer
-		err := rt.GetReceiver().MarshalCBOR(&buf)
+		err := rt.Receiver().MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness("sealrand"))
 	}
@@ -291,7 +291,7 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeProvingPeriodCronEventParams(h.t, rt.GetEpoch()+miner.WPoStProvingPeriod), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronEventParams(h.t, rt.Epoch()+miner.WPoStProvingPeriod), big.Zero(), nil, exitcode.Ok)
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
 		EventType: miner.CronEventProvingPeriod,
