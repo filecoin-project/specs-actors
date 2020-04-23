@@ -34,8 +34,8 @@ const (
 )
 
 type CronEventPayload struct {
-	EventType       CronEventType
-	Sectors         *abi.BitField
+	EventType CronEventType
+	Sectors   *abi.BitField
 }
 
 type Actor struct{}
@@ -73,6 +73,12 @@ type ConstructorParams = power.MinerConstructorParams
 
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
+
+	// Sanity check that we've been given a valid peer ID
+	_, err := peer.IDFromString(string(params.PeerId))
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid peer ID in parameters: %s", err)
+	}
 
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
@@ -381,8 +387,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Request deferred Cron check for PreCommit expiry check.
 	cronPayload := CronEventPayload{
-		EventType:       CronEventPreCommitExpiry,
-		Sectors:         bf,
+		EventType: CronEventPreCommitExpiry,
+		Sectors:   bf,
 	}
 
 	msd, ok := MaxSealDuration[params.RegisteredProof]
