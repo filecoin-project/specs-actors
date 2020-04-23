@@ -38,7 +38,7 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
 
-	st := ConstructState(rewards)
+	st := ConstructState()
 	rt.State().Create(st)
 	return nil
 }

@@ -398,7 +398,7 @@ func (a Actor) computeInitialPledge(rt Runtime, desc *SectorStorageWeightDesc) a
 	}
 
 	qapower := QAPowerForWeight(desc)
-	initialPledge := InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), st.TotalPledgeCollateral, epochReward)
+	initialPledge := InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.CirculatingTokenSupply(), st.TotalPledgeCollateral, epochReward)
 
 	return initialPledge
 }

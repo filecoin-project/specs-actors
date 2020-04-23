@@ -76,7 +76,9 @@ type Runtime interface {
 	// Provides the system call interface.
 	Syscalls() Syscalls
 
-	TotalFilCircSupply() abi.TokenAmount
+	// The token supply in circulation.
+	// This is
+	CirculatingTokenSupply() abi.TokenAmount
 
 	// Provides a Go context for use by HAMT, etc.
 	// The VM is intended to provide an idealised machine abstraction, with infinite storage etc, so this context

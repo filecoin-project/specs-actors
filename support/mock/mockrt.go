@@ -650,7 +650,7 @@ func (rt *Runtime) failTestNow(msg string, args ...interface{}) {
 	rt.t.FailNow()
 }
 
-func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
+func (rt *Runtime) CirculatingTokenSupply() abi.TokenAmount {
 	panic("todo crypto econ")
 }
 

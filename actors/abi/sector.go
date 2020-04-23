@@ -57,7 +57,7 @@ type StoragePower = big.Int
 
 type SectorQuality = big.Int
 
-// The unit of spacetime committed to the network
+// The unit of spacetime committed to the network // FIXME move to reward actor
 type Spacetime = big.Int
 
 func NewStoragePower(n int64) StoragePower {
