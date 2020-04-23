@@ -8,6 +8,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,16 @@ import (
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
+
+var testPid peer.ID
+
+func init() {
+	pid, err := peer.IDB58Decode("12D3KooWGzxzKZYveHXtpG6AsrUJBcWxHBFS2HsEoGTxrMLvKXtf")
+	if err != nil {
+		panic(err)
+	}
+	testPid = pid
+}
 
 const SectorSize = abi.SectorSize(32 << 20)
 
@@ -49,7 +60,7 @@ func TestConstruction(t *testing.T) {
 			OwnerAddr:  owner,
 			WorkerAddr: worker,
 			SectorSize: SectorSize,
-			PeerId:     "peer",
+			PeerId:     testPid,
 		}
 
 		provingPeriodBoundary := abi.ChainEpoch(2386) // This is just set from running the code.
@@ -169,7 +180,6 @@ func TestCommitments(t *testing.T) {
 		// TODO: test insufficient funds when the precommit deposit is set above zero
 	})
 
-
 	// TODO
 	// already proven
 	// commitment expires before proof
@@ -219,7 +229,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime, nextPPStart abi.Chai
 		OwnerAddr:  h.owner,
 		WorkerAddr: h.worker,
 		SectorSize: SectorSize,
-		PeerId:     "peer",
+		PeerId:     testPid,
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
