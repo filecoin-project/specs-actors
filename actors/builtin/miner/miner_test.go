@@ -8,6 +8,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,16 @@ import (
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
+
+var testPid peer.ID
+
+func init() {
+	pid, err := peer.IDB58Decode("12D3KooWGzxzKZYveHXtpG6AsrUJBcWxHBFS2HsEoGTxrMLvKXtf")
+	if err != nil {
+		panic(err)
+	}
+	testPid = pid
+}
 
 const SectorSize = abi.SectorSize(32 << 20)
 
@@ -49,7 +60,7 @@ func TestConstruction(t *testing.T) {
 			OwnerAddr:  owner,
 			WorkerAddr: worker,
 			SectorSize: SectorSize,
-			PeerId:     "peer",
+			PeerId:     testPid,
 		}
 
 		provingPeriodBoundary := abi.ChainEpoch(2386) // This is just set from running the code.
@@ -169,7 +180,6 @@ func TestCommitments(t *testing.T) {
 		// TODO: test insufficient funds when the precommit deposit is set above zero
 	})
 
-
 	// TODO
 	// already proven
 	// commitment expires before proof
@@ -219,7 +229,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime, nextPPStart abi.Chai
 		OwnerAddr:  h.owner,
 		WorkerAddr: h.worker,
 		SectorSize: SectorSize,
-		PeerId:     "peer",
+		PeerId:     testPid,
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
@@ -257,7 +267,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		err := eventPayload.MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		cronParams := power.EnrollCronEventParams{
-			EventEpoch: rt.GetEpoch() + miner.MaxSealDuration[params.RegisteredProof] + 1,
+			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.RegisteredProof] + 1,
 			Payload:    buf.Bytes(),
 		}
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
@@ -279,7 +289,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	}
 	{
 		var buf bytes.Buffer
-		err := rt.GetReceiver().MarshalCBOR(&buf)
+		err := rt.Receiver().MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness("sealrand"))
 	}
@@ -291,7 +301,7 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeProvingPeriodCronEventParams(h.t, rt.GetEpoch()+miner.WPoStProvingPeriod), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronEventParams(h.t, rt.Epoch()+miner.WPoStProvingPeriod), big.Zero(), nil, exitcode.Ok)
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
 		EventType: miner.CronEventProvingPeriod,

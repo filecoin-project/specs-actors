@@ -12,11 +12,6 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-// Number of token units in an abstract "FIL" token.
-// The network works purely in the indivisible token amounts. This constant converts to a fixed decimal with more
-// human-friendly scale.
-const TokenPrecision = int64(1_000_000_000_000_000_000)
-
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
