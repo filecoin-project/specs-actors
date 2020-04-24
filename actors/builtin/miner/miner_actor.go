@@ -1005,9 +1005,7 @@ func handleProvingPeriod(rt Runtime) {
 				err = st.SaveDeadlines(store, deadlines)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
 
-				if err := st.ClearNewSectors(); err != nil {
-					t.Abortf(exitcode.ErrIllegalState, "failed to clear newsectors %v", err)
-				}
+				st.NewSectors = abi.NewBitField()
 			}
 
 			// Reset PoSt submissions for next period.
