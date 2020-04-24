@@ -49,7 +49,7 @@ func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
 func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *DeadlineInfo {
 	periodProgress := currEpoch - periodStart
 	deadlineIdx := uint64(periodProgress / WPoStChallengeWindow)
-	if deadlineIdx < 0 { // Period not yet started.
+	if periodProgress < 0 { // Period not yet started.
 		deadlineIdx = 0
 	}
 	deadlineOpen := periodStart + (abi.ChainEpoch(deadlineIdx) * WPoStChallengeWindow)
