@@ -102,9 +102,10 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmount {
+	rt.ValidateImmediateCallerAcceptAny()
+
 	var st State
 	rt.State().Readonly(&st)
-
 	return &st.LastPerEpochReward
 }
 
