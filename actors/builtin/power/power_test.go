@@ -5,18 +5,19 @@ import (
 	"context"
 	"testing"
 
+	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 
-	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
@@ -27,17 +28,10 @@ func TestExports(t *testing.T) {
 }
 
 func TestConstruction(t *testing.T) {
-	actor := spActorHarness{power.Actor{}, t}
-
-	owner1 := tutil.NewIDAddr(t, 101)
-	worker1 := tutil.NewIDAddr(t, 102)
-	miner1 := tutil.NewIDAddr(t, 103)
-
-	owner2 := tutil.NewIDAddr(t, 104)
-	worker2 := tutil.NewIDAddr(t, 105)
-	miner2 := tutil.NewIDAddr(t, 106)
-
-	unused := tutil.NewIDAddr(t, 999)
+	actor := newHarness(t)
+	owner := tutil.NewIDAddr(t, 101)
+	miner := tutil.NewIDAddr(t, 103)
+	actr := tutil.NewActorAddr(t, "actor")
 
 	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
@@ -50,7 +44,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner1, worker1, miner1, unused, "miner1", abi.SectorSize(int64(32)))
+		actor.createMiner(rt, owner, owner, miner, actr, "miner", abi.SectorSize(int64(32)))
 
 		rt.Verify()
 
@@ -74,15 +68,31 @@ func TestConstruction(t *testing.T) {
 
 		verifyEmptyMap(t, rt, st.CronEventQueue)
 	})
+}
 
-	t.Run("ensure cronevents scheduled in null rounds are executed on next block", func(t *testing.T) {
+func TestCron(t *testing.T) {
+	actor := newHarness(t)
+	miner1 := tutil.NewIDAddr(t, 101)
+	miner2 := tutil.NewIDAddr(t, 102)
+
+	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+
+	t.Run("calls reward actor", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner1, worker1, miner1, unused, "miner1", abi.SectorSize(int64(32)))
-		actor.createMiner(rt, owner2, worker2, miner2, unused, "miner2", abi.SectorSize(int64(32)))
-
+		expectedPower := big.NewInt(0)
+		rt.SetEpoch(1)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, abi.NewTokenAmount(0), nil, 0)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
+	})
+
+	t.Run("event scheduled in null round called next round", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
 
 		//  0 - genesis
 		//  1 - block - registers events
@@ -90,38 +100,49 @@ func TestConstruction(t *testing.T) {
 		//  3 - null
 		//  4 - block - has event
 
-		enrollCronEventParams1 := &power.EnrollCronEventParams{
-			EventEpoch: 2,
-			Payload:    []byte{0x1, 0x3},
-		}
-		enrollCronEventParams2 := &power.EnrollCronEventParams{
-			EventEpoch: 4,
-			Payload:    []byte{0x2, 0x3},
-		}
-
 		rt.SetEpoch(1)
-
-		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-
-		rt.SetCaller(miner1, builtin.StorageMinerActorCodeID)
-		rt.Call(actor.Actor.EnrollCronEvent, enrollCronEventParams1)
-
-		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.SetCaller(miner2, builtin.StorageMinerActorCodeID)
-		rt.Call(actor.Actor.EnrollCronEvent, enrollCronEventParams2)
-
-		rt.Verify()
+		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
+		actor.enrollCronEvent(rt, miner2, 4, []byte{0x2, 0x3})
 
 		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(enrollCronEventParams1.Payload), abi.NewTokenAmount(0), nil, 0)
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(enrollCronEventParams2.Payload), abi.NewTokenAmount(0), nil, 0)
-		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, abi.NewTokenAmount(0), nil, 0)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x2, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
+	})
+
+	t.Run("handles failed call", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(1)
+		actor.enrollCronEvent(rt, miner1, 2, []byte{})
+		actor.enrollCronEvent(rt, miner2, 2, []byte{})
+
+		expectedPower := big.NewInt(0)
+		rt.SetEpoch(2)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		// First send fails
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{}), big.Zero(), nil, exitcode.ErrIllegalState)
+		// Subsequent one still invoked
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{}), big.Zero(), nil, exitcode.Ok)
+		// Reward actor still invoked
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 
+		// Next epoch, only the reward actor is invoked
+		rt.SetEpoch(3)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
 	})
 }
 
@@ -148,8 +169,11 @@ type spActorHarness struct {
 	t testing.TB
 }
 
-func (s key) Key() string {
-	return string(s)
+func newHarness(t testing.TB) *spActorHarness {
+	return &spActorHarness{
+		Actor: power.Actor{},
+		t:     t,
+	}
 }
 
 func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
@@ -189,13 +213,24 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 
 	msgParams := &initact.ExecParams{
 		CodeCID:           builtin.StorageMinerActorCodeID,
-		ConstructorParams: h.initCreateMinerBytes(owner, worker, peer, sectorSize),
+		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, sectorSize),
 	}
-	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(0), createMinerRet, 0)
+	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, big.Zero(), createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
+	rt.Verify()
 }
 
-func (h *spActorHarness) initCreateMinerBytes(owner, worker addr.Address, peer peer.ID, sectorSize abi.SectorSize) []byte {
+func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, epoch abi.ChainEpoch, payload []byte) {
+	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+	rt.SetCaller(miner, builtin.StorageMinerActorCodeID)
+	rt.Call(h.Actor.EnrollCronEvent, &power.EnrollCronEventParams{
+		EventEpoch: epoch,
+		Payload:    payload,
+	})
+	rt.Verify()
+}
+
+func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer peer.ID, sectorSize abi.SectorSize) []byte {
 	params := &power.MinerConstructorParams{
 		OwnerAddr:  owner,
 		WorkerAddr: worker,
@@ -204,7 +239,10 @@ func (h *spActorHarness) initCreateMinerBytes(owner, worker addr.Address, peer p
 	}
 
 	buf := new(bytes.Buffer)
-	require.NoError(h.t, params.MarshalCBOR(buf))
-
+	require.NoError(t, params.MarshalCBOR(buf))
 	return buf.Bytes()
+}
+
+func (s key) Key() string {
+	return string(s)
 }
