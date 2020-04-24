@@ -182,12 +182,7 @@ func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEv
 	var events []CronEvent
 	var ev CronEvent
 	err = mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
-		// Ignore events for defunct miners.
-		if _, found, err := st.getClaim(store, ev.MinerAddr); err != nil {
-			return errors.Wrapf(err, "failed to find claimed power for %v for cron event", ev.MinerAddr)
-		} else if found {
-			events = append(events, ev)
-		}
+		events = append(events, ev)
 		return nil
 	})
 	return events, err
