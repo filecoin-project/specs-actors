@@ -495,7 +495,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		if availableBalance.LessThan(initialPledge) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for initial pledge requirement %s, available: %s", initialPledge, availableBalance)
 		}
-		if err = st.AddLockedFunds(store, rt.CurrEpoch(), initialPledge, &PledgeVestingSpec); err != nil {
+		if err := st.AddLockedFunds(store, rt.CurrEpoch(), initialPledge, &PledgeVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
 		}
 		st.AssertBalanceInvariants(rt.CurrentBalance())
@@ -507,20 +507,20 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 			VerifiedDealWeight: dealWeights.VerifiedDealWeight,
 		}
 
-		if err = st.PutSector(store, newSectorInfo); err != nil {
+		if err := st.PutSector(store, newSectorInfo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
 		}
 
-		if err = st.DeletePrecommittedSector(store, sectorNo); err != nil {
+		if err := st.DeletePrecommittedSector(store, sectorNo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
 		}
 
-		if err = st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(sectorNo)); err != nil {
+		if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(sectorNo)); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", sectorNo, err)
 		}
 
 		// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
-		if err = st.AddNewSectors(sectorNo); err != nil {
+		if err := st.AddNewSectors(sectorNo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", sectorNo, err)
 		}
 
@@ -599,7 +599,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	// Store new sector expiry.
 	rt.State().Transaction(&st, func() interface{} {
 		sector.Info.Expiration = params.NewExpiration
-		if err = st.PutSector(store, sector); err != nil {
+		if err := st.PutSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
 		return nil
@@ -798,7 +798,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
 		}
 
-		if err = st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &PledgeVestingSpec); err != nil {
+		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &PledgeVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to lock pledge: %v", err)
 		}
 		return newlyVestedFund
@@ -1004,6 +1004,8 @@ func handleProvingPeriod(rt Runtime) {
 				// Store updated deadline state.
 				err = st.SaveDeadlines(store, deadlines)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
+
+				st.NewSectors = abi.NewBitField()
 			}
 
 			// Reset PoSt submissions for next period.
@@ -1433,7 +1435,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 
 	// Verify the PoSt Proof
-	if err = rt.Syscalls().VerifyPoSt(pvInfo); err != nil {
+	if err := rt.Syscalls().VerifyPoSt(pvInfo); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid PoSt %+v: %s", pvInfo, err)
 	}
 }
@@ -1471,7 +1473,7 @@ func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
 		UnsealedCID:           commD,
 	}
-	if err = rt.Syscalls().VerifySeal(svInfo); err != nil {
+	if err := rt.Syscalls().VerifySeal(svInfo); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "invalid seal %+v: %s", svInfo, err)
 	}
 }
