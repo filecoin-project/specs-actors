@@ -41,6 +41,7 @@ const SectorSize = abi.SectorSize(32 << 20)
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, miner.Actor{})
 }
+
 func TestConstruction(t *testing.T) {
 	actor := miner.Actor{}
 
@@ -63,13 +64,13 @@ func TestConstruction(t *testing.T) {
 			PeerId:     testPid,
 		}
 
-		provingPeriodBoundary := abi.ChainEpoch(2386) // This is just set from running the code.
+		provingPeriodStart := abi.ChainEpoch(2386) // This is just set from running the code.
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		// Fetch worker pubkey.
 		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
 		// Register proving period cron.
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-			makeProvingPeriodCronEventParams(t, provingPeriodBoundary-1), big.Zero(), nil, exitcode.Ok)
+			makeProvingPeriodCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
 		ret := rt.Call(actor.Constructor, &params)
 		assert.Nil(t, ret)
 		rt.Verify()
@@ -80,7 +81,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, params.WorkerAddr, st.Info.Worker)
 		assert.Equal(t, params.PeerId, st.Info.PeerId)
 		assert.Equal(t, params.SectorSize, st.Info.SectorSize)
-		assert.Equal(t, provingPeriodBoundary, st.Info.ProvingPeriodBoundary)
+		assert.Equal(t, provingPeriodStart, st.ProvingPeriodStart)
 
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, big.Zero(), st.LockedFunds)
@@ -147,7 +148,7 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
 		st := getState(rt)
-		deadline, _ := st.DeadlineInfo(precommitEpoch)
+		deadline := st.DeadlineInfo(precommitEpoch)
 
 		challengeEpoch := precommitEpoch - miner.PreCommitChallengeDelay
 
@@ -192,22 +193,32 @@ func TestProvingPeriodCron(t *testing.T) {
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
 	actor := newHarness(t, owner, worker, workerKey)
-	periodBoundary := abi.ChainEpoch(100)
+	periodOffset := abi.ChainEpoch(100)
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodBoundary))).
+		WithHasher(fixedHasher(uint64(periodOffset))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
-	t.Run("empty period", func(t *testing.T) {
+	t.Run("empty periods", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, periodBoundary)
+		actor.constructAndVerify(rt, periodOffset)
+		st := getState(rt)
+		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
-		rt.SetEpoch(periodBoundary - 1)
-		actor.onProvingPeriodCron(rt) // Checks that the expected re-enrollment is made for next period.
+		// First cron invocation just before the first proving period starts.
+		rt.SetEpoch(periodOffset - 1)
+		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
+		actor.onProvingPeriodCron(rt, secondCronEpoch)
+		// The proving period start isn't changed, because the period hadn't started yet.
+		st = getState(rt)
+		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
-		rt.SetEpoch(periodBoundary + miner.WPoStProvingPeriod - 1)
-		actor.onProvingPeriodCron(rt)
+		rt.SetEpoch(secondCronEpoch)
+		actor.onProvingPeriodCron(rt, periodOffset+2*miner.WPoStProvingPeriod-1)
+		// Proving period moves forward
+		st = getState(rt)
+		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
 	})
 }
 
@@ -224,7 +235,7 @@ func newHarness(t testing.TB, owner, worker, key addr.Address) *actorHarness {
 	return &actorHarness{miner.Actor{}, t, owner, worker, key}
 }
 
-func (h *actorHarness) constructAndVerify(rt *mock.Runtime, nextPPStart abi.ChainEpoch) {
+func (h *actorHarness) constructAndVerify(rt *mock.Runtime, provingPeriodStart abi.ChainEpoch) {
 	params := miner.ConstructorParams{
 		OwnerAddr:  h.owner,
 		WorkerAddr: h.worker,
@@ -237,7 +248,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime, nextPPStart abi.Chai
 	rt.ExpectSend(h.worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 	// Register proving period cron.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeProvingPeriodCronEventParams(h.t, nextPPStart-1), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronEventParams(h.t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
 	ret := rt.Call(h.a.Constructor, &params)
 	assert.Nil(h.t, ret)
 	rt.Verify()
@@ -297,11 +308,11 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	rt.Verify()
 }
 
-func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime) {
+func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeProvingPeriodCronEventParams(h.t, rt.Epoch()+miner.WPoStProvingPeriod), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronEventParams(h.t, expectedEnrollment), big.Zero(), nil, exitcode.Ok)
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
 		EventType: miner.CronEventProvingPeriod,
