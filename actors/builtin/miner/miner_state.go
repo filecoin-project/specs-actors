@@ -322,12 +322,6 @@ func (st *State) RemoveNewSectors(sectorNos *abi.BitField) (err error) {
 	return err
 }
 
-// Clears the new sectors bitfield.
-func (st *State) ClearNewSectors() error {
-	st.NewSectors = abi.NewBitField()
-	return nil
-}
-
 // Gets the sector numbers expiring at some epoch.
 func (st *State) GetSectorExpirations(store adt.Store, expiry abi.ChainEpoch) (*abi.BitField, error) {
 	arr, err := adt.AsArray(store, st.SectorExpirations)
