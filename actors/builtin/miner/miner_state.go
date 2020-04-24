@@ -903,6 +903,34 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 	return amountUnlocked, nil
 }
 
+// CheckVestedFunds returns the amount of vested funds that have vested before the provided epoch.
+func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	if err != nil {
+		return abi.TokenAmount{}, err
+	}
+
+	amountUnlocked := big.Zero()
+
+	var lockedEntry abi.TokenAmount
+	var finished = fmt.Errorf("finished")
+
+	// Iterate vestingFunds  in order of release.
+	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+		if k < int64(currEpoch) {
+			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
+		} else {
+			return finished // stop iterating
+		}
+		return nil
+	})
+	if err != nil && err != finished {
+		return big.Zero(), err
+	}
+
+	return amountUnlocked, nil
+}
+
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
 	availableBal := big.Sub(big.Sub(actorBalance, st.LockedFunds), st.PreCommitDeposits)
 	Assert(availableBal.GreaterThanEqual(big.Zero()))
