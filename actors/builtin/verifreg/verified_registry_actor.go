@@ -65,13 +65,13 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 	return nil
 }
 
-func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr addr.Address) *adt.EmptyValue {
+func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr *addr.Address) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.DeleteVerifier(adt.AsStore(rt), verifierAddr)
+		err := st.DeleteVerifier(adt.AsStore(rt), *verifierAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to delete verifier: %v", err)
 		}
