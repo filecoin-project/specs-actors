@@ -428,18 +428,19 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		}
 
 		st.LastEpochTick = rtEpoch
-
 		return nil
 	})
 
 	for _, event := range cronEvents {
-		_, code := rt.Send(
+		_, _ = rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
 			vmr.CBORBytes(event.CallbackPayload),
 			abi.NewTokenAmount(0),
 		)
-		builtin.RequireSuccess(rt, code, "failed to defer cron event")
+		// The exit code is ignored. If a callback fails, this actor continues to invoke other callbacks
+		// and persists state removing the failed event from the event queue. It won't be tried again.
+		// A log message would really help here, though.
 	}
 	return nil
 }

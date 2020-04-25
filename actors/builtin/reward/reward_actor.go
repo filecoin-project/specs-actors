@@ -12,11 +12,6 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-// Number of token units in an abstract "FIL" token.
-// The network works purely in the indivisible token amounts. This constant converts to a fixed decimal with more
-// human-friendly scale.
-const TokenPrecision = int64(1_000_000_000_000_000_000)
-
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
@@ -102,9 +97,10 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmount {
+	rt.ValidateImmediateCallerAcceptAny()
+
 	var st State
 	rt.State().Readonly(&st)
-
 	return &st.LastPerEpochReward
 }
 

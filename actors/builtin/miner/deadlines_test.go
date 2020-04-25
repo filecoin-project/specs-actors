@@ -18,98 +18,121 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 	CW := miner.WPoStChallengeWindow
 	DLS := miner.WPoStPeriodDeadlines
 
-	t.Run("boundary zero", func(t *testing.T) {
-		boundary := abi.ChainEpoch(0)
+	t.Run("pre-open", func(t *testing.T) {
+		curr := abi.ChainEpoch(0)  // Current is before the period opens.
+		{
+			periodStart := miner.FaultDeclarationCutoff + 1
+			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+			assert.Equal(t, uint64(0), di.Index)
+			assert.Equal(t, periodStart, di.Open)
+
+			assert.False(t, di.PeriodStarted())
+			assert.False(t, di.IsOpen())
+			assert.False(t, di.HasElapsed())
+			assert.False(t, di.FaultCutoffPassed())
+			assert.Equal(t, periodStart+miner.WPoStProvingPeriod-1, di.PeriodEnd())
+			assert.Equal(t, periodStart+miner.WPoStProvingPeriod, di.NextPeriodStart())
+		}
+		{
+			periodStart := miner.FaultDeclarationCutoff - 1
+			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+			assert.True(t, di.FaultCutoffPassed())
+		}
+	})
+
+	t.Run("offset zero", func(t *testing.T) {
+		firstPeriodStart := abi.ChainEpoch(0)
 
 		// First proving period.
-		di := assertDeadlineInfo(t, boundary, 0, 0, 0, 0)
+		di := assertDeadlineInfo(t, 0, firstPeriodStart, 0, 0)
 		assert.Equal(t, -miner.WPoStChallengeLookback, di.Challenge)
 		assert.Equal(t, -miner.FaultDeclarationCutoff, di.FaultCutoff)
 		assert.True(t, di.IsOpen())
 		assert.True(t, di.FaultCutoffPassed())
 
-		assertDeadlineInfo(t, boundary, 1, 0, 0, 0)
+		assertDeadlineInfo(t, 1, firstPeriodStart, 0, 0)
 		// Final epoch of deadline 0.
-		assertDeadlineInfo(t, boundary, CW-1, 0, 0, 0)
+		assertDeadlineInfo(t, CW-1, firstPeriodStart, 0, 0)
 		// First epoch of deadline 1
-		assertDeadlineInfo(t, boundary, CW, 0, 1, CW)
-		assertDeadlineInfo(t, boundary, CW+1, 0, 1, CW)
+		assertDeadlineInfo(t, CW, firstPeriodStart, 1, CW)
+		assertDeadlineInfo(t, CW+1, firstPeriodStart, 1, CW)
 		// Final epoch of deadline 1
-		assertDeadlineInfo(t, boundary, CW*2-1, 0, 1, CW)
+		assertDeadlineInfo(t, CW*2-1, firstPeriodStart, 1, CW)
 		// First epoch of deadline 2
-		assertDeadlineInfo(t, boundary, CW*2, 0, 2, CW*2)
+		assertDeadlineInfo(t, CW*2, firstPeriodStart, 2, CW*2)
 
 		// Last epoch of last deadline
-		assertDeadlineInfo(t, boundary, PP-1, 0, DLS-1, PP-CW)
+		assertDeadlineInfo(t, PP-1, firstPeriodStart, DLS-1, PP-CW)
 
 		// Second proving period
 		// First epoch of deadline 0
-		di = assertDeadlineInfo(t, boundary, PP, PP, 0, PP)
+		secondPeriodStart := PP
+		di = assertDeadlineInfo(t, PP, secondPeriodStart, 0, PP)
 		assert.Equal(t, PP-miner.WPoStChallengeLookback, di.Challenge)
 		assert.Equal(t, PP-miner.FaultDeclarationCutoff, di.FaultCutoff)
 
 		// Final epoch of deadline 0.
-		assertDeadlineInfo(t, boundary, PP+CW-1, PP, 0, PP+0)
+		assertDeadlineInfo(t, PP+CW-1, secondPeriodStart, 0, PP+0)
 		// First epoch of deadline 1
-		assertDeadlineInfo(t, boundary, PP+CW, PP, 1, PP+CW)
-		assertDeadlineInfo(t, boundary, PP+CW+1, PP, 1, PP+CW)
+		assertDeadlineInfo(t, PP+CW, secondPeriodStart, 1, PP+CW)
+		assertDeadlineInfo(t, PP+CW+1, secondPeriodStart, 1, PP+CW)
 	})
 
-	t.Run("boundary non-zero", func(t *testing.T) {
-		boundary := CW*2 + 2 // Arbitrary not aligned with challenge window.
-		initialPPStart := boundary - PP
-		firstDlIndex := miner.WPoStPeriodDeadlines - uint64(boundary/CW) - 1
+	t.Run("offset non-zero", func(t *testing.T) {
+		offset := CW*2 + 2 // Arbitrary not aligned with challenge window.
+		initialPPStart := offset - PP
+		firstDlIndex := miner.WPoStPeriodDeadlines - uint64(offset/CW) - 1
 		firstDlOpen := initialPPStart + CW*abi.ChainEpoch(firstDlIndex)
 
-		require.True(t, boundary < PP)
+		require.True(t, offset < PP)
 		require.True(t, initialPPStart < 0)
 		require.True(t, firstDlOpen < 0)
 
 		// Incomplete initial proving period.
 		// At epoch zero, the initial deadlines in the period have already passed and we're part way through
 		// another one.
-		di := assertDeadlineInfo(t, boundary, 0, initialPPStart, firstDlIndex, firstDlOpen)
+		di := assertDeadlineInfo(t, 0, initialPPStart, firstDlIndex, firstDlOpen)
 		assert.Equal(t, firstDlOpen-miner.WPoStChallengeLookback, di.Challenge)
 		assert.Equal(t, firstDlOpen-miner.FaultDeclarationCutoff, di.FaultCutoff)
 		assert.True(t, di.IsOpen())
 		assert.True(t, di.FaultCutoffPassed())
 
 		// Epoch 1
-		assertDeadlineInfo(t, boundary, 1, initialPPStart, firstDlIndex, firstDlOpen)
+		assertDeadlineInfo(t, 1, initialPPStart, firstDlIndex, firstDlOpen)
 
 		// Epoch 2 rolls over to third-last challenge window
-		assertDeadlineInfo(t, boundary, 2, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
-		assertDeadlineInfo(t, boundary, 3, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
+		assertDeadlineInfo(t, 2, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
+		assertDeadlineInfo(t, 3, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
 
 		// Last epoch of second-last window.
-		assertDeadlineInfo(t, boundary, 2+CW-1, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
+		assertDeadlineInfo(t, 2+CW-1, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
 		// First epoch of last challenge window.
-		assertDeadlineInfo(t, boundary, 2+CW, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
+		assertDeadlineInfo(t, 2+CW, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
 		// Last epoch of last challenge window.
 		assert.Equal(t, miner.WPoStPeriodDeadlines-1, firstDlIndex+2)
-		assertDeadlineInfo(t, boundary, 2+2*CW-1, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
+		assertDeadlineInfo(t, 2+2*CW-1, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
 
 		// First epoch of next proving period.
-		assertDeadlineInfo(t, boundary, 2+2*CW, initialPPStart+PP, 0, initialPPStart+PP)
-		assertDeadlineInfo(t, boundary, 2+2*CW+1, initialPPStart+PP, 0, initialPPStart+PP)
+		assertDeadlineInfo(t, 2+2*CW, initialPPStart+PP, 0, initialPPStart+PP)
+		assertDeadlineInfo(t, 2+2*CW+1, initialPPStart+PP, 0, initialPPStart+PP)
 	})
 }
 
-func assertDeadlineInfo(t *testing.T, boundary, current, periodStart abi.ChainEpoch, index uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
-	expected := makeDeadline(current, periodStart, index, deadlineOpen)
-	actual, started := miner.ComputeProvingPeriodDeadline(boundary, current)
-	assert.Equal(t, actual.PeriodStart >= 0, started)
+func assertDeadlineInfo(t *testing.T, current, periodStart abi.ChainEpoch, expectedIndex uint64, expectedDeadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
+	expected := makeDeadline(current, periodStart, expectedIndex, expectedDeadlineOpen)
+	actual := miner.ComputeProvingPeriodDeadline(periodStart, current)
+	assert.True(t, actual.PeriodStarted())
 	assert.True(t, actual.IsOpen())
 	assert.False(t, actual.HasElapsed())
 	assert.Equal(t, expected, actual)
 	return actual
 }
 
-func makeDeadline(currEpoch, periodStart abi.ChainEpoch, deadline uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
+func makeDeadline(currEpoch, periodStart abi.ChainEpoch, index uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
 	return &miner.DeadlineInfo{
 		CurrentEpoch: currEpoch,
 		PeriodStart:  periodStart,
-		Index:        deadline,
+		Index:        index,
 		Open:         deadlineOpen,
 		Close:        deadlineOpen + miner.WPoStChallengeWindow,
 		Challenge:    deadlineOpen - miner.WPoStChallengeLookback,

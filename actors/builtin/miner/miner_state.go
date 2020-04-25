@@ -39,6 +39,15 @@ type State struct {
 	// Information for all proven and not-yet-expired sectors.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
 
+	// The first epoch in this miner's current proving period. This is the first epoch in which a PoSt for a
+	// partition at the miner's first deadline may arrive. Alternatively, it is after the last epoch at which
+	// a PoSt for the previous window is valid.
+	// Always greater than zero, his may be greater than the current epoch for genesis miners in the first
+	// WPoStProvingPeriod epochs of the chain; the epochs before the first proving period starts are exempt from Window
+	// PoSt requirements.
+	// Updated at the end of every period by a power actor cron event.
+	ProvingPeriodStart abi.ChainEpoch
+
 	// Sector numbers prove-committed since period start, to be added to Deadlines at next proving period boundary.
 	NewSectors *abi.BitField
 
@@ -87,11 +96,6 @@ type MinerInfo struct {
 
 	// Amount of space in each sector committed to the network by this miner.
 	SectorSize abi.SectorSize
-
-	// The offset of this miner's proving period from zero.
-	// An un-changing number in range [0, proving period).
-	// A miner's current proving period start is the highest multiple of this boundary <= the current epoch.
-	ProvingPeriodBoundary abi.ChainEpoch
 }
 
 type PeerID peer.ID
@@ -124,15 +128,14 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId peer.ID, sectorSize abi.SectorSize, periodBoundary abi.ChainEpoch) *State {
+	peerId peer.ID, sectorSize abi.SectorSize, periodStart abi.ChainEpoch) *State {
 	return &State{
 		Info: MinerInfo{
-			Owner:                 ownerAddr,
-			Worker:                workerAddr,
-			PendingWorkerKey:      nil,
-			PeerId:                peerId,
-			SectorSize:            sectorSize,
-			ProvingPeriodBoundary: periodBoundary,
+			Owner:            ownerAddr,
+			Worker:           workerAddr,
+			PendingWorkerKey: nil,
+			PeerId:           peerId,
+			SectorSize:       sectorSize,
 		},
 
 		PreCommitDeposits: abi.NewTokenAmount(0),
@@ -141,6 +144,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 
 		PreCommittedSectors: emptyMapCid,
 		Sectors:             emptyArrayCid,
+		ProvingPeriodStart:  periodStart,
 		NewSectors:          abi.NewBitField(),
 		SectorExpirations:   emptyArrayCid,
 		Deadlines:           emptyDeadlinesCid,
@@ -159,9 +163,9 @@ func (st *State) GetSectorSize() abi.SectorSize {
 	return st.Info.SectorSize
 }
 
-// Computes the current proving period and deadline, and whether that period is whole.
-func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) (*DeadlineInfo, bool) {
-	return ComputeProvingPeriodDeadline(st.Info.ProvingPeriodBoundary, currEpoch)
+// Returns deadline calculations for the current proving period.
+func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *DeadlineInfo {
+	return ComputeProvingPeriodDeadline(st.ProvingPeriodStart, currEpoch)
 }
 
 func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
@@ -320,12 +324,6 @@ func (st *State) AddNewSectors(sectorNos ...abi.SectorNumber) (err error) {
 func (st *State) RemoveNewSectors(sectorNos *abi.BitField) (err error) {
 	st.NewSectors, err = bitfield.SubtractBitField(st.NewSectors, sectorNos)
 	return err
-}
-
-// Clears the new sectors bitfield.
-func (st *State) ClearNewSectors() error {
-	st.NewSectors = abi.NewBitField()
-	return nil
 }
 
 // Gets the sector numbers expiring at some epoch.
@@ -897,6 +895,34 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
 	st.VestingFunds, err = vestingFunds.Root()
 	if err != nil {
+		return big.Zero(), err
+	}
+
+	return amountUnlocked, nil
+}
+
+// CheckVestedFunds returns the amount of vested funds that have vested before the provided epoch.
+func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	if err != nil {
+		return abi.TokenAmount{}, err
+	}
+
+	amountUnlocked := big.Zero()
+
+	var lockedEntry abi.TokenAmount
+	var finished = fmt.Errorf("finished")
+
+	// Iterate vestingFunds  in order of release.
+	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+		if k < int64(currEpoch) {
+			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
+		} else {
+			return finished // stop iterating
+		}
+		return nil
+	})
+	if err != nil && err != finished {
 		return big.Zero(), err
 	}
 
