@@ -14,8 +14,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-const DealUpdatesInterval = 100
-
 const epochUndefined = abi.ChainEpoch(-1)
 
 // Market mutations
@@ -61,7 +59,15 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
 	amountSlashed := abi.NewTokenAmount(0)
 
-	state := st.mustGetDealState(rt, dealID)
+	states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
+	}
+
+	state, err := states.Get(dealID)
+	if err != nil {
+		return abi.NewTokenAmount(0), epochUndefined
+	}
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
 	everSlashed := state.SlashEpoch != epochUndefined
@@ -75,11 +81,14 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		if epoch > deal.StartEpoch {
 			return st.processDealInitTimedOut(rt, dealID, deal, state), 0
 		}
-		return amountSlashed, 0
+		// This should not be able to happen
+		return amountSlashed, epochUndefined
 	}
 
+	// This would be the case that the first callback somehow triggers before it is scheduled to
+	// This is expected not to be able to happen
 	if deal.StartEpoch > epoch {
-		return amountSlashed, 0
+		return amountSlashed, epochUndefined
 	}
 
 	dealEnd := deal.EndEpoch
@@ -118,12 +127,12 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		st.slashBalance(rt, deal.Provider, amountSlashed)
 
 		st.deleteDeal(rt, dealID)
-		return amountSlashed, 0
+		return amountSlashed, epochUndefined
 	}
 
 	if epoch >= deal.EndEpoch {
 		st.processDealExpired(rt, dealID)
-		return amountSlashed, 0
+		return amountSlashed, epochUndefined
 	}
 
 	next := epoch + DealUpdatesInterval

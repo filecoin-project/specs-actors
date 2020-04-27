@@ -79,8 +79,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	var amountExtracted abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		// Before any operations that check the balance tables for funds, execute all deferred
-		// deal state updates.
+		// The withdrawable amount might be slightly less than nominal
+		// depending on whether or not all relevant entries have been processed
+		// by cron
 
 		minBalance := st.GetLockedBalance(rt, nominal)
 
@@ -192,7 +193,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load proposals array: %s", err)
 		}
 
-		dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
+		dealOps, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids set: %s", err)
 		}
@@ -222,7 +223,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
-			if err := dbp.Put(deal.Proposal.StartEpoch, id); err != nil {
+			if err := dealOps.Put(deal.Proposal.StartEpoch, id); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal in ops set: %v", err)
 			}
 
@@ -234,7 +235,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		}
 		st.Proposals = propc
 
-		dipc, err := dbp.Root()
+		dipc, err := dealOps.Root()
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
 		}
@@ -429,8 +430,8 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
 
-				if nextEpoch != 0 {
-					Assert(nextEpoch <= rt.CurrEpoch())
+				if nextEpoch != epochUndefined {
+					Assert(nextEpoch > rt.CurrEpoch())
 
 					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], deal)
 				}
@@ -463,7 +464,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		return nil
 	})
 
-	_, e := rt.Send(builtin.BurntFundsActorAddr, 0, nil, amountSlashed)
+	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
 	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
 	return nil
 }
