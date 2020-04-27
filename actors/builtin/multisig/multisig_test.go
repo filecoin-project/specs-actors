@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/minio/blake2b-simd"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 
@@ -20,8 +21,6 @@ import (
 )
 
 func TestExports(t *testing.T) {
-	t.Skip("missing method 5")
-
 	mock.CheckActorExports(t, multisig.Actor{})
 }
 
@@ -117,7 +116,8 @@ func TestVesting(t *testing.T) {
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithEpoch(0).
 		// balance 0: current balance of the actor. receive: 100 the amount the multisig actor will be initalized with -- InitialBalance
-		WithBalance(multisigInitialBalance, multisigInitialBalance)
+		WithBalance(multisigInitialBalance, multisigInitialBalance).
+		WithHasher(blake2b.Sum256)
 
 	t.Run("happy path full vesting", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -138,7 +138,7 @@ func TestVesting(t *testing.T) {
 		// expect darlene to receive the transaction proposed by anne.
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, multisigInitialBalance, nil, exitcode.Ok)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+		proposalHashData := makeProposalHash(t, &multisig.Transaction{
 			To:       darlene,
 			Value:    multisigInitialBalance,
 			Method:   builtin.MethodSend,
@@ -167,7 +167,7 @@ func TestVesting(t *testing.T) {
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
-		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+		proposalHashData := makeProposalHash(t, &multisig.Transaction{
 			To:       darlene,
 			Value:    big.Div(multisigInitialBalance, big.NewInt(2)),
 			Method:   builtin.MethodSend,
@@ -220,7 +220,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       darlene,
 				Value:    big.Div(multisigInitialBalance, big.NewInt(2)),
 				Method:   builtin.MethodSend,
@@ -339,7 +339,9 @@ func TestApprove(t *testing.T) {
 	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(context.Background(), receiver).
+		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+		WithHasher(blake2b.Sum256)
 
 	t.Run("simple propose and approval", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -364,7 +366,7 @@ func TestApprove(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 
-		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+		proposalHashData := makeProposalHash(t, &multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
@@ -403,7 +405,7 @@ func TestApprove(t *testing.T) {
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
@@ -429,7 +431,7 @@ func TestApprove(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		// TODO replace with correct exit code when multisig actor breaks the AbortStateMsg pattern.
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   builtin.MethodSend,
@@ -465,7 +467,7 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   builtin.MethodSend,
@@ -501,7 +503,7 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   builtin.MethodSend,
@@ -540,7 +542,9 @@ func TestCancel(t *testing.T) {
 	var sendValue = abi.NewTokenAmount(10)
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(context.Background(), receiver).
+		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+		WithHasher(blake2b.Sum256)
 
 	t.Run("simple propose and cancel", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -557,7 +561,7 @@ func TestCancel(t *testing.T) {
 		rt.SetBalance(sendValue)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
-		proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+		proposalHashData := makeProposalHash(t, &multisig.Transaction{
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
@@ -587,7 +591,7 @@ func TestCancel(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       bob,
 				Value:    sendValue,
 				Method:   fakeMethod,
@@ -613,7 +617,7 @@ func TestCancel(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
@@ -649,7 +653,7 @@ func TestCancel(t *testing.T) {
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
@@ -685,7 +689,7 @@ func TestCancel(t *testing.T) {
 		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			proposalHashData := actor.a.GetProposalHash(rt, multisig.Transaction{
+			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
@@ -1151,6 +1155,12 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 		assert.True(h.t, found)
 		assert.Equal(h.t, expected[i], actual)
 	}
+}
+
+func makeProposalHash(t *testing.T, txn *multisig.Transaction) []byte {
+	proposalHashData, err := multisig.ComputeProposalHash(txn, blake2b.Sum256)
+	require.NoError(t, err)
+	return proposalHashData
 }
 
 type key string

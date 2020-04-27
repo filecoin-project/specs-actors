@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -35,8 +36,6 @@ type Runtime struct {
 	actorCodeCIDs map[addr.Address]cid.Cid
 	newActorAddr  addr.Address
 
-	syscalls syscaller
-
 	// Actor state
 	state   cid.Cid
 	balance abi.TokenAmount
@@ -45,17 +44,60 @@ type Runtime struct {
 	inCall        bool
 	store         map[cid.Cid][]byte
 	inTransaction bool
+	// Syscalls
+	hashfunc func(data []byte) [32]byte
 
 	// Expectations
 	t                        testing.TB
 	expectValidateCallerAny  bool
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
+	expectRandomness         []*expectRandomness
 	expectSends              []*expectedMessage
 	expectCreateActor        *expectCreateActor
+	expectVerifySig          *expectVerifySig
+}
+
+type expectRandomness struct {
+	// Expected parameters.
+	tag     crypto.DomainSeparationTag
+	epoch   abi.ChainEpoch
+	entropy []byte
+	// Result.
+	out abi.Randomness
+}
+
+type expectedMessage struct {
+	// expectedMessage values
+	to     addr.Address
+	method abi.MethodNum
+	params runtime.CBORMarshaler
+	value  abi.TokenAmount
+
+	// returns from applying expectedMessage
+	sendReturn runtime.SendReturn
+	exitCode   exitcode.ExitCode
+}
+
+type expectVerifySig struct {
+	// Expected arguments
+	sig       crypto.Signature
+	signer    addr.Address
+	plaintext []byte
+	// Result
+	result error
+}
+
+func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
+	return m.to == to && m.method == method && m.value.Equals(value) && reflect.DeepEqual(m.params, params)
+}
+
+func (m *expectedMessage) String() string {
+	return fmt.Sprintf("to: %v method: %v value: %v params: %v sendReturn: %v exitCode: %v", m.to, m.method, m.value, m.params, m.sendReturn, m.exitCode)
 }
 
 type expectCreateActor struct {
+	// Expected parameters
 	codeId  cid.Cid
 	address addr.Address
 }
@@ -87,7 +129,7 @@ func (rt *Runtime) CurrEpoch() abi.ChainEpoch {
 func (rt *Runtime) ValidateImmediateCallerAcceptAny() {
 	rt.requireInCall()
 	if !rt.expectValidateCallerAny {
-		rt.t.Fatalf("unexpected validate-caller-any")
+		rt.failTest("unexpected validate-caller-any")
 	}
 	rt.expectValidateCallerAny = false
 }
@@ -97,11 +139,11 @@ func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
 	rt.checkArgument(len(addrs) > 0, "addrs must be non-empty")
 	// Check and clear expectations.
 	if len(rt.expectValidateCallerAddr) == 0 {
-		rt.t.Errorf("unexpected validate caller addrs")
+		rt.failTest("unexpected validate caller addrs")
 		return
 	}
 	if !reflect.DeepEqual(rt.expectValidateCallerAddr, addrs) {
-		rt.t.Errorf("unexpected validate caller addrs %v, expected %v", addrs, rt.expectValidateCallerAddr)
+		rt.failTest("unexpected validate caller addrs %v, expected %+v", addrs, rt.expectValidateCallerAddr)
 		return
 	}
 	defer func() {
@@ -123,10 +165,10 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 
 	// Check and clear expectations.
 	if len(rt.expectValidateCallerType) == 0 {
-		rt.t.Errorf("unexpected validate caller code")
+		rt.failTest("unexpected validate caller code")
 	}
 	if !reflect.DeepEqual(rt.expectValidateCallerType, types) {
-		rt.t.Errorf("unexpected validate caller code %v, expected %v", types, rt.expectValidateCallerType)
+		rt.failTest("unexpected validate caller code %v, expected %+v", types, rt.expectValidateCallerType)
 	}
 	defer func() {
 		rt.expectValidateCallerType = nil
@@ -161,9 +203,21 @@ func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
 	return
 }
 
-func (rt *Runtime) GetRandomness(_ crypto.DomainSeparationTag, _ abi.ChainEpoch, _ []byte) abi.Randomness {
+func (rt *Runtime) GetRandomness(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte) abi.Randomness {
 	rt.requireInCall()
-	panic("implement me")
+	if len(rt.expectRandomness) == 0 {
+		rt.failTestNow("unexpected call to get randomness for tag %v, epoch %v", tag, epoch)
+	}
+	exp := rt.expectRandomness[0]
+	if tag != exp.tag || epoch != exp.epoch || !bytes.Equal(entropy, exp.entropy) {
+		rt.failTest("unexpected get randomness\n" +
+			"         tag: %d, epoch: %d, entropy: %v\n" +
+			"expected tag: %d, epoch: %d, entropy: %v", tag, epoch, entropy, exp.tag, exp.epoch, exp.entropy)
+	}
+	defer func() {
+		rt.expectRandomness = rt.expectRandomness[1:]
+	}()
+	return exp.out
 }
 
 func (rt *Runtime) State() runtime.StateHandle {
@@ -182,12 +236,15 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	if len(rt.expectSends) == 0 {
-		rt.t.Fatalf("unexpected expectedMessage to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
+		rt.failTestNow("unexpected send to: %v method: %v, value: %v, params: %v", toAddr, methodNum, value, params)
 	}
-	expectedMsg := rt.expectSends[0]
+	exp := rt.expectSends[0]
 
-	if !expectedMsg.Equal(toAddr, methodNum, params, value) {
-		rt.t.Errorf("expectedMessage being sent does not match expectation.\nMessage -\t to: %v method: %v value: %v params: %v\nExpected -\t %v", toAddr, methodNum, value, params, rt.expectSends[0])
+	if !exp.Equal(toAddr, methodNum, params, value) {
+		rt.failTest("unexpected send\n"+
+			"          to: %s method: %d value: %v params: %v\n"+
+			"Expected  to: %s method: %d value: %v params: %v",
+			toAddr, methodNum, value, params, exp.to, exp.method, exp.value, exp.params)
 	}
 
 	if value.GreaterThan(rt.balance) {
@@ -199,13 +256,13 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 		rt.expectSends = rt.expectSends[1:]
 		rt.balance = big.Sub(rt.balance, value)
 	}()
-	return expectedMsg.sendReturn, expectedMsg.exitCode
+	return exp.sendReturn, exp.exitCode
 }
 
 func (rt *Runtime) NewActorAddress() addr.Address {
 	rt.requireInCall()
 	if rt.newActorAddr == addr.Undef {
-		rt.t.Fatal("unexpected call to new actor address")
+		rt.failTestNow("unexpected call to new actor address")
 	}
 	defer func() { rt.newActorAddr = addr.Undef }()
 	return rt.newActorAddr
@@ -216,16 +273,18 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 	if rt.inTransaction {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	if rt.expectCreateActor == nil {
-		rt.t.Fatal("unexpected call to create actor")
+	exp := rt.expectCreateActor
+	if exp != nil {
+		if !exp.codeId.Equals(codeId) || exp.address != address {
+			rt.failTest("unexpected create actor, code: %s, address: %s; expected code: %s, address: %s",
+				codeId, address, exp.codeId, exp.address)
+		}
+		defer func() {
+			rt.expectCreateActor = nil
+		}()
+		return
 	}
-	if !rt.expectCreateActor.codeId.Equals(codeId) || rt.expectCreateActor.address != address {
-		rt.t.Errorf("unexpected actor being created, expected code: %s address: %s, actual code: %s address: %s",
-			rt.expectCreateActor.codeId, rt.expectCreateActor.address, codeId, address)
-	}
-	defer func() {
-		rt.expectCreateActor = nil
-	}()
+	rt.failTestNow("unexpected call to create actor")
 }
 
 func (rt *Runtime) DeleteActor(_ addr.Address) {
@@ -249,7 +308,7 @@ func (rt *Runtime) AbortStateMsg(msg string) {
 
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
-	return &rt.syscalls
+	return rt
 }
 
 func (rt *Runtime) Context() context.Context {
@@ -338,10 +397,50 @@ func (rt *Runtime) Transaction(st runtime.CBORer, f func() interface{}) interfac
 	}
 	rt.Readonly(st)
 	rt.inTransaction = true
+	defer func() { rt.inTransaction = false }()
 	ret := f()
 	rt.state = rt.Put(st)
-	rt.inTransaction = false
 	return ret
+}
+
+///// Syscalls implementation /////
+
+func (rt *Runtime) VerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte) error {
+	exp := rt.expectVerifySig
+	if exp != nil {
+		if !exp.sig.Equals(&sig) || exp.signer != signer || !bytes.Equal(exp.plaintext, plaintext) {
+			rt.failTest("unexpected signature verification\n" +
+				"         sig: %v, signer: %s, plaintext: %v\n" +
+				"expected sig: %v, signer: %s, plaintext: %v",
+				sig, signer, plaintext, exp.sig, exp.signer, exp.plaintext)
+		}
+		defer func() {
+			rt.expectVerifySig = nil
+		}()
+		return exp.result
+	}
+	rt.failTestNow("unexpected syscall to verify signature %v, signer %s, plaintext %v", sig, signer, plaintext)
+	return nil
+}
+
+func (rt *Runtime) HashBlake2b(data []byte) [32]byte {
+	return rt.hashfunc(data)
+}
+
+func (rt *Runtime) ComputeUnsealedSectorCID(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error) {
+	panic("implement me")
+}
+
+func (rt *Runtime) VerifySeal(vi abi.SealVerifyInfo) error {
+	panic("implement me")
+}
+
+func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
+	panic("implement me")
+}
+
+func (rt *Runtime) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
+	panic("implement me")
 }
 
 ///// Trace span implementation /////
@@ -371,35 +470,23 @@ func (rt *Runtime) StateRoot() cid.Cid {
 func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
 	data, found := rt.store[rt.state]
 	if !found {
-		rt.t.Fatalf("can't find state at root %v", rt.state) // something internal is messed up
+		rt.failTestNow("can't find state at root %v", rt.state) // something internal is messed up
 	}
 	err := o.UnmarshalCBOR(bytes.NewReader(data))
 	if err != nil {
-		rt.t.Fatalf("error loading state: %v", err)
+		rt.failTestNow("error loading state: %v", err)
 	}
 }
 
+func (rt *Runtime) Balance() abi.TokenAmount {
+	return rt.balance
+}
+
+func (rt *Runtime) Epoch() abi.ChainEpoch {
+	return rt.epoch
+}
+
 ///// Mocking facilities /////
-
-type expectedMessage struct {
-	// expectedMessage values
-	to     addr.Address
-	method abi.MethodNum
-	params runtime.CBORMarshaler
-	value  abi.TokenAmount
-
-	// returns from applying expectedMessage
-	sendReturn runtime.SendReturn
-	exitCode   exitcode.ExitCode
-}
-
-func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
-	return m.to == to && m.method == method && m.value.Equals(value) && reflect.DeepEqual(m.params, params)
-}
-
-func (m *expectedMessage) String() string {
-	return fmt.Sprintf("to: %v method: %v value: %v params: %v sendReturn: %v exitCode: %v", m.to, m.method, m.value, m.params, m.sendReturn, m.exitCode)
-}
 
 func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.caller = address
@@ -409,11 +496,6 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
-}
-
-// Get balance outside of a runtime call for test purposes
-func (rt *Runtime) GetBalance() abi.TokenAmount {
-	return rt.balance
 }
 
 func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
@@ -448,6 +530,15 @@ func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
 	rt.expectValidateCallerType = types[:]
 }
 
+func (rt *Runtime) ExpectGetRandomness(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte, out abi.Randomness) {
+	rt.expectRandomness = append(rt.expectRandomness, &expectRandomness{
+		tag:     tag,
+		epoch:   epoch,
+		entropy: entropy,
+		out:     out,
+	})
+}
+
 func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount, ret runtime.CBORMarshaler, exitCode exitcode.ExitCode) {
 	// append to the send queue
 	rt.expectSends = append(rt.expectSends, &expectedMessage{
@@ -467,22 +558,36 @@ func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
 	}
 }
 
+func (rt *Runtime) SetHasher(f func(data []byte) [32]byte) {
+	rt.hashfunc = f
+}
+
+func (rt *Runtime) ExpectVerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte, result error) {
+	rt.expectVerifySig = &expectVerifySig{
+		sig:       sig,
+		signer:    signer,
+		plaintext: plaintext,
+		result:    result,
+	}
+}
+
+
 // Verifies that expected calls were received, and resets all expectations.
 func (rt *Runtime) Verify() {
 	if rt.expectValidateCallerAny {
-		rt.t.Error("expected ValidateCallerAny, not received")
+		rt.failTest("expected ValidateCallerAny, not received")
 	}
 	if len(rt.expectValidateCallerAddr) > 0 {
-		rt.t.Errorf("expected ValidateCallerAddr %v, not received", rt.expectValidateCallerAddr)
+		rt.failTest("missing expected ValidateCallerAddr %v", rt.expectValidateCallerAddr)
 	}
 	if len(rt.expectValidateCallerType) > 0 {
-		rt.t.Errorf("expected ValidateCallerType %v, not received", rt.expectValidateCallerType)
+		rt.failTest("missing expected ValidateCallerType %v", rt.expectValidateCallerType)
 	}
 	if len(rt.expectSends) > 0 {
-		rt.t.Errorf("expected all message to be send, unsent messages %v", rt.expectSends)
+		rt.failTest("missing expected Send: %v", rt.expectSends)
 	}
 	if rt.expectCreateActor != nil {
-		rt.t.Errorf("expected actor to be created, uncreated actor code: %v, address %v",
+		rt.failTest("missing expected create actor with code: %s, address %s",
 			rt.expectCreateActor.codeId, rt.expectCreateActor.address)
 	}
 
@@ -504,7 +609,7 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			rt.t.Errorf("expected abort with code %v but call succeeded", expected)
+			rt.failTest("expected abort with code %v but call succeeded", expected)
 			return
 		}
 		a, ok := r.(abort)
@@ -512,7 +617,7 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 			panic(r)
 		}
 		if a.code != expected {
-			rt.t.Errorf("abort expected code %v, got %v %s", expected, a.code, a.msg)
+			rt.failTest("abort expected code %v, got %v %s", expected, a.code, a.msg)
 		}
 		// Roll back state change.
 		rt.state = prevState
@@ -526,12 +631,12 @@ func (rt *Runtime) ExpectAssertionFailure(expected string, f func()) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			rt.t.Errorf("expected panic with message %v but call succeeded", expected)
+			rt.failTest("expected panic with message %v but call succeeded", expected)
 			return
 		}
 		a, ok := r.(abort)
 		if ok {
-			rt.t.Errorf("expected panic with message %v but got abort %v", expected, a)
+			rt.failTest("expected panic with message %v but got abort %v", expected, a)
 			return
 		}
 		p, ok := r.(string)
@@ -539,7 +644,7 @@ func (rt *Runtime) ExpectAssertionFailure(expected string, f func()) {
 			panic(r)
 		}
 		if p != expected {
-			rt.t.Errorf("expected panic with message \"%v\" but got message \"%v\"", expected, p)
+			rt.failTest("expected panic with message \"%v\" but got message \"%v\"", expected, p)
 		}
 		// Roll back state change.
 		rt.state = prevState
@@ -555,6 +660,7 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	// If not expected, the panic will escape and cause the test to fail.
 
 	rt.inCall = true
+	defer func() { rt.inCall = false }()
 	var arg reflect.Value
 	if params != nil {
 		arg = reflect.ValueOf(params)
@@ -562,16 +668,7 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 		arg = reflect.ValueOf(adt.Empty)
 	}
 	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), arg})
-	rt.inCall = false
 	return ret[0].Interface()
-}
-
-func (rt *Runtime) SetVerifier(f VerifyFunc) {
-	rt.syscalls.SignatureVerifier = f
-}
-
-func (rt *Runtime) SetHasher(f HasherFunc) {
-	rt.syscalls.Hasher = f
 }
 
 func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
@@ -591,8 +688,20 @@ func (rt *Runtime) requireInCall() {
 
 func (rt *Runtime) require(predicate bool, msg string, args ...interface{}) {
 	if !predicate {
-		rt.t.Fatalf(msg, args...)
+		rt.failTestNow(msg, args...)
 	}
+}
+
+func (rt *Runtime) failTest(msg string, args ...interface{}) {
+	rt.t.Logf(msg, args...)
+	rt.t.Logf("%s", debug.Stack())
+	rt.t.Fail()
+}
+
+func (rt *Runtime) failTestNow(msg string, args ...interface{}) {
+	rt.t.Logf(msg, args...)
+	rt.t.Logf("%s", debug.Stack())
+	rt.t.FailNow()
 }
 
 func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {

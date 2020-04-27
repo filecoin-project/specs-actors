@@ -3,6 +3,7 @@ package miner_test
 import (
 	"testing"
 
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -10,103 +11,128 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 )
 
+const partSize = miner.WPoStPartitionSectors
+
 func TestProvingPeriodDeadlines(t *testing.T) {
 	PP := miner.WPoStProvingPeriod
 	CW := miner.WPoStChallengeWindow
 	DLS := miner.WPoStPeriodDeadlines
 
-	t.Run("boundary zero", func(t *testing.T) {
-		boundary := abi.ChainEpoch(0)
+	t.Run("pre-open", func(t *testing.T) {
+		curr := abi.ChainEpoch(0)  // Current is before the period opens.
+		{
+			periodStart := miner.FaultDeclarationCutoff + 1
+			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+			assert.Equal(t, uint64(0), di.Index)
+			assert.Equal(t, periodStart, di.Open)
+
+			assert.False(t, di.PeriodStarted())
+			assert.False(t, di.IsOpen())
+			assert.False(t, di.HasElapsed())
+			assert.False(t, di.FaultCutoffPassed())
+			assert.Equal(t, periodStart+miner.WPoStProvingPeriod-1, di.PeriodEnd())
+			assert.Equal(t, periodStart+miner.WPoStProvingPeriod, di.NextPeriodStart())
+		}
+		{
+			periodStart := miner.FaultDeclarationCutoff - 1
+			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+			assert.True(t, di.FaultCutoffPassed())
+		}
+	})
+
+	t.Run("offset zero", func(t *testing.T) {
+		firstPeriodStart := abi.ChainEpoch(0)
 
 		// First proving period.
-		di := assertDeadlineInfo(t, boundary, 0, 0, 0, 0)
+		di := assertDeadlineInfo(t, 0, firstPeriodStart, 0, 0)
 		assert.Equal(t, -miner.WPoStChallengeLookback, di.Challenge)
 		assert.Equal(t, -miner.FaultDeclarationCutoff, di.FaultCutoff)
 		assert.True(t, di.IsOpen())
 		assert.True(t, di.FaultCutoffPassed())
 
-		assertDeadlineInfo(t, boundary, 1, 0, 0, 0)
+		assertDeadlineInfo(t, 1, firstPeriodStart, 0, 0)
 		// Final epoch of deadline 0.
-		assertDeadlineInfo(t, boundary, CW-1, 0, 0, 0)
+		assertDeadlineInfo(t, CW-1, firstPeriodStart, 0, 0)
 		// First epoch of deadline 1
-		assertDeadlineInfo(t, boundary, CW, 0, 1, CW)
-		assertDeadlineInfo(t, boundary, CW+1, 0, 1, CW)
+		assertDeadlineInfo(t, CW, firstPeriodStart, 1, CW)
+		assertDeadlineInfo(t, CW+1, firstPeriodStart, 1, CW)
 		// Final epoch of deadline 1
-		assertDeadlineInfo(t, boundary, CW*2-1, 0, 1, CW)
+		assertDeadlineInfo(t, CW*2-1, firstPeriodStart, 1, CW)
 		// First epoch of deadline 2
-		assertDeadlineInfo(t, boundary, CW*2, 0, 2, CW*2)
+		assertDeadlineInfo(t, CW*2, firstPeriodStart, 2, CW*2)
 
 		// Last epoch of last deadline
-		assertDeadlineInfo(t, boundary, PP-1, 0, DLS-1, PP-CW)
+		assertDeadlineInfo(t, PP-1, firstPeriodStart, DLS-1, PP-CW)
 
 		// Second proving period
 		// First epoch of deadline 0
-		di = assertDeadlineInfo(t, boundary, PP, PP, 0, PP)
+		secondPeriodStart := PP
+		di = assertDeadlineInfo(t, PP, secondPeriodStart, 0, PP)
 		assert.Equal(t, PP-miner.WPoStChallengeLookback, di.Challenge)
 		assert.Equal(t, PP-miner.FaultDeclarationCutoff, di.FaultCutoff)
 
 		// Final epoch of deadline 0.
-		assertDeadlineInfo(t, boundary, PP+CW-1, PP, 0, PP+0)
+		assertDeadlineInfo(t, PP+CW-1, secondPeriodStart, 0, PP+0)
 		// First epoch of deadline 1
-		assertDeadlineInfo(t, boundary, PP+CW, PP, 1, PP+CW)
-		assertDeadlineInfo(t, boundary, PP+CW+1, PP, 1, PP+CW)
+		assertDeadlineInfo(t, PP+CW, secondPeriodStart, 1, PP+CW)
+		assertDeadlineInfo(t, PP+CW+1, secondPeriodStart, 1, PP+CW)
 	})
 
-	t.Run("boundary non-zero", func(t *testing.T) {
-		boundary := CW * 2 + 2 // Arbitrary not aligned with challenge window.
-		initialPPStart := boundary - PP
-		firstDlIndex := miner.WPoStPeriodDeadlines - uint64(boundary / CW) - 1
+	t.Run("offset non-zero", func(t *testing.T) {
+		offset := CW*2 + 2 // Arbitrary not aligned with challenge window.
+		initialPPStart := offset - PP
+		firstDlIndex := miner.WPoStPeriodDeadlines - uint64(offset/CW) - 1
 		firstDlOpen := initialPPStart + CW*abi.ChainEpoch(firstDlIndex)
 
-		require.True(t, boundary < PP)
+		require.True(t, offset < PP)
 		require.True(t, initialPPStart < 0)
 		require.True(t, firstDlOpen < 0)
 
 		// Incomplete initial proving period.
 		// At epoch zero, the initial deadlines in the period have already passed and we're part way through
 		// another one.
-		di := assertDeadlineInfo(t, boundary, 0, initialPPStart, firstDlIndex, firstDlOpen)
+		di := assertDeadlineInfo(t, 0, initialPPStart, firstDlIndex, firstDlOpen)
 		assert.Equal(t, firstDlOpen-miner.WPoStChallengeLookback, di.Challenge)
 		assert.Equal(t, firstDlOpen-miner.FaultDeclarationCutoff, di.FaultCutoff)
 		assert.True(t, di.IsOpen())
 		assert.True(t, di.FaultCutoffPassed())
 
 		// Epoch 1
-		assertDeadlineInfo(t, boundary, 1, initialPPStart, firstDlIndex, firstDlOpen)
+		assertDeadlineInfo(t, 1, initialPPStart, firstDlIndex, firstDlOpen)
 
 		// Epoch 2 rolls over to third-last challenge window
-		assertDeadlineInfo(t, boundary, 2, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
-		assertDeadlineInfo(t, boundary, 3, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
+		assertDeadlineInfo(t, 2, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
+		assertDeadlineInfo(t, 3, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
 
 		// Last epoch of second-last window.
-		assertDeadlineInfo(t, boundary, 2+CW-1, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
+		assertDeadlineInfo(t, 2+CW-1, initialPPStart, firstDlIndex+1, firstDlOpen+CW)
 		// First epoch of last challenge window.
-		assertDeadlineInfo(t, boundary, 2+CW, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
+		assertDeadlineInfo(t, 2+CW, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
 		// Last epoch of last challenge window.
 		assert.Equal(t, miner.WPoStPeriodDeadlines-1, firstDlIndex+2)
-		assertDeadlineInfo(t, boundary, 2+2*CW-1, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
+		assertDeadlineInfo(t, 2+2*CW-1, initialPPStart, firstDlIndex+2, firstDlOpen+CW*2)
 
 		// First epoch of next proving period.
-		assertDeadlineInfo(t, boundary, 2+2*CW, initialPPStart+PP, 0, initialPPStart+PP)
-		assertDeadlineInfo(t, boundary, 2+2*CW+1, initialPPStart+PP, 0, initialPPStart+PP)
+		assertDeadlineInfo(t, 2+2*CW, initialPPStart+PP, 0, initialPPStart+PP)
+		assertDeadlineInfo(t, 2+2*CW+1, initialPPStart+PP, 0, initialPPStart+PP)
 	})
 }
 
-func assertDeadlineInfo(t *testing.T, boundary, current, periodStart abi.ChainEpoch, index uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
-	expected := deadline(current, periodStart, index, deadlineOpen)
-	actual, started := miner.ComputeProvingPeriodDeadline(boundary, current)
-	assert.Equal(t, actual.PeriodStart >= 0, started)
+func assertDeadlineInfo(t *testing.T, current, periodStart abi.ChainEpoch, expectedIndex uint64, expectedDeadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
+	expected := makeDeadline(current, periodStart, expectedIndex, expectedDeadlineOpen)
+	actual := miner.ComputeProvingPeriodDeadline(periodStart, current)
+	assert.True(t, actual.PeriodStarted())
 	assert.True(t, actual.IsOpen())
 	assert.False(t, actual.HasElapsed())
 	assert.Equal(t, expected, actual)
 	return actual
 }
 
-func deadline(currEpoch, periodStart abi.ChainEpoch, deadline uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
+func makeDeadline(currEpoch, periodStart abi.ChainEpoch, index uint64, deadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
 	return &miner.DeadlineInfo{
 		CurrentEpoch: currEpoch,
 		PeriodStart:  periodStart,
-		Index:        deadline,
+		Index:        index,
 		Open:         deadlineOpen,
 		Close:        deadlineOpen + miner.WPoStChallengeWindow,
 		Challenge:    deadlineOpen - miner.WPoStChallengeLookback,
@@ -264,16 +290,135 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 }
 
+func TestComputePartitionsSectors(t *testing.T) {
+	t.Run("no partitions due at empty deadline", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 1)
+
+		// No partitions at deadline 0
+		_, err := miner.ComputePartitionsSectors(dls, 0, []uint64{0})
+		require.Error(t, err)
+
+		// No partitions at deadline 2
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{0})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{1})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{2})
+		require.Error(t, err)
+	})
+	t.Run("single sector", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 1)
+		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0})
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(0, 1), partitions[0])
+	})
+	t.Run("full partition", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[10] = bf(1234, partSize)
+		partitions, err := miner.ComputePartitionsSectors(dls, 10, []uint64{0})
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(1234, partSize), partitions[0])
+	})
+	t.Run("full plus partial partition", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[10] = bf(5555, partSize+1)
+		partitions, err := miner.ComputePartitionsSectors(dls, 10, []uint64{0}) // First partition
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(5555, partSize), partitions[0])
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 10, []uint64{1}) // Second partition
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(5555+partSize, 1), partitions[0])
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 10, []uint64{0, 1}) // Both partitions
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(partitions))
+		assertBfEqual(t, bf(5555, partSize), partitions[0])
+		assertBfEqual(t, bf(5555+partSize, 1), partitions[1])
+	})
+	t.Run("multiple partitions", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 3*partSize+1)
+		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0, 1, 2, 3})
+		require.NoError(t, err)
+		assert.Equal(t, 4, len(partitions))
+		assertBfEqual(t, bf(0, partSize), partitions[0])
+		assertBfEqual(t, bf(1*partSize, partSize), partitions[1])
+		assertBfEqual(t, bf(2*partSize, partSize), partitions[2])
+		assertBfEqual(t, bf(3*partSize, 1), partitions[3])
+	})
+	t.Run("partitions numbered across deadlines", func(t *testing.T) {
+		dls := miner.ConstructDeadlines()
+		dls.Due[1] = bf(0, 3*partSize+1)
+		dls.Due[3] = bf(3*partSize+1, 1)
+		dls.Due[5] = bf(3*partSize+1+1, 2*partSize)
+
+		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0, 1, 2, 3})
+		require.NoError(t, err)
+		assert.Equal(t, 4, len(partitions))
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 3, []uint64{4})
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(partitions))
+		assertBfEqual(t, bf(3*partSize+1, 1), partitions[0])
+
+		partitions, err = miner.ComputePartitionsSectors(dls, 5, []uint64{5, 6})
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(partitions))
+		assertBfEqual(t, bf(3*partSize+1+1, partSize), partitions[0])
+		assertBfEqual(t, bf(3*partSize+1+1+partSize, partSize), partitions[1])
+
+		// Mismatched deadline/partition pairs
+		_, err = miner.ComputePartitionsSectors(dls, 1, []uint64{4})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{4})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{0})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{3})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{5})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 4, []uint64{5})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 5, []uint64{0})
+		require.Error(t, err)
+		_, err = miner.ComputePartitionsSectors(dls, 5, []uint64{7})
+		require.Error(t, err)
+	})
+}
+
 //
 // Deadlines Utils
 //
 
-const partSize = miner.WPoStPartitionSectors
+func assertBfEqual(t *testing.T, expected, actual *bitfield.BitField) {
+	ex, err := expected.All(1 << 20)
+	require.NoError(t, err)
+	ac, err := actual.All(1 << 20)
+	require.NoError(t, err)
+	assert.Equal(t, ex, ac)
+}
+
+// Creates a bitfield with a contiguous run of `count` values from `first.
+func bf(first uint64, count uint64) *abi.BitField {
+	values := make([]uint64, count)
+	for i := range values {
+		values[i] = first + uint64(i)
+	}
+	return bitfield.NewFromSet(values)
+}
 
 func deadlinesWithFullPartitions(t *testing.T, n uint64) *miner.Deadlines {
 	gen := [miner.WPoStPeriodDeadlines]uint64{}
 	for i := range gen {
-		gen[i] = partSize*n
+		gen[i] = partSize * n
 	}
 	return deadlineWithSectors(t, gen)
 }

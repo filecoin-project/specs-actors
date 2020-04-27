@@ -7,7 +7,6 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
-	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -26,9 +25,6 @@ type State struct {
 
 	// Last chain epoch OnEpochTickEnd was called on
 	LastEpochTick abi.ChainEpoch
-
-	// Miners having failed to prove storage.
-	PoStDetectedFaultMiners cid.Cid // Set, HAMT[addr.Address]struct{}
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -58,7 +54,6 @@ func ConstructState(emptyMapCid cid.Cid) *State {
 		TotalQualityAdjPower:     abi.NewStoragePower(0),
 		TotalPledgeCollateral:    abi.NewTokenAmount(0),
 		CronEventQueue:           emptyMapCid,
-		PoStDetectedFaultMiners:  emptyMapCid,
 		Claims:                   emptyMapCid,
 		NumMinersMeetingMinPower: 0,
 	}
@@ -75,11 +70,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return false, errors.Errorf("no claim for actor %v", miner)
 	}
 
-	// nominal power will be in quality adjusted power
-	minerNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
-	if err != nil {
-		return false, err
-	}
+	minerNominalPower := claim.QualityAdjPower
 
 	// if miner is larger than min power requirement, we're set
 	if minerNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
@@ -104,15 +95,8 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 
 	var minerSizes []abi.StoragePower
 	var claimed Claim
-	if err := m.ForEach(&claimed, func(k string) error {
-		maddr, err := addr.NewFromBytes([]byte(k))
-		if err != nil {
-			return err
-		}
-		nominalPower, err := st.computeNominalPower(s, maddr, claimed.QualityAdjPower)
-		if err != nil {
-			return err
-		}
+	if err = m.ForEach(&claimed, func(k string) error {
+		nominalPower := claimed.QualityAdjPower
 		minerSizes = append(minerSizes, nominalPower)
 		return nil
 	}); err != nil {
@@ -134,44 +118,31 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
-	oldNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
-	if err != nil {
-		return err
-	}
+	oldNominalPower := claim.QualityAdjPower
 
 	// update power
 	claim.RawBytePower = big.Add(claim.RawBytePower, power)
 	claim.QualityAdjPower = big.Add(claim.QualityAdjPower, qapower)
 
-	newNominalPower, err := st.computeNominalPower(s, miner, claim.QualityAdjPower)
-	if err != nil {
-		return err
-	}
+	newNominalPower := claim.QualityAdjPower
 
 	prevBelow := oldNominalPower.LessThan(ConsensusMinerMinPower)
 	stillBelow := newNominalPower.LessThan(ConsensusMinerMinPower)
 
-	faulty, err := st.hasDetectedFault(s, miner)
-	if err != nil {
-		return xerrors.Errorf("Failed to check if miner was faulty: %w", err)
-	}
-
-	if !faulty {
-		if prevBelow && !stillBelow {
-			// just passed min miner size
-			st.NumMinersMeetingMinPower++
-			st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newNominalPower)
-			st.TotalRawBytePower = big.Add(st.TotalRawBytePower, claim.RawBytePower)
-		} else if !prevBelow && stillBelow {
-			// just went below min miner size
-			st.NumMinersMeetingMinPower--
-			st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldNominalPower)
-			st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
-		} else if !prevBelow && !stillBelow {
-			// Was above the threshold, still above
-			st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, qapower)
-			st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
-		}
+	if prevBelow && !stillBelow {
+		// just passed min miner size
+		st.NumMinersMeetingMinPower++
+		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newNominalPower)
+		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, claim.RawBytePower)
+	} else if !prevBelow && stillBelow {
+		// just went below min miner size
+		st.NumMinersMeetingMinPower--
+		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldNominalPower)
+		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
+	} else if !prevBelow && !stillBelow {
+		// Was above the threshold, still above
+		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, qapower)
+		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
 	}
 
 	AssertMsg(claim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", claim.RawBytePower)
@@ -183,111 +154,6 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 func (st *State) addPledgeTotal(amount abi.TokenAmount) {
 	st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, amount)
 	Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
-}
-
-func (st *State) computeNominalPower(s adt.Store, minerAddr addr.Address, claimedPower abi.StoragePower) (abi.StoragePower, error) {
-	// Compute nominal power: i.e., the power we infer the miner to have (based on the network's
-	// PoSt queries), which may not be the same as the claimed power.
-	// Currently, the nominal power may differ from claimed power because of
-	// detected faults.
-	nominalPower := claimedPower
-	if found, err := st.hasDetectedFault(s, minerAddr); err != nil {
-		return abi.NewStoragePower(0), err
-	} else if found {
-		nominalPower = big.Zero()
-	}
-	// no need to account for declared faults, since they
-	// are already accounted for in "claimed" power
-	// Likewise miners will never be undercollateralized so no
-	// check needed here
-
-	return nominalPower, nil
-}
-
-func (st *State) hasDetectedFault(s adt.Store, a addr.Address) (bool, error) {
-	faultyMiners, err := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err != nil {
-		return false, err
-	}
-
-	found, err := faultyMiners.Has(AddrKey(a))
-	if err != nil {
-		return false, errors.Wrapf(err, "failed to get detected faults for address %v from set %s", a, st.PoStDetectedFaultMiners)
-	}
-	return found, nil
-}
-
-func (st *State) putDetectedFault(s adt.Store, a addr.Address) error {
-
-	// prior to making change verify whether we've lose a miner > min size
-	claim, ok, err := st.getClaim(s, a)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errors.Errorf("no claim for actor %v", a)
-	}
-	// could be made more efficient by just taking claimed power given
-	// how computeNominal currently works, but that could change.
-	nominalPower, err := st.computeNominalPower(s, a, claim.QualityAdjPower)
-	if err != nil {
-		return err
-	}
-	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
-		// just lost a miner > min size
-		st.NumMinersMeetingMinPower--
-	}
-
-	faultyMiners, err := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err != nil {
-		return err
-	}
-
-	if err := faultyMiners.Put(AddrKey(a)); err != nil {
-		return errors.Wrapf(err, "failed to put detected fault for miner %s in set %s", a, st.PoStDetectedFaultMiners)
-	}
-	st.PoStDetectedFaultMiners, err = faultyMiners.Root()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (st *State) deleteDetectedFault(s adt.Store, a addr.Address) error {
-	faultyMiners, err := adt.AsSet(s, st.PoStDetectedFaultMiners)
-	if err != nil {
-		return err
-	}
-
-	if err := faultyMiners.Delete(AddrKey(a)); err != nil {
-		return errors.Wrapf(err, "failed to delete storage power at address %s from set %s", a, st.PoStDetectedFaultMiners)
-	}
-
-	st.PoStDetectedFaultMiners, err = faultyMiners.Root()
-	if err != nil {
-		return err
-	}
-
-	claim, ok, err := st.getClaim(s, a)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errors.Errorf("no claim for actor %v", a)
-	}
-	nominalPower, err := st.computeNominalPower(s, a, claim.QualityAdjPower)
-	if err != nil {
-		return err
-	}
-	if nominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
-		// just regained a miner > min size
-		st.NumMinersMeetingMinPower++
-		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, claim.RawBytePower)
-		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, claim.QualityAdjPower)
-	}
-
-	return nil
 }
 
 func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
@@ -316,12 +182,7 @@ func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEv
 	var events []CronEvent
 	var ev CronEvent
 	err = mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
-		// Ignore events for defunct miners.
-		if _, found, err := st.getClaim(store, ev.MinerAddr); err != nil {
-			return errors.Wrapf(err, "failed to find claimed power for %v for cron event", ev.MinerAddr)
-		} else if found {
-			events = append(events, ev)
-		}
+		events = append(events, ev)
 		return nil
 	})
 	return events, err
@@ -370,7 +231,7 @@ func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
 		return err
 	}
 
-	if err := hm.Put(AddrKey(a), claim); err != nil {
+	if err = hm.Put(AddrKey(a), claim); err != nil {
 		return errors.Wrapf(err, "failed to put claim with address %s power %v in store %s", a, claim, st.Claims)
 	}
 
@@ -387,7 +248,7 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 		return err
 	}
 
-	if err := hm.Delete(AddrKey(a)); err != nil {
+	if err = hm.Delete(AddrKey(a)); err != nil {
 		return errors.Wrapf(err, "failed to delete claim at address %s from store %s", a, st.Claims)
 	}
 	st.Claims, err = hm.Root()
