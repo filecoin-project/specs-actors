@@ -92,9 +92,7 @@ const (
 	SysErrorReserved3 = ExitCode(12)
 	SysErrorReserved4 = ExitCode(13)
 	SysErrorReserved5 = ExitCode(14)
-
-	// Indicates something broken within the VM.
-	SysErrInternal = ExitCode(15)
+	SysErrorReserved6 = ExitCode(15)
 )
 
 // The initial range of exit codes is reserved for system errors.
@@ -117,5 +115,5 @@ var names = map[ExitCode]string{
 	SysErrorReserved3:        "SysErrorReserved3",
 	SysErrorReserved4:        "SysErrorReserved4",
 	SysErrorReserved5:        "SysErrorReserved5",
-	SysErrInternal:           "SysErrInternal",
+	SysErrorReserved6:        "SysErrorReserved6",
 }
