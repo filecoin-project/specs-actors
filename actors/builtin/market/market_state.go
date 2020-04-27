@@ -82,7 +82,7 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 	if state.SectorStartEpoch == epochUndefined {
 		// Not yet appeared in proven sector; check for timeout.
 		if epoch > deal.StartEpoch {
-			return st.processDealInitTimedOut(rt, dealID, deal, state), 0
+			return st.processDealInitTimedOut(rt, dealID, deal, state), epochUndefined
 		}
 		// This should not be able to happen
 		return amountSlashed, epochUndefined
@@ -478,22 +478,4 @@ func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.Token
 	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
-}
-
-func (st *State) MutateDealIDs(rt Runtime, f func(dbp *SetMultimap) error) {
-	dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids map: %s", err)
-	}
-
-	if err := f(dbp); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to manipulate dead ids map: %s", err)
-	}
-
-	dipc, err := dbp.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
-	}
-
-	st.DealOpsByEpoch = dipc
 }
