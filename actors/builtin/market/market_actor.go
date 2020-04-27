@@ -366,7 +366,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 
 	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorType, pieces)
 	if err != nil {
-		rt.Abortf(exitcode.SysErrorIllegalArgument, "failed to compute unsealed sector CID: %s", err)
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to compute unsealed sector CID: %s", err)
 	}
 
 	return (*cbg.CborCid)(&commd)

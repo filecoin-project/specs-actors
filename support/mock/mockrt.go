@@ -387,7 +387,7 @@ func (rt *Runtime) Create(obj runtime.CBORMarshaler) {
 func (rt *Runtime) Readonly(st runtime.CBORUnmarshaler) {
 	found := rt.Store().Get(rt.state, st)
 	if !found {
-		rt.Abortf(exitcode.SysErrInternal, "actor state not found: %v", rt.state)
+		panic(fmt.Sprintf("actor state not found: %v", rt.state))
 	}
 }
 
