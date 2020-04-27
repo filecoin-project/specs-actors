@@ -284,7 +284,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, err := states.Get(dealID)
+			deal, _, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
@@ -385,7 +385,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 			Assert(deal.Provider == minerAddr)
 
-			state, err := states.Get(dealID)
+			state, _, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}

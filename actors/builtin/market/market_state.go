@@ -64,8 +64,11 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
 	}
 
-	state, err := states.Get(dealID)
+	state, found, err := states.Get(dealID)
 	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
+	}
+	if !found {
 		return abi.NewTokenAmount(0), epochUndefined
 	}
 
@@ -423,9 +426,13 @@ func (st *State) mustGetDealState(rt Runtime, dealID abi.DealID) *DealState {
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
 	}
-	state, err := states.Get(dealID)
+	state, found, err := states.Get(dealID)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
+	}
+
+	if !found {
+		rt.Abortf(exitcode.ErrIllegalState, "deal %d not found", dealID)
 	}
 
 	return state
