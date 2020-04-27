@@ -4,6 +4,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
 type State struct {
@@ -17,4 +18,12 @@ type Entry struct {
 
 func ConstructState(entries []Entry) *State {
 	return &State{Entries: entries}
+}
+
+// The default entries to install in the cron actor's state at genesis.
+func BuiltInEntries() []Entry {
+	return []Entry{{
+		Receiver:  builtin.StoragePowerActorAddr,
+		MethodNum: builtin.MethodsPower.OnEpochTickEnd,
+	}}
 }
