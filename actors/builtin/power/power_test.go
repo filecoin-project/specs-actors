@@ -23,6 +23,8 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
+const sectorSize = abi.SectorSize(2048)
+
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, power.Actor{})
 }
@@ -44,9 +46,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, "miner", abi.SectorSize(int64(32)))
-
-		rt.Verify()
+		actor.createMiner(rt, owner, owner, miner, actr, "miner", sectorSize, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -193,7 +193,8 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
 }
 
-func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer peer.ID, sectorSize abi.SectorSize) {
+func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer peer.ID,
+	sectorSize abi.SectorSize, value abi.TokenAmount) {
 	createMinerParams := &power.CreateMinerParams{
 		Owner:      owner,
 		Worker:     worker,
@@ -203,7 +204,8 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 
 	// owner send CreateMiner to Actor
 	rt.SetCaller(owner, builtin.AccountActorCodeID)
-	rt.SetReceived(abi.NewTokenAmount(1))
+	rt.SetReceived(value)
+	rt.SetBalance(value)
 	rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 	createMinerRet := &power.CreateMinerReturn{
@@ -215,7 +217,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 		CodeCID:           builtin.StorageMinerActorCodeID,
 		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, sectorSize),
 	}
-	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, big.Zero(), createMinerRet, 0)
+	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, value, createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
 	rt.Verify()
 }
