@@ -265,7 +265,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 type VerifyDealsOnSectorProveCommitParams struct {
 	DealIDs      []abi.DealID
-	SectorSize   abi.SectorSize
 	SectorExpiry abi.ChainEpoch
 }
 
