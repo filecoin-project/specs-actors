@@ -91,7 +91,7 @@ type CreateMinerParams struct {
 
 type CreateMinerReturn struct {
 	IDAddress     addr.Address // The canonical ID-based address for the actor.
-	RobustAddress addr.Address // A mre expensive but re-org-safe address for the newly created actor.
+	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 }
 
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
@@ -115,7 +115,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 			CodeCID:           builtin.StorageMinerActorCodeID,
 			ConstructorParams: ctorParamBuf.Bytes(),
 		},
-		abi.NewTokenAmount(0),
+		rt.Message().ValueReceived(), // Pass on any value to the new actor.
 	)
 	builtin.RequireSuccess(rt, code, "failed to init new actor")
 	var addresses initact.ExecReturn
