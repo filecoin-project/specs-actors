@@ -448,7 +448,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
 		&market.VerifyDealsOnSectorProveCommitParams{
 			DealIDs:      precommit.Info.DealIDs,
-			SectorSize:   st.GetSectorSize(),
 			SectorExpiry: precommit.Info.Expiration,
 		},
 		abi.NewTokenAmount(0),
