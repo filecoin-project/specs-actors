@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -236,7 +235,7 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if st.isSigner(params.Signer) {
+		if a.isSigner(rt, &st, params.Signer) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "party is already a signer")
 		}
 		st.Signers = append(st.Signers, params.Signer)
@@ -259,9 +258,7 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if !st.isSigner(params.Signer) {
-			rt.Abortf(exitcode.ErrNotFound, "Party not found")
-		}
+		a.validateSigner(rt, &st, params.Signer)
 
 		if len(st.Signers) == 1 {
 			rt.Abortf(exitcode.ErrForbidden, "cannot remove only signer")
@@ -294,11 +291,9 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if !st.isSigner(params.From) {
-			rt.Abortf(exitcode.ErrNotFound, "Party not found")
-		}
+		a.validateSigner(rt, &st, params.From)
 
-		if st.isSigner(params.To) {
+		if a.isSigner(rt, &st, params.To) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "Party already present")
 		}
 
@@ -408,9 +403,28 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 }
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
-	if !st.isSigner(address) {
+	if !a.isSigner(rt, st, address) {
 		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
 	}
+}
+
+func (a Actor) isSigner(rt vmr.Runtime, st *State, address addr.Address) bool {
+	for i, ap := range st.Signers {
+		if address == ap {
+			return true
+		}
+
+		if ap.Protocol() != addr.ID {
+			idAddr, found := rt.ResolveAddress(ap)
+			if found {
+				st.Signers[i] = idAddr
+				if idAddr == address {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // Computes a digest of a proposed transaction. This digest is used to confirm identity of the transaction

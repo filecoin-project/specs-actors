@@ -33,15 +33,6 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
 }
 
-func (st *State) isSigner(party address.Address) bool {
-	for _, ap := range st.Signers {
-		if party == ap {
-			return true
-		}
-	}
-	return false
-}
-
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
 func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
 	if amountToSpend.LessThan(big.Zero()) {
