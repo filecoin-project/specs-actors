@@ -23,7 +23,7 @@ const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // Half
 const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
 
 // The maximum number of sectors in a single window PoSt proof.
-const WPoStPartitionSectors = uint64(2350)
+const WPoStPartitionSectors = uint64(2349)
 
 // The maximum number of partitions that may be submitted in a single message.
 // This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
