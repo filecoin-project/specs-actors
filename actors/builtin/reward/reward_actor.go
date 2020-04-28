@@ -88,10 +88,11 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	}).(abi.TokenAmount)
 
 	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
+	builtin.RequireSuccess(rt, code, "failed to send reward to miner: %s", minerAddr)
 
 	// Burn the penalty amount.
 	_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
-	builtin.RequireSuccess(rt, code, "failed to send penalty to BurntFundsActor")
+	builtin.RequireSuccess(rt, code, "failed to send penalty to burnt funds actor")
 
 	return nil
 }
