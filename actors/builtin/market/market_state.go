@@ -56,37 +56,13 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
+func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
 	amountSlashed := abi.NewTokenAmount(0)
-
-	states, err := AsDealStateArray(adt.AsStore(rt), st.States)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
-	}
-
-	state, found, err := states.Get(dealID)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
-	}
-	if !found {
-		return abi.NewTokenAmount(0), epochUndefined
-	}
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
 	everSlashed := state.SlashEpoch != epochUndefined
 
 	Assert(!everUpdated || (state.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
-
-	deal := st.mustGetDeal(rt, dealID)
-
-	if state.SectorStartEpoch == epochUndefined {
-		// Not yet appeared in proven sector; check for timeout.
-		if epoch > deal.StartEpoch {
-			return st.processDealInitTimedOut(rt, dealID, deal, state), epochUndefined
-		}
-		// This should not be able to happen
-		return amountSlashed, epochUndefined
-	}
 
 	// This would be the case that the first callback somehow triggers before it is scheduled to
 	// This is expected not to be able to happen
@@ -143,15 +119,6 @@ func (st *State) updatePendingDealState(rt Runtime, dealID abi.DealID, epoch abi
 		next = deal.EndEpoch
 	}
 
-	// TODO: can we avoid having this field?
-	state.LastUpdatedEpoch = epoch
-
-	st.mutateDealStates(rt, func(states *DealMetaArray) {
-		if err := states.Set(dealID, state); err != nil {
-			rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
-		}
-	})
-
 	return amountSlashed, next
 }
 
@@ -198,19 +165,19 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID, deal *DealProposal, state *DealState) (amountSlashed abi.TokenAmount) {
+func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
 	Assert(state.SectorStartEpoch == epochUndefined)
 
 	st.unlockBalance(rt, deal.Client, deal.ClientBalanceRequirement())
 
-	amountSlashed = collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
+	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
 
 	st.slashBalance(rt, deal.Provider, amountSlashed)
 	st.unlockBalance(rt, deal.Provider, amountRemaining)
 
 	st.deleteDeal(rt, dealID)
-	return
+	return amountSlashed
 }
 
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.

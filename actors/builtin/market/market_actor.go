@@ -395,8 +395,8 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// is performed. // TODO: Do that here
 
 			state.SlashEpoch = rt.CurrEpoch()
-			err = states.Set(dealID, state)
-			if err != nil {
+
+			if err := states.Set(dealID, state); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 		}
@@ -414,6 +414,8 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 	amountSlashed := big.Zero()
 
+	var timedOutVerifiedDeals []*DealProposal
+
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
@@ -423,9 +425,42 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
+		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
+		}
+
 		for i := st.LastCron; i <= rt.CurrEpoch(); i++ {
-			if err := dbe.ForEach(i, func(deal abi.DealID) error {
-				slashAmount, nextEpoch := st.updatePendingDealState(rt, deal, rt.CurrEpoch())
+			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
+				state, found, err := states.Get(dealID)
+				if err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
+				}
+
+				if !found {
+					return nil
+				}
+
+				deal := st.mustGetDeal(rt, dealID)
+
+				if state.SectorStartEpoch == epochUndefined {
+					// Not yet appeared in proven sector; check for timeout.
+					if rt.CurrEpoch() > deal.StartEpoch {
+						slashed := st.processDealInitTimedOut(rt, dealID, deal, state)
+						if !slashed.IsZero() {
+							amountSlashed = big.Add(amountSlashed, slashed)
+						}
+						if deal.VerifiedDeal {
+							timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
+						}
+						return nil
+					}
+
+					// This should not be able to happen
+					rt.Abortf(exitcode.ErrIllegalState, "invalid deal state, unstarted, not timed out")
+				}
+
+				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())
 				if !slashAmount.IsZero() {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
@@ -433,7 +468,14 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				if nextEpoch != epochUndefined {
 					Assert(nextEpoch > rt.CurrEpoch())
 
-					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], deal)
+					// TODO: can we avoid having this field?
+					state.LastUpdatedEpoch = rt.CurrEpoch()
+
+					if err := states.Set(dealID, state); err != nil {
+						rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
+					}
+
+					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], dealID)
 				}
 
 				return nil
@@ -463,6 +505,20 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 		return nil
 	})
+
+	for _, d := range timedOutVerifiedDeals {
+		_, code := rt.Send(
+			builtin.VerifiedRegistryActorAddr,
+			builtin.MethodsVerifiedRegistry.RestoreBytes,
+			&verifreg.RestoreBytesParams{
+				Address:  d.Client,
+				DealSize: big.NewIntUnsigned(uint64(d.PieceSize)),
+			},
+			abi.NewTokenAmount(0),
+		)
+
+		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
+	}
 
 	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
 	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
