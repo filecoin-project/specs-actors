@@ -56,7 +56,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
+func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
 	amountSlashed := abi.NewTokenAmount(0)
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
@@ -99,18 +99,20 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		// unlock client collateral and locked storage fee
 		clientCollateral := deal.ClientCollateral
 		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
-		st.unlockBalance(rt, deal.Client, big.Add(clientCollateral, paymentRemaining))
+		st.unlockBalance(lt, deal.Client, big.Add(clientCollateral, paymentRemaining))
 
 		// slash provider collateral
 		amountSlashed = deal.ProviderCollateral
-		st.slashBalance(rt, deal.Provider, amountSlashed)
+		if err := st.slashBalance(et, lt, deal.Provider, amountSlashed); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "slashing balance: %s", err)
+		}
 
 		st.deleteDeal(rt, dealID)
 		return amountSlashed, epochUndefined
 	}
 
 	if epoch >= deal.EndEpoch {
-		st.processDealExpired(rt, dealID)
+		st.processDealExpired(rt, deal, state, lt, dealID)
 		return amountSlashed, epochUndefined
 	}
 
@@ -165,31 +167,31 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *State) processDealInitTimedOut(rt Runtime, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
+func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
 	Assert(state.SectorStartEpoch == epochUndefined)
 
-	st.unlockBalance(rt, deal.Client, deal.ClientBalanceRequirement())
+	st.unlockBalance(lt, deal.Client, deal.ClientBalanceRequirement())
 
 	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
 
-	st.slashBalance(rt, deal.Provider, amountSlashed)
-	st.unlockBalance(rt, deal.Provider, amountRemaining)
+	if err := st.slashBalance(et, lt, deal.Provider, amountSlashed); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to slash balance: %s", err)
+	}
+
+	st.unlockBalance(lt, deal.Provider, amountRemaining)
 
 	st.deleteDeal(rt, dealID)
 	return amountSlashed
 }
 
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
-func (st *State) processDealExpired(rt Runtime, dealID abi.DealID) {
-	deal := st.mustGetDeal(rt, dealID)
-	state := st.mustGetDealState(rt, dealID)
-
+func (st *State) processDealExpired(rt Runtime, deal *DealProposal, state *DealState, lt *adt.BalanceTable, dealID abi.DealID) {
 	Assert(state.SectorStartEpoch != epochUndefined)
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
-	st.unlockBalance(rt, deal.Provider, deal.ProviderCollateral)
-	st.unlockBalance(rt, deal.Client, deal.ClientCollateral)
+	st.unlockBalance(lt, deal.Provider, deal.ProviderCollateral)
+	st.unlockBalance(lt, deal.Client, deal.ClientCollateral)
 
 	st.deleteDeal(rt, dealID)
 }
@@ -286,16 +288,14 @@ func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.Toke
 }
 
 // TODO: all these balance table mutations need to happen at the top level and be batched (no flushing after each!)
-func (st *State) unlockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
+func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	st.MutateBalanceTable(adt.AsStore(rt), &st.LockedTable, func(lt *adt.BalanceTable) error {
-		err := lt.MustSubtract(addr, amount)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "subtracting from locked balance: %v", err)
-		}
-		return nil
-	})
+	err := lt.MustSubtract(addr, amount)
+	if err != nil {
+		return xerrors.Errorf("subtracting from locked balance: %v", err)
+	}
+	return nil
 }
 
 // move funds from locked in client to available in provider
@@ -336,38 +336,18 @@ func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.
 	st.EscrowTable = etc
 }
 
-func (st *State) slashBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) {
+func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
-	}
-	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+	if err := et.MustSubtract(addr, amount); err != nil {
+		return xerrors.Errorf("subtract from escrow: %v", err)
 	}
 
-	err = et.MustSubtract(addr, amount)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
-	}
-	err = lt.MustSubtract(addr, amount)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
+	if err := lt.MustSubtract(addr, amount); err != nil {
+		return xerrors.Errorf("subtract from locked: %v", err)
 	}
 
-	ltc, err := lt.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
-	}
-	etc, err := et.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
-	}
-
-	st.LockedTable = ltc
-	st.EscrowTable = etc
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

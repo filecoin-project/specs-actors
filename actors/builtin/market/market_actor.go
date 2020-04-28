@@ -430,6 +430,16 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
 		}
 
+		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
+		}
+
+		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+		}
+
 		for i := st.LastCron; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
 				state, found, err := states.Get(dealID)
@@ -446,7 +456,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				if state.SectorStartEpoch == epochUndefined {
 					// Not yet appeared in proven sector; check for timeout.
 					if rt.CurrEpoch() > deal.StartEpoch {
-						slashed := st.processDealInitTimedOut(rt, dealID, deal, state)
+						slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
 						if !slashed.IsZero() {
 							amountSlashed = big.Add(amountSlashed, slashed)
 						}
@@ -460,7 +470,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					rt.Abortf(exitcode.ErrIllegalState, "invalid deal state, unstarted, not timed out")
 				}
 
-				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())
+				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
 				if !slashAmount.IsZero() {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
@@ -500,6 +510,17 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to get root of deals by epoch set: %s", err)
 		}
+
+		ltc, err := lt.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
+		}
+		etc, err := et.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
+		}
+		st.LockedTable = ltc
+		st.EscrowTable = etc
 
 		st.DealOpsByEpoch = ndbec
 
