@@ -69,11 +69,11 @@ func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *Deadli
 // Partitions are numbered globally for the miner, not per-deadline.
 // If the deadline has no sectors, the first partition index is the index that a partition at that deadline would
 // have, if non-empty (and sectorCount is zero).
-func PartitionsForDeadline(d *Deadlines, deadlineIdx uint64) (firstPartition, sectorCount uint64, _ error) {
+func PartitionsForDeadline(d *Deadlines, partitionSize, deadlineIdx uint64) (firstPartition, sectorCount uint64, _ error) {
 	AssertMsg(deadlineIdx < WPoStPeriodDeadlines, "invalid deadline index %d for %d deadlines", deadlineIdx, WPoStPeriodDeadlines)
 	var partitionCountSoFar uint64
 	for i := uint64(0); i < WPoStPeriodDeadlines; i++ {
-		partitionCount, thisSectorCount, err := DeadlineCount(d, i)
+		partitionCount, thisSectorCount, err := DeadlineCount(d, partitionSize, i)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -86,15 +86,15 @@ func PartitionsForDeadline(d *Deadlines, deadlineIdx uint64) (firstPartition, se
 }
 
 // Counts the partitions (including up to one partial) and sectors at a deadline.
-func DeadlineCount(d *Deadlines, deadlineIdx uint64) (partitionCount, sectorCount uint64, err error) {
+func DeadlineCount(d *Deadlines, partitionSize, deadlineIdx uint64) (partitionCount, sectorCount uint64, err error) {
 	AssertMsg(deadlineIdx < WPoStPeriodDeadlines, "invalid deadline index %d for %d deadlines", deadlineIdx, WPoStPeriodDeadlines)
 	sectorCount, err = d.Due[deadlineIdx].Count()
 	if err != nil {
 		return 0, 0, err
 	}
 
-	partitionCount = sectorCount / WPoStPartitionSectors
-	if sectorCount%WPoStPartitionSectors != 0 {
+	partitionCount = sectorCount / partitionSize
+	if sectorCount%partitionSize != 0 {
 		partitionCount++
 	}
 	return
@@ -102,13 +102,13 @@ func DeadlineCount(d *Deadlines, deadlineIdx uint64) (partitionCount, sectorCoun
 
 // Computes a bitfield of the sector numbers included in a sequence of partitions due at some deadline.
 // Fails if any partition is not due at the provided deadline.
-func ComputePartitionsSectors(d *Deadlines, deadlineIndex uint64, partitions []uint64) ([]*abi.BitField, error) {
-	deadlineFirstPartition, deadlineSectorCount, err := PartitionsForDeadline(d, deadlineIndex)
+func ComputePartitionsSectors(d *Deadlines, partitionSize uint64, deadlineIndex uint64, partitions []uint64) ([]*abi.BitField, error) {
+	deadlineFirstPartition, deadlineSectorCount, err := PartitionsForDeadline(d, partitionSize, deadlineIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count partitions for deadline %d: %w", deadlineIndex, err)
 	}
-	// ceil(deadlineSectorCount / WPoStPartitionSectors)
-	deadlinePartitionCount := (deadlineSectorCount + WPoStPartitionSectors - 1) / WPoStPartitionSectors
+	// ceil(deadlineSectorCount / partitionSize)
+	deadlinePartitionCount := (deadlineSectorCount + partitionSize - 1) / partitionSize
 
 	// Work out which sector numbers the partitions correspond to.
 	deadlineSectors := d.Due[deadlineIndex]
@@ -120,8 +120,8 @@ func ComputePartitionsSectors(d *Deadlines, deadlineIndex uint64, partitions []u
 		}
 
 		// Slice out the sectors corresponding to this partition from the deadline's sector bitfield.
-		sectorOffset := (pIdx - deadlineFirstPartition) * WPoStPartitionSectors
-		sectorCount := min64(WPoStPartitionSectors, deadlineSectorCount-sectorOffset)
+		sectorOffset := (pIdx - deadlineFirstPartition) * partitionSize
+		sectorCount := min64(partitionSize, deadlineSectorCount-sectorOffset)
 		partitionSectors, err := deadlineSectors.Slice(sectorOffset, sectorCount)
 		if err != nil {
 			return nil, fmt.Errorf("failed to slice deadline %d, size %d, offset %d, count %d",
@@ -136,7 +136,7 @@ func ComputePartitionsSectors(d *Deadlines, deadlineIndex uint64, partitions []u
 // - filling any non-full partitions, in round-robin order across the deadlines
 // - repeatedly adding a new partition to the deadline with the fewest partitions
 // When multiple partitions share the minimal sector count, one is chosen at random (from a seed).
-func AssignNewSectors(deadlines *Deadlines, newSectors []uint64, seed abi.Randomness) error {
+func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []uint64, seed abi.Randomness) error {
 	nextNewSector := uint64(0)
 
 	// Assigns up to `count` sectors to `deadline` and advances `nextNewSector`.
@@ -156,14 +156,14 @@ func AssignNewSectors(deadlines *Deadlines, newSectors []uint64, seed abi.Random
 	// Meanwhile, record the partition count at each deadline.
 	deadlinePartitionCounts := make([]uint64, WPoStPeriodDeadlines)
 	for i := uint64(0); i < WPoStPeriodDeadlines && nextNewSector < uint64(len(newSectors)); i++ {
-		partitionCount, sectorCount, err := DeadlineCount(deadlines, i)
+		partitionCount, sectorCount, err := DeadlineCount(deadlines, partitionSize, i)
 		if err != nil {
 			return fmt.Errorf("failed to count sectors in partition %d: %w", i, err)
 		}
 		deadlinePartitionCounts[i] = partitionCount
 
-		gap := WPoStPartitionSectors - (sectorCount % WPoStPartitionSectors)
-		if gap != WPoStPartitionSectors {
+		gap := partitionSize - (sectorCount % partitionSize)
+		if gap != partitionSize {
 			err = assignToDeadline(gap, i)
 			if err != nil {
 				return err
@@ -175,7 +175,7 @@ func AssignNewSectors(deadlines *Deadlines, newSectors []uint64, seed abi.Random
 	// TODO WPOST (follow-up): fill less-full deadlines first, randomize when equally full.
 	targetDeadline := uint64(0)
 	for nextNewSector < uint64(len(newSectors)) {
-		err := assignToDeadline(WPoStPartitionSectors, targetDeadline)
+		err := assignToDeadline(partitionSize, targetDeadline)
 		if err != nil {
 			return err
 		}

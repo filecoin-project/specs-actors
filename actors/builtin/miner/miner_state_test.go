@@ -950,7 +950,8 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	// state field init
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
-	state := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, "peer", SectorSize, periodBoundary)
+	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, "peer", abi.RegisteredProof_StackedDRG2KiBSeal, periodBoundary)
+	require.NoError(t, err)
 
 	// assert NewSectors bitfield was constructed correctly (empty)
 	newSectorsCount, err := state.NewSectors.Count()

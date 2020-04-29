@@ -36,8 +36,6 @@ func init() {
 	testPid = pid
 }
 
-const SectorSize = abi.SectorSize(32 << 20)
-
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, miner.Actor{})
 }
@@ -58,10 +56,10 @@ func TestConstruction(t *testing.T) {
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
 		params := miner.ConstructorParams{
-			OwnerAddr:  owner,
-			WorkerAddr: worker,
-			SectorSize: SectorSize,
-			PeerId:     testPid,
+			OwnerAddr:     owner,
+			WorkerAddr:    worker,
+			SealProofType: abi.RegisteredProof_StackedDRG2KiBSeal,
+			PeerId:        testPid,
 		}
 
 		provingPeriodStart := abi.ChainEpoch(2386) // This is just set from running the code.
@@ -80,7 +78,9 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, params.OwnerAddr, st.Info.Owner)
 		assert.Equal(t, params.WorkerAddr, st.Info.Worker)
 		assert.Equal(t, params.PeerId, st.Info.PeerId)
-		assert.Equal(t, params.SectorSize, st.Info.SectorSize)
+		assert.Equal(t, abi.RegisteredProof_StackedDRG2KiBSeal, st.Info.SealProofType)
+		assert.Equal(t, abi.SectorSize(2048), st.Info.SectorSize)
+		assert.Equal(t, uint64(2), st.Info.WindowPoStPartitionSectors)
 		assert.Equal(t, provingPeriodStart, st.ProvingPeriodStart)
 
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
@@ -237,10 +237,10 @@ func newHarness(t testing.TB, owner, worker, key addr.Address) *actorHarness {
 
 func (h *actorHarness) constructAndVerify(rt *mock.Runtime, provingPeriodStart abi.ChainEpoch) {
 	params := miner.ConstructorParams{
-		OwnerAddr:  h.owner,
-		WorkerAddr: h.worker,
-		SectorSize: SectorSize,
-		PeerId:     testPid,
+		OwnerAddr:     h.owner,
+		WorkerAddr:    h.worker,
+		SealProofType: abi.RegisteredProof_StackedDRG2KiBSeal,
+		PeerId:        testPid,
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
