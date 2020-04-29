@@ -377,10 +377,15 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SectorSize (abi.SectorSize) (uint64)
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
-		return err
+	// t.SealProofType (abi.RegisteredProof) (int64)
+	if t.SealProofType >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealProofType)-1)); err != nil {
+			return err
+		}
 	}
 
 	// t.Peer (peer.ID) (string)
@@ -430,19 +435,30 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SectorSize (abi.SectorSize) (uint64)
-
+	// t.SealProofType (abi.RegisteredProof) (int64)
 	{
-
-		maj, extra, err = cbg.CborReadHeader(br)
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
 		if err != nil {
 			return err
 		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
-		t.SectorSize = abi.SectorSize(extra)
 
+		t.SealProofType = abi.RegisteredProof(extraI)
 	}
 	// t.Peer (peer.ID) (string)
 
@@ -1022,10 +1038,15 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SectorSize (abi.SectorSize) (uint64)
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorSize))); err != nil {
-		return err
+	// t.SealProofType (abi.RegisteredProof) (int64)
+	if t.SealProofType >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.SealProofType)-1)); err != nil {
+			return err
+		}
 	}
 
 	// t.PeerId (peer.ID) (string)
@@ -1075,19 +1096,30 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SectorSize (abi.SectorSize) (uint64)
-
+	// t.SealProofType (abi.RegisteredProof) (int64)
 	{
-
-		maj, extra, err = cbg.CborReadHeader(br)
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
 		if err != nil {
 			return err
 		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
-		t.SectorSize = abi.SectorSize(extra)
 
+		t.SealProofType = abi.RegisteredProof(extraI)
 	}
 	// t.PeerId (peer.ID) (string)
 

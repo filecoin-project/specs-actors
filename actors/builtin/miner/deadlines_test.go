@@ -11,7 +11,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 )
 
-const partSize = miner.WPoStPartitionSectors
+const partSize = uint64(1000)
 
 func TestProvingPeriodDeadlines(t *testing.T) {
 	PP := miner.WPoStProvingPeriod
@@ -143,12 +143,12 @@ func makeDeadline(currEpoch, periodStart abi.ChainEpoch, index uint64, deadlineO
 func TestPartitionsForDeadline(t *testing.T) {
 	t.Run("empty deadlines", func(t *testing.T) {
 		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{})
-		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, 0)
+		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, uint64(0), sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, miner.WPoStPeriodDeadlines-1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, miner.WPoStPeriodDeadlines-1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, uint64(0), sectorCount)
@@ -156,17 +156,17 @@ func TestPartitionsForDeadline(t *testing.T) {
 
 	t.Run("single sector at first deadline", func(t *testing.T) {
 		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{1})
-		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, 0)
+		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, uint64(1), sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Zero(t, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, miner.WPoStPeriodDeadlines-1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, miner.WPoStPeriodDeadlines-1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Zero(t, sectorCount)
@@ -174,22 +174,22 @@ func TestPartitionsForDeadline(t *testing.T) {
 
 	t.Run("single sector at non-first deadline", func(t *testing.T) {
 		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{0, 1})
-		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, 0)
+		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, uint64(0), sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, uint64(1), sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 2)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Equal(t, uint64(0), sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, miner.WPoStPeriodDeadlines-1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, miner.WPoStPeriodDeadlines-1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Equal(t, uint64(0), sectorCount)
@@ -197,17 +197,17 @@ func TestPartitionsForDeadline(t *testing.T) {
 
 	t.Run("deadlines with one full partitions", func(t *testing.T) {
 		dl := deadlinesWithFullPartitions(t, 1)
-		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, 0)
+		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, partSize, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Equal(t, partSize, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, miner.WPoStPeriodDeadlines-1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, miner.WPoStPeriodDeadlines-1)
 		require.NoError(t, err)
 		assert.Equal(t, miner.WPoStPeriodDeadlines-1, firstIndex)
 		assert.Equal(t, partSize, sectorCount)
@@ -222,22 +222,22 @@ func TestPartitionsForDeadline(t *testing.T) {
 			4: partSize - 3,
 			5: partSize,
 		})
-		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, 0)
+		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, partSize-1, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Equal(t, partSize, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 2)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(2), firstIndex)
 		assert.Equal(t, partSize-2, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 5)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 5)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(5), firstIndex)
 		assert.Equal(t, partSize, sectorCount)
@@ -253,37 +253,37 @@ func TestPartitionsForDeadline(t *testing.T) {
 			5: partSize * 9,   // 9 partitions 30 total
 		})
 
-		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, 0)
+		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
 		assert.Equal(t, partSize, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), firstIndex)
 		assert.Equal(t, partSize*2, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 2)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(3), firstIndex)
 		assert.Equal(t, partSize*4-1, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 3)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 3)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(7), firstIndex)
 		assert.Equal(t, partSize*6, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 4)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 4)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(13), firstIndex)
 		assert.Equal(t, partSize*8-1, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, 5)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, 5)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(21), firstIndex)
 		assert.Equal(t, partSize*9, sectorCount)
 
-		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, miner.WPoStPeriodDeadlines-1)
+		firstIndex, sectorCount, err = miner.PartitionsForDeadline(dl, partSize, miner.WPoStPeriodDeadlines-1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(30), firstIndex)
 		assert.Equal(t, uint64(0), sectorCount)
@@ -296,21 +296,21 @@ func TestComputePartitionsSectors(t *testing.T) {
 		dls.Due[1] = bf(0, 1)
 
 		// No partitions at deadline 0
-		_, err := miner.ComputePartitionsSectors(dls, 0, []uint64{0})
+		_, err := miner.ComputePartitionsSectors(dls, partSize, 0, []uint64{0})
 		require.Error(t, err)
 
 		// No partitions at deadline 2
-		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{0})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 2, []uint64{0})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{1})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 2, []uint64{1})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{2})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 2, []uint64{2})
 		require.Error(t, err)
 	})
 	t.Run("single sector", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
 		dls.Due[1] = bf(0, 1)
-		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0})
+		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{0})
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
 		assertBfEqual(t, bf(0, 1), partitions[0])
@@ -318,7 +318,7 @@ func TestComputePartitionsSectors(t *testing.T) {
 	t.Run("full partition", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
 		dls.Due[10] = bf(1234, partSize)
-		partitions, err := miner.ComputePartitionsSectors(dls, 10, []uint64{0})
+		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{0})
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
 		assertBfEqual(t, bf(1234, partSize), partitions[0])
@@ -326,17 +326,17 @@ func TestComputePartitionsSectors(t *testing.T) {
 	t.Run("full plus partial partition", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
 		dls.Due[10] = bf(5555, partSize+1)
-		partitions, err := miner.ComputePartitionsSectors(dls, 10, []uint64{0}) // First partition
+		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{0}) // First partition
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
 		assertBfEqual(t, bf(5555, partSize), partitions[0])
 
-		partitions, err = miner.ComputePartitionsSectors(dls, 10, []uint64{1}) // Second partition
+		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{1}) // Second partition
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
 		assertBfEqual(t, bf(5555+partSize, 1), partitions[0])
 
-		partitions, err = miner.ComputePartitionsSectors(dls, 10, []uint64{0, 1}) // Both partitions
+		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{0, 1}) // Both partitions
 		require.NoError(t, err)
 		assert.Equal(t, 2, len(partitions))
 		assertBfEqual(t, bf(5555, partSize), partitions[0])
@@ -345,7 +345,7 @@ func TestComputePartitionsSectors(t *testing.T) {
 	t.Run("multiple partitions", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
 		dls.Due[1] = bf(0, 3*partSize+1)
-		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0, 1, 2, 3})
+		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{0, 1, 2, 3})
 		require.NoError(t, err)
 		assert.Equal(t, 4, len(partitions))
 		assertBfEqual(t, bf(0, partSize), partitions[0])
@@ -359,37 +359,37 @@ func TestComputePartitionsSectors(t *testing.T) {
 		dls.Due[3] = bf(3*partSize+1, 1)
 		dls.Due[5] = bf(3*partSize+1+1, 2*partSize)
 
-		partitions, err := miner.ComputePartitionsSectors(dls, 1, []uint64{0, 1, 2, 3})
+		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{0, 1, 2, 3})
 		require.NoError(t, err)
 		assert.Equal(t, 4, len(partitions))
 
-		partitions, err = miner.ComputePartitionsSectors(dls, 3, []uint64{4})
+		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 3, []uint64{4})
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
 		assertBfEqual(t, bf(3*partSize+1, 1), partitions[0])
 
-		partitions, err = miner.ComputePartitionsSectors(dls, 5, []uint64{5, 6})
+		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 5, []uint64{5, 6})
 		require.NoError(t, err)
 		assert.Equal(t, 2, len(partitions))
 		assertBfEqual(t, bf(3*partSize+1+1, partSize), partitions[0])
 		assertBfEqual(t, bf(3*partSize+1+1+partSize, partSize), partitions[1])
 
 		// Mismatched deadline/partition pairs
-		_, err = miner.ComputePartitionsSectors(dls, 1, []uint64{4})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{4})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 2, []uint64{4})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 2, []uint64{4})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{0})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 3, []uint64{0})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{3})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 3, []uint64{3})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 3, []uint64{5})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 3, []uint64{5})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 4, []uint64{5})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 4, []uint64{5})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 5, []uint64{0})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 5, []uint64{0})
 		require.Error(t, err)
-		_, err = miner.ComputePartitionsSectors(dls, 5, []uint64{7})
+		_, err = miner.ComputePartitionsSectors(dls, partSize, 5, []uint64{7})
 		require.Error(t, err)
 	})
 }

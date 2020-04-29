@@ -94,8 +94,16 @@ type MinerInfo struct {
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
 
-	// Amount of space in each sector committed to the network by this miner.
+	// The proof type used by this miner for sealing sectors.
+	SealProofType abi.RegisteredProof
+
+	// Amount of space in each sector committed by this miner.
+	// This is computed from the proof type and represented here redundantly.
 	SectorSize abi.SectorSize
+
+	// The number of sectors in each Window PoSt partition (proof).
+	// This is computed from the proof type and represented here redundantly.
+	WindowPoStPartitionSectors uint64
 }
 
 type PeerID peer.ID
@@ -128,14 +136,28 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId peer.ID, sectorSize abi.SectorSize, periodStart abi.ChainEpoch) *State {
+	peerId peer.ID, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
+	sealProofType, err := proofType.RegisteredSealProof()
+	if err != nil {
+		return nil, fmt.Errorf("no seal proof for proof type %d: %w", sealProofType, err)
+	}
+	sectorSize, err := sealProofType.SectorSize()
+	if err != nil {
+		return nil, fmt.Errorf("no sector size for seal proof type %d: %w", sealProofType, err)
+	}
+	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
+	if err != nil {
+		return nil, fmt.Errorf("no partition size for seal proof type %d: %w", sealProofType, err)
+	}
 	return &State{
 		Info: MinerInfo{
-			Owner:            ownerAddr,
-			Worker:           workerAddr,
-			PendingWorkerKey: nil,
-			PeerId:           peerId,
-			SectorSize:       sectorSize,
+			Owner:                      ownerAddr,
+			Worker:                     workerAddr,
+			PendingWorkerKey:           nil,
+			PeerId:                     peerId,
+			SealProofType:              sealProofType,
+			SectorSize:                 sectorSize,
+			WindowPoStPartitionSectors: partitionSectors,
 		},
 
 		PreCommitDeposits: abi.NewTokenAmount(0),
@@ -152,7 +174,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 		FaultEpochs:         emptyArrayCid,
 		Recoveries:          abi.NewBitField(),
 		PostSubmissions:     abi.NewBitField(),
-	}
+	}, nil
 }
 
 func (st *State) GetWorker() addr.Address {

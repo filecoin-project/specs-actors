@@ -22,13 +22,6 @@ const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // Half
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
 
-// The maximum number of sectors in a single window PoSt proof.
-const WPoStPartitionSectors = uint64(2349)
-
-// The maximum number of partitions that may be submitted in a single message.
-// This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
-const WPoStMessagePartitionsMax = 100_000 / WPoStPartitionSectors
-
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
 	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {
@@ -45,7 +38,15 @@ func init() {
 const SectorsMax = 32 << 20 // PARAM_FINISH
 
 // The maximum number of proving partitions a miner can have simultaneously active.
-const PartitionsMax = (SectorsMax / WPoStPartitionSectors) + WPoStPeriodDeadlines
+func activePartitionsMax(partitionSectorCount uint64) uint64 {
+	return (SectorsMax / partitionSectorCount) + WPoStPeriodDeadlines
+}
+
+// The maximum number of partitions that may be submitted in a single message.
+// This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
+func windowPoStMessagePartitionsMax(partitionSectorCount uint64) uint64 {
+	return 100_000 / partitionSectorCount
+}
 
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
 const NewSectorsPerPeriodMax = 128 << 10

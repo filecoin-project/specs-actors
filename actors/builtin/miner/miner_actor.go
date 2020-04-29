@@ -102,7 +102,8 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	periodStart := nextProvingPeriodStart(currEpoch, offset)
 	Assert(periodStart > currEpoch)
 
-	state := ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, params.PeerId, params.SectorSize, periodStart)
+	state, err := ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, params.PeerId, params.SealProofType, periodStart)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
 	// Register cron callback for epoch before the first proving period starts.
@@ -194,9 +195,6 @@ type SubmitWindowedPoStParams struct {
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
-	if uint64(len(params.Partitions)) > WPoStMessagePartitionsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, max %d", len(params.Partitions), WPoStMessagePartitionsMax)
-	}
 	if len(params.Partitions) != len(params.Proofs) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %", len(params.Proofs), len(params.Partitions))
 	}
@@ -210,6 +208,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
+		partitionSize := st.Info.WindowPoStPartitionSectors
+		submissionPartitionLimit := windowPoStMessagePartitionsMax(partitionSize)
+		if uint64(len(params.Partitions)) > submissionPartitionLimit {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
+		}
 		deadline := st.DeadlineInfo(currEpoch)
 		if !deadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", deadline.PeriodStart, currEpoch)
@@ -235,7 +238,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
 
 		// Work out which sectors are due in the declared partitions at this deadline.
-		partitionsSectors, err := ComputePartitionsSectors(deadlines, deadline.Index, params.Partitions)
+		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
 			deadline.Index, params.Partitions)
 
@@ -998,7 +1001,7 @@ func handleProvingPeriod(rt Runtime) {
 
 			if len(newSectors) > 0 {
 				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, deadline.PeriodEnd()-1, nil)
-				err = AssignNewSectors(deadlines, newSectors, assignmentSeed)
+				err = AssignNewSectors(deadlines, st.Info.WindowPoStPartitionSectors, newSectors, assignmentSeed)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 				// Store updated deadline state.
@@ -1055,7 +1058,8 @@ func checkMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *D
 func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
 	// TODO: Iterating this bitfield and keeping track of what partitions we're expecting could remove the
 	// need to expand this into a potentially-giant map. But it's tricksy.
-	submissions, err := st.PostSubmissions.AllMap(PartitionsMax)
+	partitionSize := st.Info.WindowPoStPartitionSectors
+	submissions, err := st.PostSubmissions.AllMap(activePartitionsMax(partitionSize))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to expand submissions: %w", err)
 	}
@@ -1063,7 +1067,7 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 	deadlineFirstPartition := uint64(0)
 	var fGroups, rGroups []*abi.BitField
 	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
-		partitionCount, dlSectorCount, err := DeadlineCount(deadlines, dlIdx)
+		partitionCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)
 		}
@@ -1072,10 +1076,10 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 		for i := uint64(0); i < partitionCount; i++ {
 			if !submissions[deadlineFirstPartition+i] {
 				// No PoSt received in prior period.
-				firstSector := i * WPoStPartitionSectors
-				sectorCount := WPoStPartitionSectors
+				firstSector := i * partitionSize
+				sectorCount := partitionSize
 				if i == partitionCount-1 {
-					sectorCount = dlSectorCount % WPoStPartitionSectors
+					sectorCount = dlSectorCount % partitionSize
 				}
 
 				partitionSectors, err := deadlineSectors.Slice(firstSector, sectorCount)
