@@ -110,6 +110,30 @@ func (p RegisteredProof) SectorSize() (SectorSize, error) {
 	}
 }
 
+// Returns the partition size, in sectors, associated with a proof type.
+// The partition size is the number of sectors proven in a single PoSt proof.
+func (p RegisteredProof) WindowPoStPartitionSectors() (uint64, error) {
+	// Resolve to seal proof and then compute size from that.
+	sp, err := p.RegisteredSealProof()
+	if err != nil {
+		return 0, err
+	}
+	// These numbers must match those used by the proofs library.
+	// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
+	switch sp {
+	case RegisteredProof_StackedDRG32GiBSeal:
+		return 2049, nil
+	case RegisteredProof_StackedDRG2KiBSeal:
+		return 2, nil
+	case RegisteredProof_StackedDRG8MiBSeal:
+		return 2, nil
+	case RegisteredProof_StackedDRG512MiBSeal:
+		return 2, nil
+	default:
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+}
+
 // RegisteredWinningPoStProof produces the PoSt-specific RegisteredProof corresponding
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredWinningPoStProof() (RegisteredProof, error) {

@@ -23,8 +23,6 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
-const sectorSize = abi.SectorSize(2048)
-
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, power.Actor{})
 }
@@ -46,7 +44,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, "miner", sectorSize, abi.NewTokenAmount(10))
+		actor.createMiner(rt, owner, owner, miner, actr, "miner", abi.RegisteredProof_StackedDRG2KiBSeal, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -194,12 +192,12 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 }
 
 func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer peer.ID,
-	sectorSize abi.SectorSize, value abi.TokenAmount) {
+	sealProofType abi.RegisteredProof, value abi.TokenAmount) {
 	createMinerParams := &power.CreateMinerParams{
-		Owner:      owner,
-		Worker:     worker,
-		SectorSize: sectorSize,
-		Peer:       peer,
+		Owner:         owner,
+		Worker:        worker,
+		SealProofType: sealProofType,
+		Peer:          peer,
 	}
 
 	// owner send CreateMiner to Actor
@@ -215,7 +213,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 
 	msgParams := &initact.ExecParams{
 		CodeCID:           builtin.StorageMinerActorCodeID,
-		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, sectorSize),
+		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, sealProofType),
 	}
 	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, value, createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
@@ -232,12 +230,12 @@ func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, e
 	rt.Verify()
 }
 
-func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer peer.ID, sectorSize abi.SectorSize) []byte {
+func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer peer.ID, sealProofType abi.RegisteredProof) []byte {
 	params := &power.MinerConstructorParams{
-		OwnerAddr:  owner,
-		WorkerAddr: worker,
-		SectorSize: sectorSize,
-		PeerId:     peer,
+		OwnerAddr:     owner,
+		WorkerAddr:    worker,
+		SealProofType: sealProofType,
+		PeerId:        peer,
 	}
 
 	buf := new(bytes.Buffer)

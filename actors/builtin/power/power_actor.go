@@ -52,10 +52,10 @@ var _ abi.Invokee = Actor{}
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
 type MinerConstructorParams struct {
-	OwnerAddr  addr.Address
-	WorkerAddr addr.Address
-	SectorSize abi.SectorSize
-	PeerId     peer.ID
+	OwnerAddr     addr.Address
+	WorkerAddr    addr.Address
+	SealProofType abi.RegisteredProof
+	PeerId        peer.ID
 }
 
 type SectorStorageWeightDesc struct {
@@ -83,10 +83,10 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 }
 
 type CreateMinerParams struct {
-	Owner      addr.Address
-	Worker     addr.Address
-	SectorSize abi.SectorSize
-	Peer       peer.ID
+	Owner         addr.Address
+	Worker        addr.Address
+	SealProofType abi.RegisteredProof
+	Peer          peer.ID
 }
 
 type CreateMinerReturn struct {
@@ -98,10 +98,10 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
 	ctorParams := MinerConstructorParams{
-		OwnerAddr:  params.Owner,
-		WorkerAddr: params.Worker,
-		SectorSize: params.SectorSize,
-		PeerId:     params.Peer,
+		OwnerAddr:     params.Owner,
+		WorkerAddr:    params.Worker,
+		SealProofType: params.SealProofType,
+		PeerId:        params.Peer,
 	}
 	ctorParamBuf := new(bytes.Buffer)
 	err := ctorParams.MarshalCBOR(ctorParamBuf)
