@@ -122,7 +122,7 @@ func (p RegisteredProof) WindowPoStPartitionSectors() (uint64, error) {
 	// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
 	switch sp {
 	case RegisteredProof_StackedDRG32GiBSeal:
-		return 2049, nil
+		return 2349, nil
 	case RegisteredProof_StackedDRG2KiBSeal:
 		return 2, nil
 	case RegisteredProof_StackedDRG8MiBSeal:
