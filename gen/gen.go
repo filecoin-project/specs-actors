@@ -208,7 +208,11 @@ func main() {
 	}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/puppet/cbor_gen.go", "puppet",
+		// actor state
 		puppet.State{},
+		// method params
+		puppet.SendParams{},
+		puppet.SendReturn{},
 	); err != nil {
 		panic(err)
 	}
