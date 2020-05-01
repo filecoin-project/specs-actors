@@ -1,4 +1,4 @@
-package test
+package puppet
 
 import (
 	addr "github.com/filecoin-project/go-address"

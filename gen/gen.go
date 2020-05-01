@@ -16,7 +16,7 @@ import (
 	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	system "github.com/filecoin-project/specs-actors/actors/builtin/system"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
-	test "github.com/filecoin-project/specs-actors/actors/test"
+	puppet "github.com/filecoin-project/specs-actors/actors/puppet"
 )
 
 func main() {
@@ -207,8 +207,8 @@ func main() {
 		panic(err)
 	}
 
-	if err := gen.WriteTupleEncodersToFile("./actors/test/cbor_gen.go", "test",
-		test.State{},
+	if err := gen.WriteTupleEncodersToFile("./actors/puppet/cbor_gen.go", "puppet",
+		puppet.State{},
 	); err != nil {
 		panic(err)
 	}
