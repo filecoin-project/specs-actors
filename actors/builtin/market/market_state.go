@@ -49,6 +49,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 		LockedTable:    emptyMapCid,
 		NextID:         abi.DealID(0),
 		DealOpsByEpoch: emptyMSetCid,
+		LastCron:       abi.ChainEpoch(-1),
 	}
 }
 

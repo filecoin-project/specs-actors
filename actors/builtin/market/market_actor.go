@@ -284,9 +284,12 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, _, err := states.Get(dealID)
+			deal, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
+			}
+			if !found {
+				rt.Abortf(exitcode.ErrIllegalArgument, "failed to find deal given in params: %d", dealID)
 			}
 			proposal, err := proposals.Get(dealID)
 			if err != nil {
@@ -385,9 +388,12 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 			Assert(deal.Provider == minerAddr)
 
-			state, _, err := states.Get(dealID)
+			state, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
+			}
+			if !found {
+				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
 			}
 
 			// Note: we do not perform the balance transfers here, but rather simply record the flag
@@ -455,19 +461,16 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 				if state.SectorStartEpoch == epochUndefined {
 					// Not yet appeared in proven sector; check for timeout.
-					if rt.CurrEpoch() > deal.StartEpoch {
-						slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
-						if !slashed.IsZero() {
-							amountSlashed = big.Add(amountSlashed, slashed)
-						}
-						if deal.VerifiedDeal {
-							timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
-						}
-						return nil
-					}
+					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
 
-					// This should not be able to happen
-					rt.Abortf(exitcode.ErrIllegalState, "invalid deal state, unstarted, not timed out")
+					slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
+					if !slashed.IsZero() {
+						amountSlashed = big.Add(amountSlashed, slashed)
+					}
+					if deal.VerifiedDeal {
+						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
+					}
+					return nil
 				}
 
 				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
