@@ -57,7 +57,7 @@ func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *Deadli
 	return &DeadlineInfo{
 		CurrentEpoch: currEpoch,
 		PeriodStart:  periodStart,
-		Index:        deadlineIdx,
+		Index:        deadlineIdx % WPoStPeriodDeadlines,
 		Open:         deadlineOpen,
 		Close:        deadlineOpen + WPoStChallengeWindow,
 		Challenge:    deadlineOpen - WPoStChallengeLookback,

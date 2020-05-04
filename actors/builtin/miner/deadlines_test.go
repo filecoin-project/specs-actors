@@ -116,6 +116,17 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		assertDeadlineInfo(t, 2+2*CW, initialPPStart+PP, 0, initialPPStart+PP)
 		assertDeadlineInfo(t, 2+2*CW+1, initialPPStart+PP, 0, initialPPStart+PP)
 	})
+
+	t.Run("missed period", func(t *testing.T) {
+		currDlOffset := abi.ChainEpoch(5)
+
+		periodStart := PP / 3
+		curr := periodStart + PP * 2 + PP / 4 + currDlOffset
+		di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+
+		assert.Equal(t, DLS / 4, di.Index)
+		assert.Equal(t, curr - currDlOffset, di.Open)
+	})
 }
 
 func assertDeadlineInfo(t *testing.T, current, periodStart abi.ChainEpoch, expectedIndex uint64, expectedDeadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
