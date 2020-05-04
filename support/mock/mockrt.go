@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"testing"
 
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
@@ -459,6 +460,10 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 	}
 	rt.failTestNow("unexpected syscall to verify seal %v", seal)
 	return nil
+}
+
+func (rt *Runtime) BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
+	panic("implement me")
 }
 
 func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {

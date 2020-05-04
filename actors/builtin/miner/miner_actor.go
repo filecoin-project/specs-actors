@@ -58,6 +58,7 @@ func (a Actor) Exports() []interface{} {
 		14:                        a.AddLockedFund,
 		15:                        a.ReportConsensusFault,
 		16:                        a.WithdrawBalance,
+		17:                        a.ConfirmSectorProofsValid,
 	}
 }
 
@@ -346,7 +347,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 				rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed with deals", params.SectorNumber)
 			} else {
 				// Committed Capacity sector upgrade.
-				if params.Expiration < sectorInfo.Info.Expiration  {
+				if params.Expiration < sectorInfo.Info.Expiration {
 					rt.Abortf(exitcode.ErrIllegalArgument, "upgraded sector %v expires before original expiration", params.SectorNumber)
 				}
 			}
@@ -434,7 +435,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	}
 
 	// will abort if seal invalid
-	verifySeal(rt, &SealVerifyStuff{
+	svi := getVerifyInfo(rt, &SealVerifyStuff{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
 		SealRandEpoch:    precommit.Info.SealRandEpoch,
@@ -444,91 +445,120 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		RegisteredProof:  precommit.Info.RegisteredProof,
 	})
 
-	// Check (and activate) storage deals associated to sector. Abort if checks failed.
-	// return DealWeight for the deal set in the sector
-	ret, code := rt.Send(
-		builtin.StorageMarketActorAddr,
-		builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
-		&market.VerifyDealsOnSectorProveCommitParams{
-			DealIDs:      precommit.Info.DealIDs,
-			SectorExpiry: precommit.Info.Expiration,
-		},
+	_, code := rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.SubmitPoRepForBulkVerify,
+		svi,
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-	var dealWeights market.VerifyDealsOnSectorProveCommitReturn
-	AssertNoError(ret.Into(&dealWeights))
+	builtin.RequireSuccess(rt, code, "failed to submit proof for bulk verification")
+	return nil
+}
 
-	// Request power for activated sector.
-	// Return initial pledge requirement.
-	ret, code = rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnSectorProveCommit,
-		&power.OnSectorProveCommitParams{
-			Weight: power.SectorStorageWeightDesc{
-				SectorSize:         st.Info.SectorSize,
+func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
+	var st State
+	rt.State().Readonly(&st)
+
+	store := adt.AsStore(rt)
+
+	for _, sectorNo := range params.Sectors {
+		precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to get precommitted sector %v: %v", sectorNo, err)
+		} else if !found {
+			rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
+		}
+
+		// Check (and activate) storage deals associated to sector. Abort if checks failed.
+		// return DealWeight for the deal set in the sector
+		var dealWeights market.VerifyDealsOnSectorProveCommitReturn
+		ret, code := rt.Send(
+			builtin.StorageMarketActorAddr,
+			builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
+			&market.VerifyDealsOnSectorProveCommitParams{
+				DealIDs:      precommit.Info.DealIDs,
+				SectorExpiry: precommit.Info.Expiration,
+			},
+			abi.NewTokenAmount(0),
+		)
+		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
+		AssertNoError(ret.Into(&dealWeights))
+
+		// Request power for activated sector.
+		// Return initial pledge requirement.
+
+		// TODO: since this method gets called by the storage power actor
+		// initially, can we just do this while we're there?
+		// We can probably return the right information from this call to the caller, so it can update there
+		var initialPledge abi.TokenAmount
+		ret, code = rt.Send(
+			builtin.StoragePowerActorAddr,
+			builtin.MethodsPower.OnSectorProveCommit,
+			&power.OnSectorProveCommitParams{
+				Weight: power.SectorStorageWeightDesc{
+					SectorSize:         st.Info.SectorSize,
+					DealWeight:         dealWeights.DealWeight,
+					VerifiedDealWeight: dealWeights.VerifiedDealWeight,
+					Duration:           precommit.Info.Expiration - rt.CurrEpoch(),
+				},
+			},
+			big.Zero(),
+		)
+		builtin.RequireSuccess(rt, code, "failed to notify power actor")
+		AssertNoError(ret.Into(&initialPledge))
+
+		// Add sector and pledge lock-up to miner state
+		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
+			}
+
+			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
+			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
+
+			// Verify locked funds are are at least the sum of sector initial pledges.
+			verifyPledgeMeetsInitialRequirements(rt, &st)
+
+			// Lock up initial pledge for new sector.
+			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+			if availableBalance.LessThan(initialPledge) {
+				rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for initial pledge requirement %s, available: %s", initialPledge, availableBalance)
+			}
+			if err := st.AddLockedFunds(store, rt.CurrEpoch(), initialPledge, &PledgeVestingSpec); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
+			}
+			st.AssertBalanceInvariants(rt.CurrentBalance())
+
+			newSectorInfo := &SectorOnChainInfo{
+				Info:               precommit.Info,
+				ActivationEpoch:    rt.CurrEpoch(),
 				DealWeight:         dealWeights.DealWeight,
 				VerifiedDealWeight: dealWeights.VerifiedDealWeight,
-				Duration:           precommit.Info.Expiration - rt.CurrEpoch(),
-			},
-		},
-		big.Zero(),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify power actor")
-	var initialPledge abi.TokenAmount
-	AssertNoError(ret.Into(&initialPledge))
+			}
 
-	// Add sector and pledge lock-up to miner state
-	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
-		}
+			if err := st.PutSector(store, newSectorInfo); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
+			}
 
-		// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
+			if err := st.DeletePrecommittedSector(store, sectorNo); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
+			}
 
-		// Verify locked funds are are at least the sum of sector initial pledges.
-		verifyPledgeMeetsInitialRequirements(rt, &st)
+			if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(sectorNo)); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", sectorNo, err)
+			}
 
-		// Lock up initial pledge for new sector.
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		if availableBalance.LessThan(initialPledge) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for initial pledge requirement %s, available: %s", initialPledge, availableBalance)
-		}
-		if err := st.AddLockedFunds(store, rt.CurrEpoch(), initialPledge, &PledgeVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
-		}
-		st.AssertBalanceInvariants(rt.CurrentBalance())
+			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
+			if err := st.AddNewSectors(sectorNo); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", sectorNo, err)
+			}
 
-		newSectorInfo := &SectorOnChainInfo{
-			Info:               precommit.Info,
-			ActivationEpoch:    rt.CurrEpoch(),
-			DealWeight:         dealWeights.DealWeight,
-			VerifiedDealWeight: dealWeights.VerifiedDealWeight,
-		}
+			return newlyVestedFund
+		}).(abi.TokenAmount)
 
-		if err := st.PutSector(store, newSectorInfo); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
-		}
-
-		if err := st.DeletePrecommittedSector(store, sectorNo); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
-		}
-
-		if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(sectorNo)); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", sectorNo, err)
-		}
-
-		// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
-		if err := st.AddNewSectors(sectorNo); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", sectorNo, err)
-		}
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
-
-	notifyPledgeChanged(rt, big.Sub(initialPledge, newlyVestedAmount))
+		notifyPledgeChanged(rt, big.Sub(initialPledge, newlyVestedAmount))
+	}
 
 	return nil
 }
@@ -1519,7 +1549,7 @@ type SealVerifyStuff struct {
 	SealRandEpoch abi.ChainEpoch // Used to tie the seal to a chain.
 }
 
-func verifySeal(rt Runtime, params *SealVerifyStuff) {
+func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 	if rt.CurrEpoch() <= params.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
@@ -1542,7 +1572,7 @@ func verifySeal(rt Runtime, params *SealVerifyStuff) {
 	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
 	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
 
-	svInfo := abi.SealVerifyInfo{
+	return &abi.SealVerifyInfo{
 		RegisteredProof: params.RegisteredProof,
 		SectorID: abi.SectorID{
 			Miner:  abi.ActorID(minerActorID),
@@ -1554,9 +1584,6 @@ func verifySeal(rt Runtime, params *SealVerifyStuff) {
 		Randomness:            abi.SealRandomness(svInfoRandomness),
 		SealedCID:             params.SealedCID,
 		UnsealedCID:           commD,
-	}
-	if err := rt.Syscalls().VerifySeal(svInfo); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "invalid seal %+v: %s", svInfo, err)
 	}
 }
 

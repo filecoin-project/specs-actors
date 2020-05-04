@@ -31,6 +31,8 @@ type State struct {
 
 	// Number of miners having proven the minimum consensus power.
 	NumMinersMeetingMinPower int64
+
+	ProofValidationBatch cid.Cid
 }
 
 type Claim struct {
