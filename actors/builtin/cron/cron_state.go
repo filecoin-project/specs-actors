@@ -22,8 +22,14 @@ func ConstructState(entries []Entry) *State {
 
 // The default entries to install in the cron actor's state at genesis.
 func BuiltInEntries() []Entry {
-	return []Entry{{
-		Receiver:  builtin.StoragePowerActorAddr,
-		MethodNum: builtin.MethodsPower.OnEpochTickEnd,
-	}}
+	return []Entry{
+		{
+			Receiver:  builtin.StoragePowerActorAddr,
+			MethodNum: builtin.MethodsPower.OnEpochTickEnd,
+		},
+		{
+			Receiver:  builtin.StorageMarketActorAddr,
+			MethodNum: builtin.MethodsMarket.CronTick,
+		},
+	}
 }
