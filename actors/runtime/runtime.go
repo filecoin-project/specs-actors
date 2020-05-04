@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -219,5 +220,12 @@ type CBORBytes []byte
 
 func (b CBORBytes) MarshalCBOR(w io.Writer) error {
 	_, err := w.Write(b)
+	return err
+}
+
+func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
+	var c bytes.Buffer
+	_, err := c.ReadFrom(r)
+	*b = c.Bytes()
 	return err
 }
