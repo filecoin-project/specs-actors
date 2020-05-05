@@ -79,8 +79,12 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
 	}
+	emptyMMapCid, err := adt.MakeEmptyMultimap(adt.AsStore(rt)).Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to get empty multimap cid")
+	}
 
-	st := ConstructState(emptyMap)
+	st := ConstructState(emptyMap, emptyMMapCid)
 	rt.State().Create(st)
 	return nil
 }
@@ -474,6 +478,12 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to iterate proof batch: %s", err)
 		}
+
+		emptyCid, err := adt.MakeEmptyMultimap(store).Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to get empty multimap cid")
+		}
+		st.ProofValidationBatch = emptyCid
 
 		return nil
 	})
