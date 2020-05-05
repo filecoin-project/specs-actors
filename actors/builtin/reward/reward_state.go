@@ -131,7 +131,7 @@ func ConstructState(emptyMultiMapCid cid.Cid) *State {
 //   from both the numerator and denominator accumulators to control the
 //   computational complexity of the bigint multiplications.
 
-// Fixed-point precision used internally and for output
+// Fixed-point precision (in bits) used internally and for output
 const FixedPoint = 97
 
 // Used in the definition of λ
