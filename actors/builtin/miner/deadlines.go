@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
-	. "github.com/filecoin-project/specs-actors/actors/util"
 )
 
 // Deadline calculations with respect to a current epoch.
@@ -14,33 +13,44 @@ import (
 type DeadlineInfo struct {
 	CurrentEpoch abi.ChainEpoch // Epoch at which this info was calculated.
 	PeriodStart  abi.ChainEpoch // First epoch of the proving period (<= CurrentEpoch).
-	Index        uint64         // Current deadline index, in [0..WPoStProvingPeriodDeadlines).
+	Index        uint64         // Current deadline index, in [0..WPoStProvingPeriodDeadlines), or WPoStProvingPeriodDeadlines if period elapsed.
 	Open         abi.ChainEpoch // First epoch from which a proof may be submitted, inclusive (>= CurrentEpoch).
 	Close        abi.ChainEpoch // First epoch from which a proof may no longer be submitted, exclusive (>= Open).
 	Challenge    abi.ChainEpoch // Epoch at which to sample the chain for challenge (< Open).
 	FaultCutoff  abi.ChainEpoch // First epoch at which a fault declaration is rejected (< Open).
 }
 
+// Whether the proving period has begun.
 func (d *DeadlineInfo) PeriodStarted() bool {
 	return d.CurrentEpoch >= d.PeriodStart
 }
 
+// Whether the proving period has elapsed.
+func (d *DeadlineInfo) PeriodElapsed() bool {
+	return d.CurrentEpoch >= d.NextPeriodStart()
+}
+
+// Whether the current deadline is currently open.
 func (d *DeadlineInfo) IsOpen() bool {
 	return d.CurrentEpoch >= d.Open && d.CurrentEpoch < d.Close
 }
 
+// Whether the current deadline has already closed.
 func (d *DeadlineInfo) HasElapsed() bool {
 	return d.CurrentEpoch >= d.Close
 }
 
+// Whether the deadline's fault cutoff has passed.
 func (d *DeadlineInfo) FaultCutoffPassed() bool {
 	return d.CurrentEpoch >= d.FaultCutoff
 }
 
+// The last epoch in the proving period.
 func (d *DeadlineInfo) PeriodEnd() abi.ChainEpoch {
 	return d.PeriodStart + WPoStProvingPeriod - 1
 }
 
+// The first epoch in the next proving period.
 func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
 	return d.PeriodStart + WPoStProvingPeriod
 }
@@ -48,6 +58,21 @@ func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
 // Returns deadline-related calculations for a proving period start and current epoch.
 func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *DeadlineInfo {
 	periodProgress := currEpoch - periodStart
+	if periodProgress >= WPoStProvingPeriod {
+		// Proving period has completely elapsed.
+		// Return deadline info for a no-duration deadline immediately after the last real one.
+		afterLastDeadline := periodStart + WPoStProvingPeriod
+		return &DeadlineInfo{
+			CurrentEpoch: currEpoch,
+			PeriodStart:  periodStart,
+			Index:        WPoStPeriodDeadlines,
+			Open:         afterLastDeadline,
+			Close:        afterLastDeadline,
+			Challenge:    afterLastDeadline,
+			FaultCutoff:  0,
+		}
+	}
+
 	deadlineIdx := uint64(periodProgress / WPoStChallengeWindow)
 	if periodProgress < 0 { // Period not yet started.
 		deadlineIdx = 0
@@ -70,7 +95,9 @@ func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *Deadli
 // If the deadline has no sectors, the first partition index is the index that a partition at that deadline would
 // have, if non-empty (and sectorCount is zero).
 func PartitionsForDeadline(d *Deadlines, partitionSize, deadlineIdx uint64) (firstPartition, sectorCount uint64, _ error) {
-	AssertMsg(deadlineIdx < WPoStPeriodDeadlines, "invalid deadline index %d for %d deadlines", deadlineIdx, WPoStPeriodDeadlines)
+	if deadlineIdx >= WPoStPeriodDeadlines {
+		return 0, 0, fmt.Errorf("invalid deadline index %d for %d deadlines", deadlineIdx, WPoStPeriodDeadlines)
+	}
 	var partitionCountSoFar uint64
 	for i := uint64(0); i < WPoStPeriodDeadlines; i++ {
 		partitionCount, thisSectorCount, err := DeadlineCount(d, partitionSize, i)
@@ -87,7 +114,9 @@ func PartitionsForDeadline(d *Deadlines, partitionSize, deadlineIdx uint64) (fir
 
 // Counts the partitions (including up to one partial) and sectors at a deadline.
 func DeadlineCount(d *Deadlines, partitionSize, deadlineIdx uint64) (partitionCount, sectorCount uint64, err error) {
-	AssertMsg(deadlineIdx < WPoStPeriodDeadlines, "invalid deadline index %d for %d deadlines", deadlineIdx, WPoStPeriodDeadlines)
+	if deadlineIdx >= WPoStPeriodDeadlines {
+		return 0, 0, fmt.Errorf("invalid deadline index %d for %d deadlines", deadlineIdx, WPoStPeriodDeadlines)
+	}
 	sectorCount, err = d.Due[deadlineIdx].Count()
 	if err != nil {
 		return 0, 0, err
