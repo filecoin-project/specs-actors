@@ -463,7 +463,15 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 }
 
 func (rt *Runtime) BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
-	panic("implement me")
+	out := make(map[address.Address][]bool)
+	for k, v := range vis {
+		validations := make([]bool, len(v))
+		for i := range validations {
+			validations[i] = true
+		}
+		out[k] = validations
+	}
+	return out, nil
 }
 
 func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
