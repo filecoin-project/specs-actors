@@ -217,6 +217,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		if !deadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", deadline.PeriodStart, currEpoch)
 		}
+		if deadline.PeriodElapsed() {
+			// A cron event has not yet processed the previous proving period and established the next one.
+			// This is possible in the first non-empty epoch of a proving period if there was an empty tipset on the
+			// last epoch of the previous period.
+			rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", deadline.PeriodStart)
+		}
 		if params.Deadline != deadline.Index {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
 				params.Deadline, currEpoch, deadline.Index)
@@ -651,7 +657,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		deadline := st.DeadlineInfo(currEpoch)
+		deadline := st.DeadlineInfo(currEpoch) // FIXME messed up this is the wrong deadline
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
@@ -743,7 +749,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		deadline := st.DeadlineInfo(currEpoch)
+		deadline := st.DeadlineInfo(currEpoch) // FIXME messed up
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
