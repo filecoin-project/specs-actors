@@ -284,22 +284,26 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, found, err := states.Get(dealID)
+			_, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
-			if !found {
-				rt.Abortf(exitcode.ErrIllegalArgument, "failed to find deal given in params: %d", dealID)
+			if found {
+				rt.Abortf(exitcode.ErrIllegalArgument, "given deal already included in another sector: %d", dealID)
 			}
+
 			proposal, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
 
-			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, deal, proposal)
+			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, proposal)
 
-			deal.SectorStartEpoch = rt.CurrEpoch()
-			err = states.Set(dealID, deal)
+			err = states.Set(dealID, &DealState{
+				SectorStartEpoch: rt.CurrEpoch(),
+				LastUpdatedEpoch: epochUndefined,
+				SlashEpoch:       epochUndefined,
+			})
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal %v", err)
 			}
@@ -553,13 +557,9 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 // Checks
 ////////////////////////////////////////////////////////////////////////////////
 
-func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal *DealState, proposal *DealProposal) {
+func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, proposal *DealProposal) {
 	if proposal.Provider != minerAddr {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
-	}
-
-	if deal.SectorStartEpoch != epochUndefined {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
 	}
 
 	if rt.CurrEpoch() > proposal.StartEpoch {
