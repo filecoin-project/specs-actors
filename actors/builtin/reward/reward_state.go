@@ -138,18 +138,18 @@ const FixedPoint = 97
 const BlockTimeSeconds = 30
 const SecondsInYear = 31556925
 
-// The following are the numerator and denominator of -ln(1/2), represented as
-// a rational with sufficient precision. They are parsed from strings because
-// literals cannot be this long; they are stored as separate variables only
-// because the string parsing function has multiple returns.
-var LambdaNumBase, _ = big.FromString("6931471805599453094172321215")
-var LambdaDenBase, _ = big.FromString("10000000000000000000000000000")
+// The following are the numerator and denominator of -ln(1/2)=ln(2),
+// represented as a rational with sufficient precision. They are parsed from
+// strings because literals cannot be this long; they are stored as separate
+// variables only because the string parsing function has multiple returns.
+var LnTwoNum, _ = big.FromString("6931471805599453094172321215")
+var LnTwoDen, _ = big.FromString("10000000000000000000000000000")
 
 // We multiply the fraction ([Seconds per epoch] / (6 * [Seconds per year]))
 // into the rational representation of -ln(1/2) which was just loaded, to
 // produce the final, constant, rational representation of λ.
-var LambdaNum = big.Mul(big.NewInt(BlockTimeSeconds), LambdaNumBase)
-var LambdaDen = big.Mul(big.NewInt(6*SecondsInYear), LambdaDenBase)
+var LambdaNum = big.Mul(big.NewInt(BlockTimeSeconds), LnTwoNum)
+var LambdaDen = big.Mul(big.NewInt(6*SecondsInYear), LnTwoDen)
 
 // This function implements f(t) as described in the large comment block above,
 // with the important caveat that its return value must not be interpreted
