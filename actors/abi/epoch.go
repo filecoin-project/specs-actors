@@ -5,3 +5,4 @@ package abi
 const EpochDurationSeconds = 25
 const SecondsInYear = 31556925
 const SecondsInDay = 86400
+const SecondsInHour = 3600

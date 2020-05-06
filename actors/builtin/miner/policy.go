@@ -124,10 +124,10 @@ type VestSpec struct {
 }
 
 var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(abi.SecondsInYear / abi.EpochDurationSeconds),    // 1 year, PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(abi.SecondsInYear / abi.EpochDurationSeconds),    // 1 year, PARAM_FINISH
-	StepDuration: abi.ChainEpoch(7 * abi.SecondsInDay / abi.EpochDurationSeconds), // 1 week, PARAM_FINISH
-	Quantization: abi.SecondsInDay / abi.EpochDurationSeconds,                     // 1 day, PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(7 * abi.SecondsInDay / abi.EpochDurationSeconds),   // 1 week for testnet, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(7 * abi.SecondsInDay / abi.EpochDurationSeconds),   // 1 week for testnet, PARAM_FINISH
+	StepDuration: abi.ChainEpoch(12 * abi.SecondsInHour / abi.EpochDurationSeconds), // 12 hours for testnet, PARAM_FINISH
+	Quantization: abi.SecondsInHour / abi.EpochDurationSeconds,                      // 1 hour for testnet, PARAM_FINISH
 }
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {

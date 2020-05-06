@@ -7,7 +7,7 @@ const DealUpdatesInterval = 100
 
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
-	return abi.ChainEpoch(0), abi.ChainEpoch(10000) // PARAM_FINISH
+	return abi.ChainEpoch(0), abi.ChainEpoch(abi.SecondsInYear / abi.EpochDurationSeconds) // min 0, max 1y, PARAM_FINISH
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
