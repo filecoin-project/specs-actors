@@ -11,7 +11,7 @@ import (
 const ConsensusMinerMinMiners = 3
 
 // Minimum power of an individual miner to meet the threshold for leader election.
-var ConsensusMinerMinPower = abi.NewStoragePower(2 << 30) // PARAM_FINISH
+var ConsensusMinerMinPower = abi.NewStoragePower(10 << 40) // PARAM_FINISH
 
 var BaseMultiplier = big.NewInt(10)                // PARAM_FINISH
 var DealWeightMultiplier = big.NewInt(11)          // PARAM_FINISH
