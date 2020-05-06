@@ -79,7 +79,8 @@ func TestMarketActor(t *testing.T) {
 		assert.Equal(t, emptyMap, state.EscrowTable)
 		assert.Equal(t, emptyMap, state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
-		assert.Equal(t, emptyMultiMap, state.DealIDsByParty)
+		assert.Equal(t, emptyMultiMap, state.DealOpsByEpoch)
+		assert.Equal(t, abi.ChainEpoch(-1), state.LastCron)
 	})
 
 	t.Run("AddBalance", func(t *testing.T) {
