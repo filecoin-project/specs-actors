@@ -1073,25 +1073,22 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 	deadlineFirstPartition := uint64(0)
 	var fGroups, rGroups []*abi.BitField
 	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
-		partitionCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
+		dlPartCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)
 		}
 		deadlineSectors := deadlines.Due[dlIdx]
 
-		for i := uint64(0); i < partitionCount; i++ {
-			if !submissions[deadlineFirstPartition+i] {
+		for dlPartIdx := uint64(0); dlPartIdx < dlPartCount; dlPartIdx++ {
+			if !submissions[deadlineFirstPartition+dlPartIdx] {
 				// No PoSt received in prior period.
-				firstSector := i * partitionSize
-				sectorCount := partitionSize
-				if i == partitionCount-1 {
-					sectorCount = dlSectorCount % partitionSize
-				}
+				partFirstSectorIdx := dlPartIdx * partitionSize
+				partSectorCount := min64(partitionSize, dlSectorCount-partFirstSectorIdx)
 
-				partitionSectors, err := deadlineSectors.Slice(firstSector, sectorCount)
+				partitionSectors, err := deadlineSectors.Slice(partFirstSectorIdx, partSectorCount)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to slice deadline %d partition %d sectors %d..%d: %w",
-						dlIdx, i, firstSector, firstSector+partitionCount, err)
+						dlIdx, dlPartIdx, partFirstSectorIdx, partFirstSectorIdx+dlPartCount, err)
 				}
 
 				// Record newly-faulty sectors.
@@ -1105,7 +1102,7 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 			}
 		}
 
-		deadlineFirstPartition += partitionCount
+		deadlineFirstPartition += dlPartCount
 	}
 	detectedFaults, err = abi.BitFieldUnion(fGroups...)
 	if err != nil {
