@@ -10,10 +10,11 @@ import (
 // "Deadline" refers to the window during which proofs may be submitted.
 // Windows are non-overlapping ranges [Open, Close), but the challenge epoch for a window occurs before
 // the window opens.
+// The current epoch may not necessarily lie within the deadline or proving period represented here.
 type DeadlineInfo struct {
 	CurrentEpoch abi.ChainEpoch // Epoch at which this info was calculated.
 	PeriodStart  abi.ChainEpoch // First epoch of the proving period (<= CurrentEpoch).
-	Index        uint64         // Current deadline index, in [0..WPoStProvingPeriodDeadlines), or WPoStProvingPeriodDeadlines if period elapsed.
+	Index        uint64         // A deadline index, in [0..WPoStProvingPeriodDeadlines) unless period elapsed.
 	Open         abi.ChainEpoch // First epoch from which a proof may be submitted, inclusive (>= CurrentEpoch).
 	Close        abi.ChainEpoch // First epoch from which a proof may no longer be submitted, exclusive (>= Open).
 	Challenge    abi.ChainEpoch // Epoch at which to sample the chain for challenge (< Open).
@@ -55,38 +56,45 @@ func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
 	return d.PeriodStart + WPoStProvingPeriod
 }
 
-// Returns deadline-related calculations for a proving period start and current epoch.
+// Calculates the deadline at some epoch for a proving period and returns the deadline-related calculations.
 func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *DeadlineInfo {
 	periodProgress := currEpoch - periodStart
 	if periodProgress >= WPoStProvingPeriod {
 		// Proving period has completely elapsed.
+		return NewDeadlineInfo(periodStart, WPoStPeriodDeadlines, currEpoch)
+	}
+	deadlineIdx := uint64(periodProgress / WPoStChallengeWindow)
+	if periodProgress < 0 { // Period not yet started.
+		deadlineIdx = 0
+	}
+	return NewDeadlineInfo(periodStart, deadlineIdx, currEpoch)
+}
+
+// Returns deadline-related calculations for a deadline in some proving period and the current epoch.
+func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) *DeadlineInfo {
+	if deadlineIdx < WPoStPeriodDeadlines {
+		deadlineOpen := periodStart + (abi.ChainEpoch(deadlineIdx) * WPoStChallengeWindow)
+		return &DeadlineInfo{
+			CurrentEpoch: currEpoch,
+			PeriodStart:  periodStart,
+			Index:        deadlineIdx,
+			Open:         deadlineOpen,
+			Close:        deadlineOpen + WPoStChallengeWindow,
+			Challenge:    deadlineOpen - WPoStChallengeLookback,
+			FaultCutoff:  deadlineOpen - FaultDeclarationCutoff,
+		}
+	} else {
 		// Return deadline info for a no-duration deadline immediately after the last real one.
 		afterLastDeadline := periodStart + WPoStProvingPeriod
 		return &DeadlineInfo{
 			CurrentEpoch: currEpoch,
 			PeriodStart:  periodStart,
-			Index:        WPoStPeriodDeadlines,
+			Index:        deadlineIdx,
 			Open:         afterLastDeadline,
 			Close:        afterLastDeadline,
 			Challenge:    afterLastDeadline,
 			FaultCutoff:  0,
 		}
-	}
-
-	deadlineIdx := uint64(periodProgress / WPoStChallengeWindow)
-	if periodProgress < 0 { // Period not yet started.
-		deadlineIdx = 0
-	}
-	deadlineOpen := periodStart + (abi.ChainEpoch(deadlineIdx) * WPoStChallengeWindow)
-
-	return &DeadlineInfo{
-		CurrentEpoch: currEpoch,
-		PeriodStart:  periodStart,
-		Index:        deadlineIdx,
-		Open:         deadlineOpen,
-		Close:        deadlineOpen + WPoStChallengeWindow,
-		Challenge:    deadlineOpen - WPoStChallengeLookback,
-		FaultCutoff:  deadlineOpen - FaultDeclarationCutoff,
 	}
 }
 
