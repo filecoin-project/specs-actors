@@ -56,13 +56,12 @@ var MethodsMarket = struct {
 	Constructor                    abi.MethodNum
 	AddBalance                     abi.MethodNum
 	WithdrawBalance                abi.MethodNum
-	HandleExpiredDeals             abi.MethodNum
 	PublishStorageDeals            abi.MethodNum
 	VerifyDealsOnSectorProveCommit abi.MethodNum
 	OnMinerSectorsTerminate        abi.MethodNum
 	ComputeDataCommitment          abi.MethodNum
-	HandleInitTimeoutDeals         abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
+	CronTick                       abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8}
 
 var MethodsPower = struct {
 	Constructor              abi.MethodNum
