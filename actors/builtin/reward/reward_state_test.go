@@ -7,6 +7,24 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
+// Minting function test vectors
+//
+// Intent
+//   Check that for the first 7 years, the current minting function
+//   approximation is exact to the desired precision, namely 1 attoFIL out of 1
+//   gigaFIL.
+//
+// Approach
+//   The desired precision is, in particular lg(1e9/1e-18) ≈ 90 bits.
+//   An offline calculation with arbitrary-precision arithmetic was used to
+//   establish ground truth about the first 90 bits of the minting function,
+//   f(t):=1-exp(t*ln(1/2)*SecondsPerEpoch/(6*SecondsPerYear)), for epoch
+//   numbers corresponding to the endpoints of the first 7 years with
+//   SecondsPerEpoch set to 30. These numbers were written below as strings,
+//   because they contain more digits than literals support.
+
+var mintingTestVectorPrecision = uint(90)
+
 var mintingTestVectors = []struct {
 	in  abi.ChainEpoch
 	out string
@@ -22,10 +40,18 @@ var mintingTestVectors = []struct {
 
 func TestMintingFunction(t *testing.T) {
 	for _, vector := range mintingTestVectors {
-		ts_output := big.Rsh(taylorSeriesExpansion(vector.in), FixedPoint-90)
-		expected_output, _ := big.FromString(vector.out)
-		if !(ts_output.Equals(expected_output)) {
-			t.Errorf("at epoch %q, computed supply %q, expected supply %q", vector.in, ts_output, expected_output)
+		ts_output := taylorSeriesExpansion(vector.in)
+
+		// ts_output will always range between 0 and 2^FixedPoint. If we
+		// right-shifted by FixedPoint, without first multiplying by something, we
+		// would discard _all_ the bits and get 0. Instead, we want to discard only
+		// those bits in the FixedPoint representation that we don't also want to
+		// require to exactly match the test vectors.
+		ts_truncated_fractional_part := big.Rsh(ts_output, FixedPoint-mintingTestVectorPrecision)
+
+		expected_truncated_fractional_part, _ := big.FromString(vector.out)
+		if !(ts_truncated_fractional_part.Equals(expected_truncated_fractional_part)) {
+			t.Errorf("at epoch %q, computed supply %q, expected supply %q", vector.in, ts_truncated_fractional_part, expected_truncated_fractional_part)
 		}
 	}
 }
