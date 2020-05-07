@@ -24,8 +24,8 @@ type State struct {
 type AddrKey = adt.AddrKey
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
-var SimpleTotal, _ = big.FromString("100000000000000000000000000") // 100M for testnet, PARAM_FINISH
-var BaselineTotal, _ = big.FromString("900000000000000000000000000") // 900M for testnet, PARAM_FINISH
+var SimpleTotal = big.Mul(big.NewInt(100e6), big.NewInt(1e18))   // 100M for testnet, PARAM_FINISH
+var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for testnet, PARAM_FINISH
 
 func ConstructState(emptyMultiMapCid cid.Cid) *State {
 	return &State{

@@ -4,14 +4,15 @@ import (
 	"fmt"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 // The period over which all a miner's active sectors will be challenged.
-const WPoStProvingPeriod = abi.ChainEpoch(abi.SecondsInDay / abi.EpochDurationSeconds)
+const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
 // The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
-const WPoStChallengeWindow = abi.ChainEpoch(1800 / abi.EpochDurationSeconds) // Half an hour (=48 per day)
+const WPoStChallengeWindow = abi.ChainEpoch(1800 / builtin.EpochDurationSeconds) // Half an hour (=48 per day)
 
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
@@ -124,10 +125,10 @@ type VestSpec struct {
 }
 
 var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(7 * abi.SecondsInDay / abi.EpochDurationSeconds),   // 1 week for testnet, PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(7 * abi.SecondsInDay / abi.EpochDurationSeconds),   // 1 week for testnet, PARAM_FINISH
-	StepDuration: abi.ChainEpoch(12 * abi.SecondsInHour / abi.EpochDurationSeconds), // 12 hours for testnet, PARAM_FINISH
-	Quantization: abi.SecondsInHour / abi.EpochDurationSeconds,                      // 1 hour for testnet, PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
+	StepDuration: abi.ChainEpoch(builtin.EpochsInDay),     // 1 day for testnet, PARAM_FINISH
+	Quantization: 12 * builtin.EpochsInHour,               // 12 hours for testnet, PARAM_FINISH
 }
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
