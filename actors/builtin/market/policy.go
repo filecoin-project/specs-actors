@@ -1,13 +1,18 @@
 package market
 
-import "github.com/filecoin-project/specs-actors/actors/abi"
+import (
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+)
 
 // DealUpdatesInterval is the number of blocks between payouts for deals
 const DealUpdatesInterval = 100
 
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
-	return abi.ChainEpoch(0), abi.ChainEpoch(10000) // PARAM_FINISH
+	// Cryptoeconomic modelling to date has used an assumption of a maximum deal duration of up to one year.
+	// It very likely can be much longer, but we're not sure yet.
+	return abi.ChainEpoch(0), abi.ChainEpoch(1 * builtin.EpochsInYear) // PARAM_FINISH
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
