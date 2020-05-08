@@ -5,7 +5,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -159,8 +159,8 @@ var LnTwoDen, _ = big.FromString("10000000000000000000000000000")
 // We multiply the fraction ([Seconds per epoch] / (6 * [Seconds per year]))
 // into the rational representation of -ln(1/2) which was just loaded, to
 // produce the final, constant, rational representation of λ.
-var LambdaNum = big.Mul(big.NewInt(miner.EpochDurationSeconds), LnTwoNum)
-var LambdaDen = big.Mul(big.NewInt(6*miner.SecondsInYear), LnTwoDen)
+var LambdaNum = big.Mul(big.NewInt(builtin.EpochDurationSeconds), LnTwoNum)
+var LambdaDen = big.Mul(big.NewInt(6*builtin.SecondsInYear), LnTwoDen)
 
 // This function implements f(t) as described in the large comment block above,
 // with the important caveat that its return value must not be interpreted
