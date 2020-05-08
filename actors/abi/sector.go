@@ -88,6 +88,11 @@ const (
 
 	RegisteredProof_StackedDRG32GiBWinningPoSt = RegisteredProof(15)
 	RegisteredProof_StackedDRG32GiBWindowPoSt  = RegisteredProof(16)
+
+	RegisteredProof_StackedDRG64GiBSeal = RegisteredProof(17)
+
+	RegisteredProof_StackedDRG64GiBWinningPoSt = RegisteredProof(18)
+	RegisteredProof_StackedDRG64GiBWindowPoSt  = RegisteredProof(19)
 )
 
 func (p RegisteredProof) SectorSize() (SectorSize, error) {
@@ -97,6 +102,8 @@ func (p RegisteredProof) SectorSize() (SectorSize, error) {
 		return 0, err
 	}
 	switch sp {
+	case RegisteredProof_StackedDRG64GiBSeal:
+		return 2 * (32 << 30), nil
 	case RegisteredProof_StackedDRG32GiBSeal:
 		return 32 << 30, nil
 	case RegisteredProof_StackedDRG2KiBSeal:
@@ -121,6 +128,8 @@ func (p RegisteredProof) WindowPoStPartitionSectors() (uint64, error) {
 	// These numbers must match those used by the proofs library.
 	// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
 	switch sp {
+	case RegisteredProof_StackedDRG64GiBSeal:
+		return 2300, nil
 	case RegisteredProof_StackedDRG32GiBSeal:
 		return 2349, nil
 	case RegisteredProof_StackedDRG2KiBSeal:
@@ -138,6 +147,8 @@ func (p RegisteredProof) WindowPoStPartitionSectors() (uint64, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredWinningPoStProof() (RegisteredProof, error) {
 	switch p {
+	case RegisteredProof_StackedDRG64GiBSeal, RegisteredProof_StackedDRG64GiBWindowPoSt, RegisteredProof_StackedDRG64GiBWinningPoSt:
+		return RegisteredProof_StackedDRG64GiBWinningPoSt, nil
 	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWindowPoSt, RegisteredProof_StackedDRG32GiBWinningPoSt:
 		return RegisteredProof_StackedDRG32GiBWinningPoSt, nil
 	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWindowPoSt, RegisteredProof_StackedDRG2KiBWinningPoSt:
@@ -155,6 +166,8 @@ func (p RegisteredProof) RegisteredWinningPoStProof() (RegisteredProof, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredWindowPoStProof() (RegisteredProof, error) {
 	switch p {
+	case RegisteredProof_StackedDRG64GiBSeal, RegisteredProof_StackedDRG64GiBWinningPoSt, RegisteredProof_StackedDRG64GiBWindowPoSt:
+		return RegisteredProof_StackedDRG64GiBWindowPoSt, nil
 	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBWinningPoSt, RegisteredProof_StackedDRG32GiBWindowPoSt:
 		return RegisteredProof_StackedDRG32GiBWindowPoSt, nil
 	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBWinningPoSt, RegisteredProof_StackedDRG2KiBWindowPoSt:
@@ -172,6 +185,8 @@ func (p RegisteredProof) RegisteredWindowPoStProof() (RegisteredProof, error) {
 // to the receiving RegisteredProof.
 func (p RegisteredProof) RegisteredSealProof() (RegisteredProof, error) {
 	switch p {
+	case RegisteredProof_StackedDRG64GiBSeal, RegisteredProof_StackedDRG64GiBWindowPoSt, RegisteredProof_StackedDRG64GiBWinningPoSt:
+		return RegisteredProof_StackedDRG64GiBSeal, nil
 	case RegisteredProof_StackedDRG32GiBSeal, RegisteredProof_StackedDRG32GiBPoSt, RegisteredProof_StackedDRG32GiBWindowPoSt, RegisteredProof_StackedDRG32GiBWinningPoSt:
 		return RegisteredProof_StackedDRG32GiBSeal, nil
 	case RegisteredProof_StackedDRG2KiBSeal, RegisteredProof_StackedDRG2KiBPoSt, RegisteredProof_StackedDRG2KiBWindowPoSt, RegisteredProof_StackedDRG2KiBWinningPoSt:
