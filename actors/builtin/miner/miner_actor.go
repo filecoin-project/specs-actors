@@ -456,6 +456,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 }
 
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	var st State
 	rt.State().Readonly(&st)
 
