@@ -46,7 +46,7 @@ var TestLambdaDen = big.Mul(big.NewInt(6*SecondsInYear), LnTwoDen)
 func TestMintingFunction(t *testing.T) {
 	for _, vector := range mintingTestVectors {
 		// In order to supply an integer as an input to the minting function, we
-		// first left-shift zeroes into the fractional part of the its fixed-point
+		// first left-shift zeroes into the fractional part of its fixed-point
 		// representation.
 		ts_input := big.Lsh(big.NewInt(vector.in), MintingInputFixedPoint)
 

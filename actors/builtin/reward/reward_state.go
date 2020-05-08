@@ -5,8 +5,8 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
-  miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 )
 
 type State struct {
