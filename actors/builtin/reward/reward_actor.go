@@ -107,8 +107,11 @@ func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenA
 
 func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
 	// TODO: PARAM_FINISH
-	newSimpleSupply := big.Rsh(big.Mul(SimpleTotal, taylorSeriesExpansion(clockTime)), FixedPoint)
-	newBaselineSupply := big.Rsh(big.Mul(BaselineTotal, taylorSeriesExpansion(networkTime)), FixedPoint)
+	newSimpleSupply := mintingFunction(SimpleTotal, big.Lsh(big.NewInt(int64(clockTime)), MintingInputFixedPoint))
+
+	// TODO: when network time calculation produces a fixed-point representation
+	// with a fractional part of MintingInputFixedPoint, remove this Lsh
+	newBaselineSupply := mintingFunction(BaselineTotal, big.Lsh(big.NewInt(int64(networkTime)), MintingInputFixedPoint))
 
 	newSimpleMinted := big.Max(big.Sub(newSimpleSupply, st.SimpleSupply), big.Zero())
 	newBaselineMinted := big.Max(big.Sub(newBaselineSupply, st.BaselineSupply), big.Zero())

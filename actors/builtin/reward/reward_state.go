@@ -6,6 +6,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+  miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 )
 
 type State struct {
@@ -63,13 +64,24 @@ func ConstructState(emptyMultiMapCid cid.Cid) *State {
 //    have resorted to using an ad-hoc fixed-point standard. Experimental
 //    testing with the relevant scales of inputs and with a desired "atto"
 //    level of output precision yielded a recommendation of a 97-bit fractional
-//    part, which was stored in the constant "FixedPoint".
-// !IMPORTANT!: the return value from this function is a factor of 2^FixedPoint
-//    greater than the number it is semantically intended to represent (which
-//    will always be between 0 and 1). The expectation is that callers will
-//    multiply the result by some number, and THEN right-shift the result of
-//    the multiplication by FixedPoint bits, thus implementing fixed-point
-//    multiplication by the returned fraction.
+//    part, which was stored in the constant "MintingOutputFixedPoint".
+//    Fractional input is only necessary when considering "effective network
+//    time"; there, the desired precision is determined by the minimum
+//    plausible ratio between realized network power and network baseline,
+//    which is set in "MintingInputFixedPoint".
+//
+// !IMPORTANT!: the time input to this function should be a factor of
+//   2^MintingInputFixedPoint greater than the semantically intended value, and
+//   the return value from this function is a factor of 2^MintingOutputFixedPoint
+//   greater. The semantics of the output value will always be a fraction
+//   between 0 and 1, but will be represented as an integer between 0 and
+//   2^FixedPoint. The expectation is that callers will multiply the result by
+//   some number, and THEN right-shift the result of the multiplication by
+//   FixedPoint bits, thus implementing fixed-point multiplication by the
+//   returned fraction.  Analogously, if callers intend to pass in an integer
+//   "t", it should be left-shifted by MintingInputFixedPoint before being
+//   passed; if it is fractional, its fractional part should be
+//   MintingInputFixedPoint bits long.
 //
 // 2. Since we do not have a math library in this setting, we cannot directly
 //    implement the intended closed form using stock implementations of
@@ -131,12 +143,11 @@ func ConstructState(emptyMultiMapCid cid.Cid) *State {
 //   from both the numerator and denominator accumulators to control the
 //   computational complexity of the bigint multiplications.
 
-// Fixed-point precision (in bits) used internally and for output
-const FixedPoint = 97
+// Fixed-point precision (in bits) used for minting function's input "t"
+const MintingInputFixedPoint = 30
 
-// Used in the definition of λ
-const BlockTimeSeconds = 30
-const SecondsInYear = 31556925
+// Fixed-point precision (in bits) used internally and for output
+const MintingOutputFixedPoint = 97
 
 // The following are the numerator and denominator of -ln(1/2)=ln(2),
 // represented as a rational with sufficient precision. They are parsed from
@@ -148,18 +159,19 @@ var LnTwoDen, _ = big.FromString("10000000000000000000000000000")
 // We multiply the fraction ([Seconds per epoch] / (6 * [Seconds per year]))
 // into the rational representation of -ln(1/2) which was just loaded, to
 // produce the final, constant, rational representation of λ.
-var LambdaNum = big.Mul(big.NewInt(BlockTimeSeconds), LnTwoNum)
-var LambdaDen = big.Mul(big.NewInt(6*SecondsInYear), LnTwoDen)
+var LambdaNum = big.Mul(big.NewInt(miner.EpochDurationSeconds), LnTwoNum)
+var LambdaDen = big.Mul(big.NewInt(6*miner.SecondsInYear), LnTwoDen)
 
 // This function implements f(t) as described in the large comment block above,
 // with the important caveat that its return value must not be interpreted
 // semantically as an integer, but rather as a fixed-point number with
 // FixedPoint bits of fractional part.
-func taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
+func taylorSeriesExpansion(lambdaNum big.Int, lambdaDen big.Int, t big.Int) big.Int {
 	// `numeratorBase` is the numerator of the rational representation of (-λt).
-	numeratorBase := big.Mul(LambdaNum.Neg(), big.NewInt(int64(t)))
-	// The denominator of (-λt) is simply the denominator of λ, as -t is integral.
-	denominatorBase := LambdaDen
+	numeratorBase := big.Mul(lambdaNum.Neg(), t)
+	// The denominator of (-λt) is the denominator of λ times the denominator of t,
+	// which is a fixed 2^MintingInputFixedPoint. Multiplying by this is a left shift.
+	denominatorBase := big.Lsh(lambdaDen, MintingInputFixedPoint)
 
 	// `numerator` is the accumulator for numerators of the series terms. The
 	// first term is simply (-1)(-λt). To include that factor of (-1), which
@@ -184,7 +196,7 @@ func taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
 		denominator = big.Mul(denominator, big.NewInt(n))
 
 		// Left-shift and divide to convert rational into fixed-point.
-		term := big.Div(big.Lsh(numerator, FixedPoint), denominator)
+		term := big.Div(big.Lsh(numerator, MintingOutputFixedPoint), denominator)
 
 		// Accumulate the fixed-point result into the return accumulator.
 		ret = big.Add(ret, term)
@@ -201,7 +213,7 @@ func taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
 		// by the same number of bits, all we have done is lose unnecessary
 		// precision that would slow down the next iteration's multiplies.
 		denominatorLen := big.BitLen(denominator)
-		unnecessaryBits := denominatorLen - FixedPoint
+		unnecessaryBits := denominatorLen - MintingOutputFixedPoint
 		if unnecessaryBits < 0 {
 			unnecessaryBits = 0
 		}
@@ -211,4 +223,18 @@ func taylorSeriesExpansion(t abi.ChainEpoch) big.Int {
 	}
 
 	return ret
+}
+
+// Minting Function Wrapper
+//
+// Intent
+//   The necessary calling conventions for the function above are unwieldy:
+//   the common case is to supply the canonical Lambda, multiply by some other
+//   number, and right-shift down by MintingOutputFixedPoint. This convenience
+//   wrapper implements those conventions. However, it does NOT implement
+//   left-shifting the input by the MintingInputFixedPoint, because baseline
+//   minting will (soon) actually supply a fractional input, so this would only
+//   be used for simple minting.
+func mintingFunction(factor big.Int, t big.Int) big.Int {
+	return big.Rsh(big.Mul(factor, taylorSeriesExpansion(LambdaNum, LambdaDen, t)), MintingOutputFixedPoint)
 }
