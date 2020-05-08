@@ -127,7 +127,7 @@ type VestSpec struct {
 var PledgeVestingSpec = VestSpec{
 	InitialDelay: abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
 	VestPeriod:   abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
-	StepDuration: abi.ChainEpoch(builtin.EpochsInDay),     // 1 day for testnet, PARAM_FINISH
+	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay), // 1 day for testnet, PARAM_FINISH
 	Quantization: 12 * builtin.EpochsInHour,               // 12 hours for testnet, PARAM_FINISH
 }
 
