@@ -122,15 +122,16 @@ func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networ
 	return perEpochReward
 }
 
+const baselinePower = 1 << 50 // 1PiB for testnet, PARAM_FINISH
 func (a Actor) newBaselinePower(st *State) abi.StoragePower {
-	// TODO: this is not the final baseline
-	return big.NewInt(1 << 60)
+	// TODO: this is not the final baseline function or value, PARAM_FINISH
+	return big.NewInt(baselinePower)
 }
 
 func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) abi.ChainEpoch {
 	// TODO: this function depends on the final baseline
 	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
-	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(1<<60)).Int64())
+	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(baselinePower)).Int64())
 }
 
 func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
