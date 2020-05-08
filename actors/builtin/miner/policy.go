@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
 // The period over which all a miner's active sectors will be challenged.
@@ -56,6 +56,7 @@ var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
 	abi.RegisteredProof_StackedDRG2KiBSeal:   abi.ChainEpoch(10000),
 	abi.RegisteredProof_StackedDRG8MiBSeal:   abi.ChainEpoch(10000),
 	abi.RegisteredProof_StackedDRG512MiBSeal: abi.ChainEpoch(10000),
+	abi.RegisteredProof_StackedDRG64GiBSeal:  abi.ChainEpoch(10000),
 }
 
 // Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
