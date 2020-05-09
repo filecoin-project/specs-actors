@@ -3,7 +3,6 @@ package reward
 import (
 	"testing"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
@@ -26,7 +25,7 @@ import (
 var mintingTestVectorPrecision = uint(90)
 
 var mintingTestVectors = []struct {
-	in  abi.ChainEpoch
+	in  int64
 	out string
 }{
 	{1051897, "135060784589637453410950129"},
@@ -38,20 +37,31 @@ var mintingTestVectors = []struct {
 	{7363279, "686500230252085183344830372"},
 }
 
+const SecondsInYear = 31556925
+const TestEpochDurationSeconds = 30
+
+var TestLambdaNum = big.Mul(big.NewInt(TestEpochDurationSeconds), LnTwoNum)
+var TestLambdaDen = big.Mul(big.NewInt(6*SecondsInYear), LnTwoDen)
+
 func TestMintingFunction(t *testing.T) {
 	for _, vector := range mintingTestVectors {
-		ts_output := taylorSeriesExpansion(vector.in)
+		// In order to supply an integer as an input to the minting function, we
+		// first left-shift zeroes into the fractional part of its fixed-point
+		// representation.
+		ts_input := big.Lsh(big.NewInt(vector.in), MintingInputFixedPoint)
+
+		ts_output := taylorSeriesExpansion(TestLambdaNum, TestLambdaDen, ts_input)
 
 		// ts_output will always range between 0 and 2^FixedPoint. If we
 		// right-shifted by FixedPoint, without first multiplying by something, we
 		// would discard _all_ the bits and get 0. Instead, we want to discard only
 		// those bits in the FixedPoint representation that we don't also want to
 		// require to exactly match the test vectors.
-		ts_truncated_fractional_part := big.Rsh(ts_output, FixedPoint-mintingTestVectorPrecision)
+		ts_truncated_fractional_part := big.Rsh(ts_output, MintingOutputFixedPoint-mintingTestVectorPrecision)
 
 		expected_truncated_fractional_part, _ := big.FromString(vector.out)
 		if !(ts_truncated_fractional_part.Equals(expected_truncated_fractional_part)) {
-			t.Errorf("at epoch %q, computed supply %q, expected supply %q", vector.in, ts_truncated_fractional_part, expected_truncated_fractional_part)
+			t.Errorf("minting function: on input %q, computed %q, expected %q", ts_input, ts_truncated_fractional_part, expected_truncated_fractional_part)
 		}
 	}
 }
