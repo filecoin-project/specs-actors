@@ -56,7 +56,7 @@ func (a *Array) AppendContinuous(value runtime.CBORMarshaler) error {
 
 func (a *Array) Set(i uint64, value runtime.CBORMarshaler) error {
 	if err := a.root.Set(a.store.Context(), i, value); err != nil {
-		return xerrors.Errorf("array set failed to set index %v value %v in root %v: %w", i, value, a.root, err)
+		return xerrors.Errorf("array set failed to set index %v in root %v: %w", i, a.root, err)
 	}
 	return nil
 }
