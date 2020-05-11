@@ -819,12 +819,8 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 	st.PreCommitDeposits = newTotal
 }
 
-func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
+func (st *State) AddLockedFunds(vestingFunds *adt.Array, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
 	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return err
-	}
 
 	// Nothing unlocks here, this is just the start of the clock.
 	vestBegin := currEpoch + spec.InitialDelay
@@ -849,22 +845,17 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		// Load existing entry, else set a new one
 		key := EpochKey(vestEpoch)
 		lockedFundEntry := big.Zero()
-		_, err = vestingFunds.Get(key, &lockedFundEntry)
+		_, err := vestingFunds.Get(key, &lockedFundEntry)
 		if err != nil {
 			return err
 		}
 
 		lockedFundEntry = big.Add(lockedFundEntry, vestThisTime)
-		err = vestingFunds.Set(key, &lockedFundEntry)
-		if err != nil {
+		if err := vestingFunds.Set(key, &lockedFundEntry); err != nil {
 			return err
 		}
 	}
 
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return err
-	}
 	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
 	return nil
@@ -928,11 +919,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 
 // Unlocks all vesting funds that have vested before the provided epoch.
 // Returns the amount unlocked.
-func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return abi.TokenAmount{}, err
-	}
+func (st *State) UnlockVestedFunds(vestingFunds *adt.Array, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 
 	amountUnlocked := big.Zero()
 
@@ -941,7 +928,7 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 	var finished = fmt.Errorf("finished")
 
 	// Iterate vestingFunds  in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+	err := vestingFunds.ForEach(&lockedEntry, func(k int64) error {
 		if k < int64(currEpoch) {
 			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
 			toDelete = append(toDelete, uint64(k))
@@ -955,17 +942,12 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 		return big.Zero(), err
 	}
 
-	err = deleteMany(vestingFunds, toDelete)
-	if err != nil {
+	if err := deleteMany(vestingFunds, toDelete); err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest: %v", err)
 	}
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return big.Zero(), err
-	}
 
 	return amountUnlocked, nil
 }
