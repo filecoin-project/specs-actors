@@ -157,3 +157,12 @@ func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.denominator)
 	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, maxReporterShareNum), maxReporterShareDen))
 }
+
+func proofPartitionCount(proofs []abi.PoStProof) int {
+	partitions := 0
+	for _, proof := range proofs {
+		partitions += len(proof.ProofBytes) / WdPoStSingleProofLen
+	}
+
+	return partitions
+}
