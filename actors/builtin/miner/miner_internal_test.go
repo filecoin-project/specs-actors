@@ -66,7 +66,7 @@ func TestNextProvingPeriodStart(t *testing.T) {
 	assert.Equal(t, WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
 
 	// The final epoch in the chain's first full period
-	curr = WPoStProvingPeriod-1
+	curr = WPoStProvingPeriod - 1
 	assert.Equal(t, WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
 	assert.Equal(t, WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
 	assert.Equal(t, WPoStProvingPeriod+2, nextProvingPeriodStart(curr, 2))
@@ -80,7 +80,7 @@ func TestNextProvingPeriodStart(t *testing.T) {
 	assert.Equal(t, WPoStProvingPeriod+2, nextProvingPeriodStart(curr, 2))
 	assert.Equal(t, WPoStProvingPeriod+WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
 
-	curr = WPoStProvingPeriod+234
+	curr = WPoStProvingPeriod + 234
 	assert.Equal(t, 2*WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
 	assert.Equal(t, 2*WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
 	assert.Equal(t, 2*WPoStProvingPeriod+233, nextProvingPeriodStart(curr, 233))
