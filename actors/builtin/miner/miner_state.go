@@ -977,9 +977,10 @@ func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 
 func AsStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *power.SectorStorageWeightDesc {
 	return &power.SectorStorageWeightDesc{
-		SectorSize: sectorSize,
-		DealWeight: sectorInfo.DealWeight,
-		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
+		SectorSize:         sectorSize,
+		DealWeight:         sectorInfo.DealWeight,
+		VerifiedDealWeight: sectorInfo.VerifiedDealWeight,
+		Duration:           sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
 	}
 }
 
