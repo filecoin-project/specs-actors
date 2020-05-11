@@ -80,6 +80,11 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid peer ID in parameters: %s", err)
 	}
 
+	_, ok := SupportedProofTypes[params.SealProofType]
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
+	}
+
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 
