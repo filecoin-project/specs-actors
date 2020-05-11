@@ -8,6 +8,9 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
+// single proof byte length for wdpost
+const WdPoStSingleProofLen = 192
+
 // The period over which all a miner's active sectors will be challenged.
 const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 

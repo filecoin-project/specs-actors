@@ -195,8 +195,9 @@ type SubmitWindowedPoStParams struct {
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
+	proofNum := len(params.Proofs[0].ProofBytes) / WdPoStSingleProofLen
 	if len(params.Partitions) != len(params.Proofs) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %", len(params.Proofs), len(params.Partitions))
+		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %d", proofNum, len(params.Partitions))
 	}
 
 	currEpoch := rt.CurrEpoch()
