@@ -71,7 +71,13 @@ func TestConstruction(t *testing.T) {
 		// Register proving period cron.
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
 			makeProvingPeriodCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
+
+		miner.SupportedProofTypes = map[abi.RegisteredProof]struct{}{
+			abi.RegisteredProof_StackedDRG2KiBSeal: {},
+		}
+
 		ret := rt.Call(actor.Constructor, &params)
+
 		assert.Nil(t, ret)
 		rt.Verify()
 
