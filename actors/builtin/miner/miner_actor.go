@@ -345,6 +345,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		if params.RegisteredProof != st.Info.SealProofType {
+			rt.Abortf(exitcode.ErrIllegalArgument, "wrong proof type")
+		}
+
 		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
 		} else if found {

@@ -142,6 +142,8 @@ func TestCommitments(t *testing.T) {
 		WithHasher(fixedHasher(uint64(periodBoundary))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
+	spt := abi.RegisteredProof_StackedDRG2KiBSeal
+
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
 		rt := builder.Build(t)
 		precommitEpoch := periodBoundary + 1
@@ -153,29 +155,34 @@ func TestCommitments(t *testing.T) {
 		challengeEpoch := precommitEpoch - miner.PreCommitChallengeDelay
 
 		// Good commitment.
-		actor.preCommitSector(rt, makePreCommit(100, challengeEpoch, deadline.PeriodEnd()), big.Zero())
+		actor.preCommitSector(rt, makePreCommit(spt, 100, challengeEpoch, deadline.PeriodEnd()), big.Zero())
 
 		// Duplicate sector ID
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.preCommitSector(rt, makePreCommit(100, challengeEpoch, deadline.PeriodEnd()), big.Zero())
+			actor.preCommitSector(rt, makePreCommit(spt, 100, challengeEpoch, deadline.PeriodEnd()), big.Zero())
+		})
+
+		// Bad seal proof type
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, makePreCommit(abi.RegisteredProof_StackedDRG8MiBSeal, 114, challengeEpoch, deadline.PeriodEnd()), big.Zero())
 		})
 
 		// Expires at current epoch
 		rt.SetEpoch(deadline.PeriodEnd())
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.preCommitSector(rt, makePreCommit(111, challengeEpoch, deadline.PeriodEnd()), big.Zero())
+			actor.preCommitSector(rt, makePreCommit(spt, 111, challengeEpoch, deadline.PeriodEnd()), big.Zero())
 		})
 
 		// Expires before current epoch
 		rt.SetEpoch(deadline.PeriodEnd() + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.preCommitSector(rt, makePreCommit(112, challengeEpoch, deadline.PeriodEnd()), big.Zero())
+			actor.preCommitSector(rt, makePreCommit(spt, 112, challengeEpoch, deadline.PeriodEnd()), big.Zero())
 		})
 
 		// Expires not on period end
 		rt.SetEpoch(precommitEpoch)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.preCommitSector(rt, makePreCommit(113, challengeEpoch, deadline.PeriodEnd()-1), big.Zero())
+			actor.preCommitSector(rt, makePreCommit(spt, 113, challengeEpoch, deadline.PeriodEnd()-1), big.Zero())
 		})
 
 		// TODO: test insufficient funds when the precommit deposit is set above zero
@@ -192,7 +199,7 @@ func TestCommitments(t *testing.T) {
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
 		challengeEpoch := precommitEpoch - 20
-		precommit := makePreCommit(sectorNo, challengeEpoch, deadline.PeriodEnd())
+		precommit := makePreCommit(spt, sectorNo, challengeEpoch, deadline.PeriodEnd())
 		actor.preCommitSector(rt, precommit, big.Zero())
 
 		// Sector pre-commitment missing.
@@ -469,9 +476,9 @@ func makeProvingPeriodCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power
 	}
 }
 
-func makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch) *miner.SectorPreCommitInfo {
+func makePreCommit(spt abi.RegisteredProof, sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		RegisteredProof: abi.RegisteredProof_StackedDRG2KiBSeal,
+		RegisteredProof: spt,
 		SectorNumber:    sectorNo,
 		SealedCID:       tutil.MakeCID("commr"),
 		SealRandEpoch:   challenge,
