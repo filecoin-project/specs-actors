@@ -49,6 +49,12 @@ const NewSectorsPerPeriodMax = 128 << 10
 // An approximation to chain state finality (should include message propagation time as well).
 const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
 
+// List of proof types which can be used when creating new miner actors
+var SupportedProofTypes = map[abi.RegisteredProof]struct{}{
+	abi.RegisteredProof_StackedDRG32GiBSeal: {},
+	abi.RegisteredProof_StackedDRG64GiBSeal: {},
+}
+
 // Maximum duration to allow for the sealing process for seal algorithms.
 // Dependent on algorithm and sector size
 var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
