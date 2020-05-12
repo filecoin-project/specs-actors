@@ -14,6 +14,9 @@ import (
 // Epoch number of the chain state, which acts as a proxy for time within the VM.
 type ChainEpoch int64
 
+// Fractional representation of NetworkTime with an implicit denominator of (2^MintingInputFixedPoint).
+type NetworkTime big.Int
+
 func (e ChainEpoch) String() string {
 	return strconv.FormatInt(int64(e), 10)
 }

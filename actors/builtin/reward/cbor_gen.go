@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -42,15 +41,9 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.EffectiveNetworkTime (abi.ChainEpoch) (int64)
-	if t.EffectiveNetworkTime >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.EffectiveNetworkTime))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.EffectiveNetworkTime)-1)); err != nil {
-			return err
-		}
+	// t.EffectiveNetworkTime (big.Int) (struct)
+	if err := t.EffectiveNetworkTime.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.SimpleSupply (big.Int) (struct)
@@ -121,30 +114,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.EffectiveNetworkTime (abi.ChainEpoch) (int64)
+	// t.EffectiveNetworkTime (big.Int) (struct)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
+
+		if err := t.EffectiveNetworkTime.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.EffectiveNetworkTime: %w", err)
 		}
 
-		t.EffectiveNetworkTime = abi.ChainEpoch(extraI)
 	}
 	// t.SimpleSupply (big.Int) (struct)
 
