@@ -1,8 +1,6 @@
 package reward
 
 import (
-	cid "github.com/ipfs/go-cid"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -19,7 +17,14 @@ type State struct {
 	SimpleSupply   abi.TokenAmount // current supply
 	BaselineSupply abi.TokenAmount // current supply
 
+	// The reward to be paid in total to block producers, if exactly the expected number of them produce a block.
+	// The actual reward total paid out depends on the number of winners in any round.
+	// This is computed at the end of the previous epoch, and should really be called ThisEpochReward.
 	LastPerEpochReward abi.TokenAmount
+
+	// The count of epochs for which a reward has been paid.
+	// This should equal the number of non-empty tipsets after the genesis, aka "chain height".
+	RewardEpochsPaid abi.ChainEpoch
 }
 
 type AddrKey = adt.AddrKey
@@ -28,7 +33,7 @@ type AddrKey = adt.AddrKey
 var SimpleTotal = big.Mul(big.NewInt(100e6), big.NewInt(1e18))   // 100M for testnet, PARAM_FINISH
 var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for testnet, PARAM_FINISH
 
-func ConstructState(emptyMultiMapCid cid.Cid) *State {
+func ConstructState() *State {
 	return &State{
 		BaselinePower:        big.Zero(),
 		RealizedPower:        big.Zero(),
@@ -36,8 +41,10 @@ func ConstructState(emptyMultiMapCid cid.Cid) *State {
 		CumsumRealized:       big.Zero(),
 		EffectiveNetworkTime: abi.ChainEpoch(int64(0)),
 
-		SimpleSupply:   big.Zero(),
-		BaselineSupply: big.Zero(),
+		SimpleSupply:       big.Zero(),
+		BaselineSupply:     big.Zero(),
+		LastPerEpochReward: big.Zero(),
+		RewardEpochsPaid:   0,
 	}
 }
 

@@ -597,7 +597,7 @@ func (st *State) ClearFaultEpochs(store adt.Store, epochs ...abi.ChainEpoch) err
 	}
 
 	st.FaultEpochs, err = arr.Root()
-	return nil
+	return err
 }
 
 // Adds sectors to recoveries.
