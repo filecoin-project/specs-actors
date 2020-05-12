@@ -21,7 +21,7 @@ var ExpectedLeadersPerEpoch = int64(5)
 
 func init() {
 	//noinspection GoBoolExpressions
-	if SecondsInHour % EpochDurationSeconds != 0 {
+	if SecondsInHour%EpochDurationSeconds != 0 {
 		// This even division is an assumption that other code might unwittingly make.
 		// Don't rely on it on purpose, though.
 		// While we're pretty sure everything will still work fine, we're safer maintaining this invariant anyway.

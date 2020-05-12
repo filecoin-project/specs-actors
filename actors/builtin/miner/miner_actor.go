@@ -80,6 +80,11 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid peer ID in parameters: %s", err)
 	}
 
+	_, ok := SupportedProofTypes[params.SealProofType]
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
+	}
+
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 
@@ -187,7 +192,8 @@ type SubmitWindowedPoStParams struct {
 	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
 	// than the partition numbers in the first deadlines.
 	Partitions []uint64
-	// Parallel array of proofs corresponding to the partitions.
+	// Array of proofs, one per distinct registered proof type present in the sectors being proven. 
+	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
 	// Sectors skipped while proving that weren't already declared faulty
 	Skipped abi.BitField
@@ -195,10 +201,6 @@ type SubmitWindowedPoStParams struct {
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
-	if len(params.Partitions) != len(params.Proofs) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %", len(params.Proofs), len(params.Partitions))
-	}
-
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
@@ -243,6 +245,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// of penalties if locked pledge drops too low.
 		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
 
+		// TODO WPOST (follow-up): process Skipped as faults
+
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
@@ -251,34 +255,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
 
-		// TODO WPOST (follow-up): process Skipped as faults
-
-		// Extract a fault set relevant to the sectors being submitted, for expansion into a map.
-		declaredFaults, err := bitfield.IntersectBitField(provenSectors, st.Faults)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect proof sectors with faults")
-
-		declaredRecoveries, err := bitfield.IntersectBitField(declaredFaults, st.Recoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect recoveries with faults")
-
-		expectedFaults, err := bitfield.SubtractBitField(declaredFaults, declaredRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from faults")
-
-		nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to diff bitfields")
-
-		empty, err := nonFaults.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-		if empty {
-			rt.Abortf(exitcode.ErrIllegalArgument, "no non-faulty sectors in partitions %s", params.Partitions)
-		}
-
-		// Select a non-faulty sector as a substitute for faulty ones.
-		goodSectorNo, err := nonFaults.First()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get first good sector")
-
-		// Load sector infos for proof
-		sectorInfos, err := st.LoadSectorInfosWithFaultMask(store, provenSectors, expectedFaults, abi.SectorNumber(goodSectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
+		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		// Verify the proof.
 		// A failed verification doesn't immediately cause a penalty; the miner can try again.
@@ -302,7 +280,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
 		// Load info for recovered sectors for recovery of power outside this state transaction.
-		empty, err = declaredRecoveries.IsEmpty()
+		empty, err := declaredRecoveries.IsEmpty()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty: %s")
 
 		if !empty {
@@ -340,11 +318,25 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	if params.Expiration <= rt.CurrEpoch() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
 	}
+	if params.SealRandEpoch >= rt.CurrEpoch() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v must be before now %v", params.SealRandEpoch, rt.CurrEpoch())
+	}
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredProof)
+	if params.SealRandEpoch < challengeEarliest {
+		// The subsequent commitment proof can't possibly be accepted because the seal challenge will be deemed
+		// too old. Note that passing this check doesn't guarantee the proof will be soon enough, depending on
+		// when it arrives.
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
+	}
 
 	store := adt.AsStore(rt)
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		if params.RegisteredProof != st.Info.SealProofType {
+			rt.Abortf(exitcode.ErrIllegalArgument, "wrong proof type")
+		}
+
 		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
 		} else if found {
@@ -1026,7 +1018,7 @@ func handleProvingPeriod(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expand new sectors")
 
 			if len(newSectors) > 0 {
-				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, deadline.PeriodEnd()-1, nil)
+				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, deadline.PeriodEnd(), nil)
 				err = AssignNewSectors(deadlines, st.Info.WindowPoStPartitionSectors, newSectors, assignmentSeed)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
@@ -1478,9 +1470,9 @@ func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 	}
 
 	// Check randomness.
-	sealRandEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[onChainInfo.RegisteredProof]
-	if onChainInfo.SealRandEpoch < sealRandEarliest {
-		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, sealRandEarliest)
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), onChainInfo.RegisteredProof)
+	if onChainInfo.SealRandEpoch < challengeEarliest {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, challengeEarliest)
 	}
 
 	commD := requestUnsealedSectorCID(rt, onChainInfo.RegisteredProof, onChainInfo.DealIDs)
@@ -1706,6 +1698,11 @@ func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors
 		fee = big.Add(fee, feeCalc(s))
 	}
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+// The oldest seal challenge epoch that will be accepted in the current epoch.
+func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredProof) abi.ChainEpoch {
+	return currEpoch - ChainFinalityish - MaxSealDuration[proof]
 }
 
 func min64(a, b uint64) uint64 {

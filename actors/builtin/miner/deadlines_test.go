@@ -19,7 +19,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 	DLS := miner.WPoStPeriodDeadlines
 
 	t.Run("pre-open", func(t *testing.T) {
-		curr := abi.ChainEpoch(0)  // Current is before the period opens.
+		curr := abi.ChainEpoch(0) // Current is before the period opens.
 		{
 			periodStart := miner.FaultDeclarationCutoff + 1
 			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
