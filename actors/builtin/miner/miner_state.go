@@ -902,8 +902,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 		return big.Zero(), err
 	}
 
-	err = deleteMany(vestingFunds, toDelete)
-	if err != nil {
+	if err := vestingFunds.BatchDelete(toDelete); err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during slash: %v", err)
 	}
 
@@ -942,7 +941,7 @@ func (st *State) UnlockVestedFunds(vestingFunds *adt.Array, currEpoch abi.ChainE
 		return big.Zero(), err
 	}
 
-	if err := deleteMany(vestingFunds, toDelete); err != nil {
+	if err := vestingFunds.BatchDelete(toDelete); err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest: %v", err)
 	}
 
@@ -1016,17 +1015,6 @@ func AsStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInf
 //
 // Misc helpers
 //
-
-func deleteMany(arr *adt.Array, keys []uint64) error {
-	// If AMT exposed a batch delete we could save some writes here.
-	for _, i := range keys {
-		err := arr.Delete(i)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // Rounds e to the nearest exact multiple of the quantization unit, rounding up.
 // Precondition: unit >= 0 else behaviour is undefined
