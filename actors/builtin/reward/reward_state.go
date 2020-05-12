@@ -22,8 +22,9 @@ type State struct {
 	// This is computed at the end of the previous epoch, and should really be called ThisEpochReward.
 	LastPerEpochReward abi.TokenAmount
 
-	// The epoch at the end of which the LastPerEpochReward was updated.
-	LastKPIUpdate abi.ChainEpoch
+	// The count of epochs for which a reward has been paid.
+	// This should equal the number of non-empty tipsets after the genesis, aka "chain height".
+	RewardEpochsPaid abi.ChainEpoch
 }
 
 type AddrKey = adt.AddrKey
@@ -43,7 +44,7 @@ func ConstructState() *State {
 		SimpleSupply:       big.Zero(),
 		BaselineSupply:     big.Zero(),
 		LastPerEpochReward: big.Zero(),
-		LastKPIUpdate:      -1, // -1 to avoid skipping calculation on the first epoch (0).
+		RewardEpochsPaid:   0,
 	}
 }
 

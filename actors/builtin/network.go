@@ -16,6 +16,9 @@ const EpochsInHour = SecondsInHour / EpochDurationSeconds
 const EpochsInDay = SecondsInDay / EpochDurationSeconds
 const EpochsInYear = SecondsInYear / EpochDurationSeconds
 
+// The expected number of block producers in each epoch.
+var ExpectedLeadersPerEpoch = int64(5)
+
 func init() {
 	//noinspection GoBoolExpressions
 	if SecondsInHour % EpochDurationSeconds != 0 {
