@@ -193,7 +193,7 @@ type SubmitWindowedPoStParams struct {
 	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
 	// than the partition numbers in the first deadlines.
 	Partitions []uint64
-	// Array of proofs, one per distinct registered proof type present in the sectors being proven. 
+	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
 	// Sectors skipped while proving that weren't already declared faulty
@@ -244,7 +244,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Traverse earlier submissions and enact detected faults.
 		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
 		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
+		vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
+		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, vestingFunds, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
+
+		vfc, err := vestingFunds.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush root of vestingFunds")
+		st.VestingFunds = vfc
 
 		// TODO WPOST (follow-up): process Skipped as faults
 
@@ -698,9 +705,12 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
+		vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
 		// Traverse earlier submissions and enact detected faults.
 		// This is necessary to prevent the miner "declaring" a fault for a PoSt already missed.
-		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currEpoch)
+		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, vestingFunds, deadlines, currDeadline.PeriodStart, currDeadline.Index, currEpoch)
 
 		var decaredSectors []*abi.BitField
 		for _, decl := range params.Faults {
@@ -762,8 +772,10 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for declared faults.
-			declaredPenalty, err := unlockPenalty(&st, store, currEpoch, declaredFaultSectors, pledgePenaltyForSectorDeclaredFault)
+
+			declaredPenalty, err := unlockPenalty(&st, vestingFunds, currEpoch, declaredFaultSectors, pledgePenaltyForSectorDeclaredFault)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+
 			penalty = big.Add(penalty, declaredPenalty)
 		}
 
@@ -775,6 +787,11 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			err = st.RemoveRecoveries(recoveries)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 		}
+
+		vfc, err := vestingFunds.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush root of vestingFunds")
+		st.VestingFunds = vfc
+
 		return nil
 	})
 
@@ -1035,7 +1052,18 @@ func handleProvingPeriod(rt Runtime) {
 			if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
 				deadlines, err := st.LoadDeadlines(store)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-				detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd())
+
+				vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+				if err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to load vesting funds array: %s", err)
+				}
+
+				detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, vestingFunds, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd())
+
+				st.VestingFunds, err = vestingFunds.Root()
+				if err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to flush vesting funds array: %s", err)
+				}
 			}
 			return nil
 		})
@@ -1074,7 +1102,14 @@ func handleProvingPeriod(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for ongoing faults.
-			ongoingFaultPenalty, err = unlockPenalty(&st, store, deadline.PeriodEnd(), ongoingFaultInfos, pledgePenaltyForSectorDeclaredFault)
+			vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
+			ongoingFaultPenalty, err = unlockPenalty(&st, vestingFunds, deadline.PeriodEnd(), ongoingFaultInfos, pledgePenaltyForSectorDeclaredFault)
+
+			vfc, err := vestingFunds.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush root of vestingFunds")
+			st.VestingFunds = vfc
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			return nil
 		})
@@ -1125,7 +1160,8 @@ func handleProvingPeriod(rt Runtime) {
 }
 
 // Detects faults from missing PoSt submissions that did not arrive.
-func checkMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch) ([]*SectorOnChainInfo, abi.TokenAmount) {
+func checkMissingPoStFaults(rt Runtime, st *State, vestingFunds *adt.Array, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch) ([]*SectorOnChainInfo, abi.TokenAmount) {
+	store := adt.AsStore(rt)
 	detectedFaults, failedRecoveries, err := computeFaultsFromMissingPoSts(st, deadlines, beforeDeadline)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute detected faults")
 
@@ -1143,7 +1179,7 @@ func checkMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *D
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
 	// Unlock sector penalty for all undeclared faults.
-	penalty, err := unlockPenalty(st, store, currEpoch, append(detectedFaultSectors, failedRecoverySectors...), pledgePenaltyForSectorUndeclaredFault)
+	penalty, err := unlockPenalty(st, vestingFunds, currEpoch, append(detectedFaultSectors, failedRecoverySectors...), pledgePenaltyForSectorUndeclaredFault)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
 	return detectedFaultSectors, penalty
 }
@@ -1367,9 +1403,16 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
 
+		vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
 		if terminationType != power.SectorTerminationExpired {
-			penalty, err = unlockPenalty(&st, store, rt.CurrEpoch(), allSectors, pledgePenaltyForSectorTermination)
+			penalty, err = unlockPenalty(&st, vestingFunds, rt.CurrEpoch(), allSectors, pledgePenaltyForSectorTermination)
 		}
+
+		vfc, err := vestingFunds.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush root of vestingFunds")
+		st.VestingFunds = vfc
 		return nil
 	})
 
@@ -1764,13 +1807,13 @@ func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declare
 
 // Computes a fee for a collection of sectors and unlocks it from unvested funds (for burning).
 // The fee computation is a parameter.
-func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo,
+func unlockPenalty(st *State, vestingFunds *adt.Array, currEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo,
 	feeCalc func(info *SectorOnChainInfo) abi.TokenAmount) (abi.TokenAmount, error) {
 	fee := big.Zero()
 	for _, s := range sectors {
 		fee = big.Add(fee, feeCalc(s))
 	}
-	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+	return st.UnlockUnvestedFunds(vestingFunds, currEpoch, fee)
 }
 
 // The oldest seal challenge epoch that will be accepted in the current epoch.

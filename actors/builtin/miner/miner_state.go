@@ -864,11 +864,7 @@ func (st *State) AddLockedFunds(vestingFunds *adt.Array, currEpoch abi.ChainEpoc
 // Unlocks an amount of funds that have *not yet vested*, if possible.
 // The soonest-vesting entries are unlocked first.
 // Returns the amount actually unlocked.
-func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return abi.TokenAmount{}, err
-	}
+func (st *State) UnlockUnvestedFunds(vestingFunds *adt.Array, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
 
 	amountUnlocked := big.Zero()
 
@@ -877,7 +873,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 	var finished = fmt.Errorf("finished")
 
 	// Iterate vestingFunds are in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
+	err := vestingFunds.ForEach(&lockedEntry, func(k int64) error {
 		if amountUnlocked.LessThan(target) {
 			if k >= int64(currEpoch) {
 				unlockAmount := big.Min(big.Sub(target, amountUnlocked), lockedEntry)
@@ -887,7 +883,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 				if lockedEntry.IsZero() {
 					toDelete = append(toDelete, uint64(k))
 				} else {
-					if err = vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
+					if err := vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
 						return err
 					}
 				}
@@ -908,10 +904,6 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return big.Zero(), err
-	}
 
 	return amountUnlocked, nil
 }

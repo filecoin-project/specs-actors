@@ -754,7 +754,7 @@ func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.Toke
 	if err != nil {
 		h.t.Fatalf("failed to load vesting funds array: %s", err)
 	}
-	amount, err := h.s.UnlockUnvestedFunds(h.store, epoch, target)
+	amount, err := h.s.UnlockUnvestedFunds(vestingFunds, epoch, target)
 	require.NoError(h.t, err)
 	h.s.VestingFunds, err = vestingFunds.Root()
 	if err != nil {
