@@ -192,7 +192,8 @@ type SubmitWindowedPoStParams struct {
 	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
 	// than the partition numbers in the first deadlines.
 	Partitions []uint64
-	// Parallel array of proofs corresponding to the partitions.
+	// Array of proofs, one per distinct registered proof type present in the sectors being proven. 
+	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
 	// Sectors skipped while proving that weren't already declared faulty
 	Skipped abi.BitField
@@ -200,10 +201,6 @@ type SubmitWindowedPoStParams struct {
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
-	if len(params.Partitions) != len(params.Proofs) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %", len(params.Proofs), len(params.Partitions))
-	}
-
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
