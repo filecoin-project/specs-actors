@@ -12,7 +12,7 @@ type State struct {
 	RealizedPower        abi.StoragePower
 	CumsumBaseline       abi.Spacetime
 	CumsumRealized       abi.Spacetime
-	EffectiveNetworkTime big.Int
+	EffectiveNetworkTime abi.NetworkTime
 
 	SimpleSupply   abi.TokenAmount // current supply
 	BaselineSupply abi.TokenAmount // current supply

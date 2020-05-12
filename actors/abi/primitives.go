@@ -15,7 +15,7 @@ import (
 type ChainEpoch int64
 
 // Fractional representation of NetworkTime with an implicit denominator of (2^MintingInputFixedPoint).
-type NetworkTime big.Int
+type NetworkTime = big.Int
 
 func (e ChainEpoch) String() string {
 	return strconv.FormatInt(int64(e), 10)
