@@ -33,7 +33,7 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
 	}
 
-	st := ConstructState(rewards)
+	st := ConstructState()
 	rt.State().Create(st)
 	return nil
 }
@@ -45,7 +45,7 @@ type AwardBlockRewardParams struct {
 	TicketCount int64
 }
 
-// Awards a reward to a block producer, by accounting for it internally to be withdrawn later.
+// Awards a reward to a block producer.
 // This method is called only by the system actor, implicitly, as the last message in the evaluation of a block.
 // The system actor thus computes the parameters and attached value.
 //
@@ -102,6 +102,7 @@ func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenA
 	return &st.LastPerEpochReward
 }
 
+// Updates the simple/baseline supply state and last epoch reward with computation for for a single epoch.
 func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.ChainEpoch, ticketCount int64) abi.TokenAmount {
 	// TODO: PARAM_FINISH
 	newSimpleSupply := mintingFunction(SimpleTotal, big.Lsh(big.NewInt(int64(clockTime)), MintingInputFixedPoint))
@@ -123,7 +124,7 @@ func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networ
 }
 
 const baselinePower = 1 << 50 // 1PiB for testnet, PARAM_FINISH
-func (a Actor) newBaselinePower(st *State) abi.StoragePower {
+func (a Actor) newBaselinePower(st *State, epochEnd abi.ChainEpoch) abi.StoragePower {
 	// TODO: this is not the final baseline function or value, PARAM_FINISH
 	return big.NewInt(baselinePower)
 }
@@ -134,24 +135,36 @@ func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, 
 	return abi.ChainEpoch(big.Div(realizedCumsum, big.NewInt(baselinePower)).Int64())
 }
 
+// Called at the end of each epoch by the power actor (in turn by it's cron hook).
 func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		st.RealizedPower = *currRealizedPower
-		st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
-
-		for i := st.LastKPIUpdate; i < rt.CurrEpoch(); i++ {
-			newBaselinePower := a.newBaselinePower(&st)
-			st.BaselinePower = newBaselinePower
+		// Loop to compute intermediates for any missed epochs (empty tipsets), and then finally the current epoch.
+		for i := st.LastKPIUpdate + 1; i <= rt.CurrEpoch(); i++ {
+			st.BaselinePower = a.newBaselinePower(&st, i)
 			st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
+
+			// Add the prior realized power for each empty tipset, then the new realized power only for this non-empty one.
+			if i == rt.CurrEpoch() {
+				st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
+			} else {
+				st.CumsumRealized = big.Add(st.CumsumRealized, st.RealizedPower)
+
+			}
 
 			st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
+			// TODO: in case of an empty tipset, this will incorrectly update the supply state to suggest that reward
+			// was emitted in epoch, when none was. It's better than the alternative of paying double reward in the
+			// subsequent non-null round, though, because that would incentivize bad behaviour.
+			// A real fix will require teasing that logic apart somewhat.
+			// https://github.com/filecoin-project/specs-actors/issues/317
 			a.computePerEpochReward(&st, i, st.EffectiveNetworkTime, 1)
 		}
 
+		st.RealizedPower = *currRealizedPower
 		st.LastKPIUpdate = rt.CurrEpoch()
 		return nil
 	})
