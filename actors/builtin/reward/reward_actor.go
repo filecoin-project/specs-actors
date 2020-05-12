@@ -72,7 +72,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	var penalty abi.TokenAmount
 	var st State
 	rt.State().Readonly(&st)
-	blockReward := st.LastPerEpochReward
+	blockReward := big.Div(st.LastPerEpochReward, big.NewInt(ExpectedLeadersPerRound))
 	totalReward := big.Add(blockReward, params.GasReward)
 
 	// Cap the penalty at the total reward value.
@@ -139,13 +139,13 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		st.RealizedPower = *currRealizedPower
+		st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
+
 		for i := st.LastKPIUpdate; i < rt.CurrEpoch(); i++ {
 			newBaselinePower := a.newBaselinePower(&st)
 			st.BaselinePower = newBaselinePower
 			st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
-
-			st.RealizedPower = *currRealizedPower
-			st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
 
 			st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
