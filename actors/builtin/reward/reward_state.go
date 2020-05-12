@@ -7,12 +7,15 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+// Fractional representation of NetworkTime with an implicit denominator of (2^MintingInputFixedPoint).
+type NetworkTime = big.Int
+
 type State struct {
 	BaselinePower        abi.StoragePower
 	RealizedPower        abi.StoragePower
 	CumsumBaseline       abi.Spacetime
 	CumsumRealized       abi.Spacetime
-	EffectiveNetworkTime abi.ChainEpoch
+	EffectiveNetworkTime NetworkTime
 
 	SimpleSupply   abi.TokenAmount // current supply
 	BaselineSupply abi.TokenAmount // current supply
@@ -39,7 +42,7 @@ func ConstructState() *State {
 		RealizedPower:        big.Zero(),
 		CumsumBaseline:       big.Zero(),
 		CumsumRealized:       big.Zero(),
-		EffectiveNetworkTime: abi.ChainEpoch(int64(0)),
+		EffectiveNetworkTime: big.Zero(),
 
 		SimpleSupply:       big.Zero(),
 		BaselineSupply:     big.Zero(),
@@ -240,8 +243,7 @@ func taylorSeriesExpansion(lambdaNum big.Int, lambdaDen big.Int, t big.Int) big.
 //   number, and right-shift down by MintingOutputFixedPoint. This convenience
 //   wrapper implements those conventions. However, it does NOT implement
 //   left-shifting the input by the MintingInputFixedPoint, because baseline
-//   minting will (soon) actually supply a fractional input, so this would only
-//   be used for simple minting.
+//   minting will actually supply a fractional input.
 func mintingFunction(factor big.Int, t big.Int) big.Int {
 	return big.Rsh(big.Mul(factor, taylorSeriesExpansion(LambdaNum, LambdaDen, t)), MintingOutputFixedPoint)
 }
