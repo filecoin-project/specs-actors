@@ -57,6 +57,7 @@ type Runtime struct {
 	expectCreateActor        *expectCreateActor
 	expectVerifySig          *expectVerifySig
 	expectVerifySeal         *expectVerifySeal
+	expectVerifyPoSt         *expectVerifyPoSt
 }
 
 type expectRandomness struct {
@@ -91,6 +92,11 @@ type expectVerifySig struct {
 
 type expectVerifySeal struct {
 	seal   abi.SealVerifyInfo
+	result error
+}
+
+type expectVerifyPoSt struct {
+	post   abi.WindowPoStVerifyInfo
 	result error
 }
 
@@ -456,7 +462,21 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 }
 
 func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
-	panic("implement me")
+	exp := rt.expectVerifyPoSt
+	if exp != nil {
+		if !reflect.DeepEqual(exp.post, vi) {
+			rt.failTest("unexpected PoSt verification\n"+
+				"        : %v\n"+
+				"expected: %v",
+				vi, exp.post)
+		}
+		defer func() {
+			rt.expectVerifyPoSt = nil
+		}()
+		return exp.result
+	}
+	rt.failTestNow("unexpected syscall to verify PoSt %v", vi)
+	return nil
 }
 
 func (rt *Runtime) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
@@ -482,6 +502,10 @@ func (a abort) String() string {
 }
 
 ///// Inspection facilities /////
+
+func (rt *Runtime) AdtStore() adt.Store {
+	return adt.AsStore(rt)
+}
 
 func (rt *Runtime) StateRoot() cid.Cid {
 	return rt.state
@@ -594,6 +618,13 @@ func (rt *Runtime) ExpectVerifySignature(sig crypto.Signature, signer addr.Addre
 func (rt *Runtime) ExpectVerifySeal(seal abi.SealVerifyInfo, result error) {
 	rt.expectVerifySeal = &expectVerifySeal{
 		seal:   seal,
+		result: result,
+	}
+}
+
+func (rt *Runtime) ExpectVerifyPoSt(post abi.WindowPoStVerifyInfo, result error) {
+	rt.expectVerifyPoSt = &expectVerifyPoSt{
+		post:   post,
 		result: result,
 	}
 }
