@@ -597,6 +597,10 @@ func (st *State) ClearFaultEpochs(store adt.Store, epochs ...abi.ChainEpoch) err
 	}
 
 	st.FaultEpochs, err = arr.Root()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -20,6 +20,8 @@ type State struct {
 	BaselineSupply abi.TokenAmount // current supply
 
 	LastPerEpochReward abi.TokenAmount
+
+	LastKPIUpdate abi.ChainEpoch
 }
 
 type AddrKey = adt.AddrKey

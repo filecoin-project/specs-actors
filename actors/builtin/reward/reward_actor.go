@@ -71,21 +71,18 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	var penalty abi.TokenAmount
 	var st State
-	rewardPayable := rt.State().Transaction(&st, func() interface{} {
-		blockReward := a.computePerEpochReward(&st, rt.CurrEpoch(), st.EffectiveNetworkTime, params.TicketCount)
-		totalReward := big.Add(blockReward, params.GasReward)
+	rt.State().Readonly(&st)
+	blockReward := st.LastPerEpochReward
+	totalReward := big.Add(blockReward, params.GasReward)
 
-		// Cap the penalty at the total reward value.
-		penalty = big.Min(params.Penalty, totalReward)
+	// Cap the penalty at the total reward value.
+	penalty = big.Min(params.Penalty, totalReward)
 
-		// Reduce the payable reward by the penalty.
-		rewardPayable := big.Sub(totalReward, penalty)
+	// Reduce the payable reward by the penalty.
+	rewardPayable := big.Sub(totalReward, penalty)
 
-		AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
-			"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
-
-		return rewardPayable
-	}).(abi.TokenAmount)
+	AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
+		"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
 
 	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
 	builtin.RequireSuccess(rt, code, "failed to send reward to miner: %s", minerAddr)
@@ -142,15 +139,20 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		newBaselinePower := a.newBaselinePower(&st)
-		st.BaselinePower = newBaselinePower
-		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
+		for i := st.LastKPIUpdate; i < rt.CurrEpoch(); i++ {
+			newBaselinePower := a.newBaselinePower(&st)
+			st.BaselinePower = newBaselinePower
+			st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
 
-		st.RealizedPower = *currRealizedPower
-		st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
+			st.RealizedPower = *currRealizedPower
+			st.CumsumRealized = big.Add(st.CumsumRealized, *currRealizedPower)
 
-		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
+			st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
+			a.computePerEpochReward(&st, i, st.EffectiveNetworkTime, 1)
+		}
+
+		st.LastKPIUpdate = rt.CurrEpoch()
 		return nil
 	})
 
