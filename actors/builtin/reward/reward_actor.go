@@ -99,7 +99,7 @@ func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenA
 }
 
 // Updates the simple/baseline supply state and last epoch reward with computation for for a single epoch.
-func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime abi.NetworkTime, ticketCount int64) abi.TokenAmount {
+func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime NetworkTime, ticketCount int64) abi.TokenAmount {
 	// TODO: PARAM_FINISH
 	newSimpleSupply := mintingFunction(SimpleTotal, big.Lsh(big.NewInt(int64(clockTime)), MintingInputFixedPoint))
 	newBaselineSupply := mintingFunction(BaselineTotal, networkTime)
@@ -125,7 +125,7 @@ func (a Actor) newBaselinePower(st *State, rewardEpochsPaid abi.ChainEpoch) abi.
 	return big.NewInt(baselinePower)
 }
 
-func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) abi.NetworkTime {
+func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) NetworkTime {
 	// TODO: this function depends on the final baseline
 	// EffectiveNetworkTime is a fractional input with an implicit denominator of (2^MintingInputFixedPoint).
 	// realizedCumsum is thus left shifted by MintingInputFixedPoint before converted into a FixedPoint fraction

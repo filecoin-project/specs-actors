@@ -7,12 +7,15 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+// Fractional representation of NetworkTime with an implicit denominator of (2^MintingInputFixedPoint).
+type NetworkTime = big.Int
+
 type State struct {
 	BaselinePower        abi.StoragePower
 	RealizedPower        abi.StoragePower
 	CumsumBaseline       abi.Spacetime
 	CumsumRealized       abi.Spacetime
-	EffectiveNetworkTime abi.NetworkTime
+	EffectiveNetworkTime NetworkTime
 
 	SimpleSupply   abi.TokenAmount // current supply
 	BaselineSupply abi.TokenAmount // current supply
