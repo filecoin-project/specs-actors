@@ -195,11 +195,6 @@ type SubmitWindowedPoStParams struct {
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
-	proofPartitions := proofPartitionCount(params.Proofs)
-	if len(params.Partitions) != proofPartitions {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %d", proofPartitions, len(params.Partitions))
-	}
-
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
