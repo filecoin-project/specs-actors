@@ -1,6 +1,7 @@
 package reward
 
 import (
+	"math"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -62,6 +63,49 @@ func TestMintingFunction(t *testing.T) {
 		expected_truncated_fractional_part, _ := big.FromString(vector.out)
 		if !(ts_truncated_fractional_part.Equals(expected_truncated_fractional_part)) {
 			t.Errorf("minting function: on input %q, computed %q, expected %q", ts_input, ts_truncated_fractional_part, expected_truncated_fractional_part)
+		}
+	}
+}
+
+var fractionalMintingTestVectors = []struct {
+	numerator int64
+	denominator int64
+}{
+	{1, 2},
+	{100, 33},
+}
+
+func TestFractionalMintingFunction(t *testing.T) {
+	for _, vector := range fractionalMintingTestVectors {
+		// total token supply to be minted in attoFil
+		total_supply := big.Mul(big.NewInt(100e6), big.NewInt(1e18))
+
+		// convert input into a fraction with an implicit denominator of (2^MintingInputFixedPoint).
+		network_time := big.Div(big.Lsh(big.NewInt(vector.numerator), MintingInputFixedPoint), big.NewInt(vector.denominator))
+		
+		// compute ceiling of test vector fraction 
+		timestep_ceiling := int64(math.Ceil(float64(vector.numerator) / float64(vector.denominator)))
+		timestep_floor := vector.numerator / vector.denominator
+		remainder_numerator := vector.numerator - timestep_floor * vector.denominator
+		
+		simple_supply_ceiling := mintingFunction(total_supply, big.Lsh(big.NewInt(timestep_ceiling), MintingInputFixedPoint))
+		simple_supply_floor := mintingFunction(total_supply, big.Lsh(big.NewInt(timestep_floor), MintingInputFixedPoint))
+		simple_supply_fraction := big.Sub(simple_supply_ceiling, simple_supply_floor)
+
+		baseline_supply := mintingFunction(total_supply, network_time)
+		expected_baseline_supply := big.Add(simple_supply_floor, big.Div(big.Mul(simple_supply_fraction, big.NewInt(remainder_numerator)), big.NewInt(vector.denominator)))
+
+		if !(expected_baseline_supply.Equals(baseline_supply)) {
+			t.Errorf("timestep ceiling: %q. \n", big.NewInt(timestep_ceiling))
+			t.Errorf("timestep floor: %q. \n", big.NewInt(timestep_floor))
+			t.Errorf("remainder numerator: %q. \n", big.NewInt(remainder_numerator))
+			t.Errorf("network_time: %q. \n", network_time)
+			t.Errorf("simple_supply_ceiling: %q. \n", simple_supply_ceiling)
+			t.Errorf("simple_supply_floor: %q. \n", simple_supply_floor)
+			t.Errorf("simple_supply_fraction: %q. \n", simple_supply_fraction)
+			t.Errorf("baseline_supply: %q. \n", baseline_supply)
+			t.Errorf("expected_baseline_supply: %q. \n", expected_baseline_supply)
+			t.Errorf("fractional minting function: on input %q,\n computed %q, expected %q, %q, %q", network_time, baseline_supply, expected_baseline_supply, network_time, total_supply)
 		}
 	}
 }
