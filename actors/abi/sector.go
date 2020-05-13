@@ -209,18 +209,22 @@ type InteractiveSealRandomness Randomness
 
 // Information needed to verify a seal proof.
 type SealVerifyInfo struct {
+	RegisteredProof
 	SectorID
-	OnChain               OnChainSealVerifyInfo // TODO: don't embed this https://github.com/filecoin-project/specs-actors/issues/276
-	Randomness            SealRandomness
+
+	DealIDs               []DealID
 	InteractiveRandomness InteractiveSealRandomness
+	Proof                 []byte
+	Randomness            SealRandomness
+	SealedCID             cid.Cid // CommR
 	UnsealedCID           cid.Cid // CommD
 }
 
-// OnChainSealVerifyInfo is the structure of information that must be sent with
-// a message to commit a sector. Most of this information is not needed in the
+// SealVerifyParams is the structure of information that must be sent with a
+// message to commit a sector. Most of this information is not needed in the
 // state tree but will be verified in sm.CommitSector. See SealCommitment for
 // data stored on the state tree for each sector.
-type OnChainSealVerifyInfo struct {
+type SealVerifyParams struct {
 	SealedCID        cid.Cid    // CommR
 	InteractiveEpoch ChainEpoch // Used to derive the interactive PoRep challenge.
 	RegisteredProof

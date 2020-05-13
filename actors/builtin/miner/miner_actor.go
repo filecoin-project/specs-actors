@@ -192,7 +192,7 @@ type SubmitWindowedPoStParams struct {
 	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
 	// than the partition numbers in the first deadlines.
 	Partitions []uint64
-	// Array of proofs, one per distinct registered proof type present in the sectors being proven. 
+	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
 	// Sectors skipped while proving that weren't already declared faulty
@@ -431,7 +431,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	}
 
 	// will abort if seal invalid
-	verifySeal(rt, &abi.OnChainSealVerifyInfo{
+	verifySeal(rt, &abi.SealVerifyParams{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
 		SealRandEpoch:    precommit.Info.SealRandEpoch,
@@ -1464,7 +1464,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 }
 
-func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
+func verifySeal(rt Runtime, onChainInfo *abi.SealVerifyParams) {
 	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
@@ -1488,13 +1488,16 @@ func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, buf.Bytes())
 
 	svInfo := abi.SealVerifyInfo{
+		RegisteredProof: onChainInfo.RegisteredProof,
 		SectorID: abi.SectorID{
 			Miner:  abi.ActorID(minerActorID),
 			Number: onChainInfo.SectorNumber,
 		},
-		OnChain:               *onChainInfo,
-		Randomness:            abi.SealRandomness(svInfoRandomness),
+		DealIDs:               onChainInfo.DealIDs,
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
+		Proof:                 onChainInfo.Proof,
+		Randomness:            abi.SealRandomness(svInfoRandomness),
+		SealedCID:             onChainInfo.SealedCID,
 		UnsealedCID:           commD,
 	}
 	if err := rt.Syscalls().VerifySeal(svInfo); err != nil {

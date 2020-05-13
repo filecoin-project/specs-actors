@@ -26,7 +26,7 @@ func main() {
 		abi.SectorID{},
 		abi.SectorInfo{},
 		abi.SealVerifyInfo{},
-		abi.OnChainSealVerifyInfo{},
+		abi.SealVerifyParams{},
 		abi.PoStProof{},
 		abi.WindowPoStVerifyInfo{},
 		abi.WinningPoStVerifyInfo{},
