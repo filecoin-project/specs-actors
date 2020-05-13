@@ -4,6 +4,7 @@ import (
 	"reflect"
 
 	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-hamt-ipld"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
@@ -101,7 +102,10 @@ func (mm *SetMultimap) PutMany(epoch abi.ChainEpoch, vs []abi.DealID) error {
 func (mm *SetMultimap) RemoveAll(key abi.ChainEpoch) error {
 	err := mm.mp.Delete(adt.UIntKey(uint64(key)))
 	if err != nil {
-		return xerrors.Errorf("failed to delete set key %v: %w", key, err)
+		if !xerrors.Is(err, hamt.ErrNotFound) {
+			return xerrors.Errorf("failed to delete set key %v: %w", key, err)
+		}
+		return nil
 	}
 	return nil
 }
