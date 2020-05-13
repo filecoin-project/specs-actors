@@ -431,7 +431,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	}
 
 	// will abort if seal invalid
-	verifySeal(rt, &abi.SealVerifyParams{
+	verifySeal(rt, &SealVerifyParams{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
 		SealRandEpoch:    precommit.Info.SealRandEpoch,
@@ -1464,7 +1464,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 }
 
-func verifySeal(rt Runtime, onChainInfo *abi.SealVerifyParams) {
+func verifySeal(rt Runtime, onChainInfo *SealVerifyParams) {
 	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}

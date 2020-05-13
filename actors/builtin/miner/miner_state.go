@@ -135,6 +135,20 @@ type SectorOnChainInfo struct {
 	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
 }
 
+// SealVerifyParams is the structure of information that must be sent with a
+// message to commit a sector. Most of this information is not needed in the
+// state tree but will be verified in sm.CommitSector. See SealCommitment for
+// data stored on the state tree for each sector.
+type SealVerifyParams struct {
+	SealedCID        cid.Cid        // CommR
+	InteractiveEpoch abi.ChainEpoch // Used to derive the interactive PoRep challenge.
+	abi.RegisteredProof
+	Proof   []byte
+	DealIDs []abi.DealID
+	abi.SectorNumber
+	SealRandEpoch abi.ChainEpoch // Used to tie the seal to a chain.
+}
+
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
 	peerId peer.ID, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
 	sealProofType, err := proofType.RegisteredSealProof()

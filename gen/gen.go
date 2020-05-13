@@ -26,7 +26,6 @@ func main() {
 		abi.SectorID{},
 		abi.SectorInfo{},
 		abi.SealVerifyInfo{},
-		abi.SealVerifyParams{},
 		abi.PoStProof{},
 		abi.WindowPoStVerifyInfo{},
 		abi.WinningPoStVerifyInfo{},
@@ -184,6 +183,7 @@ func main() {
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
 		miner.WithdrawBalanceParams{},
+		miner.SealVerifyParams{},
 		// other types
 		miner.CronEventPayload{},
 		miner.FaultDeclaration{},
