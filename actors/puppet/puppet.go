@@ -57,8 +57,8 @@ func (a Actor) Send(rt runtime.Runtime, params *SendParams) *SendReturn {
 		runtime.CBORBytes(params.Params),
 		params.Value,
 	)
-	var out runtime.CBORBytes
-	if err := ret.Into(&out); err != nil {
+	out, err := handleSendReturn(ret)
+	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal send return: %v", err)
 	}
 	return &SendReturn{
@@ -75,14 +75,26 @@ func (a Actor) SendMarshalCBORFailure(rt runtime.Runtime, params *SendParams) *S
 		&FailToMarshalCBOR{},
 		params.Value,
 	)
-	var out runtime.CBORBytes
-	if err := ret.Into(&out); err != nil {
+	out, err := handleSendReturn(ret)
+	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal send return: %v", err)
 	}
 	return &SendReturn{
 		Return: out,
 		Code:   code,
 	}
+}
+
+func handleSendReturn(ret runtime.SendReturn) (runtime.CBORBytes, error) {
+	if ret != nil {
+		var out runtime.CBORBytes
+		if err := ret.Into(&out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	// nothing was returned
+	return nil, nil
 }
 
 type FailToMarshalCBOR struct {
