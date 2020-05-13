@@ -450,7 +450,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
 		}
 
-		for i := st.LastCron; i <= rt.CurrEpoch(); i++ {
+		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
 				state, found, err := states.Get(dealID)
 				if err != nil {
@@ -530,6 +530,8 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		st.EscrowTable = etc
 
 		st.DealOpsByEpoch = ndbec
+
+		st.LastCron = rt.CurrEpoch()
 
 		return nil
 	})
