@@ -1464,18 +1464,18 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 }
 
-func verifySeal(rt Runtime, onChainInfo *SealVerifyParams) {
-	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
+func verifySeal(rt Runtime, params *SealVerifyParams) {
+	if rt.CurrEpoch() <= params.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
 
 	// Check randomness.
-	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), onChainInfo.RegisteredProof)
-	if onChainInfo.SealRandEpoch < challengeEarliest {
-		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, challengeEarliest)
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredProof)
+	if params.SealRandEpoch < challengeEarliest {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", params.SealRandEpoch, challengeEarliest)
 	}
 
-	commD := requestUnsealedSectorCID(rt, onChainInfo.RegisteredProof, onChainInfo.DealIDs)
+	commD := requestUnsealedSectorCID(rt, params.RegisteredProof, params.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
@@ -1484,20 +1484,20 @@ func verifySeal(rt Runtime, onChainInfo *SealVerifyParams) {
 	err = rt.Message().Receiver().MarshalCBOR(buf)
 	AssertNoError(err)
 
-	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealRandEpoch, buf.Bytes())
-	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, buf.Bytes())
+	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
+	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
 
 	svInfo := abi.SealVerifyInfo{
-		RegisteredProof: onChainInfo.RegisteredProof,
+		RegisteredProof: params.RegisteredProof,
 		SectorID: abi.SectorID{
 			Miner:  abi.ActorID(minerActorID),
-			Number: onChainInfo.SectorNumber,
+			Number: params.SectorNumber,
 		},
-		DealIDs:               onChainInfo.DealIDs,
+		DealIDs:               params.DealIDs,
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
-		Proof:                 onChainInfo.Proof,
+		Proof:                 params.Proof,
 		Randomness:            abi.SealRandomness(svInfoRandomness),
-		SealedCID:             onChainInfo.SealedCID,
+		SealedCID:             params.SealedCID,
 		UnsealedCID:           commD,
 	}
 	if err := rt.Syscalls().VerifySeal(svInfo); err != nil {
