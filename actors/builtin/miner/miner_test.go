@@ -497,8 +497,13 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 			InteractiveRandomness: sealIntRand,
 			UnsealedCID:           cid.Cid(commd),
 		}
-		rt.ExpectVerifySeal(seal, conf.verifySealErr)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.SubmitPoRepForBulkVerify, &seal, abi.NewTokenAmount(0), nil, 0)
 	}
+
+	rt.Call(h.a.ProveCommitSector, params)
+
+	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	{
 		vdParams := market.VerifyDealsOnSectorProveCommitParams{
 			DealIDs:      precommit.DealIDs,
@@ -527,7 +532,10 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &upParams, big.Zero(), nil, exitcode.Ok)
 		}
 	}
-	rt.Call(h.a.ProveCommitSector, params)
+
+	if conf.verifySealErr == nil {
+		rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{Sectors: []abi.SectorNumber{params.SectorNumber}})
+	}
 	rt.Verify()
 }
 
