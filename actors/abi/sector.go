@@ -213,9 +213,9 @@ type SealVerifyInfo struct {
 	SectorID
 
 	DealIDs               []DealID
+	Randomness            SealRandomness
 	InteractiveRandomness InteractiveSealRandomness
 	Proof                 []byte
-	Randomness            SealRandomness
 	SealedCID             cid.Cid // CommR
 	UnsealedCID           cid.Cid // CommD
 }
