@@ -1464,6 +1464,20 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 }
 
+// SealVerifyParams is the structure of information that must be sent with a
+// message to commit a sector. Most of this information is not needed in the
+// state tree but will be verified in sm.CommitSector. See SealCommitment for
+// data stored on the state tree for each sector.
+type SealVerifyStuff struct {
+	SealedCID        cid.Cid        // CommR
+	InteractiveEpoch abi.ChainEpoch // Used to derive the interactive PoRep challenge.
+	abi.RegisteredProof
+	Proof   []byte
+	DealIDs []abi.DealID
+	abi.SectorNumber
+	SealRandEpoch abi.ChainEpoch // Used to tie the seal to a chain.
+}
+
 func verifySeal(rt Runtime, params *SealVerifyStuff) {
 	if rt.CurrEpoch() <= params.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
