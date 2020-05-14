@@ -139,7 +139,7 @@ type SectorOnChainInfo struct {
 // message to commit a sector. Most of this information is not needed in the
 // state tree but will be verified in sm.CommitSector. See SealCommitment for
 // data stored on the state tree for each sector.
-type SealVerifyParams struct {
+type SealVerifyStuff struct {
 	SealedCID        cid.Cid        // CommR
 	InteractiveEpoch abi.ChainEpoch // Used to derive the interactive PoRep challenge.
 	abi.RegisteredProof

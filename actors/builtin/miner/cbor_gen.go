@@ -1966,7 +1966,7 @@ func (t *WithdrawBalanceParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *SealVerifyParams) MarshalCBOR(w io.Writer) error {
+func (t *SealVerifyStuff) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -2048,7 +2048,7 @@ func (t *SealVerifyParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *SealVerifyParams) UnmarshalCBOR(r io.Reader) error {
+func (t *SealVerifyStuff) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

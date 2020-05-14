@@ -183,7 +183,7 @@ func main() {
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
 		miner.WithdrawBalanceParams{},
-		miner.SealVerifyParams{},
+		miner.SealVerifyStuff{},
 		// other types
 		miner.CronEventPayload{},
 		miner.FaultDeclaration{},
