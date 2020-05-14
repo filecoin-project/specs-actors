@@ -293,6 +293,18 @@ func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.Randomness (abi.SealRandomness) (slice)
+	if len(t.Randomness) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Randomness was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Randomness)))); err != nil {
+		return err
+	}
+	if _, err := w.Write(t.Randomness); err != nil {
+		return err
+	}
+
 	// t.InteractiveRandomness (abi.InteractiveSealRandomness) (slice)
 	if len(t.InteractiveRandomness) > cbg.ByteArrayMaxLen {
 		return xerrors.Errorf("Byte array in field t.InteractiveRandomness was too long")
@@ -314,18 +326,6 @@ func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	if _, err := w.Write(t.Proof); err != nil {
-		return err
-	}
-
-	// t.Randomness (abi.SealRandomness) (slice)
-	if len(t.Randomness) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Randomness was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Randomness)))); err != nil {
-		return err
-	}
-	if _, err := w.Write(t.Randomness); err != nil {
 		return err
 	}
 
@@ -426,6 +426,23 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		t.DealIDs[i] = DealID(val)
 	}
 
+	// t.Randomness (abi.SealRandomness) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Randomness: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Randomness = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Randomness); err != nil {
+		return err
+	}
 	// t.InteractiveRandomness (abi.InteractiveSealRandomness) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
@@ -458,23 +475,6 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	}
 	t.Proof = make([]byte, extra)
 	if _, err := io.ReadFull(br, t.Proof); err != nil {
-		return err
-	}
-	// t.Randomness (abi.SealRandomness) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Randomness: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-	t.Randomness = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Randomness); err != nil {
 		return err
 	}
 	// t.SealedCID (cid.Cid) (struct)
