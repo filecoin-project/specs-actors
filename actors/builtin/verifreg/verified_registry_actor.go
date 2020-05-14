@@ -90,6 +90,7 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 	if params.Allowance.LessThanEqual(MinVerifiedDealSize) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
 	}
+	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
