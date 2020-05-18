@@ -121,5 +121,5 @@ var PuppetActorCodeID cid.Cid
 var MethodsPuppet = struct {
 	Constructor            abi.MethodNum
 	Send                   abi.MethodNum
-	SendMarshalCBORFailuer abi.MethodNum
+	SendMarshalCBORFailure abi.MethodNum
 }{builtin.MethodConstructor, 2, 3}
