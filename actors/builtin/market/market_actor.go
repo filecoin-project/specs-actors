@@ -24,12 +24,11 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AddBalance,
 		3:                         a.WithdrawBalance,
-		4:                         a.HandleExpiredDeals,
-		5:                         a.PublishStorageDeals,
-		6:                         a.VerifyDealsOnSectorProveCommit,
-		7:                         a.OnMinerSectorsTerminate,
-		8:                         a.ComputeDataCommitment,
-		9:                         a.HandleInitTimeoutDeals,
+		4:                         a.PublishStorageDeals,
+		5:                         a.VerifyDealsOnSectorProveCommit,
+		6:                         a.OnMinerSectorsTerminate,
+		7:                         a.ComputeDataCommitment,
+		8:                         a.CronTick,
 	}
 }
 
@@ -80,9 +79,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	var amountExtracted abi.TokenAmount
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		// Before any operations that check the balance tables for funds, execute all deferred
-		// deal state updates.
-		amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, nominal))
+		// The withdrawable amount might be slightly less than nominal
+		// depending on whether or not all relevant entries have been processed
+		// by cron
 
 		minBalance := st.GetLockedBalance(rt, nominal)
 
@@ -148,7 +147,6 @@ type PublishStorageDealsReturn struct {
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
-	amountSlashedTotal := abi.NewTokenAmount(0)
 
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
@@ -195,7 +193,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load proposals array: %s", err)
 		}
 
-		dbp, err := AsSetMultimap(adt.AsStore(rt), st.DealIDsByParty)
+		dealOps, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids set: %s", err)
 		}
@@ -216,29 +214,17 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			deal.Proposal.Provider = provider
 			deal.Proposal.Client = client
 
-			// Before any operations that check the balance tables for funds, execute all deferred
-			// deal state updates.
-			//
-			// Note: as an optimization, implementations may cache efficient data structures indicating
-			// which of the following set of updates are redundant and can be skipped.
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, client))
-			amountSlashedTotal = big.Add(amountSlashedTotal, st.updatePendingDealStatesForParty(rt, provider))
-
 			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
 			st.lockBalanceOrAbort(rt, provider, deal.Proposal.ProviderBalanceRequirement())
 
 			id := st.generateStorageDealID()
 
-			err := proposals.Set(id, &deal.Proposal)
-			if err != nil {
+			if err := proposals.Set(id, &deal.Proposal); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 
-			if err = dbp.Put(client, id); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set client deal id: %v", err)
-			}
-			if err = dbp.Put(provider, id); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set provider deal id: %v", err)
+			if err := dealOps.Put(deal.Proposal.StartEpoch, id); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "set deal in ops set: %v", err)
 			}
 
 			newDealIds = append(newDealIds, id)
@@ -249,17 +235,15 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		}
 		st.Proposals = propc
 
-		dipc, err := dbp.Root()
+		dipc, err := dealOps.Root()
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
 		}
 
-		st.DealIDsByParty = dipc
+		st.DealOpsByEpoch = dipc
 		return nil
 	})
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-	builtin.RequireSuccess(rt, code, "failed to burn funds")
 	return &PublishStorageDealsReturn{newDealIds}
 }
 
@@ -300,19 +284,26 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, err := states.Get(dealID)
+			_, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
+			if found {
+				rt.Abortf(exitcode.ErrIllegalArgument, "given deal already included in another sector: %d", dealID)
+			}
+
 			proposal, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
 			}
 
-			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, deal, proposal)
+			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, proposal)
 
-			deal.SectorStartEpoch = rt.CurrEpoch()
-			err = states.Set(dealID, deal)
+			err = states.Set(dealID, &DealState{
+				SectorStartEpoch: rt.CurrEpoch(),
+				LastUpdatedEpoch: epochUndefined,
+				SlashEpoch:       epochUndefined,
+			})
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal %v", err)
 			}
@@ -401,9 +392,12 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 			Assert(deal.Provider == minerAddr)
 
-			state, err := states.Get(dealID)
+			state, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
+			}
+			if !found {
+				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
 			}
 
 			// Note: we do not perform the balance transfers here, but rather simply record the flag
@@ -411,8 +405,8 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// is performed. // TODO: Do that here
 
 			state.SlashEpoch = rt.CurrEpoch()
-			err = states.Set(dealID, state)
-			if err != nil {
+
+			if err := states.Set(dealID, state); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 		}
@@ -426,78 +420,138 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 	return nil
 }
 
-type HandleExpiredDealsParams struct {
-	Deals []abi.DealID // TODO: RLE
-}
+func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
+	amountSlashed := big.Zero()
 
-func (a Actor) HandleExpiredDeals(rt Runtime, params *HandleExpiredDealsParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	var slashed abi.TokenAmount
+	var timedOutVerifiedDeals []*DealProposal
+
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		slashed = st.updatePendingDealStates(rt, params.Deals, rt.CurrEpoch())
-		return nil
-	})
+		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal opts set: %s", err)
+		}
 
-	// TODO: award some small portion of slashed to caller as incentive
+		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashed)
-	builtin.RequireSuccess(rt, code, "failed to burn funds")
-	return nil
-}
+		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
+		}
 
-type HandleInitTimeoutDealsParams struct {
-	Deals []abi.DealID // TODO: RLE
-}
+		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
+		}
 
-func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDealsParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	var st State
-	var verifiedDeals []*DealProposal
-	slashedAmount := rt.State().Transaction(&st, func() interface{} {
-		slashed := abi.NewTokenAmount(0)
-		for _, dealID := range params.Deals {
-			deal := st.mustGetDeal(rt, dealID)
-			state := st.mustGetDealState(rt, dealID)
+		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+		}
 
-			// Deal has not been activated.
-			if state.SectorStartEpoch == epochUndefined {
-				// Now is after StartEpoch when the Deal should have been activated, hence clean up.
-				if rt.CurrEpoch() > deal.StartEpoch {
-					// Store VerifiedDeal to restore bytes for VerifiedClient.
-					if deal.VerifiedDeal {
-						verifiedDeals = append(verifiedDeals, deal)
-					}
-					newlySlashed := st.processDealInitTimedOut(rt, dealID)
-					big.Add(slashed, newlySlashed)
-				} else {
-					// All deals must have timed out.
-					rt.Abortf(exitcode.ErrIllegalArgument, "not all deals have timed out: %d", dealID)
+		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
+			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
+				state, found, err := states.Get(dealID)
+				if err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
 				}
+
+				if !found {
+					return nil
+				}
+
+				deal := st.mustGetDeal(rt, dealID)
+
+				if state.SectorStartEpoch == epochUndefined {
+					// Not yet appeared in proven sector; check for timeout.
+					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
+
+					slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
+					if !slashed.IsZero() {
+						amountSlashed = big.Add(amountSlashed, slashed)
+					}
+					if deal.VerifiedDeal {
+						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
+					}
+					return nil
+				}
+
+				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
+				if !slashAmount.IsZero() {
+					amountSlashed = big.Add(amountSlashed, slashAmount)
+				}
+
+				if nextEpoch != epochUndefined {
+					Assert(nextEpoch > rt.CurrEpoch())
+
+					// TODO: can we avoid having this field?
+					state.LastUpdatedEpoch = rt.CurrEpoch()
+
+					if err := states.Set(dealID, state); err != nil {
+						rt.Abortf(exitcode.ErrPlaceholder, "failed to get deal: %v", err)
+					}
+
+					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], dealID)
+				}
+
+				return nil
+			}); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to iterate deals for epoch: %s", err)
+			}
+			if err := dbe.RemoveAll(i); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete deals from set: %s", err)
 			}
 		}
 
-		return &slashed
-	}).(abi.TokenAmount)
+		// NB: its okay that we're doing a 'random' golang map iteration here
+		// because HAMTs and AMTs are insertion order independent, the same set of
+		// data inserted will always produce the same structure, no matter the order
+		for epoch, deals := range updatesNeeded {
+			if err := dbe.PutMany(epoch, deals); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to reinsert deal IDs into epoch set: %s", err)
+			}
+		}
 
-	// TODO: award some small portion of slashed to caller as incentive
+		ndbec, err := dbe.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to get root of deals by epoch set: %s", err)
+		}
 
-	// Restore verified dataset allowance for verified clients.
-	for _, deal := range verifiedDeals {
+		ltc, err := lt.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
+		}
+		etc, err := et.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
+		}
+		st.LockedTable = ltc
+		st.EscrowTable = etc
+
+		st.DealOpsByEpoch = ndbec
+
+		st.LastCron = rt.CurrEpoch()
+
+		return nil
+	})
+
+	for _, d := range timedOutVerifiedDeals {
 		_, code := rt.Send(
 			builtin.VerifiedRegistryActorAddr,
 			builtin.MethodsVerifiedRegistry.RestoreBytes,
 			&verifreg.RestoreBytesParams{
-				Address:  deal.Client,
-				DealSize: big.NewIntUnsigned(uint64(deal.PieceSize)),
+				Address:  d.Client,
+				DealSize: big.NewIntUnsigned(uint64(d.PieceSize)),
 			},
 			abi.NewTokenAmount(0),
 		)
-		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", deal.Client)
+
+		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
 	}
 
-	_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, slashedAmount)
-	builtin.RequireSuccess(rt, code, "failed to burn funds")
+	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
 	return nil
 }
 
@@ -505,13 +559,9 @@ func (a Actor) HandleInitTimeoutDeals(rt Runtime, params *HandleInitTimeoutDeals
 // Checks
 ////////////////////////////////////////////////////////////////////////////////
 
-func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, deal *DealState, proposal *DealProposal) {
+func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, proposal *DealProposal) {
 	if proposal.Provider != minerAddr {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
-	}
-
-	if deal.SectorStartEpoch != epochUndefined {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has already appeared in proven sector.")
 	}
 
 	if rt.CurrEpoch() > proposal.StartEpoch {

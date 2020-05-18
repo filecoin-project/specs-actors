@@ -22,6 +22,19 @@ func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, market.Actor{})
 }
 
+func TestRemoveAllError(t *testing.T) {
+	marketActor := tutil.NewIDAddr(t, 100)
+	builder := mock.NewBuilder(context.Background(), marketActor)
+	rt := builder.Build(t)
+	store := adt.AsStore(rt)
+
+	smm := market.MakeEmptySetMultimap(store)
+
+	if err := smm.RemoveAll(42); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	}
+}
+
 func TestMarketActor(t *testing.T) {
 	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
@@ -79,7 +92,8 @@ func TestMarketActor(t *testing.T) {
 		assert.Equal(t, emptyMap, state.EscrowTable)
 		assert.Equal(t, emptyMap, state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
-		assert.Equal(t, emptyMultiMap, state.DealIDsByParty)
+		assert.Equal(t, emptyMultiMap, state.DealOpsByEpoch)
+		assert.Equal(t, abi.ChainEpoch(-1), state.LastCron)
 	})
 
 	t.Run("AddBalance", func(t *testing.T) {

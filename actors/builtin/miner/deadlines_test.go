@@ -19,7 +19,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 	DLS := miner.WPoStPeriodDeadlines
 
 	t.Run("pre-open", func(t *testing.T) {
-		curr := abi.ChainEpoch(0)  // Current is before the period opens.
+		curr := abi.ChainEpoch(0) // Current is before the period opens.
 		{
 			periodStart := miner.FaultDeclarationCutoff + 1
 			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
@@ -115,6 +115,19 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		// First epoch of next proving period.
 		assertDeadlineInfo(t, 2+2*CW, initialPPStart+PP, 0, initialPPStart+PP)
 		assertDeadlineInfo(t, 2+2*CW+1, initialPPStart+PP, 0, initialPPStart+PP)
+	})
+
+	t.Run("period expired", func(t *testing.T) {
+		offset := abi.ChainEpoch(1)
+		d := miner.ComputeProvingPeriodDeadline(offset, offset+miner.WPoStProvingPeriod)
+		assert.True(t, d.PeriodStarted())
+		assert.True(t, d.PeriodElapsed())
+		assert.Equal(t, miner.WPoStPeriodDeadlines, d.Index)
+		assert.False(t, d.IsOpen())
+		assert.True(t, d.HasElapsed())
+		assert.True(t, d.FaultCutoffPassed())
+		assert.Equal(t, offset+miner.WPoStProvingPeriod-1, d.PeriodEnd())
+		assert.Equal(t, offset+miner.WPoStProvingPeriod, d.NextPeriodStart())
 	})
 }
 

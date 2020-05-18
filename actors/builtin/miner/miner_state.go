@@ -597,7 +597,7 @@ func (st *State) ClearFaultEpochs(store adt.Store, epochs ...abi.ChainEpoch) err
 	}
 
 	st.FaultEpochs, err = arr.Root()
-	return nil
+	return err
 }
 
 // Adds sectors to recoveries.
@@ -651,6 +651,53 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 		return nil
 	})
 	return sectorInfos, err
+}
+
+// Loads info for a set of sectors to be proven.
+// If any of the sectors are declared faulty and not to be recovered, info for the first non-faulty sector is substituted instead.
+// If any of the sectors are declared recovered, they are returned from this method.
+func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.BitField) (sectorInfos []*SectorOnChainInfo, recoveries *bitfield.BitField, err error) {
+	// Extract a fault set relevant to the sectors being submitted, for expansion into a map.
+	declaredFaults, err := bitfield.IntersectBitField(provenSectors, st.Faults)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to intersect proof sectors with faults: %w", err)
+	}
+
+	recoveries, err = bitfield.IntersectBitField(declaredFaults, st.Recoveries)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to intersect recoveries with faults: %w", err)
+	}
+
+	expectedFaults, err := bitfield.SubtractBitField(declaredFaults, recoveries)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to subtract recoveries from faults: %w", err)
+	}
+
+	nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to diff bitfields: %w", err)
+	}
+
+	empty, err := nonFaults.IsEmpty()
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to check if bitfield was empty: %w", err)
+	}
+	if empty {
+		return nil, nil, xerrors.Errorf("no non-faulty sectors in partitions: %w", err)
+	}
+
+	// Select a non-faulty sector as a substitute for faulty ones.
+	goodSectorNo, err := nonFaults.First()
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to get first good sector: %w", err)
+	}
+
+	// Load sector infos
+	sectorInfos, err = st.LoadSectorInfosWithFaultMask(store, provenSectors, expectedFaults, abi.SectorNumber(goodSectorNo))
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to load sector infos: %w", err)
+	}
+	return
 }
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
@@ -977,9 +1024,10 @@ func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 
 func AsStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *power.SectorStorageWeightDesc {
 	return &power.SectorStorageWeightDesc{
-		SectorSize: sectorSize,
-		DealWeight: sectorInfo.DealWeight,
-		Duration:   sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
+		SectorSize:         sectorSize,
+		DealWeight:         sectorInfo.DealWeight,
+		VerifiedDealWeight: sectorInfo.VerifiedDealWeight,
+		Duration:           sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
 	}
 }
 

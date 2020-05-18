@@ -1,14 +1,18 @@
 package puppet
 
 import (
+	"fmt"
+	"io"
+
 	addr "github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 )
 
 // The Puppet Actor exists to aid testing the runtime and environment in which it's embedded. It provides direct access
@@ -20,6 +24,7 @@ func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.Send,
+		3:                         a.SendMarshalCBORFailure,
 	}
 }
 
@@ -52,14 +57,51 @@ func (a Actor) Send(rt runtime.Runtime, params *SendParams) *SendReturn {
 		runtime.CBORBytes(params.Params),
 		params.Value,
 	)
-	var out runtime.CBORBytes
-	if err := ret.Into(&out); err != nil {
+	out, err := handleSendReturn(ret)
+	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal send return: %v", err)
 	}
 	return &SendReturn{
 		Return: out,
 		Code:   code,
 	}
+}
+
+func (a Actor) SendMarshalCBORFailure(rt runtime.Runtime, params *SendParams) *SendReturn {
+	rt.ValidateImmediateCallerAcceptAny()
+	ret, code := rt.Send(
+		params.To,
+		params.Method,
+		&FailToMarshalCBOR{},
+		params.Value,
+	)
+	out, err := handleSendReturn(ret)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal send return: %v", err)
+	}
+	return &SendReturn{
+		Return: out,
+		Code:   code,
+	}
+}
+
+func handleSendReturn(ret runtime.SendReturn) (runtime.CBORBytes, error) {
+	if ret != nil {
+		var out runtime.CBORBytes
+		if err := ret.Into(&out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	// nothing was returned
+	return nil, nil
+}
+
+type FailToMarshalCBOR struct {
+}
+
+func (t *FailToMarshalCBOR) MarshalCBOR(w io.Writer) error {
+	return fmt.Errorf("failed to marshal cbor")
 }
 
 type State struct{}
@@ -77,6 +119,7 @@ func init() {
 var PuppetActorCodeID cid.Cid
 
 var MethodsPuppet = struct {
-	Constructor abi.MethodNum
-	Send        abi.MethodNum
-}{builtin.MethodConstructor, 2}
+	Constructor            abi.MethodNum
+	Send                   abi.MethodNum
+	SendMarshalCBORFailuer abi.MethodNum
+}{builtin.MethodConstructor, 2, 3}

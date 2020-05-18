@@ -5,19 +5,14 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
-// The duration of a chain epoch.
-// This is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
-const EpochDurationSeconds = 25
-const SecondsInYear = 31556925
-const SecondsInDay = 86400
-
 // The period over which all a miner's active sectors will be challenged.
-const WPoStProvingPeriod = abi.ChainEpoch(SecondsInDay / EpochDurationSeconds)
+const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
 // The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
-const WPoStChallengeWindow = abi.ChainEpoch(1800 / EpochDurationSeconds) // Half an hour (=48 per day)
+const WPoStChallengeWindow = abi.ChainEpoch(3600 / builtin.EpochDurationSeconds) // An hour (=24 per day)
 
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
@@ -54,6 +49,12 @@ const NewSectorsPerPeriodMax = 128 << 10
 // An approximation to chain state finality (should include message propagation time as well).
 const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
 
+// List of proof types which can be used when creating new miner actors
+var SupportedProofTypes = map[abi.RegisteredProof]struct{}{
+	abi.RegisteredProof_StackedDRG32GiBSeal: {},
+	abi.RegisteredProof_StackedDRG64GiBSeal: {},
+}
+
 // Maximum duration to allow for the sealing process for seal algorithms.
 // Dependent on algorithm and sector size
 var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
@@ -61,6 +62,7 @@ var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
 	abi.RegisteredProof_StackedDRG2KiBSeal:   abi.ChainEpoch(10000),
 	abi.RegisteredProof_StackedDRG8MiBSeal:   abi.ChainEpoch(10000),
 	abi.RegisteredProof_StackedDRG512MiBSeal: abi.ChainEpoch(10000),
+	abi.RegisteredProof_StackedDRG64GiBSeal:  abi.ChainEpoch(10000),
 }
 
 // Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
@@ -130,10 +132,10 @@ type VestSpec struct {
 }
 
 var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(SecondsInYear / EpochDurationSeconds),    // 1 year, PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(SecondsInYear / EpochDurationSeconds),    // 1 year, PARAM_FINISH
-	StepDuration: abi.ChainEpoch(7 * SecondsInDay / EpochDurationSeconds), // 1 week, PARAM_FINISH
-	Quantization: SecondsInDay / EpochDurationSeconds,                     // 1 day, PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
+	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay), // 1 day for testnet, PARAM_FINISH
+	Quantization: 12 * builtin.EpochsInHour,               // 12 hours for testnet, PARAM_FINISH
 }
 
 func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {

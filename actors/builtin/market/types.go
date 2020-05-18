@@ -71,20 +71,20 @@ func (t *DealMetaArray) Root() (cid.Cid, error) {
 }
 
 // Gets the deal for a key. The entry must have been previously initialized.
-func (t *DealMetaArray) Get(id abi.DealID) (*DealState, error) {
+func (t *DealMetaArray) Get(id abi.DealID) (*DealState, bool, error) {
 	var value DealState
 	found, err := t.Array.Get(uint64(id), &value)
 	if err != nil {
-		return nil, err // The errors from Map carry good information, no need to wrap here.
+		return nil, false, err // The errors from Map carry good information, no need to wrap here.
 	}
 	if !found {
 		return &DealState{
 			SectorStartEpoch: epochUndefined,
 			LastUpdatedEpoch: epochUndefined,
 			SlashEpoch:       epochUndefined,
-		}, nil
+		}, false, nil
 	}
-	return &value, nil
+	return &value, true, nil
 }
 
 func (t *DealMetaArray) Set(k abi.DealID, value *DealState) error {

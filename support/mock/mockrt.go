@@ -56,6 +56,8 @@ type Runtime struct {
 	expectSends              []*expectedMessage
 	expectCreateActor        *expectCreateActor
 	expectVerifySig          *expectVerifySig
+	expectVerifySeal         *expectVerifySeal
+	expectVerifyPoSt         *expectVerifyPoSt
 }
 
 type expectRandomness struct {
@@ -85,6 +87,16 @@ type expectVerifySig struct {
 	signer    addr.Address
 	plaintext []byte
 	// Result
+	result error
+}
+
+type expectVerifySeal struct {
+	seal   abi.SealVerifyInfo
+	result error
+}
+
+type expectVerifyPoSt struct {
+	post   abi.WindowPoStVerifyInfo
 	result error
 }
 
@@ -210,8 +222,8 @@ func (rt *Runtime) GetRandomness(tag crypto.DomainSeparationTag, epoch abi.Chain
 	}
 	exp := rt.expectRandomness[0]
 	if tag != exp.tag || epoch != exp.epoch || !bytes.Equal(entropy, exp.entropy) {
-		rt.failTest("unexpected get randomness\n" +
-			"         tag: %d, epoch: %d, entropy: %v\n" +
+		rt.failTest("unexpected get randomness\n"+
+			"         tag: %d, epoch: %d, entropy: %v\n"+
 			"expected tag: %d, epoch: %d, entropy: %v", tag, epoch, entropy, exp.tag, exp.epoch, exp.entropy)
 	}
 	defer func() {
@@ -409,8 +421,8 @@ func (rt *Runtime) VerifySignature(sig crypto.Signature, signer addr.Address, pl
 	exp := rt.expectVerifySig
 	if exp != nil {
 		if !exp.sig.Equals(&sig) || exp.signer != signer || !bytes.Equal(exp.plaintext, plaintext) {
-			rt.failTest("unexpected signature verification\n" +
-				"         sig: %v, signer: %s, plaintext: %v\n" +
+			rt.failTest("unexpected signature verification\n"+
+				"         sig: %v, signer: %s, plaintext: %v\n"+
 				"expected sig: %v, signer: %s, plaintext: %v",
 				sig, signer, plaintext, exp.sig, exp.signer, exp.plaintext)
 		}
@@ -431,12 +443,40 @@ func (rt *Runtime) ComputeUnsealedSectorCID(reg abi.RegisteredProof, pieces []ab
 	panic("implement me")
 }
 
-func (rt *Runtime) VerifySeal(vi abi.SealVerifyInfo) error {
-	panic("implement me")
+func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
+	exp := rt.expectVerifySeal
+	if exp != nil {
+		if !reflect.DeepEqual(exp.seal, seal) {
+			rt.failTest("unexpected seal verification\n"+
+				"        : %v\n"+
+				"expected: %v",
+				seal, exp.seal)
+		}
+		defer func() {
+			rt.expectVerifySeal = nil
+		}()
+		return exp.result
+	}
+	rt.failTestNow("unexpected syscall to verify seal %v", seal)
+	return nil
 }
 
 func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
-	panic("implement me")
+	exp := rt.expectVerifyPoSt
+	if exp != nil {
+		if !reflect.DeepEqual(exp.post, vi) {
+			rt.failTest("unexpected PoSt verification\n"+
+				"        : %v\n"+
+				"expected: %v",
+				vi, exp.post)
+		}
+		defer func() {
+			rt.expectVerifyPoSt = nil
+		}()
+		return exp.result
+	}
+	rt.failTestNow("unexpected syscall to verify PoSt %v", vi)
+	return nil
 }
 
 func (rt *Runtime) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
@@ -462,6 +502,10 @@ func (a abort) String() string {
 }
 
 ///// Inspection facilities /////
+
+func (rt *Runtime) AdtStore() adt.Store {
+	return adt.AsStore(rt)
+}
 
 func (rt *Runtime) StateRoot() cid.Cid {
 	return rt.state
@@ -571,6 +615,19 @@ func (rt *Runtime) ExpectVerifySignature(sig crypto.Signature, signer addr.Addre
 	}
 }
 
+func (rt *Runtime) ExpectVerifySeal(seal abi.SealVerifyInfo, result error) {
+	rt.expectVerifySeal = &expectVerifySeal{
+		seal:   seal,
+		result: result,
+	}
+}
+
+func (rt *Runtime) ExpectVerifyPoSt(post abi.WindowPoStVerifyInfo, result error) {
+	rt.expectVerifyPoSt = &expectVerifyPoSt{
+		post:   post,
+		result: result,
+	}
+}
 
 // Verifies that expected calls were received, and resets all expectations.
 func (rt *Runtime) Verify() {
@@ -584,11 +641,18 @@ func (rt *Runtime) Verify() {
 		rt.failTest("missing expected ValidateCallerType %v", rt.expectValidateCallerType)
 	}
 	if len(rt.expectSends) > 0 {
-		rt.failTest("missing expected Send: %v", rt.expectSends)
+		rt.failTest("missing expected send %v", rt.expectSends)
 	}
 	if rt.expectCreateActor != nil {
-		rt.failTest("missing expected create actor with code: %s, address %s",
+		rt.failTest("missing expected create actor with code %s, address %s",
 			rt.expectCreateActor.codeId, rt.expectCreateActor.address)
+	}
+	if rt.expectVerifySig != nil {
+		rt.failTest("missing expected verify signature with signer %s, sig %v, plaintext %v",
+			rt.expectVerifySig.signer, rt.expectVerifySig.sig, rt.expectVerifySig.plaintext)
+	}
+	if rt.expectVerifySeal != nil {
+		rt.failTest("missing expected verify seal with %v", rt.expectVerifySeal.seal)
 	}
 
 	rt.Reset()
@@ -599,7 +663,10 @@ func (rt *Runtime) Reset() {
 	rt.expectValidateCallerAny = false
 	rt.expectValidateCallerAddr = nil
 	rt.expectValidateCallerType = nil
+	rt.expectSends = nil
 	rt.expectCreateActor = nil
+	rt.expectVerifySig = nil
+	rt.expectVerifySeal = nil
 }
 
 // Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code.

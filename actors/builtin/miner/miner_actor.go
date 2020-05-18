@@ -80,6 +80,11 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid peer ID in parameters: %s", err)
 	}
 
+	_, ok := SupportedProofTypes[params.SealProofType]
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
+	}
+
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 
@@ -187,7 +192,8 @@ type SubmitWindowedPoStParams struct {
 	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
 	// than the partition numbers in the first deadlines.
 	Partitions []uint64
-	// Parallel array of proofs corresponding to the partitions.
+	// Array of proofs, one per distinct registered proof type present in the sectors being proven. 
+	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
 	// Sectors skipped while proving that weren't already declared faulty
 	Skipped abi.BitField
@@ -195,10 +201,6 @@ type SubmitWindowedPoStParams struct {
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
-	if len(params.Partitions) != len(params.Proofs) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proof count %d must match partition count %", len(params.Proofs), len(params.Partitions))
-	}
-
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
@@ -216,6 +218,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		deadline := st.DeadlineInfo(currEpoch)
 		if !deadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", deadline.PeriodStart, currEpoch)
+		}
+		if deadline.PeriodElapsed() {
+			// A cron event has not yet processed the previous proving period and established the next one.
+			// This is possible in the first non-empty epoch of a proving period if there was an empty tipset on the
+			// last epoch of the previous period.
+			rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", deadline.PeriodStart)
 		}
 		if params.Deadline != deadline.Index {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
@@ -237,6 +245,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// of penalties if locked pledge drops too low.
 		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
 
+		// TODO WPOST (follow-up): process Skipped as faults
+
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
@@ -245,34 +255,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
 
-		// TODO WPOST (follow-up): process Skipped as faults
-
-		// Extract a fault set relevant to the sectors being submitted, for expansion into a map.
-		declaredFaults, err := bitfield.IntersectBitField(provenSectors, st.Faults)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect proof sectors with faults")
-
-		declaredRecoveries, err := bitfield.IntersectBitField(declaredFaults, st.Recoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect recoveries with faults")
-
-		expectedFaults, err := bitfield.SubtractBitField(declaredFaults, declaredRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from faults")
-
-		nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to diff bitfields")
-
-		empty, err := nonFaults.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-		if empty {
-			rt.Abortf(exitcode.ErrIllegalArgument, "no non-faulty sectors in partitions %s", params.Partitions)
-		}
-
-		// Select a non-faulty sector as a substitute for faulty ones.
-		goodSectorNo, err := nonFaults.First()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get first good sector")
-
-		// Load sector infos for proof
-		sectorInfos, err := st.LoadSectorInfosWithFaultMask(store, provenSectors, expectedFaults, abi.SectorNumber(goodSectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
+		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		// Verify the proof.
 		// A failed verification doesn't immediately cause a penalty; the miner can try again.
@@ -296,7 +280,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
 		// Load info for recovered sectors for recovery of power outside this state transaction.
-		empty, err = declaredRecoveries.IsEmpty()
+		empty, err := declaredRecoveries.IsEmpty()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty: %s")
 
 		if !empty {
@@ -334,11 +318,25 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	if params.Expiration <= rt.CurrEpoch() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
 	}
+	if params.SealRandEpoch >= rt.CurrEpoch() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v must be before now %v", params.SealRandEpoch, rt.CurrEpoch())
+	}
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredProof)
+	if params.SealRandEpoch < challengeEarliest {
+		// The subsequent commitment proof can't possibly be accepted because the seal challenge will be deemed
+		// too old. Note that passing this check doesn't guarantee the proof will be soon enough, depending on
+		// when it arrives.
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
+	}
 
 	store := adt.AsStore(rt)
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		if params.RegisteredProof != st.Info.SealProofType {
+			rt.Abortf(exitcode.ErrIllegalArgument, "wrong proof type")
+		}
+
 		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
 		} else if found {
@@ -651,17 +649,20 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		deadline := st.DeadlineInfo(currEpoch)
+		currDeadline := st.DeadlineInfo(currEpoch)
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Traverse earlier submissions and enact detected faults.
 		// This is necessary to prevent the miner "declaring" a fault for a PoSt already missed.
-		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
+		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currEpoch)
 
 		var decaredSectors []*abi.BitField
 		for _, decl := range params.Faults {
-			err = validateFRDeclaration(deadlines, deadline, decl.Deadline, decl.Sectors)
+			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, decl.Deadline, currEpoch)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline")
+
+			err = validateFRDeclaration(deadlines, targetDeadline, decl.Sectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration")
 			decaredSectors = append(decaredSectors, decl.Sectors)
 		}
@@ -693,8 +694,23 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			}
 
 			// Add new faults to state and charge fee.
-			err = st.AddFaults(store, newFaults, deadline.PeriodStart)
+			// Note: this sets the fault epoch for all declarations to be the beginning of this proving period,
+			// even if some sectors have already been proven in this period.
+			// It would better to use the target deadline's proving period start (which may be the one subsequent
+			// to the current).
+			err = st.AddFaults(store, newFaults, st.ProvingPeriodStart)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
+
+			// Note: this charges a fee for all declarations, even if the sectors have already been proven
+			// in this proving period. This discourages early declaration compared with waiting for
+			// the proving period to roll over.
+			// It would be better to charge a fee for this proving period only if the target deadline has
+			// not already passed. If it _has_ already passed then either:
+			// - the miner submitted PoSt successfully and should not be penalised more relative to
+			//   submitting this declaration after the proving period rolls over, or
+			// - the miner failed to submit PoSt and will be penalised at the proving period end
+			// In either case, the miner will pay a fee for the subsequent proving period at the start
+			// of that period, unless faults are recovered sooner.
 
 			// Load info for sectors.
 			declaredFaultSectors, err = st.LoadSectorInfos(store, newFaults)
@@ -743,13 +759,15 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-		deadline := st.DeadlineInfo(currEpoch)
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		var declaredSectors []*abi.BitField
 		for _, decl := range params.Recoveries {
-			err = validateFRDeclaration(deadlines, deadline, decl.Deadline, decl.Sectors)
+			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, decl.Deadline, currEpoch)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration deadline")
+
+			err = validateFRDeclaration(deadlines, targetDeadline, decl.Sectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration")
 			declaredSectors = append(declaredSectors, decl.Sectors)
 		}
@@ -1000,7 +1018,7 @@ func handleProvingPeriod(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expand new sectors")
 
 			if len(newSectors) > 0 {
-				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, deadline.PeriodEnd()-1, nil)
+				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, deadline.PeriodEnd(), nil)
 				err = AssignNewSectors(deadlines, st.Info.WindowPoStPartitionSectors, newSectors, assignmentSeed)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
@@ -1067,25 +1085,22 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 	deadlineFirstPartition := uint64(0)
 	var fGroups, rGroups []*abi.BitField
 	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
-		partitionCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
+		dlPartCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)
 		}
 		deadlineSectors := deadlines.Due[dlIdx]
 
-		for i := uint64(0); i < partitionCount; i++ {
-			if !submissions[deadlineFirstPartition+i] {
+		for dlPartIdx := uint64(0); dlPartIdx < dlPartCount; dlPartIdx++ {
+			if !submissions[deadlineFirstPartition+dlPartIdx] {
 				// No PoSt received in prior period.
-				firstSector := i * partitionSize
-				sectorCount := partitionSize
-				if i == partitionCount-1 {
-					sectorCount = dlSectorCount % partitionSize
-				}
+				partFirstSectorIdx := dlPartIdx * partitionSize
+				partSectorCount := min64(partitionSize, dlSectorCount-partFirstSectorIdx)
 
-				partitionSectors, err := deadlineSectors.Slice(firstSector, sectorCount)
+				partitionSectors, err := deadlineSectors.Slice(partFirstSectorIdx, partSectorCount)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to slice deadline %d partition %d sectors %d..%d: %w",
-						dlIdx, i, firstSector, firstSector+partitionCount, err)
+						dlIdx, dlPartIdx, partFirstSectorIdx, partFirstSectorIdx+dlPartCount, err)
 				}
 
 				// Record newly-faulty sectors.
@@ -1099,7 +1114,7 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 			}
 		}
 
-		deadlineFirstPartition += partitionCount
+		deadlineFirstPartition += dlPartCount
 	}
 	detectedFaults, err = abi.BitFieldUnion(fGroups...)
 	if err != nil {
@@ -1455,9 +1470,9 @@ func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 	}
 
 	// Check randomness.
-	sealRandEarliest := rt.CurrEpoch() - ChainFinalityish - MaxSealDuration[onChainInfo.RegisteredProof]
-	if onChainInfo.SealRandEpoch < sealRandEarliest {
-		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, sealRandEarliest)
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), onChainInfo.RegisteredProof)
+	if onChainInfo.SealRandEpoch < challengeEarliest {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, challengeEarliest)
 	}
 
 	commD := requestUnsealedSectorCID(rt, onChainInfo.RegisteredProof, onChainInfo.DealIDs)
@@ -1639,27 +1654,37 @@ func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi
 	return periodStart
 }
 
-// Checks that a fault or recovery declaration of sectors at a specific deadline is valid and not within
-// the exclusion window for the deadline.
-func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declaredDeadline uint64, declaredSectors *abi.BitField) error {
-	if declaredDeadline >= WPoStPeriodDeadlines {
-		return fmt.Errorf("invalid deadline %d, must be < %d", declaredDeadline, WPoStPeriodDeadlines)
+// Computes deadline information for a fault or recovery declaration.
+// If the deadline has not yet elapsed, the declaration is taken as being for the current proving period.
+// If the deadline has elapsed, it's instead taken as being for the next proving period after the current epoch.
+func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) (*DeadlineInfo, error) {
+	if deadlineIdx >= WPoStPeriodDeadlines {
+		return nil, fmt.Errorf("invalid deadline %d, must be < %d", deadlineIdx, WPoStPeriodDeadlines)
 	}
 
-	// Check that either this declaration is before the fault declaration cutoff for this deadline, or the deadline
-	// has passed (in which case the declaration is for the subsequent proving period)
-	if deadline.FaultCutoffPassed() && !deadline.HasElapsed() {
-		return fmt.Errorf("late fault declaration at %v", deadline)
+	deadline := NewDeadlineInfo(periodStart, deadlineIdx, currEpoch)
+	// While deadline is in the past, roll over to the next proving period..
+	for deadline.HasElapsed() {
+		deadline = NewDeadlineInfo(deadline.NextPeriodStart(), deadlineIdx, currEpoch)
+	}
+	return deadline, nil
+}
+
+// Checks that a fault or recovery declaration of sectors at a specific deadline is valid and not within
+// the exclusion window for the deadline.
+func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declaredSectors *abi.BitField) error {
+	if deadline.FaultCutoffPassed() {
+		return fmt.Errorf("late fault or recovery declaration at %v", deadline)
 	}
 
 	// Check that the declared sectors are actually due at the deadline.
-	deadlineSectors := deadlines.Due[declaredDeadline]
+	deadlineSectors := deadlines.Due[deadline.Index]
 	contains, err := abi.BitFieldContainsAll(deadlineSectors, declaredSectors)
 	if err != nil {
 		return fmt.Errorf("failed to check sectors at deadline: %w", err)
 	}
 	if !contains {
-		return fmt.Errorf("sectors not all due at deadline %d", declaredDeadline)
+		return fmt.Errorf("sectors not all due at deadline %d", deadline.Index)
 	}
 	return nil
 }
@@ -1673,6 +1698,11 @@ func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors
 		fee = big.Add(fee, feeCalc(s))
 	}
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+// The oldest seal challenge epoch that will be accepted in the current epoch.
+func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredProof) abi.ChainEpoch {
+	return currEpoch - ChainFinalityish - MaxSealDuration[proof]
 }
 
 func min64(a, b uint64) uint64 {

@@ -430,7 +430,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 }
 
 func TestActor_UpdateChannelStateExtra(t *testing.T) {
-	mnum :=  builtin.MethodsPaych.UpdateChannelState
+	mnum := builtin.MethodsPaych.UpdateChannelState
 	fakeParams := runtime.CBORBytes([]byte{1, 2, 3, 4})
 	expSendParams := &PaymentVerifyParams{fakeParams, nil}
 	otherAddr := tutil.NewIDAddr(t, 104)
@@ -555,7 +555,7 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		rt.GetState(&st)
 		ucp := &UpdateChannelStateParams{
 			Sv:     *sv,
-			Secret:  []byte("Profesr"),
+			Secret: []byte("Profesr"),
 			Proof:  nil,
 		}
 		ucp.Sv.SecretPreimage = append([]byte("Magneto"), make([]byte, 25)...)
