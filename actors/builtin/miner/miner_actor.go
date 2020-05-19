@@ -205,8 +205,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	store := adt.AsStore(rt)
 	var st State
 	var detectedFaultSectors []*SectorOnChainInfo
-	var penalty abi.TokenAmount
 	var recoveredSectors []*SectorOnChainInfo
+	penalty := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
@@ -443,7 +443,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	// Check (and activate) storage deals associated to sector. Abort if checks failed.
 	// return DealWeight for the deal set in the sector
-	var dealWeights market.VerifyDealsOnSectorProveCommitReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
@@ -454,11 +453,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
+	var dealWeights market.VerifyDealsOnSectorProveCommitReturn
 	AssertNoError(ret.Into(&dealWeights))
 
 	// Request power for activated sector.
 	// Return initial pledge requirement.
-	var initialPledge abi.TokenAmount
 	ret, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnSectorProveCommit,
@@ -473,6 +472,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		big.Zero(),
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor")
+	var initialPledge abi.TokenAmount
 	AssertNoError(ret.Into(&initialPledge))
 
 	// Add sector and pledge lock-up to miner state
@@ -644,7 +644,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	var st State
 	var declaredFaultSectors []*SectorOnChainInfo
 	var detectedFaultSectors []*SectorOnChainInfo
-	var penalty abi.TokenAmount
+	penalty := abi.NewTokenAmount(0)
 
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
@@ -931,12 +931,6 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 func handleProvingPeriod(rt Runtime) {
 	store := adt.AsStore(rt)
 	var st State
-	// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
-	// exactly the final epoch of the period; it may be slightly later (i.e. in the subsequent period).
-	// Further, this method is invoked once *before* the first proving period starts, after the actor is first
-	// constructed; this is detected by !deadline.PeriodStarted().
-	// Use deadline.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
-	var deadline *DeadlineInfo
 	{
 		// Vest locked funds.
 		// This happens first so that any subsequent penalties are taken from locked pledge, rather than free funds.
@@ -949,11 +943,17 @@ func handleProvingPeriod(rt Runtime) {
 		notifyPledgeChanged(rt, newlyVestedAmount.Neg())
 	}
 
+	// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
+	// exactly the final epoch of the period; it may be slightly later (i.e. in the subsequent period).
+	// Further, this method is invoked once *before* the first proving period starts, after the actor is first
+	// constructed; this is detected by !deadline.PeriodStarted().
+	// Use deadline.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
+	deadline := NewDeadlineInfo(0, 0, 0)
 	{
 		// Detect and penalize missing proofs.
 		var detectedFaultSectors []*SectorOnChainInfo
 		currEpoch := rt.CurrEpoch()
-		penalty := big.Zero()
+		penalty := abi.NewTokenAmount(0)
 		rt.State().Transaction(&st, func() interface{} {
 			deadline = st.DeadlineInfo(currEpoch)
 			if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
@@ -971,9 +971,9 @@ func handleProvingPeriod(rt Runtime) {
 
 	{
 		// Expire sectors that are due.
-		var expiredSectors *abi.BitField
-		var err error
+		expiredSectors := abi.NewBitField()
 		rt.State().Transaction(&st, func() interface{} {
+			var err error
 			expiredSectors, err = popSectorExpirations(&st, store, deadline.PeriodEnd())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
 			return nil
@@ -985,10 +985,11 @@ func handleProvingPeriod(rt Runtime) {
 
 	{
 		// Terminate sectors with faults that are too old, and pay fees for ongoing faults.
-		var expiredFaults, ongoingFaults *abi.BitField
-		var ongoingFaultPenalty abi.TokenAmount
-		var err error
+		expiredFaults := abi.NewBitField()
+		ongoingFaults := abi.NewBitField()
+		ongoingFaultPenalty := abi.NewTokenAmount(0)
 		rt.State().Transaction(&st, func() interface{} {
+			var err error
 			expiredFaults, ongoingFaults, err = popExpiredFaults(&st, store, deadline.PeriodEnd()-FaultMaxAge)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault epochs")
 
@@ -1245,8 +1246,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 	var dealIDs []abi.DealID
 	var allSectors []*SectorOnChainInfo
 	var faultySectors []*SectorOnChainInfo
-	var penalty abi.TokenAmount
-
+	penalty := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
 		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault max")
@@ -1504,7 +1504,6 @@ func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
 func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredProof, dealIDs []abi.DealID) cid.Cid {
-	var unsealedCID cbg.CborCid
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.ComputeDataCommitment,
@@ -1515,6 +1514,7 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredProof, dealIDs
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed request for unsealed sector CID for deals %v", dealIDs)
+	var unsealedCID cbg.CborCid
 	AssertNoError(ret.Into(&unsealedCID))
 	return cid.Cid(unsealedCID)
 }
