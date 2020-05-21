@@ -215,19 +215,21 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		if uint64(len(params.Partitions)) > submissionPartitionLimit {
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
 		}
-		deadline := st.DeadlineInfo(currEpoch)
-		if !deadline.PeriodStarted() {
-			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", deadline.PeriodStart, currEpoch)
+		currDeadline := st.DeadlineInfo(currEpoch)
+		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+		// Traverse earlier submissions and enact detected faults.
+		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
+		// of penalties if locked pledge drops too low.
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines)
+
+		if !currDeadline.PeriodStarted() {
+			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
 		}
-		if deadline.PeriodElapsed() {
-			// A cron event has not yet processed the previous proving period and established the next one.
-			// This is possible in the first non-empty epoch of a proving period if there was an empty tipset on the
-			// last epoch of the previous period.
-			rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", deadline.PeriodStart)
-		}
-		if params.Deadline != deadline.Index {
+		if params.Deadline != currDeadline.Index {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
-				params.Deadline, currEpoch, deadline.Index)
+				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
 		// Verify locked funds are are at least the sum of sector initial pledges.
@@ -237,20 +239,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Vesting will be at most one proving period old if computed in the cron callback.
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
-		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-
-		// Traverse earlier submissions and enact detected faults.
-		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
-		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, deadline.Index, currEpoch)
-
 		// TODO WPOST (follow-up): process Skipped as faults
 
 		// Work out which sectors are due in the declared partitions at this deadline.
-		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, params.Partitions)
+		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, currDeadline.Index, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
-			deadline.Index, params.Partitions)
+			currDeadline.Index, params.Partitions)
 
 		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
@@ -260,7 +254,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Verify the proof.
 		// A failed verification doesn't immediately cause a penalty; the miner can try again.
-		verifyWindowedPost(rt, deadline.Challenge, sectorInfos, params.Proofs)
+		verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 
 		// Record the successful submission
 		postedPartitions := bitfield.NewFromSet(params.Partitions)
@@ -654,8 +648,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Traverse earlier submissions and enact detected faults.
-		// This is necessary to prevent the miner "declaring" a fault for a PoSt already missed.
-		detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currEpoch)
+		// This is necessary to move the NextDeadlineToProcessFaults index past the deadline that this recovery
+		// is targeting, so that the recovery won't be declared failed next time it's checked during this proving period.
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines)
 
 		var decaredSectors []*abi.BitField
 		for _, decl := range params.Faults {
@@ -754,13 +749,23 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Recoveries), WPoStPeriodDeadlines)
 	}
 
+	var detectedFaultSectors []*SectorOnChainInfo
+	penalty := abi.NewTokenAmount(0)
+
 	currEpoch := rt.CurrEpoch()
+	store := adt.AsStore(rt)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
+		currDeadline := st.DeadlineInfo(currEpoch)
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+		// Traverse earlier submissions and enact detected faults.
+		// This is necessary to move the NextDeadlineToProcessFaults index past the deadline that this recovery
+		// is targeting, so that the recovery won't be declared failed next time it's checked during this proving period.
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines)
 
 		var declaredSectors []*abi.BitField
 		for _, decl := range params.Recoveries {
@@ -790,6 +795,10 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recoveries")
 		return nil
 	})
+
+	// Remove power for new faulty sectors.
+	requestBeginFaults(rt, st.Info.SectorSize, detectedFaultSectors)
+	burnFundsAndNotifyPledgeChange(rt, penalty)
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
 	return nil
@@ -959,7 +968,7 @@ func handleProvingPeriod(rt Runtime) {
 			if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
 				deadlines, err := st.LoadDeadlines(store)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-				detectedFaultSectors, penalty = checkMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd())
+				detectedFaultSectors, penalty = processMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd())
 			}
 			return nil
 		})
@@ -1048,10 +1057,32 @@ func handleProvingPeriod(rt Runtime) {
 	})
 }
 
-// Detects faults from missing PoSt submissions that did not arrive.
-func checkMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch) ([]*SectorOnChainInfo, abi.TokenAmount) {
-	detectedFaults, failedRecoveries, err := computeFaultsFromMissingPoSts(st, deadlines, beforeDeadline)
+// Detects faults from PoSt submissions that have not arrived in schedule earlier in the current proving period.
+func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, deadlines *Deadlines) ([]*SectorOnChainInfo, abi.TokenAmount) {
+	if currDeadline.PeriodElapsed() {
+		// A cron event has not yet processed the previous proving period and established the next one.
+		// This is possible in the first non-empty epoch of a proving period if there was an empty tipset on the
+		// last epoch of the previous period.
+		// The period must be reset before processing missing-post faults.
+		rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", currDeadline.PeriodStart)
+	}
+	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch)
+}
+
+// Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves
+// the NextDeadlineToProcessFaults index up to that deadline.
+func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch) ([]*SectorOnChainInfo, abi.TokenAmount) {
+	// This method must be called to process the end of one proving period before moving on to the process something
+	// the next. Usually, sinceDeadline would be <= beforeDeadline since the former is updated to match the latter
+	// and the call during proving period cron will set NextDeadlineToProcessFaults back to zero.
+	// In the odd case where the proving period's penultimate tipset is empty, this method must be invoked by the cron
+	// callback before allowing any fault/recovery declaration or PoSt to do partial processing.
+	AssertMsg(st.NextDeadlineToProcessFaults <= beforeDeadline, "invalid next-deadline %d after before-deadline %d while detecting faults",
+		st.NextDeadlineToProcessFaults, beforeDeadline)
+
+	detectedFaults, failedRecoveries, err := computeFaultsFromMissingPoSts(st, deadlines, st.NextDeadlineToProcessFaults, beforeDeadline)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute detected faults")
+	st.NextDeadlineToProcessFaults = beforeDeadline % WPoStPeriodDeadlines
 
 	err = st.AddFaults(store, detectedFaults, periodStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record new faults")
@@ -1072,8 +1103,9 @@ func checkMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *D
 	return detectedFaultSectors, penalty
 }
 
-// Computes the sectors that were expected to be present in partitions of a PoSt submission but were not.
-func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
+// Computes the sectors that were expected to be present in partitions of a PoSt submission but were not, in the
+// deadlines from sinceDeadline (inclusive) to beforeDeadline (exclusive).
+func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadline, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
 	// TODO: Iterating this bitfield and keeping track of what partitions we're expecting could remove the
 	// need to expand this into a potentially-giant map. But it's tricksy.
 	partitionSize := st.Info.WindowPoStPartitionSectors
@@ -1084,7 +1116,7 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, beforeDeadli
 
 	deadlineFirstPartition := uint64(0)
 	var fGroups, rGroups []*abi.BitField
-	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
+	for dlIdx := sinceDeadline; dlIdx < beforeDeadline; dlIdx++ {
 		dlPartCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)

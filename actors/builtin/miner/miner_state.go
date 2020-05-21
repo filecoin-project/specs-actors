@@ -77,6 +77,14 @@ type State struct {
 	// Records successful PoSt submission in the current proving period by partition number.
 	// The presence of a partition number indicates on-time PoSt received.
 	PostSubmissions *abi.BitField
+
+	// The index of the last deadline for which faults have been detected and processed, in the range
+	// [0, WPoStProvingPeriodDeadlines). The proving period cron handler will always set this to
+	// WPoStProvingPeriodDeadlines-1, representing the whole period having been processed,
+	// but eager processing on fault/recovery declarations or PoSt may set a smaller number, indicating partial
+	// progress, from which subsequent processing should continue.
+	// FIXME comment
+	NextDeadlineToProcessFaults uint64
 }
 
 type MinerInfo struct {
