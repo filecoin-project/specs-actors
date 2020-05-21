@@ -78,12 +78,11 @@ type State struct {
 	// The presence of a partition number indicates on-time PoSt received.
 	PostSubmissions *abi.BitField
 
-	// The index of the last deadline for which faults have been detected and processed, in the range
-	// [0, WPoStProvingPeriodDeadlines). The proving period cron handler will always set this to
-	// WPoStProvingPeriodDeadlines-1, representing the whole period having been processed,
-	// but eager processing on fault/recovery declarations or PoSt may set a smaller number, indicating partial
-	// progress, from which subsequent processing should continue.
-	// FIXME comment
+	// The index of the next deadline for which faults should been detected and processed (after it's closed).
+	// The proving period cron handler will always reset this to 0, for the subsequent period.
+	// Eager fault detection processing on fault/recovery declarations or PoSt may set a smaller number,
+	// indicating partial progress, from which subsequent processing should continue.
+	// In the range [0, WPoStProvingPeriodDeadlines).
 	NextDeadlineToProcessFaults uint64
 }
 
