@@ -76,7 +76,7 @@ type State struct {
 
 	// Records successful PoSt submission in the current proving period by partition number.
 	// The presence of a partition number indicates on-time PoSt received.
-	PostSubmissions *abi.BitField
+	PostSubmissions [WPoStPeriodDeadlines]*abi.BitField
 }
 
 type MinerInfo struct {
