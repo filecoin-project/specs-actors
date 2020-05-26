@@ -26,7 +26,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.Send,
 		3:                         a.SendMarshalCBORFailure,
 		4:                         a.ReturnMarshalCBORFailure,
-		5:                         a.PutMarshalCBORFailure,
+		5:                         a.PersistStateMarshalCBORFailure,
 	}
 }
 
@@ -92,7 +92,7 @@ func (a Actor) ReturnMarshalCBORFailure(rt runtime.Runtime, _ *adt.EmptyValue) *
 	return &FailToMarshalCBOR{}
 }
 
-func (a Actor) PutMarshalCBORFailure(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) PersistStateMarshalCBORFailure(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
@@ -148,9 +148,9 @@ func init() {
 var PuppetActorCodeID cid.Cid
 
 var MethodsPuppet = struct {
-	Constructor              abi.MethodNum
-	Send                     abi.MethodNum
-	SendMarshalCBORFailure   abi.MethodNum
-	ReturnMarshalCBORFailure abi.MethodNum
-	PutMarshalCBORFailure    abi.MethodNum
+	Constructor                    abi.MethodNum
+	Send                           abi.MethodNum
+	SendMarshalCBORFailure         abi.MethodNum
+	ReturnMarshalCBORFailure       abi.MethodNum
+	PersistStateMarshalCBORFailure abi.MethodNum
 }{builtin.MethodConstructor, 2, 3, 4, 5}
