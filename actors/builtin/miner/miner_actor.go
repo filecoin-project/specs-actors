@@ -340,13 +340,22 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
 		} else if found {
+			// Sector is currently precommitted but still not proven.
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already precommitted", params.SectorNumber)
 		}
 
-		if found, err := st.HasSectorNo(store, params.SectorNumber); err != nil {
+		if sectorInfo, found, err := st.GetSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 		} else if found {
-			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
+			if len(sectorInfo.Info.DealIDs) > 0 {
+				// Sector has been previously committed and proven with deals.
+				rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed with deals", params.SectorNumber)
+			} else {
+				// Committed Capacity sector upgrade.
+				if params.Expiration < sectorInfo.Info.Expiration  {
+					rt.Abortf(exitcode.ErrIllegalArgument, "upgraded sector %v expires before original expiration", params.SectorNumber)
+				}
+			}
 		}
 
 		// Check expiry is exactly *the epoch before* the start of a proving period.
