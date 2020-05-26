@@ -191,8 +191,9 @@ func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []u
 	// Iterate deadlines and fill any partial partitions. There's no great advantage to filling more- or less-
 	// full ones first, so they're filled in sequence order.
 	// Meanwhile, record the partition count at each deadline.
+	// leaving first Window PoSt proving deadline empty
 	deadlinePartitionCounts := make([]uint64, WPoStPeriodDeadlines)
-	for i := uint64(0); i < WPoStPeriodDeadlines && nextNewSector < uint64(len(newSectors)); i++ {
+	for i := uint64(1); i < WPoStPeriodDeadlines && nextNewSector < uint64(len(newSectors)); i++ {
 		partitionCount, sectorCount, err := DeadlineCount(deadlines, partitionSize, i)
 		if err != nil {
 			return fmt.Errorf("failed to count sectors in partition %d: %w", i, err)
@@ -210,13 +211,16 @@ func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []u
 
 	// While there remain new sectors to assign, fill a new partition at each deadline in round-robin fashion.
 	// TODO WPOST (follow-up): fill less-full deadlines first, randomize when equally full.
-	targetDeadline := uint64(0)
+	targetDeadline := uint64(1)
 	for nextNewSector < uint64(len(newSectors)) {
 		err := assignToDeadline(partitionSize, targetDeadline)
 		if err != nil {
 			return err
 		}
 		targetDeadline = (targetDeadline + 1) % WPoStPeriodDeadlines
+		if targetDeadline == 0 {
+			targetDeadline++
+		}
 	}
 	return nil
 }
