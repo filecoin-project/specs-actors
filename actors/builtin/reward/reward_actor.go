@@ -149,7 +149,10 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 		st.BaselinePower = a.newBaselinePower(&st, st.RewardEpochsPaid)
 		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
-		st.CumsumRealized = big.Add(st.CumsumRealized, st.RealizedPower)
+
+		// Cap realized power in computing CumsumRealized so that progress is only relative to the current epoch.
+		cappedRealizedPower := big.Min(st.BaselinePower, st.RealizedPower)
+		st.CumsumRealized = big.Add(st.CumsumRealized, cappedRealizedPower)
 
 		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
