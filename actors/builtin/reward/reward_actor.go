@@ -130,8 +130,7 @@ func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, 
 	// EffectiveNetworkTime is a fractional input with an implicit denominator of (2^MintingInputFixedPoint).
 	// realizedCumsum is thus left shifted by MintingInputFixedPoint before converted into a FixedPoint fraction
 	// through division (which is an inverse function for the integral of the baseline).
-	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
-	return big.Div(big.Lsh(realizedCumsum, MintingInputFixedPoint), big.NewInt(baselinePower))
+	return big.Div(big.Lsh(cumsumRealized, MintingInputFixedPoint), big.NewInt(baselinePower))
 }
 
 // Called at the end of each epoch by the power actor (in turn by its cron hook).
