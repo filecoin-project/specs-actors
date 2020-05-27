@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -44,6 +46,7 @@ func (a Actor) Exports() []interface{} {
 		10:                        a.OnEpochTickEnd,
 		11:                        a.UpdatePledgeTotal,
 		12:                        a.OnConsensusFault,
+		13:                        a.SubmitPoRepForBulkVerify,
 	}
 }
 
@@ -76,8 +79,12 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
 	}
+	emptyMMapCid, err := adt.MakeEmptyMultimap(adt.AsStore(rt)).Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to get empty multimap cid")
+	}
 
-	st := ConstructState(emptyMap)
+	st := ConstructState(emptyMap, emptyMMapCid)
 	rt.State().Create(st)
 	return nil
 }
@@ -328,6 +335,10 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
 
+	if err := a.processBatchProofVerifies(rt); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to process batch proof verification: %s", err)
+	}
+
 	var st State
 	rt.State().Readonly(&st)
 
@@ -382,6 +393,34 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 	return nil
 }
 
+func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo) *adt.EmptyValue {
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
+
+	minerAddr := rt.Message().Caller()
+
+	// TODO: charge a LOT of gas
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		mmap, err := adt.AsMultimap(adt.AsStore(rt), st.ProofValidationBatch)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load proof batching set: %s", err)
+		}
+
+		if err := mmap.Add(adt.AddrKey(minerAddr), sealInfo); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to insert proof into set: %s", err)
+		}
+
+		mmrc, err := mmap.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proofs batch map: %s", err)
+		}
+		st.ProofValidationBatch = mmrc
+		return nil
+	})
+
+	return nil
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -401,6 +440,85 @@ func (a Actor) computeInitialPledge(rt Runtime, desc *SectorStorageWeightDesc) a
 	initialPledge := InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), st.TotalPledgeCollateral, epochReward)
 
 	return initialPledge
+}
+
+func (a Actor) processBatchProofVerifies(rt Runtime) error {
+	var st State
+
+	var miners []address.Address
+	verifies := make(map[address.Address][]abi.SealVerifyInfo)
+
+	rt.State().Transaction(&st, func() interface{} {
+		store := adt.AsStore(rt)
+		mmap, err := adt.AsMultimap(store, st.ProofValidationBatch)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to load proofs validation batch: %s", err)
+		}
+
+		err = mmap.ForAll(func(k string, arr *adt.Array) error {
+			a, err := address.NewFromBytes([]byte(k))
+			if err != nil {
+				return xerrors.Errorf("failed to parse address key: %w", err)
+			}
+
+			miners = append(miners, a)
+
+			var infos []abi.SealVerifyInfo
+			var svi abi.SealVerifyInfo
+			err = arr.ForEach(&svi, func(i int64) error {
+				infos = append(infos, svi)
+				return nil
+			})
+			if err != nil {
+				return xerrors.Errorf("failed to iterate over proof verify array for miner %s: %w", a, err)
+			}
+			verifies[a] = infos
+			return nil
+		})
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to iterate proof batch: %s", err)
+		}
+
+		emptyCid, err := adt.MakeEmptyMultimap(store).Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to get empty multimap cid")
+		}
+		st.ProofValidationBatch = emptyCid
+
+		return nil
+	})
+
+	res, err := rt.Syscalls().BatchVerifySeals(verifies)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to batch verify: %s", err)
+	}
+
+	for _, m := range miners {
+		vres, ok := res[m]
+		if !ok {
+			rt.Abortf(exitcode.ErrNotFound, "batch verify seals syscall implemented incorrectly")
+		}
+
+		verifs := verifies[m]
+
+		var successful []abi.SectorNumber
+		for i, r := range vres {
+			if r {
+				successful = append(successful, verifs[i].SectorID.Number)
+			}
+		}
+
+		ret, code := rt.Send(
+			m,
+			builtin.MethodsMiner.ConfirmSectorProofsValid,
+			&builtin.ConfirmSectorProofsParams{successful},
+			abi.NewTokenAmount(0),
+		)
+		builtin.RequireSuccess(rt, code, "failed to confirm sector proofs valid") // should never happen...
+		_ = ret
+	}
+
+	return nil
 }
 
 func (a Actor) processDeferredCronEvents(rt Runtime) error {
