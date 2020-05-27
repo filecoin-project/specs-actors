@@ -130,8 +130,7 @@ func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, 
 	// EffectiveNetworkTime is a fractional input with an implicit denominator of (2^MintingInputFixedPoint).
 	// realizedCumsum is thus left shifted by MintingInputFixedPoint before converted into a FixedPoint fraction
 	// through division (which is an inverse function for the integral of the baseline).
-	realizedCumsum := big.Min(cumsumBaseline, cumsumRealized)
-	return big.Div(big.Lsh(realizedCumsum, MintingInputFixedPoint), big.NewInt(baselinePower))
+	return big.Div(big.Lsh(cumsumRealized, MintingInputFixedPoint), big.NewInt(baselinePower))
 }
 
 // Called at the end of each epoch by the power actor (in turn by its cron hook).
@@ -149,7 +148,10 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 		st.BaselinePower = a.newBaselinePower(&st, st.RewardEpochsPaid)
 		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
-		st.CumsumRealized = big.Add(st.CumsumRealized, st.RealizedPower)
+
+		// Cap realized power in computing CumsumRealized so that progress is only relative to the current epoch.
+		cappedRealizedPower := big.Min(st.BaselinePower, st.RealizedPower)
+		st.CumsumRealized = big.Add(st.CumsumRealized, cappedRealizedPower)
 
 		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
