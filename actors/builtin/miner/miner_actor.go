@@ -192,7 +192,7 @@ type SubmitWindowedPoStParams struct {
 	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
 	// than the partition numbers in the first deadlines.
 	Partitions []uint64
-	// Array of proofs, one per distinct registered proof type present in the sectors being proven. 
+	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
 	// Sectors skipped while proving that weren't already declared faulty
@@ -340,13 +340,22 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		if _, found, err := st.GetPrecommittedSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check precommit %v: %v", params.SectorNumber, err)
 		} else if found {
+			// Sector is currently precommitted but still not proven.
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already precommitted", params.SectorNumber)
 		}
 
-		if found, err := st.HasSectorNo(store, params.SectorNumber); err != nil {
+		if sectorInfo, found, err := st.GetSector(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 		} else if found {
-			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
+			if len(sectorInfo.Info.DealIDs) > 0 {
+				// Sector has been previously committed and proven with deals.
+				rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed with deals", params.SectorNumber)
+			} else {
+				// Committed Capacity sector upgrade.
+				if params.Expiration < sectorInfo.Info.Expiration  {
+					rt.Abortf(exitcode.ErrIllegalArgument, "upgraded sector %v expires before original expiration", params.SectorNumber)
+				}
+			}
 		}
 
 		// Check expiry is exactly *the epoch before* the start of a proving period.
@@ -431,7 +440,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	}
 
 	// will abort if seal invalid
-	verifySeal(rt, &abi.OnChainSealVerifyInfo{
+	verifySeal(rt, &SealVerifyStuff{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
 		SealRandEpoch:    precommit.Info.SealRandEpoch,
@@ -1464,18 +1473,32 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 }
 
-func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
-	if rt.CurrEpoch() <= onChainInfo.InteractiveEpoch {
+// SealVerifyParams is the structure of information that must be sent with a
+// message to commit a sector. Most of this information is not needed in the
+// state tree but will be verified in sm.CommitSector. See SealCommitment for
+// data stored on the state tree for each sector.
+type SealVerifyStuff struct {
+	SealedCID        cid.Cid        // CommR
+	InteractiveEpoch abi.ChainEpoch // Used to derive the interactive PoRep challenge.
+	abi.RegisteredProof
+	Proof   []byte
+	DealIDs []abi.DealID
+	abi.SectorNumber
+	SealRandEpoch abi.ChainEpoch // Used to tie the seal to a chain.
+}
+
+func verifySeal(rt Runtime, params *SealVerifyStuff) {
+	if rt.CurrEpoch() <= params.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
 
 	// Check randomness.
-	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), onChainInfo.RegisteredProof)
-	if onChainInfo.SealRandEpoch < challengeEarliest {
-		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", onChainInfo.SealRandEpoch, challengeEarliest)
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredProof)
+	if params.SealRandEpoch < challengeEarliest {
+		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", params.SealRandEpoch, challengeEarliest)
 	}
 
-	commD := requestUnsealedSectorCID(rt, onChainInfo.RegisteredProof, onChainInfo.DealIDs)
+	commD := requestUnsealedSectorCID(rt, params.RegisteredProof, params.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
@@ -1484,17 +1507,20 @@ func verifySeal(rt Runtime, onChainInfo *abi.OnChainSealVerifyInfo) {
 	err = rt.Message().Receiver().MarshalCBOR(buf)
 	AssertNoError(err)
 
-	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, onChainInfo.SealRandEpoch, buf.Bytes())
-	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, onChainInfo.InteractiveEpoch, buf.Bytes())
+	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
+	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
 
 	svInfo := abi.SealVerifyInfo{
+		RegisteredProof: params.RegisteredProof,
 		SectorID: abi.SectorID{
 			Miner:  abi.ActorID(minerActorID),
-			Number: onChainInfo.SectorNumber,
+			Number: params.SectorNumber,
 		},
-		OnChain:               *onChainInfo,
-		Randomness:            abi.SealRandomness(svInfoRandomness),
+		DealIDs:               params.DealIDs,
 		InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
+		Proof:                 params.Proof,
+		Randomness:            abi.SealRandomness(svInfoRandomness),
+		SealedCID:             params.SealedCID,
 		UnsealedCID:           commD,
 	}
 	if err := rt.Syscalls().VerifySeal(svInfo); err != nil {
