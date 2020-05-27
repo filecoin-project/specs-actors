@@ -76,7 +76,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	nominal, recipient := escrowAddress(rt, params.ProviderOrClientAddress)
 
 	amountSlashedTotal := abi.NewTokenAmount(0)
-	var amountExtracted abi.TokenAmount
+	amountExtracted := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		// The withdrawable amount might be slightly less than nominal

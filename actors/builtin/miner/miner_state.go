@@ -876,12 +876,11 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
 	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 	if err != nil {
-		return abi.TokenAmount{}, err
+		return big.Zero(), err
 	}
 
-	amountUnlocked := big.Zero()
-
-	var lockedEntry abi.TokenAmount
+	amountUnlocked := abi.NewTokenAmount(0)
+	lockedEntry := abi.NewTokenAmount(0)
 	var toDelete []uint64
 	var finished = fmt.Errorf("finished")
 
@@ -931,12 +930,11 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 	if err != nil {
-		return abi.TokenAmount{}, err
+		return big.Zero(), err
 	}
 
-	amountUnlocked := big.Zero()
-
-	var lockedEntry abi.TokenAmount
+	amountUnlocked := abi.NewTokenAmount(0)
+	lockedEntry := abi.NewTokenAmount(0)
 	var toDelete []uint64
 	var finished = fmt.Errorf("finished")
 
@@ -974,12 +972,11 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 	if err != nil {
-		return abi.TokenAmount{}, err
+		return big.Zero(), err
 	}
 
-	amountUnlocked := big.Zero()
-
-	var lockedEntry abi.TokenAmount
+	amountUnlocked := abi.NewTokenAmount(0)
+	lockedEntry := abi.NewTokenAmount(0)
 	var finished = fmt.Errorf("finished")
 
 	// Iterate vestingFunds  in order of release.

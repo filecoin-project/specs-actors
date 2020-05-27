@@ -392,7 +392,7 @@ func (a Actor) computeInitialPledge(rt Runtime, desc *SectorStorageWeightDesc) a
 
 	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
-	var epochReward abi.TokenAmount
+	epochReward := abi.NewTokenAmount(0)
 	if err := rwret.Into(&epochReward); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal epoch reward value: %s", err)
 	}
