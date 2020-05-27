@@ -65,7 +65,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	priorBalance := rt.CurrentBalance()
 
-	var penalty abi.TokenAmount
+	penalty := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Readonly(&st)
 	blockReward := big.Div(st.LastPerEpochReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
