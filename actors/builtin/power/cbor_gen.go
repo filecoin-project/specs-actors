@@ -19,7 +19,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{136}); err != nil {
+	if _, err := w.Write([]byte{137}); err != nil {
 		return err
 	}
 
@@ -82,6 +82,13 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
+
+	// t.ProofValidationBatch (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.ProofValidationBatch); err != nil {
+		return xerrors.Errorf("failed to write cid field t.ProofValidationBatch: %w", err)
+	}
+
 	return nil
 }
 
@@ -96,7 +103,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 8 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -225,6 +232,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.NumMinersMeetingMinPower = int64(extraI)
+	}
+	// t.ProofValidationBatch (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.ProofValidationBatch: %w", err)
+		}
+
+		t.ProofValidationBatch = c
+
 	}
 	return nil
 }

@@ -90,6 +90,22 @@ func (mm *Multimap) ForEach(key Keyer, out runtime.CBORUnmarshaler, fn func(i in
 	return nil
 }
 
+func (mm *Multimap) ForAll(fn func(k string, arr *Array) error) error {
+	var arrRoot cbg.CborCid
+	if err := mm.mp.ForEach(&arrRoot, func(k string) error {
+		arr, err := AsArray(mm.mp.store, cid.Cid(arrRoot))
+		if err != nil {
+			return err
+		}
+
+		return fn(k, arr)
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (mm *Multimap) Get(key Keyer) (*Array, bool, error) {
 	var arrayRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &arrayRoot)

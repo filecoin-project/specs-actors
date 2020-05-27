@@ -42,3 +42,7 @@ type MinerAddrs struct {
 	Owner  addr.Address
 	Worker addr.Address
 }
+
+type ConfirmSectorProofsParams struct {
+	Sectors []abi.SectorNumber
+}
