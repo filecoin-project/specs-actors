@@ -401,9 +401,16 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 	// TODO: charge a LOT of gas
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		mmap, err := adt.AsMultimap(adt.AsStore(rt), st.ProofValidationBatch)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load proof batching set: %s", err)
+		store := adt.AsStore(rt)
+		var mmap *adt.Multimap
+		if st.ProofValidationBatch == nil {
+			mmap = adt.MakeEmptyMultimap(store)
+		} else {
+			var err error
+			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to load proof batching set: %s", err)
+			}
 		}
 
 		if err := mmap.Add(adt.AddrKey(minerAddr), sealInfo); err != nil {
@@ -414,7 +421,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proofs batch map: %s", err)
 		}
-		st.ProofValidationBatch = mmrc
+		st.ProofValidationBatch = &mmrc
 		return nil
 	})
 
@@ -450,7 +457,10 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
-		mmap, err := adt.AsMultimap(store, st.ProofValidationBatch)
+		if st.ProofValidationBatch == nil {
+			return nil
+		}
+		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load proofs validation batch: %s", err)
 		}
@@ -479,11 +489,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to iterate proof batch: %s", err)
 		}
 
-		emptyCid, err := adt.MakeEmptyMultimap(store).Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to get empty multimap cid")
-		}
-		st.ProofValidationBatch = emptyCid
+		st.ProofValidationBatch = nil
 
 		return nil
 	})

@@ -85,8 +85,14 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	// t.ProofValidationBatch (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(w, t.ProofValidationBatch); err != nil {
-		return xerrors.Errorf("failed to write cid field t.ProofValidationBatch: %w", err)
+	if t.ProofValidationBatch == nil {
+		if _, err := w.Write(cbg.CborNull); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteCid(w, *t.ProofValidationBatch); err != nil {
+			return xerrors.Errorf("failed to write cid field t.ProofValidationBatch: %w", err)
+		}
 	}
 
 	return nil
@@ -237,12 +243,24 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		c, err := cbg.ReadCid(br)
+		pb, err := br.PeekByte()
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.ProofValidationBatch: %w", err)
+			return err
 		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
 
-		t.ProofValidationBatch = c
+			c, err := cbg.ReadCid(br)
+			if err != nil {
+				return xerrors.Errorf("failed to read cid field t.ProofValidationBatch: %w", err)
+			}
+
+			t.ProofValidationBatch = &c
+		}
 
 	}
 	return nil
