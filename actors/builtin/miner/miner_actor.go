@@ -472,6 +472,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		// Check (and activate) storage deals associated to sector. Abort if checks failed.
 		// return DealWeight for the deal set in the sector
+		// TODO: we should batch these calls...
 		var dealWeights market.VerifyDealsOnSectorProveCommitReturn
 		ret, code := rt.Send(
 			builtin.StorageMarketActorAddr,
@@ -491,6 +492,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// TODO: since this method gets called by the storage power actor
 		// initially, can we just do this while we're there?
 		// We can probably return the right information from this call to the caller, so it can update there
+		// TODO: we should batch these calls...
 		var initialPledge abi.TokenAmount
 		ret, code = rt.Send(
 			builtin.StoragePowerActorAddr,
@@ -509,6 +511,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		AssertNoError(ret.Into(&initialPledge))
 
 		// Add sector and pledge lock-up to miner state
+		// TODO: do this all at once after the loop
 		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 			if err != nil {

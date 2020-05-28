@@ -32,7 +32,7 @@ type State struct {
 	// Number of miners having proven the minimum consensus power.
 	NumMinersMeetingMinPower int64
 
-	ProofValidationBatch cid.Cid
+	ProofValidationBatch *cid.Cid
 }
 
 type Claim struct {
@@ -58,7 +58,6 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		CronEventQueue:           emptyMapCid,
 		Claims:                   emptyMapCid,
 		NumMinersMeetingMinPower: 0,
-		ProofValidationBatch:     emptyMMapCid,
 	}
 }
 
