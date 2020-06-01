@@ -380,6 +380,76 @@ func TestProvingPeriodCron(t *testing.T) {
 	})
 }
 
+/*
+func TestFaultPolicies(t *testing.T) {
+	rt.SetEpoch(0)
+	miner, actor := registerMiner()
+
+	rt.AdvanceEpoch(1)
+	rt.SetEpoch(currEpoch)
+	CommD := testCommD
+	Sector1, PreCommitInfo := miner.preCommit(CommD)
+	actor.preCommitSector(PreCommitInfo)
+
+	rt.AdvanceEpoch(preCommitSectorDelay)
+	commitSectorRandomness := rt.GetRandomness(rt.Epoch())
+
+	rt.AdvanceEpoch(1)
+	CommitInfo := miner.generateProof(Sector1)
+	actor.commitSector(CommitInfo)
+
+	// PoRep submission
+	{
+		// Correct submission
+			// Committing to a sector results to power to be added
+			// Committing to a sector results in sector being added
+
+		// Incorrect submission
+			// Double Commit Test: Committing to the same sector more than once must fails
+			// Bad Proof Test: Committing to a sector with a bad proof must fail
+			// Valid Proof Invalid Inputs Test:
+				// Committing to a sector with a wrong replica identifier must fail
+				// Committing to a sector and using an incorrect randomness must fail
+			// Late Submission Test: Committing after a deadline must fail and make the PreCommitDeposit being lost
+			// Early Submission Test: Committing with a valid proof
+	}
+
+	// PoSt submission
+	{
+		// Incorrect submission
+			// Double Submission Test: Proving the same deadline more than once must fails
+			// Bad Proof Test: Proving a deadline with a bad proof must fail
+			// Valid Proof Invalid Inputs Test:
+				// Proving a deadline must fail with wrong sectors fail
+				// Proving a deadline must fail and using an incorrect randomness must fail
+	}
+
+	// Declared faults
+	{
+		// Valid fault declaration:
+			// Power for this proving period is not removed
+			// Power for the next proving period is removed
+			// Fault Fee Penalty is paid at the moment of the submission
+		// Invalid fault declaration:
+			// Late Fault Declaration: submission fails
+			// Invalid sectors: Fault Declaration for non existing sectors
+	}
+
+	// Skipped faults
+	{
+		//
+	}
+
+	// Undeclared faults
+
+	{
+		//
+	}
+
+	rt.SetEpoch()
+}
+*/
+
 type actorHarness struct {
 	a miner.Actor
 	t testing.TB
