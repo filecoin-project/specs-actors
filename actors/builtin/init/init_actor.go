@@ -88,13 +88,14 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 
 func canExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
 	switch execCodeID {
-	case builtin.AccountActorCodeID, builtin.InitActorCodeID, builtin.StoragePowerActorCodeID, builtin.StorageMarketActorCodeID, builtin.StorageMinerActorCodeID, cid.Undef:
-		if execCodeID == builtin.StorageMinerActorCodeID && callerCodeID == builtin.StoragePowerActorCodeID {
+	case builtin.StorageMinerActorCodeID:
+		if callerCodeID == builtin.StoragePowerActorCodeID {
 			return true
 		}
-
 		return false
-	default:
+	case builtin.PaymentChannelActorCodeID, builtin.MultisigActorCodeID:
 		return true
+	default:
+		return false
 	}
 }
