@@ -3,6 +3,7 @@ package power
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	peer "github.com/libp2p/go-libp2p-core/peer"

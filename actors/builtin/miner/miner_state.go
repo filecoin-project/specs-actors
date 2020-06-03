@@ -2,7 +2,6 @@ package miner
 
 import (
 	"fmt"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"io"
 	"reflect"
 
@@ -16,6 +15,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
