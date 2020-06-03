@@ -26,6 +26,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.Send,
 		3:                         a.SendMarshalCBORFailure,
 		4:                         a.ReturnMarshalCBORFailure,
+		5:                         a.RuntimeTransactionMarshalCBORFailure,
 	}
 }
 
@@ -91,6 +92,19 @@ func (a Actor) ReturnMarshalCBORFailure(rt runtime.Runtime, _ *adt.EmptyValue) *
 	return &FailToMarshalCBOR{}
 }
 
+func (a Actor) RuntimeTransactionMarshalCBORFailure(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+	rt.ValidateImmediateCallerAcceptAny()
+
+	var st State
+
+	rt.State().Transaction(&st, func() interface{} {
+		st.OptFailToMarshalCBOR = []*FailToMarshalCBOR{{}}
+		return nil
+	})
+
+	return nil
+}
+
 func handleSendReturn(ret runtime.SendReturn) (runtime.CBORBytes, error) {
 	if ret != nil {
 		var out runtime.CBORBytes
@@ -103,14 +117,23 @@ func handleSendReturn(ret runtime.SendReturn) (runtime.CBORBytes, error) {
 	return nil, nil
 }
 
-type FailToMarshalCBOR struct {
+type FailToMarshalCBOR struct{}
+
+func (t *FailToMarshalCBOR) UnmarshalCBOR(io.Reader) error {
+	return fmt.Errorf("failed to unmarshal cbor")
 }
 
 func (t *FailToMarshalCBOR) MarshalCBOR(w io.Writer) error {
 	return fmt.Errorf("failed to marshal cbor")
 }
 
-type State struct{}
+type State struct {
+	// OptFailToMarshalCBOR is to be used as an Option<T> or Maybe<T>, with T
+	// specialized to *FailToMarshalCBOR. If the slice contains no values, the
+	// State struct will encode as CBOR without issue. If the slice contains
+	// more than zero values, the CBOR encoding will fail.
+	OptFailToMarshalCBOR []*FailToMarshalCBOR
+}
 
 func init() {
 	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
@@ -125,8 +148,9 @@ func init() {
 var PuppetActorCodeID cid.Cid
 
 var MethodsPuppet = struct {
-	Constructor              abi.MethodNum
-	Send                     abi.MethodNum
-	SendMarshalCBORFailure   abi.MethodNum
-	ReturnMarshalCBORFailure abi.MethodNum
-}{builtin.MethodConstructor, 2, 3, 4}
+	Constructor                          abi.MethodNum
+	Send                                 abi.MethodNum
+	SendMarshalCBORFailure               abi.MethodNum
+	ReturnMarshalCBORFailure             abi.MethodNum
+	RuntimeTransactionMarshalCBORFailure abi.MethodNum
+}{builtin.MethodConstructor, 2, 3, 4, 5}
