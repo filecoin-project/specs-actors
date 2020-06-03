@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
@@ -118,6 +119,9 @@ type Syscalls interface {
 	ComputeUnsealedSectorCID(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
 	VerifySeal(vi abi.SealVerifyInfo) error
+
+	BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error)
+
 	// Verifies a proof of spacetime.
 	VerifyPoSt(vi abi.WindowPoStVerifyInfo) error
 	// Verifies that two block headers provide proof of a consensus fault:

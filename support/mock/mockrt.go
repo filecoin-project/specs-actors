@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"testing"
 
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
@@ -461,6 +462,18 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 	return nil
 }
 
+func (rt *Runtime) BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
+	out := make(map[address.Address][]bool)
+	for k, v := range vis {
+		validations := make([]bool, len(v))
+		for i := range validations {
+			validations[i] = true
+		}
+		out[k] = validations
+	}
+	return out, nil
+}
+
 func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
 	exp := rt.expectVerifyPoSt
 	if exp != nil {
@@ -631,6 +644,7 @@ func (rt *Runtime) ExpectVerifyPoSt(post abi.WindowPoStVerifyInfo, result error)
 
 // Verifies that expected calls were received, and resets all expectations.
 func (rt *Runtime) Verify() {
+	rt.t.Helper()
 	if rt.expectValidateCallerAny {
 		rt.failTest("expected ValidateCallerAny, not received")
 	}
@@ -671,9 +685,11 @@ func (rt *Runtime) Reset() {
 
 // Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code.
 func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
+	rt.t.Helper()
 	prevState := rt.state
 
 	defer func() {
+		rt.t.Helper()
 		r := recover()
 		if r == nil {
 			rt.failTest("expected abort with code %v but call succeeded", expected)
@@ -693,6 +709,7 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 }
 
 func (rt *Runtime) ExpectAssertionFailure(expected string, f func()) {
+	rt.t.Helper()
 	prevState := rt.state
 
 	defer func() {
@@ -739,6 +756,7 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 }
 
 func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
+	rt.t.Helper()
 	t := meth.Type()
 	rt.require(t.Kind() == reflect.Func, "%v is not a function", meth)
 	rt.require(t.NumIn() == 2, "exported method %v must have two parameters, got %v", meth, t.NumIn())
@@ -750,22 +768,26 @@ func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
 }
 
 func (rt *Runtime) requireInCall() {
+	rt.t.Helper()
 	rt.require(rt.inCall, "invalid runtime invocation outside of method call")
 }
 
 func (rt *Runtime) require(predicate bool, msg string, args ...interface{}) {
+	rt.t.Helper()
 	if !predicate {
 		rt.failTestNow(msg, args...)
 	}
 }
 
 func (rt *Runtime) failTest(msg string, args ...interface{}) {
+	rt.t.Helper()
 	rt.t.Logf(msg, args...)
 	rt.t.Logf("%s", debug.Stack())
 	rt.t.Fail()
 }
 
 func (rt *Runtime) failTestNow(msg string, args ...interface{}) {
+	rt.t.Helper()
 	rt.t.Logf(msg, args...)
 	rt.t.Logf("%s", debug.Stack())
 	rt.t.FailNow()

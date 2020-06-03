@@ -46,8 +46,8 @@ func windowPoStMessagePartitionsMax(partitionSectorCount uint64) uint64 {
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
 const NewSectorsPerPeriodMax = 128 << 10
 
-// An approximation to chain state finality (should include message propagation time as well).
-const ChainFinalityish = abi.ChainEpoch(500) // PARAM_FINISH
+// An approximation to chain state finality (ish because should include message propagation time as well).
+const ChainFinalityish = abi.ChainEpoch(900) // PARAM_FINISH
 
 // List of proof types which can be used when creating new miner actors
 var SupportedProofTypes = map[abi.RegisteredProof]struct{}{

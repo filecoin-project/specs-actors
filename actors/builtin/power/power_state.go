@@ -31,6 +31,8 @@ type State struct {
 
 	// Number of miners having proven the minimum consensus power.
 	NumMinersMeetingMinPower int64
+
+	ProofValidationBatch *cid.Cid
 }
 
 type Claim struct {
@@ -48,7 +50,7 @@ type CronEvent struct {
 
 type AddrKey = adt.AddrKey
 
-func ConstructState(emptyMapCid cid.Cid) *State {
+func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 	return &State{
 		TotalRawBytePower:        abi.NewStoragePower(0),
 		TotalQualityAdjPower:     abi.NewStoragePower(0),

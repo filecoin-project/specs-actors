@@ -77,6 +77,13 @@ type State struct {
 	// Records successful PoSt submission in the current proving period by partition number.
 	// The presence of a partition number indicates on-time PoSt received.
 	PostSubmissions *abi.BitField
+
+	// The index of the next deadline for which faults should been detected and processed (after it's closed).
+	// The proving period cron handler will always reset this to 0, for the subsequent period.
+	// Eager fault detection processing on fault/recovery declarations or PoSt may set a smaller number,
+	// indicating partial progress, from which subsequent processing should continue.
+	// In the range [0, WPoStProvingPeriodDeadlines).
+	NextDeadlineToProcessFaults uint64
 }
 
 type MinerInfo struct {
@@ -876,12 +883,11 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
 	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 	if err != nil {
-		return abi.TokenAmount{}, err
+		return big.Zero(), err
 	}
 
-	amountUnlocked := big.Zero()
-
-	var lockedEntry abi.TokenAmount
+	amountUnlocked := abi.NewTokenAmount(0)
+	lockedEntry := abi.NewTokenAmount(0)
 	var toDelete []uint64
 	var finished = fmt.Errorf("finished")
 
@@ -931,12 +937,11 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 	if err != nil {
-		return abi.TokenAmount{}, err
+		return big.Zero(), err
 	}
 
-	amountUnlocked := big.Zero()
-
-	var lockedEntry abi.TokenAmount
+	amountUnlocked := abi.NewTokenAmount(0)
+	lockedEntry := abi.NewTokenAmount(0)
 	var toDelete []uint64
 	var finished = fmt.Errorf("finished")
 
@@ -974,12 +979,11 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 	if err != nil {
-		return abi.TokenAmount{}, err
+		return big.Zero(), err
 	}
 
-	amountUnlocked := big.Zero()
-
-	var lockedEntry abi.TokenAmount
+	amountUnlocked := abi.NewTokenAmount(0)
+	lockedEntry := abi.NewTokenAmount(0)
 	var finished = fmt.Errorf("finished")
 
 	// Iterate vestingFunds  in order of release.

@@ -755,7 +755,7 @@ func (h *stateHarness) vestingFundsStoreEmpty() bool {
 	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
 	require.NoError(h.t, err)
 	empty := true
-	var lockedEntry abi.TokenAmount
+	lockedEntry := abi.NewTokenAmount(0)
 	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
 		empty = false
 		return nil
