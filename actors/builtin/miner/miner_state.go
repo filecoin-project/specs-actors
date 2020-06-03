@@ -102,7 +102,7 @@ type MinerInfo struct {
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
 
-	// Slice of byte slices representing Libp2p multi-addresses used for establishing a connection with this miner.
+	// Slice of byte arrays representing Libp2p multi-addresses used for establishing a connection with this miner.
 	Multiaddrs []builtin.MultiAddress
 
 	// The proof type used by this miner for sealing sectors.
