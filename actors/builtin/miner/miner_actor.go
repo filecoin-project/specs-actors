@@ -1160,13 +1160,16 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 
 	deadlineFirstPartition := uint64(0)
 	var fGroups, rGroups []*abi.BitField
-	for dlIdx := sinceDeadline; dlIdx < beforeDeadline; dlIdx++ {
+	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
 		dlPartCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)
 		}
+		if dlIdx < sinceDeadline {
+			deadlineFirstPartition += dlPartCount
+			continue
+		}
 		deadlineSectors := deadlines.Due[dlIdx]
-
 		for dlPartIdx := uint64(0); dlPartIdx < dlPartCount; dlPartIdx++ {
 			if !submissions[deadlineFirstPartition+dlPartIdx] {
 				// No PoSt received in prior period.
