@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
@@ -59,6 +58,7 @@ func (a Actor) Exports() []interface{} {
 		15:                        a.ReportConsensusFault,
 		16:                        a.WithdrawBalance,
 		17:                        a.ConfirmSectorProofsValid,
+		18:                        a.ChangeMultiaddrs,
 	}
 }
 
@@ -176,6 +176,20 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 		st.Info.PeerId = params.NewID
+		return nil
+	})
+	return nil
+}
+
+type ChangeMultiaddrsParams struct {
+	NewMultiaddrs []MultiAddress
+}
+
+func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		st.Info.Multiaddrs = params.NewMultiaddrs
 		return nil
 	})
 	return nil

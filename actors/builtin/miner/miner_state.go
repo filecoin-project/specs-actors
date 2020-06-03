@@ -101,6 +101,9 @@ type MinerInfo struct {
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
 
+	// Slice of byte slices representing Libp2p multi-addresses used for establishing a connection with this miner.
+	Multiaddrs []MultiAddress
+
 	// The proof type used by this miner for sealing sectors.
 	SealProofType abi.RegisteredProof
 
@@ -114,6 +117,7 @@ type MinerInfo struct {
 }
 
 type PeerID peer.ID
+type MultiAddress = []byte
 
 type WorkerKeyChange struct {
 	NewWorker   addr.Address // Must be an ID address

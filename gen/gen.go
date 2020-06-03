@@ -175,6 +175,7 @@ func main() {
 		miner.SubmitWindowedPoStParams{},
 		miner.TerminateSectorsParams{},
 		miner.ChangePeerIDParams{},
+		miner.ChangeMultiaddrsParams{},
 		miner.ProveCommitSectorParams{},
 		miner.ChangeWorkerAddressParams{},
 		miner.ExtendSectorExpirationParams{},
