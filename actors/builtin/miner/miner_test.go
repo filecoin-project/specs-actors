@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/multiformats/go-multiaddr"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -29,6 +30,7 @@ import (
 )
 
 var testPid peer.ID
+var testMultiaddrs []builtin.MultiAddress
 
 func init() {
 	pid, err := peer.Decode("12D3KooWGzxzKZYveHXtpG6AsrUJBcWxHBFS2HsEoGTxrMLvKXtf")
@@ -36,6 +38,18 @@ func init() {
 		panic(err)
 	}
 	testPid = pid
+
+	testMultiaddrs = make([]builtin.MultiAddress, 2)
+	ma1, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/1234")
+	if err != nil {
+		panic(err)
+	}
+	ma2, err := multiaddr.NewMultiaddr("/ip4/127.0.0.2/tcp/1234")
+	if err != nil {
+		panic(err)
+	}
+	testMultiaddrs[0] = ma1.Bytes()
+	testMultiaddrs[1] = ma2.Bytes()
 
 	miner.SupportedProofTypes = map[abi.RegisteredProof]struct{}{
 		abi.RegisteredProof_StackedDRG2KiBSeal: {},
@@ -66,6 +80,7 @@ func TestConstruction(t *testing.T) {
 			WorkerAddr:    worker,
 			SealProofType: abi.RegisteredProof_StackedDRG2KiBSeal,
 			PeerId:        testPid,
+			Multiaddrs:    testMultiaddrs,
 		}
 
 		provingPeriodStart := abi.ChainEpoch(2386) // This is just set from running the code.
@@ -85,6 +100,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, params.OwnerAddr, st.Info.Owner)
 		assert.Equal(t, params.WorkerAddr, st.Info.Worker)
 		assert.Equal(t, params.PeerId, st.Info.PeerId)
+		assert.Equal(t, params.Multiaddrs, st.Info.Multiaddrs)
 		assert.Equal(t, abi.RegisteredProof_StackedDRG2KiBSeal, st.Info.SealProofType)
 		assert.Equal(t, abi.SectorSize(2048), st.Info.SectorSize)
 		assert.Equal(t, uint64(2), st.Info.WindowPoStPartitionSectors)

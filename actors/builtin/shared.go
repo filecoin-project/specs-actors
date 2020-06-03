@@ -43,6 +43,10 @@ type MinerAddrs struct {
 	Worker addr.Address
 }
 
+// This type is required to construct a miner (in power_actor) and change a miners multiaddress (in miner_actor)
+// the type is defined here to work around a circular dependency between the actors.
+type MultiAddress = []byte
+
 type ConfirmSectorProofsParams struct {
 	Sectors []abi.SectorNumber
 }
