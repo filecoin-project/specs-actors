@@ -8,7 +8,6 @@ import (
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -379,15 +378,15 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.PeerId (peer.ID) (string)
-	if len(t.PeerId) > cbg.MaxLength {
-		return xerrors.Errorf("Value in field t.PeerId was too long")
+	// t.PeerId ([]uint8) (slice)
+	if len(t.PeerId) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.PeerId was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.PeerId)))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.PeerId)))); err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(t.PeerId)); err != nil {
+	if _, err := w.Write(t.PeerId); err != nil {
 		return err
 	}
 
@@ -492,15 +491,22 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.PeerId (peer.ID) (string)
+	// t.PeerId ([]uint8) (slice)
 
-	{
-		sval, err := cbg.ReadString(br)
-		if err != nil {
-			return err
-		}
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		t.PeerId = peer.ID(sval)
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.PeerId: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.PeerId = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.PeerId); err != nil {
+		return err
 	}
 	// t.Multiaddrs ([][]uint8) (slice)
 
@@ -1393,15 +1399,15 @@ func (t *ChangePeerIDParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.NewID (peer.ID) (string)
-	if len(t.NewID) > cbg.MaxLength {
-		return xerrors.Errorf("Value in field t.NewID was too long")
+	// t.NewID ([]uint8) (slice)
+	if len(t.NewID) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.NewID was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.NewID)))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.NewID)))); err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(t.NewID)); err != nil {
+	if _, err := w.Write(t.NewID); err != nil {
 		return err
 	}
 	return nil
@@ -1422,15 +1428,22 @@ func (t *ChangePeerIDParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.NewID (peer.ID) (string)
+	// t.NewID ([]uint8) (slice)
 
-	{
-		sval, err := cbg.ReadString(br)
-		if err != nil {
-			return err
-		}
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		t.NewID = peer.ID(sval)
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.NewID: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.NewID = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.NewID); err != nil {
+		return err
 	}
 	return nil
 }

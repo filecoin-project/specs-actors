@@ -10,7 +10,6 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	bitfield "github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,15 +27,11 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
-var testPid peer.ID
+var testPid builtin.PeerID
 var testMultiaddrs []builtin.Multiaddrs
 
 func init() {
-	pid, err := peer.Decode("12D3KooWGzxzKZYveHXtpG6AsrUJBcWxHBFS2HsEoGTxrMLvKXtf")
-	if err != nil {
-		panic(err)
-	}
-	testPid = pid
+	testPid = builtin.PeerID("peerID")
 
 	testMultiaddrs = []builtin.Multiaddrs{
 		{1},

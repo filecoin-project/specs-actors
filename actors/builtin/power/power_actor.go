@@ -6,7 +6,6 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
@@ -58,7 +57,7 @@ type MinerConstructorParams struct {
 	OwnerAddr     addr.Address
 	WorkerAddr    addr.Address
 	SealProofType abi.RegisteredProof
-	PeerId        peer.ID
+	PeerId        builtin.PeerID
 	Multiaddrs    []builtin.Multiaddrs
 }
 
@@ -94,7 +93,7 @@ type CreateMinerParams struct {
 	Owner         addr.Address
 	Worker        addr.Address
 	SealProofType abi.RegisteredProof
-	Peer          peer.ID
+	Peer          builtin.PeerID
 }
 
 type CreateMinerReturn struct {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
@@ -950,7 +951,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	// state field init
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
-	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, "peer", testMultiaddrs, abi.RegisteredProof_StackedDRG2KiBSeal, periodBoundary)
+	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, builtin.PeerID("peer"), testMultiaddrs, abi.RegisteredProof_StackedDRG2KiBSeal, periodBoundary)
 	require.NoError(t, err)
 
 	// assert NewSectors bitfield was constructed correctly (empty)

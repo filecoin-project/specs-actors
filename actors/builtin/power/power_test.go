@@ -7,7 +7,6 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 
@@ -44,7 +43,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, "miner", abi.RegisteredProof_StackedDRG2KiBSeal, abi.NewTokenAmount(10))
+		actor.createMiner(rt, owner, owner, miner, actr, builtin.PeerID("miner"), abi.RegisteredProof_StackedDRG2KiBSeal, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -191,7 +190,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
 }
 
-func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer peer.ID,
+func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer builtin.PeerID,
 	sealProofType abi.RegisteredProof, value abi.TokenAmount) {
 	createMinerParams := &power.CreateMinerParams{
 		Owner:         owner,
@@ -230,7 +229,7 @@ func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, e
 	rt.Verify()
 }
 
-func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer peer.ID, sealProofType abi.RegisteredProof) []byte {
+func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer builtin.PeerID, sealProofType abi.RegisteredProof) []byte {
 	params := &power.MinerConstructorParams{
 		OwnerAddr:     owner,
 		WorkerAddr:    worker,

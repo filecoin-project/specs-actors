@@ -7,7 +7,6 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -425,15 +424,15 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Peer (peer.ID) (string)
-	if len(t.Peer) > cbg.MaxLength {
-		return xerrors.Errorf("Value in field t.Peer was too long")
+	// t.Peer ([]uint8) (slice)
+	if len(t.Peer) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Peer was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.Peer)))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.Peer)))); err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(t.Peer)); err != nil {
+	if _, err := w.Write(t.Peer); err != nil {
 		return err
 	}
 	return nil
@@ -497,15 +496,22 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.SealProofType = abi.RegisteredProof(extraI)
 	}
-	// t.Peer (peer.ID) (string)
+	// t.Peer ([]uint8) (slice)
 
-	{
-		sval, err := cbg.ReadString(br)
-		if err != nil {
-			return err
-		}
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		t.Peer = peer.ID(sval)
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.Peer: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.Peer = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.Peer); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1086,15 +1092,15 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.PeerId (peer.ID) (string)
-	if len(t.PeerId) > cbg.MaxLength {
-		return xerrors.Errorf("Value in field t.PeerId was too long")
+	// t.PeerId ([]uint8) (slice)
+	if len(t.PeerId) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.PeerId was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.PeerId)))); err != nil {
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(t.PeerId)))); err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(t.PeerId)); err != nil {
+	if _, err := w.Write(t.PeerId); err != nil {
 		return err
 	}
 
@@ -1179,15 +1185,22 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.SealProofType = abi.RegisteredProof(extraI)
 	}
-	// t.PeerId (peer.ID) (string)
+	// t.PeerId ([]uint8) (slice)
 
-	{
-		sval, err := cbg.ReadString(br)
-		if err != nil {
-			return err
-		}
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
 
-		t.PeerId = peer.ID(sval)
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.PeerId: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+	t.PeerId = make([]byte, extra)
+	if _, err := io.ReadFull(br, t.PeerId); err != nil {
+		return err
 	}
 	// t.Multiaddrs ([][]uint8) (slice)
 

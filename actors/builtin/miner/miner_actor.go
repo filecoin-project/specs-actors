@@ -8,7 +8,6 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -75,12 +74,6 @@ type ConstructorParams = power.MinerConstructorParams
 
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
-
-	// Sanity check that we've been given a valid peer ID
-	_, err := peer.IDFromString(string(params.PeerId))
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "invalid peer ID in parameters: %s", err)
-	}
 
 	_, ok := SupportedProofTypes[params.SealProofType]
 	if !ok {
@@ -169,7 +162,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 }
 
 type ChangePeerIDParams struct {
-	NewID peer.ID
+	NewID builtin.PeerID
 }
 
 func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
