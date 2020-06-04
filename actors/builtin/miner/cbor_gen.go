@@ -360,7 +360,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{135}); err != nil {
+	if _, err := w.Write([]byte{136}); err != nil {
 		return err
 	}
 
@@ -389,6 +389,27 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	}
 	if _, err := w.Write([]byte(t.PeerId)); err != nil {
 		return err
+	}
+
+	// t.Multiaddrs ([][]uint8) (slice)
+	if len(t.Multiaddrs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Multiaddrs was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Multiaddrs)))); err != nil {
+		return err
+	}
+	for _, v := range t.Multiaddrs {
+		if len(v) > cbg.ByteArrayMaxLen {
+			return xerrors.Errorf("Byte array in field v was too long")
+		}
+
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(v)))); err != nil {
+			return err
+		}
+		if _, err := w.Write(v); err != nil {
+			return err
+		}
 	}
 
 	// t.SealProofType (abi.RegisteredProof) (int64)
@@ -428,7 +449,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 7 {
+	if extra != 8 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -481,6 +502,49 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 
 		t.PeerId = peer.ID(sval)
 	}
+	// t.Multiaddrs ([][]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Multiaddrs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.Multiaddrs = make([][]uint8, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+		{
+			var maj byte
+			var extra uint64
+			var err error
+
+			maj, extra, err = cbg.CborReadHeader(br)
+			if err != nil {
+				return err
+			}
+
+			if extra > cbg.ByteArrayMaxLen {
+				return fmt.Errorf("t.Multiaddrs[i]: byte array too large (%d)", extra)
+			}
+			if maj != cbg.MajByteString {
+				return fmt.Errorf("expected byte array")
+			}
+			t.Multiaddrs[i] = make([]byte, extra)
+			if _, err := io.ReadFull(br, t.Multiaddrs[i]); err != nil {
+				return err
+			}
+		}
+	}
+
 	// t.SealProofType (abi.RegisteredProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
@@ -1368,6 +1432,99 @@ func (t *ChangePeerIDParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.NewID = peer.ID(sval)
 	}
+	return nil
+}
+
+func (t *ChangeMultiaddrsParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write([]byte{129}); err != nil {
+		return err
+	}
+
+	// t.NewMultiaddrs ([][]uint8) (slice)
+	if len(t.NewMultiaddrs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.NewMultiaddrs was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.NewMultiaddrs)))); err != nil {
+		return err
+	}
+	for _, v := range t.NewMultiaddrs {
+		if len(v) > cbg.ByteArrayMaxLen {
+			return xerrors.Errorf("Byte array in field v was too long")
+		}
+
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(v)))); err != nil {
+			return err
+		}
+		if _, err := w.Write(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *ChangeMultiaddrsParams) UnmarshalCBOR(r io.Reader) error {
+	br := cbg.GetPeeker(r)
+
+	maj, extra, err := cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.NewMultiaddrs ([][]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeader(br)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.NewMultiaddrs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.NewMultiaddrs = make([][]uint8, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+		{
+			var maj byte
+			var extra uint64
+			var err error
+
+			maj, extra, err = cbg.CborReadHeader(br)
+			if err != nil {
+				return err
+			}
+
+			if extra > cbg.ByteArrayMaxLen {
+				return fmt.Errorf("t.NewMultiaddrs[i]: byte array too large (%d)", extra)
+			}
+			if maj != cbg.MajByteString {
+				return fmt.Errorf("expected byte array")
+			}
+			t.NewMultiaddrs[i] = make([]byte, extra)
+			if _, err := io.ReadFull(br, t.NewMultiaddrs[i]); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 

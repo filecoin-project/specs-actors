@@ -15,6 +15,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -101,6 +102,9 @@ type MinerInfo struct {
 	// Libp2p identity that should be used when connecting to this miner.
 	PeerId peer.ID
 
+	// Slice of byte arrays representing Libp2p multi-addresses used for establishing a connection with this miner.
+	Multiaddrs []builtin.Multiaddrs
+
 	// The proof type used by this miner for sealing sectors.
 	SealProofType abi.RegisteredProof
 
@@ -143,7 +147,7 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId peer.ID, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
+	peerId peer.ID, multiaddrs []builtin.Multiaddrs, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
 	sealProofType, err := proofType.RegisteredSealProof()
 	if err != nil {
 		return nil, fmt.Errorf("no seal proof for proof type %d: %w", sealProofType, err)
@@ -162,6 +166,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 			Worker:                     workerAddr,
 			PendingWorkerKey:           nil,
 			PeerId:                     peerId,
+			Multiaddrs:                 multiaddrs,
 			SealProofType:              sealProofType,
 			SectorSize:                 sectorSize,
 			WindowPoStPartitionSectors: partitionSectors,
