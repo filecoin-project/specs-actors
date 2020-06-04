@@ -94,6 +94,7 @@ type CreateMinerParams struct {
 	Worker        addr.Address
 	SealProofType abi.RegisteredProof
 	Peer          builtin.PeerID
+	Multiaddrs    []builtin.Multiaddrs
 }
 
 type CreateMinerReturn struct {
@@ -109,6 +110,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		WorkerAddr:    params.Worker,
 		SealProofType: params.SealProofType,
 		PeerId:        params.Peer,
+		Multiaddrs:    params.Multiaddrs,
 	}
 	ctorParamBuf := new(bytes.Buffer)
 	err := ctorParams.MarshalCBOR(ctorParamBuf)

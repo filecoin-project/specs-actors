@@ -43,7 +43,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, builtin.PeerID("miner"), abi.RegisteredProof_StackedDRG2KiBSeal, abi.NewTokenAmount(10))
+		actor.createMiner(rt, owner, owner, miner, actr, builtin.PeerID("miner"), []builtin.Multiaddrs{{1}}, abi.RegisteredProof_StackedDRG2KiBSeal, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -191,12 +191,13 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 }
 
 func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer builtin.PeerID,
-	sealProofType abi.RegisteredProof, value abi.TokenAmount) {
+	multiaddrs []builtin.Multiaddrs, sealProofType abi.RegisteredProof, value abi.TokenAmount) {
 	createMinerParams := &power.CreateMinerParams{
 		Owner:         owner,
 		Worker:        worker,
 		SealProofType: sealProofType,
 		Peer:          peer,
+		Multiaddrs:    multiaddrs,
 	}
 
 	// owner send CreateMiner to Actor
@@ -212,7 +213,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 
 	msgParams := &initact.ExecParams{
 		CodeCID:           builtin.StorageMinerActorCodeID,
-		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, sealProofType),
+		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, multiaddrs, sealProofType),
 	}
 	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, value, createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
@@ -229,12 +230,13 @@ func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, e
 	rt.Verify()
 }
 
-func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer builtin.PeerID, sealProofType abi.RegisteredProof) []byte {
+func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer builtin.PeerID, multiaddrs []builtin.Multiaddrs, sealProofType abi.RegisteredProof) []byte {
 	params := &power.MinerConstructorParams{
 		OwnerAddr:     owner,
 		WorkerAddr:    worker,
 		SealProofType: sealProofType,
 		PeerId:        peer,
+		Multiaddrs:    multiaddrs,
 	}
 
 	buf := new(bytes.Buffer)
