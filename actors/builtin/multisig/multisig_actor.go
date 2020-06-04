@@ -117,7 +117,14 @@ type ProposeParams struct {
 	Params []byte
 }
 
-func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
+type ProposeReturn struct {
+	TxnID   cbg.CborInt
+	Applied bool
+	Code    exitcode.ExitCode
+	Ret     vmr.CBORBytes
+}
+
+func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
@@ -143,13 +150,17 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	// Proposal implicitly includes approval of a transaction. Bypass hash check
 	// because PROPOSE is the reference point for other approvers.
 	var emptyArray []byte
-	a.approveTransaction(rt, txnID, emptyArray, false)
+	applied, ret, code := a.approveTransaction(rt, txnID, emptyArray, false)
 
 	// Note: this ID may not be stable across chain re-orgs.
 	// https://github.com/filecoin-project/specs-actors/issues/7
 
-	v := cbg.CborInt(txnID)
-	return &v
+	return &ProposeReturn{
+		TxnID:   cbg.CborInt(txnID),
+		Applied: applied,
+		Code:    code,
+		Ret:     ret,
+	}
 }
 
 type TxnIDParams struct {
@@ -157,7 +168,13 @@ type TxnIDParams struct {
 	ProposalHash []byte
 }
 
-func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+type ApproveReturn struct {
+	Applied bool
+	Code    exitcode.ExitCode
+	Ret     vmr.CBORBytes
+}
+
+func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 	var st State
@@ -165,8 +182,12 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		a.validateSigner(rt, &st, callerAddr)
 		return nil
 	})
-	a.approveTransaction(rt, params.ID, params.ProposalHash, true)
-	return nil
+	approved, ret, code := a.approveTransaction(rt, params.ID, params.ProposalHash, true)
+	return &ApproveReturn{
+		Applied: approved,
+		Code:    code,
+		Ret:     ret,
+	}
 }
 
 func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
@@ -313,7 +334,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) {
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) (bool, vmr.CBORBytes, exitcode.ExitCode) {
 	var st State
 	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
@@ -348,21 +369,28 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 		return nil
 	})
 
+	var out vmr.CBORBytes
+	var code exitcode.ExitCode
+	applied := false
 	thresholdMet := uint64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
+		var ret vmr.SendReturn
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
-		_, code := rt.Send(
+		ret, code = rt.Send(
 			txn.To,
 			txn.Method,
 			vmr.CBORBytes(txn.Params),
 			txn.Value,
 		)
-		// The exit code is explicitly ignored. It's ok for the subcall to fail.
-		_ = code
+		applied = true
+
+		if err := ret.Into(&out); err != nil {
+			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
+		}
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {
@@ -372,6 +400,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 			return nil
 		})
 	}
+	return applied, out, code
 }
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
