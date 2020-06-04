@@ -27,13 +27,13 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
-var testPid builtin.PeerID
-var testMultiaddrs []builtin.Multiaddrs
+var testPid abi.PeerID
+var testMultiaddrs []abi.Multiaddrs
 
 func init() {
-	testPid = builtin.PeerID("peerID")
+	testPid = abi.PeerID("peerID")
 
-	testMultiaddrs = []builtin.Multiaddrs{
+	testMultiaddrs = []abi.Multiaddrs{
 		{1},
 		{2},
 	}

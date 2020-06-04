@@ -162,7 +162,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 }
 
 type ChangePeerIDParams struct {
-	NewID builtin.PeerID
+	NewID abi.PeerID
 }
 
 func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
@@ -176,7 +176,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 }
 
 type ChangeMultiaddrsParams struct {
-	NewMultiaddrs []builtin.Multiaddrs
+	NewMultiaddrs []abi.Multiaddrs
 }
 
 func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
