@@ -59,6 +59,7 @@ func (a Actor) Exports() []interface{} {
 		15:                        a.ReportConsensusFault,
 		16:                        a.WithdrawBalance,
 		17:                        a.ConfirmSectorProofsValid,
+		18:                        a.ChangeMultiaddrs,
 	}
 }
 
@@ -108,7 +109,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	periodStart := nextProvingPeriodStart(currEpoch, offset)
 	Assert(periodStart > currEpoch)
 
-	state, err := ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, params.PeerId, params.SealProofType, periodStart)
+	state, err := ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, params.PeerId, params.Multiaddrs, params.SealProofType, periodStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
@@ -176,6 +177,20 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 		st.Info.PeerId = params.NewID
+		return nil
+	})
+	return nil
+}
+
+type ChangeMultiaddrsParams struct {
+	NewMultiaddrs []builtin.Multiaddrs
+}
+
+func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		rt.ValidateImmediateCallerIs(st.Info.Worker)
+		st.Info.Multiaddrs = params.NewMultiaddrs
 		return nil
 	})
 	return nil
@@ -1160,13 +1175,16 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 
 	deadlineFirstPartition := uint64(0)
 	var fGroups, rGroups []*abi.BitField
-	for dlIdx := sinceDeadline; dlIdx < beforeDeadline; dlIdx++ {
+	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
 		dlPartCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)
 		}
+		if dlIdx < sinceDeadline {
+			deadlineFirstPartition += dlPartCount
+			continue
+		}
 		deadlineSectors := deadlines.Due[dlIdx]
-
 		for dlPartIdx := uint64(0); dlPartIdx < dlPartCount; dlPartIdx++ {
 			if !submissions[deadlineFirstPartition+dlPartIdx] {
 				// No PoSt received in prior period.
