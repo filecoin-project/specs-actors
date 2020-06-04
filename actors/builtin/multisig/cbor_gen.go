@@ -1207,7 +1207,7 @@ func (t *ProposeReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TxnID (typegen.CborInt) (int64)
+	// t.TxnID (multisig.TxnID) (int64)
 	if t.TxnID >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TxnID))); err != nil {
 			return err
@@ -1263,7 +1263,7 @@ func (t *ProposeReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.TxnID (typegen.CborInt) (int64)
+	// t.TxnID (multisig.TxnID) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -1286,7 +1286,7 @@ func (t *ProposeReturn) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.TxnID = cbg.CborInt(extraI)
+		t.TxnID = TxnID(extraI)
 	}
 	// t.Applied (bool) (bool)
 

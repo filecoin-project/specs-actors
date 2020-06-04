@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
-	cbg "github.com/whyrusleeping/cbor-gen"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -119,7 +117,7 @@ type ProposeParams struct {
 
 type ProposeReturn struct {
 	// TxnID is the ID of the proposed transaction
-	TxnID cbg.CborInt
+	TxnID TxnID
 	// Applied indicates if the transaction was applied as opposed to proposed but not applied due to lack of approvals
 	Applied bool
 	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
@@ -160,7 +158,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	// https://github.com/filecoin-project/specs-actors/issues/7
 
 	return &ProposeReturn{
-		TxnID:   cbg.CborInt(txnID),
+		TxnID:   txnID,
 		Applied: applied,
 		Code:    code,
 		Ret:     ret,
