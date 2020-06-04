@@ -6,7 +6,6 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
@@ -58,8 +57,8 @@ type MinerConstructorParams struct {
 	OwnerAddr     addr.Address
 	WorkerAddr    addr.Address
 	SealProofType abi.RegisteredProof
-	PeerId        peer.ID
-	Multiaddrs    []builtin.Multiaddrs
+	PeerId        abi.PeerID
+	Multiaddrs    []abi.Multiaddrs
 }
 
 type SectorStorageWeightDesc struct {
@@ -94,7 +93,8 @@ type CreateMinerParams struct {
 	Owner         addr.Address
 	Worker        addr.Address
 	SealProofType abi.RegisteredProof
-	Peer          peer.ID
+	Peer          abi.PeerID
+	Multiaddrs    []abi.Multiaddrs
 }
 
 type CreateMinerReturn struct {
@@ -110,6 +110,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		WorkerAddr:    params.Worker,
 		SealProofType: params.SealProofType,
 		PeerId:        params.Peer,
+		Multiaddrs:    params.Multiaddrs,
 	}
 	ctorParamBuf := new(bytes.Buffer)
 	err := ctorParams.MarshalCBOR(ctorParamBuf)

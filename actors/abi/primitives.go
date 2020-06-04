@@ -60,3 +60,9 @@ func NewTokenAmount(t int64) TokenAmount {
 
 // Randomness is a string of random bytes
 type Randomness []byte
+
+// Multiaddrs is a byte array representing a Libp2p MultiAddress
+type Multiaddrs = []byte
+
+// PeerID is a byte array representing a Libp2p PeerID
+type PeerID = []byte
