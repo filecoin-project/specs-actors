@@ -118,10 +118,14 @@ type ProposeParams struct {
 }
 
 type ProposeReturn struct {
-	TxnID   cbg.CborInt
+	// TxnID is the ID of the proposed transaction
+	TxnID cbg.CborInt
+	// Applied indicates if the transaction was applied as opposed to proposed but not applied due to lack of approvals
 	Applied bool
-	Code    exitcode.ExitCode
-	Ret     vmr.CBORBytes
+	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
+	Code exitcode.ExitCode
+	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
+	Ret vmr.CBORBytes
 }
 
 func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
@@ -169,9 +173,12 @@ type TxnIDParams struct {
 }
 
 type ApproveReturn struct {
+	// Applied indicates if the transaction was applied as opposed to proposed but not applied due to lack of approvals
 	Applied bool
-	Code    exitcode.ExitCode
-	Ret     vmr.CBORBytes
+	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
+	Code exitcode.ExitCode
+	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
+	Ret vmr.CBORBytes
 }
 
 func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
