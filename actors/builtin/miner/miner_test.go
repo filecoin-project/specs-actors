@@ -532,9 +532,16 @@ func TestExtendSectorExpiration(t *testing.T) {
 			NewExpiration: newExpiration,
 		}
 
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		func() {
+			defer func() {
+				r := recover()
+				require.NotNil(t, r)
+				assert.Contains(t, fmt.Sprintf("%s", r), "cannot reduce sector expiration")
+			}()
+
 			actor.extendSector(rt, sector, 0, params)
-		})
+		}()
+
 	})
 
 	t.Run("rejects extension to invalid epoch", func(t *testing.T) {
@@ -1090,7 +1097,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	if newSectors {
-		randEpoch := rt.Epoch()-miner.ElectionLookback
+		randEpoch := rt.Epoch() - miner.ElectionLookback
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randEpoch, nil, bytes.Repeat([]byte{0}, 32))
 	}
 	// Re-enrollment for next period.
