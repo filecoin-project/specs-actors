@@ -2,20 +2,16 @@ package miner
 
 import (
 	"fmt"
-	"io"
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	errors "github.com/pkg/errors"
-	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -99,11 +95,11 @@ type MinerInfo struct {
 
 	PendingWorkerKey *WorkerKeyChange
 
-	// Libp2p identity that should be used when connecting to this miner.
-	PeerId peer.ID
+	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
+	PeerId abi.PeerID
 
 	// Slice of byte arrays representing Libp2p multi-addresses used for establishing a connection with this miner.
-	Multiaddrs []builtin.Multiaddrs
+	Multiaddrs []abi.Multiaddrs
 
 	// The proof type used by this miner for sealing sectors.
 	SealProofType abi.RegisteredProof
@@ -116,8 +112,6 @@ type MinerInfo struct {
 	// This is computed from the proof type and represented here redundantly.
 	WindowPoStPartitionSectors uint64
 }
-
-type PeerID peer.ID
 
 type WorkerKeyChange struct {
 	NewWorker   addr.Address // Must be an ID address
@@ -147,7 +141,7 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId peer.ID, multiaddrs []builtin.Multiaddrs, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
+	peerId abi.PeerID, multiaddrs []abi.Multiaddrs, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
 	sealProofType, err := proofType.RegisteredSealProof()
 	if err != nil {
 		return nil, fmt.Errorf("no seal proof for proof type %d: %w", sealProofType, err)
@@ -1089,38 +1083,4 @@ func init() {
 	if reflect.TypeOf(e).Kind() != reflect.Uint64 {
 		panic("incorrect sector number encoding")
 	}
-}
-
-func (p *PeerID) MarshalCBOR(w io.Writer) error {
-	if err := cbg.CborWriteHeader(w, cbg.MajByteString, uint64(len([]byte(*p)))); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte(*p)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (p *PeerID) UnmarshalCBOR(r io.Reader) error {
-	t, l, err := cbg.CborReadHeader(r)
-	if err != nil {
-		return err
-	}
-
-	if t != cbg.MajByteString {
-		return fmt.Errorf("expected MajByteString when reading peer ID, got %d instead", t)
-	}
-
-	if l > cbg.MaxLength {
-		return fmt.Errorf("peer ID in input was too long")
-	}
-
-	buf := make([]byte, l)
-	_, err = io.ReadFull(r, buf)
-	if err != nil {
-		return fmt.Errorf("failed to read full peer ID: %w", err)
-	}
-
-	*p = PeerID(buf)
-	return nil
 }

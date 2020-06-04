@@ -6,6 +6,7 @@ require (
 	github.com/filecoin-project/go-address v0.0.2-0.20200218010043-eb9bb40ed5be
 	github.com/filecoin-project/go-amt-ipld/v2 v2.0.1-0.20200424220931-6263827e49f2
 	github.com/filecoin-project/go-bitfield v0.0.1
+	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20190812055157-5d271430af9f // indirect
 	github.com/ipfs/go-block-format v0.0.2
 	github.com/ipfs/go-cid v0.0.5
@@ -13,8 +14,8 @@ require (
 	github.com/ipfs/go-ipld-cbor v0.0.4
 	github.com/ipfs/go-ipld-format v0.0.2 // indirect
 	github.com/ipfs/go-log v1.0.0 // indirect
-	github.com/libp2p/go-libp2p-core v0.3.0
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
+	github.com/minio/sha256-simd v0.1.1 // indirect
 	github.com/multiformats/go-multihash v0.0.13
 	github.com/pkg/errors v0.9.1
 	github.com/polydawn/refmt v0.0.0-20190809202753-05966cbd336a // indirect
