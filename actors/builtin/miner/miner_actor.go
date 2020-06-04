@@ -183,7 +183,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 }
 
 type ChangeMultiaddrsParams struct {
-	NewMultiaddrs []builtin.MultiAddress
+	NewMultiaddrs []builtin.Multiaddrs
 }
 
 func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {

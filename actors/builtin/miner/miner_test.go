@@ -12,7 +12,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/minio/blake2b-simd"
-	multiaddr "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -30,7 +29,7 @@ import (
 )
 
 var testPid peer.ID
-var testMultiaddrs []builtin.MultiAddress
+var testMultiaddrs []builtin.Multiaddrs
 
 func init() {
 	pid, err := peer.Decode("12D3KooWGzxzKZYveHXtpG6AsrUJBcWxHBFS2HsEoGTxrMLvKXtf")
@@ -39,17 +38,10 @@ func init() {
 	}
 	testPid = pid
 
-	testMultiaddrs = make([]builtin.MultiAddress, 2)
-	ma1, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/1234")
-	if err != nil {
-		panic(err)
+	testMultiaddrs = []builtin.Multiaddrs{
+		{1},
+		{2},
 	}
-	ma2, err := multiaddr.NewMultiaddr("/ip4/127.0.0.2/tcp/1234")
-	if err != nil {
-		panic(err)
-	}
-	testMultiaddrs[0] = ma1.Bytes()
-	testMultiaddrs[1] = ma2.Bytes()
 
 	miner.SupportedProofTypes = map[abi.RegisteredProof]struct{}{
 		abi.RegisteredProof_StackedDRG2KiBSeal: {},

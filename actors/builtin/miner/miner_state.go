@@ -103,7 +103,7 @@ type MinerInfo struct {
 	PeerId peer.ID
 
 	// Slice of byte arrays representing Libp2p multi-addresses used for establishing a connection with this miner.
-	Multiaddrs []builtin.MultiAddress
+	Multiaddrs []builtin.Multiaddrs
 
 	// The proof type used by this miner for sealing sectors.
 	SealProofType abi.RegisteredProof
@@ -147,7 +147,7 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId peer.ID, multiaddrs []builtin.MultiAddress, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
+	peerId peer.ID, multiaddrs []builtin.Multiaddrs, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
 	sealProofType, err := proofType.RegisteredSealProof()
 	if err != nil {
 		return nil, fmt.Errorf("no seal proof for proof type %d: %w", sealProofType, err)
