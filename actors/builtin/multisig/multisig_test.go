@@ -300,6 +300,25 @@ func TestPropose(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("propose with threshold and non-empty return value", func(t *testing.T) {
+		const numApprovals = int64(1)
+
+		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		rt.ExpectSend(chuck, builtin.MethodSend, fakeParams, sendValue, runtime.CBORBytes{1, 2, 3, 4, 5}, 0)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+
+		// the transaction has been sent and cleaned up
+		actor.assertTransactions(rt)
+		rt.Verify()
+
+	})
+
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
 		const numApprovals = uint64(1)
 		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build(t)
@@ -1102,14 +1121,38 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Method: method,
 		Params: params,
 	}
-	rt.Call(h.a.Propose, proposeParams)
+	ret := rt.Call(h.a.Propose, proposeParams)
+	proposeReturn, ok := ret.(*multisig.ProposeReturn)
+	if !ok {
+		h.t.Fatalf("unexpected type returned from call to Propose")
+	}
+	if proposeReturn.Applied {
+		// get the last message sent and ensure it matches the exit code
+		msg := rt.LastMessageSent()
+		assert.Equal(h.t, proposeReturn.Code, msg.ExitCode())
+		var out runtime.CBORBytes
+		assert.NoError(h.t, msg.SendReturn().Into(&out))
+		assert.Equal(h.t, proposeReturn.Ret, out)
+	}
 }
 
 // TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
 // exercise both un/successful sends.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte) {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
-	rt.Call(h.a.Approve, approveParams)
+	ret := rt.Call(h.a.Approve, approveParams)
+	approveReturn, ok := ret.(*multisig.ApproveReturn)
+	if !ok {
+		h.t.Fatalf("unexpected type returned from call to Approve")
+	}
+	if approveReturn.Applied {
+		// get the last message sent and ensure it matches the exit code
+		msg := rt.LastMessageSent()
+		assert.Equal(h.t, approveReturn.Code, msg.ExitCode())
+		var out runtime.CBORBytes
+		assert.NoError(h.t, msg.SendReturn().Into(&out))
+		assert.Equal(h.t, approveReturn.Ret, out)
+	}
 }
 
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64, proposalParams []byte) {

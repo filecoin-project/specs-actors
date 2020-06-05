@@ -388,6 +388,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 		ret, code = rt.Send(
 			txn.To,
 			txn.Method,
+			// pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails since it just copies the bytes.
 			vmr.CBORBytes(txn.Params),
 			txn.Value,
 		)

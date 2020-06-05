@@ -44,7 +44,7 @@ func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 		expectValidateCallerType: nil,
 		expectCreateActor:        nil,
 
-		expectSends: make([]*expectedMessage, 0),
+		expectSends: make([]*ExpectedMessage, 0),
 	}
 	return &RuntimeBuilder{m}
 }
