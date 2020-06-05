@@ -12,7 +12,7 @@ import (
 const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
 // The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
-const WPoStChallengeWindow = abi.ChainEpoch(3600 / builtin.EpochDurationSeconds) // An hour (=24 per day)
+const WPoStChallengeWindow = abi.ChainEpoch(40*60 / builtin.EpochDurationSeconds) // 40 minutes (36 per day)
 
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
