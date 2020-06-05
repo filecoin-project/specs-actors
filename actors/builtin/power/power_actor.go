@@ -509,21 +509,29 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 
 		verifs := verifies[m]
 
+		seen := map[abi.SectorNumber]struct{}{}
 		var successful []abi.SectorNumber
 		for i, r := range vres {
 			if r {
-				successful = append(successful, verifs[i].SectorID.Number)
+				snum := verifs[i].SectorID.Number
+
+				if _, exists := seen[snum]; exists {
+					// filter-out duplicates
+					continue
+				}
+
+				seen[snum] = struct{}{}
+				successful = append(successful, snum)
 			}
 		}
 
-		ret, code := rt.Send(
+		// The exit code is explicitly ignored
+		_, _ = rt.Send(
 			m,
 			builtin.MethodsMiner.ConfirmSectorProofsValid,
 			&builtin.ConfirmSectorProofsParams{successful},
 			abi.NewTokenAmount(0),
 		)
-		builtin.RequireSuccess(rt, code, "failed to confirm sector proofs valid") // should never happen...
-		_ = ret
 	}
 
 	return nil
