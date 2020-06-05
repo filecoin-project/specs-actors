@@ -361,13 +361,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			}
 		}
 
-		// Check expiry is exactly *the epoch before* the start of a proving period.
-		periodOffset := st.ProvingPeriodStart % WPoStProvingPeriod
-		expiryOffset := (params.Expiration + 1) % WPoStProvingPeriod
-		if expiryOffset != periodOffset {
-			rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, must be immediately before proving period boundary %d mod %d",
-				params.Expiration, periodOffset, WPoStProvingPeriod)
-		}
+		validateExpiration(rt, &st, params.Expiration)
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -608,6 +602,8 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
+
+	validateExpiration(rt, &st, params.NewExpiration)
 
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
@@ -1221,6 +1217,16 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 		return nil, nil, fmt.Errorf("failed to union failed recovery groups: %w", err)
 	}
 	return
+}
+
+// Check expiry is exactly *the epoch before* the start of a proving period.
+func validateExpiration(rt Runtime, st *State, expiration abi.ChainEpoch) {
+	periodOffset := st.ProvingPeriodStart % WPoStProvingPeriod
+	expiryOffset := (expiration + 1) % WPoStProvingPeriod
+	if expiryOffset != periodOffset {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, must be immediately before proving period boundary %d mod %d",
+			expiration, periodOffset, WPoStProvingPeriod)
+	}
 }
 
 // Removes and returns sector numbers that expire at or before an epoch.
