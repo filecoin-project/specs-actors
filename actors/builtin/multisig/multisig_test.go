@@ -1136,8 +1136,6 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 	}
 }
 
-// TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
-// exercise both un/successful sends.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte) {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
 	ret := rt.Call(h.a.Approve, approveParams)
