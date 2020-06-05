@@ -532,16 +532,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 			NewExpiration: newExpiration,
 		}
 
-		func() {
-			defer func() {
-				r := recover()
-				require.NotNil(t, r)
-				assert.Contains(t, fmt.Sprintf("%s", r), "cannot reduce sector expiration")
-			}()
-
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.extendSector(rt, sector, 0, params)
-		}()
-
+		})
 	})
 
 	t.Run("rejects extension to invalid epoch", func(t *testing.T) {
