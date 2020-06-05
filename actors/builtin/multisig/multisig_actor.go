@@ -385,12 +385,12 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 		ret, code = rt.Send(
 			txn.To,
 			txn.Method,
-			// pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails since it just copies the bytes.
 			vmr.CBORBytes(txn.Params),
 			txn.Value,
 		)
 		applied = true
 
+		// pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails since it just copies the bytes.
 		if err := ret.Into(&out); err != nil {
 			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
 		}
