@@ -97,6 +97,20 @@ func TestConstruction(t *testing.T) {
 		rt.Verify()
 
 	})
+
+	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{anne, bob, charlie},
+			NumApprovalsThreshold: 4,
+			UnlockDuration:        1,
+		}
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+	})
 }
 
 func TestVesting(t *testing.T) {
@@ -870,13 +884,13 @@ func TestRemoveSigner(t *testing.T) {
 			desc: "remove signer from single singer list",
 
 			initialSigners:   []addr.Address{anne},
-			initialApprovals: int64(2),
+			initialApprovals: int64(1),
 
 			removeSigner: anne,
 			decrease:     false,
 
 			expectSigners:   nil,
-			expectApprovals: int64(2),
+			expectApprovals: int64(1),
 			code:            exitcode.ErrForbidden,
 		},
 		{
