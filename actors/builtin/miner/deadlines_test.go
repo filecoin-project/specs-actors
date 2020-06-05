@@ -567,7 +567,7 @@ type DeadlinesBuilder struct {
 	t             *testing.T
 }
 
-// Creates a new builder with, with optional initial sector counts.
+// Creates a new builder, with optional initial sector counts.
 func NewDeadlinesBuilder(t *testing.T, counts ...uint64) *DeadlinesBuilder {
 	b := &DeadlinesBuilder{miner.ConstructDeadlines(), 0, t}
 	b.addToFrom(0, counts...)

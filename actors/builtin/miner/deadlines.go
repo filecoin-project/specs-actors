@@ -239,7 +239,7 @@ func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []u
 
 	sortDeadlines := func() {
 		// Order deadline indexes by corresponding partition count (then secondarily by index) to form a queue.
-		sort.Slice(dlIdxs, func(i, j int) bool {
+		sort.SliceStable(dlIdxs, func(i, j int) bool {
 			idxI, idxJ := dlIdxs[i], dlIdxs[j]
 			countI, countJ := deadlinePartitionCounts[idxI], deadlinePartitionCounts[idxJ]
 			if countI == countJ {
