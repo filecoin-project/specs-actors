@@ -23,9 +23,9 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SomeField ([]*puppet.FailToMarshalCBOR) (slice)
+	// t.OptFailToMarshalCBOR ([]*puppet.FailToMarshalCBOR) (slice)
 	if len(t.OptFailToMarshalCBOR) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.SomeField was too long")
+		return xerrors.Errorf("Slice value in field t.OptFailToMarshalCBOR was too long")
 	}
 
 	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.OptFailToMarshalCBOR)))); err != nil {
@@ -54,7 +54,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.SomeField ([]*puppet.FailToMarshalCBOR) (slice)
+	// t.OptFailToMarshalCBOR ([]*puppet.FailToMarshalCBOR) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -62,7 +62,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.SomeField: array too large (%d)", extra)
+		return fmt.Errorf("t.OptFailToMarshalCBOR: array too large (%d)", extra)
 	}
 
 	if maj != cbg.MajArray {
