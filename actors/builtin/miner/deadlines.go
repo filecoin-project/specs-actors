@@ -177,11 +177,11 @@ func ComputePartitionsSectors(d *Deadlines, partitionSize uint64, deadlineIndex 
 // When multiple partitions share the minimal sector count, one is chosen at random (from a seed).
 func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []uint64, seed abi.Randomness) error {
 	nextNewSector := uint64(0)
-	// The first deadline is left empty since it's more difficult for a miner to orchestrate proofs. 
+	// The first deadline is left empty since it's more difficult for a miner to orchestrate proofs.
 	// The set of sectors due at the deadline isn't known until the proving period actually starts and any
 	// new sectors are assigned to it (here).
 	// Practically, a miner must also wait for some probabilistic finality after that before beginning proof
-	// calculations. 
+	// calculations.
 	// It's left empty so a miner has at least one challenge duration to prepare for proving after new sectors
 	// are assigned.
 	firstAssignableDeadline := uint64(1)
