@@ -82,18 +82,13 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		rt.Abortf(exitcode.ErrIllegalArgument, "must not require more approvals than signers")
 	}
 
-	var signers []addr.Address
-	for _, sa := range params.Signers {
-		signers = append(signers, sa)
-	}
-
 	pending, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
 	}
 
 	var st State
-	st.Signers = signers
+	st.Signers = params.Signers
 	st.NumApprovalsThreshold = params.NumApprovalsThreshold
 	st.PendingTxns = pending
 	st.InitialBalance = abi.NewTokenAmount(0)
