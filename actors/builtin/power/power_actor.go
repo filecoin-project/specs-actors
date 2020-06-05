@@ -525,14 +525,13 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 			}
 		}
 
-		ret, code := rt.Send(
+		// The exit code is explicitly ignored
+		_, _ = rt.Send(
 			m,
 			builtin.MethodsMiner.ConfirmSectorProofsValid,
 			&builtin.ConfirmSectorProofsParams{successful},
 			abi.NewTokenAmount(0),
 		)
-		builtin.RequireSuccess(rt, code, "failed to confirm sector proofs valid") // should never happen...
-		_ = ret
 	}
 
 	return nil
