@@ -154,9 +154,6 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	var emptyArray []byte
 	applied, ret, code := a.approveTransaction(rt, txnID, emptyArray, false)
 
-	// Note: this ID may not be stable across chain re-orgs.
-	// https://github.com/filecoin-project/specs-actors/issues/7
-
 	return &ProposeReturn{
 		TxnID:   txnID,
 		Applied: applied,
