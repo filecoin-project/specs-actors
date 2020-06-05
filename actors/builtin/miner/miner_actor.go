@@ -645,6 +645,15 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		if err := st.PutSector(store, sector); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector %v, %v", sectorNo, err)
 		}
+
+		// move expiration from old epoch to new
+		if err := st.RemoveSectorExpirations(store, oldExpiration, uint64(params.SectorNumber)); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector expiration %v, %v", sectorNo, err)
+		}
+		if err := st.AddSectorExpirations(store, params.NewExpiration, uint64(params.SectorNumber)); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to update sector expiration %v, %v", sectorNo, err)
+		}
+
 		return nil
 	})
 
