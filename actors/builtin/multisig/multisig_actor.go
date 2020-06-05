@@ -78,6 +78,10 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		rt.Abortf(exitcode.ErrIllegalArgument, "must have at least one signer")
 	}
 
+	if params.NumApprovalsThreshold > int64(len(params.Signers)) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "must not require more approvals than signers")
+	}
+
 	var signers []addr.Address
 	for _, sa := range params.Signers {
 		signers = append(signers, sa)
