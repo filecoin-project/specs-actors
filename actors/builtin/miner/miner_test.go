@@ -397,9 +397,20 @@ func TestExtendSectorExpiration(t *testing.T) {
 		WithHasher(fixedHasher(uint64(periodOffset))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
-	t.Run("rejects negative extension", func(t *testing.T) {
-		rt, _, _, sector := setupExtension(t, builder, actor, periodOffset)
+	rt := builder.Build(t)
+	actor.constructAndVerify(rt, periodOffset)
+	precommitEpoch := abi.ChainEpoch(1)
+	rt.SetEpoch(precommitEpoch)
+	st := getState(rt)
+	deadline := st.DeadlineInfo(rt.Epoch())
+	expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
+	sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, big.Zero())
 
+	sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	t.Run("rejects negative extension", func(t *testing.T) {
 		// attempt to shorten epoch
 		newExpiration := sector.Info.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
 		params := &miner.ExtendSectorExpirationParams{
@@ -412,9 +423,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		})
 	})
 
-	t.Run("rejects extention to invalid epoch", func(t *testing.T) {
-		rt, _, _, sector := setupExtension(t, builder, actor, periodOffset)
-
+	t.Run("rejects extension to invalid epoch", func(t *testing.T) {
 		// attempt to extend to an epoch that is not a multiple of the proving period + the commit epoch
 		extension := 42*miner.WPoStProvingPeriod + 1
 		newExpiration := sector.Info.Expiration - abi.ChainEpoch(extension)
@@ -429,8 +438,6 @@ func TestExtendSectorExpiration(t *testing.T) {
 	})
 
 	t.Run("updates expiration with valid params", func(t *testing.T) {
-		rt, st, expiration, sector := setupExtension(t, builder, actor, periodOffset)
-
 		extension := uint64(42 * miner.WPoStProvingPeriod)
 		newExpiration := sector.Info.Expiration + abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
@@ -461,22 +468,6 @@ func TestExtendSectorExpiration(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
-}
-
-func setupExtension(t *testing.T, b *mock.RuntimeBuilder, a *actorHarness, periodOffset abi.ChainEpoch) (*mock.Runtime, *miner.State, abi.ChainEpoch, *miner.SectorOnChainInfo) {
-	rt := b.Build(t)
-	a.constructAndVerify(rt, periodOffset)
-	precommitEpoch := abi.ChainEpoch(1)
-	rt.SetEpoch(precommitEpoch)
-	st := getState(rt)
-	deadline := st.DeadlineInfo(rt.Epoch())
-	expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
-	sectorInfo := a.commitAndProveSectors(rt, 1, expiration, big.Zero())
-
-	sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
-	require.NoError(t, err)
-	require.True(t, found)
-	return rt, st, expiration, sector
 }
 
 type actorHarness struct {
@@ -721,14 +712,19 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 }
 
 func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension uint64, params *miner.ExtendSectorExpirationParams) {
+	rt.Reset()
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	st := getState(rt)
 
 	storageWeightDescPrev := miner.AsStorageWeightDesc(st.Info.SectorSize, sector)
-	storageWeightDescNew := *storageWeightDescPrev
-	storageWeightDescNew.Duration += abi.ChainEpoch(extension)
+	storageWeightDescNew := power.SectorStorageWeightDesc{
+		SectorSize:         storageWeightDescPrev.SectorSize,
+		Duration:           storageWeightDescPrev.Duration + abi.ChainEpoch(extension),
+		DealWeight:         storageWeightDescPrev.DealWeight,
+		VerifiedDealWeight: storageWeightDescPrev.VerifiedDealWeight,
+	}
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnSectorModifyWeightDesc,

@@ -361,7 +361,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			}
 		}
 
-		validateExpiration(st, params.Expiration, rt)
+		validateExpiration(rt, &st, params.Expiration)
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -603,7 +603,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	validateExpiration(st, params.NewExpiration, rt)
+	validateExpiration(rt, &st, params.NewExpiration)
 
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
@@ -1220,7 +1220,7 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 }
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
-func validateExpiration(st State, expiration abi.ChainEpoch, rt Runtime) {
+func validateExpiration(rt Runtime, st *State, expiration abi.ChainEpoch) {
 	periodOffset := st.ProvingPeriodStart % WPoStProvingPeriod
 	expiryOffset := (expiration + 1) % WPoStProvingPeriod
 	if expiryOffset != periodOffset {
