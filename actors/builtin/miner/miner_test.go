@@ -305,7 +305,7 @@ func TestWindowPost(t *testing.T) {
 		deadline = st.DeadlineInfo(rt.Epoch())
 		rt.SetEpoch(deadline.PeriodEnd())
 		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, nextCron, true)
+		actor.onProvingPeriodCron(rt, nextCron, true, rt.Epoch()-miner.ElectionLookback)
 		st = getState(rt)
 		rt.SetEpoch(deadline.NextPeriodStart())
 
@@ -372,16 +372,49 @@ func TestProvingPeriodCron(t *testing.T) {
 		// First cron invocation just before the first proving period starts.
 		rt.SetEpoch(periodOffset - 1)
 		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, secondCronEpoch, false)
+		actor.onProvingPeriodCron(rt, secondCronEpoch, false, 0)
 		// The proving period start isn't changed, because the period hadn't started yet.
 		st = getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
 		rt.SetEpoch(secondCronEpoch)
-		actor.onProvingPeriodCron(rt, periodOffset+2*miner.WPoStProvingPeriod-1, false)
+		actor.onProvingPeriodCron(rt, periodOffset+2*miner.WPoStProvingPeriod-1, false, 0)
 		// Proving period moves forward
 		st = getState(rt)
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
+	})
+
+	t.Run("first period gets randomness from previous epoch", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt, periodOffset)
+		st := getState(rt)
+
+		sectorInfo := actor.commitAndProveSectors(rt, 1, periodOffset+100*miner.WPoStProvingPeriod-1, big.Zero())
+
+		// Flag new sectors to trigger request for randomness
+		rt.Transaction(st, func() interface{} {
+			st.NewSectors.Set(uint64(sectorInfo[0].SectorNumber))
+			return nil
+		})
+
+		// First cron invocation just before the first proving period starts
+		// requires randomness come from current epoch minus lookback
+		rt.SetEpoch(periodOffset - 1)
+		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
+		actor.onProvingPeriodCron(rt, secondCronEpoch, true, rt.Epoch()-miner.ElectionLookback)
+
+		// cron invocation after the proving period starts, requires randomness come from end of proving period
+		rt.SetEpoch(periodOffset)
+		actor.advanceProvingPeriodWithoutFaults(rt)
+
+		// triggers a new request for randomness
+		rt.Transaction(st, func() interface{} {
+			st.NewSectors.Set(uint64(sectorInfo[0].SectorNumber))
+			return nil
+		})
+
+		thirdCronEpoch := secondCronEpoch + miner.WPoStProvingPeriod
+		actor.onProvingPeriodCron(rt, thirdCronEpoch, true, getState(rt).DeadlineInfo(rt.Epoch()).PeriodEnd())
 	})
 }
 
@@ -711,6 +744,44 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	rt.Verify()
 }
 
+func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
+	st := getState(rt)
+	store := rt.AdtStore()
+	partitionSize := st.Info.WindowPoStPartitionSectors
+
+	// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
+	// Submit a window post for all partitions due at each deadline when necessary.
+	deadline := st.DeadlineInfo(rt.Epoch())
+	for !deadline.PeriodElapsed() {
+		st = getState(rt)
+		deadlines, err := st.LoadDeadlines(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load deadlines")
+
+		firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, partitionSize, deadline.Index)
+		if sectorCount != 0 {
+			partitionCount, _, err := miner.DeadlineCount(deadlines, partitionSize, deadline.Index)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partition count")
+
+			partitions := make([]uint64, partitionCount)
+			for i := uint64(0); i < partitionCount; i++ {
+				partitions[i] = firstPartIdx + i
+			}
+
+			partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, partitions)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not compute partitions")
+			provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get proven sectors")
+			infos, _, err := st.LoadSectorInfosForProof(store, provenSectors)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load sector info for proof")
+
+			h.submitWindowPost(rt, deadline, partitions, infos)
+		}
+
+		rt.SetEpoch(deadline.Close + 1)
+		deadline = st.DeadlineInfo(rt.Epoch())
+	}
+}
+
 func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension uint64, params *miner.ExtendSectorExpirationParams) {
 	rt.Reset()
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
@@ -740,10 +811,10 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 
 }
 
-func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool) {
+func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool, randEpoch abi.ChainEpoch) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	if newSectors {
-		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, rt.Epoch(), nil, bytes.Repeat([]byte{0}, 32))
+		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randEpoch, nil, bytes.Repeat([]byte{0}, 32))
 	}
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
