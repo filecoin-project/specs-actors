@@ -221,6 +221,12 @@ func (rt *Runtime) GetRandomness(tag crypto.DomainSeparationTag, epoch abi.Chain
 	if len(rt.expectRandomness) == 0 {
 		rt.failTestNow("unexpected call to get randomness for tag %v, epoch %v", tag, epoch)
 	}
+
+	if epoch > rt.epoch {
+		rt.failTestNow("attempt to get randomness from future\n"+
+			"         requested epoch: %d greater than current epoch %d\n", epoch, rt.epoch)
+	}
+
 	exp := rt.expectRandomness[0]
 	if tag != exp.tag || epoch != exp.epoch || !bytes.Equal(entropy, exp.entropy) {
 		rt.failTest("unexpected get randomness\n"+
