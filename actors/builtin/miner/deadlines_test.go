@@ -11,8 +11,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 )
 
-const partSize = uint64(1000)
-
 func TestProvingPeriodDeadlines(t *testing.T) {
 	PP := miner.WPoStProvingPeriod
 	CW := miner.WPoStChallengeWindow
@@ -154,8 +152,10 @@ func makeDeadline(currEpoch, periodStart abi.ChainEpoch, index uint64, deadlineO
 }
 
 func TestPartitionsForDeadline(t *testing.T) {
+	const partSize = uint64(1000)
+
 	t.Run("empty deadlines", func(t *testing.T) {
-		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{})
+		dl := buildDeadlines(t, []uint64{})
 		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
@@ -168,7 +168,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 
 	t.Run("single sector at first deadline", func(t *testing.T) {
-		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{1})
+		dl := buildDeadlines(t, []uint64{1})
 		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
@@ -186,7 +186,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 
 	t.Run("single sector at non-first deadline", func(t *testing.T) {
-		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{0, 1})
+		dl := buildDeadlines(t, []uint64{0, 1})
 		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
@@ -209,7 +209,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 
 	t.Run("deadlines with one full partitions", func(t *testing.T) {
-		dl := deadlinesWithFullPartitions(t, 1)
+		dl := NewDeadlinesBuilder(t).addToAll(partSize).Deadlines
 		firstIndex, sectorCount, err := miner.PartitionsForDeadline(dl, partSize, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), firstIndex)
@@ -227,7 +227,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 
 	t.Run("partial partitions", func(t *testing.T) {
-		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{
+		dl := buildDeadlines(t, []uint64{
 			0: partSize - 1,
 			1: partSize,
 			2: partSize - 2,
@@ -257,7 +257,7 @@ func TestPartitionsForDeadline(t *testing.T) {
 	})
 
 	t.Run("multiple partitions", func(t *testing.T) {
-		dl := deadlineWithSectors(t, [miner.WPoStPeriodDeadlines]uint64{
+		dl := buildDeadlines(t, []uint64{
 			0: partSize,       // 1 partition 1 total
 			1: partSize * 2,   // 2 partitions 3 total
 			2: partSize*4 - 1, // 4 partitions 7 total
@@ -304,9 +304,11 @@ func TestPartitionsForDeadline(t *testing.T) {
 }
 
 func TestComputePartitionsSectors(t *testing.T) {
+	const partSize = uint64(1000)
+
 	t.Run("no partitions due at empty deadline", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
-		dls.Due[1] = bf(0, 1)
+		dls.Due[1] = bfSeq(0, 1)
 
 		// No partitions at deadline 0
 		_, err := miner.ComputePartitionsSectors(dls, partSize, 0, []uint64{0})
@@ -322,55 +324,55 @@ func TestComputePartitionsSectors(t *testing.T) {
 	})
 	t.Run("single sector", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
-		dls.Due[1] = bf(0, 1)
+		dls.Due[1] = bfSeq(0, 1)
 		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{0})
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
-		assertBfEqual(t, bf(0, 1), partitions[0])
+		assertBfEqual(t, bfSeq(0, 1), partitions[0])
 	})
 	t.Run("full partition", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
-		dls.Due[10] = bf(1234, partSize)
+		dls.Due[10] = bfSeq(1234, partSize)
 		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{0})
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
-		assertBfEqual(t, bf(1234, partSize), partitions[0])
+		assertBfEqual(t, bfSeq(1234, partSize), partitions[0])
 	})
 	t.Run("full plus partial partition", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
-		dls.Due[10] = bf(5555, partSize+1)
+		dls.Due[10] = bfSeq(5555, partSize+1)
 		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{0}) // First partition
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
-		assertBfEqual(t, bf(5555, partSize), partitions[0])
+		assertBfEqual(t, bfSeq(5555, partSize), partitions[0])
 
 		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{1}) // Second partition
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
-		assertBfEqual(t, bf(5555+partSize, 1), partitions[0])
+		assertBfEqual(t, bfSeq(5555+partSize, 1), partitions[0])
 
 		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 10, []uint64{0, 1}) // Both partitions
 		require.NoError(t, err)
 		assert.Equal(t, 2, len(partitions))
-		assertBfEqual(t, bf(5555, partSize), partitions[0])
-		assertBfEqual(t, bf(5555+partSize, 1), partitions[1])
+		assertBfEqual(t, bfSeq(5555, partSize), partitions[0])
+		assertBfEqual(t, bfSeq(5555+partSize, 1), partitions[1])
 	})
 	t.Run("multiple partitions", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
-		dls.Due[1] = bf(0, 3*partSize+1)
+		dls.Due[1] = bfSeq(0, 3*partSize+1)
 		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{0, 1, 2, 3})
 		require.NoError(t, err)
 		assert.Equal(t, 4, len(partitions))
-		assertBfEqual(t, bf(0, partSize), partitions[0])
-		assertBfEqual(t, bf(1*partSize, partSize), partitions[1])
-		assertBfEqual(t, bf(2*partSize, partSize), partitions[2])
-		assertBfEqual(t, bf(3*partSize, 1), partitions[3])
+		assertBfEqual(t, bfSeq(0, partSize), partitions[0])
+		assertBfEqual(t, bfSeq(1*partSize, partSize), partitions[1])
+		assertBfEqual(t, bfSeq(2*partSize, partSize), partitions[2])
+		assertBfEqual(t, bfSeq(3*partSize, 1), partitions[3])
 	})
 	t.Run("partitions numbered across deadlines", func(t *testing.T) {
 		dls := miner.ConstructDeadlines()
-		dls.Due[1] = bf(0, 3*partSize+1)
-		dls.Due[3] = bf(3*partSize+1, 1)
-		dls.Due[5] = bf(3*partSize+1+1, 2*partSize)
+		dls.Due[1] = bfSeq(0, 3*partSize+1)
+		dls.Due[3] = bfSeq(3*partSize+1, 1)
+		dls.Due[5] = bfSeq(3*partSize+1+1, 2*partSize)
 
 		partitions, err := miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{0, 1, 2, 3})
 		require.NoError(t, err)
@@ -379,13 +381,13 @@ func TestComputePartitionsSectors(t *testing.T) {
 		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 3, []uint64{4})
 		require.NoError(t, err)
 		assert.Equal(t, 1, len(partitions))
-		assertBfEqual(t, bf(3*partSize+1, 1), partitions[0])
+		assertBfEqual(t, bfSeq(3*partSize+1, 1), partitions[0])
 
 		partitions, err = miner.ComputePartitionsSectors(dls, partSize, 5, []uint64{5, 6})
 		require.NoError(t, err)
 		assert.Equal(t, 2, len(partitions))
-		assertBfEqual(t, bf(3*partSize+1+1, partSize), partitions[0])
-		assertBfEqual(t, bf(3*partSize+1+1+partSize, partSize), partitions[1])
+		assertBfEqual(t, bfSeq(3*partSize+1+1, partSize), partitions[0])
+		assertBfEqual(t, bfSeq(3*partSize+1+1+partSize, partSize), partitions[1])
 
 		// Mismatched deadline/partition pairs
 		_, err = miner.ComputePartitionsSectors(dls, partSize, 1, []uint64{4})
@@ -407,6 +409,109 @@ func TestComputePartitionsSectors(t *testing.T) {
 	})
 }
 
+func TestAssignNewSectors(t *testing.T) {
+	partSize := uint64(4)
+	seed := abi.Randomness([]byte{})
+
+	assign := func(deadlines *miner.Deadlines, sectors []uint64) *miner.Deadlines {
+		require.NoError(t, miner.AssignNewSectors(deadlines, partSize, sectors, seed))
+		return deadlines
+	}
+
+	t.Run("initial assignment", func(t *testing.T) {
+		{
+			deadlines := assign(miner.ConstructDeadlines(), seq(0, 0))
+			NewDeadlinesBuilder(t).verify(deadlines)
+		}
+		{
+			deadlines := assign(miner.ConstructDeadlines(), seq(0, 1))
+			NewDeadlinesBuilder(t, 0, 1).verify(deadlines)
+		}
+		{
+			deadlines := assign(miner.ConstructDeadlines(), seq(0, 15))
+			NewDeadlinesBuilder(t, 0, 4, 4, 4, 3).verify(deadlines)
+		}
+		{
+			deadlines := assign(miner.ConstructDeadlines(), seq(0, (miner.WPoStPeriodDeadlines-1)*partSize+1))
+			NewDeadlinesBuilder(t).addToAllFrom(1, partSize).addTo(1, 1).verify(deadlines)
+		}
+	})
+	t.Run("incremental assignment", func(t *testing.T) {
+		{
+			// Add one sector at a time.
+			deadlines := NewDeadlinesBuilder(t, 0, 1).Deadlines
+			assign(deadlines, seq(1, 1))
+			NewDeadlinesBuilder(t, 0, 2).verify(deadlines)
+			assign(deadlines, seq(2, 1))
+			NewDeadlinesBuilder(t, 0, 3).verify(deadlines)
+			assign(deadlines, seq(3, 1))
+			NewDeadlinesBuilder(t, 0, 4).verify(deadlines)
+			assign(deadlines, seq(4, 1))
+			NewDeadlinesBuilder(t, 0, 4, 1).verify(deadlines)
+		}
+		{
+			// Add one partition at a time.
+			deadlines := miner.ConstructDeadlines()
+			assign(deadlines, seq(0, 4))
+			NewDeadlinesBuilder(t, 0, 4).verify(deadlines)
+			assign(deadlines, seq(4, 4))
+			NewDeadlinesBuilder(t, 0, 4, 4).verify(deadlines)
+			assign(deadlines, seq(2*4, 4))
+			NewDeadlinesBuilder(t, 0, 4, 4, 4).verify(deadlines)
+			assign(deadlines, seq(3*4, 4))
+			NewDeadlinesBuilder(t, 0, 4, 4, 4, 4).verify(deadlines)
+		}
+		{
+			// Add lots
+			deadlines := miner.ConstructDeadlines()
+			assign(deadlines, seq(0, 2*partSize+1))
+			NewDeadlinesBuilder(t, 0, partSize, partSize, 1).verify(deadlines)
+			assign(deadlines, seq(2*partSize+1, partSize))
+			NewDeadlinesBuilder(t, 0, partSize, partSize, partSize, 1).verify(deadlines)
+		}
+	})
+	t.Run("fill partial partitions first", func(t *testing.T) {
+		{
+			b := NewDeadlinesBuilder(t, 0, 4, 3, 1)
+			deadlines := assign(b.Deadlines, seq(b.NextSectorIdx, 4))
+
+			NewDeadlinesBuilder(t, 0, 4, 3, 1).
+				addTo(2, 1). // Fill the first partial partition
+				addTo(3, 3). // Fill the next partial partition
+				verify(deadlines)
+		}
+		{
+			b := NewDeadlinesBuilder(t, 0, 9, 8, 7, 4, 1)
+			deadlines := assign(b.Deadlines, seq(b.NextSectorIdx, 7))
+
+			NewDeadlinesBuilder(t, 0, 9, 8, 7, 4, 1).
+				addTo(1, 3). // Fill the first partial partition, in deadline 1
+				addTo(3, 1). // Fill the next partial partition
+				addTo(5, 3). // Fill the final partial partition
+				verify(deadlines)
+		}
+	})
+	t.Run("fill less full deadlines first", func(t *testing.T) {
+		{
+			b := NewDeadlinesBuilder(t, 0, 12, 4, 4, 8).
+				addToAllFrom(5, 100) // Fill  trailing deadlines so we can just use the first few.
+			deadlines := b.Deadlines
+			assign(deadlines, seq(b.NextSectorIdx, 20))
+
+			NewDeadlinesBuilder(t, 0, 12, 4, 4, 8).
+				addToAllFrom(5, 100).
+				addTo(2, 4).
+				addTo(3, 4).
+				addTo(2, 4).
+				addTo(3, 4).
+				addTo(4, 4).
+				verify(deadlines)
+		}
+	})
+	// TODO: a final test including partial and full partitions that exercises both filling the partials first,
+	// then prioritising the less full deadlines.
+}
+
 //
 // Deadlines Utils
 //
@@ -419,21 +524,29 @@ func assertBfEqual(t *testing.T, expected, actual *bitfield.BitField) {
 	assert.Equal(t, ex, ac)
 }
 
-// Creates a bitfield with a contiguous run of `count` values from `first.
-func bf(first uint64, count uint64) *abi.BitField {
+func assertDeadlinesEqual(t *testing.T, expected, actual *miner.Deadlines) {
+	for i := range expected.Due {
+		ex, err := expected.Due[i].All(1 << 20)
+		require.NoError(t, err)
+		ac, err := actual.Due[i].All(1 << 20)
+		require.NoError(t, err)
+		assert.Equal(t, ex, ac, "mismatched deadlines at index %d", i)
+	}
+}
+
+// Creates a bitfield with a sequence of `count` values from `first.
+func bfSeq(first uint64, count uint64) *abi.BitField {
+	values := seq(first, count)
+	return bitfield.NewFromSet(values)
+}
+
+// Creates a slice of integers with a sequence of `count` values from `first.
+func seq(first uint64, count uint64) []uint64 {
 	values := make([]uint64, count)
 	for i := range values {
 		values[i] = first + uint64(i)
 	}
-	return bitfield.NewFromSet(values)
-}
-
-func deadlinesWithFullPartitions(t *testing.T, n uint64) *miner.Deadlines {
-	gen := [miner.WPoStPeriodDeadlines]uint64{}
-	for i := range gen {
-		gen[i] = partSize * n
-	}
-	return deadlineWithSectors(t, gen)
+	return values
 }
 
 // accepts an array were the value at each index indicates how many sectors are in the partition of the returned Deadlines
@@ -443,17 +556,57 @@ func deadlinesWithFullPartitions(t *testing.T, n uint64) *miner.Deadlines {
 // 42 sectors at deadlineIdx 1
 // 89 sectors at deadlineIdx 2
 // 0  sectors at deadlineIdx 3-47
-func deadlineWithSectors(t *testing.T, gen [miner.WPoStPeriodDeadlines]uint64) *miner.Deadlines {
-	// ensure there are no duplicate sectors across partitions
-	var sectorIdx uint64
-	dls := miner.ConstructDeadlines()
-	for partition, numSectors := range gen {
-		var sectors []uint64
-		for i := uint64(0); i < numSectors; i++ {
-			sectors = append(sectors, sectorIdx)
-			sectorIdx++
-		}
-		require.NoError(t, dls.AddToDeadline(uint64(partition), sectors...))
+func buildDeadlines(t *testing.T, gen []uint64) *miner.Deadlines {
+	return NewDeadlinesBuilder(t).addToFrom(0, gen...).Deadlines
+}
+
+// A builder for initialising a Deadlines with sectors assigned.
+type DeadlinesBuilder struct {
+	Deadlines     *miner.Deadlines
+	NextSectorIdx uint64
+	t             *testing.T
+}
+
+// Creates a new builder, with optional initial sector counts.
+func NewDeadlinesBuilder(t *testing.T, counts ...uint64) *DeadlinesBuilder {
+	b := &DeadlinesBuilder{miner.ConstructDeadlines(), 0, t}
+	b.addToFrom(0, counts...)
+	return b
+}
+
+// Assigns count new sectors to deadline idx.
+func (b *DeadlinesBuilder) addTo(idx uint64, count uint64) *DeadlinesBuilder {
+	nums := seq(b.NextSectorIdx, count)
+	b.NextSectorIdx += count
+	require.NoError(b.t, b.Deadlines.AddToDeadline(idx, nums...))
+	return b
+}
+
+// Assigns counts[i] new sectors to deadlines sequentially from first.
+func (b *DeadlinesBuilder) addToFrom(first uint64, counts ...uint64) *DeadlinesBuilder {
+	for i, c := range counts {
+		b.addTo(first+uint64(i), c)
 	}
-	return dls
+	return b
+}
+
+// Assigns count new sectors to every deadline.
+func (b *DeadlinesBuilder) addToAll(count uint64) *DeadlinesBuilder {
+	for i := range b.Deadlines.Due {
+		b.addTo(uint64(i), count)
+	}
+	return b
+}
+
+// Assigns count new sectors to every deadline from first until the last.
+func (b *DeadlinesBuilder) addToAllFrom(first uint64, count uint64) *DeadlinesBuilder {
+	for i := first; i < miner.WPoStPeriodDeadlines; i++ {
+		b.addTo(i, count)
+	}
+	return b
+}
+
+// Verifies that deadlines match this builder as expected values.
+func (b *DeadlinesBuilder) verify(actual *miner.Deadlines) {
+	assertDeadlinesEqual(b.t, b.Deadlines, actual)
 }
