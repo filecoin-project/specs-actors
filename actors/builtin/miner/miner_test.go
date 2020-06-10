@@ -38,8 +38,8 @@ func init() {
 		{2},
 	}
 
-	miner.SupportedProofTypes = map[abi.RegisteredProof]struct{}{
-		abi.RegisteredProof_StackedDRG2KiBSeal: {},
+	miner.SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
+		abi.RegisteredSealProof_StackedDrg2KiBV1: {},
 	}
 }
 
@@ -65,7 +65,7 @@ func TestConstruction(t *testing.T) {
 		params := miner.ConstructorParams{
 			OwnerAddr:     owner,
 			WorkerAddr:    worker,
-			SealProofType: abi.RegisteredProof_StackedDRG2KiBSeal,
+			SealProofType: abi.RegisteredSealProof_StackedDrg2KiBV1,
 			PeerId:        testPid,
 			Multiaddrs:    testMultiaddrs,
 		}
@@ -88,7 +88,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, params.WorkerAddr, st.Info.Worker)
 		assert.Equal(t, params.PeerId, st.Info.PeerId)
 		assert.Equal(t, params.Multiaddrs, st.Info.Multiaddrs)
-		assert.Equal(t, abi.RegisteredProof_StackedDRG2KiBSeal, st.Info.SealProofType)
+		assert.Equal(t, abi.RegisteredSealProof_StackedDrg2KiBV1, st.Info.SealProofType)
 		assert.Equal(t, abi.SectorSize(2048), st.Info.SectorSize)
 		assert.Equal(t, uint64(2), st.Info.WindowPoStPartitionSectors)
 		assert.Equal(t, provingPeriodStart, st.ProvingPeriodStart)
@@ -170,7 +170,7 @@ func TestCommitments(t *testing.T) {
 		// Bad seal proof type
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			pc := makePreCommit(114, challengeEpoch, deadline.PeriodEnd())
-			pc.RegisteredProof = abi.RegisteredProof_StackedDRG8MiBSeal
+			pc.RegisteredSealProof = abi.RegisteredSealProof_StackedDrg8MiBV1
 			actor.preCommitSector(rt, pc, big.Zero())
 		})
 
@@ -216,7 +216,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Too late.
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[precommit.RegisteredProof] + 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[precommit.RegisteredSealProof] + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{})
 		})
@@ -523,7 +523,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime, provingPeriodStart a
 	params := miner.ConstructorParams{
 		OwnerAddr:     h.owner,
 		WorkerAddr:    h.worker,
-		SealProofType: abi.RegisteredProof_StackedDRG2KiBSeal,
+		SealProofType: abi.RegisteredSealProof_StackedDrg2KiBV1,
 		PeerId:        testPid,
 	}
 
@@ -562,7 +562,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		err := eventPayload.MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		cronParams := power.EnrollCronEventParams{
-			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.RegisteredProof] + 1,
+			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.RegisteredSealProof] + 1,
 			Payload:    buf.Bytes(),
 		}
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
@@ -593,7 +593,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	{
 		cdcParams := market.ComputeDataCommitmentParams{
 			DealIDs:    precommit.DealIDs,
-			SectorType: precommit.RegisteredProof,
+			SectorType: precommit.RegisteredSealProof,
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &commd, exitcode.Ok)
 	}
@@ -613,7 +613,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 				Number: precommit.SectorNumber,
 			},
 			SealedCID:             precommit.SealedCID,
-			RegisteredProof:       precommit.RegisteredProof,
+			RegisteredSealProof:       precommit.RegisteredSealProof,
 			Proof:                 params.Proof,
 			DealIDs:               precommit.DealIDs,
 			Randomness:            sealRand,
@@ -639,7 +639,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsOnSectorProveCommit, &vdParams, big.Zero(), &vdRet, conf.verifyDealsExit)
 	}
 	{
-		sectorSize, err := precommit.RegisteredProof.SectorSize()
+		sectorSize, err := precommit.RegisteredSealProof.SectorSize()
 		require.NoError(h.t, err)
 		pcParams := power.OnSectorProveCommitParams{Weight: power.SectorStorageWeightDesc{
 			SectorSize:         sectorSize,
@@ -697,9 +697,12 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
+	var registeredPoStProof, err = abi.RegisteredSealProof_StackedDrg2KiBV1.RegisteredWindowPoStProof()
+	require.NoError(h.t, err)
+
 	proofs := make([]abi.PoStProof, 1) // Number of proofs doesn't depend on partition count
 	for i := range proofs {
-		proofs[i].RegisteredProof = abi.RegisteredProof_StackedDRG2KiBSeal
+		proofs[i].RegisteredPoStProof = registeredPoStProof
 		proofs[i].ProofBytes = []byte(fmt.Sprintf("proof%d", i))
 	}
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
@@ -718,7 +721,7 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			proofInfos[i] = abi.SectorInfo{
-				RegisteredProof: ci.Info.RegisteredProof,
+				RegisteredSealProof: ci.Info.RegisteredSealProof,
 				SectorNumber:    ci.Info.SectorNumber,
 				SealedCID:       ci.Info.SealedCID,
 			}
@@ -845,7 +848,7 @@ func makeProvingPeriodCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power
 
 func makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		RegisteredProof: abi.RegisteredProof_StackedDRG2KiBSeal,
+		RegisteredSealProof: abi.RegisteredSealProof_StackedDrg2KiBV1,
 		SectorNumber:    sectorNo,
 		SealedCID:       tutil.MakeCID("commr"),
 		SealRandEpoch:   challenge,

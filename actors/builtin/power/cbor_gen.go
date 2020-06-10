@@ -515,7 +515,7 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.SealProofType = abi.RegisteredProof(extraI)
+		t.SealProofType = abi.RegisteredSealProof(extraI)
 	}
 	// t.Peer ([]uint8) (slice)
 
@@ -1247,7 +1247,7 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.SealProofType = abi.RegisteredProof(extraI)
+		t.SealProofType = abi.RegisteredSealProof(extraI)
 	}
 	// t.PeerId ([]uint8) (slice)
 

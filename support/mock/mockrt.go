@@ -446,7 +446,7 @@ func (rt *Runtime) HashBlake2b(data []byte) [32]byte {
 	return rt.hashfunc(data)
 }
 
-func (rt *Runtime) ComputeUnsealedSectorCID(reg abi.RegisteredProof, pieces []abi.PieceInfo) (cid.Cid, error) {
+func (rt *Runtime) ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error) {
 	panic("implement me")
 }
 
