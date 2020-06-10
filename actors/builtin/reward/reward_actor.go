@@ -38,7 +38,6 @@ type AwardBlockRewardParams struct {
 	Miner       address.Address
 	Penalty     abi.TokenAmount // penalty for including bad messages in a block
 	GasReward   abi.TokenAmount // gas reward from all gas fees in a block
-	TicketCount int64
 }
 
 // Awards a reward to a block producer.
@@ -55,8 +54,6 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
 		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
-
-	AssertMsg(params.TicketCount > 0, "cannot give block reward for zero tickets")
 
 	minerAddr, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
@@ -99,7 +96,7 @@ func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenA
 }
 
 // Updates the simple/baseline supply state and last epoch reward with computation for for a single epoch.
-func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime NetworkTime, ticketCount int64) abi.TokenAmount {
+func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networkTime NetworkTime) abi.TokenAmount {
 	// TODO: PARAM_FINISH
 	newSimpleSupply := mintingFunction(SimpleTotal, big.Lsh(big.NewInt(int64(clockTime)), MintingInputFixedPoint))
 	newBaselineSupply := mintingFunction(BaselineTotal, networkTime)
@@ -155,7 +152,7 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 		st.EffectiveNetworkTime = a.getEffectiveNetworkTime(&st, st.CumsumBaseline, st.CumsumRealized)
 
-		a.computePerEpochReward(&st, st.RewardEpochsPaid, st.EffectiveNetworkTime, 1)
+		a.computePerEpochReward(&st, st.RewardEpochsPaid, st.EffectiveNetworkTime)
 
 		return nil
 	})
