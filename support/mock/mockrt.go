@@ -800,6 +800,7 @@ func (rt *Runtime) failTestNow(msg string, args ...interface{}) {
 }
 
 func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
+	// https://github.com/filecoin-project/specs-actors/issues/467
 	panic("todo crypto econ")
 }
 
