@@ -883,7 +883,7 @@ func (h *stateHarness) getNewSectorCount() uint64 {
 // Sector Store Assertion Operations
 //
 
-func (h *stateHarness) getSectorCount() uint64 {
+func (h *stateHarness) getSectorCount() uint64 { //nolint:unused
 	out, err := h.s.GetSectorCount(h.store)
 	require.NoError(h.t, err)
 	return out

@@ -258,7 +258,7 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 	return nil
 }
 
-func addrInArray(a addr.Address, list []addr.Address) bool {
+func addrInArray(a addr.Address, list []addr.Address) bool { //nolint:deadcode,unused
 	for _, b := range list {
 		if b == a {
 			return true
