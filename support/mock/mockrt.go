@@ -50,16 +50,18 @@ type Runtime struct {
 	hashfunc func(data []byte) [32]byte
 
 	// Expectations
-	t                        testing.TB
-	expectValidateCallerAny  bool
-	expectValidateCallerAddr []addr.Address
-	expectValidateCallerType []cid.Cid
-	expectRandomness         []*expectRandomness
-	expectSends              []*expectedMessage
-	expectCreateActor        *expectCreateActor
-	expectVerifySig          *expectVerifySig
-	expectVerifySeal         *expectVerifySeal
-	expectVerifyPoSt         *expectVerifyPoSt
+	t                          testing.TB
+	expectValidateCallerAny    bool
+	expectValidateCallerAddr   []addr.Address
+	expectValidateCallerType   []cid.Cid
+	expectRandomness           []*expectRandomness
+	expectSends                []*expectedMessage
+	expectCreateActor          *expectCreateActor
+	expectVerifySig            *expectVerifySig
+	expectVerifySeal           *expectVerifySeal
+	expectVerifyPoSt           *expectVerifyPoSt
+	expectVerifyConsensusFault *expectVerifyConsensusFault
+	expectDeleteActor          *address.Address
 }
 
 type expectRandomness struct {
@@ -114,6 +116,16 @@ type expectCreateActor struct {
 	// Expected parameters
 	codeId  cid.Cid
 	address addr.Address
+}
+
+type expectVerifyConsensusFault struct {
+	requireCorrectInput bool
+	BlockHeader1        []byte
+	BlockHeader2        []byte
+	BlockHeaderExtra    []byte
+
+	Fault *runtime.ConsensusFault
+	Err   error
 }
 
 var _ runtime.Runtime = &Runtime{}
@@ -307,12 +319,18 @@ func (rt *Runtime) CreateActor(codeId cid.Cid, address addr.Address) {
 	rt.failTestNow("unexpected call to create actor")
 }
 
-func (rt *Runtime) DeleteActor(_ addr.Address) {
+func (rt *Runtime) DeleteActor(addr addr.Address) {
 	rt.requireInCall()
 	if rt.inTransaction {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
-	panic("implement me")
+	if rt.expectDeleteActor == nil {
+		rt.failTestNow("Unexpected call to delete actor")
+	}
+
+	if *rt.expectDeleteActor != addr {
+		rt.failTestNow("Attempt to delete wrong actor. Expected %s, got %s.", rt.expectDeleteActor.String(), addr.String())
+	}
 }
 
 func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
@@ -504,7 +522,24 @@ func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
 }
 
 func (rt *Runtime) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
-	panic("implement me")
+	if rt.expectVerifyConsensusFault == nil {
+		rt.failTestNow("Unexpected syscall VerifyConsensusFault")
+		return nil, nil
+	}
+
+	if rt.expectVerifyConsensusFault.requireCorrectInput {
+		if !bytes.Equal(h1, rt.expectVerifyConsensusFault.BlockHeader1) {
+			rt.failTest("block header 1 does not equal expected block header 1 (%v != %v)", h1, rt.expectVerifyConsensusFault.BlockHeader1)
+		}
+		if !bytes.Equal(h2, rt.expectVerifyConsensusFault.BlockHeader2) {
+			rt.failTest("block header 2 does not equal expected block header 2 (%v != %v)", h2, rt.expectVerifyConsensusFault.BlockHeader2)
+		}
+		if !bytes.Equal(extra, rt.expectVerifyConsensusFault.BlockHeaderExtra) {
+			rt.failTest("block header extra does not equal expected block header extra (%v != %v)", extra, rt.expectVerifyConsensusFault.BlockHeaderExtra)
+		}
+	}
+
+	return rt.expectVerifyConsensusFault.Fault, rt.expectVerifyConsensusFault.Err
 }
 
 ///// Trace span implementation /////
@@ -633,6 +668,10 @@ func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
 	}
 }
 
+func (rt *Runtime) ExpectDeleteActor(beneficiary address.Address) {
+	rt.expectDeleteActor = &beneficiary
+}
+
 func (rt *Runtime) SetHasher(f func(data []byte) [32]byte) {
 	rt.hashfunc = f
 }
@@ -657,6 +696,17 @@ func (rt *Runtime) ExpectVerifyPoSt(post abi.WindowPoStVerifyInfo, result error)
 	rt.expectVerifyPoSt = &expectVerifyPoSt{
 		post:   post,
 		result: result,
+	}
+}
+
+func (rt *Runtime) ExpectVerifyConsensusFault(h1, h2, extra []byte, result *runtime.ConsensusFault, resultErr error) {
+	rt.expectVerifyConsensusFault = &expectVerifyConsensusFault{
+		requireCorrectInput: true,
+		BlockHeader1:        h1,
+		BlockHeader2:        h2,
+		BlockHeaderExtra:    extra,
+		Fault:               result,
+		Err:                 resultErr,
 	}
 }
 
