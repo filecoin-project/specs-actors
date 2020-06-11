@@ -101,7 +101,7 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		clientCollateral := deal.ClientCollateral
 		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
 		if err := st.unlockBalance(lt, deal.Client, big.Add(clientCollateral, paymentRemaining)); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client balance", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client balance: %s", err)
 		}
 
 		// slash provider collateral
@@ -158,7 +158,7 @@ func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, d
 	Assert(state.SectorStartEpoch == epochUndefined)
 
 	if err := st.unlockBalance(lt, deal.Client, deal.ClientBalanceRequirement()); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client balance", err)
+		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client balance: %s", err)
 	}
 
 	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
