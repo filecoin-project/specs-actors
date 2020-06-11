@@ -249,6 +249,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
 		// TODO WPOST (follow-up): process Skipped as faults
+		// https://github.com/filecoin-project/specs-actors/issues/410
 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, currDeadline.Index, params.Partitions)
@@ -475,6 +476,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// Check (and activate) storage deals associated to sector. Abort if checks failed.
 		// return DealWeight for the deal set in the sector
 		// TODO: we should batch these calls...
+		// https://github.com/filecoin-project/specs-actors/issues/474
 		var dealWeights market.VerifyDealsOnSectorProveCommitReturn
 		ret, code := rt.Send(
 			builtin.StorageMarketActorAddr,
@@ -495,6 +497,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// initially, can we just do this while we're there?
 		// We can probably return the right information from this call to the caller, so it can update there
 		// TODO: we should batch these calls...
+		// https://github.com/filecoin-project/specs-actors/issues/475
 		var initialPledge abi.TokenAmount
 		ret, code = rt.Send(
 			builtin.StoragePowerActorAddr,

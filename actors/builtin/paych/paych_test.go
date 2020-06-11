@@ -523,8 +523,6 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 }
 
 func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
-	// TODO: constructing the mock runtime outside of the t.Run calls below is invalid, results in use of
-	// the wrong testing.T.
 	t.Run("Succeeds with correct secret", func(t *testing.T) {
 		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
 		var st State

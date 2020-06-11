@@ -24,6 +24,7 @@ import (
 type State struct {
 	// Information not related to sectors.
 	// TODO: this should be a cid of the miner Info struct so it's not re-written when other fields change.
+	// https://github.com/filecoin-project/specs-actors/issues/422
 	Info MinerInfo
 
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
