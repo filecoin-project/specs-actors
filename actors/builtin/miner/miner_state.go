@@ -119,7 +119,7 @@ type WorkerKeyChange struct {
 }
 
 type SectorPreCommitInfo struct {
-	RegisteredSealProof abi.RegisteredSealProof
+	SealProof abi.RegisteredSealProof
 	SectorNumber    abi.SectorNumber
 	SealedCID       cid.Cid // CommR
 	SealRandEpoch   abi.ChainEpoch
@@ -1015,7 +1015,7 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 
 func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 	return abi.SectorInfo{
-		RegisteredSealProof: s.Info.RegisteredSealProof,
+		SealProof:       s.Info.SealProof,
 		SectorNumber:    s.Info.SectorNumber,
 		SealedCID:       s.Info.SealedCID,
 	}

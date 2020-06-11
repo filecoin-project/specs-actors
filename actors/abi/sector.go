@@ -109,16 +109,16 @@ func (p RegisteredPoStProof) RegisteredSealProof() (RegisteredSealProof, error) 
 
 func (p RegisteredSealProof) SectorSize() (SectorSize, error) {
 	switch p {
-	case RegisteredSealProof_StackedDrg64GiBV1:
-		return 2 * (32 << 30), nil
-	case RegisteredSealProof_StackedDrg32GiBV1:
-		return 32 << 30, nil
 	case RegisteredSealProof_StackedDrg2KiBV1:
 		return 2 << 10, nil
 	case RegisteredSealProof_StackedDrg8MiBV1:
 		return 8 << 20, nil
 	case RegisteredSealProof_StackedDrg512MiBV1:
 		return 512 << 20, nil
+	case RegisteredSealProof_StackedDrg32GiBV1:
+		return 32 << 30, nil
+	case RegisteredSealProof_StackedDrg64GiBV1:
+		return 2 * (32 << 30), nil
 	default:
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
@@ -184,18 +184,6 @@ func (p RegisteredSealProof) RegisteredWinningPoStProof() (RegisteredPoStProof, 
 	}
 }
 
-// RegisteredWinningPoStProof produces the PoSt-specific RegisteredProof corresponding
-// to the receiving RegisteredProof.
-func (p RegisteredPoStProof) RegisteredWinningPoStProof() (RegisteredPoStProof, error) {
-	// Resolve to seal proof and then compute Winning PoSt from that.
-	sp, err := p.RegisteredSealProof()
-	if err != nil {
-		return 0, err
-	}
-	return sp.RegisteredWinningPoStProof()
-}
-
-
 // RegisteredWindowPoStProof produces the PoSt-specific RegisteredProof corresponding
 // to the receiving RegisteredProof.
 func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, error) {
@@ -215,17 +203,6 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 	}
 }
 
-// RegisteredWindowPoStProof produces the PoSt-specific RegisteredProof corresponding
-// to the receiving RegisteredProof.
-func (p RegisteredPoStProof) RegisteredWindowPoStProof() (RegisteredPoStProof, error) {
-	// Resolve to seal proof and then compute Window PoSt from that.
-	sp, err := p.RegisteredSealProof()
-	if err != nil {
-		return 0, err
-	}
-	return sp.RegisteredWindowPoStProof()
-}
-
 ///
 /// Sealing
 ///
@@ -235,9 +212,8 @@ type InteractiveSealRandomness Randomness
 
 // Information needed to verify a seal proof.
 type SealVerifyInfo struct {
-	RegisteredSealProof
+	SealProof             RegisteredSealProof
 	SectorID
-
 	DealIDs               []DealID
 	Randomness            SealRandomness
 	InteractiveRandomness InteractiveSealRandomness
@@ -254,13 +230,13 @@ type PoStRandomness Randomness
 
 // Information about a sector necessary for PoSt verification.
 type SectorInfo struct {
-	RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
+	SealProof       RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
 	SectorNumber    SectorNumber
 	SealedCID       cid.Cid // CommR
 }
 
 type PoStProof struct {
-	RegisteredPoStProof
+	PoStProof  RegisteredPoStProof
 	ProofBytes []byte
 }
 

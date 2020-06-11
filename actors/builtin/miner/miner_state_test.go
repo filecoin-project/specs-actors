@@ -999,7 +999,7 @@ const (
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		RegisteredSealProof: abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealProof:       abi.RegisteredSealProof_StackedDrg32GiBV1,
 		SectorNumber:    sectorNo,
 		SealedCID:       sealed,
 		SealRandEpoch:   sectorSealRandEpochValue,
