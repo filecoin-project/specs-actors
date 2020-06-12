@@ -56,7 +56,7 @@ var _ abi.Invokee = Actor{}
 type MinerConstructorParams struct {
 	OwnerAddr     addr.Address
 	WorkerAddr    addr.Address
-	SealProofType abi.RegisteredProof
+	SealProofType abi.RegisteredSealProof
 	PeerId        abi.PeerID
 	Multiaddrs    []abi.Multiaddrs
 }
@@ -92,7 +92,7 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 type CreateMinerParams struct {
 	Owner         addr.Address
 	Worker        addr.Address
-	SealProofType abi.RegisteredProof
+	SealProofType abi.RegisteredSealProof
 	Peer          abi.PeerID
 	Multiaddrs    []abi.Multiaddrs
 }

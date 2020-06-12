@@ -335,7 +335,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 
 type ComputeDataCommitmentParams struct {
 	DealIDs    []abi.DealID
-	SectorType abi.RegisteredProof
+	SectorType abi.RegisteredSealProof
 }
 
 func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {

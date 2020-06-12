@@ -509,7 +509,7 @@ func (t *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.SectorType (abi.RegisteredProof) (int64)
+	// t.SectorType (abi.RegisteredSealProof) (int64)
 	if t.SectorType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SectorType))); err != nil {
 			return err
@@ -593,7 +593,7 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.SectorType = abi.RegisteredProof(extraI)
+		t.SectorType = abi.RegisteredSealProof(extraI)
 	}
 	return nil
 }
