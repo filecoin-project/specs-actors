@@ -43,7 +43,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}}, abi.RegisteredProof_StackedDRG2KiBSeal, abi.NewTokenAmount(10))
+		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}}, abi.RegisteredSealProof_StackedDrg2KiBV1, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -191,7 +191,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 }
 
 func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer abi.PeerID,
-	multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredProof, value abi.TokenAmount) {
+	multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof, value abi.TokenAmount) {
 	createMinerParams := &power.CreateMinerParams{
 		Owner:         owner,
 		Worker:        worker,
@@ -230,7 +230,7 @@ func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, e
 	rt.Verify()
 }
 
-func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredProof) []byte {
+func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof) []byte {
 	params := &power.MinerConstructorParams{
 		OwnerAddr:     owner,
 		WorkerAddr:    worker,

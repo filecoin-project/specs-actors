@@ -324,7 +324,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	if params.SealRandEpoch >= rt.CurrEpoch() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v must be before now %v", params.SealRandEpoch, rt.CurrEpoch())
 	}
-	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredProof)
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.SealProof)
 	if params.SealRandEpoch < challengeEarliest {
 		// The subsequent commitment proof can't possibly be accepted because the seal challenge will be deemed
 		// too old. Note that passing this check doesn't guarantee the proof will be soon enough, depending on
@@ -336,7 +336,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
-		if params.RegisteredProof != st.Info.SealProofType {
+		if params.SealProof != st.Info.SealProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "wrong proof type")
 		}
 
@@ -396,9 +396,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		Sectors:   bf,
 	}
 
-	msd, ok := MaxSealDuration[params.RegisteredProof]
+	msd, ok := MaxSealDuration[params.SealProof]
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.RegisteredProof)
+		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
 	}
 
 	expiryBound := rt.CurrEpoch() + msd + 1
@@ -427,9 +427,9 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
-	msd, ok := MaxSealDuration[precommit.Info.RegisteredProof]
+	msd, ok := MaxSealDuration[precommit.Info.SealProof]
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.RegisteredProof)
+		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.SealProof)
 	}
 	proveCommitDue := precommit.PreCommitEpoch + msd
 	if rt.CurrEpoch() > proveCommitDue {
@@ -444,7 +444,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		Proof:            params.Proof,
 		DealIDs:          precommit.Info.DealIDs,
 		SectorNumber:     precommit.Info.SectorNumber,
-		RegisteredProof:  precommit.Info.RegisteredProof,
+		RegisteredSealProof:        precommit.Info.SealProof,
 	})
 
 	_, code := rt.Send(
@@ -1574,7 +1574,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 type SealVerifyStuff struct {
 	SealedCID        cid.Cid        // CommR
 	InteractiveEpoch abi.ChainEpoch // Used to derive the interactive PoRep challenge.
-	abi.RegisteredProof
+	abi.RegisteredSealProof
 	Proof   []byte
 	DealIDs []abi.DealID
 	abi.SectorNumber
@@ -1587,12 +1587,12 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 	}
 
 	// Check randomness.
-	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredProof)
+	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredSealProof)
 	if params.SealRandEpoch < challengeEarliest {
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", params.SealRandEpoch, challengeEarliest)
 	}
 
-	commD := requestUnsealedSectorCID(rt, params.RegisteredProof, params.DealIDs)
+	commD := requestUnsealedSectorCID(rt, params.RegisteredSealProof, params.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
@@ -1605,7 +1605,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
 
 	return &abi.SealVerifyInfo{
-		RegisteredProof: params.RegisteredProof,
+		SealProof: params.RegisteredSealProof,
 		SectorID: abi.SectorID{
 			Miner:  abi.ActorID(minerActorID),
 			Number: params.SectorNumber,
@@ -1620,7 +1620,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
-func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredProof, dealIDs []abi.DealID) cid.Cid {
+func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dealIDs []abi.DealID) cid.Cid {
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.ComputeDataCommitment,
@@ -1818,7 +1818,7 @@ func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors
 }
 
 // The oldest seal challenge epoch that will be accepted in the current epoch.
-func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredProof) abi.ChainEpoch {
+func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
 	return currEpoch - ChainFinalityish - MaxSealDuration[proof]
 }
 
