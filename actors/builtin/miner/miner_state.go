@@ -119,12 +119,12 @@ type WorkerKeyChange struct {
 }
 
 type SectorPreCommitInfo struct {
-	SealProof abi.RegisteredSealProof
-	SectorNumber    abi.SectorNumber
-	SealedCID       cid.Cid // CommR
-	SealRandEpoch   abi.ChainEpoch
-	DealIDs         []abi.DealID
-	Expiration      abi.ChainEpoch // Sector Expiration
+	SealProof     abi.RegisteredSealProof
+	SectorNumber  abi.SectorNumber
+	SealedCID     cid.Cid // CommR
+	SealRandEpoch abi.ChainEpoch
+	DealIDs       []abi.DealID
+	Expiration    abi.ChainEpoch // Sector Expiration
 }
 
 type SectorPreCommitOnChainInfo struct {
@@ -374,9 +374,14 @@ func (st *State) ForEachSectorExpiration(store adt.Store, f func(expiry abi.Chai
 		return err
 	}
 
-	bf := abi.NewBitField()
-	return arr.ForEach(bf, func(i int64) error {
-		return f(abi.ChainEpoch(i), bf)
+	var bf bitfield.BitField
+	empty := abi.NewBitField()
+	return arr.ForEach(&bf, func(i int64) error {
+		bfCopy, err := bitfield.MergeBitFields(&bf, empty)
+		if err != nil {
+			return err
+		}
+		return f(abi.ChainEpoch(i), bfCopy)
 	})
 }
 
@@ -416,6 +421,10 @@ func (st *State) AddSectorExpirations(store adt.Store, expiry abi.ChainEpoch, se
 
 // Removes some sector numbers from the set expiring at an epoch.
 func (st *State) RemoveSectorExpirations(store adt.Store, expiry abi.ChainEpoch, sectors ...uint64) error {
+	if len(sectors) == 0 {
+		return nil
+	}
+
 	arr, err := adt.AsArray(store, st.SectorExpirations)
 	if err != nil {
 		return err
@@ -432,7 +441,13 @@ func (st *State) RemoveSectorExpirations(store adt.Store, expiry abi.ChainEpoch,
 		return err
 	}
 
-	if err = arr.Set(uint64(expiry), bf); err != nil {
+	if empty, err := bf.IsEmpty(); err != nil {
+		return err
+	} else if empty {
+		if err := arr.Delete(uint64(expiry)); err != nil {
+			return err
+		}
+	} else if err = arr.Set(uint64(expiry), bf); err != nil {
 		return err
 	}
 
@@ -514,18 +529,17 @@ func (st *State) AddFaults(store adt.Store, sectorNos *abi.BitField, faultEpoch 
 }
 
 // Removes sector numbers from faults and fault epochs, if present.
-func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) (err error) {
-	empty, err := sectorNos.IsEmpty()
-	if err != nil {
+func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
+	if empty, err := sectorNos.IsEmpty(); err != nil {
 		return err
-	}
-	if empty {
+	} else if empty {
 		return nil
 	}
 
-	st.Faults, err = bitfield.SubtractBitField(st.Faults, sectorNos)
-	if err != nil {
+	if newFaults, err := bitfield.SubtractBitField(st.Faults, sectorNos); err != nil {
 		return err
+	} else {
+		st.Faults = newFaults
 	}
 
 	arr, err := adt.AsArray(store, st.FaultEpochs)
@@ -533,27 +547,27 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) (err err
 		return err
 	}
 
-	changed := map[uint64]*abi.BitField{}
+	epochsChanged := map[uint64]*abi.BitField{}
 
-	bf1 := &abi.BitField{}
-	err = arr.ForEach(bf1, func(i int64) error {
-		c1, err := bf1.Count()
+	epochFaultsOld := &abi.BitField{}
+	err = arr.ForEach(epochFaultsOld, func(i int64) error {
+		countOld, err := epochFaultsOld.Count()
 		if err != nil {
 			return err
 		}
 
-		bf2, err := bitfield.SubtractBitField(bf1, sectorNos)
+		epochFaultsNew, err := bitfield.SubtractBitField(epochFaultsOld, sectorNos)
 		if err != nil {
 			return err
 		}
 
-		c2, err := bf2.Count()
+		countNew, err := epochFaultsNew.Count()
 		if err != nil {
 			return err
 		}
 
-		if c1 != c2 {
-			changed[uint64(i)] = bf2
+		if countOld != countNew {
+			epochsChanged[uint64(i)] = epochFaultsNew
 		}
 
 		return nil
@@ -562,8 +576,14 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) (err err
 		return err
 	}
 
-	for i, field := range changed {
-		if err = arr.Set(i, field); err != nil {
+	for i, newFaults := range epochsChanged {
+		if empty, err := newFaults.IsEmpty(); err != nil {
+			return err
+		} else if empty {
+			if err := arr.Delete(i); err != nil {
+				return err
+			}
+		} else if err = arr.Set(i, newFaults); err != nil {
 			return err
 		}
 	}
@@ -579,9 +599,14 @@ func (st *State) ForEachFaultEpoch(store adt.Store, cb func(epoch abi.ChainEpoch
 		return err
 	}
 
-	bf := abi.NewBitField()
-	return arr.ForEach(bf, func(i int64) error {
-		return cb(abi.ChainEpoch(i), bf)
+	var bf bitfield.BitField
+	empty := abi.NewBitField()
+	return arr.ForEach(&bf, func(i int64) error {
+		bfCopy, err := bitfield.MergeBitFields(&bf, empty)
+		if err != nil {
+			return err
+		}
+		return cb(abi.ChainEpoch(i), bfCopy)
 	})
 }
 
@@ -1015,9 +1040,9 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 
 func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 	return abi.SectorInfo{
-		SealProof:       s.Info.SealProof,
-		SectorNumber:    s.Info.SectorNumber,
-		SealedCID:       s.Info.SealedCID,
+		SealProof:    s.Info.SealProof,
+		SectorNumber: s.Info.SectorNumber,
+		SealedCID:    s.Info.SealedCID,
 	}
 }
 
