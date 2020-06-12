@@ -914,7 +914,19 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
 	builtin.RequireSuccess(rt, code, "failed to reward reporter")
 
-	// kill power, close deals and burn funds
+	var st State
+	rt.State().Readonly(&st)
+
+	// Notify power actor with lock-up total being removed.
+	_, code = rt.Send(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.OnConsensusFault,
+		&st.LockedFunds,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
+
+	// close deals and burn funds
 	terminateMiner(rt)
 
 	return nil
@@ -1591,15 +1603,6 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 func terminateMiner(rt Runtime) {
 	var st State
 	rt.State().Readonly(&st)
-
-	// Notify power actor with lock-up total being removed.
-	_, code := rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnConsensusFault,
-		&st.LockedFunds,
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
 
 	requestTerminateAllDeals(rt, &st)
 
