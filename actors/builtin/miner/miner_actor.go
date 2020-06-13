@@ -356,6 +356,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 				rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed with deals", params.SectorNumber)
 			} else {
 				// Committed Capacity sector upgrade.
+				// The unexpired sector info remains in the state until ProveCommitSector overwrites it with the
+				// new activation epoch, expiration, deals etc.
 				if params.Expiration < sectorInfo.Info.Expiration {
 					rt.Abortf(exitcode.ErrIllegalArgument, "upgraded sector %v expires before original expiration", params.SectorNumber)
 				}
@@ -365,6 +367,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		validateExpiration(rt, &st, params.Expiration)
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		depositReq := precommitDeposit(st.GetSectorSize(), params.Expiration-rt.CurrEpoch())
 		if availableBalance.LessThan(depositReq) {
@@ -374,12 +377,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		st.AddPreCommitDeposit(depositReq)
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
-		err = st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
+		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:             *params,
 			PreCommitDeposit: depositReq,
 			PreCommitEpoch:   rt.CurrEpoch(),
-		})
-		if err != nil {
+		}); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
 
@@ -402,6 +404,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
 	}
 
+	// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
+	// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
+	// ConfirmSectorProofsValid would fail to find it.
 	expiryBound := rt.CurrEpoch() + msd + 1
 	enrollCronEvent(rt, expiryBound, &cronPayload)
 
@@ -413,6 +418,9 @@ type ProveCommitSectorParams struct {
 	Proof        []byte
 }
 
+// Checks state of the corresponding sector pre-commitment, then schedules the proof to be verified in bulk
+// by the power actor.
+// If valid, the power actor will call ConfirmSectorProofsValid at the end of the same epoch as this message.
 func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
@@ -437,7 +445,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", sectorNo, rt.CurrEpoch(), proveCommitDue)
 	}
 
-	// will abort if seal invalid
 	svi := getVerifyInfo(rt, &SealVerifyStuff{
 		SealedCID:        precommit.Info.SealedCID,
 		InteractiveEpoch: precommit.PreCommitEpoch + PreCommitChallengeDelay,
@@ -470,6 +477,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to get precommitted sector %v: %v", sectorNo, err)
 		} else if !found {
+			// This relies on the precommit having been checked in ProveCommitSector and not removed (expired) before
+			// this call. This in turn relies on the call from the power actor reliably coming in the same
+			// epoch as ProveCommitSector.
 			rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 		}
 
@@ -585,11 +595,11 @@ func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *a
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
 
-	_, found, _ := st.GetSector(store, sectorNo)
-	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "Sector hasn't been proven %v", sectorNo)
+	if _, found, err := st.GetSector(store, sectorNo); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load proven sector %v", sectorNo)
+	} else if !found {
+		rt.Abortf(exitcode.ErrNotFound, "sector %v not proven", sectorNo)
 	}
-
 	return nil
 }
 
@@ -984,7 +994,9 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	case CronEventProvingPeriod:
 		handleProvingPeriod(rt)
 	case CronEventPreCommitExpiry:
-		checkPrecommitExpiry(rt, payload.Sectors)
+		if payload.Sectors != nil {
+			checkPrecommitExpiry(rt, payload.Sectors)
+		}
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
 	}
