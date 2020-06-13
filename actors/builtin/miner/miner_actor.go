@@ -1341,7 +1341,7 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 }
 
 // TODO: red flag that this method is potentially super expensive
-// https://github.com/filecoin-project/specs-actors/issues/411
+// https://github.com/filecoin-project/specs-actors/issues/483
 func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power.SectorTermination) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
@@ -1516,7 +1516,7 @@ func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
 func requestTerminateAllDeals(rt Runtime, st *State) {
 	// TODO: red flag this is an ~unbounded computation.
 	// Transform into an idempotent partial computation that can be progressed on each invocation.
-	// https://github.com/filecoin-project/specs-actors/issues/411
+	// https://github.com/filecoin-project/specs-actors/issues/483
 	dealIds := []abi.DealID{}
 	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
 		dealIds = append(dealIds, sector.Info.DealIDs...)

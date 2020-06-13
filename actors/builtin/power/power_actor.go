@@ -217,7 +217,7 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 
 type OnSectorTerminateParams struct {
 	TerminationType SectorTermination
-	Weights         []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner, https://github.com/filecoin-project/specs-actors/issues/466
+	Weights         []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner, https://github.com/filecoin-project/specs-actors/issues/419
 }
 
 func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
