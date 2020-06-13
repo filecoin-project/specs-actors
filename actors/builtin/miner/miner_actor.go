@@ -249,6 +249,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
 		// TODO WPOST (follow-up): process Skipped as faults
+		// https://github.com/filecoin-project/specs-actors/issues/410
 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, currDeadline.Index, params.Partitions)
@@ -475,6 +476,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// Check (and activate) storage deals associated to sector. Abort if checks failed.
 		// return DealWeight for the deal set in the sector
 		// TODO: we should batch these calls...
+		// https://github.com/filecoin-project/specs-actors/issues/474
 		var dealWeights market.VerifyDealsOnSectorProveCommitReturn
 		ret, code := rt.Send(
 			builtin.StorageMarketActorAddr,
@@ -495,6 +497,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// initially, can we just do this while we're there?
 		// We can probably return the right information from this call to the caller, so it can update there
 		// TODO: we should batch these calls...
+		// https://github.com/filecoin-project/specs-actors/issues/475
 		var initialPledge abi.TokenAmount
 		ret, code = rt.Send(
 			builtin.StoragePowerActorAddr,
@@ -514,6 +517,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		// Add sector and pledge lock-up to miner state
 		// TODO: do this all at once after the loop
+		// https://github.com/filecoin-project/specs-actors/issues/476
 		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 			if err != nil {
@@ -1060,6 +1064,7 @@ func handleProvingPeriod(rt Runtime) {
 
 			// Load info for ongoing faults.
 			// TODO: this is potentially super expensive for a large miner with ongoing faults
+			// https://github.com/filecoin-project/specs-actors/issues/411
 			ongoingFaultInfos, err := st.LoadSectorInfos(store, ongoingFaults)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
@@ -1151,6 +1156,7 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 
 	// Load info for sectors.
 	// TODO: this is potentially super expensive for a large miner failing to submit proofs.
+	// https://github.com/filecoin-project/specs-actors/issues/411
 	detectedFaultSectors, err := st.LoadSectorInfos(store, detectedFaults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 	failedRecoverySectors, err := st.LoadSectorInfos(store, failedRecoveries)
@@ -1167,6 +1173,7 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadline, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
 	// TODO: Iterating this bitfield and keeping track of what partitions we're expecting could remove the
 	// need to expand this into a potentially-giant map. But it's tricksy.
+	// https://github.com/filecoin-project/specs-actors/issues/477
 	partitionSize := st.Info.WindowPoStPartitionSectors
 	submissions, err := st.PostSubmissions.AllMap(activePartitionsMax(partitionSize))
 	if err != nil {
@@ -1334,6 +1341,7 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 }
 
 // TODO: red flag that this method is potentially super expensive
+// https://github.com/filecoin-project/specs-actors/issues/483
 func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power.SectorTermination) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
@@ -1402,6 +1410,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 
 	// End any fault state before terminating sector power.
 	// TODO: could we compress the three calls to power actor into one sector termination call?
+	// https://github.com/filecoin-project/specs-actors/issues/478
 	requestEndFaults(rt, st.Info.SectorSize, faultySectors)
 	requestTerminateDeals(rt, dealIDs)
 	requestTerminatePower(rt, terminationType, st.Info.SectorSize, allSectors)
@@ -1507,6 +1516,7 @@ func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
 func requestTerminateAllDeals(rt Runtime, st *State) {
 	// TODO: red flag this is an ~unbounded computation.
 	// Transform into an idempotent partial computation that can be progressed on each invocation.
+	// https://github.com/filecoin-project/specs-actors/issues/483
 	dealIds := []abi.DealID{}
 	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
 		dealIds = append(dealIds, sector.Info.DealIDs...)
@@ -1658,6 +1668,7 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 	// TODO WPOST (follow-up): implement this
+	// https://github.com/filecoin-project/specs-actors/issues/415
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.

@@ -135,6 +135,7 @@ func TestControlAddresses(t *testing.T) {
 	})
 
 	// TODO: test changing worker (with delay), changing peer id
+	// https://github.com/filecoin-project/specs-actors/issues/479
 }
 
 // Test for sector precommitment and proving.
@@ -225,6 +226,7 @@ func TestCommitments(t *testing.T) {
 		// TODO: too early to prove sector
 		// TODO: seal rand epoch too old
 		// TODO: commitment expires before proof
+		// https://github.com/filecoin-project/specs-actors/issues/479
 
 		// Set the right epoch for all following tests
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -247,6 +249,7 @@ func TestCommitments(t *testing.T) {
 
 		// Invalid seal proof
 		/* TODO: how should this test work?
+		// https://github.com/filecoin-project/specs-actors/issues/479
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
 				verifySealErr: fmt.Errorf("for testing"),
