@@ -21,7 +21,7 @@ func BitFieldUnion(bfs ...*BitField) (*BitField, error) {
 	if len(bfs) == 0 {
 		return NewBitField(), nil
 	}
-	// TODO: optimize me
+	// TODO: optimize me: https://github.com/filecoin-project/specs-actors/issues/460
 	for len(bfs) > 1 {
 		var next []*BitField
 		for i := 0; i < len(bfs); i += 2 {
