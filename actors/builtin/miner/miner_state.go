@@ -24,6 +24,7 @@ import (
 type State struct {
 	// Information not related to sectors.
 	// TODO: this should be a cid of the miner Info struct so it's not re-written when other fields change.
+	// https://github.com/filecoin-project/specs-actors/issues/422
 	Info MinerInfo
 
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
@@ -102,7 +103,7 @@ type MinerInfo struct {
 	Multiaddrs []abi.Multiaddrs
 
 	// The proof type used by this miner for sealing sectors.
-	SealProofType abi.RegisteredProof
+	SealProofType abi.RegisteredSealProof
 
 	// Amount of space in each sector committed by this miner.
 	// This is computed from the proof type and represented here redundantly.
@@ -119,7 +120,7 @@ type WorkerKeyChange struct {
 }
 
 type SectorPreCommitInfo struct {
-	RegisteredProof abi.RegisteredProof
+	SealProof abi.RegisteredSealProof
 	SectorNumber    abi.SectorNumber
 	SealedCID       cid.Cid // CommR
 	SealRandEpoch   abi.ChainEpoch
@@ -141,11 +142,7 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId abi.PeerID, multiaddrs []abi.Multiaddrs, proofType abi.RegisteredProof, periodStart abi.ChainEpoch) (*State, error) {
-	sealProofType, err := proofType.RegisteredSealProof()
-	if err != nil {
-		return nil, fmt.Errorf("no seal proof for proof type %d: %w", sealProofType, err)
-	}
+	peerId abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof, periodStart abi.ChainEpoch) (*State, error) {
 	sectorSize, err := sealProofType.SectorSize()
 	if err != nil {
 		return nil, fmt.Errorf("no sector size for seal proof type %d: %w", sealProofType, err)
@@ -1019,7 +1016,7 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 
 func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 	return abi.SectorInfo{
-		RegisteredProof: s.Info.RegisteredProof,
+		SealProof:       s.Info.SealProof,
 		SectorNumber:    s.Info.SectorNumber,
 		SealedCID:       s.Info.SealedCID,
 	}

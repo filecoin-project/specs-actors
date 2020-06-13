@@ -9,6 +9,7 @@ const (
 	MethodConstructor = abi.MethodNum(1)
 
 	// TODO fin: remove this once canonical method numbers are finalized
+	// https://github.com/filecoin-project/specs-actors/issues/461
 	MethodPlaceholder = abi.MethodNum(1 << 30)
 )
 

@@ -30,6 +30,7 @@ func init() {
 // The maximum number of sectors that a miner can have simultaneously active.
 // This also bounds the number of faults that can be declared, etc.
 // TODO raise this number, carefully
+// https://github.com/filecoin-project/specs-actors/issues/470
 const SectorsMax = 32 << 20 // PARAM_FINISH
 
 // The maximum number of proving partitions a miner can have simultaneously active.
@@ -50,19 +51,19 @@ const NewSectorsPerPeriodMax = 128 << 10
 const ChainFinalityish = abi.ChainEpoch(900) // PARAM_FINISH
 
 // List of proof types which can be used when creating new miner actors
-var SupportedProofTypes = map[abi.RegisteredProof]struct{}{
-	abi.RegisteredProof_StackedDRG32GiBSeal: {},
-	abi.RegisteredProof_StackedDRG64GiBSeal: {},
+var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
+	abi.RegisteredSealProof_StackedDrg32GiBV1: {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
 }
 
 // Maximum duration to allow for the sealing process for seal algorithms.
 // Dependent on algorithm and sector size
-var MaxSealDuration = map[abi.RegisteredProof]abi.ChainEpoch{
-	abi.RegisteredProof_StackedDRG32GiBSeal:  abi.ChainEpoch(10000), // PARAM_FINISH
-	abi.RegisteredProof_StackedDRG2KiBSeal:   abi.ChainEpoch(10000),
-	abi.RegisteredProof_StackedDRG8MiBSeal:   abi.ChainEpoch(10000),
-	abi.RegisteredProof_StackedDRG512MiBSeal: abi.ChainEpoch(10000),
-	abi.RegisteredProof_StackedDRG64GiBSeal:  abi.ChainEpoch(10000),
+var MaxSealDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
+	abi.RegisteredSealProof_StackedDrg32GiBV1:  abi.ChainEpoch(10000), // PARAM_FINISH
+	abi.RegisteredSealProof_StackedDrg2KiBV1:   abi.ChainEpoch(10000),
+	abi.RegisteredSealProof_StackedDrg8MiBV1:   abi.ChainEpoch(10000),
+	abi.RegisteredSealProof_StackedDrg512MiBV1: abi.ChainEpoch(10000),
+	abi.RegisteredSealProof_StackedDrg64GiBV1:  abi.ChainEpoch(10000),
 }
 
 // Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn

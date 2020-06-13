@@ -950,7 +950,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	// state field init
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
-	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, abi.PeerID("peer"), testMultiaddrs, abi.RegisteredProof_StackedDRG2KiBSeal, periodBoundary)
+	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, abi.PeerID("peer"), testMultiaddrs, abi.RegisteredSealProof_StackedDrg2KiBV1, periodBoundary)
 	require.NoError(t, err)
 
 	// assert NewSectors bitfield was constructed correctly (empty)
@@ -999,7 +999,7 @@ const (
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		RegisteredProof: abi.RegisteredProof_StackedDRG32GiBPoSt,
+		SealProof:       abi.RegisteredSealProof_StackedDrg32GiBV1,
 		SectorNumber:    sectorNo,
 		SealedCID:       sealed,
 		SealRandEpoch:   sectorSealRandEpochValue,

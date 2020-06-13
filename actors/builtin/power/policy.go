@@ -46,6 +46,7 @@ func QAPowerForWeight(weight *SectorStorageWeightDesc) abi.StoragePower {
 func InitialPledgeForWeight(qapower abi.StoragePower, totqapower abi.StoragePower, circSupply abi.TokenAmount, totalPledge abi.TokenAmount, perEpochReward abi.TokenAmount) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
+	// https://github.com/filecoin-project/specs-actors/issues/468
 	_ = circSupply  // TODO: ce use this
 	_ = totalPledge // TODO: ce use this
 
