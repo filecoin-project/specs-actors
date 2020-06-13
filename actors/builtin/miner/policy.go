@@ -30,6 +30,7 @@ func init() {
 // The maximum number of sectors that a miner can have simultaneously active.
 // This also bounds the number of faults that can be declared, etc.
 // TODO raise this number, carefully
+// https://github.com/filecoin-project/specs-actors/issues/470
 const SectorsMax = 32 << 20 // PARAM_FINISH
 
 // The maximum number of proving partitions a miner can have simultaneously active.
