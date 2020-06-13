@@ -433,20 +433,24 @@ func TestExtendSectorExpiration(t *testing.T) {
 		WithHasher(fixedHasher(uint64(periodOffset))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
-	rt := builder.Build(t)
-	actor.constructAndVerify(rt, periodOffset)
-	precommitEpoch := abi.ChainEpoch(1)
-	rt.SetEpoch(precommitEpoch)
-	st := getState(rt)
-	deadline := st.DeadlineInfo(rt.Epoch())
-	expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
-	sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, big.Zero())
+	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
+		actor.constructAndVerify(rt, periodOffset)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		st := getState(rt)
+		deadline := st.DeadlineInfo(rt.Epoch())
+		expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
+		sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, big.Zero())
 
-	sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
-	require.NoError(t, err)
-	require.True(t, found)
+		sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
+		require.NoError(t, err)
+		require.True(t, found)
+		return sector
+	}
 
 	t.Run("rejects negative extension", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
 		// attempt to shorten epoch
 		newExpiration := sector.Info.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
 		params := &miner.ExtendSectorExpirationParams{
@@ -460,6 +464,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 	})
 
 	t.Run("rejects extension to invalid epoch", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
 		// attempt to extend to an epoch that is not a multiple of the proving period + the commit epoch
 		extension := 42*miner.WPoStProvingPeriod + 1
 		newExpiration := sector.Info.Expiration - abi.ChainEpoch(extension)
@@ -474,6 +481,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 	})
 
 	t.Run("updates expiration with valid params", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
 		extension := uint64(42 * miner.WPoStProvingPeriod)
 		newExpiration := sector.Info.Expiration + abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
@@ -484,25 +494,21 @@ func TestExtendSectorExpiration(t *testing.T) {
 		actor.extendSector(rt, sector, extension, params)
 
 		// assert sector expiration is set to the new value
-		st = getState(rt)
+		st := getState(rt)
 		sector, found, err := st.GetSector(rt.AdtStore(), sector.Info.SectorNumber)
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, newExpiration, sector.Info.Expiration)
 
-		// assert that an expiration exists at the target epoch
-		expirations, err := st.GetSectorExpirations(rt.AdtStore(), newExpiration)
-		require.NoError(t, err)
-		exists, err := expirations.IsSet(uint64(sector.Info.SectorNumber))
-		require.NoError(t, err)
-		assert.True(t, exists)
-
-		// assert that the expiration has been removed from the old epoch
-		expirations, err = st.GetSectorExpirations(rt.AdtStore(), expiration)
-		require.NoError(t, err)
-		exists, err = expirations.IsSet(uint64(sector.Info.SectorNumber))
-		require.NoError(t, err)
-		assert.False(t, exists)
+		// assert the only expiration is for the new target epoch
+		err = st.ForEachSectorExpiration(rt.AdtStore(), func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
+			assert.Equal(t, newExpiration, expiry)
+			expiringSectors, err := sectors.All(10)
+			require.NoError(t, err)
+			assert.Equal(t, []uint64{uint64(sector.Info.SectorNumber)}, expiringSectors)
+			return nil
+		})
+		assert.NoError(t, err)
 	})
 }
 
@@ -789,7 +795,6 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 }
 
 func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension uint64, params *miner.ExtendSectorExpirationParams) {
-	rt.Reset()
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -814,7 +819,7 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 		exitcode.Ok,
 	)
 	rt.Call(h.a.ExtendSectorExpiration, params)
-
+	rt.Verify()
 }
 
 func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool, randEpoch abi.ChainEpoch) {
