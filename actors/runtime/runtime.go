@@ -95,6 +95,13 @@ type Runtime interface {
 
 	// Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
 	StartSpan(name string) TraceSpan
+
+	// ChargeGas charges specified amount of `gas` for execution.
+	// `name` provides information about gas charging point
+	// `virtual` sets virtual amount of gas to charge, this amount is not counted
+	// toward execution cost. This functionality is used for observing global changes
+	// in total gas charged if amount of gas charged was to be changed.
+	ChargeGas(name string, gas int64, virtual int64)
 }
 
 // Store defines the storage module exposed to actors.
