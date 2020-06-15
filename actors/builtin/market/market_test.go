@@ -294,6 +294,7 @@ func TestMarketActor(t *testing.T) {
 
 		// TODO: withdraws limited by slashing
 		// TODO: withdraws limited by locked balance
+		// https://github.com/filecoin-project/specs-actors/issues/465
 	})
 }
 

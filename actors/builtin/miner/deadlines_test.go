@@ -510,6 +510,7 @@ func TestAssignNewSectors(t *testing.T) {
 	})
 	// TODO: a final test including partial and full partitions that exercises both filling the partials first,
 	// then prioritising the less full deadlines.
+	// https://github.com/filecoin-project/specs-actors/issues/439
 }
 
 //

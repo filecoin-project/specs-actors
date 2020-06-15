@@ -35,9 +35,9 @@ func (a Actor) Constructor(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 }
 
 type AwardBlockRewardParams struct {
-	Miner       address.Address
-	Penalty     abi.TokenAmount // penalty for including bad messages in a block
-	GasReward   abi.TokenAmount // gas reward from all gas fees in a block
+	Miner     address.Address
+	Penalty   abi.TokenAmount // penalty for including bad messages in a block
+	GasReward abi.TokenAmount // gas reward from all gas fees in a block
 }
 
 // Awards a reward to a block producer.
