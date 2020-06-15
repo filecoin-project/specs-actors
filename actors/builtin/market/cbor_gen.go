@@ -570,7 +570,7 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 		t.DealIDs[i] = abi.DealID(val)
 	}
 
-	// t.SectorType (abi.RegisteredProof) (int64)
+	// t.SectorType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64

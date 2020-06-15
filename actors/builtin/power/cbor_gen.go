@@ -413,7 +413,7 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	if t.SealProofType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
 			return err
@@ -492,7 +492,7 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -726,29 +726,14 @@ func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TerminationType (power.SectorTermination) (int64)
-	if t.TerminationType >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TerminationType))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.TerminationType)-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-	if len(t.Weights) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Weights was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
+	// t.RawBytePower (big.Int) (struct)
+	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
 		return err
 	}
-	for _, v := range t.Weights {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
+
+	// t.QualityAdjustedPower (big.Int) (struct)
+	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -768,60 +753,24 @@ func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.TerminationType (power.SectorTermination) (int64)
+	// t.RawBytePower (big.Int) (struct)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
+
+		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
 		}
 
-		t.TerminationType = SectorTermination(extraI)
 	}
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	// t.QualityAdjustedPower (big.Int) (struct)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Weights: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Weights = make([]SectorStorageWeightDesc, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v SectorStorageWeightDesc
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
 		}
 
-		t.Weights[i] = v
 	}
-
 	return nil
 }
 
@@ -830,17 +779,27 @@ func (t *OnSectorModifyWeightDescParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write([]byte{132}); err != nil {
 		return err
 	}
 
-	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
-	if err := t.PrevWeight.MarshalCBOR(w); err != nil {
+	// t.PrevRawBytePower (big.Int) (struct)
+	if err := t.PrevRawBytePower.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.NewWeight (power.SectorStorageWeightDesc) (struct)
-	if err := t.NewWeight.MarshalCBOR(w); err != nil {
+	// t.NewRawBytePower (big.Int) (struct)
+	if err := t.NewRawBytePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PrevQualityAdjustedPower (big.Int) (struct)
+	if err := t.PrevQualityAdjustedPower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.NewQualityAdjustedPower (big.Int) (struct)
+	if err := t.NewQualityAdjustedPower.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -857,25 +816,43 @@ func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
+	// t.PrevRawBytePower (big.Int) (struct)
 
 	{
 
-		if err := t.PrevWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PrevWeight: %w", err)
+		if err := t.PrevRawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.PrevRawBytePower: %w", err)
 		}
 
 	}
-	// t.NewWeight (power.SectorStorageWeightDesc) (struct)
+	// t.NewRawBytePower (big.Int) (struct)
 
 	{
 
-		if err := t.NewWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.NewWeight: %w", err)
+		if err := t.NewRawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NewRawBytePower: %w", err)
+		}
+
+	}
+	// t.PrevQualityAdjustedPower (big.Int) (struct)
+
+	{
+
+		if err := t.PrevQualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.PrevQualityAdjustedPower: %w", err)
+		}
+
+	}
+	// t.NewQualityAdjustedPower (big.Int) (struct)
+
+	{
+
+		if err := t.NewQualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NewQualityAdjustedPower: %w", err)
 		}
 
 	}
@@ -887,12 +864,17 @@ func (t *OnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
-	if err := t.Weight.MarshalCBOR(w); err != nil {
+	// t.RawBytePower (big.Int) (struct)
+	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.QualityAdjustedPower (big.Int) (struct)
+	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -909,16 +891,25 @@ func (t *OnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
+	// t.RawBytePower (big.Int) (struct)
 
 	{
 
-		if err := t.Weight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Weight: %w", err)
+		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
+		}
+
+	}
+	// t.QualityAdjustedPower (big.Int) (struct)
+
+	{
+
+		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
 		}
 
 	}
@@ -930,22 +921,18 @@ func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-	if len(t.Weights) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Weights was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
+	// t.RawBytePower (big.Int) (struct)
+	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
 		return err
 	}
-	for _, v := range t.Weights {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
+
+	// t.QualityAdjustedPower (big.Int) (struct)
+	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -961,39 +948,28 @@ func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	// t.RawBytePower (big.Int) (struct)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Weights: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Weights = make([]SectorStorageWeightDesc, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v SectorStorageWeightDesc
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
 		}
 
-		t.Weights[i] = v
 	}
+	// t.QualityAdjustedPower (big.Int) (struct)
 
+	{
+
+		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
+		}
+
+	}
 	return nil
 }
 
@@ -1002,22 +978,18 @@ func (t *OnFaultEndParams) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-	if len(t.Weights) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Weights was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
+	// t.RawBytePower (big.Int) (struct)
+	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
 		return err
 	}
-	for _, v := range t.Weights {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
+
+	// t.QualityAdjustedPower (big.Int) (struct)
+	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1033,39 +1005,28 @@ func (t *OnFaultEndParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	// t.RawBytePower (big.Int) (struct)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Weights: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Weights = make([]SectorStorageWeightDesc, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v SectorStorageWeightDesc
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
 		}
 
-		t.Weights[i] = v
 	}
+	// t.QualityAdjustedPower (big.Int) (struct)
 
+	{
+
+		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
+		}
+
+	}
 	return nil
 }
 
@@ -1145,7 +1106,7 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	if t.SealProofType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
 			return err
@@ -1224,7 +1185,7 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64

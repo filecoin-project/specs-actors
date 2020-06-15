@@ -159,7 +159,7 @@ func (t *SectorInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SealProof (abi.RegisteredProof) (int64)
+	// t.SealProof (abi.RegisteredSealProof) (int64)
 	if t.SealProof >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProof))); err != nil {
 			return err
@@ -200,7 +200,7 @@ func (t *SectorInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	// t.SealProof (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -263,7 +263,7 @@ func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.RegisteredSealProof (abi.RegisteredProof) (int64)
+	// t.SealProof (abi.RegisteredSealProof) (int64)
 	if t.SealProof >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProof))); err != nil {
 			return err
@@ -359,7 +359,7 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	// t.SealProof (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -513,7 +513,7 @@ func (t *PoStProof) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	// t.PoStProof (abi.RegisteredPoStProof) (int64)
 	if t.PoStProof >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.PoStProof))); err != nil {
 			return err
@@ -553,7 +553,7 @@ func (t *PoStProof) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	// t.PoStProof (abi.RegisteredPoStProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
