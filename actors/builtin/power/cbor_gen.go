@@ -717,148 +717,6 @@ func (t *EnrollCronEventParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{130}); err != nil {
-		return err
-	}
-
-	// t.RawBytePower (big.Int) (struct)
-	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.QualityAdjustedPower (big.Int) (struct)
-	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.RawBytePower (big.Int) (struct)
-
-	{
-
-		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
-		}
-
-	}
-	// t.QualityAdjustedPower (big.Int) (struct)
-
-	{
-
-		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
-		}
-
-	}
-	return nil
-}
-
-func (t *OnSectorModifyWeightDescParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{132}); err != nil {
-		return err
-	}
-
-	// t.PrevRawBytePower (big.Int) (struct)
-	if err := t.PrevRawBytePower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.NewRawBytePower (big.Int) (struct)
-	if err := t.NewRawBytePower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.PrevQualityAdjustedPower (big.Int) (struct)
-	if err := t.PrevQualityAdjustedPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.NewQualityAdjustedPower (big.Int) (struct)
-	if err := t.NewQualityAdjustedPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 4 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.PrevRawBytePower (big.Int) (struct)
-
-	{
-
-		if err := t.PrevRawBytePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PrevRawBytePower: %w", err)
-		}
-
-	}
-	// t.NewRawBytePower (big.Int) (struct)
-
-	{
-
-		if err := t.NewRawBytePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.NewRawBytePower: %w", err)
-		}
-
-	}
-	// t.PrevQualityAdjustedPower (big.Int) (struct)
-
-	{
-
-		if err := t.PrevQualityAdjustedPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PrevQualityAdjustedPower: %w", err)
-		}
-
-	}
-	// t.NewQualityAdjustedPower (big.Int) (struct)
-
-	{
-
-		if err := t.NewQualityAdjustedPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.NewQualityAdjustedPower: %w", err)
-		}
-
-	}
-	return nil
-}
-
 func (t *OnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
@@ -916,7 +774,7 @@ func (t *OnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
+func (t *UpdateClaimedPowerParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -925,19 +783,19 @@ func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.RawBytePower (big.Int) (struct)
-	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
+	// t.RawByteDelta (big.Int) (struct)
+	if err := t.RawByteDelta.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.QualityAdjustedPower (big.Int) (struct)
-	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
+	// t.QualityAdjustedDelta (big.Int) (struct)
+	if err := t.QualityAdjustedDelta.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
+func (t *UpdateClaimedPowerParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -952,78 +810,21 @@ func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.RawBytePower (big.Int) (struct)
+	// t.RawByteDelta (big.Int) (struct)
 
 	{
 
-		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
+		if err := t.RawByteDelta.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawByteDelta: %w", err)
 		}
 
 	}
-	// t.QualityAdjustedPower (big.Int) (struct)
+	// t.QualityAdjustedDelta (big.Int) (struct)
 
 	{
 
-		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
-		}
-
-	}
-	return nil
-}
-
-func (t *OnFaultEndParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{130}); err != nil {
-		return err
-	}
-
-	// t.RawBytePower (big.Int) (struct)
-	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.QualityAdjustedPower (big.Int) (struct)
-	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *OnFaultEndParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.RawBytePower (big.Int) (struct)
-
-	{
-
-		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
-		}
-
-	}
-	// t.QualityAdjustedPower (big.Int) (struct)
-
-	{
-
-		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
+		if err := t.QualityAdjustedDelta.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedDelta: %w", err)
 		}
 
 	}
