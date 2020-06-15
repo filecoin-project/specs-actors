@@ -170,14 +170,13 @@ func TestNewSectorsBitField(t *testing.T) {
 func TestSectorExpirationStore(t *testing.T) {
 	exp1 := abi.ChainEpoch(10)
 	exp2 := abi.ChainEpoch(20)
-
-	sectorExpirations := make(map[abi.ChainEpoch][]uint64)
-	sectorExpirations[exp1] = []uint64{1, 2, 3, 4, 5}
-	sectorExpirations[exp2] = []uint64{6, 7, 8, 9, 10}
+	sectorExpirations := map[abi.ChainEpoch][]uint64{
+		exp1: {1, 2, 3, 4, 5},
+		exp2: {6, 7, 8, 9, 10},
+	}
 
 	t.Run("Round trip add get sector expirations", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-
 		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
 		harness.addSectorExpiration(exp2, sectorExpirations[exp2]...)
 
@@ -195,34 +194,35 @@ func TestSectorExpirationStore(t *testing.T) {
 		// remove all sectors from expiration set 2
 		harness.removeSectorExpiration(exp2, sectorExpirations[exp2]...)
 		assert.Empty(t, harness.getSectorExpirations(exp2))
+
+		// Remove remainder
+		harness.removeSectorExpiration(exp1, sectorExpirations[exp1][1:]...)
+		err := harness.s.ForEachSectorExpiration(harness.store, func(epoch abi.ChainEpoch, expirations *abi.BitField) error {
+			assert.Fail(t, "unexpected expiration epoch: %v", epoch)
+			return nil
+		})
+		require.NoError(t, err)
 	})
 
 	t.Run("Iteration by expiration", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-
 		harness.addSectorExpiration(exp1, sectorExpirations[exp1]...)
 		harness.addSectorExpiration(exp2, sectorExpirations[exp2]...)
 
-		exp1Hit, exp2Hit := false, false
-		err := harness.s.ForEachSectorExpiration(harness.store, func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
-			if expiry == exp1 {
-				sectorSlice, err := sectors.All(miner.SectorsMax)
-				assert.NoError(t, err)
-				assert.Equal(t, sectorExpirations[expiry], sectorSlice)
-				exp1Hit = true
-			} else if expiry == exp2 {
-				sectorSlice, err := sectors.All(miner.SectorsMax)
-				assert.NoError(t, err)
-				assert.Equal(t, sectorExpirations[expiry], sectorSlice)
-				exp2Hit = true
-			} else {
-				t.Fatalf("unexpected expiry value: %v in sector expirations", expiry)
-			}
+		var prevCallbackArg *abi.BitField
+		found := map[abi.ChainEpoch][]uint64{}
+		err := harness.s.ForEachSectorExpiration(harness.store, func(epoch abi.ChainEpoch, expirations *abi.BitField) error {
+			sectors, err := expirations.All(100)
+			require.NoError(t, err)
+			found[epoch] = sectors
+
+			// Check that bitfield pointer argument is newly allocated, not re-used
+			assert.True(t, prevCallbackArg != expirations)
+			prevCallbackArg = expirations
 			return nil
 		})
 		assert.NoError(t, err)
-		assert.True(t, exp1Hit)
-		assert.True(t, exp2Hit)
+		assert.Equal(t, sectorExpirations, found)
 	})
 
 	t.Run("Adding sectors at expiry merges with existing", func(t *testing.T) {
@@ -255,79 +255,87 @@ func TestSectorExpirationStore(t *testing.T) {
 func TestFaultStore(t *testing.T) {
 	fault1 := abi.ChainEpoch(10)
 	fault2 := abi.ChainEpoch(20)
+	sectorFaults := map[abi.ChainEpoch][]uint64 {
+		fault1: {1, 2, 3, 4, 5},
+		fault2: {6, 7, 8, 9, 10, 11},
+	}
 
-	sectorFaults := make(map[abi.ChainEpoch][]uint64)
-	faultSet1 := []uint64{1, 2, 3, 4, 5}
-	faultSet2 := []uint64{6, 7, 8, 9, 10, 11}
-	sectorFaults[fault1] = faultSet1
-	sectorFaults[fault2] = faultSet2
-
-	t.Run("Round trip add remove", func(t *testing.T) {
+	t.Run("Add/remove all", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		harness.addFaults(fault1, sectorFaults[fault1]...)
+		harness.addFaults(fault2, sectorFaults[fault2]...)
 
-		harness.addFaults(fault1, faultSet1...)
-		harness.addFaults(fault2, faultSet2...)
-
-		fault1Hit, fault2Hit := false, false
+		found := map[abi.ChainEpoch][]uint64{}
+		var prevCallbackArg *abi.BitField
 		err := harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
-			if epoch == fault1 {
-				sectors, err := faults.All(uint64(len(faultSet1)))
-				require.NoError(t, err)
-				assert.Equal(t, faultSet1, sectors)
-				fault1Hit = true
-			} else if epoch == fault2 {
-				sectors, err := faults.All(uint64(len(faultSet2)))
-				require.NoError(t, err)
-				assert.Equal(t, faultSet2, sectors)
-				fault2Hit = true
-			} else {
-				t.Fatalf("unexpected fault epoch: %v", epoch)
-			}
+			sectors, err := faults.All(100)
+			require.NoError(t, err)
+			found[epoch] = sectors
+
+			// Assert the bitfield pointer is pointing to a distinct object on different calls, so that holding on
+			// to the reference is safe.
+			assert.True(t, faults != prevCallbackArg)
+			prevCallbackArg = faults
 			return nil
 		})
 		require.NoError(t, err)
-		assert.True(t, fault1Hit)
-		assert.True(t, fault2Hit)
+		assert.Equal(t, sectorFaults, found)
+
+		// remove all the faults
+		harness.removeFaults(sectorFaults[fault1]...)
+		harness.removeFaults(sectorFaults[fault2]...)
+		err = harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+			assert.Fail(t, "unexpected fault epoch: %v", epoch)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("Add/remove some", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		harness.addFaults(fault1, sectorFaults[fault1]...)
+		harness.addFaults(fault2, sectorFaults[fault2]...)
+
+		found := map[abi.ChainEpoch][]uint64{}
+		err := harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
+			sectors, err := faults.All(100)
+			require.NoError(t, err)
+			found[epoch] = sectors
+			return nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, sectorFaults, found)
 
 		// remove the faults
-		harness.removeFaults(faultSet1[1:]...)
-		harness.removeFaults(faultSet2[2:]...)
+		harness.removeFaults(sectorFaults[fault1][1:]...)
+		harness.removeFaults(sectorFaults[fault2][2:]...)
 
-		fault1Hit, fault2Hit = false, false
+		found = map[abi.ChainEpoch][]uint64{}
 		err = harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
-			if epoch == fault1 {
-				sectors, err := faults.All(uint64(len(faultSet1)))
-				require.NoError(t, err)
-				assert.Equal(t, faultSet1[:1], sectors, "expected: %v, actual: %v", faultSet1[:1], sectors)
-				fault1Hit = true
-			} else if epoch == fault2 {
-				sectors, err := faults.All(uint64(len(faultSet2)))
-				require.NoError(t, err)
-				assert.Equal(t, faultSet2[:2], sectors, "expected: %v, actual: %v", faultSet2[:2], sectors)
-				fault2Hit = true
-
-			} else {
-				t.Fatalf("unexpected fault epoch: %v", epoch)
-			}
+			sectors, err := faults.All(100)
+			require.NoError(t, err)
+			found[epoch] = sectors
 			return nil
 		})
 		require.NoError(t, err)
-		assert.True(t, fault1Hit)
-		assert.True(t, fault2Hit)
+		expected := map[abi.ChainEpoch][]uint64{
+			fault1: {1},
+			fault2: {6, 7},
+		}
+		assert.Equal(t, expected, found) // FOIXME
 	})
 
 	t.Run("Clear all", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-
-		harness.addFaults(fault1, faultSet1...)
-		harness.addFaults(fault2, faultSet2...)
+		harness.addFaults(fault1, []uint64{1, 2, 3, 4, 5}...)
+		harness.addFaults(fault2, []uint64{6, 7, 8, 9, 10, 11}...)
 
 		// now clear all the faults
 		err := harness.s.ClearFaultEpochs(harness.store, fault1, fault2)
 		require.NoError(t, err)
 
 		err = harness.s.ForEachFaultEpoch(harness.store, func(epoch abi.ChainEpoch, faults *abi.BitField) error {
-			t.Fatalf("unexpected fault epoch: %v", epoch)
+			assert.Fail(t, "unexpected fault epoch: %v", epoch)
 			return nil
 		})
 		require.NoError(t, err)
