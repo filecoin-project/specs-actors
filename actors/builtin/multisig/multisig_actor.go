@@ -67,7 +67,7 @@ var _ abi.Invokee = Actor{}
 
 type ConstructorParams struct {
 	Signers               []addr.Address
-	NumApprovalsThreshold int64
+	NumApprovalsThreshold uint64
 	UnlockDuration        abi.ChainEpoch
 }
 
@@ -78,9 +78,16 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		rt.Abortf(exitcode.ErrIllegalArgument, "must have at least one signer")
 	}
 
-	var signers []addr.Address
-	for _, sa := range params.Signers {
-		signers = append(signers, sa)
+	if params.NumApprovalsThreshold > uint64(len(params.Signers)) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "must not require more approvals than signers")
+	}
+
+	if params.NumApprovalsThreshold < 1 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "must require at least one approval")
+	}
+
+	if params.UnlockDuration < 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "negative unlock duration disallowed")
 	}
 
 	pending, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
@@ -89,7 +96,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 	}
 
 	var st State
-	st.Signers = signers
+	st.Signers = params.Signers
 	st.NumApprovalsThreshold = params.NumApprovalsThreshold
 	st.PendingTxns = pending
 	st.InitialBalance = abi.NewTokenAmount(0)
@@ -243,7 +250,7 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 				newSigners = append(newSigners, s)
 			}
 		}
-		if params.Decrease || int64(len(st.Signers)-1) < st.NumApprovalsThreshold {
+		if params.Decrease || uint64(len(st.Signers)-1) < st.NumApprovalsThreshold {
 			st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 		}
 		st.Signers = newSigners
@@ -287,7 +294,7 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 }
 
 type ChangeNumApprovalsThresholdParams struct {
-	NewThreshold int64
+	NewThreshold uint64
 }
 
 func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
@@ -296,7 +303,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if params.NewThreshold <= 0 || params.NewThreshold > int64(len(st.Signers)) {
+		if params.NewThreshold <= 0 || params.NewThreshold > uint64(len(st.Signers)) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "New threshold value not supported")
 		}
 
@@ -341,7 +348,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 		return nil
 	})
 
-	thresholdMet := int64(len(txn.Approved)) >= st.NumApprovalsThreshold
+	thresholdMet := uint64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
