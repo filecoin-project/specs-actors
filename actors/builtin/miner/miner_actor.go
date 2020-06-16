@@ -1804,6 +1804,18 @@ func powerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (r
 	return
 }
 
+// This is the BR(t) value of the given sector for the current epoch.
+// It is the expected reward this sector would pay out over a one day period.
+// BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
+func expectedDayRewardForSector(rt Runtime, epochReward abi.TokenAmount, totalQAPower abi.StoragePower, sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) abi.TokenAmount {
+	if totalQAPower.IsZero() {
+		rt.Abortf(exitcode.ErrIllegalState, "network has 0 QA power")
+	}
+	qaSectorPower := QAPowerForSector(sectorSize, sectorInfo)
+	expectedRewardForProvingPeriod := big.Mul(big.NewInt(builtin.EpochsInDay), epochReward)
+	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), totalQAPower)
+}
+
 // The oldest seal challenge epoch that will be accepted in the current epoch.
 func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
 	return currEpoch - ChainFinality - MaxSealDuration[proof]
