@@ -37,15 +37,12 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.CreateMiner,
 		3:                         a.DeleteMiner,
 		4:                         a.OnSectorProveCommit,
-		5:                         a.OnSectorTerminate,
-		6:                         a.OnFaultBegin,
-		7:                         a.OnFaultEnd,
-		8:                         a.OnSectorModifyWeightDesc,
-		9:                         a.EnrollCronEvent,
-		10:                        a.OnEpochTickEnd,
-		11:                        a.UpdatePledgeTotal,
-		12:                        a.OnConsensusFault,
-		13:                        a.SubmitPoRepForBulkVerify,
+		5:                         a.UpdateClaimedPower,
+		6:                         a.EnrollCronEvent,
+		7:                         a.OnEpochTickEnd,
+		8:                         a.UpdatePledgeTotal,
+		9:                         a.OnConsensusFault,
+		10:                        a.SubmitPoRepForBulkVerify,
 	}
 }
 
@@ -192,117 +189,47 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 }
 
 type OnSectorProveCommitParams struct {
-	Weight SectorStorageWeightDesc
+	RawBytePower         abi.StoragePower
+	QualityAdjustedPower abi.StoragePower
 }
 
-// Returns the initial pledge collateral requirement.
+// Adds power for the calling actor and returns the initial pledge requirement for committing that
+// much power at this epoch.
+// May only be invoked by a miner actor.
+// TODO: remove this method after extracting pledge calculation, https://github.com/filecoin-project/specs-actors/issues/489
 func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	initialPledge := a.computeInitialPledge(rt, &params.Weight)
+	builtin.RequireParam(rt, params.RawBytePower.GreaterThanEqual(big.Zero()), "negative raw power %s", params.RawBytePower)
+	builtin.RequireParam(rt, params.QualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative QA power %s", params.RawBytePower)
+	initialPledge := a.computeInitialPledge(rt, params.QualityAdjustedPower)
+
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		rbpower := big.NewIntUnsigned(uint64(params.Weight.SectorSize))
-		qapower := QAPowerForWeight(&params.Weight)
-
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower, qapower)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to add power for sector: %v", err)
-		}
-
+		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), params.RawBytePower, params.QualityAdjustedPower)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add power raw %s, qa %s", params.RawBytePower, params.QualityAdjustedPower)
 		return nil
 	})
-
 	return &initialPledge
 }
 
-type OnSectorTerminateParams struct {
-	TerminationType SectorTermination
-	Weights         []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner, https://github.com/filecoin-project/specs-actors/issues/419
+type UpdateClaimedPowerParams struct {
+	RawByteDelta         abi.StoragePower
+	QualityAdjustedDelta abi.StoragePower
 }
 
-func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
+// Adds or removes claimed power for the calling actor.
+// May only be invoked by a miner actor.
+func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		rbpower, qapower := powersForWeights(params.Weights)
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, rbpower.Neg(), qapower.Neg())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
-		}
-		return nil
-	})
-
-	return nil
-}
-
-type OnFaultBeginParams struct {
-	Weights []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner, https://github.com/filecoin-project/specs-actors/issues/466
-}
-
-func (a Actor) OnFaultBegin(rt Runtime, params *OnFaultBeginParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		rbpower, qapower := powersForWeights(params.Weights)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower.Neg(), qapower.Neg())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
-		}
+		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
 		return nil
 	})
 	return nil
-}
-
-type OnFaultEndParams struct {
-	Weights []SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner, https://github.com/filecoin-project/specs-actors/issues/466
-}
-
-func (a Actor) OnFaultEnd(rt Runtime, params *OnFaultEndParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		rbpower, qapower := powersForWeights(params.Weights)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), rbpower, qapower)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add claimed power for sector: %v", err)
-		}
-		return nil
-	})
-
-	return nil
-}
-
-type OnSectorModifyWeightDescParams struct {
-	PrevWeight SectorStorageWeightDesc // TODO: replace with power if it can be computed by miner, https://github.com/filecoin-project/specs-actors/issues/466
-	NewWeight  SectorStorageWeightDesc
-}
-
-// Returns new initial pledge, now committed in place of the old.
-func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *abi.TokenAmount {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	newInitialPledge := a.computeInitialPledge(rt, &params.NewWeight)
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		prevPower := QAPowerForWeight(&params.PrevWeight)
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), big.NewIntUnsigned(uint64(params.PrevWeight.SectorSize)).Neg(), prevPower.Neg())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to deduct claimed power for sector: %v", err)
-		}
-
-		newPower := QAPowerForWeight(&params.NewWeight)
-		err = st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), big.NewIntUnsigned(uint64(params.NewWeight.SectorSize)), newPower)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add power for sector: %v", err)
-		}
-
-		return nil
-	})
-
-	return &newInitialPledge
 }
 
 type EnrollCronEventParams struct {
@@ -435,7 +362,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) computeInitialPledge(rt Runtime, desc *SectorStorageWeightDesc) abi.TokenAmount {
+func (a Actor) computeInitialPledge(rt Runtime, qaPower abi.StoragePower) abi.TokenAmount {
 	var st State
 	rt.State().Readonly(&st)
 
@@ -446,10 +373,7 @@ func (a Actor) computeInitialPledge(rt Runtime, desc *SectorStorageWeightDesc) a
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal epoch reward value: %s", err)
 	}
 
-	qapower := QAPowerForWeight(desc)
-	initialPledge := InitialPledgeForWeight(qapower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), st.TotalPledgeCollateral, epochReward)
-
-	return initialPledge
+	return InitialPledgeForWeight(qaPower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), st.TotalPledgeCollateral, epochReward)
 }
 
 func (a Actor) processBatchProofVerifies(rt Runtime) error {
@@ -591,17 +515,6 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 		return nil
 	}).(error)
 	return err
-}
-
-func powersForWeights(weights []SectorStorageWeightDesc) (abi.StoragePower, abi.StoragePower) {
-	// returns (rbpower, qapower)
-	rbpower := big.Zero()
-	qapower := big.Zero()
-	for i := range weights {
-		rbpower = big.Add(rbpower, big.NewIntUnsigned(uint64(weights[i].SectorSize)))
-		qapower = big.Add(qapower, QAPowerForWeight(&weights[i]))
-	}
-	return rbpower, qapower
 }
 
 func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {

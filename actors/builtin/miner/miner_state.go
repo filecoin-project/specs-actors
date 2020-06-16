@@ -12,7 +12,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -1044,15 +1043,6 @@ func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 		SealProof:    s.Info.SealProof,
 		SectorNumber: s.Info.SectorNumber,
 		SealedCID:    s.Info.SealedCID,
-	}
-}
-
-func AsStorageWeightDesc(sectorSize abi.SectorSize, sectorInfo *SectorOnChainInfo) *power.SectorStorageWeightDesc {
-	return &power.SectorStorageWeightDesc{
-		SectorSize:         sectorSize,
-		DealWeight:         sectorInfo.DealWeight,
-		VerifiedDealWeight: sectorInfo.VerifiedDealWeight,
-		Duration:           sectorInfo.Info.Expiration - sectorInfo.ActivationEpoch,
 	}
 }
 

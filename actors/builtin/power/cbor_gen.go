@@ -413,7 +413,7 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	if t.SealProofType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
 			return err
@@ -492,7 +492,7 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -717,182 +717,22 @@ func (t *EnrollCronEventParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *OnSectorTerminateParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{130}); err != nil {
-		return err
-	}
-
-	// t.TerminationType (power.SectorTermination) (int64)
-	if t.TerminationType >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.TerminationType))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.TerminationType)-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-	if len(t.Weights) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Weights was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
-		return err
-	}
-	for _, v := range t.Weights {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *OnSectorTerminateParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.TerminationType (power.SectorTermination) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.TerminationType = SectorTermination(extraI)
-	}
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Weights: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Weights = make([]SectorStorageWeightDesc, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v SectorStorageWeightDesc
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
-		}
-
-		t.Weights[i] = v
-	}
-
-	return nil
-}
-
-func (t *OnSectorModifyWeightDescParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{130}); err != nil {
-		return err
-	}
-
-	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
-	if err := t.PrevWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.NewWeight (power.SectorStorageWeightDesc) (struct)
-	if err := t.NewWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *OnSectorModifyWeightDescParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.PrevWeight (power.SectorStorageWeightDesc) (struct)
-
-	{
-
-		if err := t.PrevWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PrevWeight: %w", err)
-		}
-
-	}
-	// t.NewWeight (power.SectorStorageWeightDesc) (struct)
-
-	{
-
-		if err := t.NewWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.NewWeight: %w", err)
-		}
-
-	}
-	return nil
-}
-
 func (t *OnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
-	if err := t.Weight.MarshalCBOR(w); err != nil {
+	// t.RawBytePower (big.Int) (struct)
+	if err := t.RawBytePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.QualityAdjustedPower (big.Int) (struct)
+	if err := t.QualityAdjustedPower.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -909,48 +749,53 @@ func (t *OnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weight (power.SectorStorageWeightDesc) (struct)
+	// t.RawBytePower (big.Int) (struct)
 
 	{
 
-		if err := t.Weight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Weight: %w", err)
+		if err := t.RawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePower: %w", err)
+		}
+
+	}
+	// t.QualityAdjustedPower (big.Int) (struct)
+
+	{
+
+		if err := t.QualityAdjustedPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedPower: %w", err)
 		}
 
 	}
 	return nil
 }
 
-func (t *OnFaultBeginParams) MarshalCBOR(w io.Writer) error {
+func (t *UpdateClaimedPowerParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write([]byte{130}); err != nil {
 		return err
 	}
 
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-	if len(t.Weights) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Weights was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
+	// t.RawByteDelta (big.Int) (struct)
+	if err := t.RawByteDelta.MarshalCBOR(w); err != nil {
 		return err
 	}
-	for _, v := range t.Weights {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
+
+	// t.QualityAdjustedDelta (big.Int) (struct)
+	if err := t.QualityAdjustedDelta.MarshalCBOR(w); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
+func (t *UpdateClaimedPowerParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -961,111 +806,28 @@ func (t *OnFaultBeginParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
+	// t.RawByteDelta (big.Int) (struct)
 
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Weights: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Weights = make([]SectorStorageWeightDesc, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v SectorStorageWeightDesc
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		if err := t.RawByteDelta.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawByteDelta: %w", err)
 		}
 
-		t.Weights[i] = v
 	}
+	// t.QualityAdjustedDelta (big.Int) (struct)
 
-	return nil
-}
+	{
 
-func (t *OnFaultEndParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write([]byte{129}); err != nil {
-		return err
-	}
-
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-	if len(t.Weights) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Weights was too long")
-	}
-
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Weights)))); err != nil {
-		return err
-	}
-	for _, v := range t.Weights {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *OnFaultEndParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
-
-	maj, extra, err := cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Weights ([]power.SectorStorageWeightDesc) (slice)
-
-	maj, extra, err = cbg.CborReadHeader(br)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Weights: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Weights = make([]SectorStorageWeightDesc, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v SectorStorageWeightDesc
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		if err := t.QualityAdjustedDelta.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjustedDelta: %w", err)
 		}
 
-		t.Weights[i] = v
 	}
-
 	return nil
 }
 
@@ -1145,7 +907,7 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	if t.SealProofType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
 			return err
@@ -1224,7 +986,7 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64

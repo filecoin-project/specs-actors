@@ -433,20 +433,24 @@ func TestExtendSectorExpiration(t *testing.T) {
 		WithHasher(fixedHasher(uint64(periodOffset))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
-	rt := builder.Build(t)
-	actor.constructAndVerify(rt, periodOffset)
-	precommitEpoch := abi.ChainEpoch(1)
-	rt.SetEpoch(precommitEpoch)
-	st := getState(rt)
-	deadline := st.DeadlineInfo(rt.Epoch())
-	expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
-	sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, big.Zero())
+	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
+		actor.constructAndVerify(rt, periodOffset)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		st := getState(rt)
+		deadline := st.DeadlineInfo(rt.Epoch())
+		expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
+		sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, big.Zero())
 
-	sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
-	require.NoError(t, err)
-	require.True(t, found)
+		sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
+		require.NoError(t, err)
+		require.True(t, found)
+		return sector
+	}
 
 	t.Run("rejects negative extension", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
 		// attempt to shorten epoch
 		newExpiration := sector.Info.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
 		params := &miner.ExtendSectorExpirationParams{
@@ -460,6 +464,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 	})
 
 	t.Run("rejects extension to invalid epoch", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
 		// attempt to extend to an epoch that is not a multiple of the proving period + the commit epoch
 		extension := 42*miner.WPoStProvingPeriod + 1
 		newExpiration := sector.Info.Expiration - abi.ChainEpoch(extension)
@@ -469,38 +476,41 @@ func TestExtendSectorExpiration(t *testing.T) {
 		}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.extendSector(rt, sector, uint64(extension), params)
+			actor.extendSector(rt, sector, extension, params)
 		})
 	})
 
 	t.Run("updates expiration with valid params", func(t *testing.T) {
-		extension := uint64(42 * miner.WPoStProvingPeriod)
-		newExpiration := sector.Info.Expiration + abi.ChainEpoch(extension)
+		rt := builder.Build(t)
+		oldSector := commitSector(t, rt)
+
+		extension := 42 * miner.WPoStProvingPeriod
+		newExpiration := oldSector.Info.Expiration + abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
-			SectorNumber:  sector.Info.SectorNumber,
+			SectorNumber:  oldSector.Info.SectorNumber,
 			NewExpiration: newExpiration,
 		}
 
-		actor.extendSector(rt, sector, extension, params)
+		actor.extendSector(rt, oldSector, extension, params)
 
 		// assert sector expiration is set to the new value
-		st = getState(rt)
-		sector, found, err := st.GetSector(rt.AdtStore(), sector.Info.SectorNumber)
+		st := getState(rt)
+		newSector, found, err := st.GetSector(rt.AdtStore(), oldSector.Info.SectorNumber)
 		require.NoError(t, err)
 		require.True(t, found)
-		assert.Equal(t, newExpiration, sector.Info.Expiration)
+		assert.Equal(t, newExpiration, newSector.Info.Expiration)
 
 		// assert that an expiration exists at the target epoch
 		expirations, err := st.GetSectorExpirations(rt.AdtStore(), newExpiration)
 		require.NoError(t, err)
-		exists, err := expirations.IsSet(uint64(sector.Info.SectorNumber))
+		exists, err := expirations.IsSet(uint64(newSector.Info.SectorNumber))
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// assert that the expiration has been removed from the old epoch
-		expirations, err = st.GetSectorExpirations(rt.AdtStore(), expiration)
+		expirations, err = st.GetSectorExpirations(rt.AdtStore(), oldSector.Info.Expiration)
 		require.NoError(t, err)
-		exists, err = expirations.IsSet(uint64(sector.Info.SectorNumber))
+		exists, err = expirations.IsSet(uint64(newSector.Info.SectorNumber))
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -644,12 +654,16 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	{
 		sectorSize, err := precommit.SealProof.SectorSize()
 		require.NoError(h.t, err)
-		pcParams := power.OnSectorProveCommitParams{Weight: power.SectorStorageWeightDesc{
-			SectorSize:         sectorSize,
-			Duration:           precommit.Expiration - rt.Epoch(),
+		newSector := miner.SectorOnChainInfo{
+			Info:               *precommit,
+			ActivationEpoch:    rt.Epoch(),
 			DealWeight:         dealWeight,
 			VerifiedDealWeight: verifiedDealWeight,
-		}}
+		}
+		pcParams := power.OnSectorProveCommitParams{
+			RawBytePower:         big.NewIntUnsigned(uint64(sectorSize)),
+			QualityAdjustedPower: miner.QAPowerForSector(sectorSize, &newSector),
+		}
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.OnSectorProveCommit, &pcParams, big.Zero(), &conf.initialPledge, exitcode.Ok)
 	}
 	{
@@ -705,7 +719,7 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 
 	proofs := make([]abi.PoStProof, 1) // Number of proofs doesn't depend on partition count
 	for i := range proofs {
-		proofs[i].PoStProof  = registeredPoStProof
+		proofs[i].PoStProof = registeredPoStProof
 		proofs[i].ProofBytes = []byte(fmt.Sprintf("proof%d", i))
 	}
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
@@ -724,9 +738,9 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			proofInfos[i] = abi.SectorInfo{
-				SealProof:       ci.Info.SealProof,
-				SectorNumber:    ci.Info.SectorNumber,
-				SealedCID:       ci.Info.SealedCID,
+				SealProof:    ci.Info.SealProof,
+				SectorNumber: ci.Info.SectorNumber,
+				SealedCID:    ci.Info.SealedCID,
 			}
 		}
 
@@ -788,33 +802,26 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 	}
 }
 
-func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension uint64, params *miner.ExtendSectorExpirationParams) {
-	rt.Reset()
+func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension abi.ChainEpoch, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	st := getState(rt)
-
-	storageWeightDescPrev := miner.AsStorageWeightDesc(st.Info.SectorSize, sector)
-	storageWeightDescNew := power.SectorStorageWeightDesc{
-		SectorSize:         storageWeightDescPrev.SectorSize,
-		Duration:           storageWeightDescPrev.Duration + abi.ChainEpoch(extension),
-		DealWeight:         storageWeightDescPrev.DealWeight,
-		VerifiedDealWeight: storageWeightDescPrev.VerifiedDealWeight,
-	}
+	newSector := *sector
+	newSector.Info.Expiration += extension
+	qaDelta := big.Sub(miner.QAPowerForSector(st.Info.SectorSize, &newSector), miner.QAPowerForSector(st.Info.SectorSize, sector))
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnSectorModifyWeightDesc,
-		&power.OnSectorModifyWeightDescParams{
-			PrevWeight: *storageWeightDescPrev,
-			NewWeight:  storageWeightDescNew,
+		builtin.MethodsPower.UpdateClaimedPower,
+		&power.UpdateClaimedPowerParams{
+			RawByteDelta:         big.Zero(),
+			QualityAdjustedDelta: qaDelta,
 		},
 		abi.NewTokenAmount(0),
 		nil,
 		exitcode.Ok,
 	)
 	rt.Call(h.a.ExtendSectorExpiration, params)
-
 }
 
 func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool, randEpoch abi.ChainEpoch) {
@@ -851,12 +858,12 @@ func makeProvingPeriodCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power
 
 func makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		SealProof:       abi.RegisteredSealProof_StackedDrg2KiBV1,
-		SectorNumber:    sectorNo,
-		SealedCID:       tutil.MakeCID("commr"),
-		SealRandEpoch:   challenge,
-		DealIDs:         nil,
-		Expiration:      expiration,
+		SealProof:     abi.RegisteredSealProof_StackedDrg2KiBV1,
+		SectorNumber:  sectorNo,
+		SealedCID:     tutil.MakeCID("commr"),
+		SealRandEpoch: challenge,
+		DealIDs:       nil,
+		Expiration:    expiration,
 	}
 }
 
