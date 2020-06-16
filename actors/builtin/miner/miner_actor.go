@@ -1397,7 +1397,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 
 	// TODO: could we compress the multiple calls to power actor into one sector termination call?
 	// https://github.com/filecoin-project/specs-actors/issues/478
-	// Copmute the power delta as if recovering all the currently-faulty sectors before terminating all of them.
+	// Compute the power delta as if recovering all the currently-faulty sectors before terminating all of them.
 	requestUpdateSectorPower(rt, st.Info.SectorSize, faultySectors, allSectors)
 	requestTerminateDeals(rt, dealIDs)
 
