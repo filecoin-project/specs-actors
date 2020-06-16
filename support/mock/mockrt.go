@@ -26,16 +26,17 @@ import (
 // the storage interface, and mocks out side-effect-inducing calls.
 type Runtime struct {
 	// Execution context
-	ctx           context.Context
-	epoch         abi.ChainEpoch
-	receiver      addr.Address
-	caller        addr.Address
-	callerType    cid.Cid
-	miner         addr.Address
-	valueReceived abi.TokenAmount
-	idAddresses   map[addr.Address]addr.Address
-	actorCodeCIDs map[addr.Address]cid.Cid
-	newActorAddr  addr.Address
+	ctx               context.Context
+	epoch             abi.ChainEpoch
+	receiver          addr.Address
+	caller            addr.Address
+	callerType        cid.Cid
+	miner             addr.Address
+	valueReceived     abi.TokenAmount
+	idAddresses       map[addr.Address]addr.Address
+	actorCodeCIDs     map[addr.Address]cid.Cid
+	newActorAddr      addr.Address
+	circulatingSupply abi.TokenAmount
 
 	// Actor state
 	state   cid.Cid
@@ -260,7 +261,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	exp := rt.expectSends[0]
 
 	if !exp.Equal(toAddr, methodNum, params, value) {
-		rt.failTest("unexpected send\n"+
+		rt.failTestNow("unexpected send\n"+
 			"          to: %s method: %d value: %v params: %v\n"+
 			"Expected  to: %s method: %d value: %v params: %v",
 			toAddr, methodNum, value, params, exp.to, exp.method, exp.value, exp.params)
@@ -312,6 +313,10 @@ func (rt *Runtime) DeleteActor(_ addr.Address) {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	panic("implement me")
+}
+
+func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
+	return rt.circulatingSupply
 }
 
 func (rt *Runtime) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
@@ -569,6 +574,10 @@ func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
 	rt.epoch = epoch
 }
 
+func (rt *Runtime) SetCirculatingSupply(amt abi.TokenAmount) {
+	rt.circulatingSupply = amt
+}
+
 func (rt *Runtime) AddIDAddress(src addr.Address, target addr.Address) {
 	rt.require(target.Protocol() == addr.ID, "target must use ID address protocol")
 	rt.idAddresses[src] = target
@@ -797,10 +806,6 @@ func (rt *Runtime) failTestNow(msg string, args ...interface{}) {
 	rt.t.Logf(msg, args...)
 	rt.t.Logf("%s", debug.Stack())
 	rt.t.FailNow()
-}
-
-func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
-	panic("todo crypto econ")
 }
 
 type ReturnWrapper struct {
