@@ -37,15 +37,10 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.NumApprovalsThreshold (int64) (int64)
-	if t.NumApprovalsThreshold >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumApprovalsThreshold))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NumApprovalsThreshold)-1)); err != nil {
-			return err
-		}
+	// t.NumApprovalsThreshold (uint64) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumApprovalsThreshold))); err != nil {
+		return err
 	}
 
 	// t.NextTxnID (multisig.TxnID) (int64)
@@ -139,30 +134,19 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.Signers[i] = v
 	}
 
-	// t.NumApprovalsThreshold (int64) (int64)
+	// t.NumApprovalsThreshold (uint64) (uint64)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
+
+		maj, extra, err = cbg.CborReadHeader(br)
 		if err != nil {
 			return err
 		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
 		}
+		t.NumApprovalsThreshold = uint64(extra)
 
-		t.NumApprovalsThreshold = int64(extraI)
 	}
 	// t.NextTxnID (multisig.TxnID) (int64)
 	{
@@ -555,15 +539,10 @@ func (t *ConstructorParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.NumApprovalsThreshold (int64) (int64)
-	if t.NumApprovalsThreshold >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumApprovalsThreshold))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NumApprovalsThreshold)-1)); err != nil {
-			return err
-		}
+	// t.NumApprovalsThreshold (uint64) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumApprovalsThreshold))); err != nil {
+		return err
 	}
 
 	// t.UnlockDuration (abi.ChainEpoch) (int64)
@@ -623,30 +602,19 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		t.Signers[i] = v
 	}
 
-	// t.NumApprovalsThreshold (int64) (int64)
+	// t.NumApprovalsThreshold (uint64) (uint64)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
+
+		maj, extra, err = cbg.CborReadHeader(br)
 		if err != nil {
 			return err
 		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
 		}
+		t.NumApprovalsThreshold = uint64(extra)
 
-		t.NumApprovalsThreshold = int64(extraI)
 	}
 	// t.UnlockDuration (abi.ChainEpoch) (int64)
 	{
@@ -1015,16 +983,12 @@ func (t *ChangeNumApprovalsThresholdParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.NewThreshold (int64) (int64)
-	if t.NewThreshold >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NewThreshold))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NewThreshold)-1)); err != nil {
-			return err
-		}
+	// t.NewThreshold (uint64) (uint64)
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NewThreshold))); err != nil {
+		return err
 	}
+
 	return nil
 }
 
@@ -1043,30 +1007,19 @@ func (t *ChangeNumApprovalsThresholdParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.NewThreshold (int64) (int64)
+	// t.NewThreshold (uint64) (uint64)
+
 	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
+
+		maj, extra, err = cbg.CborReadHeader(br)
 		if err != nil {
 			return err
 		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
 		}
+		t.NewThreshold = uint64(extra)
 
-		t.NewThreshold = int64(extraI)
 	}
 	return nil
 }
