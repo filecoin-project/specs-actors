@@ -97,6 +97,20 @@ func TestConstruction(t *testing.T) {
 		rt.Verify()
 
 	})
+
+	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{anne, bob, charlie},
+			NumApprovalsThreshold: 4,
+			UnlockDuration:        1,
+		}
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+	})
 }
 
 func TestVesting(t *testing.T) {
@@ -250,7 +264,7 @@ func TestPropose(t *testing.T) {
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple propose", func(t *testing.T) {
-		const numApprovals = int64(2)
+		const numApprovals = uint64(2)
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
@@ -269,7 +283,7 @@ func TestPropose(t *testing.T) {
 	})
 
 	t.Run("propose with threshold met", func(t *testing.T) {
-		const numApprovals = int64(1)
+		const numApprovals = uint64(1)
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
 
@@ -287,7 +301,7 @@ func TestPropose(t *testing.T) {
 	})
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
-		const numApprovals = int64(1)
+		const numApprovals = uint64(1)
 		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build(t)
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 
@@ -305,7 +319,7 @@ func TestPropose(t *testing.T) {
 	t.Run("fail propose from non-signer", func(t *testing.T) {
 		// non-signer address
 		richard := tutil.NewIDAddr(t, 105)
-		const numApprovals = int64(2)
+		const numApprovals = uint64(2)
 
 		rt := builder.Build(t)
 
@@ -332,7 +346,7 @@ func TestApprove(t *testing.T) {
 	chuck := tutil.NewIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
-	const numApprovals = int64(2)
+	const numApprovals = uint64(2)
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
 	var sendValue = abi.NewTokenAmount(10)
@@ -417,7 +431,7 @@ func TestApprove(t *testing.T) {
 	})
 
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
-		const numApprovals = int64(2)
+		const numApprovals = uint64(2)
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
@@ -535,7 +549,7 @@ func TestCancel(t *testing.T) {
 	chuck := tutil.NewIDAddr(t, 103)
 
 	const noUnlockDuration = int64(0)
-	const numApprovals = int64(2)
+	const numApprovals = uint64(2)
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
 	var fakeParams = []byte{1, 2, 3, 4, 5}
@@ -715,13 +729,13 @@ type addSignerTestCase struct {
 	desc string
 
 	initialSigners   []addr.Address
-	initialApprovals int64
+	initialApprovals uint64
 
 	addSigner addr.Address
 	increase  bool
 
 	expectSigners   []addr.Address
-	expectApprovals int64
+	expectApprovals uint64
 	code            exitcode.ExitCode
 }
 
@@ -739,39 +753,39 @@ func TestAddSigner(t *testing.T) {
 			desc: "happy path add signer",
 
 			initialSigners:   []addr.Address{anne, bob},
-			initialApprovals: int64(2),
+			initialApprovals: uint64(2),
 
 			addSigner: chuck,
 			increase:  false,
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
-			expectApprovals: int64(2),
+			expectApprovals: uint64(2),
 			code:            exitcode.Ok,
 		},
 		{
 			desc: "add signer and increase threshold",
 
 			initialSigners:   []addr.Address{anne, bob},
-			initialApprovals: int64(2),
+			initialApprovals: uint64(2),
 
 			addSigner: chuck,
 			increase:  true,
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
-			expectApprovals: int64(3),
+			expectApprovals: uint64(3),
 			code:            exitcode.Ok,
 		},
 		{
 			desc: "fail to add signer than already exists",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
-			initialApprovals: int64(3),
+			initialApprovals: uint64(3),
 
 			addSigner: chuck,
 			increase:  false,
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
-			expectApprovals: int64(3),
+			expectApprovals: uint64(3),
 			code:            exitcode.ErrIllegalArgument,
 		},
 	}
@@ -805,13 +819,13 @@ type removeSignerTestCase struct {
 	desc string
 
 	initialSigners   []addr.Address
-	initialApprovals int64
+	initialApprovals uint64
 
 	removeSigner addr.Address
 	decrease     bool
 
 	expectSigners   []addr.Address
-	expectApprovals int64
+	expectApprovals uint64
 	code            exitcode.ExitCode
 }
 
@@ -831,65 +845,65 @@ func TestRemoveSigner(t *testing.T) {
 			desc: "happy path remove signer",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
-			initialApprovals: int64(2),
+			initialApprovals: uint64(2),
 
 			removeSigner: chuck,
 			decrease:     false,
 
 			expectSigners:   []addr.Address{anne, bob},
-			expectApprovals: int64(2),
+			expectApprovals: uint64(2),
 			code:            exitcode.Ok,
 		},
 		{
 			desc: "remove signer and decrease threshold",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
-			initialApprovals: int64(2),
+			initialApprovals: uint64(2),
 
 			removeSigner: chuck,
 			decrease:     true,
 
 			expectSigners:   []addr.Address{anne, bob},
-			expectApprovals: int64(1),
+			expectApprovals: uint64(1),
 			code:            exitcode.Ok,
 		},
 		{
 			desc: "remove signer with automatic threshold decrease",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
-			initialApprovals: int64(3),
+			initialApprovals: uint64(3),
 
 			removeSigner: chuck,
 			decrease:     false,
 
 			expectSigners:   []addr.Address{anne, bob},
-			expectApprovals: int64(2),
+			expectApprovals: uint64(2),
 			code:            exitcode.Ok,
 		},
 		{
 			desc: "remove signer from single singer list",
 
 			initialSigners:   []addr.Address{anne},
-			initialApprovals: int64(2),
+			initialApprovals: uint64(1),
 
 			removeSigner: anne,
 			decrease:     false,
 
 			expectSigners:   nil,
-			expectApprovals: int64(2),
+			expectApprovals: uint64(1),
 			code:            exitcode.ErrForbidden,
 		},
 		{
 			desc: "fail to remove non-signer",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
-			initialApprovals: int64(2),
+			initialApprovals: uint64(2),
 
 			removeSigner: richard,
 			decrease:     false,
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
-			expectApprovals: int64(2),
+			expectApprovals: uint64(2),
 			code:            exitcode.ErrNotFound,
 		},
 	}
@@ -937,7 +951,7 @@ func TestSwapSigners(t *testing.T) {
 	darlene := tutil.NewIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
-	const numApprovals = int64(1)
+	const numApprovals = uint64(1)
 	var initialSigner = []addr.Address{anne, bob}
 
 	testCases := []swapTestCase{
@@ -990,8 +1004,8 @@ func TestSwapSigners(t *testing.T) {
 
 type thresholdTestCase struct {
 	desc             string
-	initialThreshold int64
-	setThreshold     int64
+	initialThreshold uint64
+	setThreshold     uint64
 	code             exitcode.ExitCode
 }
 
@@ -1026,15 +1040,9 @@ func TestChangeThreshold(t *testing.T) {
 			code:             exitcode.ErrIllegalArgument,
 		},
 		{
-			desc:             "fail to set threshold less than zero",
-			initialThreshold: 2,
-			setThreshold:     -1,
-			code:             exitcode.ErrIllegalArgument,
-		},
-		{
 			desc:             "fail to set threshold above number of signers",
 			initialThreshold: 2,
-			setThreshold:     int64(len(initialSigner) + 1),
+			setThreshold:     uint64(len(initialSigner) + 1),
 			code:             exitcode.ErrIllegalArgument,
 		},
 		// TODO missing test case that needs definition: https://github.com/filecoin-project/specs-actors/issues/71
@@ -1074,7 +1082,7 @@ type msActorHarness struct {
 	t testing.TB
 }
 
-func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh, unlockDuration int64, signers ...addr.Address) {
+func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh uint64, unlockDuration int64, signers ...addr.Address) {
 	constructParams := multisig.ConstructorParams{
 		Signers:               signers,
 		NumApprovalsThreshold: numApprovalsThresh,
@@ -1133,7 +1141,7 @@ func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr
 	rt.Call(h.a.SwapSigner, swpParams)
 }
 
-func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold int64) {
+func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold uint64) {
 	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
 	rt.Call(h.a.ChangeNumApprovalsThreshold, thrshParams)
 }

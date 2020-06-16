@@ -13,7 +13,7 @@ import (
 
 type State struct {
 	Signers               []address.Address
-	NumApprovalsThreshold int64
+	NumApprovalsThreshold uint64
 	NextTxnID             TxnID
 
 	// Linear unlock
