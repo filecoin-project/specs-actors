@@ -11,6 +11,13 @@ import (
 
 ///// Code shared by multiple built-in actors. /////
 
+// Aborts with an ErrIllegalArgument if predicate is not true.
+func RequireParam(rt runtime.Runtime, predicate bool, msg string, args ...interface{}) {
+	if !predicate {
+		rt.Abortf(exitcode.ErrIllegalArgument, msg, args...)
+	}
+}
+
 // Propagates a failed send by aborting the current method with the same exit code.
 func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ...interface{}) {
 	if !e.IsSuccess() {
