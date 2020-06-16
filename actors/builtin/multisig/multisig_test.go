@@ -301,7 +301,7 @@ func TestPropose(t *testing.T) {
 	})
 
 	t.Run("propose with threshold and non-empty return value", func(t *testing.T) {
-		const numApprovals = int64(1)
+		const numApprovals = uint64(1)
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
 
