@@ -731,6 +731,14 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
+	reward := big.NewIntUnsigned(1e18)
+	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
+
+	pwrTotal := power.CurrentTotalPowerReturn{
+		QualityAdjPower: big.NewIntUnsigned(1000),
+	}
+	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwrTotal, exitcode.Ok)
+
 	var registeredPoStProof, err = abi.RegisteredSealProof_StackedDrg2KiBV1.RegisteredWindowPoStProof()
 	require.NoError(h.t, err)
 
@@ -848,6 +856,13 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment 
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randEpoch, nil, bytes.Repeat([]byte{0}, 32))
 	}
 	// Re-enrollment for next period.
+	reward := big.NewIntUnsigned(1e18)
+	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
+
+	pwrTotal := power.CurrentTotalPowerReturn{
+		QualityAdjPower: big.NewIntUnsigned(1000),
+	}
+	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwrTotal, exitcode.Ok)
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
 		makeProvingPeriodCronEventParams(h.t, expectedEnrollment), big.Zero(), nil, exitcode.Ok)
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
