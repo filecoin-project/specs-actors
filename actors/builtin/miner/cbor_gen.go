@@ -411,7 +411,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	if t.SealProofType >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProofType))); err != nil {
 			return err
@@ -551,7 +551,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 	}
 
-	// t.SealProofType (abi.RegisteredProof) (int64)
+	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -783,7 +783,7 @@ func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.RegisteredProof (abi.RegisteredProof) (int64)
+	// t.SealProof (abi.RegisteredSealProof) (int64)
 	if t.SealProof >= 0 {
 		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.SealProof))); err != nil {
 			return err
@@ -859,7 +859,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.RegisteredProof (abi.RegisteredSealProof) (int64)
+	// t.SealProof (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64

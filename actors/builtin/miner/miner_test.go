@@ -476,7 +476,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.extendSector(rt, sector, uint64(extension), params)
+			actor.extendSector(rt, sector, extension, params)
 		})
 	})
 
@@ -484,7 +484,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		rt := builder.Build(t)
 		oldSector := commitSector(t, rt)
 
-		extension := uint64(42 * miner.WPoStProvingPeriod)
+		extension := 42 * miner.WPoStProvingPeriod
 		newExpiration := oldSector.Info.Expiration + abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
 			SectorNumber:  oldSector.Info.SectorNumber,
@@ -654,12 +654,16 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	{
 		sectorSize, err := precommit.SealProof.SectorSize()
 		require.NoError(h.t, err)
-		pcParams := power.OnSectorProveCommitParams{Weight: power.SectorStorageWeightDesc{
-			SectorSize:         sectorSize,
-			Duration:           precommit.Expiration - rt.Epoch(),
+		newSector := miner.SectorOnChainInfo{
+			Info:               *precommit,
+			ActivationEpoch:    rt.Epoch(),
 			DealWeight:         dealWeight,
 			VerifiedDealWeight: verifiedDealWeight,
-		}}
+		}
+		pcParams := power.OnSectorProveCommitParams{
+			RawBytePower:         big.NewIntUnsigned(uint64(sectorSize)),
+			QualityAdjustedPower: miner.QAPowerForSector(sectorSize, &newSector),
+		}
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.OnSectorProveCommit, &pcParams, big.Zero(), &conf.initialPledge, exitcode.Ok)
 	}
 	{
@@ -715,7 +719,7 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 
 	proofs := make([]abi.PoStProof, 1) // Number of proofs doesn't depend on partition count
 	for i := range proofs {
-		proofs[i].PoStProof  = registeredPoStProof
+		proofs[i].PoStProof = registeredPoStProof
 		proofs[i].ProofBytes = []byte(fmt.Sprintf("proof%d", i))
 	}
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
@@ -734,9 +738,9 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			proofInfos[i] = abi.SectorInfo{
-				SealProof:       ci.Info.SealProof,
-				SectorNumber:    ci.Info.SectorNumber,
-				SealedCID:       ci.Info.SealedCID,
+				SealProof:    ci.Info.SealProof,
+				SectorNumber: ci.Info.SectorNumber,
+				SealedCID:    ci.Info.SealedCID,
 			}
 		}
 
@@ -798,32 +802,28 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 	}
 }
 
-func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension uint64, params *miner.ExtendSectorExpirationParams) {
+func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension abi.ChainEpoch, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	st := getState(rt)
-
-	storageWeightDescPrev := miner.AsStorageWeightDesc(st.Info.SectorSize, sector)
-	storageWeightDescNew := power.SectorStorageWeightDesc{
-		SectorSize:         storageWeightDescPrev.SectorSize,
-		Duration:           storageWeightDescPrev.Duration + abi.ChainEpoch(extension),
-		DealWeight:         storageWeightDescPrev.DealWeight,
-		VerifiedDealWeight: storageWeightDescPrev.VerifiedDealWeight,
-	}
+	rawBytePower := big.NewIntUnsigned(uint64(st.Info.SectorSize))
+	newSector := *sector
+	newSector.Info.Expiration += extension
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnSectorModifyWeightDesc,
 		&power.OnSectorModifyWeightDescParams{
-			PrevWeight: *storageWeightDescPrev,
-			NewWeight:  storageWeightDescNew,
+			PrevRawBytePower:         rawBytePower,
+			NewRawBytePower:          rawBytePower,
+			PrevQualityAdjustedPower: miner.QAPowerForSector(st.Info.SectorSize, sector),
+			NewQualityAdjustedPower:  miner.QAPowerForSector(st.Info.SectorSize, &newSector),
 		},
 		abi.NewTokenAmount(0),
 		nil,
 		exitcode.Ok,
 	)
 	rt.Call(h.a.ExtendSectorExpiration, params)
-	rt.Verify()
 }
 
 func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool, randEpoch abi.ChainEpoch) {
@@ -860,12 +860,12 @@ func makeProvingPeriodCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power
 
 func makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		SealProof:       abi.RegisteredSealProof_StackedDrg2KiBV1,
-		SectorNumber:    sectorNo,
-		SealedCID:       tutil.MakeCID("commr"),
-		SealRandEpoch:   challenge,
-		DealIDs:         nil,
-		Expiration:      expiration,
+		SealProof:     abi.RegisteredSealProof_StackedDrg2KiBV1,
+		SectorNumber:  sectorNo,
+		SealedCID:     tutil.MakeCID("commr"),
+		SealRandEpoch: challenge,
+		DealIDs:       nil,
+		Expiration:    expiration,
 	}
 }
 
