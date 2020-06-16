@@ -142,21 +142,6 @@ type BigFrac struct {
 	denominator big.Int
 }
 
-// Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
-func pledgePenaltyForSectorTermination(sector *SectorOnChainInfo) abi.TokenAmount {
-	return big.Zero() // PARAM_FINISH
-}
-
-// Penalty to locked pledge collateral for a "skipped" sector or missing PoSt fault.
-func pledgePenaltyForSectorUndeclaredFault(sector *SectorOnChainInfo) abi.TokenAmount {
-	return big.Zero() // PARAM_FINISH
-}
-
-// Penalty to locked pledge collateral for a declared or on-going sector fault.
-func pledgePenaltyForSectorDeclaredFault(sector *SectorOnChainInfo) abi.TokenAmount {
-	return big.Zero() // PARAM_FINISH
-}
-
 var consensusFaultReporterInitialShare = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(1),

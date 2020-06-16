@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/pkg/errors"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -216,6 +217,10 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var detectedFaultSectors []*SectorOnChainInfo
 	var recoveredSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
+
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
@@ -231,7 +236,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Traverse earlier submissions and enact detected faults.
 		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
 		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines)
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
 
 		if !currDeadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
@@ -675,6 +680,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	var detectedFaultSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
 
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+
 	rt.State().Transaction(&st, func() interface{} {
 		rt.ValidateImmediateCallerIs(st.Info.Worker)
 
@@ -685,7 +693,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		// Traverse earlier submissions and enact detected faults.
 		// This is necessary to move the NextDeadlineToProcessFaults index past the deadline that this recovery
 		// is targeting, so that the recovery won't be declared failed next time it's checked during this proving period.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines)
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
 
 		var decaredSectors []*abi.BitField
 		for _, decl := range params.Faults {
@@ -747,7 +755,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for declared faults.
-			declaredPenalty, err := unlockPenalty(&st, store, currEpoch, declaredFaultSectors, pledgePenaltyForSectorDeclaredFault)
+			declaredPenalty, err := unlockPenalty(&st, store, currEpoch, declaredFaultSectors, computeDeclaredFaultPenalty(epochReward, pwrTotal.QualityAdjPower))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			penalty = big.Add(penalty, declaredPenalty)
 		}
@@ -787,6 +795,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	var detectedFaultSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
 
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
@@ -800,7 +811,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		// Traverse earlier submissions and enact detected faults.
 		// This is necessary to move the NextDeadlineToProcessFaults index past the deadline that this recovery
 		// is targeting, so that the recovery won't be declared failed next time it's checked during this proving period.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines)
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
 
 		var declaredSectors []*abi.BitField
 		for _, decl := range params.Recoveries {
@@ -976,6 +987,10 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 // Invoked at the end of each proving period, at the end of the epoch before the next one starts.
 func handleProvingPeriod(rt Runtime) {
 	store := adt.AsStore(rt)
+
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+
 	var st State
 	{
 		// Vest locked funds.
@@ -1005,7 +1020,9 @@ func handleProvingPeriod(rt Runtime) {
 			if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
 				deadlines, err := st.LoadDeadlines(store)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-				detectedFaultSectors, penalty = processMissingPoStFaults(rt, &st, store, deadlines, deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd())
+				detectedFaultSectors, penalty = processMissingPoStFaults(rt, &st, store, deadlines,
+					deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd(), epochReward,
+					pwrTotal.QualityAdjPower)
 			}
 			return nil
 		})
@@ -1046,7 +1063,8 @@ func handleProvingPeriod(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for ongoing faults.
-			ongoingFaultPenalty, err = unlockPenalty(&st, store, deadline.PeriodEnd(), ongoingFaultInfos, pledgePenaltyForSectorDeclaredFault)
+			penaltyCalculator := computeDeclaredFaultPenalty(epochReward, pwrTotal.QualityAdjPower)
+			ongoingFaultPenalty, err = unlockPenalty(&st, store, deadline.PeriodEnd(), ongoingFaultInfos, penaltyCalculator)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			return nil
 		})
@@ -1099,7 +1117,7 @@ func handleProvingPeriod(rt Runtime) {
 }
 
 // Detects faults from PoSt submissions that have not arrived in schedule earlier in the current proving period.
-func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, deadlines *Deadlines) ([]*SectorOnChainInfo, abi.TokenAmount) {
+func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower) ([]*SectorOnChainInfo, abi.TokenAmount) {
 	if currDeadline.PeriodElapsed() {
 		// A cron event has not yet processed the previous proving period and established the next one.
 		// This is possible in the first non-empty epoch of a proving period if there was an empty tipset on the
@@ -1107,12 +1125,12 @@ func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline
 		// The period must be reset before processing missing-post faults.
 		rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", currDeadline.PeriodStart)
 	}
-	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch)
+	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch, epochReward, currentTotalPower)
 }
 
 // Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves
 // the NextDeadlineToProcessFaults index up to that deadline.
-func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch) ([]*SectorOnChainInfo, abi.TokenAmount) {
+func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower) ([]*SectorOnChainInfo, abi.TokenAmount) {
 	// This method must be called to process the end of one proving period before moving on to the process something
 	// the next. Usually, sinceDeadline would be <= beforeDeadline since the former is updated to match the latter
 	// and the call during proving period cron will set NextDeadlineToProcessFaults back to zero.
@@ -1140,7 +1158,8 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
 	// Unlock sector penalty for all undeclared faults.
-	penalty, err := unlockPenalty(st, store, currEpoch, append(detectedFaultSectors, failedRecoverySectors...), pledgePenaltyForSectorUndeclaredFault)
+	penaltyCalculator := computeUndeclaredFaultPenalty(epochReward, currentTotalPower)
+	penalty, err := unlockPenalty(st, store, currEpoch, append(detectedFaultSectors, failedRecoverySectors...), penaltyCalculator)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
 	return detectedFaultSectors, penalty
 }
@@ -1786,12 +1805,30 @@ func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declare
 // Computes a fee for a collection of sectors and unlocks it from unvested funds (for burning).
 // The fee computation is a parameter.
 func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo,
-	feeCalc func(info *SectorOnChainInfo) abi.TokenAmount) (abi.TokenAmount, error) {
+	feeCalc func(size abi.SectorSize, info *SectorOnChainInfo) abi.TokenAmount) (abi.TokenAmount, error) {
 	fee := big.Zero()
 	for _, s := range sectors {
-		fee = big.Add(fee, feeCalc(s))
+		sectorSize, err := s.Info.SealProof.SectorSize()
+		if err != nil {
+			return abi.NewTokenAmount(0), errors.Wrap(err, "could not get sector size for sector")
+		}
+		fee = big.Add(fee, feeCalc(sectorSize, s))
 	}
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+func computeDeclaredFaultPenalty(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower) func(abi.SectorSize, *SectorOnChainInfo) abi.TokenAmount {
+	return func(size abi.SectorSize, s *SectorOnChainInfo) abi.TokenAmount {
+		qaPower := QAPowerForSector(size, s)
+		return pledgePenaltyForSectorDeclaredFault(epochTargetReward, networkQAPower, qaPower)
+	}
+}
+
+func computeUndeclaredFaultPenalty(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower) func(abi.SectorSize, *SectorOnChainInfo) abi.TokenAmount {
+	return func(size abi.SectorSize, s *SectorOnChainInfo) abi.TokenAmount {
+		qaPower := QAPowerForSector(size, s)
+		return pledgePenaltyForSectorUndeclaredFault(epochTargetReward, networkQAPower, qaPower)
+	}
 }
 
 // Returns the sum of the raw byte and quality-adjusted power for sectors.

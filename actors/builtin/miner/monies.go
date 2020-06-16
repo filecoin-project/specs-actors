@@ -4,16 +4,39 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/util"
 )
+
+const InitialPledgeFactor = int64(20)
+const ExpectedFaultFactorNum = int64(214)
+const ExpectedFaultFactorDenom = int64(1000)
+const UnexpectedFaultFactor = int64(5)
 
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
 func ExpectedDayRewardForSector(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	util.Assert(!networkQAPower.IsZero())
 	expectedRewardForProvingPeriod := big.Mul(big.NewInt(builtin.EpochsInDay), epochTargetReward)
 	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), networkQAPower)
+}
+
+// This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
+// it has been previously detected by the network.
+// FF(t) = ExpectedFaultFactor * BR(t)
+func pledgePenaltyForSectorDeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return big.Div(
+		big.Mul(big.NewInt(ExpectedFaultFactorNum), ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower)),
+		big.NewInt(ExpectedFaultFactorDenom))
+}
+
+// This is the SP(t) penalty for a newly faulty sector that has not been declared.
+// SP(t) = UnexpectedFaultFactor * BR(t)
+func pledgePenaltyForSectorUndeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return big.Mul(big.NewInt(UnexpectedFaultFactor), ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower))
+}
+
+// Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
+func pledgePenaltyForSectorTermination(size abi.SectorSize, s *SectorOnChainInfo) abi.TokenAmount {
+	return big.Zero() // PARAM_FINISH
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
@@ -32,5 +55,5 @@ func InitialPledgeForPower(qaSectorPower abi.StoragePower, networkQAPower abi.St
 	if networkQAPower.IsZero() {
 		return epochTargetReward
 	}
-	return big.Mul(big.NewInt(20), ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower))
+	return big.Mul(big.NewInt(InitialPledgeFactor), ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower))
 }
