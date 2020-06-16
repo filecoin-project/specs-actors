@@ -68,13 +68,13 @@ var MethodsPower = struct {
 	Constructor              abi.MethodNum
 	CreateMiner              abi.MethodNum
 	DeleteMiner              abi.MethodNum
-	OnSectorProveCommit      abi.MethodNum
 	UpdateClaimedPower       abi.MethodNum
 	EnrollCronEvent          abi.MethodNum
 	OnEpochTickEnd           abi.MethodNum
 	UpdatePledgeTotal        abi.MethodNum
 	OnConsensusFault         abi.MethodNum
 	SubmitPoRepForBulkVerify abi.MethodNum
+	CurrentTotalPower        abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
 var MethodsMiner = struct {
