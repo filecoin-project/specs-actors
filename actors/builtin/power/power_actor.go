@@ -36,13 +36,13 @@ func (a Actor) Exports() []interface{} {
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.CreateMiner,
 		3:                         a.DeleteMiner,
-		4:                         a.OnSectorProveCommit,
-		5:                         a.UpdateClaimedPower,
-		6:                         a.EnrollCronEvent,
-		7:                         a.OnEpochTickEnd,
-		8:                         a.UpdatePledgeTotal,
-		9:                         a.OnConsensusFault,
-		10:                        a.SubmitPoRepForBulkVerify,
+		4:                         a.UpdateClaimedPower,
+		5:                         a.EnrollCronEvent,
+		6:                         a.OnEpochTickEnd,
+		7:                         a.UpdatePledgeTotal,
+		8:                         a.OnConsensusFault,
+		9:                         a.SubmitPoRepForBulkVerify,
+		10:                        a.CurrentTotalPower,
 	}
 }
 
@@ -186,30 +186,6 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 	err := a.deleteMinerActor(rt, nominal)
 	abortIfError(rt, err, "failed to delete miner %v", nominal)
 	return nil
-}
-
-type OnSectorProveCommitParams struct {
-	RawBytePower         abi.StoragePower
-	QualityAdjustedPower abi.StoragePower
-}
-
-// Adds power for the calling actor and returns the initial pledge requirement for committing that
-// much power at this epoch.
-// May only be invoked by a miner actor.
-// TODO: remove this method after extracting pledge calculation, https://github.com/filecoin-project/specs-actors/issues/489
-func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *abi.TokenAmount {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	builtin.RequireParam(rt, params.RawBytePower.GreaterThanEqual(big.Zero()), "negative raw power %s", params.RawBytePower)
-	builtin.RequireParam(rt, params.QualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative QA power %s", params.RawBytePower)
-	initialPledge := a.computeInitialPledge(rt, params.QualityAdjustedPower)
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), params.RawBytePower, params.QualityAdjustedPower)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add power raw %s, qa %s", params.RawBytePower, params.QualityAdjustedPower)
-		return nil
-	})
-	return &initialPledge
 }
 
 type UpdateClaimedPowerParams struct {
@@ -358,23 +334,28 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 	return nil
 }
 
+type CurrentTotalPowerReturn struct {
+	RawBytePower     abi.StoragePower
+	QualityAdjPower  abi.StoragePower
+	PledgeCollateral abi.TokenAmount
+}
+
+// Returns the total power and pledge recorded by the power actor.
+// TODO hold these values constant during an epoch for stable calculations, https://github.com/filecoin-project/specs-actors/issues/495
+func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPowerReturn {
+	rt.ValidateImmediateCallerAcceptAny()
+	var st State
+	rt.State().Readonly(&st)
+	return &CurrentTotalPowerReturn{
+		RawBytePower:     st.TotalRawBytePower,
+		QualityAdjPower:  st.TotalQualityAdjPower,
+		PledgeCollateral: st.TotalPledgeCollateral,
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
-
-func (a Actor) computeInitialPledge(rt Runtime, qaPower abi.StoragePower) abi.TokenAmount {
-	var st State
-	rt.State().Readonly(&st)
-
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
-	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
-	epochReward := abi.NewTokenAmount(0)
-	if err := rwret.Into(&epochReward); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to unmarshal epoch reward value: %s", err)
-	}
-
-	return InitialPledgeForWeight(qaPower, st.TotalQualityAdjPower, rt.TotalFilCircSupply(), st.TotalPledgeCollateral, epochReward)
-}
 
 func (a Actor) processBatchProofVerifies(rt Runtime) error {
 	var st State

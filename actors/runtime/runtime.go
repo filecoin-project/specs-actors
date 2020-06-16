@@ -78,6 +78,14 @@ type Runtime interface {
 	// Provides the system call interface.
 	Syscalls() Syscalls
 
+	// Returns the total token supply in circulation at the beginning of the current epoch.
+	// The circulating supply is the sum of:
+	// - rewards emitted by the reward actor,
+	// - funds vested from lock-ups in the genesis state,
+	// less the sum of:
+	// - funds burnt,
+	// - pledge collateral locked in storage miner actors (recorded in the storage power actor)
+	// - deal collateral locked by the storage market actor
 	TotalFilCircSupply() abi.TokenAmount
 
 	// Provides a Go context for use by HAMT, etc.

@@ -453,9 +453,16 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	// Request network values used for initial pledge calculations.
+	// Note that the pledge calculation is expected to move to PreCommitSector,
+	// https://github.com/filecoin-project/specs-actors/issues/424
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt) // We could save a call by accepting this in the parameters.
+	circulatingSupply := rt.TotalFilCircSupply()
+
 	var st State
 	rt.State().Readonly(&st)
-
 	store := adt.AsStore(rt)
 
 	for _, sectorNo := range params.Sectors {
@@ -492,29 +499,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			DealWeight:         dealWeights.DealWeight,
 			VerifiedDealWeight: dealWeights.VerifiedDealWeight,
 		}
-		rawBytePower := big.NewIntUnsigned(uint64(st.Info.SectorSize))
-		qualityAdjustedPower := QAPowerForSector(st.Info.SectorSize, &newSectorInfo)
 
 		// Request power for activated sector.
-		// Return initial pledge requirement.
-
-		// TODO: since this method gets called by the storage power actor
-		// initially, can we just do this while we're there?
-		// We can probably return the right information from this call to the caller, so it can update there
-		// TODO: we should batch these calls...
+		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
 		// https://github.com/filecoin-project/specs-actors/issues/475
-		var initialPledge abi.TokenAmount
-		ret, code = rt.Send(
-			builtin.StoragePowerActorAddr,
-			builtin.MethodsPower.OnSectorProveCommit,
-			&power.OnSectorProveCommitParams{
-				RawBytePower:         rawBytePower,
-				QualityAdjustedPower: qualityAdjustedPower,
-			},
-			big.Zero(),
-		)
-		builtin.RequireSuccess(rt, code, "failed to notify power actor")
-		AssertNoError(ret.Into(&initialPledge))
+		_, qaPower := requestUpdateSectorPower(rt, st.Info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
+
+		initialPledge := InitialPledgeForPower(qaPower, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
 
 		// Add sector and pledge lock-up to miner state
 		// TODO: do this all at once after the loop
@@ -563,7 +554,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		notifyPledgeChanged(rt, big.Sub(initialPledge, newlyVestedAmount))
 	}
-
 	return nil
 }
 
@@ -1444,23 +1434,26 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func requestUpdateSectorPower(rt Runtime, sectorSize abi.SectorSize, sectorsAdded, sectorsRemoved []*SectorOnChainInfo) {
+func requestUpdateSectorPower(rt Runtime, sectorSize abi.SectorSize, sectorsAdded, sectorsRemoved []*SectorOnChainInfo) (rawDelta, qaDelta big.Int) {
 	if len(sectorsAdded)+len(sectorsRemoved) == 0 {
 		return
 	}
 	addRawPower, addQAPower := powerForSectors(sectorSize, sectorsAdded)
 	remRawPower, remQAPower := powerForSectors(sectorSize, sectorsRemoved)
+	rawDelta = big.Sub(addRawPower, remRawPower)
+	qaDelta = big.Sub(addQAPower, remQAPower)
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,
 		&power.UpdateClaimedPowerParams{
-			RawByteDelta:         big.Sub(addRawPower, remRawPower),
-			QualityAdjustedDelta: big.Sub(addQAPower, remQAPower),
+			RawByteDelta:         rawDelta,
+			QualityAdjustedDelta: qaDelta,
 		},
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to update power for sectors added %v, removed %v", sectorsAdded, sectorsRemoved)
+	return
 }
 
 func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
@@ -1607,6 +1600,26 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 		return nil
 	})
 	return nil
+}
+
+// Requests the current epoch target block reward from the reward actor.
+func requestCurrentEpochBlockReward(rt Runtime) abi.TokenAmount {
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
+	epochReward := abi.NewTokenAmount(0)
+	err := rwret.Into(&epochReward)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal epoch reward value")
+	return epochReward
+}
+
+// Requests the current network total power and pledge from the power actor.
+func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
+	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check current power")
+	var pwr power.CurrentTotalPowerReturn
+	err := pwret.Into(&pwr)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
+	return &pwr
 }
 
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
