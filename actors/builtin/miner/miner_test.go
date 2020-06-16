@@ -482,33 +482,37 @@ func TestExtendSectorExpiration(t *testing.T) {
 
 	t.Run("updates expiration with valid params", func(t *testing.T) {
 		rt := builder.Build(t)
-		sector := commitSector(t, rt)
+		oldSector := commitSector(t, rt)
 
 		extension := uint64(42 * miner.WPoStProvingPeriod)
-		newExpiration := sector.Info.Expiration + abi.ChainEpoch(extension)
+		newExpiration := oldSector.Info.Expiration + abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
-			SectorNumber:  sector.Info.SectorNumber,
+			SectorNumber:  oldSector.Info.SectorNumber,
 			NewExpiration: newExpiration,
 		}
 
-		actor.extendSector(rt, sector, extension, params)
+		actor.extendSector(rt, oldSector, extension, params)
 
 		// assert sector expiration is set to the new value
 		st := getState(rt)
-		sector, found, err := st.GetSector(rt.AdtStore(), sector.Info.SectorNumber)
+		newSector, found, err := st.GetSector(rt.AdtStore(), oldSector.Info.SectorNumber)
 		require.NoError(t, err)
 		require.True(t, found)
-		assert.Equal(t, newExpiration, sector.Info.Expiration)
+		assert.Equal(t, newExpiration, newSector.Info.Expiration)
 
-		// assert the only expiration is for the new target epoch
-		err = st.ForEachSectorExpiration(rt.AdtStore(), func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
-			assert.Equal(t, newExpiration, expiry)
-			expiringSectors, err := sectors.All(10)
-			require.NoError(t, err)
-			assert.Equal(t, []uint64{uint64(sector.Info.SectorNumber)}, expiringSectors)
-			return nil
-		})
-		assert.NoError(t, err)
+		// assert that an expiration exists at the target epoch
+		expirations, err := st.GetSectorExpirations(rt.AdtStore(), newExpiration)
+		require.NoError(t, err)
+		exists, err := expirations.IsSet(uint64(newSector.Info.SectorNumber))
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// assert that the expiration has been removed from the old epoch
+		expirations, err = st.GetSectorExpirations(rt.AdtStore(), oldSector.Info.Expiration)
+		require.NoError(t, err)
+		exists, err = expirations.IsSet(uint64(newSector.Info.SectorNumber))
+		require.NoError(t, err)
+		assert.False(t, exists)
 	})
 }
 
