@@ -348,20 +348,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already precommitted", params.SectorNumber)
 		}
 
-		if sectorInfo, found, err := st.GetSector(store, params.SectorNumber); err != nil {
+		if found, err := st.HasSectorNo(store, params.SectorNumber); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to check sector %v: %v", params.SectorNumber, err)
 		} else if found {
-			if len(sectorInfo.Info.DealIDs) > 0 {
-				// Sector has been previously committed and proven with deals.
-				rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed with deals", params.SectorNumber)
-			} else {
-				// Committed Capacity sector upgrade.
-				// The unexpired sector info remains in the state until ProveCommitSector overwrites it with the
-				// new activation epoch, expiration, deals etc.
-				if params.Expiration < sectorInfo.Info.Expiration {
-					rt.Abortf(exitcode.ErrIllegalArgument, "upgraded sector %v expires before original expiration", params.SectorNumber)
-				}
-			}
+			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 		}
 
 		validateExpiration(rt, &st, params.Expiration)
