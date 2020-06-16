@@ -126,11 +126,8 @@ func main() {
 		power.CreateMinerParams{},
 		power.DeleteMinerParams{},
 		power.EnrollCronEventParams{},
-		power.OnSectorTerminateParams{},
-		power.OnSectorModifyWeightDescParams{},
 		power.OnSectorProveCommitParams{},
-		power.OnFaultBeginParams{},
-		power.OnFaultEndParams{},
+		power.UpdateClaimedPowerParams{},
 		// method returns
 		power.CreateMinerReturn{},
 		// other types

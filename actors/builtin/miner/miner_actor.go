@@ -301,14 +301,10 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		return nil
 	})
 
-	// Remove power for new faults, and burn penalties.
-	requestBeginFaults(rt, st.Info.SectorSize, detectedFaultSectors)
+	// Restore power for recovered sectors. Remove power for new faults.
+	requestUpdateSectorPower(rt, st.Info.SectorSize, recoveredSectors, detectedFaultSectors)
+	// Burn penalties.
 	burnFundsAndNotifyPledgeChange(rt, penalty)
-
-	// Restore power for recovered sectors.
-	if len(recoveredSectors) > 0 {
-		requestEndFaults(rt, st.Info.SectorSize, recoveredSectors)
-	}
 	return nil
 }
 
@@ -621,16 +617,14 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 	newSector := *oldSector
 	newSector.Info.Expiration = params.NewExpiration
-	rawBytePower := big.NewIntUnsigned(uint64(st.Info.SectorSize))
+	qaPowerDelta := big.Sub(QAPowerForSector(st.Info.SectorSize, &newSector), QAPowerForSector(st.Info.SectorSize, oldSector))
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnSectorModifyWeightDesc,
-		&power.OnSectorModifyWeightDescParams{
-			PrevRawBytePower:         rawBytePower,
-			NewRawBytePower:          rawBytePower,
-			PrevQualityAdjustedPower: QAPowerForSector(st.Info.SectorSize, oldSector),
-			NewQualityAdjustedPower:  QAPowerForSector(st.Info.SectorSize, &newSector),
+		builtin.MethodsPower.UpdateClaimedPower,
+		&power.UpdateClaimedPowerParams{
+			RawByteDelta:         big.Zero(), // Sector size has not changed
+			QualityAdjustedDelta: qaPowerDelta,
 		},
 		abi.NewTokenAmount(0),
 	)
@@ -780,7 +774,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	})
 
 	// Remove power for new faulty sectors.
-	requestBeginFaults(rt, st.Info.SectorSize, append(detectedFaultSectors, declaredFaultSectors...))
+	requestUpdateSectorPower(rt, st.Info.SectorSize, nil, append(detectedFaultSectors, declaredFaultSectors...))
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 
 	return nil
@@ -848,7 +842,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	})
 
 	// Remove power for new faulty sectors.
-	requestBeginFaults(rt, st.Info.SectorSize, detectedFaultSectors)
+	requestUpdateSectorPower(rt, st.Info.SectorSize, nil, detectedFaultSectors)
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
@@ -1027,7 +1021,7 @@ func handleProvingPeriod(rt Runtime) {
 		})
 
 		// Remove power for new faults, and burn penalties.
-		requestBeginFaults(rt, st.Info.SectorSize, detectedFaultSectors)
+		requestUpdateSectorPower(rt, st.Info.SectorSize, nil, detectedFaultSectors)
 		burnFundsAndNotifyPledgeChange(rt, penalty)
 	}
 
@@ -1401,12 +1395,11 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 		return nil
 	})
 
-	// End any fault state before terminating sector power.
-	// TODO: could we compress the three calls to power actor into one sector termination call?
+	// TODO: could we compress the multiple calls to power actor into one sector termination call?
 	// https://github.com/filecoin-project/specs-actors/issues/478
-	requestEndFaults(rt, st.Info.SectorSize, faultySectors)
+	// Compute the power delta as if recovering all the currently-faulty sectors before terminating all of them.
+	requestUpdateSectorPower(rt, st.Info.SectorSize, faultySectors, allSectors)
 	requestTerminateDeals(rt, dealIDs)
-	requestTerminatePower(rt, st.Info.SectorSize, allSectors)
 
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 }
@@ -1451,40 +1444,23 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func requestBeginFaults(rt Runtime, sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) {
-	if len(sectors) == 0 {
+func requestUpdateSectorPower(rt Runtime, sectorSize abi.SectorSize, sectorsAdded, sectorsRemoved []*SectorOnChainInfo) {
+	if len(sectorsAdded)+len(sectorsRemoved) == 0 {
 		return
 	}
-	rawBytePower, qaPower := powerForSectors(sectorSize, sectors)
+	addRawPower, addQAPower := powerForSectors(sectorSize, sectorsAdded)
+	remRawPower, remQAPower := powerForSectors(sectorSize, sectorsRemoved)
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnFaultBegin,
-		&power.OnFaultBeginParams{
-			RawBytePower:         rawBytePower,
-			QualityAdjustedPower: qaPower,
+		builtin.MethodsPower.UpdateClaimedPower,
+		&power.UpdateClaimedPowerParams{
+			RawByteDelta:         big.Sub(addRawPower, remRawPower),
+			QualityAdjustedDelta: big.Sub(addQAPower, remQAPower),
 		},
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to request faults %v", sectors)
-}
-
-func requestEndFaults(rt Runtime, sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) {
-	if len(sectors) == 0 {
-		return
-	}
-	rawBytePower, qaPower := powerForSectors(sectorSize, sectors)
-
-	_, code := rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnFaultEnd,
-		&power.OnFaultEndParams{
-			RawBytePower:         rawBytePower,
-			QualityAdjustedPower: qaPower,
-		},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to request end faults %v", sectors)
+	builtin.RequireSuccess(rt, code, "failed to update power for sectors added %v, removed %v", sectorsAdded, sectorsRemoved)
 }
 
 func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
@@ -1514,24 +1490,6 @@ func requestTerminateAllDeals(rt Runtime, st *State) {
 	}
 
 	requestTerminateDeals(rt, dealIds)
-}
-
-func requestTerminatePower(rt Runtime, sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) {
-	if len(sectors) == 0 {
-		return
-	}
-	rawBytePower, qaPower := powerForSectors(sectorSize, sectors)
-
-	_, code := rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnSectorTerminate,
-		&power.OnSectorTerminateParams{
-			RawBytePower:         rawBytePower,
-			QualityAdjustedPower: qaPower,
-		},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to terminate sector power, sectors %v", sectors)
 }
 
 func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []abi.PoStProof) {
