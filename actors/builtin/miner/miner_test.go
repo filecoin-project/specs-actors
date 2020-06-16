@@ -807,17 +807,15 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	st := getState(rt)
-	rawBytePower := big.NewIntUnsigned(uint64(st.Info.SectorSize))
 	newSector := *sector
 	newSector.Info.Expiration += extension
+	qaDelta := big.Sub(miner.QAPowerForSector(st.Info.SectorSize, &newSector), miner.QAPowerForSector(st.Info.SectorSize, sector))
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnSectorModifyWeightDesc,
-		&power.OnSectorModifyWeightDescParams{
-			PrevRawBytePower:         rawBytePower,
-			NewRawBytePower:          rawBytePower,
-			PrevQualityAdjustedPower: miner.QAPowerForSector(st.Info.SectorSize, sector),
-			NewQualityAdjustedPower:  miner.QAPowerForSector(st.Info.SectorSize, &newSector),
+		builtin.MethodsPower.UpdateClaimedPower,
+		&power.UpdateClaimedPowerParams{
+			RawByteDelta:         big.Zero(),
+			QualityAdjustedDelta: qaDelta,
 		},
 		abi.NewTokenAmount(0),
 		nil,

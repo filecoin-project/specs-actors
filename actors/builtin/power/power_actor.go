@@ -37,15 +37,12 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.CreateMiner,
 		3:                         a.DeleteMiner,
 		4:                         a.OnSectorProveCommit,
-		5:                         a.OnSectorTerminate,
-		6:                         a.OnFaultBegin,
-		7:                         a.OnFaultEnd,
-		8:                         a.OnSectorModifyWeightDesc,
-		9:                         a.EnrollCronEvent,
-		10:                        a.OnEpochTickEnd,
-		11:                        a.UpdatePledgeTotal,
-		12:                        a.OnConsensusFault,
-		13:                        a.SubmitPoRepForBulkVerify,
+		5:                         a.UpdateClaimedPower,
+		6:                         a.EnrollCronEvent,
+		7:                         a.OnEpochTickEnd,
+		8:                         a.UpdatePledgeTotal,
+		9:                         a.OnConsensusFault,
+		10:                        a.SubmitPoRepForBulkVerify,
 	}
 }
 
@@ -199,6 +196,7 @@ type OnSectorProveCommitParams struct {
 // Adds power for the calling actor and returns the initial pledge requirement for committing that
 // much power at this epoch.
 // May only be invoked by a miner actor.
+// TODO: remove this method after extracting pledge calculation, https://github.com/filecoin-project/specs-actors/issues/489
 func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams) *abi.TokenAmount {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	builtin.RequireParam(rt, params.RawBytePower.GreaterThanEqual(big.Zero()), "negative raw power %s", params.RawBytePower)
@@ -214,104 +212,24 @@ func (a Actor) OnSectorProveCommit(rt Runtime, params *OnSectorProveCommitParams
 	return &initialPledge
 }
 
-type OnSectorTerminateParams struct {
-	RawBytePower         abi.StoragePower
-	QualityAdjustedPower abi.StoragePower
+type UpdateClaimedPowerParams struct {
+	RawByteDelta         abi.StoragePower
+	QualityAdjustedDelta abi.StoragePower
 }
 
-// Removes power for the calling actor.
+// Adds or removes claimed power for the calling actor.
 // May only be invoked by a miner actor.
-func (a Actor) OnSectorTerminate(rt Runtime, params *OnSectorTerminateParams) *adt.EmptyValue {
+func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	builtin.RequireParam(rt, params.RawBytePower.GreaterThanEqual(big.Zero()), "negative raw power %s", params.RawBytePower)
-	builtin.RequireParam(rt, params.QualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative QA power %s", params.RawBytePower)
 	minerAddr := rt.Message().Caller()
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawBytePower.Neg(), params.QualityAdjustedPower.Neg())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove power raw %s, qa %s", params.RawBytePower, params.QualityAdjustedPower)
+		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
 		return nil
 	})
 	return nil
-}
-
-type OnFaultBeginParams struct {
-	RawBytePower         abi.StoragePower
-	QualityAdjustedPower abi.StoragePower
-}
-
-// Removes power for the calling actor.
-// May only be invoked by a miner actor.
-// TODO: remove duplication of OnSectorTerminate, https://github.com/filecoin-project/specs-actors/issues/487
-func (a Actor) OnFaultBegin(rt Runtime, params *OnFaultBeginParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	builtin.RequireParam(rt, params.RawBytePower.GreaterThanEqual(big.Zero()), "negative raw power %s", params.RawBytePower)
-	builtin.RequireParam(rt, params.QualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative QA power %s", params.RawBytePower)
-	minerAddr := rt.Message().Caller()
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawBytePower.Neg(), params.QualityAdjustedPower.Neg())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove power raw %s, qa %s", params.RawBytePower, params.QualityAdjustedPower)
-		return nil
-	})
-	return nil
-}
-
-type OnFaultEndParams struct {
-	RawBytePower         abi.StoragePower
-	QualityAdjustedPower abi.StoragePower
-}
-
-// Removes power for the calling actor.
-// May only be invoked by a miner actor.
-// TODO: remove duplication of OnSectorTerminate, https://github.com/filecoin-project/specs-actors/issues/487
-func (a Actor) OnFaultEnd(rt Runtime, params *OnFaultEndParams) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	builtin.RequireParam(rt, params.RawBytePower.GreaterThanEqual(big.Zero()), "negative raw power %s", params.RawBytePower)
-	builtin.RequireParam(rt, params.QualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative QA power %s", params.RawBytePower)
-	minerAddr := rt.Message().Caller()
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawBytePower, params.QualityAdjustedPower)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add power raw %s, qa %s", params.RawBytePower, params.QualityAdjustedPower)
-		return nil
-	})
-	return nil
-}
-
-type OnSectorModifyWeightDescParams struct {
-	PrevRawBytePower         abi.StoragePower
-	NewRawBytePower          abi.StoragePower
-	PrevQualityAdjustedPower abi.StoragePower
-	NewQualityAdjustedPower  abi.StoragePower
-}
-
-// Removes power and replaces for the calling actor.
-// May only be invoked by a miner actor.
-// Returns new initial pledge, now committed in place of the old.
-// This is just a composition of OnSectorTerminate and OnSectorProveCommit.
-// TODO: remove duplication of OnSectorTerminate, https://github.com/filecoin-project/specs-actors/issues/487
-func (a Actor) OnSectorModifyWeightDesc(rt Runtime, params *OnSectorModifyWeightDescParams) *abi.TokenAmount {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	builtin.RequireParam(rt, params.PrevRawBytePower.GreaterThanEqual(big.Zero()), "negative prev raw power %s", params.PrevRawBytePower)
-	builtin.RequireParam(rt, params.NewRawBytePower.GreaterThanEqual(big.Zero()), "negative new raw power %s", params.NewRawBytePower)
-	builtin.RequireParam(rt, params.PrevQualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative prev QA power %s", params.PrevQualityAdjustedPower)
-	builtin.RequireParam(rt, params.NewQualityAdjustedPower.GreaterThanEqual(big.Zero()), "negative new QA power %s", params.NewQualityAdjustedPower)
-	newInitialPledge := a.computeInitialPledge(rt, params.NewQualityAdjustedPower)
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), params.PrevRawBytePower.Neg(), params.PrevQualityAdjustedPower.Neg())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to deduct power raw %s, qa %s", params.PrevRawBytePower, params.PrevQualityAdjustedPower)
-
-		err = st.AddToClaim(adt.AsStore(rt), rt.Message().Caller(), params.NewRawBytePower, params.NewQualityAdjustedPower)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add power raw %s, qa %s", params.NewRawBytePower, params.NewQualityAdjustedPower)
-		return nil
-	})
-	return &newInitialPledge
 }
 
 type EnrollCronEventParams struct {
