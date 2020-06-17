@@ -60,8 +60,6 @@ type Runtime struct {
 	expectVerifySig          *expectVerifySig
 	expectVerifySeal         *expectVerifySeal
 	expectVerifyPoSt         *expectVerifyPoSt
-
-	sentMessages []*expectedMessage
 }
 
 type expectRandomness struct {
@@ -273,9 +271,8 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 		rt.Abortf(exitcode.SysErrSenderStateInvalid, "cannot send value: %v exceeds balance: %v", value, rt.balance)
 	}
 
-	// store the sent message, pop the expectedMessage from the queue, and modify the mockrt balance to reflect the send.
+	// pop the expectedMessage from the queue and modify the mockrt balance to reflect the send.
 	defer func() {
-		rt.sentMessages = append(rt.sentMessages, exp)
 		rt.expectSends = rt.expectSends[1:]
 		rt.balance = big.Sub(rt.balance, value)
 	}()
@@ -616,9 +613,6 @@ func (rt *Runtime) ExpectGetRandomness(tag crypto.DomainSeparationTag, epoch abi
 
 func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount, ret runtime.CBORMarshaler, exitCode exitcode.ExitCode) {
 	// append to the send queue
-	if ret == nil {
-		ret = adt.Empty
-	}
 	rt.expectSends = append(rt.expectSends, &expectedMessage{
 		to:         toAddr,
 		method:     methodNum,
