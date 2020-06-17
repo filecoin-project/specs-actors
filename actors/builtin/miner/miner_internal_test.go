@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
 
@@ -90,3 +91,40 @@ func TestNextProvingPeriodStart(t *testing.T) {
 }
 
 type e = abi.ChainEpoch
+
+func TestFaultFeeInvariants(t *testing.T) {
+	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
+		epochReward := abi.NewTokenAmount(1_000)
+		networkPower := abi.NewStoragePower(1_000_000)
+		faultySectorPower := abi.NewStoragePower(10_000)
+
+		ff := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorPower)
+		sp := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorPower)
+		assert.True(t, sp.GreaterThan(ff))
+	}) 
+
+	 t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
+		epochReward := abi.NewTokenAmount(1_000)
+		networkPower := abi.NewStoragePower(1_000_000)
+		faultySectorAPower := abi.NewStoragePower(10_000)
+		faultySectorBPower := abi.NewStoragePower(19_100)		
+		faultySectorCPower := abi.NewStoragePower(63_007)				
+		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)		
+
+		// Declared faults
+		ffA := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorAPower)
+		ffB := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		ffC := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorCPower)				
+
+		ffAll := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, totalFaultPower)						
+		assert.Equal(t, ffAll, big.Add(ffC, big.Add(ffA, ffB)))
+
+		// Undeclared faults		
+		spA := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorAPower)
+		spB := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		spC := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorCPower)				
+
+		spAll := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, totalFaultPower)
+		assert.Equal(t, spAll, big.Add(spC, big.Add(spA, spB)))
+	 })
+}
