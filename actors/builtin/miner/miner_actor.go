@@ -649,9 +649,11 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
-	terminateSectors(rt, params.Sectors, power.SectorTerminationManual)
+	terminateSectors(rt, params.Sectors, power.SectorTerminationManual, epochReward, pwrTotal.QualityAdjPower)
 	return nil
 }
 
@@ -1043,7 +1045,7 @@ func handleProvingPeriod(rt Runtime) {
 		})
 
 		// Terminate expired sectors (sends messages to power and market actors).
-		terminateSectors(rt, expiredSectors, power.SectorTerminationExpired)
+		terminateSectors(rt, expiredSectors, power.SectorTerminationExpired, epochReward, pwrTotal.QualityAdjPower)
 	}
 
 	{
@@ -1063,13 +1065,12 @@ func handleProvingPeriod(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for ongoing faults.
-			penaltyCalculator := computeDeclaredFaultPenalty(epochReward, pwrTotal.QualityAdjPower)
-			ongoingFaultPenalty, err = unlockPenalty(&st, store, deadline.PeriodEnd(), ongoingFaultInfos, penaltyCalculator)
+			ongoingFaultPenalty, err = unlockDeclaredFaultPenalty(&st, store, deadline.PeriodEnd(), epochReward, pwrTotal.QualityAdjPower, ongoingFaultInfos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			return nil
 		})
 
-		terminateSectors(rt, expiredFaults, power.SectorTerminationFaulty)
+		terminateSectors(rt, expiredFaults, power.SectorTerminationFaulty, epochReward, pwrTotal.QualityAdjPower)
 		burnFundsAndNotifyPledgeChange(rt, ongoingFaultPenalty)
 	}
 
@@ -1158,8 +1159,8 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
 	// Unlock sector penalty for all undeclared faults.
-	penaltyCalculator := computeUndeclaredFaultPenalty(epochReward, currentTotalPower)
-	penalty, err := unlockPenalty(st, store, currEpoch, append(detectedFaultSectors, failedRecoverySectors...), penaltyCalculator)
+	penalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, currEpoch, epochReward, currentTotalPower, penalizedSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
 	return detectedFaultSectors, penalty
 }
@@ -1344,7 +1345,7 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 
 // TODO: red flag that this method is potentially super expensive
 // https://github.com/filecoin-project/specs-actors/issues/483
-func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power.SectorTermination) {
+func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power.SectorTermination, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to count sectors")
@@ -1405,7 +1406,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
 
 		if terminationType != power.SectorTerminationExpired {
-			penalty, err = unlockPenalty(&st, store, rt.CurrEpoch(), allSectors, pledgePenaltyForSectorTermination)
+			penalty, err = unlockTerminationPenalty(&st, store, rt.CurrEpoch(), epochReward, currentTotalPower, allSectors)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to unlock penalty %s", err)
 			}
@@ -1802,21 +1803,7 @@ func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declare
 	return nil
 }
 
-// Computes a fee for a collection of sectors and unlocks it from unvested funds (for burning).
-// The fee computation is a parameter.
-func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo,
-	feeCalc func(size abi.SectorSize, info *SectorOnChainInfo) abi.TokenAmount) (abi.TokenAmount, error) {
-	fee := big.Zero()
-	for _, s := range sectors {
-		sectorSize, err := s.Info.SealProof.SectorSize()
-		if err != nil {
-			return abi.NewTokenAmount(0), xerrors.Errorf("could not get sector size for sector: %w", err)
-		}
-		fee = big.Add(fee, feeCalc(sectorSize, s))
-	}
-	return st.UnlockUnvestedFunds(store, currEpoch, fee)
-}
-
+// qaPowerForSectors sums the quality adjusted power of all sectors
 func qaPowerForSectors(sectors []*SectorOnChainInfo) (abi.StoragePower, error) {
 	power := big.Zero()
 	for _, s := range sectors {
@@ -1845,6 +1832,20 @@ func unlockUndeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.Chai
 	}
 	fee := pledgePenaltyForSectorUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+	totalFee := big.Zero()
+	for _, s := range sectors {
+		sectorSize, err := s.Info.SealProof.SectorSize()
+		if err != nil {
+			return abi.NewTokenAmount(0), xerrors.Errorf("could not get sector size for sector: %w", err)
+		}
+		sectorPower := QAPowerForSector(sectorSize, s)
+		fee := pledgePenaltyForSectorTermination(s, epochTargetReward, networkQAPower, sectorPower)
+		totalFee = big.Add(fee, totalFee)
+	}
+	return totalFee, nil
 }
 
 // Returns the sum of the raw byte and quality-adjusted power for sectors.
