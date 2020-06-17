@@ -755,7 +755,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for declared faults.
-			declaredPenalty, err := unlockPenalty(&st, store, currEpoch, declaredFaultSectors, computeDeclaredFaultPenalty(epochReward, pwrTotal.QualityAdjPower))
+			declaredPenalty, err := unlockDeclaredFaultPenalty(&st, store, currEpoch, epochReward, pwrTotal.QualityAdjPower, declaredFaultSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			penalty = big.Add(penalty, declaredPenalty)
 		}
@@ -1817,18 +1817,34 @@ func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func computeDeclaredFaultPenalty(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower) func(abi.SectorSize, *SectorOnChainInfo) abi.TokenAmount {
-	return func(size abi.SectorSize, s *SectorOnChainInfo) abi.TokenAmount {
-		qaPower := QAPowerForSector(size, s)
-		return pledgePenaltyForSectorDeclaredFault(epochTargetReward, networkQAPower, qaPower)
+func qaPowerForSectors(sectors []*SectorOnChainInfo) (abi.StoragePower, error) {
+	power := big.Zero()
+	for _, s := range sectors {
+		sectorSize, err := s.Info.SealProof.SectorSize()
+		if err != nil {
+			return abi.NewTokenAmount(0), xerrors.Errorf("could not get sector size for sector: %w", err)
+		}
+		power = big.Add(power, QAPowerForSector(sectorSize, s))
 	}
+	return power, nil
 }
 
-func computeUndeclaredFaultPenalty(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower) func(abi.SectorSize, *SectorOnChainInfo) abi.TokenAmount {
-	return func(size abi.SectorSize, s *SectorOnChainInfo) abi.TokenAmount {
-		qaPower := QAPowerForSector(size, s)
-		return pledgePenaltyForSectorUndeclaredFault(epochTargetReward, networkQAPower, qaPower)
+func unlockDeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+	totalQAPower, err := qaPowerForSectors(sectors)
+	if err != nil {
+		return abi.NewTokenAmount(0), err
 	}
+	fee := pledgePenaltyForSectorDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+func unlockUndeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+	totalQAPower, err := qaPowerForSectors(sectors)
+	if err != nil {
+		return abi.NewTokenAmount(0), err
+	}
+	fee := pledgePenaltyForSectorUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
 // Returns the sum of the raw byte and quality-adjusted power for sectors.
