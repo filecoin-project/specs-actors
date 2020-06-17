@@ -121,14 +121,14 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.Equal(t, claim1.RawBytePower, powerUnit)
-		require.Equal(t, claim1.QualityAdjPower, mul(powerUnit, 2))
+		require.Equal(t, powerUnit, claim1.RawBytePower, )
+		require.Equal(t, mul(powerUnit, 2), claim1.QualityAdjPower, )
 
 		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.Equal(t, claim2.RawBytePower, powerUnit)
-		require.Equal(t, claim2.QualityAdjPower, powerUnit)
+		require.Equal(t, powerUnit, claim2.RawBytePower )
+		require.Equal(t, powerUnit, claim2.QualityAdjPower )
 
 		// Subtract power and some pledge for miner2
 		actor.updateClaimedPower(rt, miner2, powerUnit.Neg(), powerUnit.Neg())
@@ -137,6 +137,13 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		assert.Equal(t, mul(powerUnit, 1), ret.RawBytePower)
 		assert.Equal(t, mul(powerUnit, 2), ret.QualityAdjPower)
 		assert.Equal(t, abi.NewTokenAmount(9e5), ret.PledgeCollateral)
+
+		rt.GetState(&st)
+		claim2, found, err = st.GetClaim(rt.AdtStore(), miner2)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, big.Zero(), claim2.RawBytePower)
+		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
 	})
 }
 
