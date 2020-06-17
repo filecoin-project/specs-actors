@@ -2,6 +2,7 @@ package market
 
 import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
@@ -30,4 +31,12 @@ func dealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.Chai
 // Penalty to provider deal collateral if the deadline expires before sector commitment.
 func collateralPenaltyForDealActivationMissed(providerCollateral abi.TokenAmount) abi.TokenAmount {
 	return providerCollateral // PARAM_FINISH
+}
+
+// Computes the weight for a deal proposal, which is a function of its size and duration.
+func DealWeight(proposal *DealProposal) abi.DealWeight {
+	dealDuration := big.NewInt(int64(proposal.Duration()))
+	dealSize := big.NewIntUnsigned(uint64(proposal.PieceSize))
+	dealSpaceTime := big.Mul(dealDuration, dealSize)
+	return dealSpaceTime
 }
