@@ -424,6 +424,45 @@ func TestApprove(t *testing.T) {
 		actor.assertTransactions(rt)
 	})
 
+	t.Run("approve with non-empty return value", func(t *testing.T) {
+		const numApprovals = uint64(2)
+
+		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, builtin.MethodsMiner.ControlAddresses, fakeParams, nil)
+
+		approveRet := miner.GetControlAddressesReturn{
+			Owner:  tutil.NewIDAddr(t, 1),
+			Worker: tutil.NewIDAddr(t, 2),
+		}
+
+		proposalHashData := makeProposalHash(t, &multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   builtin.MethodsMiner.ControlAddresses,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(chuck, builtin.MethodsMiner.ControlAddresses, fakeParams, sendValue, &approveRet, 0)
+
+		var out miner.GetControlAddressesReturn
+		actor.approve(rt, txnID, proposalHashData, &out)
+		// assert approveRet.Ret can be marshaled into the expected structure.
+		assert.Equal(t, approveRet, out)
+
+		// the transaction has been sent and cleaned up
+		actor.assertTransactions(rt)
+		rt.Verify()
+
+	})
+
 	t.Run("fail approval with bad proposal hash", func(t *testing.T) {
 		rt := builder.Build(t)
 
