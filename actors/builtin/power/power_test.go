@@ -3,6 +3,7 @@ package power_test
 import (
 	"bytes"
 	"context"
+	"strconv"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -64,6 +65,85 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.CronEventQueue)
+	})
+}
+
+func TestPowerAndPledgeAccounting(t *testing.T) {
+	actor := newHarness(t)
+	owner := tutil.NewIDAddr(t, 101)
+	miner1 := tutil.NewIDAddr(t, 111)
+	miner2 := tutil.NewIDAddr(t, 112)
+
+	// These tests use the min power for consensus to check the accounting above that value.
+	// TODO: tests for crossing the consensus minimum boundary after settling the behaviour.
+	// See https://github.com/filecoin-project/specs-actors/issues/266
+	powerUnit := power.ConsensusMinerMinPower
+
+	mul := func(a big.Int, b int64) big.Int {
+		return big.Mul(a, big.NewInt(b))
+	}
+
+	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).
+		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+
+	t.Run("power & pledge accounted", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+
+		ret := actor.currentPowerTotal(rt)
+		assert.Equal(t, big.Zero(), ret.RawBytePower)
+		assert.Equal(t, big.Zero(), ret.QualityAdjPower)
+		assert.Equal(t, big.Zero(), ret.PledgeCollateral)
+
+		// Add power for miner1
+		actor.updateClaimedPower(rt, miner1, powerUnit, mul(powerUnit, 2))
+		ret = actor.currentPowerTotal(rt)
+		assert.Equal(t, powerUnit, ret.RawBytePower)
+		assert.Equal(t, mul(powerUnit, 2), ret.QualityAdjPower)
+		assert.Equal(t, big.Zero(), ret.PledgeCollateral)
+
+		// Add power and pledge for miner2
+		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
+		actor.updatePledgeTotal(rt, miner1, abi.NewTokenAmount(1e6))
+		ret = actor.currentPowerTotal(rt)
+		assert.Equal(t, mul(powerUnit, 2), ret.RawBytePower)
+		assert.Equal(t, mul(powerUnit, 3), ret.QualityAdjPower)
+		assert.Equal(t, abi.NewTokenAmount(1e6), ret.PledgeCollateral)
+
+		rt.Verify()
+
+		// Verify claims in state.
+		var st power.State
+		rt.GetState(&st)
+		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, powerUnit, claim1.RawBytePower, )
+		require.Equal(t, mul(powerUnit, 2), claim1.QualityAdjPower, )
+
+		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, powerUnit, claim2.RawBytePower )
+		require.Equal(t, powerUnit, claim2.QualityAdjPower )
+
+		// Subtract power and some pledge for miner2
+		actor.updateClaimedPower(rt, miner2, powerUnit.Neg(), powerUnit.Neg())
+		actor.updatePledgeTotal(rt, miner2, abi.NewTokenAmount(1e5).Neg())
+		ret = actor.currentPowerTotal(rt)
+		assert.Equal(t, mul(powerUnit, 1), ret.RawBytePower)
+		assert.Equal(t, mul(powerUnit, 2), ret.QualityAdjPower)
+		assert.Equal(t, abi.NewTokenAmount(9e5), ret.PledgeCollateral)
+
+		rt.GetState(&st)
+		claim2, found, err = st.GetClaim(rt.AdtStore(), miner2)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, big.Zero(), claim2.RawBytePower)
+		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
 	})
 }
 
@@ -163,10 +243,11 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 
 type spActorHarness struct {
 	power.Actor
-	t testing.TB
+	t        *testing.T
+	minerSeq int
 }
 
-func newHarness(t testing.TB) *spActorHarness {
+func newHarness(t *testing.T) *spActorHarness {
 	return &spActorHarness{
 		Actor: power.Actor{},
 		t:     t,
@@ -183,6 +264,8 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.GetState(&st)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePower)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
+	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
+	assert.Equal(h.t, abi.ChainEpoch(-1), st.LastEpochTick)
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
 
@@ -218,6 +301,38 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, value, createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
 	rt.Verify()
+}
+
+func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner addr.Address) {
+	label := strconv.Itoa(h.minerSeq)
+	actrAddr := tutil.NewActorAddr(h.t, label)
+	h.minerSeq += 1
+	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero())
+}
+
+func (h *spActorHarness) updateClaimedPower(rt *mock.Runtime, miner addr.Address, rawDelta, qaDelta abi.StoragePower) {
+	params := power.UpdateClaimedPowerParams{
+		RawByteDelta:         rawDelta,
+		QualityAdjustedDelta: qaDelta,
+	}
+	rt.SetCaller(miner, builtin.StorageMinerActorCodeID)
+	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+	rt.Call(h.UpdateClaimedPower, &params)
+	rt.Verify()
+}
+
+func (h *spActorHarness) updatePledgeTotal(rt *mock.Runtime, miner addr.Address, delta abi.TokenAmount) {
+	rt.SetCaller(miner, builtin.StorageMinerActorCodeID)
+	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+	rt.Call(h.UpdatePledgeTotal, &delta)
+	rt.Verify()
+}
+
+func (h *spActorHarness) currentPowerTotal(rt *mock.Runtime) *power.CurrentTotalPowerReturn {
+	rt.ExpectValidateCallerAny()
+	ret := rt.Call(h.CurrentTotalPower, nil).(*power.CurrentTotalPowerReturn)
+	rt.Verify()
+	return ret
 }
 
 func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, epoch abi.ChainEpoch, payload []byte) {
