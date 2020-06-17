@@ -123,7 +123,7 @@ type ProposeReturn struct {
 	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
 	Code exitcode.ExitCode
 	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
-	Ret vmr.CBORBytes
+	Ret []byte
 }
 
 func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
@@ -173,7 +173,7 @@ type ApproveReturn struct {
 	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
 	Code exitcode.ExitCode
 	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
-	Ret vmr.CBORBytes
+	Ret []byte
 }
 
 func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
@@ -336,7 +336,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) (bool, vmr.CBORBytes, exitcode.ExitCode) {
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) (bool, []byte, exitcode.ExitCode) {
 	var st State
 	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
@@ -390,7 +390,8 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 		)
 		applied = true
 
-		// pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails since it just copies the bytes.
+		// Pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails
+		// since it just copies the bytes.
 		if err := ret.Into(&out); err != nil {
 			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
 		}

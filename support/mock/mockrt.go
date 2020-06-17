@@ -612,7 +612,10 @@ func (rt *Runtime) ExpectGetRandomness(tag crypto.DomainSeparationTag, epoch abi
 }
 
 func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount, ret runtime.CBORMarshaler, exitCode exitcode.ExitCode) {
-	// append to the send queue
+	// Adapt nil to Empty as convenience for the caller (otherwise we would require non-nil here).
+	if ret == nil {
+		ret = adt.Empty
+	}
 	rt.expectSends = append(rt.expectSends, &expectedMessage{
 		to:         toAddr,
 		method:     methodNum,

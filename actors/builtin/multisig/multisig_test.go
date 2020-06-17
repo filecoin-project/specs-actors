@@ -1178,9 +1178,7 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 	// if the transaction was applied and a return value is expected deserialize it to the out parameter
 	if proposeReturn.Applied {
 		if out != nil {
-			buf := bytes.Buffer{}
-			require.NoError(h.t, proposeReturn.Ret.MarshalCBOR(&buf))
-			require.NoError(h.t, out.UnmarshalCBOR(&buf))
+			require.NoError(h.t, out.UnmarshalCBOR(bytes.NewReader(proposeReturn.Ret)))
 		}
 	}
 	return proposeReturn.Code
@@ -1196,9 +1194,7 @@ func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams [
 	// if the transaction was applied and a return value is expected deserialize it to the out parameter
 	if approveReturn.Applied {
 		if out != nil {
-			buf := bytes.Buffer{}
-			require.NoError(h.t, approveReturn.Ret.MarshalCBOR(&buf))
-			require.NoError(h.t, out.UnmarshalCBOR(&buf))
+			require.NoError(h.t, out.UnmarshalCBOR(bytes.NewReader(approveReturn.Ret)))
 		}
 	}
 	return approveReturn.Code
