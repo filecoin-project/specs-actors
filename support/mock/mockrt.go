@@ -803,6 +803,8 @@ func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
 	panic("todo crypto econ")
 }
 
+func (rt *Runtime) ChargeGas(_ string, _, _ int64) {}
+
 type ReturnWrapper struct {
 	V runtime.CBORMarshaler
 }
