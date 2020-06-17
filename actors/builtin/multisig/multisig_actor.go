@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
-	cbg "github.com/whyrusleeping/cbor-gen"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -117,7 +115,18 @@ type ProposeParams struct {
 	Params []byte
 }
 
-func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
+type ProposeReturn struct {
+	// TxnID is the ID of the proposed transaction
+	TxnID TxnID
+	// Applied indicates if the transaction was applied as opposed to proposed but not applied due to lack of approvals
+	Applied bool
+	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
+	Code exitcode.ExitCode
+	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
+	Ret []byte
+}
+
+func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
@@ -143,13 +152,14 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *cbg.CborInt {
 	// Proposal implicitly includes approval of a transaction. Bypass hash check
 	// because PROPOSE is the reference point for other approvers.
 	var emptyArray []byte
-	a.approveTransaction(rt, txnID, emptyArray, false)
+	applied, ret, code := a.approveTransaction(rt, txnID, emptyArray, false)
 
-	// Note: this ID may not be stable across chain re-orgs.
-	// https://github.com/filecoin-project/specs-actors/issues/7
-
-	v := cbg.CborInt(txnID)
-	return &v
+	return &ProposeReturn{
+		TxnID:   txnID,
+		Applied: applied,
+		Code:    code,
+		Ret:     ret,
+	}
 }
 
 type TxnIDParams struct {
@@ -157,7 +167,16 @@ type TxnIDParams struct {
 	ProposalHash []byte
 }
 
-func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+type ApproveReturn struct {
+	// Applied indicates if the transaction was applied as opposed to proposed but not applied due to lack of approvals
+	Applied bool
+	// Code is the exitcode of the transaction, if Applied is false this field should be ignored.
+	Code exitcode.ExitCode
+	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
+	Ret []byte
+}
+
+func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 	var st State
@@ -165,8 +184,12 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		a.validateSigner(rt, &st, callerAddr)
 		return nil
 	})
-	a.approveTransaction(rt, params.ID, params.ProposalHash, true)
-	return nil
+	approved, ret, code := a.approveTransaction(rt, params.ID, params.ProposalHash, true)
+	return &ApproveReturn{
+		Applied: approved,
+		Code:    code,
+		Ret:     ret,
+	}
 }
 
 func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
@@ -313,7 +336,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) {
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) (bool, []byte, exitcode.ExitCode) {
 	var st State
 	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
@@ -348,21 +371,30 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 		return nil
 	})
 
+	var out vmr.CBORBytes
+	var code exitcode.ExitCode
+	applied := false
 	thresholdMet := uint64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
+		var ret vmr.SendReturn
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
-		_, code := rt.Send(
+		ret, code = rt.Send(
 			txn.To,
 			txn.Method,
 			vmr.CBORBytes(txn.Params),
 			txn.Value,
 		)
-		// The exit code is explicitly ignored. It's ok for the subcall to fail.
-		_ = code
+		applied = true
+
+		// Pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails
+		// since it just copies the bytes.
+		if err := ret.Into(&out); err != nil {
+			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
+		}
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {
@@ -372,6 +404,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 			return nil
 		})
 	}
+	return applied, out, code
 }
 
 func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {

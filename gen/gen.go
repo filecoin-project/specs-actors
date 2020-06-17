@@ -98,6 +98,9 @@ func main() {
 		multisig.TxnIDParams{},
 		multisig.ChangeNumApprovalsThresholdParams{},
 		multisig.SwapSignerParams{},
+		// method returns
+		multisig.ApproveReturn{},
+		multisig.ProposeReturn{},
 	); err != nil {
 		panic(err)
 	}
