@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/pkg/errors"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -1810,7 +1810,7 @@ func unlockPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, sectors
 	for _, s := range sectors {
 		sectorSize, err := s.Info.SealProof.SectorSize()
 		if err != nil {
-			return abi.NewTokenAmount(0), errors.Wrap(err, "could not get sector size for sector")
+			return abi.NewTokenAmount(0), xerrors.Errorf("could not get sector size for sector: %w", err)
 		}
 		fee = big.Add(fee, feeCalc(sectorSize, s))
 	}
