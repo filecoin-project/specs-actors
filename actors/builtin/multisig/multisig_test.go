@@ -161,7 +161,7 @@ func TestVesting(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
-		actor.approve(rt, 0, proposalHashData)
+		actor.approve(rt, 0, proposalHashData, nil)
 		rt.Verify()
 
 	})
@@ -191,7 +191,7 @@ func TestVesting(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		actor.approve(rt, 0, proposalHashData)
+		actor.approve(rt, 0, proposalHashData, nil)
 		rt.Verify()
 
 	})
@@ -243,7 +243,7 @@ func TestVesting(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{anne},
 			})
-			actor.approve(rt, 0, proposalHashData)
+			actor.approve(rt, 0, proposalHashData, nil)
 		})
 		rt.Verify()
 	})
@@ -417,7 +417,7 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		actor.approve(rt, txnID, proposalHashData)
+		actor.approve(rt, txnID, proposalHashData, nil)
 		rt.Verify()
 
 		// Transaction should be removed from actor state after send
@@ -455,7 +455,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{bob},
 			})
-			actor.approve(rt, txnID, proposalHashData)
+			actor.approve(rt, txnID, proposalHashData, nil)
 		})
 	})
 
@@ -481,7 +481,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{anne},
 			})
-			actor.approve(rt, txnID, proposalHashData)
+			actor.approve(rt, txnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -517,7 +517,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{bob},
 			})
-			actor.approve(rt, dneTxnID, proposalHashData)
+			actor.approve(rt, dneTxnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -553,7 +553,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{richard},
 			})
-			actor.approve(rt, txnID, proposalHashData)
+			actor.approve(rt, txnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -1124,7 +1124,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	rt.Verify()
 }
 
-func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) {
+func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
 	proposeParams := &multisig.ProposeParams{
 		To:     to,
 		Value:  value,
@@ -1136,30 +1136,33 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 	if !ok {
 		h.t.Fatalf("unexpected type returned from call to Propose")
 	}
+	// if the transaction was applied and a return value is expected deserialize it to the out parameter
 	if proposeReturn.Applied {
-		// get the last message sent and ensure it matches the exit code
-		msg := rt.LastMessageSent()
-		assert.Equal(h.t, proposeReturn.Code, msg.ExitCode())
 		if out != nil {
 			buf := bytes.Buffer{}
 			require.NoError(h.t, proposeReturn.Ret.MarshalCBOR(&buf))
 			require.NoError(h.t, out.UnmarshalCBOR(&buf))
 		}
 	}
+	return proposeReturn.Code
 }
 
-func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte) {
+func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
 	ret := rt.Call(h.a.Approve, approveParams)
 	approveReturn, ok := ret.(*multisig.ApproveReturn)
 	if !ok {
 		h.t.Fatalf("unexpected type returned from call to Approve")
 	}
+	// if the transaction was applied and a return value is expected deserialize it to the out parameter
 	if approveReturn.Applied {
-		// get the last message sent and ensure it matches the exit code
-		msg := rt.LastMessageSent()
-		assert.Equal(h.t, approveReturn.Code, msg.ExitCode())
+		if out != nil {
+			buf := bytes.Buffer{}
+			require.NoError(h.t, approveReturn.Ret.MarshalCBOR(&buf))
+			require.NoError(h.t, out.UnmarshalCBOR(&buf))
+		}
 	}
+	return approveReturn.Code
 }
 
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64, proposalParams []byte) {

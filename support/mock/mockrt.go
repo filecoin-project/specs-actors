@@ -55,13 +55,13 @@ type Runtime struct {
 	expectValidateCallerAddr []addr.Address
 	expectValidateCallerType []cid.Cid
 	expectRandomness         []*expectRandomness
-	expectSends              []*ExpectedMessage
+	expectSends              []*expectedMessage
 	expectCreateActor        *expectCreateActor
 	expectVerifySig          *expectVerifySig
 	expectVerifySeal         *expectVerifySeal
 	expectVerifyPoSt         *expectVerifyPoSt
 
-	sentMessages []*ExpectedMessage
+	sentMessages []*expectedMessage
 }
 
 type expectRandomness struct {
@@ -73,14 +73,14 @@ type expectRandomness struct {
 	out abi.Randomness
 }
 
-type ExpectedMessage struct {
-	// ExpectedMessage values
+type expectedMessage struct {
+	// expectedMessage values
 	to     addr.Address
 	method abi.MethodNum
 	params runtime.CBORMarshaler
 	value  abi.TokenAmount
 
-	// returns from applying ExpectedMessage
+	// returns from applying expectedMessage
 	sendReturn runtime.SendReturn
 	exitCode   exitcode.ExitCode
 }
@@ -104,20 +104,12 @@ type expectVerifyPoSt struct {
 	result error
 }
 
-func (m *ExpectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
+func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
 	return m.to == to && m.method == method && m.value.Equals(value) && reflect.DeepEqual(m.params, params)
 }
 
-func (m *ExpectedMessage) String() string {
+func (m *expectedMessage) String() string {
 	return fmt.Sprintf("to: %v method: %v value: %v params: %v sendReturn: %v exitCode: %v", m.to, m.method, m.value, m.params, m.sendReturn, m.exitCode)
-}
-
-func (m *ExpectedMessage) ExitCode() exitcode.ExitCode {
-	return m.exitCode
-}
-
-func (m *ExpectedMessage) SendReturn() runtime.SendReturn {
-	return m.sendReturn
 }
 
 type expectCreateActor struct {
@@ -281,7 +273,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 		rt.Abortf(exitcode.SysErrSenderStateInvalid, "cannot send value: %v exceeds balance: %v", value, rt.balance)
 	}
 
-	// store the sent message, pop the ExpectedMessage from the queue, and modify the mockrt balance to reflect the send.
+	// store the sent message, pop the expectedMessage from the queue, and modify the mockrt balance to reflect the send.
 	defer func() {
 		rt.sentMessages = append(rt.sentMessages, exp)
 		rt.expectSends = rt.expectSends[1:]
@@ -627,7 +619,7 @@ func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, para
 	if ret == nil {
 		ret = adt.Empty
 	}
-	rt.expectSends = append(rt.expectSends, &ExpectedMessage{
+	rt.expectSends = append(rt.expectSends, &expectedMessage{
 		to:         toAddr,
 		method:     methodNum,
 		params:     params,
@@ -669,14 +661,6 @@ func (rt *Runtime) ExpectVerifyPoSt(post abi.WindowPoStVerifyInfo, result error)
 		post:   post,
 		result: result,
 	}
-}
-
-func (rt *Runtime) LastMessageSent() ExpectedMessage {
-	if len(rt.sentMessages) < 1 {
-		rt.failTestNow("developer error: no messages sent")
-	}
-	msg := rt.sentMessages[len(rt.sentMessages)-1]
-	return *msg
 }
 
 // Verifies that expected calls were received, and resets all expectations.
