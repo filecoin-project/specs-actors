@@ -1,6 +1,7 @@
 package multisig_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -142,7 +144,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetReceived(big.Zero())
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, darlene, multisigInitialBalance, builtin.MethodSend, fakeParams)
+		actor.propose(rt, darlene, multisigInitialBalance, builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
 
 		// Advance the epoch s.t. all funds are unlocked.
@@ -159,7 +161,7 @@ func TestVesting(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
-		actor.approve(rt, 0, proposalHashData)
+		actor.approve(rt, 0, proposalHashData, nil)
 		rt.Verify()
 
 	})
@@ -172,7 +174,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetReceived(big.Zero())
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, fakeParams)
+		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
 
 		// set the current balance of the multisig actor to its InitialBalance amount
@@ -189,7 +191,7 @@ func TestVesting(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		actor.approve(rt, 0, proposalHashData)
+		actor.approve(rt, 0, proposalHashData, nil)
 		rt.Verify()
 
 	})
@@ -204,7 +206,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.propose(rt, darlene, abi.NewTokenAmount(100), builtin.MethodSend, fakeParams)
+			actor.propose(rt, darlene, abi.NewTokenAmount(100), builtin.MethodSend, fakeParams, nil)
 		})
 		rt.Verify()
 
@@ -213,7 +215,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, abi.NewTokenAmount(10), nil, 0)
-		actor.propose(rt, darlene, abi.NewTokenAmount(10), builtin.MethodSend, fakeParams)
+		actor.propose(rt, darlene, abi.NewTokenAmount(10), builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
 
 	})
@@ -226,7 +228,7 @@ func TestVesting(t *testing.T) {
 		rt.SetReceived(big.Zero())
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, fakeParams)
+		actor.propose(rt, darlene, big.Div(multisigInitialBalance, big.NewInt(2)), builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
 
 		// this propose will fail since it would send more than the required locked balance.
@@ -241,7 +243,7 @@ func TestVesting(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{anne},
 			})
-			actor.approve(rt, 0, proposalHashData)
+			actor.approve(rt, 0, proposalHashData, nil)
 		})
 		rt.Verify()
 	})
@@ -270,7 +272,7 @@ func TestPropose(t *testing.T) {
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 
 		// the transaction remains awaiting second approval
 		actor.assertTransactions(rt, multisig.Transaction{
@@ -293,11 +295,38 @@ func TestPropose(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 
 		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
 		rt.Verify()
+	})
+
+	t.Run("propose with threshold and non-empty return value", func(t *testing.T) {
+		const numApprovals = uint64(1)
+
+		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		proposeRet := miner.GetControlAddressesReturn{
+			Owner:  tutil.NewIDAddr(t, 1),
+			Worker: tutil.NewIDAddr(t, 2),
+		}
+		rt.ExpectSend(chuck, builtin.MethodsMiner.ControlAddresses, fakeParams, sendValue, &proposeRet, 0)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+		var out miner.GetControlAddressesReturn
+		actor.propose(rt, chuck, sendValue, builtin.MethodsMiner.ControlAddresses, fakeParams, &out)
+		// assert ProposeReturn.Ret can be marshaled into the expected structure.
+		assert.Equal(t, proposeRet, out)
+
+		// the transaction has been sent and cleaned up
+		actor.assertTransactions(rt)
+		rt.Verify()
+
 	})
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
@@ -308,7 +337,7 @@ func TestPropose(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+			actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		})
 
 		// proposal failed since it should have but failed to immediately execute.
@@ -328,7 +357,7 @@ func TestPropose(t *testing.T) {
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+			actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		})
 
 		// the transaction is not persisted
@@ -364,7 +393,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		actor.assertTransactions(rt, multisig.Transaction{
@@ -388,11 +417,50 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		actor.approve(rt, txnID, proposalHashData)
+		actor.approve(rt, txnID, proposalHashData, nil)
 		rt.Verify()
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+	})
+
+	t.Run("approve with non-empty return value", func(t *testing.T) {
+		const numApprovals = uint64(2)
+
+		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.propose(rt, chuck, sendValue, builtin.MethodsMiner.ControlAddresses, fakeParams, nil)
+
+		approveRet := miner.GetControlAddressesReturn{
+			Owner:  tutil.NewIDAddr(t, 1),
+			Worker: tutil.NewIDAddr(t, 2),
+		}
+
+		proposalHashData := makeProposalHash(t, &multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   builtin.MethodsMiner.ControlAddresses,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(chuck, builtin.MethodsMiner.ControlAddresses, fakeParams, sendValue, &approveRet, 0)
+
+		var out miner.GetControlAddressesReturn
+		actor.approve(rt, txnID, proposalHashData, &out)
+		// assert approveRet.Ret can be marshaled into the expected structure.
+		assert.Equal(t, approveRet, out)
+
+		// the transaction has been sent and cleaned up
+		actor.assertTransactions(rt)
+		rt.Verify()
+
 	})
 
 	t.Run("fail approval with bad proposal hash", func(t *testing.T) {
@@ -402,7 +470,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		actor.assertTransactions(rt, multisig.Transaction{
@@ -426,7 +494,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{bob},
 			})
-			actor.approve(rt, txnID, proposalHashData)
+			actor.approve(rt, txnID, proposalHashData, nil)
 		})
 	})
 
@@ -438,7 +506,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
 
 		// anne is going to approve it twice and fail, poor anne.
@@ -452,7 +520,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{anne},
 			})
-			actor.approve(rt, txnID, proposalHashData)
+			actor.approve(rt, txnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -474,7 +542,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
 
 		// bob is going to approve a transaction that doesn't exist.
@@ -488,7 +556,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{bob},
 			})
-			actor.approve(rt, dneTxnID, proposalHashData)
+			actor.approve(rt, dneTxnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -511,7 +579,7 @@ func TestApprove(t *testing.T) {
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams)
+		actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 
 		// richard is going to approve a transaction they are not a signer for.
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
@@ -524,7 +592,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{richard},
 			})
-			actor.approve(rt, txnID, proposalHashData)
+			actor.approve(rt, txnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -568,7 +636,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		// anne cancels their transaction
@@ -597,7 +665,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		// anne cancels their transaction
@@ -624,7 +692,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		// bob (a signer) fails to cancel anne's transaction because bob didn't create it, nice try bob.
@@ -660,7 +728,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		// richard (not a signer) fails to cancel anne's transaction because richard isn't a signer, go away richard.
@@ -697,7 +765,7 @@ func TestCancel(t *testing.T) {
 		// anne proposes a transaction ID: 0
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams)
+		actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		rt.Verify()
 
 		// anne fails to cancel a transaction that does not exists ID: 1 (dneTxnID)
@@ -1178,21 +1246,41 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	rt.Verify()
 }
 
-func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte) {
+func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
 	proposeParams := &multisig.ProposeParams{
 		To:     to,
 		Value:  value,
 		Method: method,
 		Params: params,
 	}
-	rt.Call(h.a.Propose, proposeParams)
+	ret := rt.Call(h.a.Propose, proposeParams)
+	proposeReturn, ok := ret.(*multisig.ProposeReturn)
+	if !ok {
+		h.t.Fatalf("unexpected type returned from call to Propose")
+	}
+	// if the transaction was applied and a return value is expected deserialize it to the out parameter
+	if proposeReturn.Applied {
+		if out != nil {
+			require.NoError(h.t, out.UnmarshalCBOR(bytes.NewReader(proposeReturn.Ret)))
+		}
+	}
+	return proposeReturn.Code
 }
 
-// TODO In a follow-up, this method should also verify the return value from Approve contains the exit code prescribed in ExpectSend.
-// exercise both un/successful sends.
-func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte) {
+func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
-	rt.Call(h.a.Approve, approveParams)
+	ret := rt.Call(h.a.Approve, approveParams)
+	approveReturn, ok := ret.(*multisig.ApproveReturn)
+	if !ok {
+		h.t.Fatalf("unexpected type returned from call to Approve")
+	}
+	// if the transaction was applied and a return value is expected deserialize it to the out parameter
+	if approveReturn.Applied {
+		if out != nil {
+			require.NoError(h.t, out.UnmarshalCBOR(bytes.NewReader(approveReturn.Ret)))
+		}
+	}
+	return approveReturn.Code
 }
 
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64, proposalParams []byte) {
