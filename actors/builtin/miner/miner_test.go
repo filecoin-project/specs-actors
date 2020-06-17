@@ -735,7 +735,7 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
 
 	pwrTotal := power.CurrentTotalPowerReturn{
-		QualityAdjPower: big.NewIntUnsigned(1000),
+		QualityAdjPower: big.NewIntUnsigned(1 << 50),
 	}
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwrTotal, exitcode.Ok)
 
@@ -860,7 +860,7 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment 
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
 
 	pwrTotal := power.CurrentTotalPowerReturn{
-		QualityAdjPower: big.NewIntUnsigned(1000),
+		QualityAdjPower: big.NewIntUnsigned(1 << 50),
 	}
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwrTotal, exitcode.Ok)
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,

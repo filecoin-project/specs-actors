@@ -95,8 +95,8 @@ type e = abi.ChainEpoch
 func TestFaultFeeInvariants(t *testing.T) {
 	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
 		epochReward := abi.NewTokenAmount(1_000)
-		networkPower := abi.NewStoragePower(1_000_000)
-		faultySectorPower := abi.NewStoragePower(10_000)
+		networkPower := abi.NewStoragePower(100 << 50)
+		faultySectorPower := abi.NewStoragePower(1 << 50)
 
 		ff := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorPower)
 		sp := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorPower)
@@ -105,10 +105,10 @@ func TestFaultFeeInvariants(t *testing.T) {
 
 	 t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
 		epochReward := abi.NewTokenAmount(1_000)
-		networkPower := abi.NewStoragePower(1_000_000)
-		faultySectorAPower := abi.NewStoragePower(10_000)
-		faultySectorBPower := abi.NewStoragePower(19_100)		
-		faultySectorCPower := abi.NewStoragePower(63_007)				
+		networkPower := abi.NewStoragePower(100 << 50)
+		faultySectorAPower := abi.NewStoragePower(1 << 50)
+		faultySectorBPower := abi.NewStoragePower(19 << 50)		
+		faultySectorCPower := abi.NewStoragePower(63 << 50)				
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)		
 
 		// Declared faults
@@ -116,8 +116,13 @@ func TestFaultFeeInvariants(t *testing.T) {
 		ffB := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorBPower)		
 		ffC := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorCPower)				
 
-		ffAll := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, totalFaultPower)						
-		assert.Equal(t, ffAll, big.Add(ffC, big.Add(ffA, ffB)))
+		ffAll := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, totalFaultPower)
+
+		// Because we can introduce rounding error between 1 and zero for every penalty calculation
+		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
+		diff := big.Sub(ffAll, big.Add(ffC, big.Add(ffA, ffB)))
+		assert.True(t, diff.GreaterThanEqual(big.Zero()))
+		assert.True(t, diff.LessThan(big.NewInt(3)))
 
 		// Undeclared faults		
 		spA := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorAPower)
@@ -125,6 +130,12 @@ func TestFaultFeeInvariants(t *testing.T) {
 		spC := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorCPower)				
 
 		spAll := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, totalFaultPower)
-		assert.Equal(t, spAll, big.Add(spC, big.Add(spA, spB)))
+
+		// Because we can introduce rounding error between 1 and zero for every penalty calculation
+		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
+		diff = big.Sub(spAll, big.Add(spC, big.Add(spA, spB)))
+		assert.True(t, diff.GreaterThanEqual(big.Zero()))
+		assert.True(t, diff.LessThan(big.NewInt(3)))
+
 	 })
 }
