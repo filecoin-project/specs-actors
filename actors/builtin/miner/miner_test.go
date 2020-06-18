@@ -322,6 +322,7 @@ func TestWindowPost(t *testing.T) {
 			require.NoError(t, err)
 
 			firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, partitionSize, deadline.Index)
+			require.NoError(t, err)
 			if sectorCount != 0 {
 				partitionCount, _, err := miner.DeadlineCount(deadlines, partitionSize, deadline.Index)
 				require.NoError(t, err)
@@ -794,6 +795,7 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load deadlines")
 
 		firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, partitionSize, deadline.Index)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partitions for deadline")
 		if sectorCount != 0 {
 			partitionCount, _, err := miner.DeadlineCount(deadlines, partitionSize, deadline.Index)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partition count")

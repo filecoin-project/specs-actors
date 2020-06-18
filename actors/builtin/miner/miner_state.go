@@ -862,7 +862,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		vestEpoch := quantizeUp(e, spec.Quantization)
 		elapsed := vestEpoch - vestBegin
 
-		targetVest := big.Zero()
+		targetVest := big.Zero() //nolint:ineffassign
 		if elapsed < spec.VestPeriod {
 			// Linear vesting, PARAM_FINISH
 			targetVest = big.Div(big.Mul(vestingSum, big.NewInt(int64(elapsed))), vestPeriod)
@@ -1069,16 +1069,6 @@ func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
 		return e
 	}
 	return e - remainder + unit
-}
-
-// Rounds e to the nearest exact multiple of the quantization unit, rounding down.
-// Precondition: unit >= 0 else behaviour is undefined
-func quantizeDown(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
-	remainder := e % unit
-	if remainder == 0 {
-		return e
-	}
-	return e - remainder
 }
 
 func SectorKey(e abi.SectorNumber) adt.Keyer {
