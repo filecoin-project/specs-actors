@@ -101,7 +101,7 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		clientCollateral := deal.ClientCollateral
 		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
 		if err := st.unlockBalance(lt, deal.Client, big.Add(clientCollateral, paymentRemaining)); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client balance: %s", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock client balance: %s", err)
 		}
 
 		// slash provider collateral

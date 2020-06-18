@@ -64,6 +64,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 
 // Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate
 // Election PoSt winners outside the chain state. We may remove it.
+// See https://github.com/filecoin-project/specs-actors/issues/266
 func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) {
 	claim, ok, err := st.GetClaim(s, miner)
 	if err != nil {
@@ -256,15 +257,6 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 		return err
 	}
 	return nil
-}
-
-func addrInArray(a addr.Address, list []addr.Address) bool { //nolint:deadcode,unused
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
 }
 
 func epochKey(e abi.ChainEpoch) adt.Keyer {
