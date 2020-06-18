@@ -163,7 +163,7 @@ func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValu
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 
-		claim, found, err := st.getClaim(adt.AsStore(rt), nominal)
+		claim, found, err := st.GetClaim(adt.AsStore(rt), nominal)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load miner claim for deletion: %v", err)
 		}
@@ -275,7 +275,7 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		claim, powerOk, err := st.getClaim(adt.AsStore(rt), minerAddr)
+		claim, powerOk, err := st.GetClaim(adt.AsStore(rt), minerAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
@@ -435,7 +435,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 		_, _ = rt.Send(
 			m,
 			builtin.MethodsMiner.ConfirmSectorProofsValid,
-			&builtin.ConfirmSectorProofsParams{successful},
+			&builtin.ConfirmSectorProofsParams{Sectors: successful},
 			abi.NewTokenAmount(0),
 		)
 	}

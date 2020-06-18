@@ -224,9 +224,7 @@ func taylorSeriesExpansion(lambdaNum big.Int, lambdaDen big.Int, t big.Int) big.
 		// precision that would slow down the next iteration's multiplies.
 		denominatorLen := big.BitLen(denominator)
 		unnecessaryBits := denominatorLen - MintingOutputFixedPoint
-		if unnecessaryBits < 0 {
-			unnecessaryBits = 0
-		}
+
 		numerator = big.Rsh(numerator, unnecessaryBits)
 		denominator = big.Rsh(denominator, unnecessaryBits)
 

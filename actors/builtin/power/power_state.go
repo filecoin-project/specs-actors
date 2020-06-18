@@ -55,6 +55,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		TotalRawBytePower:        abi.NewStoragePower(0),
 		TotalQualityAdjPower:     abi.NewStoragePower(0),
 		TotalPledgeCollateral:    abi.NewTokenAmount(0),
+		LastEpochTick:            -1,
 		CronEventQueue:           emptyMapCid,
 		Claims:                   emptyMapCid,
 		NumMinersMeetingMinPower: 0,
@@ -63,8 +64,9 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 
 // Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate
 // Election PoSt winners outside the chain state. We may remove it.
-func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) {
-	claim, ok, err := st.getClaim(s, miner)
+// See https://github.com/filecoin-project/specs-actors/issues/266
+func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) { //nolint:deadcode,unused
+	claim, ok, err := st.GetClaim(s, miner)
 	if err != nil {
 		return false, err
 	}
@@ -112,7 +114,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 
 // Parameters may be negative to subtract.
 func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
-	claim, ok, err := st.getClaim(s, miner)
+	oldClaim, ok, err := st.GetClaim(s, miner)
 	if err != nil {
 		return err
 	}
@@ -120,37 +122,51 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
-	oldNominalPower := claim.QualityAdjPower
+	newClaim := Claim{
+		RawBytePower:    big.Add(oldClaim.RawBytePower, power),
+		QualityAdjPower: big.Add(oldClaim.QualityAdjPower, qapower),
+	}
 
-	// update power
-	claim.RawBytePower = big.Add(claim.RawBytePower, power)
-	claim.QualityAdjPower = big.Add(claim.QualityAdjPower, qapower)
-
-	newNominalPower := claim.QualityAdjPower
-
-	prevBelow := oldNominalPower.LessThan(ConsensusMinerMinPower)
-	stillBelow := newNominalPower.LessThan(ConsensusMinerMinPower)
+	prevBelow := oldClaim.QualityAdjPower.LessThan(ConsensusMinerMinPower)
+	stillBelow := newClaim.QualityAdjPower.LessThan(ConsensusMinerMinPower)
 
 	if prevBelow && !stillBelow {
 		// just passed min miner size
 		st.NumMinersMeetingMinPower++
-		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newNominalPower)
-		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, claim.RawBytePower)
+		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newClaim.QualityAdjPower)
+		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, newClaim.RawBytePower)
 	} else if !prevBelow && stillBelow {
 		// just went below min miner size
 		st.NumMinersMeetingMinPower--
-		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldNominalPower)
-		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
+		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldClaim.QualityAdjPower)
+		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, oldClaim.RawBytePower)
 	} else if !prevBelow && !stillBelow {
 		// Was above the threshold, still above
 		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, qapower)
 		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
 	}
 
-	AssertMsg(claim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", claim.RawBytePower)
-	AssertMsg(claim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", claim.QualityAdjPower)
+	AssertMsg(newClaim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", newClaim.RawBytePower)
+	AssertMsg(newClaim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)
 	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
-	return st.setClaim(s, miner, claim)
+	return st.setClaim(s, miner, &newClaim)
+}
+
+func (st *State) GetClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
+	hm, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var out Claim
+	found, err := hm.Get(AddrKey(a), &out)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "failed to get claim for address %v from store %s", a, st.Claims)
+	}
+	if !found {
+		return nil, false, nil
+	}
+	return &out, true, nil
 }
 
 func (st *State) addPledgeTotal(amount abi.TokenAmount) {
@@ -207,23 +223,6 @@ func (st *State) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
 	return nil
 }
 
-func (st *State) getClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var out Claim
-	found, err := hm.Get(AddrKey(a), &out)
-	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to get claim for address %v from store %s", a, st.Claims)
-	}
-	if !found {
-		return nil, false, nil
-	}
-	return &out, true, nil
-}
-
 func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
 	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
@@ -258,15 +257,6 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 		return err
 	}
 	return nil
-}
-
-func addrInArray(a addr.Address, list []addr.Address) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
 }
 
 func epochKey(e abi.ChainEpoch) adt.Keyer {
