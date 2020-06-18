@@ -29,7 +29,7 @@ func ExpectedDayRewardForSector(epochTargetReward abi.TokenAmount, networkQAPowe
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
 // it has been previously detected by the network.
 // FF(t) = DeclaredFaultFactor * BR(t)
-func pledgePenaltyForSectorDeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForSectorDeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
 		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower)),
 		DeclaredFaultFactorDenom)

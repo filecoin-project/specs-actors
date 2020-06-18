@@ -437,9 +437,28 @@ func TestDeclareFaults(t *testing.T) {
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
-	t.Run("declare fault", func(t *testing.T) {
+	t.Run("declare fault pays fee", func(t *testing.T) {
+		// Get sector into proving state
 		rt := builder.Build(t)
+		actor.constructAndVerify(rt, periodOffset)
+		expiration := 10*miner.WPoStProvingPeriod + periodOffset - 1
+		sectorNumber := actor.nextSectorNo
+		actor.commitAndProveSectors(rt, 1, expiration, 1<<50)
 
+		// Skip to end of proving period, cron adds sectors to proving set.
+		st := getState(rt)
+		deadline := st.DeadlineInfo(rt.Epoch())
+		rt.SetEpoch(deadline.PeriodEnd())
+		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+		actor.onProvingPeriodCron(rt, nextCron, true, rt.Epoch()-miner.ElectionLookback)
+		st = getState(rt)
+		rt.SetEpoch(deadline.NextPeriodStart())
+		info, found, err := st.GetSector(rt.AdtStore(), sectorNumber)
+		require.NoError(t, err)
+		require.True(t, found)
+
+		// Declare the sector as faulted
+		actor.declareFaults(rt, info)
 	})
 }
 
@@ -808,6 +827,92 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	rt.Verify()
 }
 
+func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(h.worker)
+
+	ss, err := faultSectorInfos[0].Info.SealProof.SectorSize()
+	require.NoError(h.t, err)
+	expectedRawDelta, expectedQADelta := miner.PowerForSectors(ss, faultSectorInfos)
+
+	expectedReward := abi.NewTokenAmount(100_000)
+	expectedTotalPower := big.Mul(big.NewInt(10), expectedQADelta)
+
+	rt.ExpectSend(
+		builtin.RewardActorAddr, 
+		builtin.MethodsReward.LastPerEpochReward, 
+		nil,
+		big.Zero(),
+		&expectedReward,
+		exitcode.Ok,
+	)
+
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+	    builtin.MethodsPower.CurrentTotalPower,
+	    nil,
+		big.Zero(),
+		&expectedTotalPower,
+		exitcode.Ok,
+	)
+
+	// expect power update
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.UpdateClaimedPower,
+		makePowerClaimUpdate(expectedRawDelta, expectedQADelta),
+		abi.NewTokenAmount(0),
+		nil,
+		exitcode.Ok,
+	)
+
+	fee := miner.PledgePenaltyForSectorDeclaredFault(expectedReward, expectedTotalPower, expectedQADelta)
+	// expect fee
+	rt.ExpectSend(
+		builtin.BurntFundsActorAddr,
+		builtin.MethodSend,
+		nil,
+		fee,
+		nil,
+		exitcode.Ok,
+	)
+
+	// expect pledge update
+	pledgeDelta := big.Mul(big.NewInt(-1), fee)
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.UpdatePledgeTotal,
+		&pledgeDelta,
+		abi.NewTokenAmount(0),
+		nil,
+		exitcode.Ok,
+	)
+
+	// Calculate params from faulted sector infos
+	st := getState(rt)
+	deadlines, err := st.LoadDeadlines(rt.AdtStore())
+	require.NoError(h.t, err)
+	faultAtDeadline := make(map[uint64][]uint64)
+	for _, sectorInfo := range faultSectorInfos {
+		dl, err := miner.FindDeadline(deadlines, sectorInfo.Info.SectorNumber)
+		require.NoError(h.t, err)
+		if _, ok := faultAtDeadline[dl]; !ok {
+			faultAtDeadline[dl] = []uint64{uint64(sectorInfo.Info.SectorNumber)}
+		}
+		faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.Info.SectorNumber))
+	}
+	params := &miner.DeclareFaultsParams{Faults: []miner.FaultDeclaration{}}
+	for dl, sectorNumbers := range faultAtDeadline {
+		fault := miner.FaultDeclaration{
+			Deadline: dl,
+			Sectors: bitfield.NewFromSet(sectorNumbers),
+		}
+		params.Faults = append(params.Faults, fault)
+	}
+	rt.Call(h.a.DeclareFaults, params)
+	rt.Verify()
+}
+
 func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 	st := getState(rt)
 	store := rt.AdtStore()
@@ -926,11 +1031,17 @@ func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 	}
 }
 
+func makePowerClaimUpdate(rawDelta, qaDelta abi.StoragePower) *power.UpdateClaimedPowerParams {
+	return &power.UpdateClaimedPowerParams{
+		RawByteDelta:         rawDelta,
+		QualityAdjustedDelta: qaDelta,
+	}
+}
+
 func assertEmptyBitfield(t *testing.T, b *abi.BitField) {
 	empty, err := b.IsEmpty()
 	require.NoError(t, err)
 	assert.True(t, empty)
-
 }
 
 // Returns a fake hashing function that always arranges the first 8 bytes of the digest to be the binary

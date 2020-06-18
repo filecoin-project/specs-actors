@@ -711,10 +711,10 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union faults")
 
 		// Split declarations into declarations of new faults, and retraction of declared recoveries.
-		recoveries, err := bitfield.IntersectBitField(st.Recoveries, allDeclared)
+		retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, allDeclared)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
 
-		newFaults, err := bitfield.SubtractBitField(allDeclared, recoveries)
+		newFaults, err := bitfield.SubtractBitField(allDeclared, retractedRecoveries)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from sectors")
 
 		empty, err := newFaults.IsEmpty()
@@ -763,11 +763,11 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		}
 
 		// Remove faulty recoveries
-		empty, err = recoveries.IsEmpty()
+		empty, err = retractedRecoveries.IsEmpty()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
 
 		if !empty {
-			err = st.RemoveRecoveries(recoveries)
+			err = st.RemoveRecoveries(retractedRecoveries)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 		}
 		return nil
@@ -1467,8 +1467,8 @@ func requestUpdateSectorPower(rt Runtime, sectorSize abi.SectorSize, sectorsAdde
 	if len(sectorsAdded)+len(sectorsRemoved) == 0 {
 		return
 	}
-	addRawPower, addQAPower := powerForSectors(sectorSize, sectorsAdded)
-	remRawPower, remQAPower := powerForSectors(sectorSize, sectorsRemoved)
+	addRawPower, addQAPower := PowerForSectors(sectorSize, sectorsAdded)
+	remRawPower, remQAPower := PowerForSectors(sectorSize, sectorsRemoved)
 	rawDelta = big.Sub(addRawPower, remRawPower)
 	qaDelta = big.Sub(addQAPower, remQAPower)
 
@@ -1821,7 +1821,7 @@ func unlockDeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainE
 	if err != nil {
 		return abi.NewTokenAmount(0), err
 	}
-	fee := pledgePenaltyForSectorDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	fee := PledgePenaltyForSectorDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
@@ -1849,7 +1849,7 @@ func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoc
 }
 
 // Returns the sum of the raw byte and quality-adjusted power for sectors.
-func powerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (rawBytePower, qaPower big.Int) {
+func PowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (rawBytePower, qaPower big.Int) {
 	rawBytePower = big.Mul(big.NewIntUnsigned(uint64(sectorSize)), big.NewIntUnsigned(uint64(len(sectors))))
 	qaPower = big.Zero()
 	for _, s := range sectors {
