@@ -206,7 +206,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, darlene, abi.NewTokenAmount(100), builtin.MethodSend, fakeParams, nil)
+			_ = actor.propose(rt, darlene, abi.NewTokenAmount(100), builtin.MethodSend, fakeParams, nil)
 		})
 		rt.Verify()
 
@@ -243,7 +243,7 @@ func TestVesting(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{anne},
 			})
-			actor.approveOK(rt, 0, proposalHashData, nil)
+			_ = actor.approve(rt, 0, proposalHashData, nil)
 		})
 		rt.Verify()
 	})
@@ -337,7 +337,7 @@ func TestPropose(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
+			_ = actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		})
 
 		// proposal failed since it should have but failed to immediately execute.
@@ -357,7 +357,7 @@ func TestPropose(t *testing.T) {
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.proposeOK(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
+			_ = actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		})
 
 		// the transaction is not persisted
@@ -494,7 +494,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{bob},
 			})
-			actor.approveOK(rt, txnID, proposalHashData, nil)
+			_ = actor.approve(rt, txnID, proposalHashData, nil)
 		})
 	})
 
@@ -520,7 +520,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{anne},
 			})
-			actor.approveOK(rt, txnID, proposalHashData, nil)
+			_ = actor.approve(rt, txnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -556,7 +556,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{bob},
 			})
-			actor.approveOK(rt, dneTxnID, proposalHashData, nil)
+			_ = actor.approve(rt, dneTxnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
@@ -592,7 +592,7 @@ func TestApprove(t *testing.T) {
 				Params:   fakeParams,
 				Approved: []addr.Address{richard},
 			})
-			actor.approveOK(rt, txnID, proposalHashData, nil)
+			_ = actor.approve(rt, txnID, proposalHashData, nil)
 		})
 		rt.Verify()
 
