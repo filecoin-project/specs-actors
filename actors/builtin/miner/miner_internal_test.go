@@ -98,7 +98,7 @@ func TestFaultFeeInvariants(t *testing.T) {
 		networkPower := abi.NewStoragePower(100 << 50)
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
-		ff := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorPower)
+		ff := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorPower)
 		sp := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorPower)
 		assert.True(t, sp.GreaterThan(ff))
 	}) 
@@ -112,11 +112,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)		
 
 		// Declared faults
-		ffA := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorAPower)
-		ffB := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorBPower)		
-		ffC := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorCPower)				
+		ffA := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorAPower)
+		ffB := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		ffC := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorCPower)				
 
-		ffAll := pledgePenaltyForSectorDeclaredFault(epochReward, networkPower, totalFaultPower)
+		ffAll := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
