@@ -834,9 +834,13 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	ss, err := faultSectorInfos[0].Info.SealProof.SectorSize()
 	require.NoError(h.t, err)
 	expectedRawDelta, expectedQADelta := miner.PowerForSectors(ss, faultSectorInfos)
+	expectedRawDelta = big.Mul(big.NewInt(-1), expectedRawDelta)
+	expectedQADelta = big.Mul(big.NewInt(-1), expectedQADelta)
 
 	expectedReward := abi.NewTokenAmount(100_000)
-	expectedTotalPower := big.Mul(big.NewInt(10), expectedQADelta)
+	expectedTotalPower := power.CurrentTotalPowerReturn{
+		QualityAdjPower: big.Mul(big.NewInt(10), expectedQADelta),
+	}
 
 	rt.ExpectSend(
 		builtin.RewardActorAddr, 
@@ -866,7 +870,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 		exitcode.Ok,
 	)
 
-	fee := miner.PledgePenaltyForSectorDeclaredFault(expectedReward, expectedTotalPower, expectedQADelta)
+	fee := miner.PledgePenaltyForSectorDeclaredFault(expectedReward, expectedTotalPower.QualityAdjPower, expectedQADelta)
 	// expect fee
 	rt.ExpectSend(
 		builtin.BurntFundsActorAddr,
