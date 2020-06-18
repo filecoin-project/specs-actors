@@ -1797,7 +1797,7 @@ func powerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (r
 
 // The oldest seal challenge epoch that will be accepted in the current epoch.
 func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
-	return currEpoch - ChainFinalityish - MaxSealDuration[proof]
+	return currEpoch - ChainFinality - MaxSealDuration[proof]
 }
 
 func min64(a, b uint64) uint64 {
