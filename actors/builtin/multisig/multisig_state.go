@@ -12,6 +12,10 @@ import (
 )
 
 type State struct {
+	// Signers may be either public-key or actor ID-addresses. The ID address is canonical, but doesn't exist
+	// for a public key that has not yet received a message on chain.
+	// If any signer address is a public-key address, it will be resolved to an ID address and persisted
+	// in this state when the address is used.
 	Signers               []address.Address
 	NumApprovalsThreshold uint64
 	NextTxnID             TxnID
