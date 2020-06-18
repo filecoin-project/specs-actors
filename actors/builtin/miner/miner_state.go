@@ -862,7 +862,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		vestEpoch := quantizeUp(e, spec.Quantization)
 		elapsed := vestEpoch - vestBegin
 
-		targetVest := big.Zero()
+		targetVest := big.Zero() //nolint:ineffassign
 		if elapsed < spec.VestPeriod {
 			// Linear vesting, PARAM_FINISH
 			targetVest = big.Div(big.Mul(vestingSum, big.NewInt(int64(elapsed))), vestPeriod)

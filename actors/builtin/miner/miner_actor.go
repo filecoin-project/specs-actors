@@ -1480,7 +1480,7 @@ func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
 	builtin.RequireSuccess(rt, code, "failed to terminate deals %v, exit code %v", dealIDs, code)
 }
 
-func requestTerminateAllDeals(rt Runtime, st *State) {
+func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
 	// TODO: red flag this is an ~unbounded computation.
 	// Transform into an idempotent partial computation that can be progressed on each invocation.
 	// https://github.com/filecoin-project/specs-actors/issues/483
