@@ -435,7 +435,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 		_, _ = rt.Send(
 			m,
 			builtin.MethodsMiner.ConfirmSectorProofsValid,
-			&builtin.ConfirmSectorProofsParams{successful},
+			&builtin.ConfirmSectorProofsParams{Sectors: successful},
 			abi.NewTokenAmount(0),
 		)
 	}

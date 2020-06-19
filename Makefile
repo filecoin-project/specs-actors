@@ -21,7 +21,7 @@ tidy:
 .PHONY: tidy
 
 lint:
-	$(GOLINT) run ./...
+	$(GOLINT) run -v --skip-dirs-use-default=false ./...
 .PHONY: lint
 
 gen:
