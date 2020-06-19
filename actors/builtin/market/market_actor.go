@@ -1,8 +1,9 @@
 package market
 
 import (
-	addr "github.com/filecoin-project/go-address"
+	"fmt"
 
+	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -259,77 +260,52 @@ type VerifyDealsOnSectorProveCommitReturn struct {
 
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // update the market's internal state accordingly, and return DealWeight of the set of storage deals given.
-// Note: in the case of a capacity-commitment sector (one with zero deals), this function should succeed vacuously.
-// The weight is defined as the sum, over all deals in the set, of the product of its size
-// with its duration. This quantity may be an input into the functions specifying block reward,
-// sector power, collateral, and/or other parameters.
+// The weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
 func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *VerifyDealsOnSectorProveCommitReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
-	totalDealSpaceTime := big.Zero()
-	totalVerifiedDealSpaceTime := big.Zero()
+	currEpoch := rt.CurrEpoch()
 
 	var st State
+	store := adt.AsStore(rt)
+
+	// Update deal states.
+	dealWeight := big.Zero()
+	verifiedWeight := big.Zero()
+	var err error
 	rt.State().Transaction(&st, func() interface{} {
-		// if there are no dealIDs, it is a CommittedCapacity sector
-		// and the totalDealSpaceTime should be zero
-		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		dealWeight, verifiedWeight, err = ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "load states %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to validate proposals for activation: %v", err)
 		}
 
-		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "load proposals %v", err)
-		}
+		states, err := AsDealStateArray(store, st.States)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal states")
 
 		for _, dealID := range params.DealIDs {
+			// This construction could be replaced with a single "update deal state" state method, possibly batched
+			// over all deal ids at once.
 			_, found, err := states.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal")
 			if found {
-				rt.Abortf(exitcode.ErrIllegalArgument, "given deal already included in another sector: %d", dealID)
+				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
 			}
-
-			proposal, err := proposals.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
-			}
-
-			validateDealCanActivate(rt, minerAddr, params.SectorExpiry, proposal)
-
 			err = states.Set(dealID, &DealState{
-				SectorStartEpoch: rt.CurrEpoch(),
+				SectorStartEpoch: currEpoch,
 				LastUpdatedEpoch: epochUndefined,
 				SlashEpoch:       epochUndefined,
 			})
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set deal %v", err)
-			}
-
-			// Compute deal weight
-			dealDuration := big.NewInt(int64(proposal.Duration()))
-			dealSize := big.NewIntUnsigned(uint64(proposal.PieceSize))
-			dealSpaceTime := big.Mul(dealDuration, dealSize)
-
-			if proposal.VerifiedDeal {
-				totalVerifiedDealSpaceTime = big.Add(totalVerifiedDealSpaceTime, dealSpaceTime)
-			} else {
-				totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
-			}
-
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %d", dealID)
 		}
 
 		st.States, err = states.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush deal states")
 		return nil
 	})
+
 	return &VerifyDealsOnSectorProveCommitReturn{
-		DealWeight:         totalDealSpaceTime,
-		VerifiedDealWeight: totalVerifiedDealSpaceTime,
+		DealWeight:         dealWeight,
+		VerifiedDealWeight: verifiedWeight,
 	}
 }
 
@@ -556,22 +532,57 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
+//
+// Exported functions
+//
+
+// Validates a collection of deal proposals for activation, and returns their combined weight,
+// split into regular deal weight and verified deal weight.
+func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address,
+	sectorExpiry, currEpoch abi.ChainEpoch) (big.Int, big.Int, error) {
+
+	proposals, err := AsDealProposalArray(store, st.Proposals)
+	if err != nil {
+		return big.Int{}, big.Int{}, fmt.Errorf("failed to load proposals: %w", err)
+	}
+
+	totalDealSpaceTime := big.Zero()
+	totalVerifiedSpaceTime := big.Zero()
+	for _, dealID := range dealIDs {
+		proposal, err := proposals.Get(dealID)
+		if err != nil {
+			return big.Int{}, big.Int{}, fmt.Errorf("failed to load deal %d: %w", dealID, err)
+		}
+		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
+			return big.Int{}, big.Int{}, fmt.Errorf("cannot activate deal %d: %w", dealID, err)
+		}
+
+		// Compute deal weight
+		dealSpaceTime := DealWeight(proposal)
+		if proposal.VerifiedDeal {
+			totalVerifiedSpaceTime = big.Add(totalVerifiedSpaceTime, dealSpaceTime)
+		} else {
+			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
+		}
+	}
+	return totalDealSpaceTime, totalVerifiedSpaceTime, nil
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Checks
 ////////////////////////////////////////////////////////////////////////////////
 
-func validateDealCanActivate(rt Runtime, minerAddr addr.Address, sectorExpiration abi.ChainEpoch, proposal *DealProposal) {
+func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sectorExpiration, currEpoch abi.ChainEpoch) error {
 	if proposal.Provider != minerAddr {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal has incorrect miner as its provider.")
+		return fmt.Errorf("proposal has provider %v, must be %v", proposal.Provider, minerAddr)
 	}
-
-	if rt.CurrEpoch() > proposal.StartEpoch {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
+	if currEpoch > proposal.StartEpoch {
+		return fmt.Errorf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, currEpoch)
 	}
-
 	if proposal.EndEpoch > sectorExpiration {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal would outlive its containing sector.")
+		return fmt.Errorf("proposal expiration %d exceeds sector expiration %d", proposal.EndEpoch, sectorExpiration)
 	}
+	return nil
 }
 
 func validateDeal(rt Runtime, deal ClientDealProposal) {
