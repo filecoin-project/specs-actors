@@ -23,6 +23,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -899,25 +900,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, expectedReward abi.TokenA
 
 	// Calculate params from faulted sector infos
 	st := getState(rt)
-	deadlines, err := st.LoadDeadlines(rt.AdtStore())
-	require.NoError(h.t, err)
-	faultAtDeadline := make(map[uint64][]uint64)
-	for _, sectorInfo := range faultSectorInfos {
-		dl, err := miner.FindDeadline(deadlines, sectorInfo.Info.SectorNumber)
-		require.NoError(h.t, err)
-		if _, ok := faultAtDeadline[dl]; !ok {
-			faultAtDeadline[dl] = []uint64{uint64(sectorInfo.Info.SectorNumber)}
-		}
-		faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.Info.SectorNumber))
-	}
-	params := &miner.DeclareFaultsParams{Faults: []miner.FaultDeclaration{}}
-	for dl, sectorNumbers := range faultAtDeadline {
-		fault := miner.FaultDeclaration{
-			Deadline: dl,
-			Sectors:  bitfield.NewFromSet(sectorNumbers),
-		}
-		params.Faults = append(params.Faults, fault)
-	}
+	params := makeFaultParamsFromFaultingSectors(h.t, st, rt.AdtStore(), faultSectorInfos)
 	rt.Call(h.a.DeclareFaults, params)
 	rt.Verify()
 }
@@ -1045,6 +1028,29 @@ func makePowerClaimUpdate(rawDelta, qaDelta abi.StoragePower) *power.UpdateClaim
 		RawByteDelta:         rawDelta,
 		QualityAdjustedDelta: qaDelta,
 	}
+}
+
+func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt.Store, faultSectorInfos []*miner.SectorOnChainInfo) *miner.DeclareFaultsParams {
+	deadlines, err := st.LoadDeadlines(store)
+	require.NoError(t, err)
+	faultAtDeadline := make(map[uint64][]uint64)
+	for _, sectorInfo := range faultSectorInfos {
+		dl, err := miner.FindDeadline(deadlines, sectorInfo.Info.SectorNumber)
+		require.NoError(t, err)
+		if _, ok := faultAtDeadline[dl]; !ok {
+			faultAtDeadline[dl] = []uint64{uint64(sectorInfo.Info.SectorNumber)}
+		}
+		faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.Info.SectorNumber))
+	}
+	params := &miner.DeclareFaultsParams{Faults: []miner.FaultDeclaration{}}
+	for dl, sectorNumbers := range faultAtDeadline {
+		fault := miner.FaultDeclaration{
+			Deadline: dl,
+			Sectors:  bitfield.NewFromSet(sectorNumbers),
+		}
+		params.Faults = append(params.Faults, fault)
+	}
+	return params
 }
 
 func assertEmptyBitfield(t *testing.T, b *abi.BitField) {
