@@ -1183,11 +1183,17 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 
 				// Record newly-faulty sectors.
 				newFaults, err := bitfield.SubtractBitField(partitionSectors, st.Faults)
+				if err != nil {
+					return nil, nil, fmt.Errorf("bitfield subtract failed: %s", err)
+				}
 				fGroups = append(fGroups, newFaults)
 
 				// Record failed recoveries.
 				// By construction, these are already faulty and thus not in newFaults.
 				failedRecovery, err := bitfield.IntersectBitField(partitionSectors, st.Recoveries)
+				if err != nil {
+					return nil, nil, fmt.Errorf("bitfield intersect failed: %s", err)
+				}
 				rGroups = append(rGroups, failedRecovery)
 			}
 		}
@@ -1381,6 +1387,9 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 
 		if terminationType != power.SectorTerminationExpired {
 			penalty, err = unlockPenalty(&st, store, rt.CurrEpoch(), allSectors, pledgePenaltyForSectorTermination)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to unlock penalty %s", err)
+			}
 		}
 		return nil
 	})
@@ -1471,7 +1480,7 @@ func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
 	builtin.RequireSuccess(rt, code, "failed to terminate deals %v, exit code %v", dealIDs, code)
 }
 
-func requestTerminateAllDeals(rt Runtime, st *State) {
+func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
 	// TODO: red flag this is an ~unbounded computation.
 	// Transform into an idempotent partial computation that can be progressed on each invocation.
 	// https://github.com/filecoin-project/specs-actors/issues/483

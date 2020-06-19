@@ -75,12 +75,15 @@ const PreCommitChallengeDelay = abi.ChainEpoch(10)
 const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
 // Lookback from the deadline's challenge window opening from which to sample chain randomness for the challenge seed.
-const WPoStChallengeLookback = abi.ChainEpoch(20) // PARAM_FINISH
+// This lookback exists so that deadline windows can be non-overlapping (which make the programming simpler)
+// but without making the miner wait for chain stability before being able to start on PoSt computation.
+// The challenge is available this many epochs before the window is actually open to receiving a PoSt.
+const WPoStChallengeLookback = abi.ChainEpoch(20)
 
 // Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
-// A fault declaration may appear in the challenge epoch, since it must have been posted before the
-// epoch completed, and hence before the challenge was knowable.
-const FaultDeclarationCutoff = WPoStChallengeLookback // PARAM_FINISH
+// This lookback must not be less than WPoStChallengeLookback lest a malicious miner be able to selectively declare
+// faults after learning the challenge value.
+const FaultDeclarationCutoff = WPoStChallengeLookback + 10
 
 // The maximum age of a fault before the sector is terminated.
 const FaultMaxAge = WPoStProvingPeriod*14 - 1

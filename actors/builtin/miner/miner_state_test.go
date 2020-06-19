@@ -255,7 +255,7 @@ func TestSectorExpirationStore(t *testing.T) {
 func TestFaultStore(t *testing.T) {
 	fault1 := abi.ChainEpoch(10)
 	fault2 := abi.ChainEpoch(20)
-	sectorFaults := map[abi.ChainEpoch][]uint64 {
+	sectorFaults := map[abi.ChainEpoch][]uint64{
 		fault1: {1, 2, 3, 4, 5},
 		fault2: {6, 7, 8, 9, 10, 11},
 	}
@@ -883,12 +883,6 @@ func (h *stateHarness) getNewSectorCount() uint64 {
 // Sector Store Assertion Operations
 //
 
-func (h *stateHarness) getSectorCount() uint64 {
-	out, err := h.s.GetSectorCount(h.store)
-	require.NoError(h.t, err)
-	return out
-}
-
 func (h *stateHarness) hasSectorNo(sectorNo abi.SectorNumber) bool {
 	found, err := h.s.HasSectorNo(h.store, sectorNo)
 	require.NoError(h.t, err)
@@ -1007,11 +1001,11 @@ const (
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		SealProof:       abi.RegisteredSealProof_StackedDrg32GiBV1,
-		SectorNumber:    sectorNo,
-		SealedCID:       sealed,
-		SealRandEpoch:   sectorSealRandEpochValue,
-		DealIDs:         nil,
-		Expiration:      sectorExpiration,
+		SealProof:     abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SectorNumber:  sectorNo,
+		SealedCID:     sealed,
+		SealRandEpoch: sectorSealRandEpochValue,
+		DealIDs:       nil,
+		Expiration:    sectorExpiration,
 	}
 }
