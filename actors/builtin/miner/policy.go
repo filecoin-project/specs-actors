@@ -48,8 +48,8 @@ func windowPoStMessagePartitionsMax(partitionSectorCount uint64) uint64 {
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
 const NewSectorsPerPeriodMax = 128 << 10
 
-// An approximation to chain state finality (ish because should include message propagation time as well).
-const ChainFinalityish = abi.ChainEpoch(900) // PARAM_FINISH
+// Epochs after which chain state is final.
+const ChainFinality = abi.ChainEpoch(900)
 
 // List of proof types which can be used when creating new miner actors
 var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
@@ -89,7 +89,10 @@ const FaultDeclarationCutoff = WPoStChallengeLookback + 10
 const FaultMaxAge = WPoStProvingPeriod*14 - 1
 
 // Staging period for a miner worker key change.
-const WorkerKeyChangeDelay = 2 * ElectionLookback // PARAM_FINISH
+// Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Winow PoSts until
+// it can be changed. It's the only safe value, though. We may implement a mitigation mechanism such as a second
+// key or allowing the owner account to submit PoSts while a key change is pending.
+const WorkerKeyChangeDelay = ChainFinality
 
 var QualityBaseMultiplier = big.NewInt(10)         // PARAM_FINISH
 var DealWeightMultiplier = big.NewInt(11)          // PARAM_FINISH
