@@ -458,7 +458,14 @@ func TestDeclareFaults(t *testing.T) {
 		require.True(t, found)
 
 		// Declare the sector as faulted
-		actor.declareFaults(rt, info)
+		ss, err := info.Info.SealProof.SectorSize()
+		require.NoError(t, err)
+		_, sectorQAPower := miner.PowerForSectors(ss, []*miner.SectorOnChainInfo{info})
+		expectedReward := big.Exp(big.NewInt(10), big.NewInt(18)) // 1 FIL
+		totalQAPower := big.NewInt(1 << 52)
+		fee := miner.PledgePenaltyForSectorDeclaredFault(expectedReward, totalQAPower, sectorQAPower)
+
+		actor.declareFaults(rt, expectedReward, totalQAPower, fee, info)
 	})
 }
 
@@ -827,7 +834,7 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	rt.Verify()
 }
 
-func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
+func (h *actorHarness) declareFaults(rt *mock.Runtime, expectedReward abi.TokenAmount, totalQAPower abi.StoragePower, fee abi.TokenAmount, faultSectorInfos ...*miner.SectorOnChainInfo) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -837,14 +844,13 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	expectedRawDelta = big.Mul(big.NewInt(-1), expectedRawDelta)
 	expectedQADelta = big.Mul(big.NewInt(-1), expectedQADelta)
 
-	expectedReward := abi.NewTokenAmount(100_000)
-	expectedTotalPower := power.CurrentTotalPowerReturn{
-		QualityAdjPower: big.Mul(big.NewInt(10), expectedQADelta),
+	expectedTotalPower := &power.CurrentTotalPowerReturn{
+		QualityAdjPower: totalQAPower,
 	}
 
 	rt.ExpectSend(
-		builtin.RewardActorAddr, 
-		builtin.MethodsReward.LastPerEpochReward, 
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.LastPerEpochReward,
 		nil,
 		big.Zero(),
 		&expectedReward,
@@ -853,10 +859,10 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
-	    builtin.MethodsPower.CurrentTotalPower,
-	    nil,
+		builtin.MethodsPower.CurrentTotalPower,
+		nil,
 		big.Zero(),
-		&expectedTotalPower,
+		expectedTotalPower,
 		exitcode.Ok,
 	)
 
@@ -870,7 +876,6 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 		exitcode.Ok,
 	)
 
-	fee := miner.PledgePenaltyForSectorDeclaredFault(expectedReward, expectedTotalPower.QualityAdjPower, expectedQADelta)
 	// expect fee
 	rt.ExpectSend(
 		builtin.BurntFundsActorAddr,
@@ -909,7 +914,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	for dl, sectorNumbers := range faultAtDeadline {
 		fault := miner.FaultDeclaration{
 			Deadline: dl,
-			Sectors: bitfield.NewFromSet(sectorNumbers),
+			Sectors:  bitfield.NewFromSet(sectorNumbers),
 		}
 		params.Faults = append(params.Faults, fault)
 	}
