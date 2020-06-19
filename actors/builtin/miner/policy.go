@@ -105,25 +105,30 @@ const SectorQualityPrecision = 20
 // Sectors full of Deals will have a SectorQuality of DealWeightMultiplier/QualityBaseMultiplier.
 // Sectors with neither will have a SectorQuality of QualityBaseMultiplier/QualityBaseMultiplier.
 // SectorQuality of a sector is a weighted average of multipliers based on their propotions.
-func QualityForSector(sectorSize abi.SectorSize, sector *SectorOnChainInfo) abi.SectorQuality {
-	duration := sector.Info.Expiration - sector.ActivationEpoch
-	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(sectorSize)), big.NewInt(int64(duration)))
-	totalDealSpaceTime := big.Add(sector.DealWeight, sector.VerifiedDealWeight)
+func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.SectorQuality {
+	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
+	totalDealSpaceTime := big.Add(dealWeight, verifiedWeight)
 	Assert(sectorSpaceTime.GreaterThanEqual(totalDealSpaceTime))
 
 	weightedBaseSpaceTime := big.Mul(big.Sub(sectorSpaceTime, totalDealSpaceTime), QualityBaseMultiplier)
-	weightedDealSpaceTime := big.Mul(sector.DealWeight, DealWeightMultiplier)
-	weightedVerifiedSpaceTime := big.Mul(sector.VerifiedDealWeight, VerifiedDealWeightMultiplier)
+	weightedDealSpaceTime := big.Mul(dealWeight, DealWeightMultiplier)
+	weightedVerifiedSpaceTime := big.Mul(verifiedWeight, VerifiedDealWeightMultiplier)
 	weightedSumSpaceTime := big.Add(weightedBaseSpaceTime, big.Add(weightedDealSpaceTime, weightedVerifiedSpaceTime))
 	scaledUpWeightedSumSpaceTime := big.Lsh(weightedSumSpaceTime, SectorQualityPrecision)
 
 	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), QualityBaseMultiplier)
 }
 
+// Returns the power for a sector size and weight.
+func QAPowerForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.StoragePower {
+	quality := QualityForWeight(size, duration, dealWeight, verifiedWeight)
+	return big.Rsh(big.Mul(big.NewIntUnsigned(uint64(size)), quality), SectorQualityPrecision)
+}
+
 // Returns the quality-adjusted power for a sector.
 func QAPowerForSector(size abi.SectorSize, sector *SectorOnChainInfo) abi.StoragePower {
-	qual := QualityForSector(size, sector)
-	return big.Rsh(big.Mul(big.NewIntUnsigned(uint64(size)), qual), SectorQualityPrecision)
+	duration := sector.Info.Expiration - sector.ActivationEpoch
+	return QAPowerForWeight(size, duration, sector.DealWeight, sector.VerifiedDealWeight)
 }
 
 // Deposit per sector required at pre-commitment, refunded after the commitment is proven (else burned).
