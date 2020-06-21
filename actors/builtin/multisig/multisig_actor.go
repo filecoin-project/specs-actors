@@ -326,7 +326,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if params.NewThreshold <= 0 || params.NewThreshold > uint64(len(st.Signers)) {
+		if params.NewThreshold == 0 || params.NewThreshold > uint64(len(st.Signers)) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "New threshold value not supported")
 		}
 

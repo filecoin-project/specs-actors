@@ -84,7 +84,7 @@ jobs:
         default: golang
       golangci-lint-version:
         type: string
-        default: 1.21.0
+        default: 1.23.1
       concurrency:
         type: string
         default: '2'
@@ -110,8 +110,6 @@ jobs:
           command: |
             $HOME/.local/bin/golangci-lint run -v --skip-dirs-use-default=false\
               --concurrency << parameters.concurrency >> << parameters.args >>
-  lint-changes:
-    <<: *lint
 
   lint-all:
     <<: *lint
@@ -120,8 +118,7 @@ workflows:
   version: 2.1
   ci:
     jobs:
-      - lint-changes:
-          args: "--new-from-rev origin/master"
+      - lint-all
       - mod-tidy-check
       - build-all
       - test-all
