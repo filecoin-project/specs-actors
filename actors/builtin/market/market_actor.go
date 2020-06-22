@@ -26,10 +26,11 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.AddBalance,
 		3:                         a.WithdrawBalance,
 		4:                         a.PublishStorageDeals,
-		5:                         a.VerifyDealsOnSectorProveCommit,
-		6:                         a.OnMinerSectorsTerminate,
-		7:                         a.ComputeDataCommitment,
-		8:                         a.CronTick,
+		5:                         a.VerifyDeals,
+		6:                         a.ActivateDealsOnSectorProveCommit,
+		7:                         a.OnMinerSectorsTerminate,
+		8:                         a.ComputeDataCommitment,
+		9:                         a.CronTick,
 	}
 }
 
@@ -248,20 +249,45 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	return &PublishStorageDealsReturn{newDealIds}
 }
 
-type VerifyDealsOnSectorProveCommitParams struct {
+type VerifyDealsParams struct {
 	DealIDs      []abi.DealID
 	SectorExpiry abi.ChainEpoch
+	SectorStart  abi.ChainEpoch
 }
 
-type VerifyDealsOnSectorProveCommitReturn struct {
+type VerifyDealsReturn struct {
 	DealWeight         abi.DealWeight
 	VerifiedDealWeight abi.DealWeight
 }
 
-// Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
-// update the market's internal state accordingly, and return DealWeight of the set of storage deals given.
+// Verify that a given set of storage deals is valid for a sector currently being PreCommitted
+// and return DealWeight of the set of storage deals given.
 // The weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
-func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnSectorProveCommitParams) *VerifyDealsOnSectorProveCommitReturn {
+func (A Actor) VerifyDeals(rt Runtime, params *VerifyDealsParams) *VerifyDealsReturn {
+	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
+	minerAddr := rt.Message().Caller()
+
+	var st State
+	rt.State().Readonly(&st)
+	store := adt.AsStore(rt)
+
+	dealWeight, verifiedWeight, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate proposals for activation")
+
+	return &VerifyDealsReturn{
+		DealWeight:         dealWeight,
+		VerifiedDealWeight: verifiedWeight,
+	}
+}
+
+type ActivateDealsOnSectorProveCommitParams struct {
+	DealIDs      []abi.DealID
+	SectorExpiry abi.ChainEpoch
+}
+
+// Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
+// update the market's internal state accordingly.
+func (a Actor) ActivateDealsOnSectorProveCommit(rt Runtime, params *ActivateDealsOnSectorProveCommitParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 	currEpoch := rt.CurrEpoch()
@@ -270,14 +296,9 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 	store := adt.AsStore(rt)
 
 	// Update deal states.
-	dealWeight := big.Zero()
-	verifiedWeight := big.Zero()
-	var err error
 	rt.State().Transaction(&st, func() interface{} {
-		dealWeight, verifiedWeight, err = ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to validate proposals for activation: %v", err)
-		}
+		_, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate proposals for activation")
 
 		states, err := AsDealStateArray(store, st.States)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal states")
@@ -303,10 +324,7 @@ func (a Actor) VerifyDealsOnSectorProveCommit(rt Runtime, params *VerifyDealsOnS
 		return nil
 	})
 
-	return &VerifyDealsOnSectorProveCommitReturn{
-		DealWeight:         dealWeight,
-		VerifiedDealWeight: verifiedWeight,
-	}
+	return nil
 }
 
 type ComputeDataCommitmentParams struct {
