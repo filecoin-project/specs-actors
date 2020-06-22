@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
 
@@ -90,3 +91,51 @@ func TestNextProvingPeriodStart(t *testing.T) {
 }
 
 type e = abi.ChainEpoch
+
+func TestFaultFeeInvariants(t *testing.T) {
+	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
+		epochReward := abi.NewTokenAmount(1_000)
+		networkPower := abi.NewStoragePower(100 << 50)
+		faultySectorPower := abi.NewStoragePower(1 << 50)
+
+		ff := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorPower)
+		sp := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorPower)
+		assert.True(t, sp.GreaterThan(ff))
+	}) 
+
+	 t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
+		epochReward := abi.NewTokenAmount(1_000)
+		networkPower := abi.NewStoragePower(100 << 50)
+		faultySectorAPower := abi.NewStoragePower(1 << 50)
+		faultySectorBPower := abi.NewStoragePower(19 << 50)		
+		faultySectorCPower := abi.NewStoragePower(63 << 50)				
+		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)		
+
+		// Declared faults
+		ffA := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorAPower)
+		ffB := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		ffC := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorCPower)				
+
+		ffAll := PledgePenaltyForDeclaredFault(epochReward, networkPower, totalFaultPower)
+
+		// Because we can introduce rounding error between 1 and zero for every penalty calculation
+		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
+		diff := big.Sub(ffAll, big.Add(ffC, big.Add(ffA, ffB)))
+		assert.True(t, diff.GreaterThanEqual(big.Zero()))
+		assert.True(t, diff.LessThan(big.NewInt(3)))
+
+		// Undeclared faults		
+		spA := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorAPower)
+		spB := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		spC := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorCPower)				
+
+		spAll := PledgePenaltyForUndeclaredFault(epochReward, networkPower, totalFaultPower)
+
+		// Because we can introduce rounding error between 1 and zero for every penalty calculation
+		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
+		diff = big.Sub(spAll, big.Add(spC, big.Add(spA, spB)))
+		assert.True(t, diff.GreaterThanEqual(big.Zero()))
+		assert.True(t, diff.LessThan(big.NewInt(3)))
+
+	 })
+}
