@@ -852,10 +852,14 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, expectedReward abi.TokenA
 	expectQueryNetworkInfo(rt, expectedTotalPower, expectedReward)
 
 	// expect power update
+	claim := &power.UpdateClaimedPowerParams{
+		RawByteDelta:         expectedRawDelta,
+		QualityAdjustedDelta: expectedQADelta,
+	}
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,
-		makePowerClaimUpdate(expectedRawDelta, expectedQADelta),
+		claim,
 		abi.NewTokenAmount(0),
 		nil,
 		exitcode.Ok,
@@ -1007,26 +1011,18 @@ func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 	}
 }
 
-func makePowerClaimUpdate(rawDelta, qaDelta abi.StoragePower) *power.UpdateClaimedPowerParams {
-	return &power.UpdateClaimedPowerParams{
-		RawByteDelta:         rawDelta,
-		QualityAdjustedDelta: qaDelta,
-	}
-}
-
 func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt.Store, faultSectorInfos []*miner.SectorOnChainInfo) *miner.DeclareFaultsParams {
 	deadlines, err := st.LoadDeadlines(store)
 	require.NoError(t, err)
 	faultAtDeadline := make(map[uint64][]uint64)
+	// Find the deadline for each faulty sector which must be provided with the fault declaration
 	for _, sectorInfo := range faultSectorInfos {
 		dl, err := miner.FindDeadline(deadlines, sectorInfo.Info.SectorNumber)
 		require.NoError(t, err)
-		if _, ok := faultAtDeadline[dl]; !ok {
-			faultAtDeadline[dl] = []uint64{uint64(sectorInfo.Info.SectorNumber)}
-		}
 		faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.Info.SectorNumber))
 	}
 	params := &miner.DeclareFaultsParams{Faults: []miner.FaultDeclaration{}}
+	// Group together faults at the same deadline into a bitfield
 	for dl, sectorNumbers := range faultAtDeadline {
 		fault := miner.FaultDeclaration{
 			Deadline: dl,
