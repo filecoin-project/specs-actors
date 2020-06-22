@@ -98,8 +98,8 @@ func TestFaultFeeInvariants(t *testing.T) {
 		networkPower := abi.NewStoragePower(100 << 50)
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
-		ff := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorPower)
-		sp := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorPower)
+		ff := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorPower)
+		sp := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorPower)
 		assert.True(t, sp.GreaterThan(ff))
 	}) 
 
@@ -112,11 +112,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)		
 
 		// Declared faults
-		ffA := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorAPower)
-		ffB := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorBPower)		
-		ffC := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, faultySectorCPower)				
+		ffA := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorAPower)
+		ffB := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		ffC := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorCPower)				
 
-		ffAll := PledgePenaltyForSectorDeclaredFault(epochReward, networkPower, totalFaultPower)
+		ffAll := PledgePenaltyForDeclaredFault(epochReward, networkPower, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
@@ -125,11 +125,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		assert.True(t, diff.LessThan(big.NewInt(3)))
 
 		// Undeclared faults		
-		spA := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorAPower)
-		spB := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorBPower)		
-		spC := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, faultySectorCPower)				
+		spA := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorAPower)
+		spB := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorBPower)		
+		spC := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorCPower)				
 
-		spAll := pledgePenaltyForSectorUndeclaredFault(epochReward, networkPower, totalFaultPower)
+		spAll := PledgePenaltyForUndeclaredFault(epochReward, networkPower, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.

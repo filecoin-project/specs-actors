@@ -464,7 +464,7 @@ func TestDeclareFaults(t *testing.T) {
 		_, sectorQAPower := miner.PowerForSectors(ss, []*miner.SectorOnChainInfo{info})
 		expectedReward := big.Exp(big.NewInt(10), big.NewInt(18)) // 1 FIL
 		totalQAPower := big.NewInt(1 << 52)
-		fee := miner.PledgePenaltyForSectorDeclaredFault(expectedReward, totalQAPower, sectorQAPower)
+		fee := miner.PledgePenaltyForDeclaredFault(expectedReward, totalQAPower, sectorQAPower)
 
 		actor.declareFaults(rt, expectedReward, totalQAPower, fee, info)
 	})

@@ -9,7 +9,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
-	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -1804,45 +1803,34 @@ func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declare
 }
 
 // qaPowerForSectors sums the quality adjusted power of all sectors
-func qaPowerForSectors(sectors []*SectorOnChainInfo) (abi.StoragePower, error) {
+func qaPowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) abi.StoragePower {
 	power := big.Zero()
 	for _, s := range sectors {
-		sectorSize, err := s.Info.SealProof.SectorSize()
-		if err != nil {
-			return abi.NewTokenAmount(0), xerrors.Errorf("could not get sector size for sector: %w", err)
-		}
 		power = big.Add(power, QAPowerForSector(sectorSize, s))
 	}
-	return power, nil
+	return power
 }
 
 func unlockDeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
-	totalQAPower, err := qaPowerForSectors(sectors)
-	if err != nil {
-		return abi.NewTokenAmount(0), err
-	}
-	fee := PledgePenaltyForSectorDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	sectorSize := st.Info.SectorSize
+	totalQAPower := qaPowerForSectors(sectorSize, sectors)
+	fee := PledgePenaltyForDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
 func unlockUndeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
-	totalQAPower, err := qaPowerForSectors(sectors)
-	if err != nil {
-		return abi.NewTokenAmount(0), err
-	}
-	fee := pledgePenaltyForSectorUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	sectorSize := st.Info.SectorSize
+	totalQAPower := qaPowerForSectors(sectorSize, sectors)
+	fee := PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
 func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalFee := big.Zero()
+	sectorSize := st.Info.SectorSize
 	for _, s := range sectors {
-		sectorSize, err := s.Info.SealProof.SectorSize()
-		if err != nil {
-			return abi.NewTokenAmount(0), xerrors.Errorf("could not get sector size for sector: %w", err)
-		}
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := pledgePenaltyForSectorTermination(s, epochTargetReward, networkQAPower, sectorPower)
+		fee := pledgePenaltyForTermination(s, epochTargetReward, networkQAPower, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee, nil

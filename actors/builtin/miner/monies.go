@@ -21,7 +21,7 @@ var UndeclaredFaultFactor = big.NewInt(5)
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
-func ExpectedDayRewardForSector(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func ExpectedDayRewardForPower(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	expectedRewardForProvingPeriod := big.Mul(big.NewInt(builtin.EpochsInDay), epochTargetReward)
 	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), networkQAPower)
 }
@@ -29,22 +29,22 @@ func ExpectedDayRewardForSector(epochTargetReward abi.TokenAmount, networkQAPowe
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
 // it has been previously detected by the network.
 // FF(t) = DeclaredFaultFactor * BR(t)
-func PledgePenaltyForSectorDeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForDeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower)),
+		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower)),
 		DeclaredFaultFactorDenom)
 }
 
 // This is the SP(t) penalty for a newly faulty sector that has not been declared.
 // SP(t) = UndeclaredFaultFactor * BR(t)
-func pledgePenaltyForSectorUndeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForUndeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(UndeclaredFaultFactor, ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower)),
+		big.Mul(UndeclaredFaultFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower)),
 		big.NewInt(1))
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
-func pledgePenaltyForSectorTermination(s *SectorOnChainInfo, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func pledgePenaltyForTermination(s *SectorOnChainInfo, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	//TODO #437 compute correct termination fee using initial pledge value from SectorOnChainInfo
 	return big.Zero() // PARAM_FINISH
 }
@@ -55,7 +55,7 @@ func pledgePenaltyForSectorTermination(s *SectorOnChainInfo, epochTargetReward a
 // newly-committed power, holding the per-epoch block reward constant (though in reality it will change over time).
 // The network total pledge and circulating supply parameters are currently unused, but may be included in a
 // future calculation.
-func InitialPledgeForPower(qaSectorPower abi.StoragePower, networkQAPower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
+func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
 	// https://github.com/filecoin-project/specs-actors/issues/468
@@ -65,5 +65,5 @@ func InitialPledgeForPower(qaSectorPower abi.StoragePower, networkQAPower abi.St
 	if networkQAPower.IsZero() {
 		return epochTargetReward
 	}
-	return big.Mul(InitialPledgeFactor, ExpectedDayRewardForSector(epochTargetReward, networkQAPower, qaSectorPower))
+	return big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaPower))
 }
