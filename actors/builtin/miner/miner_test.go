@@ -459,7 +459,7 @@ func TestDeclareFaults(t *testing.T) {
 		require.True(t, found)
 
 		// Declare the sector as faulted
-		ss, err := info.Info.SealProof.SectorSize()
+		ss, err := info.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorQAPower := miner.QAPowerForSector(ss, info)
 		expectedReward := big.NewInt(1e18) // 1 FIL
@@ -502,9 +502,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 		rt := builder.Build(t)
 		sector := commitSector(t, rt)
 		// attempt to shorten epoch
-		newExpiration := sector.Info.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
+		newExpiration := sector.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
 		params := &miner.ExtendSectorExpirationParams{
-			SectorNumber:  sector.Info.SectorNumber,
+			SectorNumber:  sector.SectorNumber,
 			NewExpiration: newExpiration,
 		}
 
@@ -519,9 +519,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 
 		// attempt to extend to an epoch that is not a multiple of the proving period + the commit epoch
 		extension := 42*miner.WPoStProvingPeriod + 1
-		newExpiration := sector.Info.Expiration - abi.ChainEpoch(extension)
+		newExpiration := sector.Expiration - abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
-			SectorNumber:  sector.Info.SectorNumber,
+			SectorNumber:  sector.SectorNumber,
 			NewExpiration: newExpiration,
 		}
 
@@ -535,9 +535,9 @@ func TestExtendSectorExpiration(t *testing.T) {
 		oldSector := commitSector(t, rt)
 
 		extension := 42 * miner.WPoStProvingPeriod
-		newExpiration := oldSector.Info.Expiration + abi.ChainEpoch(extension)
+		newExpiration := oldSector.Expiration + abi.ChainEpoch(extension)
 		params := &miner.ExtendSectorExpirationParams{
-			SectorNumber:  oldSector.Info.SectorNumber,
+			SectorNumber:  oldSector.SectorNumber,
 			NewExpiration: newExpiration,
 		}
 
@@ -545,22 +545,22 @@ func TestExtendSectorExpiration(t *testing.T) {
 
 		// assert sector expiration is set to the new value
 		st := getState(rt)
-		newSector, found, err := st.GetSector(rt.AdtStore(), oldSector.Info.SectorNumber)
+		newSector, found, err := st.GetSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
 		require.True(t, found)
-		assert.Equal(t, newExpiration, newSector.Info.Expiration)
+		assert.Equal(t, newExpiration, newSector.Expiration)
 
 		// assert that an expiration exists at the target epoch
 		expirations, err := st.GetSectorExpirations(rt.AdtStore(), newExpiration)
 		require.NoError(t, err)
-		exists, err := expirations.IsSet(uint64(newSector.Info.SectorNumber))
+		exists, err := expirations.IsSet(uint64(newSector.SectorNumber))
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// assert that the expiration has been removed from the old epoch
-		expirations, err = st.GetSectorExpirations(rt.AdtStore(), oldSector.Info.Expiration)
+		expirations, err = st.GetSectorExpirations(rt.AdtStore(), oldSector.Expiration)
 		require.NoError(t, err)
-		exists, err = expirations.IsSet(uint64(newSector.Info.SectorNumber))
+		exists, err = expirations.IsSet(uint64(newSector.SectorNumber))
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -717,8 +717,12 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		sectorSize, err := precommit.SealProof.SectorSize()
 		require.NoError(h.t, err)
 		newSector := miner.SectorOnChainInfo{
-			Info:               *precommit,
-			ActivationEpoch:    rt.Epoch(),
+			SectorNumber:       precommit.SectorNumber,
+			SealProof:          precommit.SealProof,
+			SealedCID:          precommit.SealedCID,
+			DealIDs:            precommit.DealIDs,
+			Expiration:         precommit.Expiration,
+			Activation:         rt.Epoch(),
 			DealWeight:         dealWeight,
 			VerifiedDealWeight: verifiedDealWeight,
 		}
@@ -809,9 +813,9 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			proofInfos[i] = abi.SectorInfo{
-				SealProof:    ci.Info.SealProof,
-				SectorNumber: ci.Info.SectorNumber,
-				SealedCID:    ci.Info.SealedCID,
+				SealProof:    ci.SealProof,
+				SectorNumber: ci.SectorNumber,
+				SealedCID:    ci.SealedCID,
 			}
 		}
 
@@ -839,7 +843,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, expectedReward abi.TokenA
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
-	ss, err := faultSectorInfos[0].Info.SealProof.SectorSize()
+	ss, err := faultSectorInfos[0].SealProof.SectorSize()
 	require.NoError(h.t, err)
 	expectedRawDelta, expectedQADelta := miner.PowerForSectors(ss, faultSectorInfos)
 	expectedRawDelta = expectedRawDelta.Neg()
@@ -938,7 +942,7 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 
 	st := getState(rt)
 	newSector := *sector
-	newSector.Info.Expiration += extension
+	newSector.Expiration += extension
 	qaDelta := big.Sub(miner.QAPowerForSector(st.Info.SectorSize, &newSector), miner.QAPowerForSector(st.Info.SectorSize, sector))
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
@@ -1017,9 +1021,9 @@ func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt
 	faultAtDeadline := make(map[uint64][]uint64)
 	// Find the deadline for each faulty sector which must be provided with the fault declaration
 	for _, sectorInfo := range faultSectorInfos {
-		dl, err := miner.FindDeadline(deadlines, sectorInfo.Info.SectorNumber)
+		dl, err := miner.FindDeadline(deadlines, sectorInfo.SectorNumber)
 		require.NoError(t, err)
-		faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.Info.SectorNumber))
+		faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.SectorNumber))
 	}
 	params := &miner.DeclareFaultsParams{Faults: []miner.FaultDeclaration{}}
 	// Group together faults at the same deadline into a bitfield

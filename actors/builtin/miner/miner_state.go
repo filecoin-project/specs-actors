@@ -118,24 +118,31 @@ type WorkerKeyChange struct {
 	EffectiveAt abi.ChainEpoch
 }
 
+// Information provided by a miner when pre-committing a sector.
 type SectorPreCommitInfo struct {
 	SealProof     abi.RegisteredSealProof
 	SectorNumber  abi.SectorNumber
 	SealedCID     cid.Cid // CommR
 	SealRandEpoch abi.ChainEpoch
 	DealIDs       []abi.DealID
-	Expiration    abi.ChainEpoch // Sector Expiration
+	Expiration    abi.ChainEpoch
 }
 
+// Information stored on-chain for a pre-committed sector.
 type SectorPreCommitOnChainInfo struct {
 	Info             SectorPreCommitInfo
 	PreCommitDeposit abi.TokenAmount
 	PreCommitEpoch   abi.ChainEpoch
 }
 
+// Information stored on-chain for a proven sector.
 type SectorOnChainInfo struct {
-	Info               SectorPreCommitInfo
-	ActivationEpoch    abi.ChainEpoch // Epoch at which SectorProveCommit is accepted
+	SectorNumber       abi.SectorNumber
+	SealProof          abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
+	SealedCID          cid.Cid                 // CommR
+	DealIDs            []abi.DealID
+	Activation         abi.ChainEpoch // Epoch during which the sector proof was accepted
+	Expiration         abi.ChainEpoch // Epoch during which the sector expires
 	DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
 	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
 }
@@ -271,7 +278,7 @@ func (st *State) PutSector(store adt.Store, sector *SectorOnChainInfo) error {
 		return err
 	}
 
-	if err := sectors.Set(uint64(sector.Info.SectorNumber), sector); err != nil {
+	if err := sectors.Set(uint64(sector.SectorNumber), sector); err != nil {
 		return errors.Wrapf(err, "failed to put sector %v", sector)
 	}
 	st.Sectors, err = sectors.Root()
@@ -1040,9 +1047,9 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 
 func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 	return abi.SectorInfo{
-		SealProof:    s.Info.SealProof,
-		SectorNumber: s.Info.SectorNumber,
-		SealedCID:    s.Info.SealedCID,
+		SealProof:    s.SealProof,
+		SectorNumber: s.SectorNumber,
+		SealedCID:    s.SealedCID,
 	}
 }
 

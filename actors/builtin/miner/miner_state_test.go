@@ -102,7 +102,7 @@ func TestSectorsStore(t *testing.T) {
 
 		sectorNoIdx := 0
 		err := harness.s.ForEachSector(harness.store, func(si *miner.SectorOnChainInfo) {
-			require.Equal(t, abi.SectorNumber(sectorNos[sectorNoIdx]), si.Info.SectorNumber)
+			require.Equal(t, abi.SectorNumber(sectorNos[sectorNoIdx]), si.SectorNumber)
 			sectorNoIdx++
 		})
 		assert.NoError(t, err)
@@ -982,21 +982,24 @@ func newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, de
 	}
 }
 
-// returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
-func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
-	info := newSectorPreCommitInfo(sectorNo, sealed)
-	return &miner.SectorOnChainInfo{
-		Info:               *info,
-		ActivationEpoch:    activation,
-		DealWeight:         weight,
-		VerifiedDealWeight: weight,
-	}
-}
-
 const (
 	sectorSealRandEpochValue = abi.ChainEpoch(1)
 	sectorExpiration         = abi.ChainEpoch(1)
 )
+
+// returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
+func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
+	return &miner.SectorOnChainInfo{
+		SectorNumber:       sectorNo,
+		SealProof:          abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealedCID:          sealed,
+		DealIDs:            nil,
+		Activation:         activation,
+		Expiration:         sectorExpiration,
+		DealWeight:         weight,
+		VerifiedDealWeight: weight,
+	}
+}
 
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {

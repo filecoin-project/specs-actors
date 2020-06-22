@@ -1107,7 +1107,7 @@ func (t *ApproveReturn) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Ret (runtime.CBORBytes) (slice)
+	// t.Ret ([]uint8) (slice)
 	if len(t.Ret) > cbg.ByteArrayMaxLen {
 		return xerrors.Errorf("Byte array in field t.Ret was too long")
 	}
@@ -1178,7 +1178,7 @@ func (t *ApproveReturn) UnmarshalCBOR(r io.Reader) error {
 
 		t.Code = exitcode.ExitCode(extraI)
 	}
-	// t.Ret (runtime.CBORBytes) (slice)
+	// t.Ret ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
@@ -1234,7 +1234,7 @@ func (t *ProposeReturn) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Ret (runtime.CBORBytes) (slice)
+	// t.Ret ([]uint8) (slice)
 	if len(t.Ret) > cbg.ByteArrayMaxLen {
 		return xerrors.Errorf("Byte array in field t.Ret was too long")
 	}
@@ -1330,7 +1330,7 @@ func (t *ProposeReturn) UnmarshalCBOR(r io.Reader) error {
 
 		t.Code = exitcode.ExitCode(extraI)
 	}
-	// t.Ret (runtime.CBORBytes) (slice)
+	// t.Ret ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeader(br)
 	if err != nil {
