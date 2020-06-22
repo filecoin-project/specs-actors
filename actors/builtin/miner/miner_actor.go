@@ -1839,10 +1839,7 @@ func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoc
 // Returns the sum of the raw byte and quality-adjusted power for sectors.
 func PowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (rawBytePower, qaPower big.Int) {
 	rawBytePower = big.Mul(big.NewIntUnsigned(uint64(sectorSize)), big.NewIntUnsigned(uint64(len(sectors))))
-	qaPower = big.Zero()
-	for _, s := range sectors {
-		qaPower = big.Add(qaPower, QAPowerForSector(sectorSize, s))
-	}
+	qaPower = qaPowerForSectors(sectorSize, sectors)
 	return
 }
 

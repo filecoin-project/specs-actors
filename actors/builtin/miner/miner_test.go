@@ -461,8 +461,8 @@ func TestDeclareFaults(t *testing.T) {
 		// Declare the sector as faulted
 		ss, err := info.Info.SealProof.SectorSize()
 		require.NoError(t, err)
-		_, sectorQAPower := miner.PowerForSectors(ss, []*miner.SectorOnChainInfo{info})
-		expectedReward := big.Exp(big.NewInt(10), big.NewInt(18)) // 1 FIL
+		sectorQAPower := miner.QAPowerForSector(ss, info)
+		expectedReward := big.NewInt(1e18) // 1 FIL
 		totalQAPower := big.NewInt(1 << 52)
 		fee := miner.PledgePenaltyForDeclaredFault(expectedReward, totalQAPower, sectorQAPower)
 
@@ -842,30 +842,14 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, expectedReward abi.TokenA
 	ss, err := faultSectorInfos[0].Info.SealProof.SectorSize()
 	require.NoError(h.t, err)
 	expectedRawDelta, expectedQADelta := miner.PowerForSectors(ss, faultSectorInfos)
-	expectedRawDelta = big.Mul(big.NewInt(-1), expectedRawDelta)
-	expectedQADelta = big.Mul(big.NewInt(-1), expectedQADelta)
+	expectedRawDelta = expectedRawDelta.Neg()
+	expectedQADelta = expectedQADelta.Neg()
 
 	expectedTotalPower := &power.CurrentTotalPowerReturn{
 		QualityAdjPower: totalQAPower,
 	}
 
-	rt.ExpectSend(
-		builtin.RewardActorAddr,
-		builtin.MethodsReward.LastPerEpochReward,
-		nil,
-		big.Zero(),
-		&expectedReward,
-		exitcode.Ok,
-	)
-
-	rt.ExpectSend(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.CurrentTotalPower,
-		nil,
-		big.Zero(),
-		expectedTotalPower,
-		exitcode.Ok,
-	)
+	expectQueryNetworkInfo(rt, expectedTotalPower, expectedReward)
 
 	// expect power update
 	rt.ExpectSend(
@@ -888,7 +872,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, expectedReward abi.TokenA
 	)
 
 	// expect pledge update
-	pledgeDelta := big.Mul(big.NewInt(-1), fee)
+	pledgeDelta := fee.Neg()
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdatePledgeTotal,
@@ -1072,4 +1056,24 @@ func fixedHasher(target uint64) func([]byte) [32]byte {
 		copy(digest[:], buf.Bytes())
 		return digest
 	}
+}
+
+func expectQueryNetworkInfo(rt *mock.Runtime, expectedTotalPower *power.CurrentTotalPowerReturn, expectedReward big.Int) {
+	rt.ExpectSend(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.LastPerEpochReward,
+		nil,
+		big.Zero(),
+		&expectedReward,
+		exitcode.Ok,
+	)
+
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.CurrentTotalPower,
+		nil,
+		big.Zero(),
+		expectedTotalPower,
+		exitcode.Ok,
+	)
 }
