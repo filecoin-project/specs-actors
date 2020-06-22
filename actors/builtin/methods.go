@@ -54,15 +54,16 @@ var MethodsPaych = struct {
 }{MethodConstructor, 2, 3, 4}
 
 var MethodsMarket = struct {
-	Constructor                    abi.MethodNum
-	AddBalance                     abi.MethodNum
-	WithdrawBalance                abi.MethodNum
-	PublishStorageDeals            abi.MethodNum
-	VerifyDealsOnSectorProveCommit abi.MethodNum
-	OnMinerSectorsTerminate        abi.MethodNum
-	ComputeDataCommitment          abi.MethodNum
-	CronTick                       abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8}
+	Constructor                      abi.MethodNum
+	AddBalance                       abi.MethodNum
+	WithdrawBalance                  abi.MethodNum
+	PublishStorageDeals              abi.MethodNum
+	VerifyDeals                      abi.MethodNum
+	ActivateDealsOnSectorProveCommit abi.MethodNum
+	OnMinerSectorsTerminate          abi.MethodNum
+	ComputeDataCommitment            abi.MethodNum
+	CronTick                         abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
 var MethodsPower = struct {
 	Constructor              abi.MethodNum
