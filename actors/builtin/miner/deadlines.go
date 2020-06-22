@@ -5,6 +5,8 @@ import (
 	"math"
 	"sort"
 
+	"golang.org/x/xerrors"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
@@ -264,4 +266,19 @@ func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []u
 		sortDeadlines()
 	}
 	return nil
+}
+
+// FindDeadline returns the deadline index for a given sector number.
+// It returns an error if the sector number is not tracked by deadlines.
+func FindDeadline(deadlines *Deadlines, sectorNum abi.SectorNumber) (uint64, error) {
+	for deadlineIdx, sectorNums := range deadlines.Due {
+		found, err := sectorNums.IsSet(uint64(sectorNum))
+		if err != nil {
+			return 0, err
+		}
+		if found {
+			return uint64(deadlineIdx), nil
+		}
+	}
+	return 0, xerrors.New("sectorNum not due at any deadline")
 }
