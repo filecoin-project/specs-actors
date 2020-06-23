@@ -490,8 +490,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// https://github.com/filecoin-project/specs-actors/issues/474
 		_, code := rt.Send(
 			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDealsOnSectorProveCommit,
-			&market.ActivateDealsOnSectorProveCommitParams{
+			builtin.MethodsMarket.ActivateDeals,
+			&market.ActivateDeals{
 				DealIDs:      precommit.Info.DealIDs,
 				SectorExpiry: precommit.Info.Expiration,
 			},

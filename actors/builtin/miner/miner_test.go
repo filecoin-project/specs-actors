@@ -233,7 +233,7 @@ func TestCommitments(t *testing.T) {
 		// Set the right epoch for all following tests
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
 
-		// Invalid deals (market ActivateDealsOnSectorProveCommit aborts)
+		// Invalid deals (market ActivateDeals aborts)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
 				verifyDealsExit: exitcode.ErrIllegalArgument,
@@ -721,11 +721,11 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 
 	// Prepare for and receive call to ConfirmSectorProofsValid at the end of the same epoch.
 	{
-		vdParams := market.ActivateDealsOnSectorProveCommitParams{
+		vdParams := market.ActivateDeals{
 			DealIDs:      precommit.DealIDs,
 			SectorExpiry: precommit.Expiration,
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDealsOnSectorProveCommit, &vdParams, big.Zero(), nil, conf.verifyDealsExit)
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, conf.verifyDealsExit)
 	}
 	{
 		sectorSize, err := precommit.SealProof.SectorSize()

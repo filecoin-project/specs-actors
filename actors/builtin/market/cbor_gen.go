@@ -317,7 +317,7 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *ActivateDealsOnSectorProveCommitParams) MarshalCBOR(w io.Writer) error {
+func (t *ActivateDeals) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -353,7 +353,7 @@ func (t *ActivateDealsOnSectorProveCommitParams) MarshalCBOR(w io.Writer) error 
 	return nil
 }
 
-func (t *ActivateDealsOnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) error {
+func (t *ActivateDeals) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

@@ -27,7 +27,7 @@ func (a Actor) Exports() []interface{} {
 		3:                         a.WithdrawBalance,
 		4:                         a.PublishStorageDeals,
 		5:                         a.VerifyDealsForActivation,
-		6:                         a.ActivateDealsOnSectorProveCommit,
+		6:                         a.ActivateDeals,
 		7:                         a.OnMinerSectorsTerminate,
 		8:                         a.ComputeDataCommitment,
 		9:                         a.CronTick,
@@ -280,14 +280,14 @@ func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActiva
 	}
 }
 
-type ActivateDealsOnSectorProveCommitParams struct {
+type ActivateDeals struct {
 	DealIDs      []abi.DealID
 	SectorExpiry abi.ChainEpoch
 }
 
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // update the market's internal state accordingly.
-func (a Actor) ActivateDealsOnSectorProveCommit(rt Runtime, params *ActivateDealsOnSectorProveCommitParams) *adt.EmptyValue {
+func (a Actor) ActivateDeals(rt Runtime, params *ActivateDeals) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 	currEpoch := rt.CurrEpoch()

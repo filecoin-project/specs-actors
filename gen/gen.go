@@ -147,7 +147,7 @@ func main() {
 		// method params
 		market.WithdrawBalanceParams{},
 		market.PublishStorageDealsParams{},
-		market.ActivateDealsOnSectorProveCommitParams{},
+		market.ActivateDeals{},
 		market.VerifyDealsForActivationParams{},
 		market.VerifyDealsForActivationReturn{},
 		market.ComputeDataCommitmentParams{},
