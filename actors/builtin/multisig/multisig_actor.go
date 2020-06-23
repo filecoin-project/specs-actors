@@ -245,9 +245,6 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		// FIXME: if params.Signer is a pubkey address, but the corresponding ID address is already a signer,
-		// this won't resolve to detect that and the logically same account can end up present twice.
-		// This needs a test.
 		if isSigner(rt, &st, params.Signer) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "%s is already a signer", params.Signer)
 		}
@@ -310,9 +307,6 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 			rt.Abortf(exitcode.ErrNotFound, "%s is not a signer", params.From)
 		}
 
-		// FIXME: if params.To is a pubkey address, but the corresponding ID address is already a signer,
-		// this won't resolve to detect that and the logically same account can end up present twice.
-		// This needs a test.
 		if isSigner(rt, &st, params.To) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "%s already a signer", params.To)
 		}
@@ -423,21 +417,35 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 }
 
 func isSigner(rt vmr.Runtime, st *State, address addr.Address) bool {
+	candidateIdAddr := address
+	if candidateIdAddr.Protocol() != addr.ID {
+		idAddr, found := rt.ResolveAddress(candidateIdAddr)
+		if found {
+			candidateIdAddr = idAddr
+		}
+	}
+
 	for i, ap := range st.Signers {
 		if address == ap {
 			return true
 		}
 
-		if ap.Protocol() != addr.ID {
+		switch ap.Protocol() {
+		case addr.ID:
+			if candidateIdAddr == ap {
+				return true
+			}
+		default:
 			idAddr, found := rt.ResolveAddress(ap)
 			if found {
 				st.Signers[i] = idAddr
-				if idAddr == address {
+				if idAddr == candidateIdAddr {
 					return true
 				}
 			}
 		}
 	}
+
 	return false
 }
 
