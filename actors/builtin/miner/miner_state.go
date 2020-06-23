@@ -868,7 +868,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quantizeUp(e, spec.Quantization)
+		vestEpoch := quantizeUpWithOffset(e, spec.Quantization, st.ProvingPeriodStart)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign
@@ -1068,6 +1068,11 @@ func deleteMany(arr *adt.Array, keys []uint64) error {
 		}
 	}
 	return nil
+}
+
+func quantizeUpWithOffset(e abi.ChainEpoch, unit, offsetSeed abi.ChainEpoch) abi.ChainEpoch {
+	offset := offsetSeed % unit
+	return quantizeUp(e, unit) + offset
 }
 
 // Rounds e to the nearest exact multiple of the quantization unit, rounding up.
