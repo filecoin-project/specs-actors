@@ -333,13 +333,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
 	}
 
-	// compute maximum prove commit epoch
-	maxSectorStart := maxProoveCommitEpoch(rt, rt.CurrEpoch(), params.SealProof)
-
 	// gather information from other actors
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
-	dealWeight := requestDealWeight(rt, params.DealIDs, maxSectorStart, params.Expiration)
+	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
 	circulatingSupply := rt.TotalFilCircSupply()
 
 	store := adt.AsStore(rt)
@@ -441,7 +438,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
 	}
 
-	proveCommitDue := maxProoveCommitEpoch(rt, precommit.PreCommitEpoch, precommit.Info.SealProof)
+	msd, ok := MaxSealDuration[precommit.Info.SealProof]
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.SealProof)
+	}
+	proveCommitDue := precommit.PreCommitEpoch + msd
 	if rt.CurrEpoch() > proveCommitDue {
 		rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", sectorNo, rt.CurrEpoch(), proveCommitDue)
 	}
@@ -1346,14 +1347,6 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
 	burnFunds(rt, depositToBurn)
-}
-
-func maxProoveCommitEpoch(rt Runtime, precommitEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
-	msd, ok := MaxSealDuration[proof]
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", proof)
-	}
-	return precommitEpoch + msd
 }
 
 // TODO: red flag that this method is potentially super expensive
