@@ -976,9 +976,11 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 func newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
 	info := newSectorPreCommitInfo(sectorNo, sealed)
 	return &miner.SectorPreCommitOnChainInfo{
-		Info:             *info,
-		PreCommitDeposit: deposit,
-		PreCommitEpoch:   epoch,
+		Info:               *info,
+		PreCommitDeposit:   deposit,
+		PreCommitEpoch:     epoch,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
 	}
 }
 

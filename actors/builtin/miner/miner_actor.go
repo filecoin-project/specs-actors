@@ -506,7 +506,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			SealedCID:          precommit.Info.SealedCID,
 			DealIDs:            precommit.Info.DealIDs,
 			Expiration:         precommit.Info.Expiration,
-			Activation:         rt.CurrEpoch(),
+			Activation:         precommit.PreCommitEpoch,
 			DealWeight:         precommit.DealWeight,
 			VerifiedDealWeight: precommit.VerifiedDealWeight,
 		}
