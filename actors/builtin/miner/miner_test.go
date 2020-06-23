@@ -153,6 +153,68 @@ func TestCommitments(t *testing.T) {
 		WithHasher(fixedHasher(uint64(periodBoundary))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
+	t.Run("valid precommit then provecommit", func(t *testing.T) {
+		rt := builder.
+			WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
+			Build(t)
+		precommitEpoch := periodBoundary + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
+		st := getState(rt)
+		deadline := st.DeadlineInfo(precommitEpoch)
+
+		// Make a good commitment for the proof to target.
+		sectorNo := abi.SectorNumber(100)
+		precommit := makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd())
+		actor.preCommitSector(rt, precommit, networkPower, big.Zero())
+
+		// assert precommit exists and meets expectations
+		st = getState(rt)
+		onChainPrecommit, found, err := st.GetPrecommittedSector(rt.AdtStore(), sectorNo)
+		require.NoError(t, err)
+		require.True(t, found)
+
+		// expect precommit deposit to be initial pledge calculated at precommit time
+		sectorSize, err := precommit.SealProof.SectorSize()
+		require.NoError(t, err)
+
+		// deal weights mocked by actor harness for market actor must be set in precommit onchain info
+		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.DealWeight)
+		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
+
+		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
+		expectedDeposit := miner.InitialPledgeForPower(qaPower, networkPower, actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
+		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
+
+		// expect total precommit deposit to equal our new deposit
+		assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
+
+		// Sector pre-commitment missing.
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
+		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+		actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
+			networkPower: 1 << 50,
+		})
+		st = getState(rt)
+
+		// expect precommit to have been removed
+		_, found, err = st.GetPrecommittedSector(rt.AdtStore(), sectorNo)
+		require.NoError(t, err)
+		require.False(t, found)
+
+		// expect new onchain sector
+		_, found, err = st.GetSector(rt.AdtStore(), sectorNo)
+		require.NoError(t, err)
+		require.True(t, found)
+
+		// expect deposit to have been released
+		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
+
+		// expect locked initial pledge of sector to be the same as precommit deposit
+		expectedInitialPledge := expectedDeposit
+		assert.Equal(t, expectedInitialPledge, st.LockedFunds)
+	})
+
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
 		rt := builder.
 			WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
