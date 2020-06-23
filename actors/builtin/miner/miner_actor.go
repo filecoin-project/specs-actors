@@ -368,11 +368,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		duration := params.Expiration - maxSectorStart
+		duration := params.Expiration - rt.CurrEpoch()
 
 		// maximum sector weigh is maximum deal weight assuming it's verified
-		qaSectorWeight := QAPowerForWeight(st.GetSectorSize(), duration, big.Zero(), dealWeight.VerifiedDealWeight)
-		depositReq := precommitDeposit(qaSectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
+		sectorWeight := QAPowerForWeight(st.GetSectorSize(), duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
+		depositReq := precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
 		if availableBalance.LessThan(depositReq) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
