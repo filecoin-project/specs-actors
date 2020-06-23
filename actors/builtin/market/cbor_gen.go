@@ -429,7 +429,7 @@ func (t *ActivateDealsOnSectorProveCommitParams) UnmarshalCBOR(r io.Reader) erro
 	return nil
 }
 
-func (t *VerifyDealsParams) MarshalCBOR(w io.Writer) error {
+func (t *VerifyDealsForActivationParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -476,7 +476,7 @@ func (t *VerifyDealsParams) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *VerifyDealsParams) UnmarshalCBOR(r io.Reader) error {
+func (t *VerifyDealsForActivationParams) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)
@@ -577,7 +577,7 @@ func (t *VerifyDealsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-func (t *VerifyDealsReturn) MarshalCBOR(w io.Writer) error {
+func (t *VerifyDealsForActivationReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -598,7 +598,7 @@ func (t *VerifyDealsReturn) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *VerifyDealsReturn) UnmarshalCBOR(r io.Reader) error {
+func (t *VerifyDealsForActivationReturn) UnmarshalCBOR(r io.Reader) error {
 	br := cbg.GetPeeker(r)
 
 	maj, extra, err := cbg.CborReadHeader(br)

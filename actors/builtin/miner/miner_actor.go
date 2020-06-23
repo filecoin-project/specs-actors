@@ -1625,12 +1625,12 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 	return cid.Cid(unsealedCID)
 }
 
-func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsReturn {
-	var dealWeights market.VerifyDealsReturn
+func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
+	var dealWeights market.VerifyDealsForActivationReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
-		builtin.MethodsMarket.VerifyDeals,
-		&market.VerifyDealsParams{
+		builtin.MethodsMarket.VerifyDealsForActivation,
+		&market.VerifyDealsForActivationParams{
 			DealIDs:      dealIDs,
 			SectorStart:  sectorStart,
 			SectorExpiry: sectorExpiry,

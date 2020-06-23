@@ -634,17 +634,17 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		maxProveCommit, ok := miner.MaxSealDuration[params.SealProof]
 		require.True(h.t, ok)
 
-		vdParams := market.VerifyDealsParams{
+		vdParams := market.VerifyDealsForActivationParams{
 			DealIDs:      params.DealIDs,
 			SectorStart:  rt.Epoch() + maxProveCommit,
 			SectorExpiry: params.Expiration,
 		}
 
-		vdReturn := market.VerifyDealsReturn{
+		vdReturn := market.VerifyDealsForActivationReturn{
 			DealWeight:         big.NewInt(int64(sectorSize / 2)),
 			VerifiedDealWeight: big.NewInt(int64(sectorSize / 2)),
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDeals, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
 	{
 		eventPayload := miner.CronEventPayload{

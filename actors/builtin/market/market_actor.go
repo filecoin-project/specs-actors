@@ -26,7 +26,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.AddBalance,
 		3:                         a.WithdrawBalance,
 		4:                         a.PublishStorageDeals,
-		5:                         a.VerifyDeals,
+		5:                         a.VerifyDealsForActivation,
 		6:                         a.ActivateDealsOnSectorProveCommit,
 		7:                         a.OnMinerSectorsTerminate,
 		8:                         a.ComputeDataCommitment,
@@ -249,13 +249,13 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	return &PublishStorageDealsReturn{newDealIds}
 }
 
-type VerifyDealsParams struct {
+type VerifyDealsForActivationParams struct {
 	DealIDs      []abi.DealID
 	SectorExpiry abi.ChainEpoch
 	SectorStart  abi.ChainEpoch
 }
 
-type VerifyDealsReturn struct {
+type VerifyDealsForActivationReturn struct {
 	DealWeight         abi.DealWeight
 	VerifiedDealWeight abi.DealWeight
 }
@@ -263,7 +263,7 @@ type VerifyDealsReturn struct {
 // Verify that a given set of storage deals is valid for a sector currently being PreCommitted
 // and return DealWeight of the set of storage deals given.
 // The weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
-func (A Actor) VerifyDeals(rt Runtime, params *VerifyDealsParams) *VerifyDealsReturn {
+func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActivationParams) *VerifyDealsForActivationReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 
@@ -274,7 +274,7 @@ func (A Actor) VerifyDeals(rt Runtime, params *VerifyDealsParams) *VerifyDealsRe
 	dealWeight, verifiedWeight, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate proposals for activation")
 
-	return &VerifyDealsReturn{
+	return &VerifyDealsForActivationReturn{
 		DealWeight:         dealWeight,
 		VerifiedDealWeight: verifiedWeight,
 	}

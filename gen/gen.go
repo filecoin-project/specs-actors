@@ -148,8 +148,8 @@ func main() {
 		market.WithdrawBalanceParams{},
 		market.PublishStorageDealsParams{},
 		market.ActivateDealsOnSectorProveCommitParams{},
-		market.VerifyDealsParams{},
-		market.VerifyDealsReturn{},
+		market.VerifyDealsForActivationParams{},
+		market.VerifyDealsForActivationReturn{},
 		market.ComputeDataCommitmentParams{},
 		market.OnMinerSectorsTerminateParams{},
 		// method returns

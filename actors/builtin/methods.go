@@ -58,7 +58,7 @@ var MethodsMarket = struct {
 	AddBalance                       abi.MethodNum
 	WithdrawBalance                  abi.MethodNum
 	PublishStorageDeals              abi.MethodNum
-	VerifyDeals                      abi.MethodNum
+	VerifyDealsForActivation         abi.MethodNum
 	ActivateDealsOnSectorProveCommit abi.MethodNum
 	OnMinerSectorsTerminate          abi.MethodNum
 	ComputeDataCommitment            abi.MethodNum
