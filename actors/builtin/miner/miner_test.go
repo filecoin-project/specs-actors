@@ -203,9 +203,16 @@ func TestCommitments(t *testing.T) {
 		require.False(t, found)
 
 		// expect new onchain sector
-		_, found, err = st.GetSector(rt.AdtStore(), sectorNo)
+		onChainSector, found, err := st.GetSector(rt.AdtStore(), sectorNo)
 		require.NoError(t, err)
 		require.True(t, found)
+
+		// expect deal weights to be transfered to on chain info
+		assert.Equal(t, onChainPrecommit.DealWeight, onChainSector.DealWeight)
+		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, onChainSector.VerifiedDealWeight)
+
+		// expect activation epoch to be precommit
+		assert.Equal(t, precommitEpoch, onChainSector.ActivationEpoch)
 
 		// expect deposit to have been released
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
