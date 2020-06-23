@@ -127,7 +127,7 @@ func QAPowerForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, 
 
 // Returns the quality-adjusted power for a sector.
 func QAPowerForSector(size abi.SectorSize, sector *SectorOnChainInfo) abi.StoragePower {
-	duration := sector.Info.Expiration - sector.ActivationEpoch
+	duration := sector.Expiration - sector.Activation
 	return QAPowerForWeight(size, duration, sector.DealWeight, sector.VerifiedDealWeight)
 }
 

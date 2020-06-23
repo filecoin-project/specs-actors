@@ -294,7 +294,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		if !empty {
 			sectorsByNumber := map[abi.SectorNumber]*SectorOnChainInfo{}
 			for _, s := range sectorInfos {
-				sectorsByNumber[s.Info.SectorNumber] = s
+				sectorsByNumber[s.SectorNumber] = s
 			}
 
 			_ = declaredRecoveries.ForEach(func(i uint64) error {
@@ -498,8 +498,12 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		AssertNoError(ret.Into(&dealWeights))
 
 		newSectorInfo := SectorOnChainInfo{
-			Info:               precommit.Info,
-			ActivationEpoch:    rt.CurrEpoch(),
+			SectorNumber:       precommit.Info.SectorNumber,
+			SealProof:          precommit.Info.SealProof,
+			SealedCID:          precommit.Info.SealedCID,
+			DealIDs:            precommit.Info.DealIDs,
+			Expiration:         precommit.Info.Expiration,
+			Activation:         rt.CurrEpoch(),
 			DealWeight:         dealWeights.DealWeight,
 			VerifiedDealWeight: dealWeights.VerifiedDealWeight,
 		}
@@ -604,13 +608,13 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	if !found {
 		rt.Abortf(exitcode.ErrNotFound, "no such sector %v", sectorNo)
 	}
-	if params.NewExpiration < oldSector.Info.Expiration {
+	if params.NewExpiration < oldSector.Expiration {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration to %d from %d",
-			params.NewExpiration, oldSector.Info.Expiration)
+			params.NewExpiration, oldSector.Expiration)
 	}
 
 	newSector := *oldSector
-	newSector.Info.Expiration = params.NewExpiration
+	newSector.Expiration = params.NewExpiration
 	qaPowerDelta := big.Sub(QAPowerForSector(st.Info.SectorSize, &newSector), QAPowerForSector(st.Info.SectorSize, oldSector))
 
 	_, code := rt.Send(
@@ -630,10 +634,10 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sector %v", sectorNo)
 
 		// move expiration from old epoch to new
-		err = st.RemoveSectorExpirations(store, oldSector.Info.Expiration, uint64(sectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector expiration %v at %d", sectorNo, oldSector.Info.Expiration)
-		err = st.AddSectorExpirations(store, newSector.Info.Expiration, uint64(sectorNo))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add sector expiration %v at %d", sectorNo, newSector.Info.Expiration)
+		err = st.RemoveSectorExpirations(store, oldSector.Expiration, uint64(sectorNo))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector expiration %v at %d", sectorNo, oldSector.Expiration)
+		err = st.AddSectorExpirations(store, newSector.Expiration, uint64(sectorNo))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add sector expiration %v at %d", sectorNo, newSector.Expiration)
 		return nil
 	})
 	return nil
@@ -1382,7 +1386,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 				rt.Abortf(exitcode.ErrNotFound, "no sector %v", sectorNo)
 			}
 
-			dealIDs = append(dealIDs, sector.Info.DealIDs...)
+			dealIDs = append(dealIDs, sector.DealIDs...)
 			allSectors = append(allSectors, sector)
 
 			_, fault := faultsMap[sectorNo]
@@ -1505,7 +1509,7 @@ func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
 	// https://github.com/filecoin-project/specs-actors/issues/483
 	dealIds := []abi.DealID{}
 	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
-		dealIds = append(dealIds, sector.Info.DealIDs...)
+		dealIds = append(dealIds, sector.DealIDs...)
 	}); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
 	}
