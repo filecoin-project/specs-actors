@@ -189,7 +189,7 @@ func TestCommitments(t *testing.T) {
 		// expect total precommit deposit to equal our new deposit
 		assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
 
-		// Sector pre-commitment missing.
+		// run prove commit logic
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 		actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
