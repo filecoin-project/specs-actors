@@ -93,7 +93,14 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 	}
 
 	var st State
-	st.Signers = params.Signers
+	// do not allow duplicate signers because we don't allow duplicate approvers
+	for _,signer := range params.Signers {
+		if st.isSigner(signer) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "duplicate signer not allowed: %s", signer)
+		}
+		st.Signers = append(st.Signers, signer)
+	}
+
 	st.NumApprovalsThreshold = params.NumApprovalsThreshold
 	st.PendingTxns = pending
 	st.InitialBalance = abi.NewTokenAmount(0)
