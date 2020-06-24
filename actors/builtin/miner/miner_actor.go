@@ -1433,7 +1433,11 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 
 // Removes a group sectors from the sector set and its number from all sector collections in state.
 func removeTerminatedSectors(st *State, store adt.Store, deadlines *Deadlines, sectors *abi.BitField) error {
-	err := st.DeleteSectors(store, sectors)
+	err := st.DeductPledges(store, sectors)
+	if err != nil {
+		return err
+	}
+	err = st.DeleteSectors(store, sectors)
 	if err != nil {
 		return err
 	}

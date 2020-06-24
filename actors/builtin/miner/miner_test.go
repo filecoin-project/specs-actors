@@ -594,6 +594,53 @@ func TestExtendSectorExpiration(t *testing.T) {
 	})
 }
 
+func TestTerminateSectors(t *testing.T) {
+	owner := tutil.NewIDAddr(t, 100)
+	worker := tutil.NewIDAddr(t, 101)
+	workerKey := tutil.NewBLSAddr(t, 0)
+	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
+	periodOffset := abi.ChainEpoch(100)
+	builder := mock.NewBuilder(context.Background(), actor.receiver).
+		WithActorType(owner, builtin.AccountActorCodeID).
+		WithActorType(worker, builtin.AccountActorCodeID).
+		WithHasher(fixedHasher(uint64(periodOffset))).
+		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
+
+	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
+		actor.constructAndVerify(rt, periodOffset)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		st := getState(rt)
+		deadline := st.DeadlineInfo(rt.Epoch())
+		expiration := deadline.PeriodEnd() + 100*miner.WPoStProvingPeriod
+		sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, 0, nil)
+
+		sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
+		require.NoError(t, err)
+		require.True(t, found)
+		return sector
+	}
+
+	t.Run("removes sector with correct accounting", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
+		sectors := bitfield.New()
+		sectors.Set(uint64(sector.SectorNumber))
+		actor.terminateSectors(rt, &sectors)
+
+		// expect sector to have been removed
+		st := getState(rt)
+		_, found, err := st.GetSector(rt.AdtStore(), sector.SectorNumber)
+		require.NoError(t, err)
+		assert.False(t, found)
+
+		// expect pleged funds to have been decremented
+		assert.Equal(t, big.Zero(), st.InitialPledges)
+	})
+}
+
 func TestReportConsensusFault(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
@@ -695,14 +742,12 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	{
-		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero(), &h.epochReward, exitcode.Ok)
-
-		pwrTotal := power.CurrentTotalPowerReturn{
+		pwrTotal := &power.CurrentTotalPowerReturn{
 			RawBytePower:     networkPower,
 			QualityAdjPower:  networkPower,
 			PledgeCollateral: h.networkPledge,
 		}
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwrTotal, exitcode.Ok)
+		expectQueryNetworkInfo(rt, pwrTotal, h.epochReward)
 	}
 	{
 		sectorSize, err := params.SealProof.SectorSize()
@@ -1059,6 +1104,50 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 		exitcode.Ok,
 	)
 	rt.Call(h.a.ExtendSectorExpiration, params)
+}
+
+func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(h.worker)
+
+	st := getState(rt)
+	dealIDs := []abi.DealID{}
+	sectorInfos := []*miner.SectorOnChainInfo{}
+	err := sectors.ForEach(func(secNum uint64) error {
+		sector, found, err := st.GetSector(rt.AdtStore(), abi.SectorNumber(secNum))
+		require.NoError(h.t, err)
+		require.True(h.t, found)
+		dealIDs = append(dealIDs, sector.DealIDs...)
+
+		sectorInfos = append(sectorInfos, sector)
+		return nil
+	})
+	require.NoError(h.t, err)
+
+	{
+		networkPower := abi.NewStoragePower(1 << 50)
+		expectQueryNetworkInfo(rt, &power.CurrentTotalPowerReturn{
+			RawBytePower:     networkPower,
+			QualityAdjPower:  networkPower,
+			PledgeCollateral: h.networkPledge,
+		}, h.epochReward)
+	}
+
+	{
+		rawPower, qaPower := miner.PowerForSectors(st.GetSectorSize(), sectorInfos)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &power.UpdateClaimedPowerParams{
+			RawByteDelta:         rawPower.Neg(),
+			QualityAdjustedDelta: qaPower.Neg(),
+		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+	}
+	{
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
+			DealIDs: dealIDs,
+		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+	}
+
+	params := &miner.TerminateSectorsParams{Sectors: sectors}
+	rt.Call(h.a.TerminateSectors, params)
 }
 
 func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, params *miner.ReportConsensusFaultParams, dealIDs []abi.DealID) {
