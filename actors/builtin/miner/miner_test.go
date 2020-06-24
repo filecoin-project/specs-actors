@@ -885,7 +885,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, expiration
 			sectorDealIDs = dealIDs[i]
 		}
 		precommit := makePreCommit(sectorNo, precommitEpoch-1, expiration, sectorDealIDs)
-		h.preCommitSector(rt, precommit, big.Zero(), abi.NewStoragePower(int64(networkPower)))
+		h.preCommitSector(rt, precommit, abi.NewStoragePower(int64(networkPower)), big.Zero())
 		precommits[i] = precommit
 		h.nextSectorNo++
 	}
@@ -1099,10 +1099,11 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	}, nil)
 
 	// slash reward
-	rt.ExpectSend(from, builtin.MethodSend, nil, big.Zero(), nil, exitcode.Ok)
+	reward := miner.RewardForConsensusSlashReport(1, rt.Balance())
+	rt.ExpectSend(from, builtin.MethodSend, nil, reward, nil, exitcode.Ok)
 
 	// power termination
-	lockedFunds := abi.NewTokenAmount(0)
+	lockedFunds := getState(rt).LockedFunds
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.OnConsensusFault, &lockedFunds, abi.NewTokenAmount(0), nil, exitcode.Ok)
 
 	// expect every deal to be closed out

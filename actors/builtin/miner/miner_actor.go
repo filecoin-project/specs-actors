@@ -910,7 +910,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	}
 
 	// Reward reporter with a share of the miner's current balance.
-	slasherReward := rewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
+	slasherReward := RewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
 	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
 	builtin.RequireSuccess(rt, code, "failed to reward reporter")
 

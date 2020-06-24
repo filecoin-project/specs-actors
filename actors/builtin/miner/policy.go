@@ -167,7 +167,7 @@ var PledgeVestingSpec = VestSpec{
 	Quantization: 12 * builtin.EpochsInHour,               // 12 hours for testnet, PARAM_FINISH
 }
 
-func rewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
+func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
 	// PARAM_FINISH
 	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
 	// var multiplier = growthRate^elapsedEpoch
