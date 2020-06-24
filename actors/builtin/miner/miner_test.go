@@ -212,7 +212,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, onChainSector.VerifiedDealWeight)
 
 		// expect activation epoch to be precommit
-		assert.Equal(t, precommitEpoch, onChainSector.ActivationEpoch)
+		assert.Equal(t, precommitEpoch, onChainSector.Activation)
 
 		// expect deposit to have been released
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
