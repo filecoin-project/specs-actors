@@ -540,7 +540,10 @@ func (rt *Runtime) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.Consensu
 		}
 	}
 
-	return rt.expectVerifyConsensusFault.Fault, rt.expectVerifyConsensusFault.Err
+	fault := rt.expectVerifyConsensusFault.Fault
+	err := rt.expectVerifyConsensusFault.Err
+	rt.expectVerifyConsensusFault = nil
+	return fault, err
 }
 
 ///// Trace span implementation /////
@@ -736,6 +739,9 @@ func (rt *Runtime) Verify() {
 	}
 	if rt.expectVerifySeal != nil {
 		rt.failTest("missing expected verify seal with %v", rt.expectVerifySeal.seal)
+	}
+	if rt.expectVerifyConsensusFault != nil {
+		rt.failTest("missing expected verify consensus fault")
 	}
 	if rt.expectDeleteActor != nil {
 		rt.failTest("missing expected delete actor with address %s", rt.expectDeleteActor.String())
