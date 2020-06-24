@@ -346,6 +346,10 @@ func TestCommitments(t *testing.T) {
 	})
 }
 
+func TestCommittedCapacityUpgrade(t *testing.T) {
+
+}
+
 func TestWindowPost(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
