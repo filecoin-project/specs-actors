@@ -661,9 +661,6 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime, provingPeriodStart a
 		PeerId:        testPid,
 	}
 
-	h.epochReward = big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
-	h.networkPledge = big.Mul(h.epochReward, big.NewIntUnsigned(1000))
-
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 	// Fetch worker pubkey.
 	rt.ExpectSend(h.worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
