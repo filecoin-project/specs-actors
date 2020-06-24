@@ -421,7 +421,7 @@ func isSigner(rt vmr.Runtime, st *State, address addr.Address) bool {
 
 	for _, ap := range st.Signers {
 		signerResolved := resolve(rt, ap)
-		if signerResolved ==  candidateResolved {
+		if signerResolved == candidateResolved {
 			return true
 		}
 	}
