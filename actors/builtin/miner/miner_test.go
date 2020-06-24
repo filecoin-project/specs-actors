@@ -647,6 +647,7 @@ func TestReportConsensusFault(t *testing.T) {
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
 		WithHasher(fixedHasher(uint64(periodOffset))).
+		WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	rt := builder.Build(t)
