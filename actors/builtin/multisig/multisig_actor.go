@@ -200,7 +200,16 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 		}
 		return nil
 	})
-	approved, ret, code := a.approveTransaction(rt, params.ID, params.ProposalHash, true)
+
+	// if the transaction already has enough approvers, execute it without "processing" this approval.
+	txn := a.getTransaction(rt, params.ID, params.ProposalHash, true)
+	approved,ret, code := executeTransactionIfApproved(rt, st, params.ID, txn)
+	if !approved {
+		// if the transaction hasn't already been approved, let's "process" this approval
+		// and see if we can execute the transaction
+		approved, ret, code = a.approveTransaction(rt, params.ID, params.ProposalHash, true)
+	}
+
 	return &ApproveReturn{
 		Applied: approved,
 		Code:    code,
@@ -365,42 +374,59 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 
 func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) (bool, []byte, exitcode.ExitCode) {
 	var st State
-	var txn Transaction
+	txn := a.getTransaction(rt, txnID, proposalHash, checkHash)
+
+	// abort duplicate approval
+	for _, previousApprover := range txn.Approved {
+		if previousApprover == rt.Message().Caller() {
+			rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
+		}
+	}
+
+	// add the caller to the list of approvers
 	rt.State().Transaction(&st, func() interface{} {
-		var err error
-		txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
-		if err != nil {
-			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
-		}
-		// abort duplicate approval
-		for _, previousApprover := range txn.Approved {
-			if previousApprover == rt.Message().Caller() {
-				rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
-			}
-		}
-
-		// confirm the hashes match
-		if checkHash {
-			calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
-			}
-			if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
-				rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
-			}
-		}
-
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
-		if err = st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
+		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
 		}
 		return nil
 	})
 
+	return executeTransactionIfApproved(rt,st, txnID, txn)
+}
+
+func (a Actor) getTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) Transaction {
+	var txn Transaction
+	var st State
+
+	// get transaction from the state trie
+	rt.State().Readonly(&st)
+	var err error
+	txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
+	if err != nil {
+		rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
+	}
+
+	// confirm the hashes match
+	if checkHash {
+		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
+		}
+		if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
+			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+		}
+	}
+
+	return txn
+}
+
+func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn Transaction) (bool, []byte, exitcode.ExitCode) {
 	var out vmr.CBORBytes
 	var code exitcode.ExitCode
 	applied := false
+
 	thresholdMet := uint64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
 		if err := st.assertAvailable(rt.CurrentBalance(), txn.Value, rt.CurrEpoch()); err != nil {
@@ -431,6 +457,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 			return nil
 		})
 	}
+
 	return applied, out, code
 }
 
