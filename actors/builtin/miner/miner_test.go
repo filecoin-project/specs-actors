@@ -201,11 +201,12 @@ func TestCommitments(t *testing.T) {
 		// expect activation epoch to be precommit
 		assert.Equal(t, precommitEpoch, onChainSector.Activation)
 
-		// expect deposit to have been released
+		// expect deposit to have been transferred to initial pledges
+		expectedInitialPledge := expectedDeposit
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledges)
 
 		// expect locked initial pledge of sector to be the same as precommit deposit
-		expectedInitialPledge := expectedDeposit
 		assert.Equal(t, expectedInitialPledge, st.LockedFunds)
 	})
 

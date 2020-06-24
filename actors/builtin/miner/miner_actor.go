@@ -528,6 +528,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
 			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
+			st.AddInitialPledge(precommit.PreCommitDeposit)
 
 			// Verify locked funds are are at least the sum of sector initial pledges.
 			verifyPledgeMeetsInitialRequirements(rt, &st)

@@ -27,6 +27,7 @@ type State struct {
 	Info MinerInfo
 
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
+	InitialPledges    abi.TokenAmount // Total funds added as initial pledge
 	LockedFunds       abi.TokenAmount // Total unvested funds locked as pledge collateral
 	VestingFunds      cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
 
@@ -172,6 +173,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 		},
 
 		PreCommitDeposits: abi.NewTokenAmount(0),
+		InitialPledges:    abi.NewTokenAmount(0),
 		LockedFunds:       abi.NewTokenAmount(0),
 		VestingFunds:      emptyArrayCid,
 
@@ -853,6 +855,13 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative pre-commit deposit %s after adding %s to prior %s",
 		newTotal, amount, st.PreCommitDeposits)
 	st.PreCommitDeposits = newTotal
+}
+
+func (st *State) AddInitialPledge(amount abi.TokenAmount) {
+	newTotal := big.Add(st.InitialPledges, amount)
+	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
+		newTotal, amount, st.InitialPledges)
+	st.InitialPledges = newTotal
 }
 
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {

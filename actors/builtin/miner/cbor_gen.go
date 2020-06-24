@@ -19,7 +19,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{143}); err != nil {
+	if _, err := w.Write([]byte{144}); err != nil {
 		return err
 	}
 
@@ -30,6 +30,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	// t.PreCommitDeposits (big.Int) (struct)
 	if err := t.PreCommitDeposits.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.InitialPledges (big.Int) (struct)
+	if err := t.InitialPledges.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -125,7 +130,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 15 {
+	if extra != 16 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -144,6 +149,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.PreCommitDeposits.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.PreCommitDeposits: %w", err)
+		}
+
+	}
+	// t.InitialPledges (big.Int) (struct)
+
+	{
+
+		if err := t.InitialPledges.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.InitialPledges: %w", err)
 		}
 
 	}
