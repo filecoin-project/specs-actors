@@ -141,6 +141,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 
 	var txnID TxnID
 	var st State
+	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
 		if !isSigner(rt, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
@@ -148,23 +149,21 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 
 		txnID = st.NextTxnID
 		st.NextTxnID += 1
-
-		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, Transaction{
+		txn = Transaction{
 			To:       params.To,
 			Value:    params.Value,
 			Method:   params.Method,
 			Params:   params.Params,
 			Approved: []addr.Address{},
-		}); err != nil {
+		}
+
+		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for propose: %v", err)
 		}
 		return nil
 	})
 
-	// Proposal implicitly includes approval of a transaction. Bypass hash check
-	// because PROPOSE is the reference point for other approvers.
-	var emptyArray []byte
-	applied, ret, code := a.approveTransaction(rt, txnID, emptyArray, false)
+	applied, ret, code := a.approveTransaction(rt, txnID, txn)
 
 	// Note: this transaction ID may not be stable across chain re-orgs.
 	// The proposal hash may be provided as a stability check when approving.
@@ -194,20 +193,21 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 	var st State
+	var txn Transaction
 	rt.State().Transaction(&st, func() interface{} {
 		if !isSigner(rt, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
+		txn = a.getTransaction(rt, st, params.ID, params.ProposalHash, true)
 		return nil
 	})
 
 	// if the transaction already has enough approvers, execute it without "processing" this approval.
-	txn := a.getTransaction(rt, params.ID, params.ProposalHash, true)
 	approved,ret, code := executeTransactionIfApproved(rt, st, params.ID, txn)
 	if !approved {
 		// if the transaction hasn't already been approved, let's "process" this approval
 		// and see if we can execute the transaction
-		approved, ret, code = a.approveTransaction(rt, params.ID, params.ProposalHash, true)
+		approved, ret, code = a.approveTransaction(rt, params.ID, txn)
 	}
 
 	return &ApproveReturn{
@@ -372,10 +372,8 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) (bool, []byte, exitcode.ExitCode) {
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn Transaction) (bool, []byte, exitcode.ExitCode) {
 	var st State
-	txn := a.getTransaction(rt, txnID, proposalHash, checkHash)
-
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
 		if previousApprover == rt.Message().Caller() {
@@ -396,12 +394,10 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 	return executeTransactionIfApproved(rt,st, txnID, txn)
 }
 
-func (a Actor) getTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []byte, checkHash bool) Transaction {
+func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHash []byte, checkHash bool) Transaction {
 	var txn Transaction
-	var st State
 
 	// get transaction from the state trie
-	rt.State().Readonly(&st)
 	var err error
 	txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
 	if err != nil {
