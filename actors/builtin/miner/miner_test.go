@@ -661,7 +661,7 @@ func TestTerminateSectors(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, found)
 
-		// expect pleged funds to have been decremented
+		// expect pledged funds to have been decremented
 		assert.Equal(t, big.Zero(), st.InitialPledges)
 	})
 }
@@ -1199,14 +1199,10 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField)
 			QualityAdjustedDelta: qaPower.Neg(),
 		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
 	}
-	{
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
-			DealIDs: dealIDs,
-		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
-	}
 
 	params := &miner.TerminateSectorsParams{Sectors: sectors}
 	rt.Call(h.a.TerminateSectors, params)
+	rt.Verify()
 }
 
 func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, params *miner.ReportConsensusFaultParams, dealIDs []abi.DealID) {
