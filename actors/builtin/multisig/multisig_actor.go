@@ -75,6 +75,16 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		rt.Abortf(exitcode.ErrIllegalArgument, "must have at least one signer")
 	}
 
+	// do not allow duplicate signers
+	resolvedSigners := make(map[addr.Address]struct{}, len(params.Signers))
+	for _, signer := range params.Signers {
+		resolved := resolve(rt, signer)
+		if _, ok := resolvedSigners[resolved]; ok {
+			rt.Abortf(exitcode.ErrIllegalArgument, "duplicate signer not allowed: %s", signer)
+		}
+		resolvedSigners[resolved] = struct{}{}
+	}
+
 	if params.NumApprovalsThreshold > uint64(len(params.Signers)) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "must not require more approvals than signers")
 	}

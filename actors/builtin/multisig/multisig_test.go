@@ -113,6 +113,38 @@ func TestConstruction(t *testing.T) {
 		})
 		rt.Verify()
 	})
+
+	t.Run("fail to construct multisig with duplicate signers(all ID addresses)", func(t *testing.T) {
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{anne, bob, bob},
+			NumApprovalsThreshold: 2,
+			UnlockDuration:        0,
+		}
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fail to construct multisig with duplicate signers(ID & non-ID addresses)", func(t *testing.T) {
+		bobNonId := tutil.NewBLSAddr(t,1)
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{anne, bobNonId, bob},
+			NumApprovalsThreshold: 2,
+			UnlockDuration:        0,
+		}
+
+		rt.AddIDAddress(bobNonId, bob)
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+	})
 }
 
 func TestVesting(t *testing.T) {
