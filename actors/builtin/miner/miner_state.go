@@ -130,9 +130,11 @@ type SectorPreCommitInfo struct {
 
 // Information stored on-chain for a pre-committed sector.
 type SectorPreCommitOnChainInfo struct {
-	Info             SectorPreCommitInfo
-	PreCommitDeposit abi.TokenAmount
-	PreCommitEpoch   abi.ChainEpoch
+	Info               SectorPreCommitInfo
+	PreCommitDeposit   abi.TokenAmount
+	PreCommitEpoch     abi.ChainEpoch
+	DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
+	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
 }
 
 // Information stored on-chain for a proven sector.
