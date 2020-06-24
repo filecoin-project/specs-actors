@@ -940,6 +940,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	}
 
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		// Verify locked funds are are at least the sum of sector initial pledges.
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		rt.ValidateImmediateCallerIs(st.Info.Owner)
 		newlyVestedFund, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
 		if err != nil {
