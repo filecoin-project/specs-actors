@@ -38,6 +38,7 @@ type AwardBlockRewardParams struct {
 	Miner     address.Address
 	Penalty   abi.TokenAmount // penalty for including bad messages in a block
 	GasReward abi.TokenAmount // gas reward from all gas fees in a block
+	WinCount  int64
 }
 
 // Awards a reward to a block producer.
@@ -66,6 +67,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	var st State
 	rt.State().Readonly(&st)
 	blockReward := big.Div(st.LastPerEpochReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
+	blockReward = big.Mul(blockReward, big.NewInt(params.WinCount))
 	totalReward := big.Add(blockReward, params.GasReward)
 
 	// Cap the penalty at the total reward value.
