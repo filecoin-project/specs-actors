@@ -417,36 +417,27 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 }
 
 func isSigner(rt vmr.Runtime, st *State, address addr.Address) bool {
-	candidateIdAddr := address
-	if candidateIdAddr.Protocol() != addr.ID {
-		idAddr, found := rt.ResolveAddress(candidateIdAddr)
-		if found {
-			candidateIdAddr = idAddr
-		}
-	}
+	candidateResolved := resolve(rt,address)
 
-	for i, ap := range st.Signers {
-		if address == ap {
+	for _, ap := range st.Signers {
+		signerResolved := resolve(rt, ap)
+		if signerResolved ==  candidateResolved {
 			return true
-		}
-
-		switch ap.Protocol() {
-		case addr.ID:
-			if candidateIdAddr == ap {
-				return true
-			}
-		default:
-			idAddr, found := rt.ResolveAddress(ap)
-			if found {
-				st.Signers[i] = idAddr
-				if idAddr == candidateIdAddr {
-					return true
-				}
-			}
 		}
 	}
 
 	return false
+}
+
+func resolve(rt vmr.Runtime, address addr.Address) addr.Address {
+	resolved := address
+	if resolved.Protocol() != addr.ID {
+		idAddr, found := rt.ResolveAddress(resolved)
+		if found {
+			resolved = idAddr
+		}
+	}
+	return resolved
 }
 
 // Computes a digest of a proposed transaction. This digest is used to confirm identity of the transaction
