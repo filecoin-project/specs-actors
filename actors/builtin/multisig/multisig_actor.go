@@ -292,7 +292,15 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 				newSigners = append(newSigners, s)
 			}
 		}
-		if params.Decrease || uint64(len(st.Signers)-1) < st.NumApprovalsThreshold {
+
+		// if the number of signers is below the threshold after removing the given signer,
+		// we should decrease the threshold by 1. This means that decrease should NOT be set to false
+		// in such a scenario.
+		if !params.Decrease && uint64(len(st.Signers)-1) < st.NumApprovalsThreshold {
+			rt.Abortf(exitcode.ErrIllegalArgument, "decrease flag should be true as number of signers below threshold")
+		}
+
+		if params.Decrease {
 			st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 		}
 		st.Signers = newSigners

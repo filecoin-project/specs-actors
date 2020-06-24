@@ -1001,7 +1001,7 @@ func TestRemoveSigner(t *testing.T) {
 			code:            exitcode.Ok,
 		},
 		{
-			desc: "remove signer with automatic threshold decrease",
+			desc: "fail remove signer if decrease set to false and number of signers below threshold",
 
 			initialSigners:   []addr.Address{anne, bob, chuck},
 			initialApprovals: uint64(3),
@@ -1011,7 +1011,7 @@ func TestRemoveSigner(t *testing.T) {
 
 			expectSigners:   []addr.Address{anne, bob},
 			expectApprovals: uint64(2),
-			code:            exitcode.Ok,
+			code:            exitcode.ErrIllegalArgument,
 		},
 		{
 			desc: "remove signer from single singer list",
