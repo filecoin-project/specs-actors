@@ -333,6 +333,12 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
 	}
 
+	// gather information from other actors
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
+	circulatingSupply := rt.TotalFilCircSupply()
+
 	store := adt.AsStore(rt)
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
@@ -359,7 +365,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		depositReq := precommitDeposit(st.GetSectorSize(), params.Expiration-rt.CurrEpoch())
+		duration := params.Expiration - rt.CurrEpoch()
+
+		sectorWeight := QAPowerForWeight(st.GetSectorSize(), duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
+		depositReq := precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
 		if availableBalance.LessThan(depositReq) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
@@ -368,9 +377,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
 		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
-			Info:             *params,
-			PreCommitDeposit: depositReq,
-			PreCommitEpoch:   rt.CurrEpoch(),
+			Info:               *params,
+			PreCommitDeposit:   depositReq,
+			PreCommitEpoch:     rt.CurrEpoch(),
+			DealWeight:         dealWeight.DealWeight,
+			VerifiedDealWeight: dealWeight.VerifiedDealWeight,
 		}); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
@@ -458,13 +469,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
-	// Request network values used for initial pledge calculations.
-	// Note that the pledge calculation is expected to move to PreCommitSector,
-	// https://github.com/filecoin-project/specs-actors/issues/424
-	epochReward := requestCurrentEpochBlockReward(rt)
-	pwrTotal := requestCurrentTotalPower(rt) // We could save a call by accepting this in the parameters.
-	circulatingSupply := rt.TotalFilCircSupply()
-
 	var st State
 	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
@@ -484,18 +488,16 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// return DealWeight for the deal set in the sector
 		// TODO: we should batch these calls...
 		// https://github.com/filecoin-project/specs-actors/issues/474
-		var dealWeights market.VerifyDealsOnSectorProveCommitReturn
-		ret, code := rt.Send(
+		_, code := rt.Send(
 			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.VerifyDealsOnSectorProveCommit,
-			&market.VerifyDealsOnSectorProveCommitParams{
+			builtin.MethodsMarket.ActivateDeals,
+			&market.ActivateDealsParams{
 				DealIDs:      precommit.Info.DealIDs,
 				SectorExpiry: precommit.Info.Expiration,
 			},
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-		AssertNoError(ret.Into(&dealWeights))
 
 		newSectorInfo := SectorOnChainInfo{
 			SectorNumber:       precommit.Info.SectorNumber,
@@ -503,17 +505,17 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			SealedCID:          precommit.Info.SealedCID,
 			DealIDs:            precommit.Info.DealIDs,
 			Expiration:         precommit.Info.Expiration,
-			Activation:         rt.CurrEpoch(),
-			DealWeight:         dealWeights.DealWeight,
-			VerifiedDealWeight: dealWeights.VerifiedDealWeight,
+			Activation:         precommit.PreCommitEpoch,
+			DealWeight:         precommit.DealWeight,
+			VerifiedDealWeight: precommit.VerifiedDealWeight,
 		}
 
 		// Request power for activated sector.
 		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
 		// https://github.com/filecoin-project/specs-actors/issues/475
-		_, qaPower := requestUpdateSectorPower(rt, st.Info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
+		requestUpdateSectorPower(rt, st.Info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
 
-		initialPledge := InitialPledgeForPower(qaPower, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
+		initialPledge := precommit.PreCommitDeposit
 
 		// Add sector and pledge lock-up to miner state
 		// TODO: do this all at once after the loop
@@ -1613,6 +1615,24 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 	var unsealedCID cbg.CborCid
 	AssertNoError(ret.Into(&unsealedCID))
 	return cid.Cid(unsealedCID)
+}
+
+func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
+	var dealWeights market.VerifyDealsForActivationReturn
+	ret, code := rt.Send(
+		builtin.StorageMarketActorAddr,
+		builtin.MethodsMarket.VerifyDealsForActivation,
+		&market.VerifyDealsForActivationParams{
+			DealIDs:      dealIDs,
+			SectorStart:  sectorStart,
+			SectorExpiry: sectorExpiry,
+		},
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
+	AssertNoError(ret.Into(&dealWeights))
+	return dealWeights
+
 }
 
 func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
