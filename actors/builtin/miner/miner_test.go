@@ -787,7 +787,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 
 	// Prepare for and receive call to ConfirmSectorProofsValid at the end of the same epoch.
 	{
-		vdParams := market.ActivateDeals{
+		vdParams := market.ActivateDealsParams{
 			DealIDs:      precommit.DealIDs,
 			SectorExpiry: precommit.Expiration,
 		}

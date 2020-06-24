@@ -492,7 +492,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		_, code := rt.Send(
 			builtin.StorageMarketActorAddr,
 			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDeals{
+			&market.ActivateDealsParams{
 				DealIDs:      precommit.Info.DealIDs,
 				SectorExpiry: precommit.Info.Expiration,
 			},
