@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -133,7 +132,10 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	var txnID TxnID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		a.validateSigner(rt, &st, callerAddr)
+		if !isSigner(rt, &st, callerAddr) {
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
+		}
+
 		txnID = st.NextTxnID
 		st.NextTxnID += 1
 
@@ -154,6 +156,8 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	var emptyArray []byte
 	applied, ret, code := a.approveTransaction(rt, txnID, emptyArray, false)
 
+	// Note: this transaction ID may not be stable across chain re-orgs.
+	// The proposal hash may be provided as a stability check when approving.
 	return &ProposeReturn{
 		TxnID:   txnID,
 		Applied: applied,
@@ -181,7 +185,9 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	callerAddr := rt.Message().Caller()
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		a.validateSigner(rt, &st, callerAddr)
+		if !isSigner(rt, &st, callerAddr) {
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
+		}
 		return nil
 	})
 	approved, ret, code := a.approveTransaction(rt, params.ID, params.ProposalHash, true)
@@ -198,7 +204,10 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		a.validateSigner(rt, &st, callerAddr)
+		if !isSigner(rt, &st, callerAddr) {
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
+		}
+
 		txn, err := st.getPendingTransaction(adt.AsStore(rt), params.ID)
 		if err != nil {
 			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
@@ -226,7 +235,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 }
 
 type AddSignerParams struct {
-	Signer   addr.Address // must be an ID protocol address.
+	Signer   addr.Address
 	Increase bool
 }
 
@@ -236,8 +245,8 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if st.isSigner(params.Signer) {
-			rt.Abortf(exitcode.ErrIllegalArgument, "party is already a signer")
+		if isSigner(rt, &st, params.Signer) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "%s is already a signer", params.Signer)
 		}
 		st.Signers = append(st.Signers, params.Signer)
 		if params.Increase {
@@ -249,7 +258,7 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 }
 
 type RemoveSignerParams struct {
-	Signer   addr.Address // must be an ID protocol address.
+	Signer   addr.Address
 	Decrease bool
 }
 
@@ -259,8 +268,8 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if !st.isSigner(params.Signer) {
-			rt.Abortf(exitcode.ErrNotFound, "Party not found")
+		if !isSigner(rt, &st, params.Signer) {
+			rt.Abortf(exitcode.ErrNotFound, "%s is not a signer", params.Signer)
 		}
 
 		if len(st.Signers) == 1 {
@@ -294,12 +303,12 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		if !st.isSigner(params.From) {
-			rt.Abortf(exitcode.ErrNotFound, "Party not found")
+		if !isSigner(rt, &st, params.From) {
+			rt.Abortf(exitcode.ErrNotFound, "%s is not a signer", params.From)
 		}
 
-		if st.isSigner(params.To) {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Party already present")
+		if isSigner(rt, &st, params.To) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "%s already a signer", params.To)
 		}
 
 		newSigners := make([]addr.Address, 0, len(st.Signers))
@@ -407,10 +416,28 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, proposalHash []by
 	return applied, out, code
 }
 
-func (a Actor) validateSigner(rt vmr.Runtime, st *State, address addr.Address) {
-	if !st.isSigner(address) {
-		rt.Abortf(exitcode.ErrForbidden, "party not a signer")
+func isSigner(rt vmr.Runtime, st *State, address addr.Address) bool {
+	candidateResolved := resolve(rt,address)
+
+	for _, ap := range st.Signers {
+		signerResolved := resolve(rt, ap)
+		if signerResolved == candidateResolved {
+			return true
+		}
 	}
+
+	return false
+}
+
+func resolve(rt vmr.Runtime, address addr.Address) addr.Address {
+	resolved := address
+	if resolved.Protocol() != addr.ID {
+		idAddr, found := rt.ResolveAddress(resolved)
+		if found {
+			resolved = idAddr
+		}
+	}
+	return resolved
 }
 
 // Computes a digest of a proposed transaction. This digest is used to confirm identity of the transaction

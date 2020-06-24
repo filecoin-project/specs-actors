@@ -796,6 +796,7 @@ func TestCancel(t *testing.T) {
 type addSignerTestCase struct {
 	desc string
 
+	idAddrsMapping  map[addr.Address]addr.Address
 	initialSigners   []addr.Address
 	initialApprovals uint64
 
@@ -814,6 +815,8 @@ func TestAddSigner(t *testing.T) {
 	anne := tutil.NewIDAddr(t, 101)
 	bob := tutil.NewIDAddr(t, 102)
 	chuck := tutil.NewIDAddr(t, 103)
+	chuckNonId := tutil.NewBLSAddr(t,1)
+
 	const noUnlockDuration = int64(0)
 
 	testCases := []addSignerTestCase{
@@ -856,6 +859,33 @@ func TestAddSigner(t *testing.T) {
 			expectApprovals: uint64(3),
 			code:            exitcode.ErrIllegalArgument,
 		},
+		{
+			desc: "fail to add signer with ID address that already exists(even though we ONLY have the non ID address as an approver)",
+
+			idAddrsMapping:   map[addr.Address]addr.Address{chuckNonId: chuck},
+			initialSigners:   []addr.Address{anne, bob, chuckNonId},
+			initialApprovals: uint64(3),
+
+			addSigner: chuck,
+			increase:  false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: uint64(3),
+			code:            exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:             "fail to add signer with non-ID address that already exists(even though we ONLY have the ID address as an approver)",
+			idAddrsMapping:   map[addr.Address]addr.Address{chuckNonId: chuck},
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: uint64(3),
+
+			addSigner: chuckNonId,
+			increase:  false,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: uint64(3),
+			code:            exitcode.ErrIllegalArgument,
+		},
 	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -867,6 +897,9 @@ func TestAddSigner(t *testing.T) {
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
+			for src,target := range tc.idAddrsMapping {
+				rt.AddIDAddress(src,target)
+			}
 			if tc.code != exitcode.Ok {
 				rt.ExpectAbort(tc.code, func() {
 					actor.addSigner(rt, tc.addSigner, tc.increase)
@@ -1002,6 +1035,8 @@ func TestRemoveSigner(t *testing.T) {
 }
 
 type swapTestCase struct {
+	initialSigner 	[]addr.Address
+	idAddrMappings 	map[addr.Address]addr.Address
 	desc   string
 	to     addr.Address
 	from   addr.Address
@@ -1015,16 +1050,17 @@ func TestSwapSigners(t *testing.T) {
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
 	bob := tutil.NewIDAddr(t, 102)
+	bobNonId := tutil.NewBLSAddr(t,1)
 	chuck := tutil.NewIDAddr(t, 103)
 	darlene := tutil.NewIDAddr(t, 104)
 
 	const noUnlockDuration = int64(0)
 	const numApprovals = uint64(1)
-	var initialSigner = []addr.Address{anne, bob}
 
 	testCases := []swapTestCase{
 		{
 			desc:   "happy path signer swap",
+			initialSigner : []addr.Address{anne, bob},
 			to:     chuck,
 			from:   bob,
 			expect: []addr.Address{anne, chuck},
@@ -1032,6 +1068,7 @@ func TestSwapSigners(t *testing.T) {
 		},
 		{
 			desc:   "fail to swap when from signer not found",
+			initialSigner : []addr.Address{anne, bob},
 			to:     chuck,
 			from:   darlene,
 			expect: []addr.Address{anne, chuck},
@@ -1039,7 +1076,26 @@ func TestSwapSigners(t *testing.T) {
 		},
 		{
 			desc:   "fail to swap when to signer already present",
+			initialSigner : []addr.Address{anne, bob},
 			to:     bob,
+			from:   anne,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:   "fail to swap when to signer ID address already present(even though we have the non-ID address)",
+			initialSigner : []addr.Address{anne, bobNonId},
+			idAddrMappings: map[addr.Address]addr.Address{bobNonId:bob},
+			to:     bob,
+			from:   anne,
+			expect: []addr.Address{anne, chuck},
+			code:   exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:   "fail to swap when to signer non-ID address already present(even though we have the ID address)",
+			initialSigner : []addr.Address{anne, bob},
+			idAddrMappings: map[addr.Address]addr.Address{bobNonId:bob},
+			to:     bobNonId,
 			from:   anne,
 			expect: []addr.Address{anne, chuck},
 			code:   exitcode.ErrIllegalArgument,
@@ -1051,7 +1107,10 @@ func TestSwapSigners(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			rt := builder.Build(t)
 
-			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, initialSigner...)
+			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, tc.initialSigner...)
+			for src,target := range tc.idAddrMappings {
+				rt.AddIDAddress(src, target)
+			}
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
