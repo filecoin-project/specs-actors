@@ -722,9 +722,6 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 		}
 		// Roll back state change.
 		rt.state = prevState
-
-		// clear expectations unfulfilled due to abort
-		rt.Reset()
 	}()
 	f()
 }

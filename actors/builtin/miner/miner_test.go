@@ -240,6 +240,7 @@ func TestCommitments(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(100, challengeEpoch, deadline.PeriodEnd()), networkPower, big.Zero())
 		})
+		rt.Reset()
 
 		// Bad seal proof type
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -247,18 +248,21 @@ func TestCommitments(t *testing.T) {
 			pc.SealProof = abi.RegisteredSealProof_StackedDrg8MiBV1
 			actor.preCommitSector(rt, pc, networkPower, big.Zero())
 		})
+		rt.Reset()
 
 		// Expires at current epoch
 		rt.SetEpoch(deadline.PeriodEnd())
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(111, challengeEpoch, deadline.PeriodEnd()), networkPower, big.Zero())
 		})
+		rt.Reset()
 
 		// Expires before current epoch
 		rt.SetEpoch(deadline.PeriodEnd() + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(112, challengeEpoch, deadline.PeriodEnd()), networkPower, big.Zero())
 		})
+		rt.Reset()
 
 		// Expires not on period end
 		rt.SetEpoch(precommitEpoch)
