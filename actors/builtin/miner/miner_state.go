@@ -144,10 +144,11 @@ type SectorOnChainInfo struct {
 	SealProof          abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
 	SealedCID          cid.Cid                 // CommR
 	DealIDs            []abi.DealID
-	Activation         abi.ChainEpoch // Epoch during which the sector proof was accepted
-	Expiration         abi.ChainEpoch // Epoch during which the sector expires
-	DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
-	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
+	Activation         abi.ChainEpoch  // Epoch during which the sector proof was accepted
+	Expiration         abi.ChainEpoch  // Epoch during which the sector expires
+	DealWeight         abi.DealWeight  // Integral of active deals over sector lifetime
+	VerifiedDealWeight abi.DealWeight  // Integral of active verified deals over sector lifetime
+	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,

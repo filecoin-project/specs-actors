@@ -499,6 +499,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		)
 		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 
+		// initial pledge is precommit deposit
+		// TODO: compute new initial pledge here (https://github.com/filecoin-project/specs-actors/issues/522)
+		initialPledge := precommit.PreCommitDeposit
+
 		newSectorInfo := SectorOnChainInfo{
 			SectorNumber:       precommit.Info.SectorNumber,
 			SealProof:          precommit.Info.SealProof,
@@ -508,14 +512,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			Activation:         precommit.PreCommitEpoch,
 			DealWeight:         precommit.DealWeight,
 			VerifiedDealWeight: precommit.VerifiedDealWeight,
+			InitialPledge:      initialPledge,
 		}
 
 		// Request power for activated sector.
 		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
 		// https://github.com/filecoin-project/specs-actors/issues/475
 		requestUpdateSectorPower(rt, st.Info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
-
-		initialPledge := precommit.PreCommitDeposit
 
 		// Add sector and pledge lock-up to miner state
 		// TODO: do this all at once after the loop

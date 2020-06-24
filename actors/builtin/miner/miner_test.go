@@ -189,6 +189,11 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, found)
 
+		// expect deposit to have been transferred to initial pledges
+		expectedInitialPledge := expectedDeposit
+		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledges)
+
 		// expect new onchain sector
 		onChainSector, found, err := st.GetSector(rt.AdtStore(), sectorNo)
 		require.NoError(t, err)
@@ -201,10 +206,8 @@ func TestCommitments(t *testing.T) {
 		// expect activation epoch to be precommit
 		assert.Equal(t, precommitEpoch, onChainSector.Activation)
 
-		// expect deposit to have been transferred to initial pledges
-		expectedInitialPledge := expectedDeposit
-		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
-		assert.Equal(t, expectedInitialPledge, st.InitialPledges)
+		// expect initial plege of sector to be set
+		assert.Equal(t, expectedInitialPledge, onChainSector.InitialPledge)
 
 		// expect locked initial pledge of sector to be the same as precommit deposit
 		assert.Equal(t, expectedInitialPledge, st.LockedFunds)
