@@ -245,13 +245,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
-		// Verify locked funds are are at least the sum of sector initial pledges.
-		// Note that this call does not actually compute recent vesting, so the reported locked funds may be
-		// slightly higher than the true amount (i.e. slightly in the miner's favour).
-		// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
-		// Vesting will be at most one proving period old if computed in the cron callback.
-		verifyPledgeMeetsInitialRequirements(rt, &st)
-
 		// TODO WPOST (follow-up): process Skipped as faults
 		// https://github.com/filecoin-project/specs-actors/issues/410
 
@@ -429,6 +422,9 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	rt.State().Readonly(&st)
 
+	// Verify locked funds are are at least the sum of sector initial pledges.
+	verifyPledgeMeetsInitialRequirements(rt, &st)
+
 	sectorNo := params.SectorNumber
 	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 	if err != nil {
@@ -532,9 +528,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
 			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
 			st.AddInitialPledge(precommit.PreCommitDeposit)
-
-			// Verify locked funds are are at least the sum of sector initial pledges.
-			verifyPledgeMeetsInitialRequirements(rt, &st)
 
 			// Lock up initial pledge for new sector.
 			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -1694,8 +1687,9 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
-	// TODO WPOST (follow-up): implement this
-	// https://github.com/filecoin-project/specs-actors/issues/415
+	if st.LockedFunds.LessThan(st.InitialPledges) {
+		rt.Abortf(exitcode.ErrIllegalState, "locked funds insufficient to cover initial pledges (%v < %v)", st.LockedFunds, st.InitialPledges)
+	}
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.

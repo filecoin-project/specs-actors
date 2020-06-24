@@ -585,6 +585,10 @@ func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
 	}
 }
 
+func (rt *Runtime) SetStateForTesting(o runtime.CBORMarshaler) {
+	rt.state = rt.Store().Put(o)
+}
+
 func (rt *Runtime) Balance() abi.TokenAmount {
 	return rt.balance
 }
