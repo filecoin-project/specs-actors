@@ -325,12 +325,13 @@ func (rt *Runtime) DeleteActor(addr addr.Address) {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "side-effect within transaction")
 	}
 	if rt.expectDeleteActor == nil {
-		rt.failTestNow("Unexpected call to delete actor")
+		rt.failTestNow("unexpected call to delete actor %s", addr.String())
 	}
 
 	if *rt.expectDeleteActor != addr {
-		rt.failTestNow("Attempt to delete wrong actor. Expected %s, got %s.", rt.expectDeleteActor.String(), addr.String())
+		rt.failTestNow("attempt to delete wrong actor. Expected %s, got %s.", rt.expectDeleteActor.String(), addr.String())
 	}
+	rt.expectDeleteActor = nil
 }
 
 func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
@@ -735,6 +736,9 @@ func (rt *Runtime) Verify() {
 	}
 	if rt.expectVerifySeal != nil {
 		rt.failTest("missing expected verify seal with %v", rt.expectVerifySeal.seal)
+	}
+	if rt.expectDeleteActor != nil {
+		rt.failTest("missing expected delete actor with address %s", rt.expectDeleteActor.String())
 	}
 
 	rt.Reset()
