@@ -12,6 +12,10 @@ import (
 )
 
 type State struct {
+	// Signers may be either public-key or actor ID-addresses. The ID address is canonical, but doesn't exist
+	// for a public key that has not yet received a message on chain.
+	// If any signer address is a public-key address, it will be resolved to an ID address and persisted
+	// in this state when the address is used.
 	Signers               []address.Address
 	NumApprovalsThreshold uint64
 	NextTxnID             TxnID
@@ -31,15 +35,6 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 
 	unitLocked := big.Div(st.InitialBalance, big.NewInt(int64(st.UnlockDuration)))
 	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
-}
-
-func (st *State) isSigner(party address.Address) bool {
-	for _, ap := range st.Signers {
-		if party == ap {
-			return true
-		}
-	}
-	return false
 }
 
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
