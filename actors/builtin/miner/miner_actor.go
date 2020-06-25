@@ -423,6 +423,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	rt.State().Readonly(&st)
 
 	// Verify locked funds are are at least the sum of sector initial pledges.
+	// Note that this call does not actually compute recent vesting, so the reported locked funds may be
+	// slightly higher than the true amount (i.e. slightly in the miner's favour).
+	// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
+	// Vesting will be at most one proving period old if computed in the cron callback.
 	verifyPledgeMeetsInitialRequirements(rt, &st)
 
 	sectorNo := params.SectorNumber
@@ -496,7 +500,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 
 		// initial pledge is precommit deposit
-		// TODO: compute new initial pledge here (https://github.com/filecoin-project/specs-actors/issues/522)
 		initialPledge := precommit.PreCommitDeposit
 
 		newSectorInfo := SectorOnChainInfo{
@@ -527,7 +530,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
 			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
-			st.AddInitialPledge(precommit.PreCommitDeposit)
+			st.AddInitialPledge(initialPledge)
 
 			// Lock up initial pledge for new sector.
 			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -940,14 +943,15 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	}
 
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		// Verify locked funds are are at least the sum of sector initial pledges.
-		verifyPledgeMeetsInitialRequirements(rt, &st)
-
 		rt.ValidateImmediateCallerIs(st.Info.Owner)
 		newlyVestedFund, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
+
+		// Verify locked funds are are at least the sum of sector initial pledges after vesting.
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
