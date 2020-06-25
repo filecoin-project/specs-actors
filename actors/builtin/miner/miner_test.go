@@ -250,7 +250,7 @@ func TestCommitments(t *testing.T) {
 
 		// Expires before current epoch
 		expiration := deadline.PeriodEnd()
-		rt.SetEpoch(deadline.PeriodEnd() + 1)
+		rt.SetEpoch(expiration + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(112, challengeEpoch, deadline.PeriodEnd(), nil), networkPower)
 		})
