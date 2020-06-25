@@ -245,13 +245,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
-		// Verify locked funds are are at least the sum of sector initial pledges.
-		// Note that this call does not actually compute recent vesting, so the reported locked funds may be
-		// slightly higher than the true amount (i.e. slightly in the miner's favour).
-		// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
-		// Vesting will be at most one proving period old if computed in the cron callback.
-		verifyPledgeMeetsInitialRequirements(rt, &st)
-
 		// TODO WPOST (follow-up): process Skipped as faults
 		// https://github.com/filecoin-project/specs-actors/issues/410
 
@@ -429,6 +422,13 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	rt.State().Readonly(&st)
 
+	// Verify locked funds are are at least the sum of sector initial pledges.
+	// Note that this call does not actually compute recent vesting, so the reported locked funds may be
+	// slightly higher than the true amount (i.e. slightly in the miner's favour).
+	// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
+	// Vesting will be at most one proving period old if computed in the cron callback.
+	verifyPledgeMeetsInitialRequirements(rt, &st)
+
 	sectorNo := params.SectorNumber
 	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 	if err != nil {
@@ -499,6 +499,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		)
 		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 
+		// initial pledge is precommit deposit
+		initialPledge := precommit.PreCommitDeposit
+
 		newSectorInfo := SectorOnChainInfo{
 			SectorNumber:       precommit.Info.SectorNumber,
 			SealProof:          precommit.Info.SealProof,
@@ -508,14 +511,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			Activation:         precommit.PreCommitEpoch,
 			DealWeight:         precommit.DealWeight,
 			VerifiedDealWeight: precommit.VerifiedDealWeight,
+			InitialPledge:      initialPledge,
 		}
 
 		// Request power for activated sector.
 		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
 		// https://github.com/filecoin-project/specs-actors/issues/475
 		requestUpdateSectorPower(rt, st.Info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
-
-		initialPledge := precommit.PreCommitDeposit
 
 		// Add sector and pledge lock-up to miner state
 		// TODO: do this all at once after the loop
@@ -528,9 +530,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
 			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
-
-			// Verify locked funds are are at least the sum of sector initial pledges.
-			verifyPledgeMeetsInitialRequirements(rt, &st)
+			st.AddInitialPledgeRequirement(initialPledge)
 
 			// Lock up initial pledge for new sector.
 			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -948,6 +948,10 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
+
+		// Verify locked funds are are at least the sum of sector initial pledges after vesting.
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
@@ -1378,6 +1382,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			rt.Abortf(exitcode.ErrIllegalState, "failed to expand faults")
 		}
 
+		pledgeRequirementToRemove := abi.NewTokenAmount(0)
 		err = sectorNos.ForEach(func(sectorNo uint64) error {
 			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNo))
 			if err != nil {
@@ -1394,9 +1399,14 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			if fault {
 				faultySectors = append(faultySectors, sector)
 			}
+
+			pledgeRequirementToRemove = big.Add(pledgeRequirementToRemove, sector.InitialPledge)
 			return nil
 		})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector metadata")
+
+		// lower initial pledge requirement
+		st.AddInitialPledgeRequirement(pledgeRequirementToRemove.Neg())
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1686,8 +1696,9 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
-	// TODO WPOST (follow-up): implement this
-	// https://github.com/filecoin-project/specs-actors/issues/415
+	if st.LockedFunds.LessThan(st.InitialPledgeRequirement) {
+		rt.Abortf(exitcode.ErrIllegalState, "locked funds insufficient to cover initial pledges (%v < %v)", st.LockedFunds, st.InitialPledgeRequirement)
+	}
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.

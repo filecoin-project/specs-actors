@@ -26,9 +26,10 @@ type State struct {
 	// https://github.com/filecoin-project/specs-actors/issues/422
 	Info MinerInfo
 
-	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
-	LockedFunds       abi.TokenAmount // Total unvested funds locked as pledge collateral
-	VestingFunds      cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
+	PreCommitDeposits        abi.TokenAmount // Total funds locked as PreCommitDeposits
+	LockedFunds              abi.TokenAmount // Total unvested funds locked as pledge collateral
+	VestingFunds             cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
+	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
@@ -143,10 +144,11 @@ type SectorOnChainInfo struct {
 	SealProof          abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
 	SealedCID          cid.Cid                 // CommR
 	DealIDs            []abi.DealID
-	Activation         abi.ChainEpoch // Epoch during which the sector proof was accepted
-	Expiration         abi.ChainEpoch // Epoch during which the sector expires
-	DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
-	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
+	Activation         abi.ChainEpoch  // Epoch during which the sector proof was accepted
+	Expiration         abi.ChainEpoch  // Epoch during which the sector expires
+	DealWeight         abi.DealWeight  // Integral of active deals over sector lifetime
+	VerifiedDealWeight abi.DealWeight  // Integral of active verified deals over sector lifetime
+	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
@@ -171,9 +173,10 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 			WindowPoStPartitionSectors: partitionSectors,
 		},
 
-		PreCommitDeposits: abi.NewTokenAmount(0),
-		LockedFunds:       abi.NewTokenAmount(0),
-		VestingFunds:      emptyArrayCid,
+		PreCommitDeposits:        abi.NewTokenAmount(0),
+		LockedFunds:              abi.NewTokenAmount(0),
+		VestingFunds:             emptyArrayCid,
+		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors: emptyMapCid,
 		Sectors:             emptyArrayCid,
@@ -853,6 +856,13 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative pre-commit deposit %s after adding %s to prior %s",
 		newTotal, amount, st.PreCommitDeposits)
 	st.PreCommitDeposits = newTotal
+}
+
+func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
+	newTotal := big.Add(st.InitialPledgeRequirement, amount)
+	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
+		newTotal, amount, st.InitialPledgeRequirement)
+	st.InitialPledgeRequirement = newTotal
 }
 
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
