@@ -141,7 +141,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 
 	var txnID TxnID
 	var st State
-	var txn Transaction
+	var txn *Transaction
 	rt.State().Transaction(&st, func() interface{} {
 		if !isSigner(rt, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
@@ -149,7 +149,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 
 		txnID = st.NextTxnID
 		st.NextTxnID += 1
-		txn = Transaction{
+		txn = &Transaction{
 			To:       params.To,
 			Value:    params.Value,
 			Method:   params.Method,
@@ -193,7 +193,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 	var st State
-	var txn Transaction
+	var txn *Transaction
 	rt.State().Transaction(&st, func() interface{} {
 		if !isSigner(rt, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
@@ -372,7 +372,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn Transaction) (bool, []byte, exitcode.ExitCode) {
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
 	var st State
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
@@ -394,7 +394,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn Transaction) 
 	return executeTransactionIfApproved(rt,st, txnID, txn)
 }
 
-func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHash []byte, checkHash bool) Transaction {
+func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
 	var txn Transaction
 
 	// get transaction from the state trie
@@ -415,10 +415,10 @@ func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHas
 		}
 	}
 
-	return txn
+	return &txn
 }
 
-func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn Transaction) (bool, []byte, exitcode.ExitCode) {
+func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
 	var out vmr.CBORBytes
 	var code exitcode.ExitCode
 	applied := false

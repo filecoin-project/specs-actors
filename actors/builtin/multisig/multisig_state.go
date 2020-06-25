@@ -92,9 +92,9 @@ func (st *State) mutatePendingTransactions(s adt.Store, f func(pt *adt.Map) erro
 	return nil
 }
 
-func (as *State) putPendingTransaction(s adt.Store, txnID TxnID, txn Transaction) error {
+func (as *State) putPendingTransaction(s adt.Store, txnID TxnID, txn *Transaction) error {
 	return as.mutatePendingTransactions(s, func(hm *adt.Map) error {
-		if err := hm.Put(txnID, &txn); err != nil {
+		if err := hm.Put(txnID, txn); err != nil {
 			return errors.Wrapf(err, "failed to write transaction")
 		}
 		return nil
