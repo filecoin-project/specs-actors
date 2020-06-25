@@ -174,9 +174,9 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 		},
 
 		PreCommitDeposits:        abi.NewTokenAmount(0),
-		InitialPledgeRequirement: abi.NewTokenAmount(0),
 		LockedFunds:              abi.NewTokenAmount(0),
 		VestingFunds:             emptyArrayCid,
+		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors: emptyMapCid,
 		Sectors:             emptyArrayCid,
@@ -858,7 +858,7 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 	st.PreCommitDeposits = newTotal
 }
 
-func (st *State) AddInitialPledge(amount abi.TokenAmount) {
+func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	newTotal := big.Add(st.InitialPledgeRequirement, amount)
 	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
 		newTotal, amount, st.InitialPledgeRequirement)

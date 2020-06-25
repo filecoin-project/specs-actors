@@ -413,7 +413,6 @@ func TestProveCommit(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
 	builder := builderForHarness(actor).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	t.Run("aborts if sum of initial pledges exceeds locked funds", func(t *testing.T) {

@@ -530,7 +530,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
 			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
-			st.AddInitialPledge(initialPledge)
+			st.AddInitialPledgeRequirement(initialPledge)
 
 			// Lock up initial pledge for new sector.
 			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -1382,7 +1382,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			rt.Abortf(exitcode.ErrIllegalState, "failed to expand faults")
 		}
 
-		pledgeToRemove := abi.NewTokenAmount(0)
+		pledgeRequirementToRemove := abi.NewTokenAmount(0)
 		err = sectorNos.ForEach(func(sectorNo uint64) error {
 			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNo))
 			if err != nil {
@@ -1400,13 +1400,13 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 				faultySectors = append(faultySectors, sector)
 			}
 
-			pledgeToRemove = big.Add(pledgeToRemove, sector.InitialPledge)
+			pledgeRequirementToRemove = big.Add(pledgeRequirementToRemove, sector.InitialPledge)
 			return nil
 		})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector metadata")
 
 		// lower initial pledge requirement
-		st.AddInitialPledge(pledgeToRemove.Neg())
+		st.AddInitialPledgeRequirement(pledgeRequirementToRemove.Neg())
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
