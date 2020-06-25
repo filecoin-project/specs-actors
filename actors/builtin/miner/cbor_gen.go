@@ -19,7 +19,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{143}); err != nil {
+	if _, err := w.Write([]byte{144}); err != nil {
 		return err
 	}
 
@@ -42,6 +42,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCid(w, t.VestingFunds); err != nil {
 		return xerrors.Errorf("failed to write cid field t.VestingFunds: %w", err)
+	}
+
+	// t.InitialPledgeRequirement (big.Int) (struct)
+	if err := t.InitialPledgeRequirement.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.PreCommittedSectors (cid.Cid) (struct)
@@ -125,7 +130,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 15 {
+	if extra != 16 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -166,6 +171,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.VestingFunds = c
+
+	}
+	// t.InitialPledgeRequirement (big.Int) (struct)
+
+	{
+
+		if err := t.InitialPledgeRequirement.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.InitialPledgeRequirement: %w", err)
+		}
 
 	}
 	// t.PreCommittedSectors (cid.Cid) (struct)
@@ -1029,7 +1043,7 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{136}); err != nil {
+	if _, err := w.Write([]byte{137}); err != nil {
 		return err
 	}
 
@@ -1101,6 +1115,11 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.VerifiedDealWeight.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.InitialPledge (big.Int) (struct)
+	if err := t.InitialPledge.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1115,7 +1134,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 8 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1268,6 +1287,15 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
+		}
+
+	}
+	// t.InitialPledge (big.Int) (struct)
+
+	{
+
+		if err := t.InitialPledge.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.InitialPledge: %w", err)
 		}
 
 	}

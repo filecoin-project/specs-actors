@@ -613,6 +613,10 @@ func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
 	rt.epoch = epoch
 }
 
+func (rt *Runtime) ReplaceState(o runtime.CBORMarshaler) {
+	rt.state = rt.Store().Put(o)
+}
+
 func (rt *Runtime) SetCirculatingSupply(amt abi.TokenAmount) {
 	rt.circulatingSupply = amt
 }
