@@ -250,11 +250,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		// Traverse earlier submissions and enact detected faults.
-		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
-		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
-
 		// Double check that the current proving period has started. This should only happen if the cron actor wasn't invoked.
 		if !currDeadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalState, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
@@ -263,6 +258,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
+
+		// Detect and mark faults from any missed deadlines (doesn't including the current deadline).
+		// Traverse earlier submissions and enact detected faults.
+		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
+		// of penalties if locked pledge drops too low.
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
 
 		// TODO WPOST (follow-up): process Skipped as faults
 		// https://github.com/filecoin-project/specs-actors/issues/410
