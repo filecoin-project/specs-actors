@@ -1249,8 +1249,8 @@ func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainE
 
 	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
 	if expiration-activation > sealProof.SectorMaximumLifetime() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d",
-			expiration, expiration-activation, sealProof.SectorMaximumLifetime())
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",
+			expiration, expiration-activation, sealProof.SectorMaximumLifetime(), activation)
 	}
 
 	// ensure expiration is one epoch before a proving period boundary

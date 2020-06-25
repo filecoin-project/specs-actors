@@ -207,7 +207,7 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
 func (p RegisteredSealProof) SectorMaximumLifetime() ChainEpoch {
-	// currently all proofs set to around 5 years
+	// For all Stacked DRG sectors, the max is 5 years
 	epochsPerYear := 1_262_277
 	fiveYears := 5 * epochsPerYear
 	return ChainEpoch(fiveYears)
