@@ -353,7 +353,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 		}
 
-		validateExpiration(rt, &st, params.Expiration)
+		validateExpiration(rt, &st, rt.CurrEpoch(), params.Expiration, params.SealProof)
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
@@ -601,8 +601,6 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	validateExpiration(rt, &st, params.NewExpiration)
-
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
 	oldSector, found, err := st.GetSector(store, sectorNo)
@@ -614,6 +612,8 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration to %d from %d",
 			params.NewExpiration, oldSector.Expiration)
 	}
+
+	validateExpiration(rt, &st, oldSector.Activation, params.NewExpiration, oldSector.SealProof)
 
 	newSector := *oldSector
 	newSector.Expiration = params.NewExpiration
@@ -1240,7 +1240,20 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 }
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
-func validateExpiration(rt Runtime, st *State, expiration abi.ChainEpoch) {
+func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
+	// expiration cannot exceed MaxSectorExpirationExtension from now
+	if expiration > rt.CurrEpoch()+MaxSectorExpirationExtension {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, cannot be more than %d past current epoch %d",
+			expiration, MaxSectorExpirationExtension, rt.CurrEpoch())
+	}
+
+	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
+	if expiration-activation > sealProof.SectorMaximumLifetime() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d",
+			expiration, expiration-activation, sealProof.SectorMaximumLifetime())
+	}
+
+	// ensure expiration is one epoch before a proving period boundary
 	periodOffset := st.ProvingPeriodStart % WPoStProvingPeriod
 	expiryOffset := (expiration + 1) % WPoStProvingPeriod
 	if expiryOffset != periodOffset {
