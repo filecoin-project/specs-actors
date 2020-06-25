@@ -433,7 +433,7 @@ func TestProveCommit(t *testing.T) {
 		// alter lock funds to simulate vesting since last prove
 		st := getState(rt)
 		st.LockedFunds = big.Div(st.LockedFunds, big.NewInt(2))
-		rt.SetStateForTesting(st)
+		rt.ReplaceState(st)
 
 		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[st.Info.SealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
@@ -445,7 +445,7 @@ func TestProveCommit(t *testing.T) {
 
 		// succeeds when locked fund satisfy initial pledge requirement
 		st.LockedFunds = st.InitialPledgeRequirement
-		rt.SetStateForTesting(st)
+		rt.ReplaceState(st)
 		actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{
 			networkPower: 1 << 50,
 		})
@@ -690,7 +690,7 @@ func TestWithdrawBalance(t *testing.T) {
 		// alter lock funds to simulate vesting since last prove
 		st := getState(rt)
 		st.LockedFunds = big.Div(st.LockedFunds, big.NewInt(2))
-		rt.SetStateForTesting(st)
+		rt.ReplaceState(st)
 
 		// withdraw 1% of balance
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
