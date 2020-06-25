@@ -637,6 +637,116 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 	})
+
+	t.Run("proposed transaction is approved by proposer if number of approvers has already crossed threshold", func(t *testing.T) {
+		rt := builder.Build(t)
+		const newThreshold = 1
+		signers := []addr.Address{anne, bob}
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		rt.Verify()
+
+		// reduce the threshold so the transaction is already approved
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.changeNumApprovalsThreshold(rt, newThreshold)
+		rt.Verify()
+
+		// even if anne calls for an approval again(duplicate approval), transaction is executed because the threshold has been met.
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+		rt.SetBalance(sendValue)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.approveOK(rt, txnID, proposalHash, nil)
+		rt.Verify()
+
+		// Transaction should be removed from actor state after send
+		actor.assertTransactions(rt)
+	})
+
+	t.Run("approve transaction if number of approvers has already crossed threshold even if we attempt a duplicate approval", func(t *testing.T) {
+		rt := builder.Build(t)
+		const numApprovals = 3
+		const newThreshold = 2
+		signers := []addr.Address{anne, bob, chuck}
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		rt.Verify()
+
+		// bob approves the transaction (number of approvals is now two but threshold is three)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+
+		actor.approveOK(rt, txnID, proposalHash, nil)
+		rt.Verify()
+
+		// reduce the threshold so the transaction is already approved
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.changeNumApprovalsThreshold(rt, newThreshold)
+		rt.Verify()
+
+		// even if bob calls for an approval again(duplicate approval), transaction is executed because the threshold has been met.
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+		rt.SetBalance(sendValue)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.approveOK(rt, txnID, proposalHash, nil)
+		rt.Verify()
+
+		// Transaction should be removed from actor state after send
+		actor.assertTransactions(rt)
+	})
+
+	t.Run("approve transaction if number of approvers has already crossed threshold and ensure non-signatory cannot approve a transaction", func(t *testing.T) {
+		rt := builder.Build(t)
+		const newThreshold = 1
+		signers := []addr.Address{anne, bob}
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		rt.Verify()
+
+		// reduce the threshold so the transaction is already approved
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.changeNumApprovalsThreshold(rt, newThreshold)
+		rt.Verify()
+
+		// alice cannot approve the transaction as alice is not a signatory
+		alice := tutil.NewIDAddr(t, 104)
+		rt.SetCaller(alice, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			_ = actor.approve(rt, txnID, proposalHash, nil)
+		})
+		rt.Verify()
+
+		// bob attempts to approve the transaction but it gets approved without
+		// processing his approval as it the threshold has been met.
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+		rt.SetBalance(sendValue)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+		actor.approveOK(rt, txnID, proposalHash, nil)
+		rt.Verify()
+
+		// Transaction should be removed from actor state after send
+		actor.assertTransactions(rt)
+	})
 }
 
 func TestCancel(t *testing.T) {
@@ -1358,11 +1468,23 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 	return proposeReturn.Code
 }
 
-func (h *msActorHarness) proposeOK(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) {
+// returns the proposal hash
+func (h *msActorHarness) proposeOK(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) []byte {
 	code := h.propose(rt, to, value, method, params, out)
 	if code != exitcode.Ok {
 		h.t.Fatalf("unexpected exitcode %d from propose", code)
 	}
+
+	proposalHashData, err := multisig.ComputeProposalHash(&multisig.Transaction{
+		To:       to,
+		Value:    value,
+		Method:   method,
+		Params:   params,
+		Approved: []addr.Address{rt.Caller()},
+	}, blake2b.Sum256)
+	require.NoError(h.t, err)
+
+	return proposalHashData
 }
 
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
