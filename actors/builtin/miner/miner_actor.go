@@ -909,11 +909,16 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
 	}
 
+	// Reward reporter with a share of the miner's current balance.
+	slasherReward := RewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
+	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
+	builtin.RequireSuccess(rt, code, "failed to reward reporter")
+
 	var st State
 	rt.State().Readonly(&st)
 
 	// Notify power actor with lock-up total being removed.
-	_, code := rt.Send(
+	_, code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnConsensusFault,
 		&st.LockedFunds,
@@ -921,15 +926,9 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
 
-	// TODO: terminate deals with market actor, https://github.com/filecoin-project/specs-actors/issues/279
+	// close deals and burn funds
+	terminateMiner(rt)
 
-	// Reward reporter with a share of the miner's current balance.
-	slasherReward := rewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
-	_, code = rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
-	builtin.RequireSuccess(rt, code, "failed to reward reporter")
-
-	// Delete the actor and burn all remaining funds
-	rt.DeleteActor(builtin.BurntFundsActorAddr)
 	return nil
 }
 
@@ -1598,6 +1597,17 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 		SealedCID:             params.SealedCID,
 		UnsealedCID:           commD,
 	}
+}
+
+// Closes down this miner by erasing its power, terminating all its deals and burning its funds
+func terminateMiner(rt Runtime) {
+	var st State
+	rt.State().Readonly(&st)
+
+	requestTerminateAllDeals(rt, &st)
+
+	// Delete the actor and burn all remaining funds
+	rt.DeleteActor(builtin.BurntFundsActorAddr)
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
