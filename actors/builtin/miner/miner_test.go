@@ -441,6 +441,14 @@ func TestProveCommit(t *testing.T) {
 				networkPower: 1 << 50,
 			})
 		})
+		rt.Reset()
+
+		// succeeds when locked fund satisfy initial pledge requirement
+		st.LockedFunds = st.InitialPledgeRequirement
+		rt.SetStateForTesting(st)
+		actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{
+			networkPower: 1 << 50,
+		})
 	})
 }
 
@@ -554,11 +562,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
 		actor.constructAndVerify(rt)
 		sectorInfo := actor.commitAndProveSectors(rt, 1, 100, 0, nil)
-
-		sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
-		require.NoError(t, err)
-		require.True(t, found)
-		return sector
+		return sectorInfo[0]
 	}
 
 	t.Run("rejects negative extension", func(t *testing.T) {
@@ -640,11 +644,7 @@ func TestTerminateSectors(t *testing.T) {
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
 		sectorInfo := actor.commitAndProveSectors(rt, 1, 100, 0, nil)
-
-		sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
-		require.NoError(t, err)
-		require.True(t, found)
-		return sector
+		return sectorInfo[0]
 	}
 
 	t.Run("removes sector with correct accounting", func(t *testing.T) {
@@ -851,7 +851,7 @@ type proveCommitConf struct {
 }
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, precommitEpoch abi.ChainEpoch,
-	params *miner.ProveCommitSectorParams, conf proveCommitConf) {
+	params *miner.ProveCommitSectorParams, conf proveCommitConf) *miner.SectorOnChainInfo {
 	commd := cbg.CborCid(tutil.MakeCID("commd"))
 	sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
 	sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
@@ -902,25 +902,26 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, conf.verifyDealsExit)
 	}
-	{
-		// expected pledge is the precommit deposit
-		st := getState(rt)
-		precommitOnChain, found, err := st.GetPrecommittedSector(rt.AdtStore(), precommit.SectorNumber)
-		require.NoError(h.t, err)
-		require.True(h.t, found)
+	// expected pledge is the precommit deposit
+	st := getState(rt)
+	precommitOnChain, found, err := st.GetPrecommittedSector(rt.AdtStore(), precommit.SectorNumber)
+	require.NoError(h.t, err)
+	require.True(h.t, found)
 
+	newSector := miner.SectorOnChainInfo{
+		SectorNumber:       precommit.SectorNumber,
+		SealProof:          precommit.SealProof,
+		SealedCID:          precommit.SealedCID,
+		DealIDs:            precommit.DealIDs,
+		Expiration:         precommit.Expiration,
+		Activation:         precommitEpoch,
+		DealWeight:         precommitOnChain.DealWeight,
+		VerifiedDealWeight: precommitOnChain.VerifiedDealWeight,
+	}
+	{
 		sectorSize, err := precommit.SealProof.SectorSize()
 		require.NoError(h.t, err)
-		newSector := miner.SectorOnChainInfo{
-			SectorNumber:       precommit.SectorNumber,
-			SealProof:          precommit.SealProof,
-			SealedCID:          precommit.SealedCID,
-			DealIDs:            precommit.DealIDs,
-			Expiration:         precommit.Expiration,
-			Activation:         precommitEpoch,
-			DealWeight:         precommitOnChain.DealWeight,
-			VerifiedDealWeight: precommitOnChain.VerifiedDealWeight,
-		}
+
 		qaPower := miner.QAPowerForSector(sectorSize, &newSector)
 		pcParams := power.UpdateClaimedPowerParams{
 			RawByteDelta:         big.NewIntUnsigned(uint64(sectorSize)),
@@ -938,12 +939,13 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{Sectors: []abi.SectorNumber{params.SectorNumber}})
 	}
 	rt.Verify()
+	return &newSector
 }
 
 // Pre-commits and then proves a number of sectors.
 // The sectors will expire at the end of  lifetimePeriods proving periods after now.
 // The runtime epoch will be moved forward to the epoch of commitment proofs.
-func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePeriods uint64, networkPower uint64, dealIDs [][]abi.DealID) []*miner.SectorPreCommitInfo {
+func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePeriods uint64, networkPower uint64, dealIDs [][]abi.DealID) []*miner.SectorOnChainInfo {
 	precommitEpoch := rt.Epoch()
 
 	st := getState(rt)
@@ -971,13 +973,15 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 	deadline = getState(rt).DeadlineInfo(rt.Epoch())
 	require.True(h.t, !deadline.PeriodElapsed())
 
+	info := []*miner.SectorOnChainInfo{}
 	for _, pc := range precommits {
-		h.proveCommitSector(rt, pc, precommitEpoch, makeProveCommit(pc.SectorNumber), proveCommitConf{
+		sector := h.proveCommitSector(rt, pc, precommitEpoch, makeProveCommit(pc.SectorNumber), proveCommitConf{
 			networkPower: networkPower,
 		})
+		info = append(info, sector)
 	}
 	rt.Reset()
-	return precommits
+	return info
 }
 
 func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []uint64, infos []*miner.SectorOnChainInfo) {
