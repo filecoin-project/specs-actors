@@ -758,32 +758,31 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.Bit
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
 func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitField, faults *abi.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
-	sectorOnChain, found, err := st.GetSector(store, faultStandIn)
+	standInInfo, found, err := st.GetSector(store, faultStandIn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load stand-in sector %d: %v", faultStandIn, err)
 	} else if !found {
 		return nil, fmt.Errorf("can't find stand-in sector %d", faultStandIn)
 	}
-	standInInfo := sectorOnChain
 
 	// Expand faults into a map for quick lookups.
 	// The faults bitfield should already be a subset of the sectors bitfield.
-	faultMax, err := sectors.Count()
+	sectorCount, err := sectors.Count()
 	if err != nil {
 		return nil, err
 	}
-	faultSet, err := faults.AllMap(faultMax)
+	faultSet, err := faults.AllMap(sectorCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand faults: %w", err)
 	}
 
 	// Load the sector infos, masking out fault sectors with a good one.
-	var sectorInfos []*SectorOnChainInfo
+	sectorInfos := make([]*SectorOnChainInfo, 0, sectorCount)
 	err = sectors.ForEach(func(i uint64) error {
 		sector := standInInfo
 		faulty := faultSet[i]
 		if !faulty {
-			sectorOnChain, found, err = st.GetSector(store, abi.SectorNumber(i))
+			sectorOnChain, found, err := st.GetSector(store, abi.SectorNumber(i))
 			if err != nil {
 				return fmt.Errorf("failed to load sector %d: %v", i, err)
 			} else if !found {
