@@ -68,33 +68,35 @@ type RegisteredProof = int64
 
 // This ordering, defines mappings to UInt in a way which MUST never change.
 type RegisteredSealProof RegisteredProof
+
 const (
-	RegisteredSealProof_StackedDrg2KiBV1 = RegisteredSealProof(0);
-	RegisteredSealProof_StackedDrg8MiBV1 = RegisteredSealProof(1);
-	RegisteredSealProof_StackedDrg512MiBV1 = RegisteredSealProof(2);
-	RegisteredSealProof_StackedDrg32GiBV1 = RegisteredSealProof(3);
-	RegisteredSealProof_StackedDrg64GiBV1 = RegisteredSealProof(4);
+	RegisteredSealProof_StackedDrg2KiBV1   = RegisteredSealProof(0)
+	RegisteredSealProof_StackedDrg8MiBV1   = RegisteredSealProof(1)
+	RegisteredSealProof_StackedDrg512MiBV1 = RegisteredSealProof(2)
+	RegisteredSealProof_StackedDrg32GiBV1  = RegisteredSealProof(3)
+	RegisteredSealProof_StackedDrg64GiBV1  = RegisteredSealProof(4)
 )
 
 type RegisteredPoStProof RegisteredProof
-const(
- 	RegisteredPoStProof_StackedDrgWinning2KiBV1 = RegisteredPoStProof(0);
-   	RegisteredPoStProof_StackedDrgWinning8MiBV1 = RegisteredPoStProof(1);
-	RegisteredPoStProof_StackedDrgWinning512MiBV1 = RegisteredPoStProof(2);
-	RegisteredPoStProof_StackedDrgWinning32GiBV1 = RegisteredPoStProof(3);
-	RegisteredPoStProof_StackedDrgWinning64GiBV1 = RegisteredPoStProof(4);
-	RegisteredPoStProof_StackedDrgWindow2KiBV1 = RegisteredPoStProof(5);
-	RegisteredPoStProof_StackedDrgWindow8MiBV1 = RegisteredPoStProof(6);
-	RegisteredPoStProof_StackedDrgWindow512MiBV1 = RegisteredPoStProof(7);
-	RegisteredPoStProof_StackedDrgWindow32GiBV1 = RegisteredPoStProof(8);
-	RegisteredPoStProof_StackedDrgWindow64GiBV1 = RegisteredPoStProof(9);
+
+const (
+	RegisteredPoStProof_StackedDrgWinning2KiBV1   = RegisteredPoStProof(0)
+	RegisteredPoStProof_StackedDrgWinning8MiBV1   = RegisteredPoStProof(1)
+	RegisteredPoStProof_StackedDrgWinning512MiBV1 = RegisteredPoStProof(2)
+	RegisteredPoStProof_StackedDrgWinning32GiBV1  = RegisteredPoStProof(3)
+	RegisteredPoStProof_StackedDrgWinning64GiBV1  = RegisteredPoStProof(4)
+	RegisteredPoStProof_StackedDrgWindow2KiBV1    = RegisteredPoStProof(5)
+	RegisteredPoStProof_StackedDrgWindow8MiBV1    = RegisteredPoStProof(6)
+	RegisteredPoStProof_StackedDrgWindow512MiBV1  = RegisteredPoStProof(7)
+	RegisteredPoStProof_StackedDrgWindow32GiBV1   = RegisteredPoStProof(8)
+	RegisteredPoStProof_StackedDrgWindow64GiBV1   = RegisteredPoStProof(9)
 )
 
 func (p RegisteredPoStProof) RegisteredSealProof() (RegisteredSealProof, error) {
 	switch p {
- 	case RegisteredPoStProof_StackedDrgWinning2KiBV1, RegisteredPoStProof_StackedDrgWindow2KiBV1:
+	case RegisteredPoStProof_StackedDrgWinning2KiBV1, RegisteredPoStProof_StackedDrgWindow2KiBV1:
 		return RegisteredSealProof_StackedDrg2KiBV1, nil
-   	case RegisteredPoStProof_StackedDrgWinning8MiBV1, RegisteredPoStProof_StackedDrgWindow8MiBV1:
+	case RegisteredPoStProof_StackedDrgWinning8MiBV1, RegisteredPoStProof_StackedDrgWindow8MiBV1:
 		return RegisteredSealProof_StackedDrg8MiBV1, nil
 	case RegisteredPoStProof_StackedDrgWinning512MiBV1, RegisteredPoStProof_StackedDrgWindow512MiBV1:
 		return RegisteredSealProof_StackedDrg512MiBV1, nil
@@ -203,6 +205,14 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 	}
 }
 
+// SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
+func (p RegisteredSealProof) SectorMaximumLifetime() ChainEpoch {
+	// For all Stacked DRG sectors, the max is 5 years
+	epochsPerYear := 1_262_277
+	fiveYears := 5 * epochsPerYear
+	return ChainEpoch(fiveYears)
+}
+
 ///
 /// Sealing
 ///
@@ -212,7 +222,7 @@ type InteractiveSealRandomness Randomness
 
 // Information needed to verify a seal proof.
 type SealVerifyInfo struct {
-	SealProof             RegisteredSealProof
+	SealProof RegisteredSealProof
 	SectorID
 	DealIDs               []DealID
 	Randomness            SealRandomness
@@ -230,9 +240,9 @@ type PoStRandomness Randomness
 
 // Information about a sector necessary for PoSt verification.
 type SectorInfo struct {
-	SealProof       RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
-	SectorNumber    SectorNumber
-	SealedCID       cid.Cid // CommR
+	SealProof    RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
+	SectorNumber SectorNumber
+	SealedCID    cid.Cid // CommR
 }
 
 type PoStProof struct {
