@@ -618,20 +618,16 @@ func TestReportConsensusFault(t *testing.T) {
 	actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
 }
 func TestAddLockedFund(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
+
 	periodOffset := abi.ChainEpoch(1808)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodOffset))).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+	actor := newHarness(t, periodOffset)
+
+	builder := builderForHarness(actor).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
+
 	t.Run("funds vest", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, periodOffset)
+		actor.constructAndVerify(rt)
 		st := getState(rt)
 		store := rt.AdtStore()
 
@@ -661,7 +657,6 @@ func TestAddLockedFund(t *testing.T) {
 
 	})
 
-	// Inspect vesting schedule to see if the offset is respected
 }
 
 type actorHarness struct {
