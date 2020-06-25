@@ -194,8 +194,6 @@ func TestVesting(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 		actor.approveOK(rt, 0, proposalHashData, nil)
-		rt.Verify()
-
 	})
 
 	t.Run("partial vesting propose to send half the actor balance when the epoch is hald the unlock duration", func(t *testing.T) {
@@ -224,8 +222,6 @@ func TestVesting(t *testing.T) {
 		})
 
 		actor.approveOK(rt, 0, proposalHashData, nil)
-		rt.Verify()
-
 	})
 
 	t.Run("propose and autoapprove transaction above locked amount fails", func(t *testing.T) {
@@ -249,7 +245,6 @@ func TestVesting(t *testing.T) {
 		rt.ExpectSend(darlene, builtin.MethodSend, fakeParams, abi.NewTokenAmount(10), nil, 0)
 		actor.proposeOK(rt, darlene, abi.NewTokenAmount(10), builtin.MethodSend, fakeParams, nil)
 		rt.Verify()
-
 	})
 
 	t.Run("fail to vest more than locked amount", func(t *testing.T) {
@@ -371,10 +366,10 @@ func TestPropose(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			_ = actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		})
+		rt.Verify()
 
 		// proposal failed since it should have but failed to immediately execute.
 		actor.assertTransactions(rt)
-		rt.Verify()
 	})
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
@@ -391,10 +386,10 @@ func TestPropose(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			_ = actor.propose(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
 		})
+		rt.Verify()
 
 		// the transaction is not persisted
 		actor.assertTransactions(rt)
-		rt.Verify()
 	})
 }
 
@@ -450,7 +445,6 @@ func TestApprove(t *testing.T) {
 		})
 
 		actor.approveOK(rt, txnID, proposalHashData, nil)
-		rt.Verify()
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
@@ -491,8 +485,6 @@ func TestApprove(t *testing.T) {
 
 		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
-		rt.Verify()
-
 	})
 
 	t.Run("fail approval with bad proposal hash", func(t *testing.T) {
@@ -662,7 +654,6 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.approveOK(rt, txnID, proposalHash, nil)
-		rt.Verify()
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
@@ -685,9 +676,7 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
-
 		actor.approveOK(rt, txnID, proposalHash, nil)
-		rt.Verify()
 
 		// reduce the threshold so the transaction is already approved
 		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
@@ -701,7 +690,6 @@ func TestApprove(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.approveOK(rt, txnID, proposalHash, nil)
-		rt.Verify()
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
@@ -742,7 +730,6 @@ func TestApprove(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 		actor.approveOK(rt, txnID, proposalHash, nil)
-		rt.Verify()
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
@@ -1372,6 +1359,7 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Params: params,
 	}
 	ret := rt.Call(h.a.Propose, proposeParams)
+
 	proposeReturn, ok := ret.(*multisig.ProposeReturn)
 	if !ok {
 		h.t.Fatalf("unexpected type returned from call to Propose")
@@ -1407,6 +1395,7 @@ func (h *msActorHarness) proposeOK(rt *mock.Runtime, to addr.Address, value abi.
 func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
 	ret := rt.Call(h.a.Approve, approveParams)
+	rt.Verify()
 	approveReturn, ok := ret.(*multisig.ApproveReturn)
 	if !ok {
 		h.t.Fatalf("unexpected type returned from call to Approve")
