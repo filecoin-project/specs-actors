@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -23,6 +22,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
@@ -51,7 +51,6 @@ func TestExports(t *testing.T) {
 
 func TestConstruction(t *testing.T) {
 	actor := miner.Actor{}
-
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
@@ -117,23 +116,16 @@ func TestConstruction(t *testing.T) {
 
 // Tests for fetching and manipulating miner addresses.
 func TestControlAddresses(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(0)).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	actor := newHarness(t, 0)
+	builder := builderForHarness(actor)
 
 	t.Run("get addresses", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, miner.WPoStProvingPeriod)
+		actor.constructAndVerify(rt)
 
 		o, w := actor.controlAddresses(rt)
-		assert.Equal(t, owner, o)
-		assert.Equal(t, worker, w)
+		assert.Equal(t, actor.owner, o)
+		assert.Equal(t, actor.worker, w)
 	})
 
 	// TODO: test changing worker (with delay), changing peer id
@@ -142,25 +134,19 @@ func TestControlAddresses(t *testing.T) {
 
 // Test for sector precommitment and proving.
 func TestCommitments(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor)
+
 	networkPower := abi.NewStoragePower(1 << 50)
-	periodBoundary := abi.ChainEpoch(100)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodBoundary))).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("valid precommit then provecommit", func(t *testing.T) {
 		rt := builder.
 			WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
 			Build(t)
-		precommitEpoch := periodBoundary + 1
+		precommitEpoch := periodOffset + 1
 		rt.SetEpoch(precommitEpoch)
-		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
+		actor.constructAndVerify(rt)
 		st := getState(rt)
 		deadline := st.DeadlineInfo(precommitEpoch)
 
@@ -227,9 +213,9 @@ func TestCommitments(t *testing.T) {
 		rt := builder.
 			WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
 			Build(t)
-		precommitEpoch := periodBoundary + 1
+		precommitEpoch := periodOffset + 1
 		rt.SetEpoch(precommitEpoch)
-		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
+		actor.constructAndVerify(rt)
 		st := getState(rt)
 		deadline := st.DeadlineInfo(precommitEpoch)
 		challengeEpoch := precommitEpoch - 1
@@ -278,9 +264,9 @@ func TestCommitments(t *testing.T) {
 		rt := builder.
 			WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
 			Build(t)
-		precommitEpoch := periodBoundary + 1
+		precommitEpoch := periodOffset + 1
 		rt.SetEpoch(precommitEpoch)
-		actor.constructAndVerify(rt, periodBoundary+miner.WPoStProvingPeriod)
+		actor.constructAndVerify(rt)
 		st := getState(rt)
 		deadline := st.DeadlineInfo(precommitEpoch)
 
@@ -353,21 +339,14 @@ func TestCommitments(t *testing.T) {
 }
 
 func TestWindowPost(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
 	periodOffset := abi.ChainEpoch(100)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodOffset))).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	t.Run("test proof", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, periodOffset)
+		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
 		st := getState(rt)
@@ -429,21 +408,14 @@ func TestWindowPost(t *testing.T) {
 }
 
 func TestProvingPeriodCron(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
 	periodOffset := abi.ChainEpoch(100)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodOffset))).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	t.Run("empty periods", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, periodOffset)
+		actor.constructAndVerify(rt)
 		st := getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
@@ -464,7 +436,7 @@ func TestProvingPeriodCron(t *testing.T) {
 
 	t.Run("first period gets randomness from previous epoch", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, periodOffset)
+		actor.constructAndVerify(rt)
 		st := getState(rt)
 
 		sectorInfo := actor.commitAndProveSectors(rt, 1, periodOffset+100*miner.WPoStProvingPeriod-1, 1<<50, nil)
@@ -497,22 +469,15 @@ func TestProvingPeriodCron(t *testing.T) {
 }
 
 func TestDeclareFaults(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
 	periodOffset := abi.ChainEpoch(100)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodOffset))).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	t.Run("declare fault pays fee", func(t *testing.T) {
 		// Get sector into proving state
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt, periodOffset)
+		actor.constructAndVerify(rt)
 		expiration := 100*miner.WPoStProvingPeriod + periodOffset - 1
 		sectorNumber := actor.nextSectorNo
 		actor.commitAndProveSectors(rt, 1, expiration, 1<<50, nil)
@@ -542,20 +507,13 @@ func TestDeclareFaults(t *testing.T) {
 }
 
 func TestExtendSectorExpiration(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
 	periodOffset := abi.ChainEpoch(100)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodOffset))).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
-		actor.constructAndVerify(rt, periodOffset)
+		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
 		st := getState(rt)
@@ -638,20 +596,13 @@ func TestExtendSectorExpiration(t *testing.T) {
 }
 
 func TestReportConsensusFault(t *testing.T) {
-	owner := tutil.NewIDAddr(t, 100)
-	worker := tutil.NewIDAddr(t, 101)
-	workerKey := tutil.NewBLSAddr(t, 0)
-	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
 	periodOffset := abi.ChainEpoch(100)
-	builder := mock.NewBuilder(context.Background(), actor.receiver).
-		WithActorType(owner, builtin.AccountActorCodeID).
-		WithActorType(worker, builtin.AccountActorCodeID).
-		WithHasher(fixedHasher(uint64(periodOffset))).
-		WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0)).
-		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(abi.NewTokenAmount(1<<50), abi.NewTokenAmount(0))
 
 	rt := builder.Build(t)
-	actor.constructAndVerify(rt, periodOffset)
+	actor.constructAndVerify(rt)
 	precommitEpoch := abi.ChainEpoch(1)
 	rt.SetEpoch(precommitEpoch)
 	st := getState(rt)
@@ -684,19 +635,33 @@ type actorHarness struct {
 	worker   addr.Address
 	key      addr.Address
 
+	periodOffset abi.ChainEpoch
 	nextSectorNo abi.SectorNumber
 
 	epochReward   abi.TokenAmount
 	networkPledge abi.TokenAmount
 }
 
-func newHarness(t testing.TB, receiver, owner, worker, key addr.Address) *actorHarness {
+func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
+	owner := tutil.NewIDAddr(t, 100)
+	worker := tutil.NewIDAddr(t, 101)
+	workerKey := tutil.NewBLSAddr(t, 0)
+	receiver := tutil.NewIDAddr(t, 1000)
 	reward := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
-	return &actorHarness{miner.Actor{}, t, receiver, owner, worker, key,
-		100, reward, big.Mul(reward, big.NewIntUnsigned(1000))}
+	return &actorHarness{
+		t:             t,
+		receiver:      receiver,
+		owner:         owner,
+		worker:        worker,
+		key:           workerKey,
+		periodOffset:  provingPeriodOffset,
+		nextSectorNo:  100,
+		epochReward:   reward,
+		networkPledge: big.Mul(reward, big.NewIntUnsigned(1000)),
+	}
 }
 
-func (h *actorHarness) constructAndVerify(rt *mock.Runtime, provingPeriodStart abi.ChainEpoch) {
+func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 	params := miner.ConstructorParams{
 		OwnerAddr:     h.owner,
 		WorkerAddr:    h.worker,
@@ -708,8 +673,13 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime, provingPeriodStart a
 	// Fetch worker pubkey.
 	rt.ExpectSend(h.worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 	// Register proving period cron.
+	nextProvingPeriodEnd := h.periodOffset - 1
+	for nextProvingPeriodEnd < rt.Epoch() {
+		nextProvingPeriodEnd += miner.WPoStProvingPeriod
+	}
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeProvingPeriodCronEventParams(h.t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronEventParams(h.t, nextProvingPeriodEnd), big.Zero(), nil, exitcode.Ok)
+	rt.SetCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 	ret := rt.Call(h.a.Constructor, &params)
 	assert.Nil(h.t, ret)
 	rt.Verify()
@@ -1137,6 +1107,13 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment 
 		EventType: miner.CronEventProvingPeriod,
 	})
 	rt.Verify()
+}
+
+func builderForHarness(actor *actorHarness) *mock.RuntimeBuilder {
+	return mock.NewBuilder(context.Background(), actor.receiver).
+		WithActorType(actor.owner, builtin.AccountActorCodeID).
+		WithActorType(actor.worker, builtin.AccountActorCodeID).
+		WithHasher(fixedHasher(uint64(actor.periodOffset)))
 }
 
 func getState(rt *mock.Runtime) *miner.State {
