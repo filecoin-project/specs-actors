@@ -303,7 +303,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty: %s")
 
 		if !empty {
-			sectorsByNumber := map[abi.SectorNumber]*SectorOnChainInfo{}
+			sectorsByNumber := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectorInfos))
 			for _, s := range sectorInfos {
 				sectorsByNumber[s.SectorNumber] = s
 			}
