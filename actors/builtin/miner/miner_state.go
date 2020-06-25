@@ -1079,7 +1079,12 @@ func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch, offsetSeed abi.ChainEpoch
 
 	remainder := (e - offset) % unit
 	quotient := (e - offset) / unit
+	// Don't round if epoch falls on a quantization epoch
 	if remainder == 0 {
+		return unit*quotient + offset
+	}
+	// Negative truncating division rounds up
+	if e-offset < 0 {
 		return unit*quotient + offset
 	}
 	return unit*(quotient+1) + offset
