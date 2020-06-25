@@ -249,14 +249,24 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Expires before current epoch
-		rt.SetEpoch(deadline.PeriodEnd() + 1)
+		expiration := deadline.PeriodEnd()
+		rt.SetEpoch(expiration + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(112, challengeEpoch, deadline.PeriodEnd(), nil), networkPower)
 		})
 		rt.Reset()
 
 		// Expires not on period end
+		expiration = deadline.PeriodEnd() - 1
 		rt.SetEpoch(precommitEpoch)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, makePreCommit(113, challengeEpoch, expiration, nil), networkPower)
+		})
+		rt.Reset()
+
+		// Errors when expiry too far in the future
+		rt.SetEpoch(precommitEpoch)
+		expiration = deadline.PeriodEnd() + miner.WPoStProvingPeriod*(miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod+1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, makePreCommit(113, challengeEpoch, deadline.PeriodEnd()-1, nil), networkPower)
 		})
@@ -589,6 +599,55 @@ func TestExtendSectorExpiration(t *testing.T) {
 		params := &miner.ExtendSectorExpirationParams{
 			SectorNumber:  sector.SectorNumber,
 			NewExpiration: newExpiration,
+		}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.extendSector(rt, sector, extension, params)
+		})
+	})
+
+	t.Run("rejects extension too far in future", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
+		// extend by even proving period after max
+		rt.SetEpoch(sector.Expiration)
+		extension := miner.WPoStProvingPeriod * (miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod + 1)
+		newExpiration := rt.Epoch() + extension
+		params := &miner.ExtendSectorExpirationParams{
+			SectorNumber:  sector.SectorNumber,
+			NewExpiration: newExpiration,
+		}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.extendSector(rt, sector, extension, params)
+		})
+	})
+
+	t.Run("rejects extension past max for seal proof", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+		rt.SetEpoch(sector.Expiration)
+
+		maxLifetime := sector.SealProof.SectorMaximumLifetime()
+
+		// extend sector until just below threshold
+		extension := miner.WPoStProvingPeriod * (miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod - 1)
+		expiration := rt.Epoch() + extension
+		for ; expiration-sector.Activation < maxLifetime; expiration += extension {
+			params := &miner.ExtendSectorExpirationParams{
+				SectorNumber:  sector.SectorNumber,
+				NewExpiration: expiration,
+			}
+
+			actor.extendSector(rt, sector, extension, params)
+			rt.SetEpoch(expiration)
+		}
+
+		// next extension fails because it extends sector past max lifetime
+		params := &miner.ExtendSectorExpirationParams{
+			SectorNumber:  sector.SectorNumber,
+			NewExpiration: expiration,
 		}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
