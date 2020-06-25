@@ -622,14 +622,14 @@ func TestAddLockedFund(t *testing.T) {
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
 	actor := newHarness(t, tutil.NewIDAddr(t, 1000), owner, worker, workerKey)
-	periodOffset := abi.ChainEpoch(99)
+	periodOffset := abi.ChainEpoch(1808)
 	builder := mock.NewBuilder(context.Background(), actor.receiver).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
 		WithHasher(fixedHasher(uint64(periodOffset))).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
-	t.Run("funds vested with offset", func(t *testing.T) {
+	t.Run("funds vest", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt, periodOffset)
 		st := getState(rt)
@@ -639,6 +639,7 @@ func TestAddLockedFund(t *testing.T) {
 		vestingFunds, err := adt.AsArray(store, st.VestingFunds)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(0), vestingFunds.Length())
+		assert.Equal(t, big.Zero(), st.LockedFunds)
 
 		// Lock some funds with AddLockedFund
 		amt := abi.NewTokenAmount(600_000)
@@ -650,11 +651,14 @@ func TestAddLockedFund(t *testing.T) {
 
 		// Vested FIL pays out on epochs with expected offset
 		lockedEntry := abi.NewTokenAmount(0)
+		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
 		err = newVestingFunds.ForEach(&lockedEntry, func(k int64) error {
-			assert.Equal(t, int64(periodOffset), k % int64(miner.PledgeVestingSpec.Quantization))
+			assert.Equal(t, int64(expectedOffset), k % int64(miner.PledgeVestingSpec.Quantization))
 			return nil
 		})
 		require.NoError(t, err)
+		assert.Equal(t, amt, st.LockedFunds)
+
 	})
 
 	// Inspect vesting schedule to see if the offset is respected
