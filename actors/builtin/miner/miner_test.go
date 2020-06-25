@@ -341,26 +341,24 @@ func TestCommitments(t *testing.T) {
 func TestWindowPost(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
+	precommitEpoch := abi.ChainEpoch(1)
 	builder := builderForHarness(actor).
+		WithEpoch(precommitEpoch).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	t.Run("test proof", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		precommitEpoch := abi.ChainEpoch(1)
-		rt.SetEpoch(precommitEpoch)
 		st := getState(rt)
 		store := rt.AdtStore()
 		partitionSize := st.Info.WindowPoStPartitionSectors
-		deadline := st.DeadlineInfo(rt.Epoch())
-		expiration := deadline.PeriodEnd() + 100*miner.WPoStProvingPeriod
-		_ = actor.commitAndProveSectors(rt, 1, expiration, 1<<50, nil)
+		_ = actor.commitAndProveSectors(rt, 1, 100, 1<<50, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
-		deadline = st.DeadlineInfo(rt.Epoch())
+		deadline := st.DeadlineInfo(rt.Epoch())
 		rt.SetEpoch(deadline.PeriodEnd())
 		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, nextCron, true, rt.Epoch()-miner.ElectionLookback)
+		actor.onProvingPeriodCron(rt, nextCron, true)
 		st = getState(rt)
 		rt.SetEpoch(deadline.NextPeriodStart())
 
@@ -422,13 +420,13 @@ func TestProvingPeriodCron(t *testing.T) {
 		// First cron invocation just before the first proving period starts.
 		rt.SetEpoch(periodOffset - 1)
 		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, secondCronEpoch, false, 0)
+		actor.onProvingPeriodCron(rt, secondCronEpoch, false)
 		// The proving period start isn't changed, because the period hadn't started yet.
 		st = getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
 		rt.SetEpoch(secondCronEpoch)
-		actor.onProvingPeriodCron(rt, periodOffset+2*miner.WPoStProvingPeriod-1, false, 0)
+		actor.onProvingPeriodCron(rt, periodOffset+2*miner.WPoStProvingPeriod-1, false)
 		// Proving period moves forward
 		st = getState(rt)
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
@@ -439,7 +437,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		actor.constructAndVerify(rt)
 		st := getState(rt)
 
-		sectorInfo := actor.commitAndProveSectors(rt, 1, periodOffset+100*miner.WPoStProvingPeriod-1, 1<<50, nil)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, 100, 1<<50, nil)
 
 		// Flag new sectors to trigger request for randomness
 		rt.Transaction(st, func() interface{} {
@@ -451,7 +449,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		// requires randomness come from current epoch minus lookback
 		rt.SetEpoch(periodOffset - 1)
 		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, secondCronEpoch, true, rt.Epoch()-miner.ElectionLookback)
+		actor.onProvingPeriodCron(rt, secondCronEpoch, true)
 
 		// cron invocation after the proving period starts, requires randomness come from end of proving period
 		rt.SetEpoch(periodOffset)
@@ -464,8 +462,10 @@ func TestProvingPeriodCron(t *testing.T) {
 		})
 
 		thirdCronEpoch := secondCronEpoch + miner.WPoStProvingPeriod
-		actor.onProvingPeriodCron(rt, thirdCronEpoch, true, getState(rt).DeadlineInfo(rt.Epoch()).PeriodEnd())
+		actor.onProvingPeriodCron(rt, thirdCronEpoch, true)
 	})
+
+	// TODO: test cron being called one epoch late because the scheduled epoch had no blocks.
 }
 
 func TestDeclareFaults(t *testing.T) {
@@ -478,19 +478,17 @@ func TestDeclareFaults(t *testing.T) {
 		// Get sector into proving state
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		expiration := 100*miner.WPoStProvingPeriod + periodOffset - 1
-		sectorNumber := actor.nextSectorNo
-		actor.commitAndProveSectors(rt, 1, expiration, 1<<50, nil)
+		precommits := actor.commitAndProveSectors(rt, 1, 100, 1<<50, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
 		st := getState(rt)
 		deadline := st.DeadlineInfo(rt.Epoch())
 		rt.SetEpoch(deadline.PeriodEnd())
 		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, nextCron, true, rt.Epoch()-miner.ElectionLookback)
+		actor.onProvingPeriodCron(rt, nextCron, true)
 		st = getState(rt)
 		rt.SetEpoch(deadline.NextPeriodStart())
-		info, found, err := st.GetSector(rt.AdtStore(), sectorNumber)
+		info, found, err := st.GetSector(rt.AdtStore(), precommits[0].SectorNumber)
 		require.NoError(t, err)
 		require.True(t, found)
 
@@ -509,17 +507,14 @@ func TestDeclareFaults(t *testing.T) {
 func TestExtendSectorExpiration(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
+	precommitEpoch := abi.ChainEpoch(1)
 	builder := builderForHarness(actor).
+		WithEpoch(precommitEpoch).
 		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
 
 	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
 		actor.constructAndVerify(rt)
-		precommitEpoch := abi.ChainEpoch(1)
-		rt.SetEpoch(precommitEpoch)
-		st := getState(rt)
-		deadline := st.DeadlineInfo(rt.Epoch())
-		expiration := deadline.PeriodEnd() + 100*miner.WPoStProvingPeriod
-		sectorInfo := actor.commitAndProveSectors(rt, 1, expiration, 0, nil)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, 100, 0, nil)
 
 		sector, found, err := getState(rt).GetSector(rt.AdtStore(), sectorInfo[0].SectorNumber)
 		require.NoError(t, err)
@@ -564,7 +559,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		oldSector := commitSector(t, rt)
 
 		extension := 42 * miner.WPoStProvingPeriod
-		newExpiration := oldSector.Expiration + abi.ChainEpoch(extension)
+		newExpiration := oldSector.Expiration + extension
 		params := &miner.ExtendSectorExpirationParams{
 			SectorNumber:  oldSector.SectorNumber,
 			NewExpiration: newExpiration,
@@ -605,11 +600,8 @@ func TestReportConsensusFault(t *testing.T) {
 	actor.constructAndVerify(rt)
 	precommitEpoch := abi.ChainEpoch(1)
 	rt.SetEpoch(precommitEpoch)
-	st := getState(rt)
-	deadline := st.DeadlineInfo(rt.Epoch())
-	expiration := deadline.PeriodEnd() + 10*miner.WPoStProvingPeriod
 	dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
-	sectorInfo := actor.commitAndProveSectors(rt, 2, expiration, 1<<50, dealIDs)
+	sectorInfo := actor.commitAndProveSectors(rt, 2, 10, 1<<50, dealIDs)
 	_ = sectorInfo
 
 	params := &miner.ReportConsensusFaultParams{
@@ -842,12 +834,17 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 }
 
 // Pre-commits and then proves a number of sectors.
+// The sectors will expire at the end of  lifetimePeriods proving periods after now.
 // The runtime epoch will be moved forward to the epoch of commitment proofs.
-func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, expiration abi.ChainEpoch, networkPower uint64, dealIDs [][]abi.DealID) []*miner.SectorPreCommitInfo {
+func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePeriods uint64, networkPower uint64, dealIDs [][]abi.DealID) []*miner.SectorPreCommitInfo {
 	precommitEpoch := rt.Epoch()
-	precommits := make([]*miner.SectorPreCommitInfo, n)
+
+	st := getState(rt)
+	deadline := st.DeadlineInfo(rt.Epoch())
+	expiration := deadline.PeriodEnd() + abi.ChainEpoch(lifetimePeriods)*miner.WPoStProvingPeriod
 
 	// Precommit
+	precommits := make([]*miner.SectorPreCommitInfo, n)
 	for i := 0; i < n; i++ {
 		sectorNo := h.nextSectorNo
 		var sectorDealIDs []abi.DealID
@@ -864,7 +861,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, expiration
 
 	// Ensure this this doesn't cross a proving period boundary, else the expected cron call won't be
 	// invoked, which might mess things up later.
-	deadline := getState(rt).DeadlineInfo(rt.Epoch())
+	deadline = getState(rt).DeadlineInfo(rt.Epoch())
 	require.True(h.t, !deadline.PeriodElapsed())
 
 	for _, pc := range precommits {
@@ -1033,6 +1030,9 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 		rt.SetEpoch(deadline.Close + 1)
 		deadline = st.DeadlineInfo(rt.Epoch())
 	}
+	// Rewind one epoch to leave the current epoch as the penultimate one in the proving period,
+	// ready for proving-period cron.
+	rt.SetEpoch(rt.Epoch() - 1)
 }
 
 func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension abi.ChainEpoch, params *miner.ExtendSectorExpirationParams) {
@@ -1087,9 +1087,10 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	rt.Verify()
 }
 
-func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool, randEpoch abi.ChainEpoch) {
+func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	if newSectors {
+		randEpoch := rt.Epoch()-miner.ElectionLookback
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randEpoch, nil, bytes.Repeat([]byte{0}, 32))
 	}
 	// Re-enrollment for next period.
