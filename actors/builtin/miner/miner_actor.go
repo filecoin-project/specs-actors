@@ -1382,6 +1382,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			rt.Abortf(exitcode.ErrIllegalState, "failed to expand faults")
 		}
 
+		pledgeToRemove := abi.NewTokenAmount(0)
 		err = sectorNos.ForEach(func(sectorNo uint64) error {
 			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNo))
 			if err != nil {
@@ -1398,9 +1399,14 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			if fault {
 				faultySectors = append(faultySectors, sector)
 			}
+
+			pledgeToRemove = big.Add(pledgeToRemove, sector.InitialPledge)
 			return nil
 		})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector metadata")
+
+		// lower initial pledge requirement
+		st.AddInitialPledge(pledgeToRemove.Neg())
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1433,11 +1439,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 
 // Removes a group sectors from the sector set and its number from all sector collections in state.
 func removeTerminatedSectors(st *State, store adt.Store, deadlines *Deadlines, sectors *abi.BitField) error {
-	err := st.DeductPledges(store, sectors)
-	if err != nil {
-		return err
-	}
-	err = st.DeleteSectors(store, sectors)
+	err := st.DeleteSectors(store, sectors)
 	if err != nil {
 		return err
 	}

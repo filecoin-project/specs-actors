@@ -323,20 +323,6 @@ func (st *State) DeleteSectors(store adt.Store, sectorNos *abi.BitField) error {
 	return err
 }
 
-func (st *State) DeductPledges(store adt.Store, sectorNos *abi.BitField) error {
-	return sectorNos.ForEach(func(sectorNo uint64) error {
-		sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNo))
-		if err != nil {
-			return errors.Wrapf(err, "failed to get sector to deduct pledge %v", sectorNo)
-		}
-		if !found {
-			return errors.Errorf("failed to find sector to deduct pledge %v", sectorNo)
-		}
-		st.InitialPledgeRequirement = big.Sub(st.InitialPledgeRequirement, sector.InitialPledge)
-		return nil
-	})
-}
-
 func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
 	sectors, err := adt.AsArray(store, st.Sectors)
 	if err != nil {
