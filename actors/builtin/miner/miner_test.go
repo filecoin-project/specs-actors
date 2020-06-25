@@ -192,7 +192,7 @@ func TestCommitments(t *testing.T) {
 		// expect deposit to have been transferred to initial pledges
 		expectedInitialPledge := expectedDeposit
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
-		assert.Equal(t, expectedInitialPledge, st.InitialPledges)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
 		// expect new onchain sector
 		onChainSector, found, err := st.GetSector(rt.AdtStore(), sectorNo)
@@ -662,7 +662,7 @@ func TestTerminateSectors(t *testing.T) {
 		assert.False(t, found)
 
 		// expect pledged funds to have been decremented
-		assert.Equal(t, big.Zero(), st.InitialPledges)
+		assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
 	})
 }
 

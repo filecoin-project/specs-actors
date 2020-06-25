@@ -33,11 +33,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.InitialPledges (big.Int) (struct)
-	if err := t.InitialPledges.MarshalCBOR(w); err != nil {
-		return err
-	}
-
 	// t.LockedFunds (big.Int) (struct)
 	if err := t.LockedFunds.MarshalCBOR(w); err != nil {
 		return err
@@ -47,6 +42,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCid(w, t.VestingFunds); err != nil {
 		return xerrors.Errorf("failed to write cid field t.VestingFunds: %w", err)
+	}
+
+	// t.InitialPledgeRequirement (big.Int) (struct)
+	if err := t.InitialPledgeRequirement.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.PreCommittedSectors (cid.Cid) (struct)
@@ -152,15 +152,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.InitialPledges (big.Int) (struct)
-
-	{
-
-		if err := t.InitialPledges.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.InitialPledges: %w", err)
-		}
-
-	}
 	// t.LockedFunds (big.Int) (struct)
 
 	{
@@ -180,6 +171,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.VestingFunds = c
+
+	}
+	// t.InitialPledgeRequirement (big.Int) (struct)
+
+	{
+
+		if err := t.InitialPledgeRequirement.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.InitialPledgeRequirement: %w", err)
+		}
 
 	}
 	// t.PreCommittedSectors (cid.Cid) (struct)

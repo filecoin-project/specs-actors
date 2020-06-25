@@ -1694,8 +1694,8 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
-	if st.LockedFunds.LessThan(st.InitialPledges) {
-		rt.Abortf(exitcode.ErrIllegalState, "locked funds insufficient to cover initial pledges (%v < %v)", st.LockedFunds, st.InitialPledges)
+	if st.LockedFunds.LessThan(st.InitialPledgeRequirement) {
+		rt.Abortf(exitcode.ErrIllegalState, "locked funds insufficient to cover initial pledges (%v < %v)", st.LockedFunds, st.InitialPledgeRequirement)
 	}
 }
 
