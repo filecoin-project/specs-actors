@@ -88,13 +88,15 @@ func TestConstruction(t *testing.T) {
 
 		var st miner.State
 		rt.GetState(&st)
-		assert.Equal(t, params.OwnerAddr, st.Info.Owner)
-		assert.Equal(t, params.WorkerAddr, st.Info.Worker)
-		assert.Equal(t, params.PeerId, st.Info.PeerId)
-		assert.Equal(t, params.Multiaddrs, st.Info.Multiaddrs)
-		assert.Equal(t, abi.RegisteredSealProof_StackedDrg2KiBV1, st.Info.SealProofType)
-		assert.Equal(t, abi.SectorSize(2048), st.Info.SectorSize)
-		assert.Equal(t, uint64(2), st.Info.WindowPoStPartitionSectors)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		assert.Equal(t, params.OwnerAddr, info.Owner)
+		assert.Equal(t, params.WorkerAddr, info.Worker)
+		assert.Equal(t, params.PeerId, info.PeerId)
+		assert.Equal(t, params.Multiaddrs, info.Multiaddrs)
+		assert.Equal(t, abi.RegisteredSealProof_StackedDrg2KiBV1, info.SealProofType)
+		assert.Equal(t, abi.SectorSize(2048), info.SectorSize)
+		assert.Equal(t, uint64(2), info.WindowPoStPartitionSectors)
 		assert.Equal(t, provingPeriodStart, st.ProvingPeriodStart)
 
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
@@ -565,6 +567,10 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
+		st := getState(rt)
+		info, err := st.GetInfo(store)
+		require.NoError(t, err)
+		partitionSize := info.WindowPoStPartitionSectors
 		_ = actor.commitAndProveSectors(rt, 1, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
@@ -572,9 +578,7 @@ func TestWindowPost(t *testing.T) {
 		rt.SetEpoch(deadline.PeriodEnd())
 		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
 		actor.onProvingPeriodCron(rt, nextCron, true, nil, nil)
-		st := getState(rt)
 		rt.SetEpoch(deadline.NextPeriodStart())
-		partitionSize := st.Info.WindowPoStPartitionSectors
 
 		// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
 		// Submit a window post for all partitions due at each deadline when necessary.
@@ -643,8 +647,11 @@ func TestProveCommit(t *testing.T) {
 		st := getState(rt)
 		st.LockedFunds = big.Div(st.LockedFunds, big.NewInt(2))
 		rt.ReplaceState(st)
+		store :=  rt.AdtStore()
+		info, err := st.GetInfo(store)
+		require.NoError(t, err)
 
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[st.Info.SealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 		})
@@ -1463,7 +1470,9 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, totalQAPower abi.StorageP
 func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 	st := getState(rt)
 	store := rt.AdtStore()
-	partitionSize := st.Info.WindowPoStPartitionSectors
+	info, err := st.GetInfo(store)
+	require.NoError(h.t, err)
+	partitionSize := info.WindowPoStPartitionSectors
 
 	// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
 	// Submit a window post for all partitions due at each deadline when necessary.
@@ -1507,9 +1516,11 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	st := getState(rt)
+	info, err := st.GetInfo(rt.AdtStore())
+	require.NoError(h.t, err)
 	newSector := *sector
 	newSector.Expiration += extension
-	qaDelta := big.Sub(miner.QAPowerForSector(st.Info.SectorSize, &newSector), miner.QAPowerForSector(st.Info.SectorSize, sector))
+	qaDelta := big.Sub(miner.QAPowerForSector(info.SectorSize, &newSector), miner.QAPowerForSector(info.SectorSize, sector))
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,
