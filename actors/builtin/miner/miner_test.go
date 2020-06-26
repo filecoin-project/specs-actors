@@ -702,7 +702,8 @@ func TestTerminateSectors(t *testing.T) {
 		sectorSize, err := sector.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorPower := miner.QAPowerForSector(sectorSize, sector)
-		expectedFee := miner.PledgePenaltyForTermination(sector, rt.Epoch(), actor.epochReward, actor.networkQAPower, sectorPower)
+		sectorAge := rt.Epoch() - sector.Activation
+		expectedFee := miner.PledgePenaltyForTermination(sector.InitialPledge, sectorAge, actor.epochReward, actor.networkQAPower, sectorPower)
 
 		sectors := bitfield.New()
 		sectors.Set(uint64(sector.SectorNumber))
