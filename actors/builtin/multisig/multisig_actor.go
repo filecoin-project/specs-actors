@@ -203,7 +203,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	})
 
 	// if the transaction already has enough approvers, execute it without "processing" this approval.
-	approved,ret, code := executeTransactionIfApproved(rt, st, params.ID, txn)
+	approved, ret, code := executeTransactionIfApproved(rt, st, params.ID, txn)
 	if !approved {
 		// if the transaction hasn't already been approved, let's "process" this approval
 		// and see if we can execute the transaction
@@ -391,7 +391,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 		return nil
 	})
 
-	return executeTransactionIfApproved(rt,st, txnID, txn)
+	return executeTransactionIfApproved(rt, st, txnID, txn)
 }
 
 func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
@@ -439,10 +439,12 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 		)
 		applied = true
 
-		// Pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails
-		// since it just copies the bytes.
-		if err := ret.Into(&out); err != nil {
-			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
+		if ret != nil {
+			// Pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails
+			// since it just copies the bytes.
+			if err := ret.Into(&out); err != nil {
+				rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
+			}
 		}
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
@@ -458,7 +460,7 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 }
 
 func isSigner(rt vmr.Runtime, st *State, address addr.Address) bool {
-	candidateResolved := resolve(rt,address)
+	candidateResolved := resolve(rt, address)
 
 	for _, ap := range st.Signers {
 		signerResolved := resolve(rt, ap)
