@@ -23,9 +23,10 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Info (miner.MinerInfo) (struct)
-	if err := t.Info.MarshalCBOR(w); err != nil {
-		return err
+	// t.Info (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.Info); err != nil {
+		return xerrors.Errorf("failed to write cid field t.Info: %w", err)
 	}
 
 	// t.PreCommitDeposits (big.Int) (struct)
@@ -134,13 +135,16 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Info (miner.MinerInfo) (struct)
+	// t.Info (cid.Cid) (struct)
 
 	{
 
-		if err := t.Info.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Info: %w", err)
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.Info: %w", err)
 		}
+
+		t.Info = c
 
 	}
 	// t.PreCommitDeposits (big.Int) (struct)

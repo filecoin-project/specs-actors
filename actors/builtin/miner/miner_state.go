@@ -22,9 +22,7 @@ import (
 // withdrawable or usable for pre-commit deposit or pledge lock-up.
 type State struct {
 	// Information not related to sectors.
-	// TODO: this should be a cid of the miner Info struct so it's not re-written when other fields change.
-	// https://github.com/filecoin-project/specs-actors/issues/422
-	Info MinerInfo
+	Info cid.Cid
 
 	PreCommitDeposits        abi.TokenAmount // Total funds locked as PreCommitDeposits
 	LockedFunds              abi.TokenAmount // Total unvested funds locked as pledge collateral
@@ -153,27 +151,10 @@ type SectorOnChainInfo struct {
 	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
 }
 
-func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, ownerAddr, workerAddr addr.Address,
-	peerId abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof, periodStart abi.ChainEpoch) (*State, error) {
-	sectorSize, err := sealProofType.SectorSize()
-	if err != nil {
-		return nil, fmt.Errorf("no sector size for seal proof type %d: %w", sealProofType, err)
-	}
-	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
-	if err != nil {
-		return nil, fmt.Errorf("no partition size for seal proof type %d: %w", sealProofType, err)
-	}
+func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, infoCid cid.Cid, periodStart abi.ChainEpoch) (*State, error) {
+
 	return &State{
-		Info: MinerInfo{
-			Owner:                      ownerAddr,
-			Worker:                     workerAddr,
-			PendingWorkerKey:           nil,
-			PeerId:                     peerId,
-			Multiaddrs:                 multiaddrs,
-			SealProofType:              sealProofType,
-			SectorSize:                 sectorSize,
-			WindowPoStPartitionSectors: partitionSectors,
-		},
+		Info: infoCid,
 
 		PreCommitDeposits:        abi.NewTokenAmount(0),
 		LockedFunds:              abi.NewTokenAmount(0),
@@ -193,12 +174,37 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, owner
 	}, nil
 }
 
-func (st *State) GetWorker() addr.Address {
-	return st.Info.Worker
+func (st *State) GetInfo(store adt.Store) (*MinerInfo, error) {
+	var info MinerInfo
+	if err := store.Get(store.Context(), st.Info, &info); err != nil {
+		return nil, errors.Wrapf(err, "failed to get miner info")
+	}
+	return &info, nil
 }
 
-func (st *State) GetSectorSize() abi.SectorSize {
-	return st.Info.SectorSize
+func (st *State) SaveInfo(store adt.Store, info *MinerInfo) error {
+	c, err := store.Put(store.Context(), info)
+	if err != nil {
+		return err
+	}
+	st.Info = c
+	return nil
+}
+
+func (st *State) GetWorker(store adt.Store) (addr.Address, error) {
+	info, err := st.GetInfo(store)
+	if err != nil {
+		return addr.Undef, errors.Wrapf(err, "failed to get miner info")
+	}
+	return info.Worker, nil
+}
+
+func (st *State) GetSectorSize(store adt.Store) (abi.SectorSize, error) {
+	info, err := st.GetInfo(store)
+	if err != nil {
+		return abi.SectorSize(0), err
+	}
+	return info.SectorSize, nil
 }
 
 // Returns deadline calculations for the current proving period.
