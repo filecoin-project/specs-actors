@@ -875,10 +875,9 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	// Nothing unlocks here, this is just the start of the clock.
 	vestBegin := currEpoch + spec.InitialDelay
 	vestPeriod := big.NewInt(int64(spec.VestPeriod))
-
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quantizeUp(e, spec.Quantization)
+		vestEpoch := quantizeUp(e, spec.Quantization, st.ProvingPeriodStart)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign
@@ -1080,14 +1079,26 @@ func deleteMany(arr *adt.Array, keys []uint64) error {
 	return nil
 }
 
-// Rounds e to the nearest exact multiple of the quantization unit, rounding up.
+// Rounds e to the nearest exact multiple of the quantization unit offset by
+// offsetSeed % unit, rounding up.
+// This function is equivalent to `unit * ceil(e - (offsetSeed % unit) / unit) + (offsetSeed % unit)`
+// with the variables/operations are over real numbers instead of ints.
 // Precondition: unit >= 0 else behaviour is undefined
-func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch) abi.ChainEpoch {
-	remainder := e % unit
+func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch, offsetSeed abi.ChainEpoch) abi.ChainEpoch {
+	offset := offsetSeed % unit
+
+	remainder := (e - offset) % unit
+	quotient := (e - offset) / unit
+	// Don't round if epoch falls on a quantization epoch
 	if remainder == 0 {
-		return e
+		return unit*quotient + offset
 	}
-	return e - remainder + unit
+	// Negative truncating division rounds up
+	if e-offset < 0 {
+		return unit*quotient + offset
+	}
+	return unit*(quotient+1) + offset
+
 }
 
 func SectorKey(e abi.SectorNumber) adt.Keyer {

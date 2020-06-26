@@ -784,6 +784,47 @@ func TestReportConsensusFault(t *testing.T) {
 	}
 	actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
 }
+func TestAddLockedFund(t *testing.T) {
+
+	periodOffset := abi.ChainEpoch(1808)
+	actor := newHarness(t, periodOffset)
+
+	builder := builderForHarness(actor).
+		WithBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)), big.Zero())
+
+	t.Run("funds vest", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		st := getState(rt)
+		store := rt.AdtStore()
+
+		// Nothing vesting to start
+		vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(0), vestingFunds.Length())
+		assert.Equal(t, big.Zero(), st.LockedFunds)
+
+		// Lock some funds with AddLockedFund
+		amt := abi.NewTokenAmount(600_000)
+		actor.addLockedFund(rt, &amt)
+		st = getState(rt)
+		newVestingFunds, err := adt.AsArray(store, st.VestingFunds)
+		require.NoError(t, err)
+		require.Equal(t, uint64(7), newVestingFunds.Length()) // 1 day steps over 1 week
+
+		// Vested FIL pays out on epochs with expected offset
+		lockedEntry := abi.NewTokenAmount(0)
+		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
+		err = newVestingFunds.ForEach(&lockedEntry, func(k int64) error {
+			assert.Equal(t, int64(expectedOffset), k % int64(miner.PledgeVestingSpec.Quantization))
+			return nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, amt, st.LockedFunds)
+
+	})
+
+}
 
 type actorHarness struct {
 	a miner.Actor
@@ -1295,6 +1336,22 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 
 	rt.Call(h.a.ReportConsensusFault, params)
 	rt.Verify()
+}
+
+func (h *actorHarness) addLockedFund(rt *mock.Runtime, amt *abi.TokenAmount) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner, builtin.RewardActorAddr)
+	// expect pledge update
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.UpdatePledgeTotal,
+		amt,
+		abi.NewTokenAmount(0),
+		nil,
+		exitcode.Ok,
+	)
+
+	rt.Call(h.a.AddLockedFund, amt)
 }
 
 func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool) {
