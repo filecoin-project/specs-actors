@@ -1858,7 +1858,8 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 		info.Worker = info.PendingWorkerKey.NewWorker
 		info.PendingWorkerKey = nil
-		st.SaveInfo(adt.AsStore(rt), info)
+		err = st.SaveInfo(adt.AsStore(rt), info)
+		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
 
 		return nil
 	})
