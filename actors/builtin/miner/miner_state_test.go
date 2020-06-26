@@ -1036,6 +1036,7 @@ func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.
 		Expiration:         sectorExpiration,
 		DealWeight:         weight,
 		VerifiedDealWeight: weight,
+		InitialPledge:      abi.NewTokenAmount(0),
 	}
 }
 
