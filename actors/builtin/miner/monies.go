@@ -43,8 +43,11 @@ func PledgePenaltyForUndeclaredFault(epochTargetReward abi.TokenAmount, networkQ
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
+// SectorAge is the time between now and the sector's activation.
 func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	// max(SP(t), InitialPledge + BR(StartEpoch)*min(SectorAgeInDays, 180)) where BR(StartEpoch)=InitialPledge/InitialPledgeFactor
+	// max(SP(t), IP + BR(StartEpoch)*min(SectorAgeInDays, 180))
+	// where BR(StartEpoch)=IP/InitialPledgeFactor
+	// and sectorAgeInDays = sectorAge / EpochsInDay
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
 	return big.Max(
 		PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
@@ -52,7 +55,7 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 			initialPledge,
 			big.Div(
 				big.Mul(initialPledge, cappedSectorAge),
-				InitialPledgeFactor)))
+				big.Mul(InitialPledgeFactor, big.NewInt(builtin.EpochsInDay)))))
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
