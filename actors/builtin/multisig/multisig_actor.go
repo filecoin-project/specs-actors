@@ -377,7 +377,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
 		if previousApprover == rt.Message().Caller() {
-			rt.Abortf(exitcode.ErrIllegalState, "already approved this message")
+			rt.Abortf(exitcode.ErrForbidden, "%s already approved this message", previousApprover)
 		}
 	}
 
@@ -411,7 +411,7 @@ func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHas
 			rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
 		}
 		if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
-			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+			rt.Abortf(exitcode.ErrIllegalArgument, "hash does not match proposal params")
 		}
 	}
 
