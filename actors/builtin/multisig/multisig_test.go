@@ -518,7 +518,7 @@ func TestApprove(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
@@ -543,8 +543,7 @@ func TestApprove(t *testing.T) {
 
 		// anne is going to approve it twice and fail, poor anne.
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		// TODO replace with correct exit code when multisig actor breaks the AbortStateMsg pattern.
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       chuck,
 				Value:    sendValue,
