@@ -245,13 +245,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
-		// Verify locked funds are are at least the sum of sector initial pledges.
-		// Note that this call does not actually compute recent vesting, so the reported locked funds may be
-		// slightly higher than the true amount (i.e. slightly in the miner's favour).
-		// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
-		// Vesting will be at most one proving period old if computed in the cron callback.
-		verifyPledgeMeetsInitialRequirements(rt, &st)
-
 		// TODO WPOST (follow-up): process Skipped as faults
 		// https://github.com/filecoin-project/specs-actors/issues/410
 
@@ -360,7 +353,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 		}
 
-		validateExpiration(rt, &st, params.Expiration)
+		validateExpiration(rt, &st, rt.CurrEpoch(), params.Expiration, params.SealProof)
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
@@ -428,6 +421,13 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	store := adt.AsStore(rt)
 	var st State
 	rt.State().Readonly(&st)
+
+	// Verify locked funds are are at least the sum of sector initial pledges.
+	// Note that this call does not actually compute recent vesting, so the reported locked funds may be
+	// slightly higher than the true amount (i.e. slightly in the miner's favour).
+	// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
+	// Vesting will be at most one proving period old if computed in the cron callback.
+	verifyPledgeMeetsInitialRequirements(rt, &st)
 
 	sectorNo := params.SectorNumber
 	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
@@ -499,6 +499,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		)
 		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 
+		// initial pledge is precommit deposit
+		initialPledge := precommit.PreCommitDeposit
+
 		newSectorInfo := SectorOnChainInfo{
 			SectorNumber:       precommit.Info.SectorNumber,
 			SealProof:          precommit.Info.SealProof,
@@ -508,14 +511,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			Activation:         precommit.PreCommitEpoch,
 			DealWeight:         precommit.DealWeight,
 			VerifiedDealWeight: precommit.VerifiedDealWeight,
+			InitialPledge:      initialPledge,
 		}
 
 		// Request power for activated sector.
 		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
 		// https://github.com/filecoin-project/specs-actors/issues/475
 		requestUpdateSectorPower(rt, st.Info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
-
-		initialPledge := precommit.PreCommitDeposit
 
 		// Add sector and pledge lock-up to miner state
 		// TODO: do this all at once after the loop
@@ -528,9 +530,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
 			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
-
-			// Verify locked funds are are at least the sum of sector initial pledges.
-			verifyPledgeMeetsInitialRequirements(rt, &st)
+			st.AddInitialPledgeRequirement(initialPledge)
 
 			// Lock up initial pledge for new sector.
 			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
@@ -601,8 +601,6 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.Info.Worker)
 
-	validateExpiration(rt, &st, params.NewExpiration)
-
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
 	oldSector, found, err := st.GetSector(store, sectorNo)
@@ -614,6 +612,8 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration to %d from %d",
 			params.NewExpiration, oldSector.Expiration)
 	}
+
+	validateExpiration(rt, &st, oldSector.Activation, params.NewExpiration, oldSector.SealProof)
 
 	newSector := *oldSector
 	newSector.Expiration = params.NewExpiration
@@ -948,6 +948,10 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
+
+		// Verify locked funds are are at least the sum of sector initial pledges after vesting.
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
@@ -1236,7 +1240,20 @@ func computeFaultsFromMissingPoSts(st *State, deadlines *Deadlines, sinceDeadlin
 }
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
-func validateExpiration(rt Runtime, st *State, expiration abi.ChainEpoch) {
+func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
+	// expiration cannot exceed MaxSectorExpirationExtension from now
+	if expiration > rt.CurrEpoch()+MaxSectorExpirationExtension {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, cannot be more than %d past current epoch %d",
+			expiration, MaxSectorExpirationExtension, rt.CurrEpoch())
+	}
+
+	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
+	if expiration-activation > sealProof.SectorMaximumLifetime() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",
+			expiration, expiration-activation, sealProof.SectorMaximumLifetime(), activation)
+	}
+
+	// ensure expiration is one epoch before a proving period boundary
 	periodOffset := st.ProvingPeriodStart % WPoStProvingPeriod
 	expiryOffset := (expiration + 1) % WPoStProvingPeriod
 	if expiryOffset != periodOffset {
@@ -1378,6 +1395,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			rt.Abortf(exitcode.ErrIllegalState, "failed to expand faults")
 		}
 
+		pledgeRequirementToRemove := abi.NewTokenAmount(0)
 		err = sectorNos.ForEach(func(sectorNo uint64) error {
 			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNo))
 			if err != nil {
@@ -1394,9 +1412,14 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 			if fault {
 				faultySectors = append(faultySectors, sector)
 			}
+
+			pledgeRequirementToRemove = big.Add(pledgeRequirementToRemove, sector.InitialPledge)
 			return nil
 		})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector metadata")
+
+		// lower initial pledge requirement
+		st.AddInitialPledgeRequirement(pledgeRequirementToRemove.Neg())
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1686,8 +1709,9 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
-	// TODO WPOST (follow-up): implement this
-	// https://github.com/filecoin-project/specs-actors/issues/415
+	if st.LockedFunds.LessThan(st.InitialPledgeRequirement) {
+		rt.Abortf(exitcode.ErrIllegalState, "locked funds insufficient to cover initial pledges (%v < %v)", st.LockedFunds, st.InitialPledgeRequirement)
+	}
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.
@@ -1864,7 +1888,7 @@ func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoc
 	sectorSize := st.Info.SectorSize
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := pledgePenaltyForTermination(s, epochTargetReward, networkQAPower, sectorPower)
+		fee := PledgePenaltyForTermination(s.InitialPledge, curEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee, nil

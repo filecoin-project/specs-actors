@@ -89,10 +89,15 @@ const FaultDeclarationCutoff = WPoStChallengeLookback + 10
 const FaultMaxAge = WPoStProvingPeriod*14 - 1
 
 // Staging period for a miner worker key change.
-// Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Winow PoSts until
+// Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
 // it can be changed. It's the only safe value, though. We may implement a mitigation mechanism such as a second
 // key or allowing the owner account to submit PoSts while a key change is pending.
 const WorkerKeyChangeDelay = ChainFinality
+
+// Maximum number of epochs past the current epoch a sector may be set to expire.
+// The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
+// and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
+const MaxSectorExpirationExtension = builtin.EpochsInYear
 
 var QualityBaseMultiplier = big.NewInt(10)         // PARAM_FINISH
 var DealWeightMultiplier = big.NewInt(11)          // PARAM_FINISH

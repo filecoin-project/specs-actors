@@ -407,13 +407,14 @@ func TestPostSubmissionsBitfield(t *testing.T) {
 }
 
 func TestVesting_AddLockedFunds_Table(t *testing.T) {
-	vestStart := abi.ChainEpoch(10)
+	vestStartDelay := abi.ChainEpoch(10)
 	vestSum := int64(100)
 
 	testcase := []struct {
-		desc   string
-		vspec  *miner.VestSpec
-		vepocs []int64
+		desc        string
+		vspec       *miner.VestSpec
+		periodStart abi.ChainEpoch
+		vepocs      []int64
 	}{
 		{
 			desc: "vest funds in a single epoch",
@@ -543,10 +544,45 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 			},
 			vepocs: []int64{0, 0, 0, 0, 0, 0, 0, 20, 20, 20, 20, 20, 0},
 		},
+		{
+			desc: "vest funds with offset 0",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   10,
+				StepDuration: 2,
+				Quantization: 2,
+			},
+			vepocs: []int64{0, 0, 0, 20, 0, 20, 0, 20, 0, 20, 0, 20},
+		},
+		{
+			desc: "vest funds with offset 1",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   10,
+				StepDuration: 2,
+				Quantization: 2,
+			},
+			periodStart: abi.ChainEpoch(1),
+			// start epoch is at 11 instead of 10 so vepocs are shifted by one from above case
+			vepocs: []int64{0, 0, 0, 20, 0, 20, 0, 20, 0, 20, 0, 20},
+		},
+		{
+			desc: "vest funds with proving period start > quantization unit",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   10,
+				StepDuration: 2,
+				Quantization: 2,
+			},
+			// 55 % 2 = 1 so expect same vepocs with offset 1 as in previous case
+			periodStart: abi.ChainEpoch(55),
+			vepocs:      []int64{0, 0, 0, 20, 0, 20, 0, 20, 0, 20, 0, 20},
+		},
 	}
 	for _, tc := range testcase {
 		t.Run(tc.desc, func(t *testing.T) {
-			harness := constructStateHarness(t, abi.ChainEpoch(0))
+			harness := constructStateHarness(t, tc.periodStart)
+			vestStart := tc.periodStart + vestStartDelay
 
 			harness.addLockedFunds(vestStart, abi.NewTokenAmount(vestSum), tc.vspec)
 			assert.Equal(t, abi.NewTokenAmount(vestSum), harness.s.LockedFunds)
@@ -1000,6 +1036,7 @@ func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.
 		Expiration:         sectorExpiration,
 		DealWeight:         weight,
 		VerifiedDealWeight: weight,
+		InitialPledge:      abi.NewTokenAmount(0),
 	}
 }
 
