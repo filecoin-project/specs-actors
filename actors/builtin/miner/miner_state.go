@@ -121,12 +121,14 @@ type WorkerKeyChange struct {
 
 // Information provided by a miner when pre-committing a sector.
 type SectorPreCommitInfo struct {
-	SealProof     abi.RegisteredSealProof
-	SectorNumber  abi.SectorNumber
-	SealedCID     cid.Cid // CommR
-	SealRandEpoch abi.ChainEpoch
-	DealIDs       []abi.DealID
-	Expiration    abi.ChainEpoch
+	SealProof       abi.RegisteredSealProof
+	SectorNumber    abi.SectorNumber
+	SealedCID       cid.Cid // CommR
+	SealRandEpoch   abi.ChainEpoch
+	DealIDs         []abi.DealID
+	Expiration      abi.ChainEpoch
+	ReplaceCapacity bool             // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
+	ReplaceSector   abi.SectorNumber // The committed capacity sector to replace
 }
 
 // Information stored on-chain for a pre-committed sector.
@@ -323,6 +325,8 @@ func (st *State) DeleteSectors(store adt.Store, sectorNos *abi.BitField) error {
 	return err
 }
 
+// Iterates sectors.
+// The pointer provided to the callback is not safe for re-use. Copy the pointed-to value in full to hold a reference.
 func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
 	sectors, err := adt.AsArray(store, st.Sectors)
 	if err != nil {
