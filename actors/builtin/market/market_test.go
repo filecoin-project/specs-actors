@@ -1,12 +1,16 @@
 package market_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	mh "github.com/multiformats/go-multihash"
+	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -16,6 +20,10 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
+
+	"github.com/ipfs/go-cid"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestExports(t *testing.T) {
@@ -247,19 +255,8 @@ func TestMarketActor(t *testing.T) {
 
 			// withdraw amount greater than escrow balance
 			withdrawAmount := abi.NewTokenAmount(25)
-
-			rt.SetCaller(client, builtin.AccountActorCodeID)
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-			params := market.WithdrawBalanceParams{
-				ProviderOrClientAddress: client,
-				Amount:                  withdrawAmount,
-			}
-
-			rt.ExpectSend(client, builtin.MethodSend, nil, abi.NewTokenAmount(20), nil, exitcode.Ok)
-
-			rt.Call(actor.WithdrawBalance, &params)
-
-			rt.Verify()
+			expectedAmount := abi.NewTokenAmount(20)
+			actor.withdrawClientBalanceOK(rt, client, withdrawAmount, expectedAmount)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, client))
@@ -274,26 +271,77 @@ func TestMarketActor(t *testing.T) {
 
 			// withdraw amount greater than escrow balance
 			withdrawAmount := abi.NewTokenAmount(25)
-
-			rt.SetCaller(worker, builtin.AccountActorCodeID)
-			params := market.WithdrawBalanceParams{
-				ProviderOrClientAddress: provider,
-				Amount:                  withdrawAmount,
-			}
-
-			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
-			rt.ExpectSend(owner, builtin.MethodSend, nil, abi.NewTokenAmount(20), nil, exitcode.Ok)
-
-			rt.Call(actor.WithdrawBalance, &params)
-
-			rt.Verify()
+			actualWithdrawn := abi.NewTokenAmount(20)
+			actor.withdrawBalanceStorageMinerOK(rt, owner, worker, provider, withdrawAmount, actualWithdrawn)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, provider))
 		})
 
 		// TODO: withdraws limited by slashing
-		// TODO: withdraws limited by locked balance
+		t.Run("client withdrawing more than locked balance limits to available funds", func(t *testing.T) {
+			rt, actor := setup()
+
+			// create the deal to publish and the epochs around it
+			startEpoch := abi.ChainEpoch(10)
+			endEpoch := abi.ChainEpoch(20)
+			currentEpoch := abi.ChainEpoch(5)
+			deal := actor.generateUnVerifiedDealProposal(client, provider, startEpoch, endEpoch)
+
+			// ensure client and provider have enough funds to lock for the deal
+			actor.addParticipantFunds(rt, client, deal.ClientBalanceRequirement())
+			actor.addProviderFunds(rt, provider, owner, worker, deal.ProviderBalanceRequirement())
+
+			// publish the deal so that client collateral is locked
+			rt.SetEpoch(currentEpoch)
+			actor.publishDealOK(rt, deal, owner, worker, provider)
+			rt.GetState(&st)
+			require.Equal(t, deal.ClientBalanceRequirement(), st.GetLockedBalance(rt, client))
+
+			// client cannot withdraw any funds since all it's balance is locked
+			withDrawAmt := abi.NewTokenAmount(1)
+			actualWithdrawn := abi.NewTokenAmount(0)
+			actor.withdrawClientBalanceOK(rt, client, withDrawAmt, actualWithdrawn)
+
+			// add some more funds to the client & ensure withdrawal is limited by the locked funds
+			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(25))
+			withDrawAmt = abi.NewTokenAmount(30)
+			actualWithdrawn = abi.NewTokenAmount(25)
+
+			actor.withdrawClientBalanceOK(rt, client, withDrawAmt, actualWithdrawn)
+		})
+
+		t.Run("worker withdrawing more than locked balance limits to available funds", func(t *testing.T) {
+			rt, actor := setup()
+
+			// create the deal to publish and the epochs around it
+			startEpoch := abi.ChainEpoch(10)
+			endEpoch := abi.ChainEpoch(20)
+			currentEpoch := abi.ChainEpoch(5)
+			deal := actor.generateUnVerifiedDealProposal(client, provider, startEpoch, endEpoch)
+
+			// ensure client and provider have enough funds to lock for the deal
+			actor.addParticipantFunds(rt, client, deal.ClientBalanceRequirement())
+			actor.addProviderFunds(rt, provider, owner, worker, deal.ProviderBalanceRequirement())
+
+			// publish the deal so that provider collateral is locked
+			rt.SetEpoch(currentEpoch)
+			actor.publishDealOK(rt, deal, owner, worker, provider)
+			rt.GetState(&st)
+			require.Equal(t, deal.ProviderCollateral, st.GetLockedBalance(rt, provider))
+
+			// provider cannot withdraw any funds since all it's balance is locked
+			withDrawAmt := abi.NewTokenAmount(1)
+			actualWithdrawn := abi.NewTokenAmount(0)
+			actor.withdrawBalanceStorageMinerOK(rt, owner, worker, provider, withDrawAmt, actualWithdrawn)
+
+			// add some more funds to the provider & ensure withdrawal is limited by the locked funds
+			actor.addProviderFunds(rt, provider, owner, worker, abi.NewTokenAmount(25))
+			withDrawAmt = abi.NewTokenAmount(30)
+			actualWithdrawn = abi.NewTokenAmount(25)
+
+			actor.withdrawBalanceStorageMinerOK(rt, owner, worker, provider, withDrawAmt, actualWithdrawn)
+		})
 		// https://github.com/filecoin-project/specs-actors/issues/465
 	})
 }
@@ -349,4 +397,76 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 		expectRet,
 		exitcode.Ok,
 	)
+}
+
+func (h *marketActorTestHarness) withdrawBalanceStorageMinerOK(rt *mock.Runtime, owner, worker, provider address.Address, withDrawAmt, expectedSend abi.TokenAmount) {
+	params := market.WithdrawBalanceParams{
+		ProviderOrClientAddress: provider,
+		Amount:                  big.Add(withDrawAmt, big.NewInt(1)),
+	}
+	h.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
+	rt.ExpectSend(owner, builtin.MethodSend, nil, expectedSend, nil, exitcode.Ok)
+	rt.Call(h.WithdrawBalance, &params)
+	rt.Verify()
+}
+
+func(h *marketActorTestHarness) withdrawClientBalanceOK(rt *mock.Runtime, client address.Address, withDrawAmt, expectedSend abi.TokenAmount) {
+	rt.SetCaller(client, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+	params := market.WithdrawBalanceParams{
+		ProviderOrClientAddress: client,
+		Amount:                  withDrawAmt,
+	}
+
+	rt.ExpectSend(client, builtin.MethodSend, nil, expectedSend, nil, exitcode.Ok)
+
+	rt.Call(h.WithdrawBalance, &params)
+	rt.Verify()
+}
+
+func (h *marketActorTestHarness) publishDealOK(rt *mock.Runtime, deal *market.DealProposal, owner, worker, provider address.Address) abi.DealID {
+	rt.SetCaller(worker, builtin.AccountActorCodeID)
+
+	//  create a client proposal with a valid signature
+	buf := bytes.Buffer{}
+	require.NoError(h.t, deal.MarshalCBOR(&buf), "failed to marshal deal proposal")
+	sig := acrypto.Signature{Type: acrypto.SigTypeBLS, Data: []byte("does not matter")}
+	clientProposal := market.ClientDealProposal{*deal, sig}
+	params := &market.PublishStorageDealsParams{[]market.ClientDealProposal{clientProposal}}
+
+	// expectations
+	rt.ExpectVerifySignature(sig, deal.Client, buf.Bytes(), nil)
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+	rt.ExpectSend(
+		provider,
+		builtin.MethodsMiner.ControlAddresses,
+		nil,
+		big.Zero(),
+		&miner.GetControlAddressesReturn{Owner: owner, Worker: worker},
+		exitcode.Ok,
+	)
+
+	ret := rt.Call(h.PublishStorageDeals, params)
+	rt.Verify()
+
+	resp, ok := ret.(*market.PublishStorageDealsReturn)
+	require.True(h.t, ok, "unexpected type returned from call to PublishStorageDeals")
+	require.Len(h.t, resp.IDs, 1)
+	return resp.IDs[0]
+}
+
+func (h *marketActorTestHarness) generateUnVerifiedDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) *market.DealProposal{
+	buf := make([]byte, binary.MaxVarintLen64)
+	binary.PutVarint(buf, int64(rand.Int()))
+	hash, err := mh.Sum(buf, mh.SHA2_256, -1)
+	require.NoError(h.t, err)
+
+	pieceCid := cid.NewCidV0(hash)
+	pieceSize := abi.PaddedPieceSize(2048)
+	storagePerEpoch := big.NewInt(int64(rand.Intn(1000) + 1))
+	clientCollateral := big.NewInt(int64(rand.Intn(1000) + 1))
+	providerCollateral := big.NewInt(int64(rand.Intn(1000) + 1))
+
+	return &market.DealProposal{pieceCid, pieceSize, false,client, provider, startEpoch,
+		endEpoch, storagePerEpoch, providerCollateral, clientCollateral}
 }
