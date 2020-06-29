@@ -221,7 +221,11 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			deal.Proposal.Client = client
 
 			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
+			st.TotalLockedClientCollateral = big.Add(st.TotalLockedClientCollateral, deal.Proposal.ClientCollateral)
+			st.TotalLockedDealPayments = big.Add(st.TotalLockedDealPayments, deal.Proposal.TotalStorageFee())
+
 			st.lockBalanceOrAbort(rt, provider, deal.Proposal.ProviderBalanceRequirement())
+			st.TotalLockedProviderCollateral = big.Add(st.TotalLockedProviderCollateral, deal.Proposal.ProviderCollateral)
 
 			id := st.generateStorageDealID()
 

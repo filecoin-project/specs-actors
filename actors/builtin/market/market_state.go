@@ -22,6 +22,13 @@ const epochUndefined = abi.ChainEpoch(-1)
 // activate deal (miner)
 // end deal (miner terminate, expire(no activation))
 
+type role int
+
+const (
+	client role = iota
+	provider
+)
+
 type State struct {
 	Proposals cid.Cid // AMT[DealID]DealProposal
 	States    cid.Cid // AMT[DealID]DealState
@@ -43,6 +50,13 @@ type State struct {
 	// Metadata cached for efficient iteration over deals.
 	DealOpsByEpoch cid.Cid // SetMultimap, HAMT[epoch]Set
 	LastCron       abi.ChainEpoch
+
+	// Total Client Collateral that is locked -> unlocked when deal is terminated
+	TotalLockedClientCollateral abi.TokenAmount
+	// Total Provider Collateral that is locked -> unlocked when deal is terminated
+	TotalLockedProviderCollateral abi.TokenAmount
+	// Total storage fee that is locked in escrow -> unlocked when payments are made
+	TotalLockedDealPayments abi.TokenAmount
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
@@ -55,6 +69,10 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 		NextID:           abi.DealID(0),
 		DealOpsByEpoch:   emptyMSetCid,
 		LastCron:         abi.ChainEpoch(-1),
+
+		TotalLockedClientCollateral:   abi.NewTokenAmount(0),
+		TotalLockedProviderCollateral: abi.NewTokenAmount(0),
+		TotalLockedDealPayments:       abi.NewTokenAmount(0),
 	}
 }
 
@@ -105,13 +123,14 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		// unlock client collateral and locked storage fee
 		clientCollateral := deal.ClientCollateral
 		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
-		if err := st.unlockBalance(lt, deal.Client, big.Add(clientCollateral, paymentRemaining)); err != nil {
+		clientAmountUnlocked := big.Add(clientCollateral, paymentRemaining)
+		if err := st.unlockBalance(lt, deal.Client, clientAmountUnlocked, client); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock client balance: %s", err)
 		}
 
 		// slash provider collateral
 		amountSlashed = deal.ProviderCollateral
-		if err := st.slashBalance(et, lt, deal.Provider, amountSlashed); err != nil {
+		if err := st.slashBalance(et, lt, deal.Provider, amountSlashed, provider); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "slashing balance: %s", err)
 		}
 
@@ -162,18 +181,18 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
 	Assert(state.SectorStartEpoch == epochUndefined)
 
-	if err := st.unlockBalance(lt, deal.Client, deal.ClientBalanceRequirement()); err != nil {
+	if err := st.unlockBalance(lt, deal.Client, deal.ClientBalanceRequirement(), client); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client balance: %s", err)
 	}
 
 	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
 
-	if err := st.slashBalance(et, lt, deal.Provider, amountSlashed); err != nil {
+	if err := st.slashBalance(et, lt, deal.Provider, amountSlashed, provider); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to slash balance: %s", err)
 	}
 
-	if err := st.unlockBalance(lt, deal.Provider, amountRemaining); err != nil {
+	if err := st.unlockBalance(lt, deal.Provider, amountRemaining, provider); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unlock deal provider balance: %s", err)
 	}
 
@@ -186,10 +205,11 @@ func (st *State) processDealExpired(rt Runtime, deal *DealProposal, state *DealS
 	Assert(state.SectorStartEpoch != epochUndefined)
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
-	if err := st.unlockBalance(lt, deal.Provider, deal.ProviderCollateral); err != nil {
+	if err := st.unlockBalance(lt, deal.Provider, deal.ProviderCollateral, provider); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal provider balance: %s", err)
 	}
-	if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral); err != nil {
+
+	if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral, client); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal client balance: %s", err)
 	}
 
@@ -289,13 +309,21 @@ func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.Toke
 
 // TODO: all these balance table mutations need to happen at the top level and be batched (no flushing after each!)
 // https://github.com/filecoin-project/specs-actors/issues/464
-func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) error {
+func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount, role role) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	err := lt.MustSubtract(addr, amount)
 	if err != nil {
 		return xerrors.Errorf("subtracting from locked balance: %v", err)
 	}
+
+	switch role {
+	case client:
+		st.TotalLockedClientCollateral = big.Sub(st.TotalLockedClientCollateral, amount)
+	case provider:
+		st.TotalLockedProviderCollateral = big.Sub(st.TotalLockedProviderCollateral, amount)
+	}
+
 	return nil
 }
 
@@ -316,7 +344,7 @@ func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
 	}
 
-	if err := lt.MustSubtract(fromAddr, amount); err != nil {
+	if err := st.unlockBalance(lt, fromAddr, amount, client); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
 	}
 
@@ -337,18 +365,14 @@ func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.
 	st.EscrowTable = etc
 }
 
-func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) error {
+func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount, role role) error {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
 	if err := et.MustSubtract(addr, amount); err != nil {
 		return xerrors.Errorf("subtract from escrow: %v", err)
 	}
 
-	if err := lt.MustSubtract(addr, amount); err != nil {
-		return xerrors.Errorf("subtract from locked: %v", err)
-	}
-
-	return nil
+	return st.unlockBalance(lt, addr, amount, role)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
