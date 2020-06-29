@@ -357,27 +357,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		validateExpiration(rt, &st, rt.CurrEpoch(), params.Expiration, params.SealProof)
 
+		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
-			replaceSector, found, err := st.GetSector(store, params.ReplaceSector)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
-			if !found {
-				rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", params.ReplaceSector)
-			}
-			if len(replaceSector.DealIDs) > 0 {
-				rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v which has deals", params.ReplaceSector)
-			}
-			// The sectors must be the same size, but that is always true because each miner actor supports
-			// only one sector size.
-			if params.Expiration < replaceSector.Expiration {
-				rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v expiration %v with sooner expiration %v",
-					params.ReplaceSector, replaceSector.Expiration, params.Expiration)
-			}
-			faulty, err := st.Faults.IsSet(uint64(params.ReplaceSector))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check fault for sector %v", params.ReplaceSector)
-			if faulty {
-				// Note: the sector might still fault later, in which case we should not license its termination.
-				rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace faulty sector %v", params.ReplaceSector)
-			}
+			replaceSector := validateReplaceSector(rt, &st, store, params)
+			// Note the replaced sector's initial pledge as a lower bound for the new sector's deposit
+			depositMinimum = replaceSector.InitialPledge
 		}
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
@@ -386,10 +370,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		duration := params.Expiration - rt.CurrEpoch()
 
 		sectorWeight := QAPowerForWeight(st.GetSectorSize(), duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
-		// TODO: when the sector deposit/pledge is recorded in the sector on-chain state,
-		// if the sector being replaced has a higher pledge than this one, increase this one to match.
-		// See https://github.com/filecoin-project/specs-actors/issues/485
-		depositReq := precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
+		depositReq := big.Max(
+			precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply),
+			depositMinimum,
+		)
 		if availableBalance.LessThan(depositReq) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
@@ -616,37 +600,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// This transaction should replace the one inside the loop above.
 	// Migrate state mutations into here.
 	rt.State().Transaction(&st, func() interface{} {
-		// Mark replaced sectors for on-time expiration at the end of the current proving period.
-		// It's can't be removed right now because it may yet be challenged for Window PoSt in this period,
-		// and the deadline assignments can't be changed mid-period.
-		// If their initial pledge hasn't finished vesting yet, it just continues vesting (like other termination paths).
-		// Note that a sector's weight and power were calculated from its lifetime when the sector was first
-		// committed, but are not recalculated here. We only get away with this because we know the replaced sector
-		// has no deals and so its power does not vary with lifetime.
-		// That's a very brittle constraint, and would be much better with two-phase termination (where we could
-		// deduct power immediately).
-		// See https://github.com/filecoin-project/specs-actors/issues/535
-		replaceSectorNumbers := make([]uint64, len(replaceSectors))
-		deadlineInfo := st.DeadlineInfo(rt.CurrEpoch())
-		newExpiration := deadlineInfo.PeriodEnd()
-		for _, sector := range replaceSectors {
-			// Note: State updates could be minimized by batching these by existing expiration epoch.
-			err := st.RemoveSectorExpirations(store, sector.Expiration, uint64(sector.SectorNumber))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector expiration %v at %v",
-				sector.SectorNumber, sector.Expiration)
-			replaceSectorNumbers = append(replaceSectorNumbers, uint64(sector.SectorNumber))
-			sector.Expiration = newExpiration
-			// Note: these state writes could be batched too.
-			err = st.PutSector(store, sector)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sector %v expiration", sector.SectorNumber)
-		}
-		err := st.AddSectorExpirations(store, newExpiration, replaceSectorNumbers...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set replaced sector expirations for %v at %v",
-			replaceSectorNumbers, newExpiration)
-
+		err := scheduleReplaceSectorsExpiration(rt, &st, store, replaceSectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 		return nil
 	})
-
 	return nil
 }
 
@@ -1345,6 +1302,69 @@ func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainE
 	}
 }
 
+func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) *SectorOnChainInfo{
+	replaceSector, found, err := st.GetSector(store, params.ReplaceSector)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
+	if !found {
+		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", params.ReplaceSector)
+	}
+
+	if len(replaceSector.DealIDs) > 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v which has deals", params.ReplaceSector)
+	}
+	if params.SealProof != replaceSector.SealProof {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v seal proof %v with seal proof %v",
+			params.ReplaceSector, replaceSector.SealProof, params.SealProof)
+	}
+	if params.Expiration < replaceSector.Expiration {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v expiration %v with sooner expiration %v",
+			params.ReplaceSector, replaceSector.Expiration, params.Expiration)
+	}
+	faulty, err := st.Faults.IsSet(uint64(params.ReplaceSector))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check fault for sector %v", params.ReplaceSector)
+	if faulty {
+		// Note: the sector might still fault later, in which case we should not license its termination.
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace faulty sector %v", params.ReplaceSector)
+	}
+	return replaceSector
+}
+
+func scheduleReplaceSectorsExpiration(rt Runtime, st *State, store adt.Store, replaceSectors []*SectorOnChainInfo) error {
+	// Mark replaced sectors for on-time expiration at the end of the current proving period.
+	// They can't be removed right now because they may yet be challenged for Window PoSt in this period,
+	// and the deadline assignments can't be changed mid-period.
+	// If their initial pledge hasn't finished vesting yet, it just continues vesting (like other termination paths).
+	// Note that a sector's weight and power were calculated from its lifetime when the sector was first
+	// committed, but are not recalculated here. We only get away with this because we know the replaced sector
+	// has no deals and so its power does not vary with lifetime.
+	// That's a very brittle constraint, and would be much better with two-phase termination (where we could
+	// deduct power immediately).
+	// See https://github.com/filecoin-project/specs-actors/issues/535
+	replaceSectorNumbers := make([]uint64, len(replaceSectors))
+	deadlineInfo := st.DeadlineInfo(rt.CurrEpoch())
+	newExpiration := deadlineInfo.PeriodEnd()
+	for i, sector := range replaceSectors {
+		// Note: State updates could be minimized by batching these by existing expiration epoch.
+		if err := st.RemoveSectorExpirations(store, sector.Expiration, uint64(sector.SectorNumber)); err != nil {
+			return fmt.Errorf("failed to remove sector expiration %v at %v: %w",
+				sector.SectorNumber, sector.Expiration, err)
+		}
+		sector.Expiration = newExpiration
+		// Note: these state writes could be batched too.
+		if err := st.PutSector(store, sector); err != nil {
+			return fmt.Errorf("failed to update sector %v expiration: %w", sector.SectorNumber, err)
+		}
+		replaceSectorNumbers[i] = uint64(sector.SectorNumber)
+	}
+	if len(replaceSectorNumbers) > 0 {
+		if err := st.AddSectorExpirations(store, newExpiration, replaceSectorNumbers...); err != nil {
+			return fmt.Errorf("failed to set replaced sector expirations for %v at %v: %w",
+				replaceSectorNumbers, newExpiration, err)
+		}
+	}
+	return nil
+}
+
 // Removes and returns sector numbers that expire at or before an epoch.
 func popSectorExpirations(st *State, store adt.Store, epoch abi.ChainEpoch) (*abi.BitField, error) {
 	var expiredEpochs []abi.ChainEpoch
@@ -1793,7 +1813,8 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 	if st.LockedFunds.LessThan(st.InitialPledgeRequirement) {
-		rt.Abortf(exitcode.ErrIllegalState, "locked funds insufficient to cover initial pledges (%v < %v)", st.LockedFunds, st.InitialPledgeRequirement)
+		rt.Abortf(exitcode.ErrInsufficientFunds, "locked funds insufficient to cover initial pledges (%v < %v)",
+			st.LockedFunds, st.InitialPledgeRequirement)
 	}
 }
 

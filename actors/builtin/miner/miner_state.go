@@ -325,6 +325,8 @@ func (st *State) DeleteSectors(store adt.Store, sectorNos *abi.BitField) error {
 	return err
 }
 
+// Iterates sectors.
+// The pointer provided to the callback is not safe for re-use. Copy the pointed-to value in full to hold a reference.
 func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) error {
 	sectors, err := adt.AsArray(store, st.Sectors)
 	if err != nil {
