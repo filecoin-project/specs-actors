@@ -2,6 +2,7 @@ package market
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 
 	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -435,6 +436,11 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 		for _, dealID := range params.DealIDs {
 			deal, err := proposals.Get(dealID)
+			// deal could have terminated and hence deleted before the sector is terminated.
+			// we should simply continue instead of aborting execution here if a deal is not found.
+			if errors.Unwrap(err) == errDealNotFound {
+				continue
+			}
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}

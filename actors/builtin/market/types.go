@@ -1,12 +1,15 @@
 package market
 
 import (
+	"fmt"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	. "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
+
+var errDealNotFound = errors.New("deal not found")
 
 // A specialization of a array to deals.
 // It is an error to query for a key that doesn't exist.
@@ -36,7 +39,7 @@ func (t *DealArray) Get(id abi.DealID) (*DealProposal, error) {
 		return nil, err // The errors from Map carry good information, no need to wrap here.
 	}
 	if !found {
-		return nil, errors.Errorf("deal %d not found", id)
+		return nil, fmt.Errorf("deal %d not found: %w", id, errDealNotFound)
 	}
 	return &value, nil
 }
