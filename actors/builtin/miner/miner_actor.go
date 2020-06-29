@@ -1888,7 +1888,7 @@ func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoc
 	sectorSize := st.Info.SectorSize
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := pledgePenaltyForTermination(s, epochTargetReward, networkQAPower, sectorPower)
+		fee := PledgePenaltyForTermination(s.InitialPledge, curEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee, nil

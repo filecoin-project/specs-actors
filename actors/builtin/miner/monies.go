@@ -11,12 +11,11 @@ var InitialPledgeFactor = big.NewInt(20)
 
 // FF = (DeclaredFaultFactorNum / DeclaredFaultFactorDenom) * BR(t)
 var DeclaredFaultFactorNum = big.NewInt(214)
-
-// FF = (DeclaredFaultFactorNum / DeclaredFaultFactorDenom) * BR(t)
 var DeclaredFaultFactorDenom = big.NewInt(100)
 
-// SP = UndeclaredFaultFactor * BR(t)
-var UndeclaredFaultFactor = big.NewInt(5)
+// SP = (UndeclaredFaultFactor / DeclaredFaultFactorDenom) * BR(t)
+var UndeclaredFaultFactorNum = big.NewInt(5)
+var UndeclaredFaultFactorDenom = big.NewInt(1)
 
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
@@ -39,14 +38,24 @@ func PledgePenaltyForDeclaredFault(epochTargetReward abi.TokenAmount, networkQAP
 // SP(t) = UndeclaredFaultFactor * BR(t)
 func PledgePenaltyForUndeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(UndeclaredFaultFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower)),
-		big.NewInt(1))
+		big.Mul(UndeclaredFaultFactorNum, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower)),
+		UndeclaredFaultFactorDenom)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
-func pledgePenaltyForTermination(s *SectorOnChainInfo, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	//TODO #437 compute correct termination fee using initial pledge value from SectorOnChainInfo
-	return big.Zero() // PARAM_FINISH
+// SectorAge is the time between now and the sector's activation.
+func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	// max(SP(t), IP + BR(StartEpoch)*min(SectorAgeInDays, 180))
+	// where BR(StartEpoch)=IP/InitialPledgeFactor
+	// and sectorAgeInDays = sectorAge / EpochsInDay
+	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
+	return big.Max(
+		PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
+		big.Add(
+			initialPledge,
+			big.Div(
+				big.Mul(initialPledge, cappedSectorAge),
+				big.Mul(InitialPledgeFactor, big.NewInt(builtin.EpochsInDay)))))
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
