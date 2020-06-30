@@ -361,9 +361,12 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
 	}
 
-	proposal, err := proposals.Get(dealID)
+	proposal, found, err := proposals.Get(dealID)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
+	}
+	if !found {
+		rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
 	}
 
 	return proposal

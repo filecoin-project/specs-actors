@@ -2,7 +2,6 @@ package market
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 
 	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -347,9 +346,12 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
 			}
 
-			proposal, err := proposals.Get(dealID)
+			proposal, found, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
+			}
+			if !found {
+				rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
 			}
 
 			propc, err := proposal.Cid()
@@ -435,15 +437,16 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, err := proposals.Get(dealID)
-			// deal could have terminated and hence deleted before the sector is terminated.
-			// we should simply continue instead of aborting execution here if a deal is not found.
-			if errors.Unwrap(err) == errDealNotFound {
-				continue
-			}
+			deal, found, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
+			// deal could have terminated and hence deleted before the sector is terminated.
+			// we should simply continue instead of aborting execution here if a deal is not found.
+			if !found {
+				continue
+			}
+
 			Assert(deal.Provider == minerAddr)
 
 			state, found, err := states.Get(dealID)
@@ -639,9 +642,12 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
-		proposal, err := proposals.Get(dealID)
+		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
 			return big.Int{}, big.Int{}, fmt.Errorf("failed to load deal %d: %w", dealID, err)
+		}
+		if !found {
+			return big.Int{}, big.Int{}, fmt.Errorf("dealId %d not found", dealID)
 		}
 		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
 			return big.Int{}, big.Int{}, fmt.Errorf("cannot activate deal %d: %w", dealID, err)
