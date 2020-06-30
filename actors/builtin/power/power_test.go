@@ -121,14 +121,14 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.Equal(t, powerUnit, claim1.RawBytePower, )
-		require.Equal(t, mul(powerUnit, 2), claim1.QualityAdjPower, )
+		require.Equal(t, powerUnit, claim1.RawBytePower)
+		require.Equal(t, mul(powerUnit, 2), claim1.QualityAdjPower)
 
 		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.Equal(t, powerUnit, claim2.RawBytePower )
-		require.Equal(t, powerUnit, claim2.QualityAdjPower )
+		require.Equal(t, powerUnit, claim2.RawBytePower)
+		require.Equal(t, powerUnit, claim2.QualityAdjPower)
 
 		// Subtract power and some pledge for miner2
 		actor.updateClaimedPower(rt, miner2, powerUnit.Neg(), powerUnit.Neg())
@@ -151,6 +151,7 @@ func TestCron(t *testing.T) {
 	actor := newHarness(t)
 	miner1 := tutil.NewIDAddr(t, 101)
 	miner2 := tutil.NewIDAddr(t, 102)
+	owner := tutil.NewIDAddr(t, 103)
 
 	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
@@ -200,6 +201,16 @@ func TestCron(t *testing.T) {
 		actor.enrollCronEvent(rt, miner1, 2, []byte{})
 		actor.enrollCronEvent(rt, miner2, 2, []byte{})
 
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+
+		rawPow := power.ConsensusMinerMinPower
+		qaPow := rawPow
+		actor.updateClaimedPower(rt, miner1, rawPow, qaPow)
+		startPow := actor.currentPowerTotal(rt)
+		assert.Equal(t, rawPow, startPow.RawBytePower)
+		assert.Equal(t, qaPow, startPow.QualityAdjPower)
+
 		expectedPower := big.NewInt(0)
 		rt.SetEpoch(2)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
@@ -212,6 +223,10 @@ func TestCron(t *testing.T) {
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
+
+		newPow := actor.currentPowerTotal(rt)
+		assert.Equal(t, abi.NewStoragePower(0), newPow.RawBytePower)
+		assert.Equal(t, abi.NewStoragePower(0), newPow.QualityAdjPower)
 
 		// Next epoch, only the reward actor is invoked
 		rt.SetEpoch(3)

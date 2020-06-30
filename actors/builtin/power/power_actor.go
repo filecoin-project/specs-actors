@@ -154,7 +154,6 @@ type UpdateClaimedPowerParams struct {
 func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
-
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
@@ -426,18 +425,45 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		st.LastEpochTick = rtEpoch
 		return nil
 	})
-
+	failedMinerCrons := make([]addr.Address, 0)
 	for _, event := range cronEvents {
-		_, _ = rt.Send(
+		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
 			vmr.CBORBytes(event.CallbackPayload),
 			abi.NewTokenAmount(0),
 		)
-		// The exit code is ignored. If a callback fails, this actor continues to invoke other callbacks
+		// If a callback fails, this actor continues to invoke other callbacks
 		// and persists state removing the failed event from the event queue. It won't be tried again.
-		// A log message would really help here, though.
+		// Failures are unexpected here but will result in removal of miner power
+		// A log message would really help here.
+		if code != exitcode.Ok {
+			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
+		}
 	}
+	rt.State().Transaction(&st, func() interface{} {
+		store := adt.AsStore(rt)
+		// Remove power and leave miner frozen
+		for _, minerAddr := range failedMinerCrons {
+			claim, found, err := st.GetClaim(store, minerAddr)
+			if err != nil {
+				// TODO #564 log this, failing without deducting power: bad
+				continue
+			}
+			if !found {
+				// TODO #564 log this, failing without deducting power, but power doesn't exist so maybe ok?
+				continue
+			}
+
+			// zero out miner power
+			err = st.AddToClaim(store, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
+			if err != nil {
+				// TODO #564 log this, failing without deducting power: bad
+				continue
+			}
+		}
+		return nil
+	})
 	return nil
 }
 
