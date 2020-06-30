@@ -920,7 +920,7 @@ func TestCancel(t *testing.T) {
 		})
 	})
 
-	t.Run("transaction can ONLY be cancelled by the proposer", func(t *testing.T) {
+	t.Run("transaction can ONLY be cancelled by a proposer who is still the signer", func(t *testing.T) {
 		rt := builder.Build(t)
 		const numApprovals = 3
 		signers := []addr.Address{anne, bob, chuck}
