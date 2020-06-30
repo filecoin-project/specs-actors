@@ -321,6 +321,42 @@ func TestMarketActor(t *testing.T) {
 	})
 }
 
+func TestPublishStorageDeals(t *testing.T) {
+	marketActor := tutil.NewIDAddr(t, 100)
+	owner := tutil.NewIDAddr(t, 101)
+	provider := tutil.NewIDAddr(t, 102)
+	worker := tutil.NewIDAddr(t, 103)
+	client := tutil.NewIDAddr(t, 104)
+
+	t.Run("publish a deal after activating a previous deal which has a start epoch far in the future", func(t *testing.T) {
+		startEpoch := abi.ChainEpoch(1000)
+		endEpoch := abi.ChainEpoch(2000)
+		publishEpoch := abi.ChainEpoch(1)
+
+		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		deal1 := generateDealProposal(client, provider, startEpoch, endEpoch)
+
+		// ensure client and provider have enough funds to lock for the deal
+		actor.addParticipantFunds(rt, client, deal1.ClientBalanceRequirement())
+		actor.addProviderFunds(rt, deal1.ProviderBalanceRequirement())
+
+		// publish the deal and activate it
+		rt.SetEpoch(publishEpoch)
+		deal1ID := actor.publishDeal(rt, deal1)
+		actor.activateDeals(rt, []abi.DealID{deal1ID}, endEpoch+1, provider)
+		st := actor.getDealState(rt, deal1ID)
+		require.EqualValues(t, publishEpoch, st.SectorStartEpoch)
+
+		// now publish a second deal and activate it
+		deal2 := generateDealProposal(client, provider, startEpoch+1, endEpoch+1)
+		actor.addParticipantFunds(rt, client, deal2.ClientBalanceRequirement())
+		actor.addProviderFunds(rt, deal2.ProviderBalanceRequirement())
+		rt.SetEpoch(publishEpoch + 1)
+		deal2ID := actor.publishDeal(rt, deal2)
+		actor.activateDeals(rt, []abi.DealID{deal2ID}, endEpoch+2, provider)
+	})
+}
+
 func TestMarketActorDeals(t *testing.T) {
 	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
