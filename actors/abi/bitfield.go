@@ -21,25 +21,7 @@ func BitFieldUnion(bfs ...*BitField) (*BitField, error) {
 	if len(bfs) == 0 {
 		return NewBitField(), nil
 	}
-	// TODO: optimize me: https://github.com/filecoin-project/specs-actors/issues/460
-	for len(bfs) > 1 {
-		var next []*BitField
-		for i := 0; i < len(bfs); i += 2 {
-			if i+1 >= len(bfs) {
-				next = append(next, bfs[i])
-				break
-			}
-
-			merged, err := bitfield.MergeBitFields(bfs[i], bfs[i+1])
-			if err != nil {
-				return nil, err
-			}
-
-			next = append(next, merged)
-		}
-		bfs = next
-	}
-	return bfs[0], nil
+	return bitfield.MultiMerge(bfs...)
 }
 
 // Checks whether bitfield `a` contains any bit that is set in bitfield `b`.
