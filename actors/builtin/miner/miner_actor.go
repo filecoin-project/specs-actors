@@ -950,21 +950,22 @@ func (a Actor) processSkippedFaults(rt Runtime, st State, skipped *bitfield.BitF
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var skippedFaultSectors []*SectorOnChainInfo
-	penalty := abi.NewTokenAmount(0)
+	info := getMinerInfo(rt, &st)
 
 	deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-	err = validateFRDeclaration(deadlines, deadline, skipped)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration")
+	// Check that the declared sectors are actually due at the deadline.
+	deadlineSectors := deadlines.Due[deadline.Index]
+	contains, err := abi.BitFieldContainsAll(deadlineSectors, skipped)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not check if skipped faults are in deadline")
+	if !contains {
+		rt.Abortf(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline %d", deadline.Index)
+	}
 
 	// Find all skipped faults that have been labeled recovered
 	retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, skipped)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
-
-	// Add Faults
-	err = st.AddFaults(store, skipped, deadline.PeriodStart)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
 
 	// Ignore skipped faults that are already faults but have not been declared recovered
 	newFaults, err := bitfield.SubtractBitField(skipped, st.Faults)
@@ -972,23 +973,21 @@ func (a Actor) processSkippedFaults(rt Runtime, st State, skipped *bitfield.BitF
 	penalizableFaults, err := bitfield.MergeBitFields(newFaults, retractedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge skpped and retracted faults")
 
+	// Add Faults
+	err = st.AddFaults(store, newFaults, deadline.PeriodStart)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
+
 	// Load info for sectors.
 	skippedFaultSectors, err = st.LoadSectorInfos(store, penalizableFaults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 	// Unlock undeclared penalty for faults.
-	declaredPenalty, err := unlockUndeclaredFaultPenalty(&st, store, currEpoch, epochReward, qaPowerTotal, skippedFaultSectors)
+	penalty, err := unlockUndeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, qaPowerTotal, skippedFaultSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
-	penalty = big.Add(penalty, declaredPenalty)
 
 	// Remove faulty recoveries
-	empty, err = retractedRecoveries.IsEmpty()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-
-	if !empty {
-		err = st.RemoveRecoveries(retractedRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
-	}
+	err = st.RemoveRecoveries(retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
 	return skippedFaultSectors, penalty
 }
