@@ -314,7 +314,6 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			err = states.Set(dealID, &DealState{
 				SectorStartEpoch: currEpoch,
 				LastUpdatedEpoch: epochUndefined,
-				SlashEpoch:       epochUndefined,
 			})
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %d", dealID)
 		}
@@ -366,17 +365,24 @@ type OnMinerSectorsTerminateParams struct {
 func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTerminateParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
+	amountSlashed := big.Zero()
 
 	var st State
+
 	rt.State().Transaction(&st, func() interface{} {
+		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
+		}
+
+		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+		}
+
 		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "load proposals: %v", err)
-		}
-
-		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "load states: %v", err)
 		}
 
 		for _, dealID := range params.DealIDs {
@@ -385,32 +391,27 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
 			Assert(deal.Provider == minerAddr)
+			
+			// don't slash deals that have expired. They will be expired later in the CronTick.
+			if deal.EndEpoch <= rt.CurrEpoch() {
+				continue
+			}
 
-			state, found, err := states.Get(dealID)
+			slashed, err := st.slashDeal(rt, deal, dealID, rt.CurrEpoch(), et, lt)
 			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to slash deal with ID %d: %v", dealID, err)
 			}
-			if !found {
-				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
-			}
-
-			// Note: we do not perform the balance transfers here, but rather simply record the flag
-			// to indicate that processDealSlashed should be called when the deferred state computation
-			// is performed. // TODO: Do that here. https://github.com/filecoin-project/specs-actors/issues/462
-
-			state.SlashEpoch = rt.CurrEpoch()
-
-			if err := states.Set(dealID, state); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
-			}
+			amountSlashed = big.Add(amountSlashed, slashed)
 		}
 
-		st.States, err = states.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush states: %s", err)
-		}
 		return nil
 	})
+
+
+	// burn all the slashed funds
+	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+
 	return nil
 }
 
@@ -471,10 +472,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					return nil
 				}
 
-				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
-				if !slashAmount.IsZero() {
-					amountSlashed = big.Add(amountSlashed, slashAmount)
-				}
+				nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
 
 				if nextEpoch != epochUndefined {
 					Assert(nextEpoch > rt.CurrEpoch())

@@ -2,6 +2,7 @@ package market
 
 import (
 	"bytes"
+	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
@@ -57,25 +58,18 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
-	amountSlashed := abi.NewTokenAmount(0)
-
+func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) abi.ChainEpoch {
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
-	everSlashed := state.SlashEpoch != epochUndefined
 
 	Assert(!everUpdated || (state.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
 
 	// This would be the case that the first callback somehow triggers before it is scheduled to
 	// This is expected not to be able to happen
 	if deal.StartEpoch > epoch {
-		return amountSlashed, epochUndefined
+		return epochUndefined
 	}
 
 	dealEnd := deal.EndEpoch
-	if everSlashed {
-		Assert(state.SlashEpoch <= dealEnd)
-		dealEnd = state.SlashEpoch
-	}
 
 	elapsedStart := deal.StartEpoch
 	if everUpdated && state.LastUpdatedEpoch > elapsedStart {
@@ -96,27 +90,9 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		st.transferBalance(rt, deal.Client, deal.Provider, totalPayment)
 	}
 
-	if everSlashed {
-		// unlock client collateral and locked storage fee
-		clientCollateral := deal.ClientCollateral
-		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
-		if err := st.unlockBalance(lt, deal.Client, big.Add(clientCollateral, paymentRemaining)); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock client balance: %s", err)
-		}
-
-		// slash provider collateral
-		amountSlashed = deal.ProviderCollateral
-		if err := st.slashBalance(et, lt, deal.Provider, amountSlashed); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "slashing balance: %s", err)
-		}
-
-		st.deleteDeal(rt, dealID)
-		return amountSlashed, epochUndefined
-	}
-
 	if epoch >= deal.EndEpoch {
 		st.processDealExpired(rt, deal, state, lt, dealID)
-		return amountSlashed, epochUndefined
+		return epochUndefined
 	}
 
 	next := epoch + DealUpdatesInterval
@@ -124,7 +100,27 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		next = deal.EndEpoch
 	}
 
-	return amountSlashed, next
+	return next
+}
+
+func (st *State) slashDeal(rt Runtime, deal *DealProposal, dealID abi.DealID, currentEpoch abi.ChainEpoch, et, lt *adt.BalanceTable) (abi.TokenAmount, error) {
+	amountSlashed := abi.NewTokenAmount(0)
+
+	// unlock client collateral and locked storage fee
+	clientCollateral := deal.ClientCollateral
+	paymentRemaining := dealGetPaymentRemaining(deal, currentEpoch)
+	if err := st.unlockBalance(lt, deal.Client, big.Add(clientCollateral, paymentRemaining)); err != nil {
+		return amountSlashed, fmt.Errorf("failed to unlock client balance: %w", err)
+	}
+
+	// slash provider collateral
+	amountSlashed = deal.ProviderCollateral
+	if err := st.slashBalance(et, lt, deal.Provider, amountSlashed); err != nil {
+		return amountSlashed, fmt.Errorf("failed to slash provider balance: %w", err)
+	}
+
+	st.deleteDeal(rt, dealID)
+	return amountSlashed, nil
 }
 
 func (st *State) mutateDealProposals(rt Runtime, f func(*DealArray)) {

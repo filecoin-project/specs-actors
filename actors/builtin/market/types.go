@@ -81,7 +81,6 @@ func (t *DealMetaArray) Get(id abi.DealID) (*DealState, bool, error) {
 		return &DealState{
 			SectorStartEpoch: epochUndefined,
 			LastUpdatedEpoch: epochUndefined,
-			SlashEpoch:       epochUndefined,
 		}, false, nil
 	}
 	return &value, true, nil
