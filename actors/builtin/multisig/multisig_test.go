@@ -919,6 +919,64 @@ func TestCancel(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 	})
+
+	t.Run("transaction can ONLY be cancelled by a proposer who is still the signer", func(t *testing.T) {
+		rt := builder.Build(t)
+		const numApprovals = 3
+		signers := []addr.Address{anne, bob, chuck}
+
+		txnId := int64(0)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		// anne proposes a transaction ID: 0
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+
+		// bob approves the transaction -> but he is the second approver and hence not the proposer
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.approveOK(rt, txnId, proposalHash, nil)
+
+		// remove anne as a signer - tx creator
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.removeSigner(rt, anne, true)
+
+		// anne fails to cancel a transaction - she is not a signer
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.cancel(rt, txnID, proposalHash)
+		})
+
+		// bob fails to cancel the transaction -> he is not the proposer
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.cancel(rt, txnID, proposalHash)
+		})
+
+		// Transaction should remain after invalid cancel
+		actor.assertTransactions(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne, bob},
+		})
+
+		// add anne as a signer again
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.addSigner(rt, anne, true)
+
+		// now anne can cancel the transaction
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.cancel(rt, txnID, proposalHash)
+		actor.assertTransactions(rt)
+	})
 }
 
 type addSignerTestCase struct {
@@ -1358,6 +1416,7 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 		Params: params,
 	}
 	ret := rt.Call(h.a.Propose, proposeParams)
+	rt.Verify()
 
 	proposeReturn, ok := ret.(*multisig.ProposeReturn)
 	if !ok {
@@ -1418,6 +1477,7 @@ func (h *msActorHarness) approveOK(rt *mock.Runtime, txnID int64, proposalParams
 func (h *msActorHarness) cancel(rt *mock.Runtime, txnID int64, proposalParams []byte) {
 	cancelParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
 	rt.Call(h.a.Cancel, cancelParams)
+	rt.Verify()
 }
 
 func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increase bool) {
@@ -1426,6 +1486,7 @@ func (h *msActorHarness) addSigner(rt *mock.Runtime, signer addr.Address, increa
 		Increase: increase,
 	}
 	rt.Call(h.a.AddSigner, addSignerParams)
+	rt.Verify()
 }
 
 func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, decrease bool) {
@@ -1434,6 +1495,7 @@ func (h *msActorHarness) removeSigner(rt *mock.Runtime, signer addr.Address, dec
 		Decrease: decrease,
 	}
 	rt.Call(h.a.RemoveSigner, rmSignerParams)
+	rt.Verify()
 }
 
 func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr.Address) {
