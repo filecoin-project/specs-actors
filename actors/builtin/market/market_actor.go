@@ -5,6 +5,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -195,13 +196,16 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load proposals array: %s", err)
 		}
 
+		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map: %s", err)
+
 		dealOps, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids set: %s", err)
 		}
 
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
-		for _, deal := range params.Deals {
+		for di, deal := range params.Deals {
 			validateDeal(rt, deal)
 
 			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
@@ -221,6 +225,24 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			id := st.generateStorageDealID()
 
+			pcid, err := deal.Proposal.Cid()
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalArgument, "failed to take cid of proposal %d: %s", di, err)
+			}
+
+			has, err := pending.Get(adt.CidKey(pcid), nil)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to check for existence of deal proposal: %v", err)
+			}
+
+			if has {
+				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
+			}
+
+			if err := pending.Put(adt.CidKey(pcid), &deal.Proposal); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "set deal in pending: %v", err)
+			}
+
 			if err := proposals.Set(id, &deal.Proposal); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
@@ -231,6 +253,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			newDealIds = append(newDealIds, id)
 		}
+		pendc, err := pending.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush pending proposal set: %w", err)
+		}
+		st.PendingProposals = pendc
+
 		propc, err := proposals.Root()
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proposal set: %w", err)
@@ -303,6 +331,12 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 		states, err := AsDealStateArray(store, st.States)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal states")
 
+		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "load pending %v", err)
+
+		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "load proposals %v", err)
+
 		for _, dealID := range params.DealIDs {
 			// This construction could be replaced with a single "update deal state" state method, possibly batched
 			// over all deal ids at once.
@@ -311,6 +345,26 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			if found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
 			}
+
+			proposal, err := proposals.Get(dealID)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
+			}
+
+			propc, err := proposal.Cid()
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "get proposal cid %v", err)
+			}
+
+			has, err := pending.Get(adt.CidKey(propc), nil)
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "no pending proposal for  %v", err)
+			}
+
+			if !has {
+				rt.Abortf(exitcode.ErrIllegalState, "tried to active deal that was not in the pending set (%s)", propc)
+			}
+
 			err = states.Set(dealID, &DealState{
 				SectorStartEpoch: currEpoch,
 				LastUpdatedEpoch: epochUndefined,
@@ -444,6 +498,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
 		}
 
+		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "loading pending proposals map: %s", err)
+		}
+
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
 				state, found, err := states.Get(dealID)
@@ -456,6 +515,13 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				}
 
 				deal := st.mustGetDeal(rt, dealID)
+				dcid, err := deal.Cid()
+				if err != nil {
+					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
+				}
+				if err := pending.Delete(adt.CidKey(dcid)); err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to delete pending proposal: %v", err)
+				}
 
 				if state.SectorStartEpoch == epochUndefined {
 					// Not yet appeared in proven sector; check for timeout.
