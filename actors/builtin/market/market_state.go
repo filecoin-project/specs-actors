@@ -148,10 +148,32 @@ func (st *State) mutateDealProposals(rt Runtime, f func(*DealArray)) {
 	st.Proposals = rcid
 }
 
+func (st *State) mutateDealStates(rt Runtime, f func(*DealMetaArray)) {
+	states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal states array: %s", err)
+	}
+
+	f(states)
+
+	scid, err := states.Root()
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "flushing deal states set failed: %s", err)
+	}
+
+	st.States = scid
+}
+
 func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 	st.mutateDealProposals(rt, func(proposals *DealArray) {
 		if err := proposals.Delete(uint64(dealID)); err != nil {
-			rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal: %v", err)
+		}
+	})
+
+	st.mutateDealStates(rt, func(states *DealMetaArray) {
+		if err := states.Delete(dealID); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal state: %v", err)
 		}
 	})
 }

@@ -91,6 +91,6 @@ func (t *DealMetaArray) Set(k abi.DealID, value *DealState) error {
 	return t.Array.Set(uint64(k), value)
 }
 
-func (t *DealMetaArray) Delete(key uint64) error {
-	return t.Array.Delete(key)
+func (t *DealMetaArray) Delete(id abi.DealID) error {
+	return t.Array.Delete(uint64(id))
 }
