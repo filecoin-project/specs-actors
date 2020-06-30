@@ -102,25 +102,11 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	periodStart := nextProvingPeriodStart(currEpoch, offset)
 	Assert(periodStart > currEpoch)
 
-	sectorSize, err := params.SealProofType.SectorSize()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "no sector size for seal proof type %d: %w", params.SealProofType)
+	info, err := ConstructMinerInfo(owner, worker, params.PeerId, params.Multiaddrs, params.SealProofType)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
+	infoCid := rt.Store().Put(info)
 
-	partitionSectors, err := params.SealProofType.WindowPoStPartitionSectors()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "no partition size for seal proof type %d", params.SealProofType)
-
-	info := MinerInfo{
-		Owner:                      owner,
-		Worker:                     worker,
-		PendingWorkerKey:           nil,
-		PeerId:                     params.PeerId,
-		Multiaddrs:                 params.Multiaddrs,
-		SealProofType:              params.SealProofType,
-		SectorSize:                 sectorSize,
-		WindowPoStPartitionSectors: partitionSectors,
-	}
-	infoCid := rt.Store().Put(&info)
-
-	state, err := ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, infoCid, periodStart)
+	state, err := ConstructState(infoCid, periodStart, emptyArray, emptyMap, emptyDeadlinesCid)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
@@ -144,8 +130,7 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+	info := getMinerInfo(rt, &st)
 	return &GetControlAddressesReturn{
 		Owner:  info.Owner,
 		Worker: info.Worker,
@@ -160,8 +145,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	var effectiveEpoch abi.ChainEpoch
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(info.Owner)
 
@@ -174,7 +158,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 			NewWorker:   worker,
 			EffectiveAt: effectiveEpoch,
 		}
-		err = st.SaveInfo(adt.AsStore(rt), info)
+		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 		return nil
 	})
@@ -193,12 +177,11 @@ type ChangePeerIDParams struct {
 func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(info.Worker)
 		info.PeerId = params.NewID
-		err = st.SaveInfo(adt.AsStore(rt), info)
+		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 		return nil
 	})
@@ -212,11 +195,10 @@ type ChangeMultiaddrsParams struct {
 func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 		info.Multiaddrs = params.NewMultiaddrs
-		err = st.SaveInfo(adt.AsStore(rt), info)
+		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 		return nil
 	})
@@ -254,9 +236,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
+	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
 		partitionSize := info.WindowPoStPartitionSectors
@@ -334,8 +316,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		return nil
 	})
 
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
 	// Restore power for recovered sectors. Remove power for new faults.
 	requestUpdateSectorPower(rt, info.SectorSize, recoveredSectors, detectedFaultSectors)
 	// Burn penalties.
@@ -376,8 +356,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	store := adt.AsStore(rt)
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 		if params.SealProof != info.SealProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
@@ -409,9 +388,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		duration := params.Expiration - rt.CurrEpoch()
 
-		sectorSize, err := st.GetSectorSize(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to read sector size")
-		sectorWeight := QAPowerForWeight(sectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
+		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
 		depositReq := big.Max(
 			precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply),
 			depositMinimum,
@@ -591,8 +568,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// Request power for activated sector.
 		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
 		// https://github.com/filecoin-project/specs-actors/issues/475
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 		requestUpdateSectorPower(rt, info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
 
 		// Add sector and pledge lock-up to miner state
@@ -683,8 +659,7 @@ type ExtendSectorExpirationParams struct {
 func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+	info := getMinerInfo(rt, &st)
 	rt.ValidateImmediateCallerIs(info.Worker)
 
 	store := adt.AsStore(rt)
@@ -738,8 +713,7 @@ type TerminateSectorsParams struct {
 func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+	info := getMinerInfo(rt, &st)
 	rt.ValidateImmediateCallerIs(info.Worker)
 
 	epochReward := requestCurrentEpochBlockReward(rt)
@@ -778,9 +752,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
+	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
 		currDeadline := st.DeadlineInfo(currEpoch)
@@ -852,7 +826,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for declared faults.
-			declaredPenalty, err := unlockDeclaredFaultPenalty(&st, store, currEpoch, epochReward, pwrTotal.QualityAdjPower, declaredFaultSectors)
+			declaredPenalty, err := unlockDeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, pwrTotal.QualityAdjPower, declaredFaultSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			penalty = big.Add(penalty, declaredPenalty)
 		}
@@ -869,8 +843,6 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	})
 
 	// Remove power for new faulty sectors.
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
 	requestUpdateSectorPower(rt, info.SectorSize, nil, append(detectedFaultSectors, declaredFaultSectors...))
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 
@@ -900,9 +872,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
+	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
 		currDeadline := st.DeadlineInfo(currEpoch)
@@ -944,8 +916,6 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	})
 
 	// Remove power for new faulty sectors.
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
 	requestUpdateSectorPower(rt, info.SectorSize, nil, detectedFaultSectors)
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 
@@ -962,8 +932,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 	store := adt.AsStore(rt)
 	var st State
 	newlyVested := rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
 
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
@@ -1040,10 +1009,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative fund requested for withdrawal: %s", params.AmountRequested)
 	}
 	var info *MinerInfo
-	var err error
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		info, err = st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Owner)
 		newlyVestedFund, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
 		if err != nil {
@@ -1121,16 +1088,14 @@ func handleProvingPeriod(rt Runtime) {
 	// constructed; this is detected by !deadline.PeriodStarted().
 	// Use deadline.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
 	deadline := NewDeadlineInfo(0, 0, 0)
+	var info *MinerInfo
 	{
 		// Detect and penalize missing proofs.
 		var detectedFaultSectors []*SectorOnChainInfo
 		currEpoch := rt.CurrEpoch()
 		penalty := abi.NewTokenAmount(0)
-		var info *MinerInfo
-		var err error
 		rt.State().Transaction(&st, func() interface{} {
-			info, err = st.GetInfo(adt.AsStore(rt))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+			info = getMinerInfo(rt, &st)
 			deadline = st.DeadlineInfo(currEpoch)
 			if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
 				deadlines, err := st.LoadDeadlines(store)
@@ -1178,7 +1143,7 @@ func handleProvingPeriod(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 			// Unlock penalty for ongoing faults.
-			ongoingFaultPenalty, err = unlockDeclaredFaultPenalty(&st, store, deadline.PeriodEnd(), epochReward, pwrTotal.QualityAdjPower, ongoingFaultInfos)
+			ongoingFaultPenalty, err = unlockDeclaredFaultPenalty(&st, store, info.SectorSize, deadline.PeriodEnd(), epochReward, pwrTotal.QualityAdjPower, ongoingFaultInfos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 			return nil
 		})
@@ -1201,8 +1166,6 @@ func handleProvingPeriod(rt Runtime) {
 				//if period end is not in the future, get randomness from previous epoch
 				randomnessEpoch := minEpoch(deadline.PeriodEnd(), rt.CurrEpoch()-ElectionLookback)
 				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randomnessEpoch, nil)
-				info, err := st.GetInfo(adt.AsStore(rt))
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
 				err = AssignNewSectors(deadlines, info.WindowPoStPartitionSectors, newSectors, assignmentSeed)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
@@ -1255,9 +1218,8 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	AssertMsg(st.NextDeadlineToProcessFaults <= beforeDeadline, "invalid next-deadline %d after before-deadline %d while detecting faults",
 		st.NextDeadlineToProcessFaults, beforeDeadline)
 
-	info, err := st.GetInfo(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
-	detectedFaults, failedRecoveries, err := computeFaultsFromMissingPoSts(info, st.Faults, st.Recoveries, st.PostSubmissions, deadlines, st.NextDeadlineToProcessFaults, beforeDeadline)
+	info := getMinerInfo(rt, st)
+	detectedFaults, failedRecoveries, err := computeFaultsFromMissingPoSts(info.WindowPoStPartitionSectors, st.Faults, st.Recoveries, st.PostSubmissions, deadlines, st.NextDeadlineToProcessFaults, beforeDeadline)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute detected faults")
 	st.NextDeadlineToProcessFaults = beforeDeadline % WPoStPeriodDeadlines
 
@@ -1277,18 +1239,17 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 
 	// Unlock sector penalty for all undeclared faults.
 	penalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, currEpoch, epochReward, currentTotalPower, penalizedSectors)
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, penalizedSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
 	return detectedFaultSectors, penalty
 }
 
 // Computes the sectors that were expected to be present in partitions of a PoSt submission but were not, in the
 // deadlines from sinceDeadline (inclusive) to beforeDeadline (exclusive).
-func computeFaultsFromMissingPoSts(info *MinerInfo, faults, recoveries, postSubmissions *abi.BitField, deadlines *Deadlines, sinceDeadline, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
+func computeFaultsFromMissingPoSts(partitionSize uint64, faults, recoveries, postSubmissions *abi.BitField, deadlines *Deadlines, sinceDeadline, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
 	// TODO: Iterating this bitfield and keeping track of what partitions we're expecting could remove the
 	// need to expand this into a potentially-giant map. But it's tricksy.
 	// https://github.com/filecoin-project/specs-actors/issues/477
-	partitionSize := info.WindowPoStPartitionSectors
 	submissions, err := postSubmissions.AllMap(activePartitionsMax(partitionSize))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to expand submissions: %w", err)
@@ -1556,8 +1517,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 	penalty := abi.NewTokenAmount(0)
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
-		info, err = st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info = getMinerInfo(rt, &st)
 		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault max")
 
@@ -1608,7 +1568,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
 
 		if terminationType != power.SectorTerminationExpired {
-			penalty, err = unlockTerminationPenalty(&st, store, rt.CurrEpoch(), epochReward, currentTotalPower, allSectors)
+			penalty, err = unlockTerminationPenalty(&st, store, info.SectorSize, rt.CurrEpoch(), epochReward, currentTotalPower, allSectors)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to unlock penalty %s", err)
 			}
@@ -1846,8 +1806,7 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		info, err := st.GetInfo(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+		info := getMinerInfo(rt, &st)
 		if info.PendingWorkerKey == nil {
 			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
 		}
@@ -1858,7 +1817,7 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 		info.Worker = info.PendingWorkerKey.NewWorker
 		info.PendingWorkerKey = nil
-		err = st.SaveInfo(adt.AsStore(rt), info)
+		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
 
 		return nil
@@ -2049,35 +2008,20 @@ func qaPowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) 
 	return power
 }
 
-func unlockDeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return abi.NewTokenAmount(0), err
-	}
-	sectorSize := info.SectorSize
+func unlockDeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalQAPower := qaPowerForSectors(sectorSize, sectors)
 	fee := PledgePenaltyForDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func unlockUndeclaredFaultPenalty(st *State, store adt.Store, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return abi.NewTokenAmount(0), err
-	}
-	sectorSize := info.SectorSize
+func unlockUndeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalQAPower := qaPowerForSectors(sectorSize, sectors)
 	fee := PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func unlockTerminationPenalty(st *State, store adt.Store, curEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+func unlockTerminationPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, curEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalFee := big.Zero()
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return abi.NewTokenAmount(0), err
-	}
-	sectorSize := info.SectorSize
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
 		fee := PledgePenaltyForTermination(s.InitialPledge, curEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
@@ -2096,6 +2040,12 @@ func PowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (r
 // The oldest seal challenge epoch that will be accepted in the current epoch.
 func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
 	return currEpoch - ChainFinality - MaxSealDuration[proof]
+}
+
+func getMinerInfo(rt Runtime, st *State) *MinerInfo {
+	info, err := st.GetInfo(adt.AsStore(rt))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")
+	return info
 }
 
 func min64(a, b uint64) uint64 {

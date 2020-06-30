@@ -568,9 +568,6 @@ func TestWindowPost(t *testing.T) {
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		st := getState(rt)
-		info, err := st.GetInfo(store)
-		require.NoError(t, err)
-		partitionSize := info.WindowPoStPartitionSectors
 		_ = actor.commitAndProveSectors(rt, 1, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
@@ -588,10 +585,10 @@ func TestWindowPost(t *testing.T) {
 			deadlines, err := st.LoadDeadlines(store)
 			require.NoError(t, err)
 
-			firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, partitionSize, deadline.Index)
+			firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, actor.partitionSize, deadline.Index)
 			require.NoError(t, err)
 			if sectorCount != 0 {
-				partitionCount, _, err := miner.DeadlineCount(deadlines, partitionSize, deadline.Index)
+				partitionCount, _, err := miner.DeadlineCount(deadlines, actor.partitionSize, deadline.Index)
 				require.NoError(t, err)
 
 				partitions := make([]uint64, partitionCount)
@@ -599,7 +596,7 @@ func TestWindowPost(t *testing.T) {
 					partitions[i] = firstPartIdx + i
 				}
 
-				partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, partitions)
+				partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, actor.partitionSize, deadline.Index, partitions)
 				require.NoError(t, err)
 				provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 				require.NoError(t, err)
@@ -647,9 +644,7 @@ func TestProveCommit(t *testing.T) {
 		st := getState(rt)
 		st.LockedFunds = big.Div(st.LockedFunds, big.NewInt(2))
 		rt.ReplaceState(st)
-		store :=  rt.AdtStore()
-		info, err := st.GetInfo(store)
-		require.NoError(t, err)
+		info := actor.getInfo(rt)
 
 		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
@@ -1035,6 +1030,7 @@ type actorHarness struct {
 
 	sealProofType abi.RegisteredSealProof
 	sectorSize    abi.SectorSize
+	partitionSize uint64
 	periodOffset  abi.ChainEpoch
 	nextSectorNo  abi.SectorNumber
 
@@ -1047,6 +1043,8 @@ type actorHarness struct {
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
 	sealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1
 	sectorSize, err := sealProofType.SectorSize()
+	require.NoError(t, err)
+	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
 	require.NoError(t, err)
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
@@ -1062,6 +1060,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 
 		sealProofType: sealProofType,
 		sectorSize:    sectorSize,
+		partitionSize: partitionSectors,
 		periodOffset:    provingPeriodOffset,
 		nextSectorNo:    100,
 
@@ -1119,6 +1118,14 @@ func (h *actorHarness) getSector(rt *mock.Runtime, sno abi.SectorNumber) *miner.
 	require.NoError(h.t, err)
 	require.True(h.t, found)
 	return sector
+}
+
+func (h *actorHarness) getInfo(rt *mock.Runtime) *miner.MinerInfo {
+	var st miner.State
+	rt.GetState(&st)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	return info
 }
 
 // Collects all sector infos into a map.
@@ -1468,24 +1475,20 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, totalQAPower abi.StorageP
 }
 
 func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
-	st := getState(rt)
-	store := rt.AdtStore()
-	info, err := st.GetInfo(store)
-	require.NoError(h.t, err)
-	partitionSize := info.WindowPoStPartitionSectors
-
+	
 	// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
 	// Submit a window post for all partitions due at each deadline when necessary.
 	deadline := h.deadline(rt)
 	for !deadline.PeriodElapsed() {
-		st = getState(rt)
+		st := getState(rt)
+		store := rt.AdtStore()
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load deadlines")
 
-		firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, partitionSize, deadline.Index)
+		firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, h.partitionSize, deadline.Index)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partitions for deadline")
 		if sectorCount != 0 {
-			partitionCount, _, err := miner.DeadlineCount(deadlines, partitionSize, deadline.Index)
+			partitionCount, _, err := miner.DeadlineCount(deadlines, h.partitionSize, deadline.Index)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partition count")
 
 			partitions := make([]uint64, partitionCount)
@@ -1493,7 +1496,7 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 				partitions[i] = firstPartIdx + i
 			}
 
-			partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, partitions)
+			partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadline.Index, partitions)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not compute partitions")
 			provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get proven sectors")
@@ -1515,12 +1518,9 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
-	st := getState(rt)
-	info, err := st.GetInfo(rt.AdtStore())
-	require.NoError(h.t, err)
 	newSector := *sector
 	newSector.Expiration += extension
-	qaDelta := big.Sub(miner.QAPowerForSector(info.SectorSize, &newSector), miner.QAPowerForSector(info.SectorSize, sector))
+	qaDelta := big.Sub(miner.QAPowerForSector(h.sectorSize, &newSector), miner.QAPowerForSector(h.sectorSize, sector))
 
 	rt.ExpectSend(builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,

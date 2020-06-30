@@ -151,7 +151,7 @@ type SectorOnChainInfo struct {
 	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
 }
 
-func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, infoCid cid.Cid, periodStart abi.ChainEpoch) (*State, error) {
+func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 
 	return &State{
 		Info: infoCid,
@@ -174,10 +174,33 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid, infoC
 	}, nil
 }
 
+func ConstructMinerInfo(owner addr.Address, worker addr.Address, pid []byte, multiAddrs [][]byte, sealProofType abi.RegisteredSealProof) (*MinerInfo, error) {
+
+	sectorSize, err := sealProofType.SectorSize()
+	if err != nil {
+		return nil, err
+	}
+
+	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
+	if err != nil {
+		return nil, err
+	}
+	return &MinerInfo{
+		Owner:                      owner,
+		Worker:                     worker,
+		PendingWorkerKey:           nil,
+		PeerId:                     pid,
+		Multiaddrs:                 multiAddrs,
+		SealProofType:              sealProofType,
+		SectorSize:                 sectorSize,
+		WindowPoStPartitionSectors: partitionSectors,
+	}, nil
+}
+
 func (st *State) GetInfo(store adt.Store) (*MinerInfo, error) {
 	var info MinerInfo
 	if err := store.Get(store.Context(), st.Info, &info); err != nil {
-		return nil, errors.Wrapf(err, "failed to get miner info")
+		return nil, xerrors.Errorf("failed to get miner info %w", err)
 	}
 	return &info, nil
 }
@@ -189,22 +212,6 @@ func (st *State) SaveInfo(store adt.Store, info *MinerInfo) error {
 	}
 	st.Info = c
 	return nil
-}
-
-func (st *State) GetWorker(store adt.Store) (addr.Address, error) {
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return addr.Undef, errors.Wrapf(err, "failed to get miner info")
-	}
-	return info.Worker, nil
-}
-
-func (st *State) GetSectorSize(store adt.Store) (abi.SectorSize, error) {
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return abi.SectorSize(0), err
-	}
-	return info.SectorSize, nil
 }
 
 // Returns deadline calculations for the current proving period.

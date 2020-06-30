@@ -1010,7 +1010,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	infoCid, err := store.Put(context.Background(), &info)
 	require.NoError(t, err)
 
-	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, infoCid, periodBoundary)
+	state, err := miner.ConstructState(infoCid, periodBoundary, emptyArray, emptyMap, emptyDeadlinesCid)
 	require.NoError(t, err)
 
 	// assert NewSectors bitfield was constructed correctly (empty)
