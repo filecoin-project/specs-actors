@@ -572,6 +572,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Skip to end of proving period, cron adds sectors to proving set.
 		actor.advancePastProvingPeriodWithCron(rt)
+		st = getState(rt)
 
 		// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
 		// Submit a window post for all partitions due at each deadline when necessary.
