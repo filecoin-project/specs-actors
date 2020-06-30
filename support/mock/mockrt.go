@@ -730,6 +730,9 @@ func (rt *Runtime) Verify() {
 	if len(rt.expectValidateCallerType) > 0 {
 		rt.failTest("missing expected ValidateCallerType %v", rt.expectValidateCallerType)
 	}
+	if len(rt.expectRandomness) > 0 {
+		rt.failTest("missing expected randomness %v", rt.expectRandomness)
+	}
 	if len(rt.expectSends) > 0 {
 		rt.failTest("missing expected send %v", rt.expectSends)
 	}
@@ -759,6 +762,7 @@ func (rt *Runtime) Reset() {
 	rt.expectValidateCallerAny = false
 	rt.expectValidateCallerAddr = nil
 	rt.expectValidateCallerType = nil
+	rt.expectRandomness = nil
 	rt.expectSends = nil
 	rt.expectCreateActor = nil
 	rt.expectVerifySig = nil
