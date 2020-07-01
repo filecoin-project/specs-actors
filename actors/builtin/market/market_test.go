@@ -455,6 +455,18 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 				exitCode:                   exitcode.ErrIllegalArgument,
 				signatureVerificationError: errors.New("error"),
 			},
+			"no entry for client in locked  balance table": {
+				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
+					a.addProviderFunds(rt, d.ProviderCollateral)
+				},
+				exitCode: exitcode.ErrIllegalState,
+			},
+			"no entry for provider in locked  balance table": {
+				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
+					a.addParticipantFunds(rt, client, d.ClientBalanceRequirement())
+				},
+				exitCode: exitcode.ErrIllegalState,
+			},
 		}
 
 		for name, tc := range tcs {
