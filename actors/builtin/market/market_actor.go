@@ -342,14 +342,15 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			// This construction could be replaced with a single "update deal state" state method, possibly batched
 			// over all deal ids at once.
 			_, found, err := states.Get(dealID)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal")
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state for dealId %d", dealID)
 			if found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
 			}
 
-			proposal, err := proposals.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
+			proposal, found, err := proposals.Get(dealID)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
+			if !found {
+				rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
 			}
 
 			propc, err := proposal.Cid()
@@ -435,10 +436,16 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, err := proposals.Get(dealID)
+			deal, found, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
+			// deal could have terminated and hence deleted before the sector is terminated.
+			// we should simply continue instead of aborting execution here if a deal is not found.
+			if !found {
+				continue
+			}
+
 			Assert(deal.Provider == minerAddr)
 
 			state, found, err := states.Get(dealID)
@@ -634,9 +641,12 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
-		proposal, err := proposals.Get(dealID)
+		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
 			return big.Int{}, big.Int{}, fmt.Errorf("failed to load deal %d: %w", dealID, err)
+		}
+		if !found {
+			return big.Int{}, big.Int{}, fmt.Errorf("dealId %d not found", dealID)
 		}
 		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
 			return big.Int{}, big.Int{}, fmt.Errorf("cannot activate deal %d: %w", dealID, err)
