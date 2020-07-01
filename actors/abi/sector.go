@@ -57,9 +57,6 @@ type StoragePower = big.Int
 
 type SectorQuality = big.Int
 
-// The unit of spacetime committed to the network
-type Spacetime = big.Int
-
 func NewStoragePower(n int64) StoragePower {
 	return big.NewInt(n)
 }

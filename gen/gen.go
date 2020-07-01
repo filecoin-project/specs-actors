@@ -127,7 +127,6 @@ func main() {
 		power.CronEvent{},
 		// method params
 		power.CreateMinerParams{},
-		power.DeleteMinerParams{},
 		power.EnrollCronEventParams{},
 		power.UpdateClaimedPowerParams{},
 		// method returns
