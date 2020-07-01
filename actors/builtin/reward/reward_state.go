@@ -10,11 +10,14 @@ import (
 // Fractional representation of NetworkTime with an implicit denominator of (2^MintingInputFixedPoint).
 type NetworkTime = big.Int
 
+// A quantity of space * time (in byte-epochs) representing power committed to the network for some duration.
+type Spacetime = big.Int
+
 type State struct {
 	BaselinePower        abi.StoragePower
 	RealizedPower        abi.StoragePower
-	CumsumBaseline       abi.Spacetime
-	CumsumRealized       abi.Spacetime
+	CumsumBaseline       Spacetime
+	CumsumRealized       Spacetime
 	EffectiveNetworkTime NetworkTime
 
 	SimpleSupply   abi.TokenAmount // current supply
