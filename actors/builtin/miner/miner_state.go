@@ -404,9 +404,8 @@ func (st *State) ForEachSectorExpiration(store adt.Store, f func(expiry abi.Chai
 	}
 
 	var bf bitfield.BitField
-	empty := abi.NewBitField()
 	return arr.ForEach(&bf, func(i int64) error {
-		bfCopy, err := bitfield.MergeBitFields(&bf, empty)
+		bfCopy, err := bf.Copy()
 		if err != nil {
 			return err
 		}
@@ -629,9 +628,8 @@ func (st *State) ForEachFaultEpoch(store adt.Store, cb func(epoch abi.ChainEpoch
 	}
 
 	var bf bitfield.BitField
-	empty := abi.NewBitField()
 	return arr.ForEach(&bf, func(i int64) error {
-		bfCopy, err := bitfield.MergeBitFields(&bf, empty)
+		bfCopy, err := bf.Copy()
 		if err != nil {
 			return err
 		}

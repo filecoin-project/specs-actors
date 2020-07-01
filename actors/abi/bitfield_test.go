@@ -65,51 +65,31 @@ func TestBitFieldContains(t *testing.T) {
 	c.Set(2)
 	c.Set(5)
 
-	contains, err := abi.BitFieldContainsAny(a, b)
-	assert.NoError(t, err)
-	assert.True(t, contains)
+	assertContainsAny := func(a, b *abi.BitField, expected bool) {
+		t.Helper()
+		actual, err := abi.BitFieldContainsAny(a, b)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, actual)
+	}
 
-	contains, err = abi.BitFieldContainsAny(b, a)
-	assert.NoError(t, err)
-	assert.True(t, contains)
+	assertContainsAll := func(a, b *abi.BitField, expected bool) {
+		t.Helper()
+		actual, err := abi.BitFieldContainsAll(a, b)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, actual)
+	}
 
-	contains, err = abi.BitFieldContainsAny(a, c)
-	assert.NoError(t, err)
-	assert.True(t, contains)
+	assertContainsAny(a, b, true)
+	assertContainsAny(b, a, true)
+	assertContainsAny(a, c, true)
+	assertContainsAny(c, a, true)
+	assertContainsAny(b, c, false)
+	assertContainsAny(c, b, false)
 
-	contains, err = abi.BitFieldContainsAny(c, a)
-	assert.NoError(t, err)
-	assert.True(t, contains)
-
-	contains, err = abi.BitFieldContainsAny(b, c)
-	assert.NoError(t, err)
-	assert.False(t, contains)
-
-	contains, err = abi.BitFieldContainsAny(c, b)
-	assert.NoError(t, err)
-	assert.False(t, contains)
-
-	contains, err = abi.BitFieldContainsAll(a, b)
-	assert.NoError(t, err)
-	assert.False(t, contains)
-
-	contains, err = abi.BitFieldContainsAll(b, a)
-	assert.NoError(t, err)
-	assert.False(t, contains)
-
-	contains, err = abi.BitFieldContainsAll(a, c)
-	assert.NoError(t, err)
-	assert.True(t, contains)
-
-	contains, err = abi.BitFieldContainsAll(c, a)
-	assert.NoError(t, err)
-	assert.False(t, contains)
-
-	contains, err = abi.BitFieldContainsAll(b, c)
-	assert.NoError(t, err)
-	assert.False(t, contains)
-
-	contains, err = abi.BitFieldContainsAll(c, b)
-	assert.NoError(t, err)
-	assert.False(t, contains)
+	assertContainsAll(a, b, false)
+	assertContainsAll(b, a, false)
+	assertContainsAll(a, c, true)
+	assertContainsAll(c, a, false)
+	assertContainsAll(b, c, false)
+	assertContainsAll(c, b, false)
 }
