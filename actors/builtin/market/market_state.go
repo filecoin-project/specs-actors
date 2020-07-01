@@ -54,11 +54,11 @@ type State struct {
 	LastCron       abi.ChainEpoch
 
 	// Total Client Collateral that is locked -> unlocked when deal is terminated
-	TotalLockedClientCollateral abi.TokenAmount
+	TotalClientLockedCollateral abi.TokenAmount
 	// Total Provider Collateral that is locked -> unlocked when deal is terminated
-	TotalLockedProviderCollateral abi.TokenAmount
+	TotalProviderLockedCollateral abi.TokenAmount
 	// Total storage fee that is locked in escrow -> unlocked when payments are made
-	TotalLockedDealPayments abi.TokenAmount
+	TotalClientStorageFee abi.TokenAmount
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
@@ -72,9 +72,9 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 		DealOpsByEpoch:   emptyMSetCid,
 		LastCron:         abi.ChainEpoch(-1),
 
-		TotalLockedClientCollateral:   abi.NewTokenAmount(0),
-		TotalLockedProviderCollateral: abi.NewTokenAmount(0),
-		TotalLockedDealPayments:       abi.NewTokenAmount(0),
+		TotalClientLockedCollateral:   abi.NewTokenAmount(0),
+		TotalProviderLockedCollateral: abi.NewTokenAmount(0),
+		TotalClientStorageFee:         abi.NewTokenAmount(0),
 	}
 }
 
@@ -328,11 +328,11 @@ func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount a
 
 	switch lockReason {
 	case ClientCollateral:
-		st.TotalLockedClientCollateral = big.Sub(st.TotalLockedClientCollateral, amount)
+		st.TotalClientLockedCollateral = big.Sub(st.TotalClientLockedCollateral, amount)
 	case ClientStorageFee:
-		st.TotalLockedDealPayments = big.Sub(st.TotalLockedDealPayments, amount)
+		st.TotalClientStorageFee = big.Sub(st.TotalClientStorageFee, amount)
 	case ProviderCollateral:
-		st.TotalLockedProviderCollateral = big.Sub(st.TotalLockedProviderCollateral, amount)
+		st.TotalProviderLockedCollateral = big.Sub(st.TotalProviderLockedCollateral, amount)
 	}
 
 	return nil
@@ -411,11 +411,11 @@ func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.To
 
 	switch reason {
 	case ClientCollateral:
-		st.TotalLockedClientCollateral = big.Add(st.TotalLockedClientCollateral, amount)
+		st.TotalClientLockedCollateral = big.Add(st.TotalClientLockedCollateral, amount)
 	case ClientStorageFee:
-		st.TotalLockedDealPayments = big.Add(st.TotalLockedDealPayments, amount)
+		st.TotalClientStorageFee = big.Add(st.TotalClientStorageFee, amount)
 	case ProviderCollateral:
-		st.TotalLockedProviderCollateral = big.Add(st.TotalLockedProviderCollateral, amount)
+		st.TotalProviderLockedCollateral = big.Add(st.TotalProviderLockedCollateral, amount)
 	}
 }
 

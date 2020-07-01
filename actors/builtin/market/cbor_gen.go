@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -75,18 +75,18 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.TotalLockedClientCollateral (big.Int) (struct)
-	if err := t.TotalLockedClientCollateral.MarshalCBOR(w); err != nil {
+	// t.TotalClientLockedCollateral (big.Int) (struct)
+	if err := t.TotalClientLockedCollateral.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.TotalLockedProviderCollateral (big.Int) (struct)
-	if err := t.TotalLockedProviderCollateral.MarshalCBOR(w); err != nil {
+	// t.TotalProviderLockedCollateral (big.Int) (struct)
+	if err := t.TotalProviderLockedCollateral.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.TotalLockedDealPayments (big.Int) (struct)
-	if err := t.TotalLockedDealPayments.MarshalCBOR(w); err != nil {
+	// t.TotalClientStorageFee (big.Int) (struct)
+	if err := t.TotalClientStorageFee.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -218,30 +218,30 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		t.LastCron = abi.ChainEpoch(extraI)
 	}
-	// t.TotalLockedClientCollateral (big.Int) (struct)
+	// t.TotalClientLockedCollateral (big.Int) (struct)
 
 	{
 
-		if err := t.TotalLockedClientCollateral.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalLockedClientCollateral: %w", err)
+		if err := t.TotalClientLockedCollateral.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalClientLockedCollateral: %w", err)
 		}
 
 	}
-	// t.TotalLockedProviderCollateral (big.Int) (struct)
+	// t.TotalProviderLockedCollateral (big.Int) (struct)
 
 	{
 
-		if err := t.TotalLockedProviderCollateral.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalLockedProviderCollateral: %w", err)
+		if err := t.TotalProviderLockedCollateral.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalProviderLockedCollateral: %w", err)
 		}
 
 	}
-	// t.TotalLockedDealPayments (big.Int) (struct)
+	// t.TotalClientStorageFee (big.Int) (struct)
 
 	{
 
-		if err := t.TotalLockedDealPayments.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalLockedDealPayments: %w", err)
+		if err := t.TotalClientStorageFee.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalClientStorageFee: %w", err)
 		}
 
 	}
