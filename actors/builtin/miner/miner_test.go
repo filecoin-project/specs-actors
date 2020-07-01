@@ -598,6 +598,52 @@ func TestWindowPost(t *testing.T) {
 		assert.False(t, empty, "no post submission")
 	})
 
+	t.Run("successful recoveries recover power", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
+
+		// Skip to end of proving period, cron adds sectors to proving set.
+		actor.advancePastProvingPeriodWithCron(rt)
+		st := getState(rt)
+
+		deadlines, err := st.LoadDeadlines(rt.AdtStore())
+		require.NoError(t, err)
+		deadline := st.DeadlineInfo(rt.Epoch())
+
+		// advance to next dealine where we expect the first sectors to appear
+		rt.SetEpoch(deadline.Close + 1)
+		deadline = st.DeadlineInfo(rt.Epoch())
+
+		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+
+		// mark all sectors as recovered faults
+		sectors := bitfield.New()
+		for _, info := range infos {
+			sectors.Set(uint64(info.SectorNumber))
+		}
+		err = st.AddFaults(rt.AdtStore(), &sectors, rt.Epoch())
+		require.NoError(t, err)
+		err = st.AddRecoveries(&sectors)
+		require.NoError(t, err)
+		rt.ReplaceState(st)
+
+		sectorSize, err := infos[0].SealProof.SectorSize()
+		require.NoError(t, err)
+
+		rawPower, qaPower := miner.PowerForSectors(sectorSize, infos)
+
+		cfg := &faultConfig{
+			expectedRawPowerDelta: rawPower,
+			expectedQAPowerDelta:  qaPower,
+			expectedPenalty:       big.Zero(),
+			skipped:               bitfield.NewFromSet(nil),
+		}
+
+		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+	})
+
 	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -629,15 +675,62 @@ func TestWindowPost(t *testing.T) {
 		// expected penalty is the fee for an undeclared fault
 		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
-		cfg := &skipConfig{
-			skipped:               *skipped,
+		cfg := &faultConfig{
+			skipped:               skipped,
 			expectedRawPowerDelta: rawPower.Neg(),
 			expectedQAPowerDelta:  qaPower.Neg(),
 			expectedPenalty:       expectedPenalty,
 		}
 
 		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+	})
 
+	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
+
+		// Skip to end of proving period, cron adds sectors to proving set.
+		actor.advancePastProvingPeriodWithCron(rt)
+		st := getState(rt)
+
+		deadlines, err := st.LoadDeadlines(rt.AdtStore())
+		require.NoError(t, err)
+		deadline := st.DeadlineInfo(rt.Epoch())
+
+		// advance to next dealine where we expect the first sectors to appear
+		rt.SetEpoch(deadline.Close + 1)
+		deadline = st.DeadlineInfo(rt.Epoch())
+
+		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+
+		// mark all sectors as recovered faults
+		sectors := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
+		err = st.AddFaults(rt.AdtStore(), sectors, rt.Epoch())
+		require.NoError(t, err)
+		err = st.AddRecoveries(sectors)
+		require.NoError(t, err)
+		rt.ReplaceState(st)
+
+		sectorSize, err := infos[0].SealProof.SectorSize()
+		require.NoError(t, err)
+
+		_, qaPower := miner.PowerForSectors(sectorSize, infos[:1])
+
+		// skip the first sector in the partition
+		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
+		// expected penalty is the fee for an undeclared fault
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+
+		cfg := &faultConfig{
+			expectedRawPowerDelta: big.Zero(),
+			expectedQAPowerDelta:  big.Zero(),
+			expectedPenalty:       expectedPenalty,
+			skipped:               skipped,
+		}
+
+		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
 	})
 }
 
@@ -1384,14 +1477,14 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
-type skipConfig struct {
-	skipped               bitfield.BitField
+type faultConfig struct {
+	skipped               *bitfield.BitField
 	expectedRawPowerDelta abi.StoragePower
 	expectedQAPowerDelta  abi.StoragePower
 	expectedPenalty       abi.TokenAmount
 }
 
-func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []uint64, infos []*miner.SectorOnChainInfo, skipCfg *skipConfig) {
+func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []uint64, infos []*miner.SectorOnChainInfo, postCfg *faultConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -1421,9 +1514,9 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	}
 	{
 		var goodInfo *miner.SectorOnChainInfo
-		if skipCfg != nil {
+		if postCfg != nil {
 			for _, ci := range infos {
-				contains, err := skipCfg.skipped.IsSet(uint64(ci.SectorNumber))
+				contains, err := postCfg.skipped.IsSet(uint64(ci.SectorNumber))
 				require.NoError(h.t, err)
 				if !contains {
 					goodInfo = ci
@@ -1437,8 +1530,8 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			si := ci
-			if skipCfg != nil {
-				contains, err := skipCfg.skipped.IsSet(uint64(ci.SectorNumber))
+			if postCfg != nil {
+				contains, err := postCfg.skipped.IsSet(uint64(ci.SectorNumber))
 				require.NoError(h.t, err)
 				if contains {
 					si = goodInfo
@@ -1460,19 +1553,25 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		rt.ExpectVerifyPoSt(vi, nil)
 	}
 	skipped := bitfield.New()
-	if skipCfg != nil {
+	if postCfg != nil {
 		// expect power update
-		claim := &power.UpdateClaimedPowerParams{
-			RawByteDelta:         skipCfg.expectedRawPowerDelta,
-			QualityAdjustedDelta: skipCfg.expectedQAPowerDelta,
+		if !postCfg.expectedRawPowerDelta.IsZero() || !postCfg.expectedQAPowerDelta.IsZero() {
+			claim := &power.UpdateClaimedPowerParams{
+				RawByteDelta:         postCfg.expectedRawPowerDelta,
+				QualityAdjustedDelta: postCfg.expectedQAPowerDelta,
+			}
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
+				nil, exitcode.Ok)
 		}
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
-			nil, exitcode.Ok)
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, skipCfg.expectedPenalty, nil, exitcode.Ok)
-		pledgeDelta := skipCfg.expectedPenalty.Neg()
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta,
-			abi.NewTokenAmount(0), nil, exitcode.Ok)
-		skipped = skipCfg.skipped
+		if !postCfg.expectedPenalty.IsZero() {
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, postCfg.expectedPenalty, nil, exitcode.Ok)
+		}
+		pledgeDelta := postCfg.expectedPenalty.Neg()
+		if !pledgeDelta.IsZero() {
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta,
+				abi.NewTokenAmount(0), nil, exitcode.Ok)
+		}
+		skipped = *postCfg.skipped
 	}
 
 	params := miner.SubmitWindowedPoStParams{
