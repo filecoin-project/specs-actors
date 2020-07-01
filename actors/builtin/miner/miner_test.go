@@ -1461,15 +1461,34 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
 	}
 	{
+		var goodInfo *miner.SectorOnChainInfo
+		if skipCfg != nil {
+			for _, ci := range infos {
+				contains, err := skipCfg.skipped.IsSet(uint64(ci.SectorNumber))
+				require.NoError(h.t, err)
+				if !contains {
+					goodInfo = ci
+					break
+				}
+			}
+		}
 		actorId, err := addr.IDFromAddress(h.receiver)
 		require.NoError(h.t, err)
 
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
+			si := ci
+			if skipCfg != nil {
+				contains, err := skipCfg.skipped.IsSet(uint64(ci.SectorNumber))
+				require.NoError(h.t, err)
+				if contains {
+					si = goodInfo
+				}
+			}
 			proofInfos[i] = abi.SectorInfo{
-				SealProof:    ci.SealProof,
-				SectorNumber: ci.SectorNumber,
-				SealedCID:    ci.SealedCID,
+				SealProof:    si.SealProof,
+				SectorNumber: si.SectorNumber,
+				SealedCID:    si.SealedCID,
 			}
 		}
 

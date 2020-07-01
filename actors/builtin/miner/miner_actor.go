@@ -270,11 +270,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
 		// of penalties if locked pledge drops too low.
 		detectedFaultSectors, detectedFaultPenalty := detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
-		penalty = big.Add(penalty, faultPenalty)
+		penalty = big.Add(penalty, detectedFaultPenalty)
 		newFaultSectors = append(newFaultSectors, detectedFaultSectors...)
 
 		// Add skipped as faults
-		skippedFaultSectors, skippedPenalty := a.processSkippedFaults(rt, st, &params.Skipped, currDeadline, epochReward, pwrTotal.QualityAdjPower)
+		skippedFaultSectors, skippedPenalty := processSkippedFaults(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower, &params.Skipped)
 		penalty = big.Add(penalty, skippedPenalty)
 		newFaultSectors = append(newFaultSectors, skippedFaultSectors...)
 
@@ -938,60 +938,6 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	return nil
 }
 
-func (a Actor) processSkippedFaults(rt Runtime, st State, skipped *bitfield.BitField, deadline *DeadlineInfo,
-	epochReward abi.TokenAmount, qaPowerTotal abi.StoragePower) ([]*SectorOnChainInfo, abi.TokenAmount) {
-
-	empty, err := skipped.IsEmpty()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
-	if empty {
-		return nil, abi.NewTokenAmount(0)
-	}
-
-	currEpoch := rt.CurrEpoch()
-	store := adt.AsStore(rt)
-	var skippedFaultSectors []*SectorOnChainInfo
-	info := getMinerInfo(rt, &st)
-
-	deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-
-	// Check that the declared sectors are actually due at the deadline.
-	deadlineSectors := deadlines.Due[deadline.Index]
-	contains, err := abi.BitFieldContainsAll(deadlineSectors, skipped)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not check if skipped faults are in deadline")
-	if !contains {
-		rt.Abortf(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline %d", deadline.Index)
-	}
-
-	// Find all skipped faults that have been labeled recovered
-	retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, skipped)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
-
-	// Ignore skipped faults that are already faults but have not been declared recovered
-	newFaults, err := bitfield.SubtractBitField(skipped, st.Faults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
-	penalizableFaults, err := bitfield.MergeBitFields(newFaults, retractedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge skpped and retracted faults")
-
-	// Add Faults
-	err = st.AddFaults(store, newFaults, deadline.PeriodStart)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
-
-	// Load info for sectors.
-	skippedFaultSectors, err = st.LoadSectorInfos(store, penalizableFaults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-
-	// Unlock undeclared penalty for faults.
-	penalty, err := unlockUndeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, qaPowerTotal, skippedFaultSectors)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
-
-	// Remove faulty recoveries
-	err = st.RemoveRecoveries(retractedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
-
-	return skippedFaultSectors, penalty
-}
-
 ///////////////////////
 // Pledge Collateral //
 ///////////////////////
@@ -1274,6 +1220,53 @@ func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline
 		rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", currDeadline.PeriodStart)
 	}
 	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch, epochReward, currentTotalPower)
+}
+
+func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower, skipped *bitfield.BitField) ([]*SectorOnChainInfo, abi.TokenAmount) {
+	empty, err := skipped.IsEmpty()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
+	if empty {
+		return nil, abi.NewTokenAmount(0)
+	}
+
+	currEpoch := rt.CurrEpoch()
+	var skippedFaultSectors []*SectorOnChainInfo
+
+	// Check that the declared sectors are actually due at the deadline.
+	deadlineSectors := deadlines.Due[currDeadline.Index]
+	contains, err := abi.BitFieldContainsAll(deadlineSectors, skipped)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not check if skipped faults are in deadline")
+	if !contains {
+		rt.Abortf(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline %d", currDeadline.Index)
+	}
+
+	// Find all skipped faults that have been labeled recovered
+	retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, skipped)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
+
+	// Ignore skipped faults that are already faults but have not been declared recovered
+	newFaults, err := bitfield.SubtractBitField(skipped, st.Faults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
+	penalizableFaults, err := bitfield.MergeBitFields(newFaults, retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge skpped and retracted faults")
+
+	// Add Faults
+	err = st.AddFaults(store, newFaults, currDeadline.PeriodStart)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
+
+	// Load info for sectors.
+	skippedFaultSectors, err = st.LoadSectorInfos(store, penalizableFaults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
+
+	// Unlock undeclared penalty for faults.
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, currEpoch, epochReward, currentTotalPower, skippedFaultSectors)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+
+	// Remove faulty recoveries
+	err = st.RemoveRecoveries(retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+
+	return skippedFaultSectors, penalty
 }
 
 // Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves
