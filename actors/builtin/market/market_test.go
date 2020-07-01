@@ -258,7 +258,7 @@ func TestMarketActor(t *testing.T) {
 
 			// publish the deal so that client AND provider collateral is locked
 			rt.SetEpoch(publishEpoch)
-			actor.publishDeal(rt, deal)
+			actor.publishDeals(rt, []market.DealProposal{deal})
 			rt.GetState(&st)
 			require.Equal(t, deal.ProviderCollateral, st.GetLockedBalance(rt, provider))
 			require.Equal(t, deal.ClientBalanceRequirement(), st.GetLockedBalance(rt, client))
@@ -293,7 +293,7 @@ func TestMarketActor(t *testing.T) {
 
 			// publish the deal
 			rt.SetEpoch(publishEpoch)
-			dealID := actor.publishDeal(rt, deal)
+			dealID := actor.publishDeals(rt, []market.DealProposal{deal})[0]
 
 			// activate the deal
 			actor.activateDeals(rt, []abi.DealID{dealID}, endEpoch+1, provider)
@@ -342,7 +342,7 @@ func TestPublishStorageDeals(t *testing.T) {
 
 		// publish the deal and activate it
 		rt.SetEpoch(publishEpoch)
-		deal1ID := actor.publishDeal(rt, deal1)
+		deal1ID := actor.publishDeals(rt, []market.DealProposal{deal1})[0]
 		actor.activateDeals(rt, []abi.DealID{deal1ID}, endEpoch, provider)
 		st := actor.getDealState(rt, deal1ID)
 		require.EqualValues(t, publishEpoch, st.SectorStartEpoch)
@@ -352,7 +352,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		actor.addParticipantFunds(rt, client, deal2.ClientBalanceRequirement())
 		actor.addProviderFunds(rt, deal2.ProviderBalanceRequirement())
 		rt.SetEpoch(publishEpoch + 1)
-		deal2ID := actor.publishDeal(rt, deal2)
+		deal2ID := actor.publishDeals(rt, []market.DealProposal{deal2})[0]
 		actor.activateDeals(rt, []abi.DealID{deal2ID}, endEpoch+1, provider)
 	})
 }
@@ -379,7 +379,7 @@ func TestMarketActorDeals(t *testing.T) {
 
 	// First attempt at publishing the deal should work
 	{
-		actor.publishDeal(rt, dealProposal)
+		actor.publishDeals(rt, []market.DealProposal{dealProposal})
 	}
 
 	// Second attempt at publishing the same deal should fail
@@ -400,7 +400,7 @@ func TestMarketActorDeals(t *testing.T) {
 
 	// Same deal with a different label should work
 	{
-		actor.publishDeal(rt, dealProposal)
+		actor.publishDeals(rt, []market.DealProposal{dealProposal})
 	}
 }
 
@@ -489,7 +489,7 @@ func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client 
 	rt.Verify()
 }
 
-func (h *marketActorTestHarness) publishDeal(rt *mock.Runtime, deal market.DealProposal) abi.DealID {
+func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, deals []market.DealProposal) []abi.DealID {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 	rt.ExpectSend(
@@ -501,27 +501,28 @@ func (h *marketActorTestHarness) publishDeal(rt *mock.Runtime, deal market.DealP
 		exitcode.Ok,
 	)
 
-	//  create a client proposal with a valid signature
-	buf := bytes.Buffer{}
-	require.NoError(h.t, deal.MarshalCBOR(&buf), "failed to marshal deal proposal")
-	sig := crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("does not matter")}
-	clientProposal := market.ClientDealProposal{deal, sig}
-	params := &market.PublishStorageDealsParams{[]market.ClientDealProposal{clientProposal}}
+	var params market.PublishStorageDealsParams
 
-	// expect a call to verify the above signature
-	rt.ExpectVerifySignature(sig, deal.Client, buf.Bytes(), nil)
+	for _, deal := range deals {
+		//  create a client proposal with a valid signature
+		buf := bytes.Buffer{}
+		require.NoError(h.t, deal.MarshalCBOR(&buf), "failed to marshal deal proposal")
+		sig := crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("does not matter")}
+		clientProposal := market.ClientDealProposal{deal, sig}
+		params.Deals = append(params.Deals, clientProposal)
 
-	ret := rt.Call(h.PublishStorageDeals, params)
+		// expect a call to verify the above signature
+		rt.ExpectVerifySignature(sig, deal.Client, buf.Bytes(), nil)
+	}
+
+	ret := rt.Call(h.PublishStorageDeals, &params)
 	rt.Verify()
 
 	resp, ok := ret.(*market.PublishStorageDealsReturn)
 	require.True(h.t, ok, "unexpected type returned from call to PublishStorageDeals")
-	require.Len(h.t, resp.IDs, 1)
+	require.Len(h.t, resp.IDs, len(deals))
 
-	dealId := resp.IDs[0]
-	require.NotNil(h.t, h.getDealProposal(rt, dealId))
-
-	return dealId
+	return resp.IDs
 }
 
 func (h *marketActorTestHarness) activateDeals(rt *mock.Runtime, dealIDs []abi.DealID, sectorExpiry abi.ChainEpoch, minerAddr address.Address) {
@@ -534,21 +535,6 @@ func (h *marketActorTestHarness) activateDeals(rt *mock.Runtime, dealIDs []abi.D
 	rt.Verify()
 
 	require.Nil(h.t, ret)
-}
-
-func (h *marketActorTestHarness) getDealProposal(rt *mock.Runtime, dealID abi.DealID) *market.DealProposal {
-	var st market.State
-	rt.GetState(&st)
-
-	proposals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-	require.NoError(h.t, err)
-
-	d, found, err := proposals.Get(dealID)
-	require.NoError(h.t, err)
-	require.True(h.t, found)
-	require.NotNil(h.t, d)
-
-	return d
 }
 
 func (h *marketActorTestHarness) getDealState(rt *mock.Runtime, dealID abi.DealID) *market.DealState {

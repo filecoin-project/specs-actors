@@ -56,8 +56,8 @@ type Runtime struct {
 	expectValidateCallerType   []cid.Cid
 	expectRandomness           []*expectRandomness
 	expectSends                []*expectedMessage
+	expectVerifySigs           []*expectVerifySig
 	expectCreateActor          *expectCreateActor
-	expectVerifySig            *expectVerifySig
 	expectVerifySeal           *expectVerifySeal
 	expectVerifyPoSt           *expectVerifyPoSt
 	expectVerifyConsensusFault *expectVerifyConsensusFault
@@ -449,7 +449,11 @@ func (rt *Runtime) Transaction(st runtime.CBORer, f func() interface{}) interfac
 ///// Syscalls implementation /////
 
 func (rt *Runtime) VerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte) error {
-	exp := rt.expectVerifySig
+	if len(rt.expectVerifySigs) == 0 {
+		rt.failTest("unexpected signature verification sig: %v, signer: %s, plaintext: %v", sig, signer, plaintext)
+	}
+
+	exp := rt.expectVerifySigs[0]
 	if exp != nil {
 		if !exp.sig.Equals(&sig) || exp.signer != signer || !bytes.Equal(exp.plaintext, plaintext) {
 			rt.failTest("unexpected signature verification\n"+
@@ -458,7 +462,7 @@ func (rt *Runtime) VerifySignature(sig crypto.Signature, signer addr.Address, pl
 				sig, signer, plaintext, exp.sig, exp.signer, exp.plaintext)
 		}
 		defer func() {
-			rt.expectVerifySig = nil
+			rt.expectVerifySigs = rt.expectVerifySigs[1:]
 		}()
 		return exp.result
 	}
@@ -669,6 +673,15 @@ func (rt *Runtime) ExpectSend(toAddr addr.Address, methodNum abi.MethodNum, para
 	})
 }
 
+func (rt *Runtime) ExpectVerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte, result error) {
+	rt.expectVerifySigs = append(rt.expectVerifySigs, &expectVerifySig{
+		sig:       sig,
+		signer:    signer,
+		plaintext: plaintext,
+		result:    result,
+	})
+}
+
 func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
 	rt.expectCreateActor = &expectCreateActor{
 		codeId:  codeId,
@@ -682,15 +695,6 @@ func (rt *Runtime) ExpectDeleteActor(beneficiary address.Address) {
 
 func (rt *Runtime) SetHasher(f func(data []byte) [32]byte) {
 	rt.hashfunc = f
-}
-
-func (rt *Runtime) ExpectVerifySignature(sig crypto.Signature, signer addr.Address, plaintext []byte, result error) {
-	rt.expectVerifySig = &expectVerifySig{
-		sig:       sig,
-		signer:    signer,
-		plaintext: plaintext,
-		result:    result,
-	}
 }
 
 func (rt *Runtime) ExpectVerifySeal(seal abi.SealVerifyInfo, result error) {
@@ -736,14 +740,14 @@ func (rt *Runtime) Verify() {
 	if len(rt.expectSends) > 0 {
 		rt.failTest("missing expected send %v", rt.expectSends)
 	}
+	if len(rt.expectVerifySigs) > 0 {
+		rt.failTest("missing expected verify signature %v", rt.expectVerifySigs)
+	}
 	if rt.expectCreateActor != nil {
 		rt.failTest("missing expected create actor with code %s, address %s",
 			rt.expectCreateActor.codeId, rt.expectCreateActor.address)
 	}
-	if rt.expectVerifySig != nil {
-		rt.failTest("missing expected verify signature with signer %s, sig %v, plaintext %v",
-			rt.expectVerifySig.signer, rt.expectVerifySig.sig, rt.expectVerifySig.plaintext)
-	}
+
 	if rt.expectVerifySeal != nil {
 		rt.failTest("missing expected verify seal with %v", rt.expectVerifySeal.seal)
 	}
@@ -765,7 +769,7 @@ func (rt *Runtime) Reset() {
 	rt.expectRandomness = nil
 	rt.expectSends = nil
 	rt.expectCreateActor = nil
-	rt.expectVerifySig = nil
+	rt.expectVerifySigs = nil
 	rt.expectVerifySeal = nil
 }
 
