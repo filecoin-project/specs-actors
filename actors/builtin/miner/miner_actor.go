@@ -1245,27 +1245,30 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 	retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, skipped)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
 
-	// Ignore skipped faults that are already faults but have not been declared recovered
+	// Ignore skipped faults that are already faults
 	newFaults, err := bitfield.SubtractBitField(skipped, st.Faults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
-	penalizableFaults, err := bitfield.MergeBitFields(newFaults, retractedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge skpped and retracted faults")
 
 	// Add Faults
 	err = st.AddFaults(store, newFaults, currDeadline.PeriodStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
 
 	// Load info for sectors.
-	skippedFaultSectors, err = st.LoadSectorInfos(store, penalizableFaults)
+	skippedFaultSectors, err = st.LoadSectorInfos(store, newFaults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
-	// Unlock undeclared penalty for faults.
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, skippedFaultSectors)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+	// Unlock undeclared penalty for faults (skipped faults including retracted recoveries)
+	retractedRecoveryInfos, err := st.LoadSectorInfos(store, retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
 
 	// Remove faulty recoveries
 	err = st.RemoveRecoveries(retractedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+
+	// Penalize new skipped faults and retracted recoveries
+	penalizeFaultSectors := append(skippedFaultSectors, retractedRecoveryInfos...)
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizeFaultSectors)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 
 	return skippedFaultSectors, penalty
 }
