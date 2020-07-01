@@ -153,8 +153,8 @@ func ComputePartitionsSectors(d *Deadlines, partitionSize uint64, deadlineIndex 
 
 	// Work out which sector numbers the partitions correspond to.
 	deadlineSectors := d.Due[deadlineIndex]
-	var partitionsSectors []*abi.BitField
-	for _, pIdx := range partitions {
+	partitionsSectors := make([]*abi.BitField, len(partitions))
+	for i, pIdx := range partitions {
 		if pIdx < deadlineFirstPartition || pIdx >= deadlineFirstPartition+deadlinePartitionCount {
 			return nil, fmt.Errorf("invalid partition %d at deadline %d with first %d, count %d",
 				pIdx, deadlineIndex, deadlineFirstPartition, deadlinePartitionCount)
@@ -168,7 +168,7 @@ func ComputePartitionsSectors(d *Deadlines, partitionSize uint64, deadlineIndex 
 			return nil, fmt.Errorf("failed to slice deadline %d, size %d, offset %d, count %d",
 				deadlineIndex, deadlineSectorCount, sectorOffset, sectorCount)
 		}
-		partitionsSectors = append(partitionsSectors, partitionSectors)
+		partitionsSectors[i] = partitionSectors
 	}
 	return partitionsSectors, nil
 }
