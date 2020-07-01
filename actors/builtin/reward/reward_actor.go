@@ -124,7 +124,7 @@ func (a Actor) newBaselinePower(st *State, rewardEpochsPaid abi.ChainEpoch) abi.
 	return big.NewInt(baselinePower)
 }
 
-func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline abi.Spacetime, cumsumRealized abi.Spacetime) NetworkTime {
+func (a Actor) getEffectiveNetworkTime(st *State, cumsumBaseline Spacetime, cumsumRealized Spacetime) NetworkTime {
 	// TODO: this function depends on the final baseline
 	// EffectiveNetworkTime is a fractional input with an implicit denominator of (2^MintingInputFixedPoint).
 	// realizedCumsum is thus left shifted by MintingInputFixedPoint before converted into a FixedPoint fraction
