@@ -2,6 +2,7 @@ package market
 
 import (
 	"bytes"
+	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -174,12 +175,37 @@ func (st *State) mutateDealProposals(rt Runtime, f func(*DealArray)) {
 	st.Proposals = rcid
 }
 
+func (st *State) mutateDealStates(store adt.Store, f func(*DealMetaArray)) error {
+	states, err := AsDealStateArray(store, st.States)
+	if err != nil {
+		return fmt.Errorf("failed to load deal states array: %w", err)
+	}
+
+	f(states)
+
+	scid, err := states.Root()
+	if err != nil {
+		return fmt.Errorf("flushing deal states set failed: %w", err)
+	}
+
+	st.States = scid
+	return nil
+}
+
 func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 	st.mutateDealProposals(rt, func(proposals *DealArray) {
 		if err := proposals.Delete(uint64(dealID)); err != nil {
-			rt.Abortf(exitcode.ErrPlaceholder, "failed to delete deal: %v", err)
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal: %v", err)
 		}
 	})
+
+	if err := st.mutateDealStates(adt.AsStore(rt), func(states *DealMetaArray) {
+		if err := states.Delete(dealID); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal state: %v", err)
+		}
+	}); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal state: %v", err)
+	}
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.

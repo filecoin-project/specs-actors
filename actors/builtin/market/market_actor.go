@@ -448,6 +448,11 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			Assert(deal.Provider == minerAddr)
 
+			// do not slash expired deals
+			if deal.EndEpoch <= rt.CurrEpoch() {
+				continue
+			}
+
 			state, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
@@ -456,10 +461,8 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
 			}
 
-			// Note: we do not perform the balance transfers here, but rather simply record the flag
-			// to indicate that processDealSlashed should be called when the deferred state computation
-			// is performed. // TODO: Do that here. https://github.com/filecoin-project/specs-actors/issues/462
-
+			// mark the deal for slashing here.
+			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
 			state.SlashEpoch = rt.CurrEpoch()
 
 			if err := states.Set(dealID, state); err != nil {
