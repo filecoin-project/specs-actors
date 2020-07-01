@@ -988,7 +988,29 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	// state field init
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
-	state, err := miner.ConstructState(emptyArray, emptyMap, emptyDeadlinesCid, owner, worker, abi.PeerID("peer"), testMultiaddrs, abi.RegisteredSealProof_StackedDrg2KiBV1, periodBoundary)
+
+	testSealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1
+
+	sectorSize, err := testSealProofType.SectorSize()
+	require.NoError(t, err)
+
+	partitionSectors, err := testSealProofType.WindowPoStPartitionSectors()
+	require.NoError(t, err)
+
+	info := miner.MinerInfo{
+		Owner:                      owner,
+		Worker:                     worker,
+		PendingWorkerKey:           nil,
+		PeerId:                     abi.PeerID("peer"),
+		Multiaddrs:                 testMultiaddrs,
+		SealProofType:              testSealProofType,
+		SectorSize:                 sectorSize,
+		WindowPoStPartitionSectors: partitionSectors,
+	}
+	infoCid, err := store.Put(context.Background(), &info)
+	require.NoError(t, err)
+
+	state, err := miner.ConstructState(infoCid, periodBoundary, emptyArray, emptyMap, emptyDeadlinesCid)
 	require.NoError(t, err)
 
 	// assert NewSectors bitfield was constructed correctly (empty)
