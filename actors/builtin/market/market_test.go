@@ -343,7 +343,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		// publish the deal and activate it
 		rt.SetEpoch(publishEpoch)
 		deal1ID := actor.publishDeal(rt, deal1)
-		actor.activateDeals(rt, []abi.DealID{deal1ID}, endEpoch+1, provider)
+		actor.activateDeals(rt, []abi.DealID{deal1ID}, endEpoch, provider)
 		st := actor.getDealState(rt, deal1ID)
 		require.EqualValues(t, publishEpoch, st.SectorStartEpoch)
 
@@ -353,7 +353,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		actor.addProviderFunds(rt, deal2.ProviderBalanceRequirement())
 		rt.SetEpoch(publishEpoch + 1)
 		deal2ID := actor.publishDeal(rt, deal2)
-		actor.activateDeals(rt, []abi.DealID{deal2ID}, endEpoch+2, provider)
+		actor.activateDeals(rt, []abi.DealID{deal2ID}, endEpoch+1, provider)
 	})
 }
 
