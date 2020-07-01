@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/ipfs/go-cid"
 	xerrors "golang.org/x/xerrors"
 
@@ -397,11 +398,9 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	}
 
 	proposal, found, err := proposals.Get(dealID)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
 	if !found {
-		rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
+		rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
 	}
 
 	return proposal

@@ -543,8 +543,10 @@ func (h *marketActorTestHarness) getDealProposal(rt *mock.Runtime, dealID abi.De
 	proposals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	require.NoError(h.t, err)
 
-	d, err := proposals.Get(dealID)
+	d, found, err := proposals.Get(dealID)
 	require.NoError(h.t, err)
+	require.True(h.t, found)
+	require.NotNil(h.t, d)
 
 	return d
 }

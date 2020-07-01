@@ -342,17 +342,15 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			// This construction could be replaced with a single "update deal state" state method, possibly batched
 			// over all deal ids at once.
 			_, found, err := states.Get(dealID)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal")
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state for dealId %d", dealID)
 			if found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
 			}
 
 			proposal, found, err := proposals.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
 			if !found {
-				rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
+				rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
 			}
 
 			propc, err := proposal.Cid()
