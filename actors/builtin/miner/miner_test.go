@@ -581,26 +581,9 @@ func TestWindowPost(t *testing.T) {
 			deadlines, err := st.LoadDeadlines(store)
 			require.NoError(t, err)
 
-			firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, actor.partitionSize, deadline.Index)
-			require.NoError(t, err)
-			if sectorCount != 0 {
-				partitionCount, _, err := miner.DeadlineCount(deadlines, actor.partitionSize, deadline.Index)
-				require.NoError(t, err)
-
-				partitions := make([]uint64, partitionCount)
-				for i := uint64(0); i < partitionCount; i++ {
-					partitions[i] = firstPartIdx + i
-				}
-
-				partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, actor.partitionSize, deadline.Index, partitions)
-				require.NoError(t, err)
-				provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
-				require.NoError(t, err)
-				infos, _, err := st.LoadSectorInfosForProof(store, provenSectors)
-				require.NoError(t, err)
-
+			infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+			if len(infos) > 0 {
 				actor.submitWindowPost(rt, deadline, partitions, infos, nil)
-
 			}
 
 			rt.SetEpoch(deadline.Close + 1)
@@ -618,47 +601,25 @@ func TestWindowPost(t *testing.T) {
 	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		st := getState(rt)
-		info, err := st.GetInfo(adt.AsStore(rt))
-		require.NoError(t, err)
 
-		partitionSize := info.WindowPoStPartitionSectors
 		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
 		actor.advancePastProvingPeriodWithCron(rt)
-		st = getState(rt)
+		st := getState(rt)
+
+		deadlines, err := st.LoadDeadlines(rt.AdtStore())
+		require.NoError(t, err)
 		deadline := st.DeadlineInfo(rt.Epoch())
 
 		// advance to next dealine where we expect the first sectors to appear
 		rt.SetEpoch(deadline.Close + 1)
 		deadline = st.DeadlineInfo(rt.Epoch())
 
-		deadlines, err := st.LoadDeadlines(rt.AdtStore())
-		require.NoError(t, err)
-
-		firstPartIdx, _, err := miner.PartitionsForDeadline(deadlines, partitionSize, deadline.Index)
-		require.NoError(t, err)
-
-		partitionCount, _, err := miner.DeadlineCount(deadlines, partitionSize, deadline.Index)
-		require.NoError(t, err)
-
-		partitions := make([]uint64, partitionCount)
-		for i := uint64(0); i < partitionCount; i++ {
-			partitions[i] = firstPartIdx + i
-		}
-
-		partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, partitionSize, deadline.Index, partitions)
-		require.NoError(t, err)
-		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
-		require.NoError(t, err)
-
-		infos, _, err := st.LoadSectorInfosForProof(rt.AdtStore(), provenSectors)
-		require.NoError(t, err)
+		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
 
 		// skip the first sector in the partition
-		skipped, err := provenSectors.Slice(0, 1)
-		require.NoError(t, err)
+		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
 
 		sectorSize, err := infos[0].SealProof.SectorSize()
 		require.NoError(t, err)
@@ -1523,6 +1484,31 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)
 	rt.Verify()
+}
+
+func (h *actorHarness) computePartitions(rt *mock.Runtime, deadlines *miner.Deadlines, deadline *miner.DeadlineInfo) ([]*miner.SectorOnChainInfo, []uint64) {
+	st := getState(rt)
+	firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, h.partitionSize, deadline.Index)
+	require.NoError(h.t, err)
+	if sectorCount == 0 {
+		return nil, nil
+	}
+	partitionCount, _, err := miner.DeadlineCount(deadlines, h.partitionSize, deadline.Index)
+	require.NoError(h.t, err)
+
+	partitions := make([]uint64, partitionCount)
+	for i := uint64(0); i < partitionCount; i++ {
+		partitions[i] = firstPartIdx + i
+	}
+
+	partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadline.Index, partitions)
+	require.NoError(h.t, err)
+	provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
+	require.NoError(h.t, err)
+	infos, _, err := st.LoadSectorInfosForProof(rt.AdtStore(), provenSectors)
+	require.NoError(h.t, err)
+
+	return infos, partitions
 }
 
 func (h *actorHarness) declareFaults(rt *mock.Runtime, totalQAPower abi.StoragePower, fee abi.TokenAmount, faultSectorInfos ...*miner.SectorOnChainInfo) {
