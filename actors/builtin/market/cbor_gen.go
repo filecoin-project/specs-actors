@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -18,7 +18,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{135}); err != nil {
+	if _, err := w.Write([]byte{136}); err != nil {
 		return err
 	}
 
@@ -32,6 +32,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCid(w, t.States); err != nil {
 		return xerrors.Errorf("failed to write cid field t.States: %w", err)
+	}
+
+	// t.PendingProposals (cid.Cid) (struct)
+
+	if err := cbg.WriteCid(w, t.PendingProposals); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PendingProposals: %w", err)
 	}
 
 	// t.EscrowTable (cid.Cid) (struct)
@@ -82,7 +88,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 7 {
+	if extra != 8 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -108,6 +114,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.States = c
+
+	}
+	// t.PendingProposals (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PendingProposals: %w", err)
+		}
+
+		t.PendingProposals = c
 
 	}
 	// t.EscrowTable (cid.Cid) (struct)
@@ -903,7 +921,7 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{138}); err != nil {
+	if _, err := w.Write([]byte{139}); err != nil {
 		return err
 	}
 
@@ -931,6 +949,18 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 
 	// t.Provider (address.Address) (struct)
 	if err := t.Provider.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Label (string) (string)
+	if len(t.Label) > cbg.MaxLength {
+		return xerrors.Errorf("Value in field t.Label was too long")
+	}
+
+	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajTextString, uint64(len(t.Label)))); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(t.Label)); err != nil {
 		return err
 	}
 
@@ -984,7 +1014,7 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1048,6 +1078,16 @@ func (t *DealProposal) UnmarshalCBOR(r io.Reader) error {
 			return xerrors.Errorf("unmarshaling t.Provider: %w", err)
 		}
 
+	}
+	// t.Label (string) (string)
+
+	{
+		sval, err := cbg.ReadString(br)
+		if err != nil {
+			return err
+		}
+
+		t.Label = string(sval)
 	}
 	// t.StartEpoch (abi.ChainEpoch) (int64)
 	{

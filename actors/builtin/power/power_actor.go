@@ -2,7 +2,6 @@ package power
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
@@ -35,14 +34,13 @@ func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.CreateMiner,
-		3:                         a.DeleteMiner,
-		4:                         a.UpdateClaimedPower,
-		5:                         a.EnrollCronEvent,
-		6:                         a.OnEpochTickEnd,
-		7:                         a.UpdatePledgeTotal,
-		8:                         a.OnConsensusFault,
-		9:                         a.SubmitPoRepForBulkVerify,
-		10:                        a.CurrentTotalPower,
+		3:                         a.UpdateClaimedPower,
+		4:                         a.EnrollCronEvent,
+		5:                         a.OnEpochTickEnd,
+		6:                         a.UpdatePledgeTotal,
+		7:                         a.OnConsensusFault,
+		8:                         a.SubmitPoRepForBulkVerify,
+		9:                         a.CurrentTotalPower,
 	}
 }
 
@@ -144,48 +142,6 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		IDAddress:     addresses.IDAddress,
 		RobustAddress: addresses.RobustAddress,
 	}
-}
-
-type DeleteMinerParams struct {
-	Miner addr.Address
-}
-
-func (a Actor) DeleteMiner(rt Runtime, params *DeleteMinerParams) *adt.EmptyValue {
-
-	nominal, ok := rt.ResolveAddress(params.Miner)
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", params.Miner)
-	}
-
-	ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
-	rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
-
-	var st State
-	rt.State().Transaction(&st, func() interface{} {
-
-		claim, found, err := st.GetClaim(adt.AsStore(rt), nominal)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load miner claim for deletion: %v", err)
-		}
-		if !found {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to find miner %v claim for deletion", nominal)
-		}
-		if claim.RawBytePower.GreaterThan(big.Zero()) {
-			rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with raw byte power %v", nominal, claim.RawBytePower)
-		}
-		if claim.QualityAdjPower.GreaterThan(big.Zero()) {
-			rt.Abortf(exitcode.ErrIllegalState, "deletion requested for miner %v with quality adjusted power %v", nominal, claim.QualityAdjPower)
-		}
-
-		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
-		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
-
-		return nil
-	})
-
-	err := a.deleteMinerActor(rt, nominal)
-	abortIfError(rt, err, "failed to delete miner %v", nominal)
-	return nil
 }
 
 type UpdateClaimedPowerParams struct {
@@ -496,15 +452,4 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 		return nil
 	}).(error)
 	return err
-}
-
-func abortIfError(rt Runtime, err error, msg string, args ...interface{}) {
-	if err != nil {
-		code := exitcode.ErrIllegalState
-		if _, ok := err.(adt.ErrNotFound); ok {
-			code = exitcode.ErrNotFound
-		}
-		fmtmst := fmt.Sprintf(msg, args...)
-		rt.Abortf(code, "%s: %v", fmtmst, err)
-	}
 }

@@ -26,6 +26,10 @@ type State struct {
 	Proposals cid.Cid // AMT[DealID]DealProposal
 	States    cid.Cid // AMT[DealID]DealState
 
+	// PendingProposals tracks proposals that have not yet reached their deal start date.
+	// We track them here to ensure that miners can't publish the same deal proposal twice
+	PendingProposals cid.Cid // HAMT[DealCid]DealProposal
+
 	// Total amount held in escrow, indexed by actor address (including both locked and unlocked amounts).
 	EscrowTable cid.Cid // BalanceTable
 
@@ -43,13 +47,14 @@ type State struct {
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 	return &State{
-		Proposals:      emptyArrayCid,
-		States:         emptyArrayCid,
-		EscrowTable:    emptyMapCid,
-		LockedTable:    emptyMapCid,
-		NextID:         abi.DealID(0),
-		DealOpsByEpoch: emptyMSetCid,
-		LastCron:       abi.ChainEpoch(-1),
+		Proposals:        emptyArrayCid,
+		States:           emptyArrayCid,
+		PendingProposals: emptyMapCid,
+		EscrowTable:      emptyMapCid,
+		LockedTable:      emptyMapCid,
+		NextID:           abi.DealID(0),
+		DealOpsByEpoch:   emptyMSetCid,
+		LastCron:         abi.ChainEpoch(-1),
 	}
 }
 
