@@ -690,6 +690,10 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 
 	proposal := deal.Proposal
 
+	if proposal.EndEpoch <= proposal.StartEpoch {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal end before proposal start")
+	}
+
 	if rt.CurrEpoch() > proposal.StartEpoch {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}

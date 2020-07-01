@@ -3,6 +3,7 @@ package market_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -357,6 +358,202 @@ func TestPublishStorageDeals(t *testing.T) {
 	})
 }
 
+func TestPublishStorageDealsFailures(t *testing.T) {
+	marketActor := tutil.NewIDAddr(t, 100)
+	owner := tutil.NewIDAddr(t, 101)
+	provider := tutil.NewIDAddr(t, 102)
+	worker := tutil.NewIDAddr(t, 103)
+	client := tutil.NewIDAddr(t, 104)
+
+	// simple failures because of invalid deal params
+	{
+		tcs := map[string]struct {
+			setup                      func(*mock.Runtime, *marketActorTestHarness, *market.DealProposal)
+			exitCode                   exitcode.ExitCode
+			signatureVerificationError error
+		}{
+			"deal end after deal start": {
+				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.StartEpoch = 10
+					d.EndEpoch = 9
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"current epoch greater than start epoch": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					rt.SetEpoch(d.StartEpoch + 1)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"deal duration greater than max deal duration": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.StartEpoch = abi.ChainEpoch(10)
+					d.EndEpoch = d.StartEpoch + (1 * builtin.EpochsInYear) + 1
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"negative price per epoch": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.StoragePricePerEpoch = abi.NewTokenAmount(-1)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"price per epoch greater than total filecoin": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.StoragePricePerEpoch = big.Add(abi.TotalFilecoin, big.NewInt(1))
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"negative provider collateral": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.ProviderCollateral = big.NewInt(-1)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"provider collateral greater than max collateral": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.ProviderCollateral = big.Add(abi.TotalFilecoin, big.NewInt(1))
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"negative client collateral": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.ClientCollateral = big.NewInt(-1)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"client collateral greater than max collateral": {
+				setup: func(rt *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.ClientCollateral = big.Add(abi.TotalFilecoin, big.NewInt(1))
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"client does not have enough balance for collateral": {
+				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
+					a.addParticipantFunds(rt, client, big.Sub(d.ClientBalanceRequirement(), big.NewInt(1)))
+					a.addProviderFunds(rt, d.ProviderCollateral)
+				},
+				exitCode: exitcode.ErrInsufficientFunds,
+			},
+			"provider does not have enough balance for collateral": {
+				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
+					a.addParticipantFunds(rt, client, d.ClientBalanceRequirement())
+					a.addProviderFunds(rt, big.Sub(d.ProviderCollateral, big.NewInt(1)))
+				},
+				exitCode: exitcode.ErrInsufficientFunds,
+			},
+			"unable to resolve client address": {
+				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
+					d.Client = tutil.NewBLSAddr(t, 1)
+				},
+				exitCode: exitcode.ErrNotFound,
+			},
+			"signature is invalid": {
+				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
+
+				},
+				exitCode:                   exitcode.ErrIllegalArgument,
+				signatureVerificationError: errors.New("error"),
+			},
+		}
+
+		for name, tc := range tcs {
+			t.Run(name, func(t *testing.T) {
+				rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+				dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5))
+				tc.setup(rt, actor, &dealProposal)
+				params := mkPublishStorageParams(dealProposal)
+
+				rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+				rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+				rt.SetCaller(worker, builtin.AccountActorCodeID)
+				rt.ExpectVerifySignature(crypto.Signature{}, dealProposal.Client, mustCbor(&dealProposal), tc.signatureVerificationError)
+				rt.ExpectAbort(tc.exitCode, func() {
+					rt.Call(actor.PublishStorageDeals, params)
+				})
+
+				rt.Verify()
+			})
+		}
+	}
+
+	// fail when deals have different providers
+	{
+		t.Run("fail when deals have different providers", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			deal1 := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5))
+			actor.addProviderFunds(rt, deal1.ProviderCollateral)
+			actor.addParticipantFunds(rt, client, deal1.ClientBalanceRequirement())
+
+			deal2 := generateDealProposal(client, tutil.NewIDAddr(t, 1000), abi.ChainEpoch(1), abi.ChainEpoch(5))
+			actor.addProviderFunds(rt, deal2.ProviderCollateral)
+			actor.addParticipantFunds(rt, client, deal2.ClientBalanceRequirement())
+
+			params := mkPublishStorageParams(deal1, deal2)
+
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			rt.SetCaller(worker, builtin.AccountActorCodeID)
+			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
+			rt.ExpectVerifySignature(crypto.Signature{}, deal2.Client, mustCbor(&deal2), nil)
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+
+			rt.Verify()
+		})
+
+		//  failures because of incorrect call params
+		t.Run("fail when caller is not of signable type", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			params := mkPublishStorageParams(generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5)))
+			w := tutil.NewIDAddr(t, 1000)
+			rt.SetCaller(w, builtin.StorageMinerActorCodeID)
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+		})
+
+		t.Run("fail when no deals in params", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			params := mkPublishStorageParams()
+			rt.SetCaller(worker, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+		})
+
+		t.Run("fail to resolve provider address", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			deal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5))
+			deal.Provider = tutil.NewBLSAddr(t, 100)
+
+			params := mkPublishStorageParams(deal)
+			rt.SetCaller(worker, builtin.AccountActorCodeID)
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectAbort(exitcode.ErrNotFound, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+		})
+
+		t.Run("caller is not the same as the worker address for miner", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			deal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5))
+			params := mkPublishStorageParams(deal)
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: tutil.NewIDAddr(t, 999), Owner: owner}, 0)
+			rt.SetCaller(worker, builtin.AccountActorCodeID)
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+
+			rt.Verify()
+		})
+	}
+}
+
 func TestMarketActorDeals(t *testing.T) {
 	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
@@ -589,4 +786,12 @@ func basicMarketSetup(t *testing.T, ma, owner, provider, worker, client address.
 	actor.constructAndVerify(rt)
 
 	return rt, &actor
+}
+
+func mkPublishStorageParams(proposals ...market.DealProposal) *market.PublishStorageDealsParams {
+	m := &market.PublishStorageDealsParams{}
+	for _, p := range proposals {
+		m.Deals = append(m.Deals, market.ClientDealProposal{Proposal: p})
+	}
+	return m
 }

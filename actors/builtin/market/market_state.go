@@ -452,10 +452,6 @@ func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.To
 ////////////////////////////////////////////////////////////////////////////////
 
 func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) error {
-	if proposal.Proposal.EndEpoch <= proposal.Proposal.StartEpoch {
-		return xerrors.Errorf("proposal end epoch before start epoch")
-	}
-
 	// Note: we do not verify the provider signature here, since this is implicit in the
 	// authenticity of the on-chain message publishing the deal.
 	buf := bytes.Buffer{}
