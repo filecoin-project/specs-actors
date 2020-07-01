@@ -50,3 +50,66 @@ func roundtripMarshal(t *testing.T, in *abi.BitField) *abi.BitField {
 	assert.NoError(t, err)
 	return bf2
 }
+
+func TestBitFieldContains(t *testing.T) {
+	a := abi.NewBitField()
+	a.Set(2)
+	a.Set(4)
+	a.Set(5)
+
+	b := abi.NewBitField()
+	b.Set(3)
+	b.Set(4)
+
+	c := abi.NewBitField()
+	c.Set(2)
+	c.Set(5)
+
+	contains, err := abi.BitFieldContainsAny(a, b)
+	assert.NoError(t, err)
+	assert.True(t, contains)
+
+	contains, err = abi.BitFieldContainsAny(b, a)
+	assert.NoError(t, err)
+	assert.True(t, contains)
+
+	contains, err = abi.BitFieldContainsAny(a, c)
+	assert.NoError(t, err)
+	assert.True(t, contains)
+
+	contains, err = abi.BitFieldContainsAny(c, a)
+	assert.NoError(t, err)
+	assert.True(t, contains)
+
+	contains, err = abi.BitFieldContainsAny(b, c)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+
+	contains, err = abi.BitFieldContainsAny(c, b)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+
+	contains, err = abi.BitFieldContainsAll(a, b)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+
+	contains, err = abi.BitFieldContainsAll(b, a)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+
+	contains, err = abi.BitFieldContainsAll(a, c)
+	assert.NoError(t, err)
+	assert.True(t, contains)
+
+	contains, err = abi.BitFieldContainsAll(c, a)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+
+	contains, err = abi.BitFieldContainsAll(b, c)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+
+	contains, err = abi.BitFieldContainsAll(c, b)
+	assert.NoError(t, err)
+	assert.False(t, contains)
+}

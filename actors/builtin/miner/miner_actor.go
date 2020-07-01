@@ -279,7 +279,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
 			currDeadline.Index, params.Partitions)
 
-		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
+		provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
 
 		// Load sector infos, substituting a known-good sector for known-faulty sectors.
@@ -787,7 +787,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			decaredSectors = append(decaredSectors, decl.Sectors)
 		}
 
-		allDeclared, err := abi.BitFieldUnion(decaredSectors...)
+		allDeclared, err := bitfield.MultiMerge(decaredSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union faults")
 
 		// Split declarations into declarations of new faults, and retraction of declared recoveries.
@@ -907,7 +907,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 			declaredSectors = append(declaredSectors, decl.Sectors)
 		}
 
-		allRecoveries, err := abi.BitFieldUnion(declaredSectors...)
+		allRecoveries, err := bitfield.MultiMerge(declaredSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union recoveries")
 
 		contains, err := abi.BitFieldContainsAll(st.Faults, allRecoveries)
@@ -1309,11 +1309,11 @@ func computeFaultsFromMissingPoSts(partitionSize uint64, faults, recoveries, pos
 
 		deadlineFirstPartition += dlPartCount
 	}
-	detectedFaults, err = abi.BitFieldUnion(fGroups...)
+	detectedFaults, err = bitfield.MultiMerge(fGroups...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union detected fault groups: %w", err)
 	}
-	failedRecoveries, err = abi.BitFieldUnion(rGroups...)
+	failedRecoveries, err = bitfield.MultiMerge(rGroups...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union failed recovery groups: %w", err)
 	}
@@ -1427,7 +1427,7 @@ func popSectorExpirations(st *State, store adt.Store, epoch abi.ChainEpoch) (*ab
 		return nil, fmt.Errorf("failed to clear sector expirations %s: %w", expiredEpochs, err)
 	}
 
-	allExpiries, err := abi.BitFieldUnion(expiredSectors...)
+	allExpiries, err := bitfield.MultiMerge(expiredSectors...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to union expired sectors: %w", err)
 	}
@@ -1458,11 +1458,11 @@ func popExpiredFaults(st *State, store adt.Store, latestTermination abi.ChainEpo
 		return nil, nil, fmt.Errorf("failed to clear fault epochs %s: %w", expiredEpochs, err)
 	}
 
-	allExpiries, err := abi.BitFieldUnion(expiredFaults...)
+	allExpiries, err := bitfield.MultiMerge(expiredFaults...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union expired faults: %w", err)
 	}
-	allOngoing, err := abi.BitFieldUnion(ongoingFaults...)
+	allOngoing, err := bitfield.MultiMerge(ongoingFaults...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union ongoing faults: %w", err)
 	}

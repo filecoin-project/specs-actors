@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-bitfield/rle"
 )
 
 type BitField = bitfield.BitField
@@ -16,82 +17,63 @@ func NewBitField() *BitField {
 	return &bf
 }
 
-// Compute a bitfield that is the union of argument bitfields.
-func BitFieldUnion(bfs ...*BitField) (*BitField, error) {
-	if len(bfs) == 0 {
-		return NewBitField(), nil
-	}
-	// TODO: optimize me: https://github.com/filecoin-project/specs-actors/issues/460
-	for len(bfs) > 1 {
-		var next []*BitField
-		for i := 0; i < len(bfs); i += 2 {
-			if i+1 >= len(bfs) {
-				next = append(next, bfs[i])
-				break
-			}
-
-			merged, err := bitfield.MergeBitFields(bfs[i], bfs[i+1])
-			if err != nil {
-				return nil, err
-			}
-
-			next = append(next, merged)
+func isEmpty(iter rlepluslazy.RunIterator) (bool, error) {
+	// Look for the first non-zero bit.
+	for iter.HasNext() {
+		r, err := iter.NextRun()
+		if err != nil {
+			return false, err
 		}
-		bfs = next
+		if r.Val {
+			return false, nil
+		}
 	}
-	return bfs[0], nil
+	return true, nil
 }
 
 // Checks whether bitfield `a` contains any bit that is set in bitfield `b`.
 func BitFieldContainsAny(a, b *BitField) (bool, error) {
-	ca, err := a.Count()
+	aruns, err := a.RunIterator()
 	if err != nil {
 		return false, err
 	}
 
-	cb, err := b.Count()
+	bruns, err := b.RunIterator()
 	if err != nil {
 		return false, err
 	}
 
-	ab, err := bitfield.MergeBitFields(a, b)
+	// Take the intersection of the two bitfields.
+	combined, err := rlepluslazy.And(aruns, bruns)
 	if err != nil {
 		return false, err
 	}
 
-	cab, err := ab.Count()
+	// Look for the first non-zero bit.
+	empty, err := isEmpty(combined)
 	if err != nil {
 		return false, err
 	}
-
-	return ca+cb != cab, nil
+	return !empty, nil
 }
 
 // Checks whether bitfield `a` contains all bits set in bitfield `b`.
 func BitFieldContainsAll(a, b *BitField) (bool, error) {
-	ca, err := a.Count()
+	aruns, err := a.RunIterator()
 	if err != nil {
 		return false, err
 	}
 
-	cb, err := b.Count()
+	bruns, err := b.RunIterator()
 	if err != nil {
 		return false, err
 	}
 
-	if cb > ca {
-		return false, nil
-	}
-
-	ab, err := bitfield.MergeBitFields(a, b)
+	// Remove any elements in a from b. If b contains bits not in a, some
+	// bits will remain.
+	combined, err := rlepluslazy.Subtract(bruns, aruns)
 	if err != nil {
 		return false, err
 	}
-
-	cab, err := ab.Count()
-	if err != nil {
-		return false, err
-	}
-
-	return ca == cab, nil
+	return isEmpty(combined)
 }
