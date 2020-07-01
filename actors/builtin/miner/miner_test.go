@@ -598,7 +598,7 @@ func TestWindowPost(t *testing.T) {
 
 				partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, actor.partitionSize, deadline.Index, partitions)
 				require.NoError(t, err)
-				provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
+				provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
 				require.NoError(t, err)
 				infos, _, err := st.LoadSectorInfosForProof(store, provenSectors)
 				require.NoError(t, err)
@@ -1498,7 +1498,7 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 
 			partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadline.Index, partitions)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not compute partitions")
-			provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
+			provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get proven sectors")
 			infos, _, err := st.LoadSectorInfosForProof(store, provenSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load sector info for proof")
