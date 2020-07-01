@@ -1231,6 +1231,7 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 
 	currEpoch := rt.CurrEpoch()
 	var skippedFaultSectors []*SectorOnChainInfo
+	minerInfo := getMinerInfo(rt, st)
 
 	// Check that the declared sectors are actually due at the deadline.
 	deadlineSectors := deadlines.Due[currDeadline.Index]
@@ -1259,7 +1260,7 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 	// Unlock undeclared penalty for faults.
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, currEpoch, epochReward, currentTotalPower, skippedFaultSectors)
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, skippedFaultSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 
 	// Remove faulty recoveries

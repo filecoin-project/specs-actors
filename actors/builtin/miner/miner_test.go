@@ -567,12 +567,11 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
-		st := getState(rt)
 		_ = actor.commitAndProveSectors(rt, 1, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
 		actor.advancePastProvingPeriodWithCron(rt)
-		st = getState(rt)
+		st := getState(rt)
 
 		// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
 		// Submit a window post for all partitions due at each deadline when necessary.
@@ -1421,7 +1420,6 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
 	h.onProvingPeriodCron(rt, nextCron, true, nil, nil)
-	st = getState(rt)
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
