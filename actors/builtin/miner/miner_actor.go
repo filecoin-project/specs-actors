@@ -521,7 +521,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
 	var replaceSectors []*SectorOnChainInfo
 	replaceSectorKeys := map[abi.SectorNumber]struct{}{} // For de-duplication
-
+	var preCommits []*SectorPreCommitOnChainInfo
 	for _, sectorNo := range params.Sectors {
 		precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
@@ -529,37 +529,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			// This relies on the precommit having been checked in ProveCommitSector and not removed (expired) before
 			// this call. This in turn relies on the call from the power actor reliably coming in the same
 			// epoch as ProveCommitSector.
+			//
+			// It is possible to hit this case if precommit expires in this epoch because precommit expiries are
+			// processed before porep verify / sector proof confirmation
 			rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
-		}
-
-		// Check (and activate) storage deals associated to sector. Abort if checks failed.
-		// return DealWeight for the deal set in the sector
-		// TODO: we should batch these calls...
-		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDealsParams{
-				DealIDs:      precommit.Info.DealIDs,
-				SectorExpiry: precommit.Info.Expiration,
-			},
-			abi.NewTokenAmount(0),
-		)
-		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-
-		// initial pledge is precommit deposit
-		initialPledge := precommit.PreCommitDeposit
-
-		newSectorInfo := SectorOnChainInfo{
-			SectorNumber:       precommit.Info.SectorNumber,
-			SealProof:          precommit.Info.SealProof,
-			SealedCID:          precommit.Info.SealedCID,
-			DealIDs:            precommit.Info.DealIDs,
-			Expiration:         precommit.Info.Expiration,
-			Activation:         precommit.PreCommitEpoch,
-			DealWeight:         precommit.DealWeight,
-			VerifiedDealWeight: precommit.VerifiedDealWeight,
-			InitialPledge:      initialPledge,
 		}
 
 		if precommit.Info.ReplaceCapacity {
@@ -580,65 +553,96 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			}
 		}
 
-		// Request power for activated sector.
-		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
-		// https://github.com/filecoin-project/specs-actors/issues/475
-		info := getMinerInfo(rt, &st)
-		requestUpdateSectorPower(rt, info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
+		// Check (and activate) storage deals associated to sector. Abort if checks failed.
+		// TODO: we should batch these calls...
+		// https://github.com/filecoin-project/specs-actors/issues/474
+		_, code := rt.Send(
+			builtin.StorageMarketActorAddr,
+			builtin.MethodsMarket.ActivateDeals,
+			&market.ActivateDealsParams{
+				DealIDs:      precommit.Info.DealIDs,
+				SectorExpiry: precommit.Info.Expiration,
+			},
+			abi.NewTokenAmount(0),
+		)
+		builtin.RequireSuccess(rt, code, "failed to activate deals")
 
-		// Add sector and pledge lock-up to miner state
-		// TODO: do this all at once after the loop
-		// https://github.com/filecoin-project/specs-actors/issues/476
-		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
-			}
-
-			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
-			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
-			st.AddInitialPledgeRequirement(initialPledge)
-
-			// Lock up initial pledge for new sector.
-			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-			if availableBalance.LessThan(initialPledge) {
-				rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for initial pledge requirement %s, available: %s", initialPledge, availableBalance)
-			}
-			if err := st.AddLockedFunds(store, rt.CurrEpoch(), initialPledge, &PledgeVestingSpec); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
-			}
-			st.AssertBalanceInvariants(rt.CurrentBalance())
-
-			if err := st.PutSector(store, &newSectorInfo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
-			}
-
-			if err := st.DeletePrecommittedSector(store, sectorNo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
-			}
-
-			if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(sectorNo)); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", sectorNo, err)
-			}
-
-			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
-			if err := st.AddNewSectors(sectorNo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", sectorNo, err)
-			}
-
-			return newlyVestedFund
-		}).(abi.TokenAmount)
-
-		notifyPledgeChanged(rt, big.Sub(initialPledge, newlyVestedAmount))
+		preCommits = append(preCommits, precommit)
 	}
 
 	// This transaction should replace the one inside the loop above.
 	// Migrate state mutations into here.
-	rt.State().Transaction(&st, func() interface{} {
+	totalPledge := big.Zero()
+	newSectors := make([]*SectorOnChainInfo, 0)
+	var info *MinerInfo
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		err := scheduleReplaceSectorsExpiration(rt, &st, store, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
-		return nil
-	})
+
+		info = getMinerInfo(rt, &st)
+
+		for _, precommit := range preCommits {
+			// initial pledge is precommit deposit
+			initialPledge := precommit.PreCommitDeposit
+			totalPledge = big.Add(totalPledge, initialPledge)
+			newSectorInfo := SectorOnChainInfo{
+				SectorNumber:       precommit.Info.SectorNumber,
+				SealProof:          precommit.Info.SealProof,
+				SealedCID:          precommit.Info.SealedCID,
+				DealIDs:            precommit.Info.DealIDs,
+				Expiration:         precommit.Info.Expiration,
+				Activation:         precommit.PreCommitEpoch,
+				DealWeight:         precommit.DealWeight,
+				VerifiedDealWeight: precommit.VerifiedDealWeight,
+				InitialPledge:      initialPledge,
+			}
+			newSectors = append(newSectors, &newSectorInfo)
+
+			if err := st.PutSector(store, &newSectorInfo); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to put sector %v: %v", newSectorInfo.SectorNumber, err)
+			}
+
+			if err := st.DeletePrecommittedSector(store, precommit.Info.SectorNumber); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", precommit.Info.SectorNumber, err)
+			}
+
+			if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(newSectorInfo.SectorNumber)); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", newSectorInfo.SectorNumber, err)
+			}
+
+			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
+			if err := st.AddNewSectors(newSectorInfo.SectorNumber); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", newSectorInfo.SectorNumber, err)
+			}
+		}
+
+		// Add sector and pledge lock-up to miner state
+		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
+		}
+
+		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
+		st.AddPreCommitDeposit(totalPledge.Neg())
+		st.AddInitialPledgeRequirement(totalPledge)
+
+		// Lock up initial pledge for new sectors.
+		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		if availableBalance.LessThan(totalPledge) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, availableBalance)
+		}
+		if err := st.AddLockedFunds(store, rt.CurrEpoch(), totalPledge, &PledgeVestingSpec); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add aggregate pledge: %v", err)
+		}
+		st.AssertBalanceInvariants(rt.CurrentBalance())
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	// Request power and pledge update for activated sector.
+	requestUpdateSectorPower(rt, info.SectorSize, newSectors, nil)
+	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVestedAmount))
+
 	return nil
 }
 
