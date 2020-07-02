@@ -253,13 +253,14 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 	return nil
 }
 
+const GasOnSubmitVerifySeal = 132166313
+
 func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Message().Caller()
 
-	// TODO: charge a LOT of gas
-	// https://github.com/filecoin-project/specs-actors/issues/442
+	rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
