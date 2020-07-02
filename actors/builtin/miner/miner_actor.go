@@ -274,7 +274,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		newFaultSectors = append(newFaultSectors, detectedFaultSectors...)
 
 		// Add skipped as faults
-		skippedFaultSectors, skippedPenalty := processSkippedFaults(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower, &params.Skipped)
+		skippedFaultSectors, skippedPenalty := processSkippedFaults(rt, &st, store, currDeadline, info, deadlines, epochReward, pwrTotal.QualityAdjPower, &params.Skipped)
 		penalty = big.Add(penalty, skippedPenalty)
 		newFaultSectors = append(newFaultSectors, skippedFaultSectors...)
 
@@ -1222,7 +1222,7 @@ func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline
 	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch, epochReward, currentTotalPower)
 }
 
-func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower, skipped *bitfield.BitField) ([]*SectorOnChainInfo, abi.TokenAmount) {
+func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, minerInfo *MinerInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower, skipped *bitfield.BitField) ([]*SectorOnChainInfo, abi.TokenAmount) {
 	empty, err := skipped.IsEmpty()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
 	if empty {
@@ -1231,7 +1231,6 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 
 	currEpoch := rt.CurrEpoch()
 	var skippedFaultSectors []*SectorOnChainInfo
-	minerInfo := getMinerInfo(rt, st)
 
 	// Check that the declared sectors are actually due at the deadline.
 	deadlineSectors := deadlines.Due[currDeadline.Index]
