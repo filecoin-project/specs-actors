@@ -1315,19 +1315,36 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	err = st.RemoveRecoveries(failedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record failed recoveries")
 
+	// Determine which faults are from the previous deadline. Faults from previous deadline are penalized
+	// the undetected fault fee. Older faults are charged the late undetected fault fee.
+	oldDetectedFaults := detectedFaults
+	newDetectedFaults := bitfield.NewFromSet(nil)
+	// New faults in previous proving period will have been handled in handleProvingPeriod
+	if beforeDeadline > 0 {
+		newDetectedFaults = deadlines.Due[beforeDeadline-1]
+		oldDetectedFaults, err = bitfield.SubtractBitField(oldDetectedFaults, newDetectedFaults)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract last deadline from detected faults")
+	}
+
 	// Load info for sectors.
 	// TODO: this is potentially super expensive for a large miner failing to submit proofs.
 	// https://github.com/filecoin-project/specs-actors/issues/411
-	detectedFaultSectors, err := st.LoadSectorInfos(store, detectedFaults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
+	oldDetectedFaultSectors, err := st.LoadSectorInfos(store, oldDetectedFaults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load old fault sectors")
+	newDetectedFaultSectors, err := st.LoadSectorInfos(store, newDetectedFaults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load new fault sectors")
 	failedRecoverySectors, err := st.LoadSectorInfos(store, failedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
 	// Unlock sector penalty for all undeclared faults.
-	penalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, penalizedSectors)
+	latePenalizedSectors := append(oldDetectedFaultSectors, failedRecoverySectors...)
+	oldPenalty, err := unlockUndeclaredLateFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, latePenalizedSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
-	return detectedFaultSectors, penalty
+
+	newPenalty, err := unlockUndeclaredFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, newDetectedFaultSectors)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
+
+	return append(oldDetectedFaultSectors, newDetectedFaultSectors...), big.Add(oldPenalty, newPenalty)
 }
 
 // Computes the sectors that were expected to be present in partitions of a PoSt submission but were not, in the
@@ -2144,6 +2161,12 @@ func unlockDeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.Secto
 func unlockUndeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalQAPower := qaPowerForSectors(sectorSize, sectors)
 	fee := PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+func unlockUndeclaredLateFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+	totalQAPower := qaPowerForSectors(sectorSize, sectors)
+	fee := PledgePenaltyForLateUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 

@@ -600,15 +600,8 @@ func TestWindowPost(t *testing.T) {
 		assert.False(t, empty, "no post submission")
 	})
 
-	runTillFirstDeadline := func(rt *mock.Runtime) (*miner.DeadlineInfo, []*miner.SectorOnChainInfo, []uint64) {
-		actor.constructAndVerify(rt)
-
-		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
-
-		// Skip to end of proving period, cron adds sectors to proving set.
-		actor.advancePastProvingPeriodWithCron(rt)
+	runTillNextDeadline := func(rt *mock.Runtime) (*miner.DeadlineInfo, []*miner.SectorOnChainInfo, []uint64) {
 		st := getState(rt)
-
 		deadlines, err := st.LoadDeadlines(rt.AdtStore())
 		require.NoError(t, err)
 		deadline := actor.deadline(rt)
@@ -619,6 +612,17 @@ func TestWindowPost(t *testing.T) {
 
 		infos, partitions := actor.computePartitions(rt, deadlines, deadline.Index)
 		return deadline, infos, partitions
+	}
+
+	runTillFirstDeadline := func(rt *mock.Runtime) (*miner.DeadlineInfo, []*miner.SectorOnChainInfo, []uint64) {
+		actor.constructAndVerify(rt)
+
+		_ = actor.commitAndProveSectors(rt, 6, 100, nil)
+
+		// Skip to end of proving period, cron adds sectors to proving set.
+		actor.advancePastProvingPeriodWithCron(rt)
+
+		return runTillNextDeadline(rt)
 	}
 
 	t.Run("successful recoveries recover power", func(t *testing.T) {
@@ -729,6 +733,34 @@ func TestWindowPost(t *testing.T) {
 		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline", func() {
 			actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
 		})
+	})
+
+	t.Run("detects faults from previous missed posts", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		// skip two PoSts
+		_, infos1, _ := runTillFirstDeadline(rt)
+		_, infos2, _ := runTillNextDeadline(rt)
+		deadline, infos3, partitions := runTillNextDeadline(rt)
+
+		// expect power to be deducted for all sectors in first two deadlines
+		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
+
+		// expected penalty is the undeclared fault penalty for all sectors in previous deadline
+		// and the undeclared late penalty for new faults preceding that.
+		_, qaPower1 := miner.PowerForSectors(actor.sectorSize, infos1)
+		expectedPenalty1 := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower1)
+		_, qaPower2 := miner.PowerForSectors(actor.sectorSize, infos2)
+		expectedPenalty2 := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower2)
+
+		cfg := &poStConfig{
+			skipped:               bitfield.NewFromSet(nil),
+			expectedRawPowerDelta: rawPower.Neg(),
+			expectedQAPowerDelta:  qaPower.Neg(),
+			expectedPenalty:       big.Add(expectedPenalty1, expectedPenalty2),
+		}
+
+		actor.submitWindowPoSt(rt, deadline, partitions, infos3, cfg)
 	})
 }
 
@@ -1141,8 +1173,8 @@ func TestReportConsensusFault(t *testing.T) {
 	}
 	actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
 }
-func TestAddLockedFund(t *testing.T) {
 
+func TestAddLockedFund(t *testing.T) {
 	periodOffset := abi.ChainEpoch(1808)
 	actor := newHarness(t, periodOffset)
 
