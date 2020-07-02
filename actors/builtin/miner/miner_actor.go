@@ -1230,7 +1230,7 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 	}
 
 	currEpoch := rt.CurrEpoch()
-	var skippedFaultSectors []*SectorOnChainInfo
+	var newFaultSectors []*SectorOnChainInfo
 
 	// Check that the declared sectors are actually due at the deadline.
 	deadlineSectors := deadlines.Due[currDeadline.Index]
@@ -1252,24 +1252,24 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 	err = st.AddFaults(store, newFaults, currDeadline.PeriodStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
 
-	// Load info for sectors.
-	skippedFaultSectors, err = st.LoadSectorInfos(store, newFaults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-
-	// Unlock undeclared penalty for faults (skipped faults including retracted recoveries)
-	retractedRecoveryInfos, err := st.LoadSectorInfos(store, retractedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
-
 	// Remove faulty recoveries
 	err = st.RemoveRecoveries(retractedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
+	// Load info for sectors.
+	newFaultSectors, err = st.LoadSectorInfos(store, newFaults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
+
+	// load info for retractions
+	retractedRecoveryInfos, err := st.LoadSectorInfos(store, retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
+
 	// Penalize new skipped faults and retracted recoveries
-	penalizeFaultSectors := append(skippedFaultSectors, retractedRecoveryInfos...)
+	penalizeFaultSectors := append(newFaultSectors, retractedRecoveryInfos...)
 	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizeFaultSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 
-	return skippedFaultSectors, penalty
+	return newFaultSectors, penalty
 }
 
 // Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves
