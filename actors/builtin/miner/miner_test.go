@@ -629,10 +629,7 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		rt.ReplaceState(st)
 
-		sectorSize, err := infos[0].SealProof.SectorSize()
-		require.NoError(t, err)
-
-		rawPower, qaPower := miner.PowerForSectors(sectorSize, infos)
+		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos)
 
 		cfg := &faultConfig{
 			expectedRawPowerDelta: rawPower,
@@ -667,10 +664,7 @@ func TestWindowPost(t *testing.T) {
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
 
-		sectorSize, err := infos[0].SealProof.SectorSize()
-		require.NoError(t, err)
-
-		rawPower, qaPower := miner.PowerForSectors(sectorSize, infos[:1])
+		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos[:1])
 
 		// expected penalty is the fee for an undeclared fault
 		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
@@ -713,10 +707,7 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		rt.ReplaceState(st)
 
-		sectorSize, err := infos[0].SealProof.SectorSize()
-		require.NoError(t, err)
-
-		_, qaPower := miner.PowerForSectors(sectorSize, infos[:1])
+		_, qaPower := miner.PowerForSectors(actor.sectorSize, infos[:1])
 
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
@@ -731,6 +722,49 @@ func TestWindowPost(t *testing.T) {
 		}
 
 		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+	})
+
+	t.Run("skipping a fault from the wrong deadline is an error", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
+
+		// Skip to end of proving period, cron adds sectors to proving set.
+		actor.advancePastProvingPeriodWithCron(rt)
+		st := getState(rt)
+
+		deadlines, err := st.LoadDeadlines(rt.AdtStore())
+		require.NoError(t, err)
+		deadline := st.DeadlineInfo(rt.Epoch())
+
+		// advance to next dealine where we expect the first sectors to appear
+		rt.SetEpoch(deadline.Close + 1)
+		deadline = st.DeadlineInfo(rt.Epoch())
+
+		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+
+		// look ahead to next deadline to find a sector not in this deadline
+		nextDeadline := st.DeadlineInfo(deadline.Close + 1)
+		nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline)
+
+		_, qaPower := miner.PowerForSectors(actor.sectorSize, nextInfos[:1])
+
+		// skip the first sector in the partition
+		skipped := bitfield.NewFromSet([]uint64{uint64(nextInfos[0].SectorNumber)})
+		// expected penalty is the fee for an undeclared fault
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+
+		cfg := &faultConfig{
+			expectedRawPowerDelta: big.Zero(),
+			expectedQAPowerDelta:  big.Zero(),
+			expectedPenalty:       expectedPenalty,
+			skipped:               skipped,
+		}
+
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline", func() {
+			actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+		})
 	})
 }
 

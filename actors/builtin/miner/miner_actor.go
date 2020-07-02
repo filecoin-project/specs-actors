@@ -1222,6 +1222,13 @@ func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline
 	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch, epochReward, currentTotalPower)
 }
 
+// Discovers how skipped faults declared during post intersect with existing faults and recoveries, then unlocks funds
+// and returns the penalty to be paid and the sector infos needed to deduct power.
+// - Skipped faults that are not in the current deadline will trigger an error.
+// - Skipped faults that have previously been marked recovered, will be penalized as a retracted recovery but will not
+// result in a change in power (the power has already been removed).
+// - Skipped faults that are already declared, but not recovered will be ignored.
+// - The rest will be penalized as undeclared faults and have their power removed.
 func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, minerInfo *MinerInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower, skipped *bitfield.BitField) ([]*SectorOnChainInfo, abi.TokenAmount) {
 	empty, err := skipped.IsEmpty()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
@@ -1265,10 +1272,12 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
 
 	// Penalize new skipped faults and retracted recoveries
+	// This differs from declaring faults "on time", where retracting recoveries doesn't attract an extra penalty
 	penalizeFaultSectors := append(newFaultSectors, retractedRecoveryInfos...)
 	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizeFaultSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 
+	// Return only new faulty sectors (excluding retracted recoveries) for power updates
 	return newFaultSectors, penalty
 }
 
