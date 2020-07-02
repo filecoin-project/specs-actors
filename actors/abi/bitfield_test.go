@@ -50,3 +50,46 @@ func roundtripMarshal(t *testing.T, in *abi.BitField) *abi.BitField {
 	assert.NoError(t, err)
 	return bf2
 }
+
+func TestBitFieldContains(t *testing.T) {
+	a := abi.NewBitField()
+	a.Set(2)
+	a.Set(4)
+	a.Set(5)
+
+	b := abi.NewBitField()
+	b.Set(3)
+	b.Set(4)
+
+	c := abi.NewBitField()
+	c.Set(2)
+	c.Set(5)
+
+	assertContainsAny := func(a, b *abi.BitField, expected bool) {
+		t.Helper()
+		actual, err := abi.BitFieldContainsAny(a, b)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, actual)
+	}
+
+	assertContainsAll := func(a, b *abi.BitField, expected bool) {
+		t.Helper()
+		actual, err := abi.BitFieldContainsAll(a, b)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, actual)
+	}
+
+	assertContainsAny(a, b, true)
+	assertContainsAny(b, a, true)
+	assertContainsAny(a, c, true)
+	assertContainsAny(c, a, true)
+	assertContainsAny(b, c, false)
+	assertContainsAny(c, b, false)
+
+	assertContainsAll(a, b, false)
+	assertContainsAll(b, a, false)
+	assertContainsAll(a, c, true)
+	assertContainsAll(c, a, false)
+	assertContainsAll(b, c, false)
+	assertContainsAll(c, b, false)
+}

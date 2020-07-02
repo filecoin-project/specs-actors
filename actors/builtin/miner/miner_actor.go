@@ -233,6 +233,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var recoveredSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
 
+	// Get the total power/reward. We need these to compute penalties.
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
@@ -241,27 +242,34 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
+		// Validate that the miner didn't try to prove too many partitions at once.
 		partitionSize := info.WindowPoStPartitionSectors
 		submissionPartitionLimit := windowPoStMessagePartitionsMax(partitionSize)
 		if uint64(len(params.Partitions)) > submissionPartitionLimit {
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
 		}
+
+		// Load and check deadline.
 		currDeadline := st.DeadlineInfo(currEpoch)
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		// Traverse earlier submissions and enact detected faults.
-		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
-		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
-
+		// Double check that the current proving period has started. This should only happen if the cron actor wasn't invoked.
 		if !currDeadline.PeriodStarted() {
-			rt.Abortf(exitcode.ErrIllegalArgument, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
+			rt.Abortf(exitcode.ErrIllegalState, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
 		}
+
+		// The miner may only submit a proof for the current deadline.
 		if params.Deadline != currDeadline.Index {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
+
+		// Detect and mark faults from any missed deadlines (doesn't including the current deadline).
+		// Traverse earlier submissions and enact detected faults.
+		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
+		// of penalties if locked pledge drops too low.
+		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
 
 		// TODO WPOST (follow-up): process Skipped as faults
 		// https://github.com/filecoin-project/specs-actors/issues/410
@@ -271,9 +279,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
 			currDeadline.Index, params.Partitions)
 
-		provenSectors, err := abi.BitFieldUnion(partitionsSectors...)
+		provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
 
+		// Load sector infos, substituting a known-good sector for known-faulty sectors.
+		// NOTE: ErrIllegalState isn't quite correct. This can fail if the user submits a proof for a partition
+		// with only faulty sectors. Ideally we'd distinguish between the two cases, but that's tricky to do at the moment.
 		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
@@ -291,7 +302,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		err = st.AddPoStSubmissions(postedPartitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record submissions for partitions %s", params.Partitions)
 
-		// If the PoSt was successful, the declared recoveries should be restored
+		// If the PoSt was successful, restore declared recoveries.
 		err = st.RemoveFaults(store, declaredRecoveries)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
 
@@ -303,7 +314,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty: %s")
 
 		if !empty {
-			sectorsByNumber := map[abi.SectorNumber]*SectorOnChainInfo{}
+			sectorsByNumber := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectorInfos))
 			for _, s := range sectorInfos {
 				sectorsByNumber[s.SectorNumber] = s
 			}
@@ -776,7 +787,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			decaredSectors = append(decaredSectors, decl.Sectors)
 		}
 
-		allDeclared, err := abi.BitFieldUnion(decaredSectors...)
+		allDeclared, err := bitfield.MultiMerge(decaredSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union faults")
 
 		// Split declarations into declarations of new faults, and retraction of declared recoveries.
@@ -896,7 +907,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 			declaredSectors = append(declaredSectors, decl.Sectors)
 		}
 
-		allRecoveries, err := abi.BitFieldUnion(declaredSectors...)
+		allRecoveries, err := bitfield.MultiMerge(declaredSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union recoveries")
 
 		contains, err := abi.BitFieldContainsAll(st.Faults, allRecoveries)
@@ -1298,11 +1309,11 @@ func computeFaultsFromMissingPoSts(partitionSize uint64, faults, recoveries, pos
 
 		deadlineFirstPartition += dlPartCount
 	}
-	detectedFaults, err = abi.BitFieldUnion(fGroups...)
+	detectedFaults, err = bitfield.MultiMerge(fGroups...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union detected fault groups: %w", err)
 	}
-	failedRecoveries, err = abi.BitFieldUnion(rGroups...)
+	failedRecoveries, err = bitfield.MultiMerge(rGroups...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union failed recovery groups: %w", err)
 	}
@@ -1416,7 +1427,7 @@ func popSectorExpirations(st *State, store adt.Store, epoch abi.ChainEpoch) (*ab
 		return nil, fmt.Errorf("failed to clear sector expirations %s: %w", expiredEpochs, err)
 	}
 
-	allExpiries, err := abi.BitFieldUnion(expiredSectors...)
+	allExpiries, err := bitfield.MultiMerge(expiredSectors...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to union expired sectors: %w", err)
 	}
@@ -1447,11 +1458,11 @@ func popExpiredFaults(st *State, store adt.Store, latestTermination abi.ChainEpo
 		return nil, nil, fmt.Errorf("failed to clear fault epochs %s: %w", expiredEpochs, err)
 	}
 
-	allExpiries, err := abi.BitFieldUnion(expiredFaults...)
+	allExpiries, err := bitfield.MultiMerge(expiredFaults...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union expired faults: %w", err)
 	}
-	allOngoing, err := abi.BitFieldUnion(ongoingFaults...)
+	allOngoing, err := bitfield.MultiMerge(ongoingFaults...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to union ongoing faults: %w", err)
 	}
