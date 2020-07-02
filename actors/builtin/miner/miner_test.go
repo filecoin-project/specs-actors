@@ -609,7 +609,7 @@ func TestWindowPost(t *testing.T) {
 
 		deadlines, err := st.LoadDeadlines(rt.AdtStore())
 		require.NoError(t, err)
-		deadline := st.DeadlineInfo(rt.Epoch())
+		deadline := actor.deadline(rt)
 
 		// advance to next dealine where we expect the first sectors to appear
 		rt.SetEpoch(deadline.Close + 1)
