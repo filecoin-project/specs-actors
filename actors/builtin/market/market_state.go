@@ -319,6 +319,9 @@ func (st *State) GetLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
 	}
 	ret, err := lt.Get(a)
+	if _, ok := err.(adt.ErrNotFound); ok {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "failed to get locked balance: %v", err)
+	}
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
 	}
@@ -452,10 +455,6 @@ func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.To
 ////////////////////////////////////////////////////////////////////////////////
 
 func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) error {
-	if proposal.Proposal.EndEpoch <= proposal.Proposal.StartEpoch {
-		return xerrors.Errorf("proposal end epoch before start epoch")
-	}
-
 	// Note: we do not verify the provider signature here, since this is implicit in the
 	// authenticity of the on-chain message publishing the deal.
 	buf := bytes.Buffer{}
