@@ -319,6 +319,9 @@ func (st *State) GetLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
 	}
 	ret, err := lt.Get(a)
+	if _, ok := err.(adt.ErrNotFound); ok {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "failed to get locked balance: %v", err)
+	}
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
 	}

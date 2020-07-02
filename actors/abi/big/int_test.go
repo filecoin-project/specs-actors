@@ -109,6 +109,17 @@ func TestOperations(t *testing.T) {
 	assert.True(t, ta.Nil())
 }
 
+func TestSum(t *testing.T) {
+	b1 := NewInt(1)
+	b2 := NewInt(2)
+	b3 := NewInt(3)
+	b4 := NewInt(4)
+
+	require.EqualValues(t, NewInt(10), Sum(b1, b2, b3, b4))
+
+	require.EqualValues(t, NewInt(20), Sum(NewInt(20)))
+}
+
 func TestInt_Format(t *testing.T) {
 	ta := NewInt(33333000000)
 
