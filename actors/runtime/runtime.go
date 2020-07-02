@@ -14,6 +14,22 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
 
+type LogLevel int
+
+const (
+	// DebugLevel logs are typically voluminous, and are usually disabled in
+	// production.
+	DEBUG = iota
+	// InfoLevel is the default logging priority.
+	INFO
+	// WarnLevel logs are more important than Info, but don't need individual
+	// human review.
+	WARN
+	// ErrorLevel logs are high-priority. If an application is running smoothly,
+	// it shouldn't generate any error-level logs.
+	ERROR
+)
+
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
@@ -103,6 +119,9 @@ type Runtime interface {
 	// toward execution cost. This functionality is used for observing global changes
 	// in total gas charged if amount of gas charged was to be changed.
 	ChargeGas(name string, gas int64, virtual int64)
+
+	// Note events that may make debugging easier
+	Log(level LogLevel, msg string, args ...interface{})
 }
 
 // Store defines the storage module exposed to actors.
