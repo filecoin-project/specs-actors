@@ -605,6 +605,10 @@ func (rt *Runtime) SetCaller(address addr.Address, actorType cid.Cid) {
 	rt.actorCodeCIDs[address] = actorType
 }
 
+func (rt *Runtime) SetAddressActorType(address addr.Address, actorType cid.Cid) {
+	rt.actorCodeCIDs[address] = actorType
+}
+
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 	rt.balance = amt
 }
