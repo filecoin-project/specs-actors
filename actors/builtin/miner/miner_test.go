@@ -583,7 +583,7 @@ func TestWindowPost(t *testing.T) {
 
 			infos, partitions := actor.computePartitions(rt, deadlines, deadline)
 			if len(infos) > 0 {
-				actor.submitWindowPost(rt, deadline, partitions, infos, nil)
+				actor.submitWindowPoSt(rt, deadline, partitions, infos, nil)
 			}
 
 			rt.SetEpoch(deadline.Close + 1)
@@ -637,14 +637,14 @@ func TestWindowPost(t *testing.T) {
 
 		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos)
 
-		cfg := &faultConfig{
+		cfg := &poStConfig{
 			expectedRawPowerDelta: rawPower,
 			expectedQAPowerDelta:  qaPower,
 			expectedPenalty:       big.Zero(),
 			skipped:               bitfield.NewFromSet(nil),
 		}
 
-		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
 	})
 
 	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
@@ -659,14 +659,14 @@ func TestWindowPost(t *testing.T) {
 		// expected penalty is the fee for an undeclared fault
 		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
-		cfg := &faultConfig{
+		cfg := &poStConfig{
 			skipped:               skipped,
 			expectedRawPowerDelta: rawPower.Neg(),
 			expectedQAPowerDelta:  qaPower.Neg(),
 			expectedPenalty:       expectedPenalty,
 		}
 
-		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
 	})
 
 	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
@@ -689,14 +689,14 @@ func TestWindowPost(t *testing.T) {
 		// expected penalty is the fee for an undeclared fault
 		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
-		cfg := &faultConfig{
+		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
 			expectedQAPowerDelta:  big.Zero(),
 			expectedPenalty:       expectedPenalty,
 			skipped:               skipped,
 		}
 
-		actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
 	})
 
 	t.Run("skipping a fault from the wrong deadline is an error", func(t *testing.T) {
@@ -717,7 +717,7 @@ func TestWindowPost(t *testing.T) {
 		// expected penalty is the fee for an undeclared fault
 		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
-		cfg := &faultConfig{
+		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
 			expectedQAPowerDelta:  big.Zero(),
 			expectedPenalty:       expectedPenalty,
@@ -725,7 +725,7 @@ func TestWindowPost(t *testing.T) {
 		}
 
 		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline", func() {
-			actor.submitWindowPost(rt, deadline, partitions, infos, cfg)
+			actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
 		})
 	})
 }
@@ -1473,14 +1473,14 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
-type faultConfig struct {
+type poStConfig struct {
 	skipped               *bitfield.BitField
 	expectedRawPowerDelta abi.StoragePower
 	expectedQAPowerDelta  abi.StoragePower
 	expectedPenalty       abi.TokenAmount
 }
 
-func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []uint64, infos []*miner.SectorOnChainInfo, postCfg *faultConfig) {
+func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []uint64, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -1510,9 +1510,9 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 	}
 	{
 		var goodInfo *miner.SectorOnChainInfo
-		if postCfg != nil {
+		if poStCfg != nil {
 			for _, ci := range infos {
-				contains, err := postCfg.skipped.IsSet(uint64(ci.SectorNumber))
+				contains, err := poStCfg.skipped.IsSet(uint64(ci.SectorNumber))
 				require.NoError(h.t, err)
 				if !contains {
 					goodInfo = ci
@@ -1526,8 +1526,8 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			si := ci
-			if postCfg != nil {
-				contains, err := postCfg.skipped.IsSet(uint64(ci.SectorNumber))
+			if poStCfg != nil {
+				contains, err := poStCfg.skipped.IsSet(uint64(ci.SectorNumber))
 				require.NoError(h.t, err)
 				if contains {
 					si = goodInfo
@@ -1549,25 +1549,25 @@ func (h *actorHarness) submitWindowPost(rt *mock.Runtime, deadline *miner.Deadli
 		rt.ExpectVerifyPoSt(vi, nil)
 	}
 	skipped := bitfield.New()
-	if postCfg != nil {
+	if poStCfg != nil {
 		// expect power update
-		if !postCfg.expectedRawPowerDelta.IsZero() || !postCfg.expectedQAPowerDelta.IsZero() {
+		if !poStCfg.expectedRawPowerDelta.IsZero() || !poStCfg.expectedQAPowerDelta.IsZero() {
 			claim := &power.UpdateClaimedPowerParams{
-				RawByteDelta:         postCfg.expectedRawPowerDelta,
-				QualityAdjustedDelta: postCfg.expectedQAPowerDelta,
+				RawByteDelta:         poStCfg.expectedRawPowerDelta,
+				QualityAdjustedDelta: poStCfg.expectedQAPowerDelta,
 			}
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
 				nil, exitcode.Ok)
 		}
-		if !postCfg.expectedPenalty.IsZero() {
-			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, postCfg.expectedPenalty, nil, exitcode.Ok)
+		if !poStCfg.expectedPenalty.IsZero() {
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, poStCfg.expectedPenalty, nil, exitcode.Ok)
 		}
-		pledgeDelta := postCfg.expectedPenalty.Neg()
+		pledgeDelta := poStCfg.expectedPenalty.Neg()
 		if !pledgeDelta.IsZero() {
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta,
 				abi.NewTokenAmount(0), nil, exitcode.Ok)
 		}
-		skipped = *postCfg.skipped
+		skipped = *poStCfg.skipped
 	}
 
 	params := miner.SubmitWindowedPoStParams{
@@ -1693,7 +1693,7 @@ func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
 			infos, _, err := st.LoadSectorInfosForProof(store, provenSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load sector info for proof")
 
-			h.submitWindowPost(rt, deadline, partitions, infos, nil)
+			h.submitWindowPoSt(rt, deadline, partitions, infos, nil)
 		}
 
 		rt.SetEpoch(deadline.Close + 1)
