@@ -14,14 +14,30 @@ type NetworkTime = big.Int
 type Spacetime = big.Int
 
 type State struct {
-	BaselinePower        abi.StoragePower
-	RealizedPower        abi.StoragePower
-	CumsumBaseline       Spacetime
-	CumsumRealized       Spacetime
+	// Baseline network power in raw bytes (fully deterministic & functionally equivalent to a hard-coded
+	// lookup table), above which, full reward minting will be possible.
+	BaselinePower abi.StoragePower
+
+	// Realized network power in raw bytes.
+	RealizedPower abi.StoragePower
+
+	// Cumulative baseline network power in raw bytes.
+	CumsumBaseline Spacetime
+
+	// Cumulative capped realized power, where capped realized power is min(realized power, baseline power).
+	CumsumRealized Spacetime
+
+	// Captures the notion of how much the network has progressed in its baseline and in advancing network time.
+	// Defined as the unique “time” theta such that CumsumRealized(t) = CumsumBaseline(theta).
 	EffectiveNetworkTime NetworkTime
 
-	SimpleSupply   abi.TokenAmount // current supply
-	BaselineSupply abi.TokenAmount // current supply
+	// FIL supply from SimpleExponentialMinting
+	// SimpleSupply(t) = TotalSimpleSupply * (1- e^(-lambda * t))
+	SimpleSupply abi.TokenAmount
+
+	// FIL supply from BaselineExponentialMinting by network time, theta
+	// BaselineSupply(t) = TotalBaselineSupply * (1 - e^(-lambda * theta))
+	BaselineSupply abi.TokenAmount
 
 	// The reward to be paid in total to block producers, if exactly the expected number of them produce a block.
 	// The actual reward total paid out depends on the number of winners in any round.
