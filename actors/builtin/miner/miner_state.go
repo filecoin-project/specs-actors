@@ -3,6 +3,7 @@ package miner
 import (
 	"fmt"
 	"reflect"
+	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -577,7 +578,17 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 		return err
 	}
 
-	for i, newFaults := range epochsChanged {
+	epochsChangedKeys := make([]uint64, 0, len(epochsChanged))
+	for k := range epochsChanged {
+		epochsChangedKeys = append(epochsChangedKeys, k)
+	}
+	sort.Slice(epochsChangedKeys, func(i, j int) bool {
+		return epochsChangedKeys[i] < epochsChangedKeys[j]
+	})
+
+	for _, i := range epochsChangedKeys {
+		newFaults := epochsChanged[i]
+
 		if empty, err := newFaults.IsEmpty(); err != nil {
 			return err
 		} else if empty {
