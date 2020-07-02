@@ -581,7 +581,7 @@ func TestWindowPost(t *testing.T) {
 			deadlines, err := st.LoadDeadlines(store)
 			require.NoError(t, err)
 
-			infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+			infos, partitions := actor.computePartitions(rt, deadlines, deadline.Index)
 			if len(infos) > 0 {
 				actor.submitWindowPoSt(rt, deadline, partitions, infos, nil)
 			}
@@ -615,7 +615,7 @@ func TestWindowPost(t *testing.T) {
 		rt.SetEpoch(deadline.Close + 1)
 		deadline = st.DeadlineInfo(rt.Epoch())
 
-		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+		infos, partitions := actor.computePartitions(rt, deadlines, deadline.Index)
 		return deadline, infos, partitions
 	}
 
@@ -708,7 +708,7 @@ func TestWindowPost(t *testing.T) {
 		deadlines, err := st.LoadDeadlines(rt.AdtStore())
 		require.NoError(t, err)
 		nextDeadline := st.DeadlineInfo(deadline.Close + 1)
-		nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline)
+		nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline.Index)
 
 		_, qaPower := miner.PowerForSectors(actor.sectorSize, nextInfos[:1])
 
@@ -1509,6 +1509,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
 	}
 	{
+		// find the first non-faulty sector in poSt to replace all faulty sectors.
 		var goodInfo *miner.SectorOnChainInfo
 		if poStCfg != nil {
 			for _, ci := range infos {
@@ -1581,14 +1582,14 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	rt.Verify()
 }
 
-func (h *actorHarness) computePartitions(rt *mock.Runtime, deadlines *miner.Deadlines, deadline *miner.DeadlineInfo) ([]*miner.SectorOnChainInfo, []uint64) {
+func (h *actorHarness) computePartitions(rt *mock.Runtime, deadlines *miner.Deadlines, deadlineIdx uint64) ([]*miner.SectorOnChainInfo, []uint64) {
 	st := getState(rt)
-	firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, h.partitionSize, deadline.Index)
+	firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, h.partitionSize, deadlineIdx)
 	require.NoError(h.t, err)
 	if sectorCount == 0 {
 		return nil, nil
 	}
-	partitionCount, _, err := miner.DeadlineCount(deadlines, h.partitionSize, deadline.Index)
+	partitionCount, _, err := miner.DeadlineCount(deadlines, h.partitionSize, deadlineIdx)
 	require.NoError(h.t, err)
 
 	partitions := make([]uint64, partitionCount)
@@ -1596,7 +1597,7 @@ func (h *actorHarness) computePartitions(rt *mock.Runtime, deadlines *miner.Dead
 		partitions[i] = firstPartIdx + i
 	}
 
-	partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadline.Index, partitions)
+	partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadlineIdx, partitions)
 	require.NoError(h.t, err)
 	provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
 	require.NoError(h.t, err)
