@@ -598,8 +598,7 @@ func TestWindowPost(t *testing.T) {
 		assert.False(t, empty, "no post submission")
 	})
 
-	t.Run("successful recoveries recover power", func(t *testing.T) {
-		rt := builder.Build(t)
+	runTillFirstDeadline := func(rt *mock.Runtime) (*miner.DeadlineInfo, []*miner.SectorOnChainInfo, []uint64) {
 		actor.constructAndVerify(rt)
 
 		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
@@ -617,13 +616,20 @@ func TestWindowPost(t *testing.T) {
 		deadline = st.DeadlineInfo(rt.Epoch())
 
 		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+		return deadline, infos, partitions
+	}
+
+	t.Run("successful recoveries recover power", func(t *testing.T) {
+		rt := builder.Build(t)
+		deadline, infos, partitions := runTillFirstDeadline(rt)
+		st := getState(rt)
 
 		// mark all sectors as recovered faults
 		sectors := bitfield.New()
 		for _, info := range infos {
 			sectors.Set(uint64(info.SectorNumber))
 		}
-		err = st.AddFaults(rt.AdtStore(), &sectors, rt.Epoch())
+		err := st.AddFaults(rt.AdtStore(), &sectors, rt.Epoch())
 		require.NoError(t, err)
 		err = st.AddRecoveries(&sectors)
 		require.NoError(t, err)
@@ -643,23 +649,7 @@ func TestWindowPost(t *testing.T) {
 
 	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-
-		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
-
-		// Skip to end of proving period, cron adds sectors to proving set.
-		actor.advancePastProvingPeriodWithCron(rt)
-		st := getState(rt)
-
-		deadlines, err := st.LoadDeadlines(rt.AdtStore())
-		require.NoError(t, err)
-		deadline := st.DeadlineInfo(rt.Epoch())
-
-		// advance to next dealine where we expect the first sectors to appear
-		rt.SetEpoch(deadline.Close + 1)
-		deadline = st.DeadlineInfo(rt.Epoch())
-
-		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
+		deadline, infos, partitions := runTillFirstDeadline(rt)
 
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
@@ -681,27 +671,12 @@ func TestWindowPost(t *testing.T) {
 
 	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-
-		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
-
-		// Skip to end of proving period, cron adds sectors to proving set.
-		actor.advancePastProvingPeriodWithCron(rt)
+		deadline, infos, partitions := runTillFirstDeadline(rt)
 		st := getState(rt)
-
-		deadlines, err := st.LoadDeadlines(rt.AdtStore())
-		require.NoError(t, err)
-		deadline := st.DeadlineInfo(rt.Epoch())
-
-		// advance to next dealine where we expect the first sectors to appear
-		rt.SetEpoch(deadline.Close + 1)
-		deadline = st.DeadlineInfo(rt.Epoch())
-
-		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
 
 		// mark all sectors as recovered faults
 		sectors := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-		err = st.AddFaults(rt.AdtStore(), sectors, rt.Epoch())
+		err := st.AddFaults(rt.AdtStore(), sectors, rt.Epoch())
 		require.NoError(t, err)
 		err = st.AddRecoveries(sectors)
 		require.NoError(t, err)
@@ -726,25 +701,12 @@ func TestWindowPost(t *testing.T) {
 
 	t.Run("skipping a fault from the wrong deadline is an error", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-
-		_ = actor.commitAndProveSectors(rt, 4, 100, nil)
-
-		// Skip to end of proving period, cron adds sectors to proving set.
-		actor.advancePastProvingPeriodWithCron(rt)
+		deadline, infos, partitions := runTillFirstDeadline(rt)
 		st := getState(rt)
 
+		// look ahead to next deadline to find a sector not in this deadline
 		deadlines, err := st.LoadDeadlines(rt.AdtStore())
 		require.NoError(t, err)
-		deadline := st.DeadlineInfo(rt.Epoch())
-
-		// advance to next dealine where we expect the first sectors to appear
-		rt.SetEpoch(deadline.Close + 1)
-		deadline = st.DeadlineInfo(rt.Epoch())
-
-		infos, partitions := actor.computePartitions(rt, deadlines, deadline)
-
-		// look ahead to next deadline to find a sector not in this deadline
 		nextDeadline := st.DeadlineInfo(deadline.Close + 1)
 		nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline)
 
