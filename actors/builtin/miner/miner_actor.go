@@ -517,7 +517,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	var st State
 	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
-
+	info := getMinerInfo(rt, &st)
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
 	var replaceSectors []*SectorOnChainInfo
 	replaceSectorKeys := map[abi.SectorNumber]struct{}{} // For de-duplication
@@ -570,16 +570,12 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		preCommits = append(preCommits, precommit)
 	}
 
-	// This transaction should replace the one inside the loop above.
-	// Migrate state mutations into here.
+	// Batch update state, any failure processing an individual sector aborts the whole call
 	totalPledge := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
-	var info *MinerInfo
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		err := scheduleReplaceSectorsExpiration(rt, &st, store, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
-
-		info = getMinerInfo(rt, &st)
 
 		for _, precommit := range preCommits {
 			// initial pledge is precommit deposit
@@ -598,22 +594,19 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			}
 			newSectors = append(newSectors, &newSectorInfo)
 
-			if err := st.PutSector(store, &newSectorInfo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to put sector %v: %v", newSectorInfo.SectorNumber, err)
-			}
+			err = st.PutSector(store, &newSectorInfo)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put sector %d", newSectorInfo.SectorNumber)
 
-			if err := st.DeletePrecommittedSector(store, precommit.Info.SectorNumber); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", precommit.Info.SectorNumber, err)
-			}
+			err = st.DeletePrecommittedSector(store, precommit.Info.SectorNumber)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommit for sector %d", precommit.Info.SectorNumber)
 
-			if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(newSectorInfo.SectorNumber)); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", newSectorInfo.SectorNumber, err)
-			}
+			err = st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(newSectorInfo.SectorNumber))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector %d", newSectorInfo.SectorNumber)
 
 			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
-			if err := st.AddNewSectors(newSectorInfo.SectorNumber); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", newSectorInfo.SectorNumber, err)
-			}
+
+			err = st.AddNewSectors(newSectorInfo.SectorNumber)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector number %d", newSectorInfo.SectorNumber)
 		}
 
 		// Add sector and pledge lock-up to miner state
