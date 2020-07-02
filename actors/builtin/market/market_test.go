@@ -542,6 +542,49 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		}
 	}
 
+	// fails when client or provider has some funds but not enough to cover a deal
+	{
+		t.Run("fail when client has some funds but not enough for a deal", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+
+			//
+			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(100))
+			deal1 := generateDealProposal(client, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+			actor.addProviderFunds(rt, deal1.ProviderCollateral)
+			params := mkPublishStorageParams(deal1)
+
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			rt.SetCaller(worker, builtin.AccountActorCodeID)
+			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
+			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+
+			rt.Verify()
+		})
+
+		t.Run("fail when provider has some funds but not enough for a deal", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+
+			actor.addProviderFunds(rt, abi.NewTokenAmount(1))
+			deal1 := generateDealProposal(client, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+			actor.addParticipantFunds(rt, client, deal1.ClientBalanceRequirement())
+
+			params := mkPublishStorageParams(deal1)
+
+			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			rt.SetCaller(worker, builtin.AccountActorCodeID)
+			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
+			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+				rt.Call(actor.PublishStorageDeals, params)
+			})
+
+			rt.Verify()
+		})
+	}
+
 	// fail when deals have different providers
 	{
 		t.Run("fail when deals have different providers", func(t *testing.T) {
