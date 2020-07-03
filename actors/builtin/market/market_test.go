@@ -409,10 +409,8 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, totalStorageFee, st.TotalClientStorageFee)
 
 		// PUBLISH DEALS with a different provider
-		owner := tutil.NewIDAddr(t, 108)
-		provider := tutil.NewIDAddr(t, 109)
-		worker := tutil.NewIDAddr(t, 110)
-		miner := &minerAddrs{owner, worker, provider}
+		provider2 := tutil.NewIDAddr(t, 109)
+		miner := &minerAddrs{owner, worker, provider2}
 
 		// generate first deal for second provider
 		deal6 := actor.generateDealAndAddFunds(rt, client1, miner, abi.ChainEpoch(20), abi.ChainEpoch(50))
@@ -426,17 +424,18 @@ func TestPublishStorageDeals(t *testing.T) {
 		// assertions
 		rt.GetState(&st)
 		provider2Locked := big.Add(deal6.ProviderCollateral, deal7.ProviderCollateral)
-		require.EqualValues(t, provider2Locked, actor.getLockedBalance(rt, provider))
+		require.EqualValues(t, provider2Locked, actor.getLockedBalance(rt, provider2))
 		client1LockedUpdated := actor.getLockedBalance(rt, client1)
 		require.EqualValues(t, big.Add(deal7.ClientBalanceRequirement(), big.Add(client1Locked, deal6.ClientBalanceRequirement())), client1LockedUpdated)
+
+		// assert first provider's balance as well
+		require.EqualValues(t, providerLocked, actor.getLockedBalance(rt, provider))
 
 		totalClientCollateralLocked = big.Add(totalClientCollateralLocked, big.Add(deal6.ClientCollateral, deal7.ClientCollateral))
 		require.EqualValues(t, totalClientCollateralLocked, st.TotalClientLockedCollateral)
 		require.EqualValues(t, big.Add(providerLocked, provider2Locked), st.TotalProviderLockedCollateral)
-
 		totalStorageFee = big.Add(totalStorageFee, big.Add(deal6.TotalStorageFee(), deal7.TotalStorageFee()))
 		require.EqualValues(t, totalStorageFee, st.TotalClientStorageFee)
-
 	})
 }
 
