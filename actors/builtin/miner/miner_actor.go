@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -577,6 +578,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err := scheduleReplaceSectorsExpiration(rt, &st, store, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 
+		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
 			// initial pledge is precommit deposit
 			initialPledge := precommit.PreCommitDeposit
@@ -593,21 +595,20 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				InitialPledge:      initialPledge,
 			}
 			newSectors = append(newSectors, &newSectorInfo)
-
-			err = st.PutSector(store, &newSectorInfo)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put sector %d", newSectorInfo.SectorNumber)
-
-			err = st.DeletePrecommittedSector(store, precommit.Info.SectorNumber)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommit for sector %d", precommit.Info.SectorNumber)
-
-			err = st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(newSectorInfo.SectorNumber))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector %d", newSectorInfo.SectorNumber)
-
-			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
-
-			err = st.AddNewSectors(newSectorInfo.SectorNumber)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector number %d", newSectorInfo.SectorNumber)
+			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
 		}
+
+		err = st.PutSectors(store, newSectors...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put new sectors")
+
+		err = st.DeletePrecommittedSectors(store, newSectorNos...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
+
+		err = st.AddSectorExpirations(store, newSectors...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector expirations")
+
+		err = st.AddNewSectors(newSectorNos...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sectors to new sectors bitfield")
 
 		// Add sector and pledge lock-up to miner state
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
@@ -705,13 +706,13 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 	// Store new sector expiry.
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.PutSector(store, &newSector)
+		err = st.PutSectors(store, &newSector)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sector %v", sectorNo)
 
 		// move expiration from old epoch to new
-		err = st.RemoveSectorExpirations(store, oldSector.Expiration, uint64(sectorNo))
+		err = st.RemoveSectorExpirations(store, oldSector)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector expiration %v at %d", sectorNo, oldSector.Expiration)
-		err = st.AddSectorExpirations(store, newSector.Expiration, uint64(sectorNo))
+		err = st.AddSectorExpirations(store, &newSector)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add sector expiration %v at %d", sectorNo, newSector.Expiration)
 		return nil
 	})
@@ -1430,7 +1431,16 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 	return replaceSector
 }
 
+// scheduleReplaceSectorsExpiration re-schedules sector expirations at the end
+// of the current proving period.
+//
+// This function also updates the Expiration field of the passed-in sector
+// slice, in-place.
 func scheduleReplaceSectorsExpiration(rt Runtime, st *State, store adt.Store, replaceSectors []*SectorOnChainInfo) error {
+	if len(replaceSectors) == 0 {
+		return nil
+	}
+
 	// Mark replaced sectors for on-time expiration at the end of the current proving period.
 	// They can't be removed right now because they may yet be challenged for Window PoSt in this period,
 	// and the deadline assignments can't be changed mid-period.
@@ -1441,27 +1451,23 @@ func scheduleReplaceSectorsExpiration(rt Runtime, st *State, store adt.Store, re
 	// That's a very brittle constraint, and would be much better with two-phase termination (where we could
 	// deduct power immediately).
 	// See https://github.com/filecoin-project/specs-actors/issues/535
-	replaceSectorNumbers := make([]uint64, len(replaceSectors))
 	deadlineInfo := st.DeadlineInfo(rt.CurrEpoch())
 	newExpiration := deadlineInfo.PeriodEnd()
-	for i, sector := range replaceSectors {
-		// Note: State updates could be minimized by batching these by existing expiration epoch.
-		if err := st.RemoveSectorExpirations(store, sector.Expiration, uint64(sector.SectorNumber)); err != nil {
-			return fmt.Errorf("failed to remove sector expiration %v at %v: %w",
-				sector.SectorNumber, sector.Expiration, err)
-		}
-		sector.Expiration = newExpiration
-		// Note: these state writes could be batched too.
-		if err := st.PutSector(store, sector); err != nil {
-			return fmt.Errorf("failed to update sector %v expiration: %w", sector.SectorNumber, err)
-		}
-		replaceSectorNumbers[i] = uint64(sector.SectorNumber)
+
+	if err := st.RemoveSectorExpirations(store, replaceSectors...); err != nil {
+		return xerrors.Errorf("when removing expirations for replacement: %w", err)
 	}
-	if len(replaceSectorNumbers) > 0 {
-		if err := st.AddSectorExpirations(store, newExpiration, replaceSectorNumbers...); err != nil {
-			return fmt.Errorf("failed to set replaced sector expirations for %v at %v: %w",
-				replaceSectorNumbers, newExpiration, err)
-		}
+
+	for _, sector := range replaceSectors {
+		sector.Expiration = newExpiration
+	}
+
+	if err := st.PutSectors(store, replaceSectors...); err != nil {
+		return xerrors.Errorf("when updating sector expirations: %w", err)
+	}
+
+	if err := st.AddSectorExpirations(store, replaceSectors...); err != nil {
+		return xerrors.Errorf("when replacing sector expirations: %w", err)
 	}
 	return nil
 }
@@ -1537,6 +1543,7 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 	// initialize here to add together for all sectors and minimize calls across actors
 	depositToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() interface{} {
+		var sectorNos []abi.SectorNumber
 		err := sectors.ForEach(func(i uint64) error {
 			sectorNo := abi.SectorNumber(i)
 			sector, found, err := st.GetPrecommittedSector(store, sectorNo)
@@ -1548,16 +1555,20 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 				return nil
 			}
 
-			// delete sector
-			err = st.DeletePrecommittedSector(store, sectorNo)
-			if err != nil {
-				return err
-			}
+			// mark it for deletion
+			sectorNos = append(sectorNos, sectorNo)
+
 			// increment deposit to burn
 			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
 			return nil
 		})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit expiries")
+
+		// Actually delete it.
+		if len(sectorNos) > 0 {
+			err = st.DeletePrecommittedSectors(store, sectorNos...)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pre-commits")
+		}
 
 		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
 		Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
