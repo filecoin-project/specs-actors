@@ -31,7 +31,10 @@ func TestConstruction(t *testing.T) {
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
+
 	bob := tutil.NewIDAddr(t, 102)
+	bobNonId := tutil.NewBLSAddr(t, 2)
+
 	charlie := tutil.NewIDAddr(t, 103)
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -130,7 +133,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig with duplicate signers(ID & non-ID addresses)", func(t *testing.T) {
-		bobNonId := tutil.NewBLSAddr(t,1)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bobNonId, bob},
@@ -982,7 +984,7 @@ func TestCancel(t *testing.T) {
 type addSignerTestCase struct {
 	desc string
 
-	idAddrsMapping  map[addr.Address]addr.Address
+	idAddrsMapping   map[addr.Address]addr.Address
 	initialSigners   []addr.Address
 	initialApprovals uint64
 
@@ -1001,7 +1003,7 @@ func TestAddSigner(t *testing.T) {
 	anne := tutil.NewIDAddr(t, 101)
 	bob := tutil.NewIDAddr(t, 102)
 	chuck := tutil.NewIDAddr(t, 103)
-	chuckNonId := tutil.NewBLSAddr(t,1)
+	chuckNonId := tutil.NewBLSAddr(t, 1)
 
 	const noUnlockDuration = int64(0)
 
@@ -1083,8 +1085,8 @@ func TestAddSigner(t *testing.T) {
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
-			for src,target := range tc.idAddrsMapping {
-				rt.AddIDAddress(src,target)
+			for src, target := range tc.idAddrsMapping {
+				rt.AddIDAddress(src, target)
 			}
 			if tc.code != exitcode.Ok {
 				rt.ExpectAbort(tc.code, func() {
@@ -1121,6 +1123,8 @@ func TestRemoveSigner(t *testing.T) {
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
+	anneNonID := tutil.NewBLSAddr(t, 1)
+
 	bob := tutil.NewIDAddr(t, 102)
 	chuck := tutil.NewIDAddr(t, 103)
 	richard := tutil.NewIDAddr(t, 104)
@@ -1151,6 +1155,54 @@ func TestRemoveSigner(t *testing.T) {
 			decrease:     true,
 
 			expectSigners:   []addr.Address{anne, bob},
+			expectApprovals: uint64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc:             "remove signer when multi-sig is created with an ID address and then removed using it's non-ID address",
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: uint64(2),
+
+			removeSigner: anneNonID,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{bob, chuck},
+			expectApprovals: uint64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc:             "remove signer when multi-sig is created with a non-ID address and then removed using it's ID address",
+			initialSigners:   []addr.Address{anneNonID, bob, chuck},
+			initialApprovals: uint64(2),
+
+			removeSigner: anne,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{bob, chuck},
+			expectApprovals: uint64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc:             "remove signer when multi-sig is created with a non-ID address and then removed using it's non-ID address",
+			initialSigners:   []addr.Address{anneNonID, bob, chuck},
+			initialApprovals: uint64(2),
+
+			removeSigner: anneNonID,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{bob, chuck},
+			expectApprovals: uint64(1),
+			code:            exitcode.Ok,
+		},
+		{
+			desc:             "remove signer when multi-sig is created with a ID address and then removed using it's ID address",
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: uint64(2),
+
+			removeSigner: anne,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{bob, chuck},
 			expectApprovals: uint64(1),
 			code:            exitcode.Ok,
 		},
@@ -1199,6 +1251,7 @@ func TestRemoveSigner(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			rt := builder.Build(t)
+			rt.AddIDAddress(anneNonID, anne)
 
 			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
 
@@ -1221,13 +1274,12 @@ func TestRemoveSigner(t *testing.T) {
 }
 
 type swapTestCase struct {
-	initialSigner 	[]addr.Address
-	idAddrMappings 	map[addr.Address]addr.Address
-	desc   string
-	to     addr.Address
-	from   addr.Address
-	expect []addr.Address
-	code   exitcode.ExitCode
+	initialSigner []addr.Address
+	desc          string
+	to            addr.Address
+	from          addr.Address
+	expect        []addr.Address
+	code          exitcode.ExitCode
 }
 
 func TestSwapSigners(t *testing.T) {
@@ -1235,8 +1287,10 @@ func TestSwapSigners(t *testing.T) {
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
+
 	bob := tutil.NewIDAddr(t, 102)
-	bobNonId := tutil.NewBLSAddr(t,1)
+	bobNonId := tutil.NewBLSAddr(t, 1)
+
 	chuck := tutil.NewIDAddr(t, 103)
 	darlene := tutil.NewIDAddr(t, 104)
 
@@ -1245,46 +1299,76 @@ func TestSwapSigners(t *testing.T) {
 
 	testCases := []swapTestCase{
 		{
-			desc:   "happy path signer swap",
-			initialSigner : []addr.Address{anne, bob},
-			to:     chuck,
-			from:   bob,
-			expect: []addr.Address{anne, chuck},
-			code:   exitcode.Ok,
+			desc:          "happy path signer swap",
+			initialSigner: []addr.Address{anne, bob},
+			to:            chuck,
+			from:          bob,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.Ok,
 		},
 		{
-			desc:   "fail to swap when from signer not found",
-			initialSigner : []addr.Address{anne, bob},
-			to:     chuck,
-			from:   darlene,
-			expect: []addr.Address{anne, chuck},
-			code:   exitcode.ErrNotFound,
+			desc:          "swap signer when multi-sig is created with it's ID address but we ask for a swap with it's non-ID address",
+			initialSigner: []addr.Address{anne, bob},
+			to:            chuck,
+			from:          bobNonId,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.Ok,
 		},
 		{
-			desc:   "fail to swap when to signer already present",
-			initialSigner : []addr.Address{anne, bob},
-			to:     bob,
-			from:   anne,
-			expect: []addr.Address{anne, chuck},
-			code:   exitcode.ErrIllegalArgument,
+			desc:          "swap signer when multi-sig is created with it's non-ID address but we ask for a swap with it's ID address",
+			initialSigner: []addr.Address{anne, bobNonId},
+			to:            chuck,
+			from:          bob,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.Ok,
 		},
 		{
-			desc:   "fail to swap when to signer ID address already present(even though we have the non-ID address)",
-			initialSigner : []addr.Address{anne, bobNonId},
-			idAddrMappings: map[addr.Address]addr.Address{bobNonId:bob},
-			to:     bob,
-			from:   anne,
-			expect: []addr.Address{anne, chuck},
-			code:   exitcode.ErrIllegalArgument,
+			desc:          "swap signer when multi-sig is created with it's non-ID address and we ask for a swap with it's non-ID address",
+			initialSigner: []addr.Address{anne, bobNonId},
+			to:            chuck,
+			from:          bobNonId,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.Ok,
 		},
 		{
-			desc:   "fail to swap when to signer non-ID address already present(even though we have the ID address)",
-			initialSigner : []addr.Address{anne, bob},
-			idAddrMappings: map[addr.Address]addr.Address{bobNonId:bob},
-			to:     bobNonId,
-			from:   anne,
-			expect: []addr.Address{anne, chuck},
-			code:   exitcode.ErrIllegalArgument,
+			desc:          "swap signer when multi-sig is created with it's ID address and we ask for a swap with it's ID address",
+			initialSigner: []addr.Address{anne, bob},
+			to:            chuck,
+			from:          bob,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.Ok,
+		},
+		{
+			desc:          "fail to swap when from signer not found",
+			initialSigner: []addr.Address{anne, bob},
+			to:            chuck,
+			from:          darlene,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.ErrNotFound,
+		},
+		{
+			desc:          "fail to swap when to signer already present",
+			initialSigner: []addr.Address{anne, bob},
+			to:            bob,
+			from:          anne,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:          "fail to swap when to signer ID address already present(even though we have the non-ID address)",
+			initialSigner: []addr.Address{anne, bobNonId},
+			to:            bob,
+			from:          anne,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.ErrIllegalArgument,
+		},
+		{
+			desc:          "fail to swap when to signer non-ID address already present(even though we have the ID address)",
+			initialSigner: []addr.Address{anne, bob},
+			to:            bobNonId,
+			from:          anne,
+			expect:        []addr.Address{anne, chuck},
+			code:          exitcode.ErrIllegalArgument,
 		},
 	}
 
@@ -1292,11 +1376,9 @@ func TestSwapSigners(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			rt := builder.Build(t)
+			rt.AddIDAddress(bobNonId, bob)
 
 			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, tc.initialSigner...)
-			for src,target := range tc.idAddrMappings {
-				rt.AddIDAddress(src, target)
-			}
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
