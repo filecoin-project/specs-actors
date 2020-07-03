@@ -55,6 +55,8 @@ func TestMarketActor(t *testing.T) {
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
 	client := tutil.NewIDAddr(t, 104)
+	minerAddrs := &minerAddrs{owner, worker, provider}
+
 	var st market.State
 
 	t.Run("simple construction", func(t *testing.T) {
@@ -191,14 +193,14 @@ func TestMarketActor(t *testing.T) {
 		t.Run("withdraws from provider escrow funds and sends to owner", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
 
-			actor.addProviderFunds(rt, abi.NewTokenAmount(20))
+			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, provider))
 
 			// worker calls WithdrawBalance, balance is transferred to owner
 			withdrawAmount := abi.NewTokenAmount(1)
-			actor.withdrawProviderBalance(rt, withdrawAmount, withdrawAmount)
+			actor.withdrawProviderBalance(rt, withdrawAmount, withdrawAmount, minerAddrs)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(19), st.GetEscrowBalance(rt, provider))
@@ -233,7 +235,7 @@ func TestMarketActor(t *testing.T) {
 
 		t.Run("worker withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
-			actor.addProviderFunds(rt, abi.NewTokenAmount(20))
+			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, provider))
@@ -241,7 +243,7 @@ func TestMarketActor(t *testing.T) {
 			// withdraw amount greater than escrow balance
 			withdrawAmount := abi.NewTokenAmount(25)
 			actualWithdrawn := abi.NewTokenAmount(20)
-			actor.withdrawProviderBalance(rt, withdrawAmount, actualWithdrawn)
+			actor.withdrawProviderBalance(rt, withdrawAmount, actualWithdrawn, minerAddrs)
 
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, provider))
@@ -251,11 +253,11 @@ func TestMarketActor(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
 
 			// create the deal to publish
-			deal := actor.generateDealAndAddFunds(rt, client, provider, startEpoch, endEpoch)
+			deal := actor.generateDealAndAddFunds(rt, client, minerAddrs, startEpoch, endEpoch)
 
 			// publish the deal so that client AND provider collateral is locked
 			rt.SetEpoch(publishEpoch)
-			actor.publishDeals(rt, deal)
+			actor.publishDeals(rt, minerAddrs, deal)
 			rt.GetState(&st)
 			require.Equal(t, deal.ProviderCollateral, st.GetLockedBalance(rt, provider))
 			require.Equal(t, deal.ClientBalanceRequirement(), st.GetLockedBalance(rt, client))
@@ -265,13 +267,13 @@ func TestMarketActor(t *testing.T) {
 			// client cannot withdraw any funds since all it's balance is locked
 			actor.withdrawClientBalance(rt, client, withDrawAmt, withDrawableAmt)
 			//  provider cannot withdraw any funds since all it's balance is locked
-			actor.withdrawProviderBalance(rt, withDrawAmt, withDrawableAmt)
+			actor.withdrawProviderBalance(rt, withDrawAmt, withDrawableAmt, minerAddrs)
 
 			// add some more funds to the provider & ensure withdrawal is limited by the locked funds
 			withDrawAmt = abi.NewTokenAmount(30)
 			withDrawableAmt = abi.NewTokenAmount(25)
-			actor.addProviderFunds(rt, withDrawableAmt)
-			actor.withdrawProviderBalance(rt, withDrawAmt, withDrawableAmt)
+			actor.addProviderFunds(rt, withDrawableAmt, minerAddrs)
+			actor.withdrawProviderBalance(rt, withDrawAmt, withDrawableAmt, minerAddrs)
 
 			// add some more funds to the client & ensure withdrawal is limited by the locked funds
 			actor.addParticipantFunds(rt, client, withDrawableAmt)
@@ -282,11 +284,11 @@ func TestMarketActor(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
 
 			// create the deal to publish
-			deal := actor.generateDealAndAddFunds(rt, client, provider, startEpoch, endEpoch)
+			deal := actor.generateDealAndAddFunds(rt, client, minerAddrs, startEpoch, endEpoch)
 
 			// publish the deal
 			rt.SetEpoch(publishEpoch)
-			dealID := actor.publishDeals(rt, deal)[0]
+			dealID := actor.publishDeals(rt, minerAddrs, deal)[0]
 
 			// activate the deal
 			actor.activateDeals(rt, []abi.DealID{dealID}, endEpoch+1, provider)
@@ -302,14 +304,14 @@ func TestMarketActor(t *testing.T) {
 			// provider cannot withdraw any funds since all it's balance is locked
 			withDrawAmt := abi.NewTokenAmount(1)
 			actualWithdrawn := abi.NewTokenAmount(0)
-			actor.withdrawProviderBalance(rt, withDrawAmt, actualWithdrawn)
+			actor.withdrawProviderBalance(rt, withDrawAmt, actualWithdrawn, minerAddrs)
 
 			// add some more funds to the provider & ensure withdrawal is limited by the locked funds
-			actor.addProviderFunds(rt, abi.NewTokenAmount(25))
+			actor.addProviderFunds(rt, abi.NewTokenAmount(25), minerAddrs)
 			withDrawAmt = abi.NewTokenAmount(30)
 			actualWithdrawn = abi.NewTokenAmount(25)
 
-			actor.withdrawProviderBalance(rt, withDrawAmt, actualWithdrawn)
+			actor.withdrawProviderBalance(rt, withDrawAmt, actualWithdrawn, minerAddrs)
 		})
 	})
 }
@@ -320,6 +322,7 @@ func TestPublishStorageDeals(t *testing.T) {
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
 	client := tutil.NewIDAddr(t, 104)
+	mAddr := &minerAddrs{owner, worker, provider}
 	var st market.State
 
 	t.Run("publish a deal after activating a previous deal which has a start epoch far in the future", func(t *testing.T) {
@@ -328,19 +331,19 @@ func TestPublishStorageDeals(t *testing.T) {
 		publishEpoch := abi.ChainEpoch(1)
 
 		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
-		deal1 := actor.generateDealAndAddFunds(rt, client, provider, startEpoch, endEpoch)
+		deal1 := actor.generateDealAndAddFunds(rt, client, mAddr, startEpoch, endEpoch)
 
 		// publish the deal and activate it
 		rt.SetEpoch(publishEpoch)
-		deal1ID := actor.publishDeals(rt, deal1)[0]
+		deal1ID := actor.publishDeals(rt, mAddr, deal1)[0]
 		actor.activateDeals(rt, []abi.DealID{deal1ID}, endEpoch, provider)
 		st := actor.getDealState(rt, deal1ID)
 		require.EqualValues(t, publishEpoch, st.SectorStartEpoch)
 
 		// now publish a second deal and activate it
-		deal2 := actor.generateDealAndAddFunds(rt, client, provider, startEpoch+1, endEpoch+1)
+		deal2 := actor.generateDealAndAddFunds(rt, client, mAddr, startEpoch+1, endEpoch+1)
 		rt.SetEpoch(publishEpoch + 1)
-		deal2ID := actor.publishDeals(rt, deal2)[0]
+		deal2ID := actor.publishDeals(rt, mAddr, deal2)[0]
 		actor.activateDeals(rt, []abi.DealID{deal2ID}, endEpoch+1, provider)
 	})
 
@@ -351,15 +354,15 @@ func TestPublishStorageDeals(t *testing.T) {
 		client3 := tutil.NewIDAddr(t, 902)
 
 		// generate first deal for
-		deal1 := actor.generateDealAndAddFunds(rt, client1, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+		deal1 := actor.generateDealAndAddFunds(rt, client1, mAddr, abi.ChainEpoch(42), abi.ChainEpoch(100))
 
 		// generate second deal
-		deal2 := actor.generateDealAndAddFunds(rt, client2, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+		deal2 := actor.generateDealAndAddFunds(rt, client2, mAddr, abi.ChainEpoch(42), abi.ChainEpoch(100))
 
 		// generate third deal
-		deal3 := actor.generateDealAndAddFunds(rt, client3, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+		deal3 := actor.generateDealAndAddFunds(rt, client3, mAddr, abi.ChainEpoch(42), abi.ChainEpoch(100))
 
-		actor.publishDeals(rt, deal1, deal2, deal3)
+		actor.publishDeals(rt, mAddr, deal1, deal2, deal3)
 
 		// assert locked balance for all clients and provider
 		providerLocked := big.Sum(deal1.ProviderCollateral, deal2.ProviderCollateral, deal3.ProviderCollateral)
@@ -380,9 +383,9 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, totalStorageFee, st.TotalClientStorageFee)
 
 		// publish two more deals for same clients with same provider
-		deal4 := actor.generateDealAndAddFunds(rt, client3, provider, abi.ChainEpoch(1000), abi.ChainEpoch(10000))
-		deal5 := actor.generateDealAndAddFunds(rt, client3, provider, abi.ChainEpoch(100), abi.ChainEpoch(1000))
-		actor.publishDeals(rt, deal4, deal5)
+		deal4 := actor.generateDealAndAddFunds(rt, client3, mAddr, abi.ChainEpoch(1000), abi.ChainEpoch(10000))
+		deal5 := actor.generateDealAndAddFunds(rt, client3, mAddr, abi.ChainEpoch(100), abi.ChainEpoch(1000))
+		actor.publishDeals(rt, mAddr, deal4, deal5)
 
 		// assert locked balances for clients and provider
 		rt.GetState(&st)
@@ -404,6 +407,35 @@ func TestPublishStorageDeals(t *testing.T) {
 
 		totalStorageFee = big.Sum(totalStorageFee, deal4.TotalStorageFee(), deal5.TotalStorageFee())
 		require.EqualValues(t, totalStorageFee, st.TotalClientStorageFee)
+
+		// PUBLISH DEALS with a different provider
+		provider2 := tutil.NewIDAddr(t, 109)
+		miner := &minerAddrs{owner, worker, provider2}
+
+		// generate first deal for second provider
+		deal6 := actor.generateDealAndAddFunds(rt, client1, miner, abi.ChainEpoch(20), abi.ChainEpoch(50))
+
+		// generate second deal for second provider
+		deal7 := actor.generateDealAndAddFunds(rt, client1, miner, abi.ChainEpoch(25), abi.ChainEpoch(60))
+
+		// publish both the deals for the second provider
+		actor.publishDeals(rt, miner, deal6, deal7)
+
+		// assertions
+		rt.GetState(&st)
+		provider2Locked := big.Add(deal6.ProviderCollateral, deal7.ProviderCollateral)
+		require.EqualValues(t, provider2Locked, actor.getLockedBalance(rt, provider2))
+		client1LockedUpdated := actor.getLockedBalance(rt, client1)
+		require.EqualValues(t, big.Add(deal7.ClientBalanceRequirement(), big.Add(client1Locked, deal6.ClientBalanceRequirement())), client1LockedUpdated)
+
+		// assert first provider's balance as well
+		require.EqualValues(t, providerLocked, actor.getLockedBalance(rt, provider))
+
+		totalClientCollateralLocked = big.Add(totalClientCollateralLocked, big.Add(deal6.ClientCollateral, deal7.ClientCollateral))
+		require.EqualValues(t, totalClientCollateralLocked, st.TotalClientLockedCollateral)
+		require.EqualValues(t, big.Add(providerLocked, provider2Locked), st.TotalProviderLockedCollateral)
+		totalStorageFee = big.Add(totalStorageFee, big.Add(deal6.TotalStorageFee(), deal7.TotalStorageFee()))
+		require.EqualValues(t, totalStorageFee, st.TotalClientStorageFee)
 	})
 }
 
@@ -413,6 +445,8 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
 	client := tutil.NewIDAddr(t, 104)
+	mAddrs := &minerAddrs{owner, worker, provider}
+
 	currentEpoch := abi.ChainEpoch(5)
 	startEpoch := abi.ChainEpoch(10)
 	endEpoch := abi.ChainEpoch(20)
@@ -483,14 +517,14 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			"client does not have enough balance for collateral": {
 				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
 					a.addParticipantFunds(rt, client, big.Sub(d.ClientBalanceRequirement(), big.NewInt(1)))
-					a.addProviderFunds(rt, d.ProviderCollateral)
+					a.addProviderFunds(rt, d.ProviderCollateral, mAddrs)
 				},
 				exitCode: exitcode.ErrInsufficientFunds,
 			},
 			"provider does not have enough balance for collateral": {
 				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
 					a.addParticipantFunds(rt, client, d.ClientBalanceRequirement())
-					a.addProviderFunds(rt, big.Sub(d.ProviderCollateral, big.NewInt(1)))
+					a.addProviderFunds(rt, big.Sub(d.ProviderCollateral, big.NewInt(1)), mAddrs)
 				},
 				exitCode: exitcode.ErrInsufficientFunds,
 			},
@@ -509,7 +543,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"no entry for client in locked  balance table": {
 				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
-					a.addProviderFunds(rt, d.ProviderCollateral)
+					a.addProviderFunds(rt, d.ProviderCollateral, mAddrs)
 				},
 				exitCode: exitcode.ErrInsufficientFunds,
 			},
@@ -550,7 +584,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			//
 			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(100))
 			deal1 := generateDealProposal(client, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
-			actor.addProviderFunds(rt, deal1.ProviderCollateral)
+			actor.addProviderFunds(rt, deal1.ProviderCollateral, mAddrs)
 			params := mkPublishStorageParams(deal1)
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -567,7 +601,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		t.Run("fail when provider has some funds but not enough for a deal", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
 
-			actor.addProviderFunds(rt, abi.NewTokenAmount(1))
+			actor.addProviderFunds(rt, abi.NewTokenAmount(1), mAddrs)
 			deal1 := generateDealProposal(client, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
 			actor.addParticipantFunds(rt, client, deal1.ClientBalanceRequirement())
 
@@ -589,9 +623,10 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 	{
 		t.Run("fail when deals have different providers", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
-			deal1 := actor.generateDealAndAddFunds(rt, client, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+			deal1 := actor.generateDealAndAddFunds(rt, client, mAddrs, abi.ChainEpoch(42), abi.ChainEpoch(100))
+			m2 := &minerAddrs{owner, worker, tutil.NewIDAddr(t, 1000)}
 
-			deal2 := actor.generateDealAndAddFunds(rt, client, tutil.NewIDAddr(t, 1000), abi.ChainEpoch(1), abi.ChainEpoch(5))
+			deal2 := actor.generateDealAndAddFunds(rt, client, m2, abi.ChainEpoch(1), abi.ChainEpoch(5))
 
 			params := mkPublishStorageParams(deal1, deal2)
 
@@ -664,12 +699,13 @@ func TestMarketActorDeals(t *testing.T) {
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
 	client := tutil.NewIDAddr(t, 104)
+	minerAddrs := &minerAddrs{owner, worker, provider}
 
 	var st market.State
 
 	// Test adding provider funds from both worker and owner address
 	rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
-	actor.addProviderFunds(rt, abi.NewTokenAmount(10000))
+	actor.addProviderFunds(rt, abi.NewTokenAmount(10000), minerAddrs)
 	rt.GetState(&st)
 	assert.Equal(t, abi.NewTokenAmount(10000), st.GetEscrowBalance(rt, provider))
 
@@ -680,7 +716,7 @@ func TestMarketActorDeals(t *testing.T) {
 
 	// First attempt at publishing the deal should work
 	{
-		actor.publishDeals(rt, dealProposal)
+		actor.publishDeals(rt, minerAddrs, dealProposal)
 	}
 
 	// Second attempt at publishing the same deal should fail
@@ -701,17 +737,13 @@ func TestMarketActorDeals(t *testing.T) {
 
 	// Same deal with a different label should work
 	{
-		actor.publishDeals(rt, dealProposal)
+		actor.publishDeals(rt, minerAddrs, dealProposal)
 	}
 }
 
 type marketActorTestHarness struct {
 	market.Actor
 	t testing.TB
-
-	owner    address.Address
-	worker   address.Address
-	provider address.Address
 }
 
 func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
@@ -721,13 +753,20 @@ func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.Verify()
 }
 
-// addProviderFunds is a helper method to setup provider market funds
-func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, amount abi.TokenAmount) {
-	rt.SetReceived(amount)
-	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
-	h.expectProviderControlAddressesAndValidateCaller(rt, h.provider, h.owner, h.worker)
+type minerAddrs struct {
+	owner    address.Address
+	worker   address.Address
+	provider address.Address
+}
 
-	rt.Call(h.AddBalance, &h.provider)
+// addProviderFunds is a helper method to setup provider market funds
+func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, amount abi.TokenAmount, minerAddrs *minerAddrs) {
+	rt.SetReceived(amount)
+	rt.SetAddressActorType(minerAddrs.provider, builtin.StorageMinerActorCodeID)
+	rt.SetCaller(minerAddrs.owner, builtin.AccountActorCodeID)
+	h.expectProviderControlAddressesAndValidateCaller(rt, minerAddrs.provider, minerAddrs.owner, minerAddrs.worker)
+
+	rt.Call(h.AddBalance, &minerAddrs.provider)
 
 	rt.Verify()
 
@@ -762,16 +801,16 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 	)
 }
 
-func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withDrawAmt, expectedSend abi.TokenAmount) {
-	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	h.expectProviderControlAddressesAndValidateCaller(rt, h.provider, h.owner, h.worker)
+func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withDrawAmt, expectedSend abi.TokenAmount, miner *minerAddrs) {
+	rt.SetCaller(miner.worker, builtin.AccountActorCodeID)
+	h.expectProviderControlAddressesAndValidateCaller(rt, miner.provider, miner.owner, miner.worker)
 
 	params := market.WithdrawBalanceParams{
-		ProviderOrClientAddress: h.provider,
+		ProviderOrClientAddress: miner.provider,
 		Amount:                  withDrawAmt,
 	}
 
-	rt.ExpectSend(h.owner, builtin.MethodSend, nil, expectedSend, nil, exitcode.Ok)
+	rt.ExpectSend(miner.owner, builtin.MethodSend, nil, expectedSend, nil, exitcode.Ok)
 	rt.Call(h.WithdrawBalance, &params)
 	rt.Verify()
 }
@@ -790,15 +829,15 @@ func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client 
 	rt.Verify()
 }
 
-func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, deals ...market.DealProposal) []abi.DealID {
-	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, minerAddrs *minerAddrs, deals ...market.DealProposal) []abi.DealID {
+	rt.SetCaller(minerAddrs.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 	rt.ExpectSend(
-		h.provider,
+		minerAddrs.provider,
 		builtin.MethodsMiner.ControlAddresses,
 		nil,
 		big.Zero(),
-		&miner.GetControlAddressesReturn{Owner: h.owner, Worker: h.worker},
+		&miner.GetControlAddressesReturn{Owner: minerAddrs.owner, Worker: minerAddrs.worker},
 		exitcode.Ok,
 	)
 
@@ -906,9 +945,10 @@ func (h *marketActorTestHarness) terminateDeals(rt *mock.Runtime, dealIDs []abi.
 	require.Nil(h.t, ret)
 }
 
-func (h *marketActorTestHarness) generateDealAndAddFunds(rt *mock.Runtime, client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
-	deal4 := generateDealProposal(client, provider, startEpoch, endEpoch)
-	h.addProviderFunds(rt, deal4.ProviderCollateral)
+func (h *marketActorTestHarness) generateDealAndAddFunds(rt *mock.Runtime, client address.Address, minerAddrs *minerAddrs,
+	startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+	deal4 := generateDealProposal(client, minerAddrs.provider, startEpoch, endEpoch)
+	h.addProviderFunds(rt, deal4.ProviderCollateral, minerAddrs)
 	h.addParticipantFunds(rt, client, deal4.ClientBalanceRequirement())
 	return deal4
 }
@@ -934,7 +974,7 @@ func basicMarketSetup(t *testing.T, ma, owner, provider, worker, client address.
 
 	rt := builder.Build(t)
 
-	actor := marketActorTestHarness{t: t, owner: owner, worker: worker, provider: provider}
+	actor := marketActorTestHarness{t: t}
 	actor.constructAndVerify(rt)
 
 	return rt, &actor
