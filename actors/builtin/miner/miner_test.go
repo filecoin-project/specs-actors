@@ -1006,6 +1006,17 @@ func TestTerminateSectors(t *testing.T) {
 		rt := builder.Build(t)
 		sector := commitSector(t, rt)
 
+		{
+			// Verify that a sector expiration was registered.
+			st := getState(rt)
+			expiration, err := st.GetSectorExpirations(rt.AdtStore(), sector.Expiration)
+			require.NoError(t, err)
+			expiringSectorNos, err := expiration.All(1)
+			require.NoError(t, err)
+			assert.Len(t, expiringSectorNos, 1)
+			assert.Equal(t, sector.SectorNumber, abi.SectorNumber(expiringSectorNos[0]))
+		}
+
 		sectorSize, err := sector.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorPower := miner.QAPowerForSector(sectorSize, sector)
@@ -1016,14 +1027,24 @@ func TestTerminateSectors(t *testing.T) {
 		sectors.Set(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, &sectors, expectedFee)
 
-		// expect sector to have been removed
-		st := getState(rt)
-		_, found, err := st.GetSector(rt.AdtStore(), sector.SectorNumber)
-		require.NoError(t, err)
-		assert.False(t, found)
+		{
+			st := getState(rt)
 
-		// expect pledge requirement to have been decremented
-		assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
+			// expect sector expiration to have been removed
+			err = st.ForEachSectorExpiration(rt.AdtStore(), func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
+				assert.Fail(t, "did not expect to find a sector expiration, found expiration at %s", expiry)
+				return nil
+			})
+			assert.NoError(t, err)
+
+			// expect sector to have been removed
+			_, found, err := st.GetSector(rt.AdtStore(), sector.SectorNumber)
+			require.NoError(t, err)
+			assert.False(t, found)
+
+			// expect pledge requirement to have been decremented
+			assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
+		}
 	})
 }
 
