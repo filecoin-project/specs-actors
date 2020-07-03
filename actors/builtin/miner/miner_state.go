@@ -575,7 +575,15 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 		return err
 	}
 
-	epochsChanged := map[uint64]*abi.BitField{}
+	type change struct {
+		index uint64
+		value *abi.BitField
+	}
+
+	var (
+		epochsChanged []change
+		epochsDeleted []uint64
+	)
 
 	epochFaultsOld := &abi.BitField{}
 	err = arr.ForEach(epochFaultsOld, func(i int64) error {
@@ -594,8 +602,10 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 			return err
 		}
 
-		if countOld != countNew {
-			epochsChanged[uint64(i)] = epochFaultsNew
+		if countNew == 0 {
+			epochsDeleted = append(epochsDeleted, uint64(i))
+		} else if countOld != countNew {
+			epochsChanged = append(epochsChanged, change{index: uint64(i), value: epochFaultsNew})
 		}
 
 		return nil
@@ -604,14 +614,14 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 		return err
 	}
 
-	for i, newFaults := range epochsChanged {
-		if empty, err := newFaults.IsEmpty(); err != nil {
-			return err
-		} else if empty {
-			if err := arr.Delete(i); err != nil {
-				return err
-			}
-		} else if err = arr.Set(i, newFaults); err != nil {
+	err = arr.BatchDelete(epochsDeleted)
+	if err != nil {
+		return err
+	}
+
+	for _, change := range epochsChanged {
+		err = arr.Set(change.index, change.value)
+		if err != nil {
 			return err
 		}
 	}
