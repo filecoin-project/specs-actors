@@ -253,6 +253,8 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 	return nil
 }
 
+// GasOnSubmitVerifySeal is amount of gas charged for SubmitPoRepForBulkVerify
+// This number is empirically determined
 const GasOnSubmitVerifySeal = 132166313
 
 func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo) *adt.EmptyValue {
