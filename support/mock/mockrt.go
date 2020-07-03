@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -779,6 +780,11 @@ func (rt *Runtime) Reset() {
 
 // Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code.
 func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
+	rt.ExpectAbortConstainsMessage(expected, "", f)
+}
+
+// Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code and message.
+func (rt *Runtime) ExpectAbortConstainsMessage(expected exitcode.ExitCode, substr string, f func()) {
 	rt.t.Helper()
 	prevState := rt.state
 
@@ -795,6 +801,11 @@ func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
 		}
 		if a.code != expected {
 			rt.failTest("abort expected code %v, got %v %s", expected, a.code, a.msg)
+		}
+		if substr != "" {
+			if !strings.Contains(a.msg, substr) {
+				rt.failTest("abort expected message\n'%s'\nto contain\n'%s'\n", a.msg, substr)
+			}
 		}
 		// Roll back state change.
 		rt.state = prevState

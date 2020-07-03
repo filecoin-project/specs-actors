@@ -229,7 +229,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
-	var detectedFaultSectors []*SectorOnChainInfo
+	var newFaultSectors []*SectorOnChainInfo
 	var recoveredSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
 
@@ -269,10 +269,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Traverse earlier submissions and enact detected faults.
 		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
 		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
+		detectedFaultSectors, detectedFaultPenalty := detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
+		penalty = big.Add(penalty, detectedFaultPenalty)
+		newFaultSectors = append(newFaultSectors, detectedFaultSectors...)
 
-		// TODO WPOST (follow-up): process Skipped as faults
-		// https://github.com/filecoin-project/specs-actors/issues/410
+		// Add skipped as faults
+		skippedFaultSectors, skippedPenalty := processSkippedFaults(rt, &st, store, currDeadline, info, deadlines, epochReward, pwrTotal.QualityAdjPower, &params.Skipped)
+		penalty = big.Add(penalty, skippedPenalty)
+		newFaultSectors = append(newFaultSectors, skippedFaultSectors...)
 
 		// Work out which sectors are due in the declared partitions at this deadline.
 		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, currDeadline.Index, params.Partitions)
@@ -328,7 +332,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	})
 
 	// Restore power for recovered sectors. Remove power for new faults.
-	requestUpdateSectorPower(rt, info.SectorSize, recoveredSectors, detectedFaultSectors)
+	requestUpdateSectorPower(rt, info.SectorSize, recoveredSectors, newFaultSectors)
 	// Burn penalties.
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 	return nil
@@ -513,11 +517,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	var st State
 	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
-
+	info := getMinerInfo(rt, &st)
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
 	var replaceSectors []*SectorOnChainInfo
 	replaceSectorKeys := map[abi.SectorNumber]struct{}{} // For de-duplication
-
+	var preCommits []*SectorPreCommitOnChainInfo
 	for _, sectorNo := range params.Sectors {
 		precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
@@ -525,37 +529,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			// This relies on the precommit having been checked in ProveCommitSector and not removed (expired) before
 			// this call. This in turn relies on the call from the power actor reliably coming in the same
 			// epoch as ProveCommitSector.
+			//
+			// It is possible to hit this case if precommit expires in this epoch because precommit expiries are
+			// processed before porep verify / sector proof confirmation
 			rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
-		}
-
-		// Check (and activate) storage deals associated to sector. Abort if checks failed.
-		// return DealWeight for the deal set in the sector
-		// TODO: we should batch these calls...
-		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDealsParams{
-				DealIDs:      precommit.Info.DealIDs,
-				SectorExpiry: precommit.Info.Expiration,
-			},
-			abi.NewTokenAmount(0),
-		)
-		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-
-		// initial pledge is precommit deposit
-		initialPledge := precommit.PreCommitDeposit
-
-		newSectorInfo := SectorOnChainInfo{
-			SectorNumber:       precommit.Info.SectorNumber,
-			SealProof:          precommit.Info.SealProof,
-			SealedCID:          precommit.Info.SealedCID,
-			DealIDs:            precommit.Info.DealIDs,
-			Expiration:         precommit.Info.Expiration,
-			Activation:         precommit.PreCommitEpoch,
-			DealWeight:         precommit.DealWeight,
-			VerifiedDealWeight: precommit.VerifiedDealWeight,
-			InitialPledge:      initialPledge,
 		}
 
 		if precommit.Info.ReplaceCapacity {
@@ -576,65 +553,89 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			}
 		}
 
-		// Request power for activated sector.
-		// TODO: aggregate new power calculation and move this outside the loop, requesting power and pledge just once at the end.
-		// https://github.com/filecoin-project/specs-actors/issues/475
-		info := getMinerInfo(rt, &st)
-		requestUpdateSectorPower(rt, info.SectorSize, []*SectorOnChainInfo{&newSectorInfo}, nil)
+		// Check (and activate) storage deals associated to sector. Abort if checks failed.
+		// TODO: we should batch these calls...
+		// https://github.com/filecoin-project/specs-actors/issues/474
+		_, code := rt.Send(
+			builtin.StorageMarketActorAddr,
+			builtin.MethodsMarket.ActivateDeals,
+			&market.ActivateDealsParams{
+				DealIDs:      precommit.Info.DealIDs,
+				SectorExpiry: precommit.Info.Expiration,
+			},
+			abi.NewTokenAmount(0),
+		)
+		builtin.RequireSuccess(rt, code, "failed to activate deals")
 
-		// Add sector and pledge lock-up to miner state
-		// TODO: do this all at once after the loop
-		// https://github.com/filecoin-project/specs-actors/issues/476
-		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
-			}
-
-			// Unlock deposit for successful proof, make it available for lock-up as initial pledge.
-			st.AddPreCommitDeposit(precommit.PreCommitDeposit.Neg())
-			st.AddInitialPledgeRequirement(initialPledge)
-
-			// Lock up initial pledge for new sector.
-			availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-			if availableBalance.LessThan(initialPledge) {
-				rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for initial pledge requirement %s, available: %s", initialPledge, availableBalance)
-			}
-			if err := st.AddLockedFunds(store, rt.CurrEpoch(), initialPledge, &PledgeVestingSpec); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add pledge: %v", err)
-			}
-			st.AssertBalanceInvariants(rt.CurrentBalance())
-
-			if err := st.PutSector(store, &newSectorInfo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to prove commit: %v", err)
-			}
-
-			if err := st.DeletePrecommittedSector(store, sectorNo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to delete precommit for sector %v: %v", sectorNo, err)
-			}
-
-			if err := st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(sectorNo)); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector %v expiration: %v", sectorNo, err)
-			}
-
-			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
-			if err := st.AddNewSectors(sectorNo); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to add new sector number %v: %v", sectorNo, err)
-			}
-
-			return newlyVestedFund
-		}).(abi.TokenAmount)
-
-		notifyPledgeChanged(rt, big.Sub(initialPledge, newlyVestedAmount))
+		preCommits = append(preCommits, precommit)
 	}
 
-	// This transaction should replace the one inside the loop above.
-	// Migrate state mutations into here.
-	rt.State().Transaction(&st, func() interface{} {
+	// Batch update state, any failure processing an individual sector aborts the whole call
+	totalPledge := big.Zero()
+	newSectors := make([]*SectorOnChainInfo, 0)
+	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		err := scheduleReplaceSectorsExpiration(rt, &st, store, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
-		return nil
-	})
+
+		for _, precommit := range preCommits {
+			// initial pledge is precommit deposit
+			initialPledge := precommit.PreCommitDeposit
+			totalPledge = big.Add(totalPledge, initialPledge)
+			newSectorInfo := SectorOnChainInfo{
+				SectorNumber:       precommit.Info.SectorNumber,
+				SealProof:          precommit.Info.SealProof,
+				SealedCID:          precommit.Info.SealedCID,
+				DealIDs:            precommit.Info.DealIDs,
+				Expiration:         precommit.Info.Expiration,
+				Activation:         precommit.PreCommitEpoch,
+				DealWeight:         precommit.DealWeight,
+				VerifiedDealWeight: precommit.VerifiedDealWeight,
+				InitialPledge:      initialPledge,
+			}
+			newSectors = append(newSectors, &newSectorInfo)
+
+			err = st.PutSector(store, &newSectorInfo)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put sector %d", newSectorInfo.SectorNumber)
+
+			err = st.DeletePrecommittedSector(store, precommit.Info.SectorNumber)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommit for sector %d", precommit.Info.SectorNumber)
+
+			err = st.AddSectorExpirations(store, precommit.Info.Expiration, uint64(newSectorInfo.SectorNumber))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector %d", newSectorInfo.SectorNumber)
+
+			// Add to new sectors, a staging ground before scheduling to a deadline at end of proving period.
+
+			err = st.AddNewSectors(newSectorInfo.SectorNumber)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector number %d", newSectorInfo.SectorNumber)
+		}
+
+		// Add sector and pledge lock-up to miner state
+		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
+		}
+
+		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
+		st.AddPreCommitDeposit(totalPledge.Neg())
+		st.AddInitialPledgeRequirement(totalPledge)
+
+		// Lock up initial pledge for new sectors.
+		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		if availableBalance.LessThan(totalPledge) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, availableBalance)
+		}
+		if err := st.AddLockedFunds(store, rt.CurrEpoch(), totalPledge, &PledgeVestingSpec); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to add aggregate pledge: %v", err)
+		}
+		st.AssertBalanceInvariants(rt.CurrentBalance())
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	// Request power and pledge update for activated sector.
+	requestUpdateSectorPower(rt, info.SectorSize, newSectors, nil)
+	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVestedAmount))
+
 	return nil
 }
 
@@ -1216,6 +1217,65 @@ func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline
 		rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", currDeadline.PeriodStart)
 	}
 	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch, epochReward, currentTotalPower)
+}
+
+// Discovers how skipped faults declared during post intersect with existing faults and recoveries, then unlocks funds
+// and returns the penalty to be paid and the sector infos needed to deduct power.
+// - Skipped faults that are not in the current deadline will trigger an error.
+// - Skipped faults that have previously been marked recovered, will be penalized as a retracted recovery but will not
+// result in a change in power (the power has already been removed).
+// - Skipped faults that are already declared, but not recovered will be ignored.
+// - The rest will be penalized as undeclared faults and have their power removed.
+func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, minerInfo *MinerInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower, skipped *bitfield.BitField) ([]*SectorOnChainInfo, abi.TokenAmount) {
+	empty, err := skipped.IsEmpty()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
+	if empty {
+		return nil, abi.NewTokenAmount(0)
+	}
+
+	currEpoch := rt.CurrEpoch()
+	var newFaultSectors []*SectorOnChainInfo
+
+	// Check that the declared sectors are actually due at the deadline.
+	deadlineSectors := deadlines.Due[currDeadline.Index]
+	contains, err := abi.BitFieldContainsAll(deadlineSectors, skipped)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not check if skipped faults are in deadline")
+	if !contains {
+		rt.Abortf(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline %d", currDeadline.Index)
+	}
+
+	// Find all skipped faults that have been labeled recovered
+	retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, skipped)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
+
+	// Ignore skipped faults that are already faults
+	newFaults, err := bitfield.SubtractBitField(skipped, st.Faults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
+
+	// Add Faults
+	err = st.AddFaults(store, newFaults, currDeadline.PeriodStart)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
+
+	// Remove faulty recoveries
+	err = st.RemoveRecoveries(retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+
+	// Load info for sectors.
+	newFaultSectors, err = st.LoadSectorInfos(store, newFaults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
+
+	// load info for retractions
+	retractedRecoveryInfos, err := st.LoadSectorInfos(store, retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
+
+	// Penalize new skipped faults and retracted recoveries
+	// This differs from declaring faults "on time", where retracting recoveries doesn't attract an extra penalty
+	penalizeFaultSectors := append(newFaultSectors, retractedRecoveryInfos...)
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizeFaultSectors)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+
+	// Return only new faulty sectors (excluding retracted recoveries) for power updates
+	return newFaultSectors, penalty
 }
 
 // Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves
