@@ -369,8 +369,8 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 
 			err = states.Set(dealID, &DealState{
 				SectorStartEpoch: currEpoch,
-				LastUpdatedEpoch: epochUndefined,
-				SlashEpoch:       epochUndefined,
+				LastUpdatedEpoch: EpochUndefined,
+				SlashEpoch:       EpochUndefined,
 			})
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %d", dealID)
 		}
@@ -446,7 +446,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				continue
 			}
 
-			Assert(deal.Provider == minerAddr)
+			AssertMsg(deal.Provider == minerAddr, "caller is not the provider of the deal")
 
 			// do not slash expired deals
 			if deal.EndEpoch <= rt.CurrEpoch() {
@@ -534,7 +534,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to delete pending proposal: %v", err)
 				}
 
-				if state.SectorStartEpoch == epochUndefined {
+				if state.SectorStartEpoch == EpochUndefined {
 					// Not yet appeared in proven sector; check for timeout.
 					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
 
@@ -553,7 +553,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
 
-				if nextEpoch != epochUndefined {
+				if nextEpoch != EpochUndefined {
 					Assert(nextEpoch > rt.CurrEpoch())
 
 					// TODO: can we avoid having this field?
