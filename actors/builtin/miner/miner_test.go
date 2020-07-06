@@ -693,7 +693,7 @@ func TestWindowPost(t *testing.T) {
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
 		// expected penalty is the fee for an undeclared fault
-		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
 		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
@@ -796,7 +796,7 @@ func TestWindowPost(t *testing.T) {
 		skipped := bitfield.NewFromSet([]uint64{uint64(nextInfos1[0].SectorNumber)})
 
 		// expected penalty is the late fee for first sector as retracted recovery
-		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
 		cfg := &poStConfig{
 			expectedRawPowerDelta: rawPower,
