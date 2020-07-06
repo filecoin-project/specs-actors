@@ -1319,7 +1319,7 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	// TODO: this is potentially super expensive for a large miner failing to submit proofs.
 	// https://github.com/filecoin-project/specs-actors/issues/411
 	detectedFaultSectors, err := st.LoadSectorInfos(store, detectedFaults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load old fault sectors")
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 	failedRecoverySectors, err := st.LoadSectorInfos(store, failedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
