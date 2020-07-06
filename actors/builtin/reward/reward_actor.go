@@ -18,7 +18,7 @@ func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.AwardBlockReward,
-		3:                         a.LastPerEpochReward,
+		3:                         a.ThisEpochReward,
 		4:                         a.UpdateNetworkKPI,
 	}
 }
@@ -66,7 +66,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	penalty := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Readonly(&st)
-	blockReward := big.Div(st.LastPerEpochReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
+	blockReward := big.Div(st.ThisEpochReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 	blockReward = big.Mul(blockReward, big.NewInt(params.WinCount))
 	totalReward := big.Add(blockReward, params.GasReward)
 
@@ -89,12 +89,12 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	return nil
 }
 
-func (a Actor) LastPerEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmount {
+func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmount {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
 	rt.State().Readonly(&st)
-	return &st.LastPerEpochReward
+	return &st.ThisEpochReward
 }
 
 // Updates the simple/baseline supply state and last epoch reward with computation for for a single epoch.
@@ -113,7 +113,7 @@ func (a Actor) computePerEpochReward(st *State, clockTime abi.ChainEpoch, networ
 	st.BaselineSupply = newBaselineSupply
 
 	perEpochReward := big.Add(newSimpleMinted, newBaselineMinted)
-	st.LastPerEpochReward = perEpochReward
+	st.ThisEpochReward = perEpochReward
 
 	return perEpochReward
 }
