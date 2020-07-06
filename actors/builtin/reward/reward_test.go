@@ -21,11 +21,13 @@ func TestExports(t *testing.T) {
 func TestConstructor(t *testing.T) {
 	actor := rewardHarness{reward.Actor{}, t}
 
-	rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
-		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
-		Build(t)
-
-	actor.constructAndVerify(rt)
+	t.Run("construct with 0 power", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
+			Build(t)
+		startRealizedPower := abi.NewStoragePower(0)
+		actor.constructAndVerify(rt, &startRealizedPower)
+	})
 }
 
 func TestAwardBlockReward(t *testing.T) {
@@ -35,7 +37,8 @@ func TestAwardBlockReward(t *testing.T) {
 
 	t.Run("assertion failure when current balance is less than gas reward", func(t *testing.T) {
 		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
+		startRealizedPower := abi.NewStoragePower(0)
+		actor.constructAndVerify(rt, &startRealizedPower)
 		miner := tutil.NewIDAddr(t, 1000)
 
 		gasreward := abi.NewTokenAmount(10)
@@ -58,9 +61,9 @@ type rewardHarness struct {
 	t testing.TB
 }
 
-func (h *rewardHarness) constructAndVerify(rt *mock.Runtime) {
+func (h *rewardHarness) constructAndVerify(rt *mock.Runtime, currRawPower *abi.StoragePower) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	ret := rt.Call(h.Constructor, nil)
+	ret := rt.Call(h.Constructor, currRawPower)
 	assert.Nil(h.t, ret)
 	rt.Verify()
 

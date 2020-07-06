@@ -39,8 +39,8 @@ type AddrKey = adt.AddrKey
 var SimpleTotal = big.Mul(big.NewInt(100e6), big.NewInt(1e18))   // 100M for testnet, PARAM_FINISH
 var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for testnet, PARAM_FINISH
 
-func ConstructState() *State {
-	return &State{
+func ConstructState(currRealizedPower *abi.StoragePower) *State {
+	st := &State{
 		BaselinePower:        big.Zero(),
 		RealizedPower:        big.Zero(),
 		CumsumBaseline:       big.Zero(),
@@ -52,6 +52,63 @@ func ConstructState() *State {
 		ThisEpochReward:  big.Zero(),
 		RewardEpochsPaid: 0,
 	}
+	st.updateToNextEpochReward(currRealizedPower)
+
+	return st
+}
+
+// Takes in a current realized power for a reward epoch and computes
+// and updates reward state to track reward for the next epoch
+func (st *State) updateToNextEpochReward(currRealizedPower *abi.StoragePower) {
+	st.RealizedPower = *currRealizedPower
+
+	st.BaselinePower = st.newBaselinePower()
+	st.CumsumBaseline = big.Add(st.CumsumBaseline, st.BaselinePower)
+
+	// Cap realized power in computing CumsumRealized so that progress is only relative to the current epoch.
+	cappedRealizedPower := big.Min(st.BaselinePower, st.RealizedPower)
+	st.CumsumRealized = big.Add(st.CumsumRealized, cappedRealizedPower)
+
+	st.EffectiveNetworkTime = st.getEffectiveNetworkTime()
+
+	st.computePerEpochReward()
+}
+
+// Updates the simple/baseline supply state and last epoch reward with computation for for a single epoch.
+func (st *State) computePerEpochReward() abi.TokenAmount {
+	// TODO: PARAM_FINISH
+	clockTime := st.RewardEpochsPaid
+	networkTime := st.EffectiveNetworkTime
+	newSimpleSupply := mintingFunction(SimpleTotal, big.Lsh(big.NewInt(int64(clockTime)), MintingInputFixedPoint))
+	newBaselineSupply := mintingFunction(BaselineTotal, networkTime)
+
+	newSimpleMinted := big.Max(big.Sub(newSimpleSupply, st.SimpleSupply), big.Zero())
+	newBaselineMinted := big.Max(big.Sub(newBaselineSupply, st.BaselineSupply), big.Zero())
+
+	// TODO: this isn't actually counting emitted reward, but expected reward (which will generally over-estimate).
+	// It's difficult to extract this from the minting function in its current form.
+	// https://github.com/filecoin-project/specs-actors/issues/317
+	st.SimpleSupply = newSimpleSupply
+	st.BaselineSupply = newBaselineSupply
+
+	perEpochReward := big.Add(newSimpleMinted, newBaselineMinted)
+	st.ThisEpochReward = perEpochReward
+
+	return perEpochReward
+}
+
+const baselinePower = 1 << 50 // 1PiB for testnet, PARAM_FINISH
+func (st *State) newBaselinePower() abi.StoragePower {
+	// TODO: this is not the final baseline function or value, PARAM_FINISH
+	return big.NewInt(baselinePower)
+}
+
+func (st *State) getEffectiveNetworkTime() NetworkTime {
+	// TODO: this function depends on the final baseline
+	// EffectiveNetworkTime is a fractional input with an implicit denominator of (2^MintingInputFixedPoint).
+	// realizedCumsum is thus left shifted by MintingInputFixedPoint before converted into a FixedPoint fraction
+	// through division (which is an inverse function for the integral of the baseline).
+	return big.Div(big.Lsh(st.CumsumRealized, MintingInputFixedPoint), big.NewInt(baselinePower))
 }
 
 // Minting Function: Taylor series expansion
