@@ -606,7 +606,7 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		deadline := actor.deadline(rt)
 
-		// advance to next dealine where we expect the first sectors to appear
+		// advance to next deadline where we expect the first sectors to appear
 		rt.SetEpoch(deadline.Close + 1)
 		deadline = st.DeadlineInfo(rt.Epoch())
 
@@ -647,7 +647,7 @@ func TestWindowPost(t *testing.T) {
 			expectedRawPowerDelta: rawPower,
 			expectedQAPowerDelta:  qaPower,
 			expectedPenalty:       big.Zero(),
-			skipped:               bitfield.NewFromSet(nil),
+			skipped:               abi.NewBitField(),
 		}
 
 		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
@@ -743,6 +743,11 @@ func TestWindowPost(t *testing.T) {
 		_, infos2, _ := runTillNextDeadline(rt)
 		deadline, infos3, partitions := runTillNextDeadline(rt)
 
+		// assert we have sectors in each deadline
+		assert.Greater(t, len(infos1), 0)
+		assert.Greater(t, len(infos2), 0)
+		assert.Greater(t, len(infos3), 0)
+
 		// expect power to be deducted for all sectors in first two deadlines
 		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
 
@@ -751,7 +756,7 @@ func TestWindowPost(t *testing.T) {
 		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
 		cfg := &poStConfig{
-			skipped:               bitfield.NewFromSet(nil),
+			skipped:               abi.NewBitField(),
 			expectedRawPowerDelta: rawPower.Neg(),
 			expectedQAPowerDelta:  qaPower.Neg(),
 			expectedPenalty:       expectedPenalty,
@@ -759,11 +764,16 @@ func TestWindowPost(t *testing.T) {
 
 		actor.submitWindowPoSt(rt, deadline, partitions, infos3, cfg)
 
-		// adds sectors as faults
+		// same size and every info is set in bitset implies info1+info2 and st.Faults represent the same sectors
 		st := getState(rt)
 		faultCount, err := st.Faults.Count()
 		require.NoError(t, err)
 		assert.Equal(t, uint64(len(infos1)+len(infos2)), faultCount)
+		for _, info := range append(infos1, infos2...) {
+			set, err := st.Faults.IsSet(uint64(info.SectorNumber))
+			require.NoError(t, err)
+			assert.True(t, set)
+		}
 	})
 
 	t.Run("detects and penalizes failed recoveries", func(t *testing.T) {
