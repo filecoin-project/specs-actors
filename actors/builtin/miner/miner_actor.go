@@ -1285,8 +1285,8 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *
 
 	// Penalize new skipped faults and retracted recoveries
 	// This differs from declaring faults "on time", where retracting recoveries doesn't attract an extra penalty
-	penalizedSectors := append(newFaultSectors, retractedRecoveryInfos...)
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizedSectors)
+	penalizeFaultSectors := append(newFaultSectors, retractedRecoveryInfos...)
+	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizeFaultSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
 
 	// Return only new faulty sectors (excluding retracted recoveries) for power updates
