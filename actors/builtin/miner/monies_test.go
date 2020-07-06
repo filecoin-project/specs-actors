@@ -16,7 +16,7 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 	epochTargetReward := abi.NewTokenAmount(1 << 50)
 	qaSectorPower := abi.NewStoragePower(1 << 36)
 	networkQAPower := abi.NewStoragePower(1 << 50)
-	undeclaredPenalty := miner.PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower)
+	undeclaredPenalty := miner.PledgePenaltyForLateUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower)
 
 	t.Run("when undeclared fault fee exceeds expected reward, returns undeclaraed fault fee", func(t *testing.T) {
 		// small pledge and means undeclared penalty will be bigger

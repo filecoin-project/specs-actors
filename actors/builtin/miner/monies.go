@@ -57,7 +57,7 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 	// and sectorAgeInDays = sectorAge / EpochsInDay
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
 	return big.Max(
-		PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
+		PledgePenaltyForLateUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
 		big.Add(
 			initialPledge,
 			big.Div(
