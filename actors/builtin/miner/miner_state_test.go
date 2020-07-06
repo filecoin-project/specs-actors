@@ -38,7 +38,7 @@ func TestPrecommittedSectorsStore(t *testing.T) {
 	t.Run("Delete nonexistent value returns an error", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
-		err := harness.s.DeletePrecommittedSector(harness.store, sectorNo)
+		err := harness.s.DeletePrecommittedSectors(harness.store, sectorNo)
 		assert.Error(t, err)
 	})
 
@@ -878,13 +878,27 @@ func (h *stateHarness) getSectorExpirations(expiry abi.ChainEpoch) []uint64 {
 	return sectors
 }
 
-func (h *stateHarness) addSectorExpiration(expiry abi.ChainEpoch, sectors ...uint64) {
-	err := h.s.AddSectorExpirations(h.store, expiry, sectors...)
+func (h *stateHarness) addSectorExpiration(expiry abi.ChainEpoch, sectorNos ...uint64) {
+	infos := make([]*miner.SectorOnChainInfo, len(sectorNos))
+	for i, sectorNo := range sectorNos {
+		infos[i] = &miner.SectorOnChainInfo{
+			SectorNumber: abi.SectorNumber(sectorNo),
+			Expiration:   expiry,
+		}
+	}
+	err := h.s.AddSectorExpirations(h.store, infos...)
 	require.NoError(h.t, err)
 }
 
-func (h *stateHarness) removeSectorExpiration(expiry abi.ChainEpoch, sectors ...uint64) {
-	err := h.s.RemoveSectorExpirations(h.store, expiry, sectors...)
+func (h *stateHarness) removeSectorExpiration(expiry abi.ChainEpoch, sectorNos ...uint64) {
+	infos := make([]*miner.SectorOnChainInfo, len(sectorNos))
+	for i, sectorNo := range sectorNos {
+		infos[i] = &miner.SectorOnChainInfo{
+			SectorNumber: abi.SectorNumber(sectorNo),
+			Expiration:   expiry,
+		}
+	}
+	err := h.s.RemoveSectorExpirations(h.store, infos...)
 	require.NoError(h.t, err)
 }
 
@@ -926,7 +940,7 @@ func (h *stateHarness) hasSectorNo(sectorNo abi.SectorNumber) bool {
 }
 
 func (h *stateHarness) putSector(sector *miner.SectorOnChainInfo) {
-	err := h.s.PutSector(h.store, sector)
+	err := h.s.PutSectors(h.store, sector)
 	require.NoError(h.t, err)
 }
 
@@ -968,7 +982,7 @@ func (h *stateHarness) hasPreCommit(sectorNo abi.SectorNumber) bool {
 }
 
 func (h *stateHarness) deletePreCommit(sectorNo abi.SectorNumber) {
-	err := h.s.DeletePrecommittedSector(h.store, sectorNo)
+	err := h.s.DeletePrecommittedSectors(h.store, sectorNo)
 	require.NoError(h.t, err)
 }
 
