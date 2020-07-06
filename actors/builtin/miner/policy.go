@@ -51,6 +51,9 @@ const NewSectorsPerPeriodMax = 128 << 10
 // Epochs after which chain state is final.
 const ChainFinality = abi.ChainEpoch(900)
 
+// alias for backwards compatibility
+const ChainFinalityish = ChainFinality
+
 // List of proof types which can be used when creating new miner actors
 var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg32GiBV1: {},
