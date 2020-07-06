@@ -335,7 +335,10 @@ func TestCommitments(t *testing.T) {
 		assertBfEqual(t, bitfield.NewFromSet([]uint64{100, 200}), st.NewSectors)
 
 		// Roll forward to PP cron and expect old sector removed without penalty
-		completeProvingPeriod(rt, actor, true, nil, nil, []*miner.SectorOnChainInfo{oldSectorAgain})
+		completeProvingPeriod(rt, actor, &cronConfig{
+			newSectors:               true,
+			expiredSectorsPowerDelta: actor.claimParamsForSectors([]*miner.SectorOnChainInfo{oldSectorAgain}, false),
+		})
 
 		// The old sector is gone, only the new sector is assigned to a deadline.
 		st = getState(rt)
@@ -434,7 +437,7 @@ func TestCommitments(t *testing.T) {
 
 		// Complete proving period
 		// June 2020: it is impossible to declare fault for a sector not yet assigned to a deadline
-		completeProvingPeriod(rt, actor, true, nil, nil, nil)
+		completeProvingPeriod(rt, actor, &cronConfig{newSectors: true})
 
 		// Pre-commit a sector to replace the existing one
 		challengeEpoch := rt.Epoch() - 1
@@ -467,7 +470,12 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, oldSector.Expiration, oldSectorAgain.Expiration)
 
 		// Roll forward to PP cron. The faulty old sector pays a fee, but is not terminated.
-		completeProvingPeriod(rt, actor, true, nil, []*miner.SectorOnChainInfo{oldSector}, nil)
+		penalty := miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower,
+			miner.QAPowerForSector(actor.sectorSize, oldSector))
+		completeProvingPeriod(rt, actor, &cronConfig{
+			newSectors:           true,
+			ongoingFaultsPenalty: &penalty,
+		})
 
 		// Both sectors remain
 		sectors := actor.collectSectors(rt)
@@ -862,13 +870,17 @@ func TestProvingPeriodCron(t *testing.T) {
 		// First cron invocation just before the first proving period starts.
 		rt.SetEpoch(periodOffset - 1)
 		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, secondCronEpoch, false, nil, nil, nil)
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment: secondCronEpoch,
+		})
 		// The proving period start isn't changed, because the period hadn't started yet.
 		st = getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
 		rt.SetEpoch(secondCronEpoch)
-		actor.onProvingPeriodCron(rt, periodOffset+2*miner.WPoStProvingPeriod-1, false, nil, nil, nil)
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment: periodOffset + 2*miner.WPoStProvingPeriod - 1,
+		})
 		// Proving period moves forward
 		st = getState(rt)
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
@@ -891,7 +903,10 @@ func TestProvingPeriodCron(t *testing.T) {
 		// requires randomness come from current epoch minus lookback
 		rt.SetEpoch(periodOffset - 1)
 		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, secondCronEpoch, true, nil, nil, nil)
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment: secondCronEpoch,
+			newSectors:          true,
+		})
 
 		// cron invocation after the proving period starts, requires randomness come from end of proving period
 		rt.SetEpoch(periodOffset)
@@ -904,10 +919,13 @@ func TestProvingPeriodCron(t *testing.T) {
 		})
 
 		thirdCronEpoch := secondCronEpoch + miner.WPoStProvingPeriod
-		actor.onProvingPeriodCron(rt, thirdCronEpoch, true, nil, nil, nil)
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment: thirdCronEpoch,
+			newSectors:          true,
+		})
 	})
 
-	t.Run("detects penalizes faults", func(t *testing.T) {
+	t.Run("detects and penalizes faults", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -917,7 +935,10 @@ func TestProvingPeriodCron(t *testing.T) {
 		st := getState(rt)
 		deadline := st.DeadlineInfo(rt.Epoch())
 		nextCron := deadline.NextPeriodStart() - 1
-		actor.onProvingPeriodCron(rt, nextCron, true, nil, nil, nil)
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment: nextCron,
+			newSectors:          true,
+		})
 
 		// advance to next deadline where we expect the first sectors to appear
 		rt.SetEpoch(deadline.Close + 1)
@@ -926,7 +947,59 @@ func TestProvingPeriodCron(t *testing.T) {
 		// Skip to end of proving period, cron detects all sectors as faulty
 		rt.SetEpoch(deadline.PeriodEnd())
 		nextCron = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-		actor.onProvingPeriodCron(rt, nextCron, false, allSectors, nil, nil)
+
+		// Undetected faults penalized once as a late undetected fault
+		rawPower, qaPower := powerForSectors(actor.sectorSize, allSectors)
+		undetectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+
+		// power for sectors is removed
+		powerDeltaClaim := &power.UpdateClaimedPowerParams{
+			RawByteDelta:         rawPower.Neg(),
+			QualityAdjustedDelta: qaPower.Neg(),
+		}
+
+		// Faults are charged again as ongoing faults
+		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment:        nextCron,
+			undetectedFaultsPenalty:    &undetectedPenalty,
+			undetectedFaultsPowerDelta: powerDeltaClaim,
+			ongoingFaultsPenalty:       &ongoingPenalty,
+		})
+
+		// expect both faults are added to state
+		st = getState(rt)
+		set, err := st.Faults.IsSet(uint64(allSectors[0].SectorNumber))
+		require.NoError(t, err)
+		assert.True(t, set)
+		set, err = st.Faults.IsSet(uint64(allSectors[1].SectorNumber))
+		require.NoError(t, err)
+		assert.True(t, set)
+
+		// advance 3 deadlines
+		rt.SetEpoch(deadline.Close + 3*miner.WPoStChallengeWindow)
+		deadline = st.DeadlineInfo(rt.Epoch())
+
+		actor.declareRecoveries(rt, 1, sectorInfoAsBitfield(allSectors[1:]))
+
+		// Skip to end of proving period, cron detects all sectors as faulty
+		rt.SetEpoch(deadline.PeriodEnd())
+		nextCron = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+
+		// Retracted recovery is penalized as an undetected fault, but power is unchanged
+		_, retractedQAPower := powerForSectors(actor.sectorSize, allSectors[1:])
+		retractedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, retractedQAPower)
+
+		// Faults are charged again as ongoing faults
+		_, faultQAPower := powerForSectors(actor.sectorSize, allSectors)
+		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower, faultQAPower)
+
+		actor.onProvingPeriodCron(rt, &cronConfig{
+			expectedEntrollment:     nextCron,
+			undetectedFaultsPenalty: &retractedPenalty,
+			ongoingFaultsPenalty:    &ongoingPenalty,
+		})
 	})
 
 	// TODO: test cron being called one epoch late because the scheduled epoch had no blocks.
@@ -945,7 +1018,7 @@ func TestDeclareFaults(t *testing.T) {
 		precommits := actor.commitAndProveSectors(rt, 1, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
-		completeProvingPeriod(rt, actor, true, nil, nil, nil)
+		completeProvingPeriod(rt, actor, &cronConfig{newSectors: true})
 		info := actor.getSector(rt, precommits[0].SectorNumber)
 
 		// Declare the sector as faulted
@@ -1612,7 +1685,10 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	deadline := st.DeadlineInfo(rt.Epoch())
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-	h.onProvingPeriodCron(rt, nextCron, true, nil, nil, nil)
+	h.onProvingPeriodCron(rt, &cronConfig{
+		expectedEntrollment: nextCron,
+		newSectors:          true,
+	})
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
@@ -1978,8 +2054,17 @@ func (h *actorHarness) addLockedFund(rt *mock.Runtime, amt abi.TokenAmount) {
 	rt.Verify()
 }
 
-func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment abi.ChainEpoch, newSectors bool,
-	undetectedFaultySectors []*miner.SectorOnChainInfo, faultySectors []*miner.SectorOnChainInfo, expireSectors []*miner.SectorOnChainInfo) {
+type cronConfig struct {
+	expectedEntrollment        abi.ChainEpoch
+	newSectors                 bool
+	vestingPledgeDelta         *abi.TokenAmount // nolint:structcheck,unused
+	undetectedFaultsPowerDelta *power.UpdateClaimedPowerParams
+	undetectedFaultsPenalty    *abi.TokenAmount
+	expiredSectorsPowerDelta   *power.UpdateClaimedPowerParams
+	ongoingFaultsPenalty       *abi.TokenAmount
+}
+
+func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, config *cronConfig) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	// Preamble
@@ -1993,43 +2078,26 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment 
 		},
 		exitcode.Ok)
 
-	if len(undetectedFaultySectors) > 0 {
-		// Process ongoing faulty sectors
-		rawPower, qaPower := powerForSectors(h.sectorSize, undetectedFaultySectors)
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &power.UpdateClaimedPowerParams{
-			RawByteDelta:         rawPower.Neg(),
-			QualityAdjustedDelta: qaPower.Neg(),
-		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
-		fee := miner.PledgePenaltyForLateUndeclaredFault(h.epochReward, networkPower, qaPower)
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, fee, nil, exitcode.Ok)
-
-		pledgeDelta := fee.Neg()
+	if config.undetectedFaultsPowerDelta != nil {
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, config.undetectedFaultsPowerDelta,
+			abi.NewTokenAmount(0), nil, exitcode.Ok)
+	}
+	if config.undetectedFaultsPenalty != nil {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, *config.undetectedFaultsPenalty, nil, exitcode.Ok)
+		pledgeDelta := config.undetectedFaultsPenalty.Neg()
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
-
-		// undetected faulty sectors now become faulty sectors
-		faultySectors = append(faultySectors, undetectedFaultySectors...)
 	}
-
-	if len(expireSectors) > 0 {
-		// Expire sectors
-		rawPower, qaPower := powerForSectors(h.sectorSize, expireSectors)
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &power.UpdateClaimedPowerParams{
-			RawByteDelta:         rawPower.Neg(),
-			QualityAdjustedDelta: qaPower.Neg(),
-		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+	if config.expiredSectorsPowerDelta != nil {
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, config.expiredSectorsPowerDelta,
+			abi.NewTokenAmount(0), nil, exitcode.Ok)
 	}
-
-	if len(faultySectors) > 0 {
-		// Process ongoing faulty sectors (not yet implemented)
-		_, qaFault := powerForSectors(h.sectorSize, faultySectors)
-		fee := miner.PledgePenaltyForDeclaredFault(h.epochReward, networkPower, qaFault)
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, fee, nil, exitcode.Ok)
-
-		pledgeDelta := fee.Neg()
+	if config.ongoingFaultsPenalty != nil {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, *config.ongoingFaultsPenalty, nil, exitcode.Ok)
+		pledgeDelta := config.ongoingFaultsPenalty.Neg()
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
 	}
 
-	if newSectors {
+	if config.newSectors {
 		// Establish new proving sets
 		randEpoch := rt.Epoch() - miner.ElectionLookback
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randEpoch, nil, bytes.Repeat([]byte{0}, 32))
@@ -2037,7 +2105,7 @@ func (h *actorHarness) onProvingPeriodCron(rt *mock.Runtime, expectedEnrollment 
 
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeProvingPeriodCronEventParams(h.t, expectedEnrollment), big.Zero(), nil, exitcode.Ok)
+		makeProvingPeriodCronEventParams(h.t, config.expectedEntrollment), big.Zero(), nil, exitcode.Ok)
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
@@ -2058,17 +2126,29 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amount abi.TokenAmount) {
 	rt.Verify()
 }
 
+func (h *actorHarness) claimParamsForSectors(sectors []*miner.SectorOnChainInfo, addition bool) *power.UpdateClaimedPowerParams {
+	multiplier := big.NewInt(1)
+	if !addition {
+		multiplier = big.NewInt(-1)
+	}
+	rawPower, qaPower := powerForSectors(h.sectorSize, sectors)
+	return &power.UpdateClaimedPowerParams{
+		RawByteDelta:         big.Mul(rawPower, multiplier),
+		QualityAdjustedDelta: big.Mul(qaPower, multiplier),
+	}
+}
+
 //
 // Higher-level orchestration
 //
 
 // Completes a proving period by moving the epoch forward to the penultimate one, calling the proving period cron handler,
 // and then advancing to the first epoch in the new period.
-func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, newSectors bool, undeclaredFaultySectors, faultySectors, expireSectors []*miner.SectorOnChainInfo) {
+func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, config *cronConfig) {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.PeriodEnd())
-	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-	h.onProvingPeriodCron(rt, nextCron, newSectors, undeclaredFaultySectors, faultySectors, expireSectors)
+	config.expectedEntrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+	h.onProvingPeriodCron(rt, config)
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
