@@ -14,12 +14,13 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
 
+// Specifies importance of message, LogLevel numbering is consistent with the uber-go/zap package.
 type LogLevel int
 
 const (
 	// DebugLevel logs are typically voluminous, and are usually disabled in
 	// production.
-	DEBUG = iota
+	DEBUG LogLevel = iota - 1
 	// InfoLevel is the default logging priority.
 	INFO
 	// WarnLevel logs are more important than Info, but don't need individual
