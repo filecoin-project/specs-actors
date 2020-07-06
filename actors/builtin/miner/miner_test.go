@@ -748,16 +748,13 @@ func TestWindowPost(t *testing.T) {
 
 		// expected penalty is the undeclared fault penalty for all sectors in previous deadline
 		// and the undeclared late penalty for new faults preceding that.
-		_, qaPower1 := miner.PowerForSectors(actor.sectorSize, infos1)
-		expectedPenalty1 := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower1)
-		_, qaPower2 := miner.PowerForSectors(actor.sectorSize, infos2)
-		expectedPenalty2 := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower2)
+		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
 		cfg := &poStConfig{
 			skipped:               bitfield.NewFromSet(nil),
 			expectedRawPowerDelta: rawPower.Neg(),
 			expectedQAPowerDelta:  qaPower.Neg(),
-			expectedPenalty:       big.Add(expectedPenalty1, expectedPenalty2),
+			expectedPenalty:       expectedPenalty,
 		}
 
 		actor.submitWindowPoSt(rt, deadline, partitions, infos3, cfg)
