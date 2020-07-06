@@ -63,6 +63,8 @@ type Runtime struct {
 	expectVerifyPoSt           *expectVerifyPoSt
 	expectVerifyConsensusFault *expectVerifyConsensusFault
 	expectDeleteActor          *address.Address
+
+	logs []string
 }
 
 type expectRandomness struct {
@@ -551,6 +553,10 @@ func (rt *Runtime) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.Consensu
 	return fault, err
 }
 
+func (rt *Runtime) Log(level runtime.LogLevel, msg string, args ...interface{}) {
+	rt.logs = append(rt.logs, fmt.Sprintf(msg, args...))
+}
+
 ///// Trace span implementation /////
 
 type TraceSpan struct {
@@ -839,6 +845,15 @@ func (rt *Runtime) ExpectAssertionFailure(expected string, f func()) {
 		rt.state = prevState
 	}()
 	f()
+}
+
+func (rt *Runtime) ExpectLogsContain(substr string) {
+	for _, msg := range rt.logs {
+		if strings.Contains(msg, substr) {
+			return
+		}
+	}
+	rt.failTest("logs contain %d message(s) and do not contain \"%s\"", len(rt.logs), substr)
 }
 
 func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {

@@ -441,6 +441,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		// Failures are unexpected here but will result in removal of miner power
 		// A log message would really help here.
 		if code != exitcode.Ok {
+			rt.Log(vmr.WARN, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
 			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
 		}
 	}
@@ -450,18 +451,18 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		for _, minerAddr := range failedMinerCrons {
 			claim, found, err := st.GetClaim(store, minerAddr)
 			if err != nil {
-				// TODO #564 log this, failing without deducting power: bad
+				rt.Log(vmr.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 				continue
 			}
 			if !found {
-				// TODO #564 log this, failing without deducting power, but power doesn't exist so maybe ok?
+				rt.Log(vmr.WARN, "miner OnDeferredCronEvent failed for miner %s with no power", minerAddr)
 				continue
 			}
 
 			// zero out miner power
 			err = st.AddToClaim(store, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
 			if err != nil {
-				// TODO #564 log this, failing without deducting power: bad
+				rt.Log(vmr.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
 				continue
 			}
 		}
