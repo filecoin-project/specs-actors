@@ -94,7 +94,10 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 	}
 
-	emptyDeadlines := ConstructDeadlines()
+	emptyDeadline := ConstructDeadline(emptyArray)
+	emptyDeadlineCid := rt.Store().Put(emptyDeadline)
+
+	emptyDeadlines := ConstructDeadlines(emptyDeadlineCid)
 	emptyDeadlinesCid := rt.Store().Put(emptyDeadlines)
 
 	currEpoch := rt.CurrEpoch()
@@ -1152,7 +1155,7 @@ func handleProvingPeriod(rt Runtime) {
 		expiredSectors := abi.NewBitField()
 		rt.State().Transaction(&st, func() interface{} {
 			var err error
-			expiredSectors, err = popSectorExpirations(&st, store, deadline.PeriodEnd())
+			expiredSectors, err = st.PopExpiredSectors(store, deadline.PeriodEnd())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
 			return nil
 		})
@@ -1493,34 +1496,6 @@ func scheduleReplaceSectorsExpiration(rt Runtime, st *State, store adt.Store, re
 		return xerrors.Errorf("when replacing sector expirations: %w", err)
 	}
 	return nil
-}
-
-// Removes and returns sector numbers that expire at or before an epoch.
-func popSectorExpirations(st *State, store adt.Store, epoch abi.ChainEpoch) (*abi.BitField, error) {
-	var expiredEpochs []abi.ChainEpoch
-	var expiredSectors []*abi.BitField
-	errDone := fmt.Errorf("done")
-	err := st.ForEachSectorExpiration(store, func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
-		if expiry > epoch {
-			return errDone
-		}
-		expiredSectors = append(expiredSectors, sectors)
-		expiredEpochs = append(expiredEpochs, expiry)
-		return nil
-	})
-	if err != nil && err != errDone {
-		return nil, err
-	}
-	err = st.ClearSectorExpirations(store, expiredEpochs...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clear sector expirations %s: %w", expiredEpochs, err)
-	}
-
-	allExpiries, err := bitfield.MultiMerge(expiredSectors...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to union expired sectors: %w", err)
-	}
-	return allExpiries, err
 }
 
 // Removes and returns sector numbers that were faulty at or before an epoch, and returns the sector

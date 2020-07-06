@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // Deadline calculations with respect to a current epoch.
@@ -270,15 +272,39 @@ func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []u
 
 // FindDeadline returns the deadline index for a given sector number.
 // It returns an error if the sector number is not tracked by deadlines.
-func FindDeadline(deadlines *Deadlines, sectorNum abi.SectorNumber) (uint64, error) {
-	for deadlineIdx, sectorNums := range deadlines.Due {
-		found, err := sectorNums.IsSet(uint64(sectorNum))
+func FindDeadline(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumber) (uint64, error) {
+	for dlIdx := range deadlines.Due {
+		dl, err := deadlines.LoadDeadline(store, uint64(dlIdx))
 		if err != nil {
 			return 0, err
 		}
-		if found {
-			return uint64(deadlineIdx), nil
+
+		partitions, err := adt.AsArray(store, dl.Partitions)
+		if err != nil {
+			return 0, err
 		}
+		var partition Partition
+
+		stopErr := errors.New("stop")
+		err = partitions.ForEach(&partition, func(partIdx int64) error {
+			found, err := partition.Sectors.IsSet(uint64(sectorNum))
+			if err != nil {
+				return err
+			}
+			if found {
+				return stopErr
+			}
+			return nil
+		})
+		switch err {
+		case stopErr:
+			return uint64(dlIdx), nil
+		case nil:
+			// continue.
+		default:
+			return 0, err
+		}
+
 	}
 	return 0, xerrors.New("sectorNum not due at any deadline")
 }
