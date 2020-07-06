@@ -126,6 +126,19 @@ func TestMarketActor(t *testing.T) {
 			}
 		})
 
+		t.Run("fails when called with negative value", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+
+			rt.SetCaller(owner, builtin.AccountActorCodeID)
+			rt.SetReceived(abi.NewTokenAmount(-1))
+
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				rt.Call(actor.AddBalance, &provider)
+			})
+
+			rt.Verify()
+		})
+
 		t.Run("fails unless called by an account actor", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
 
