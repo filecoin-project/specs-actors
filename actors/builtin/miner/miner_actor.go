@@ -526,22 +526,27 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	for _, sectorNo := range params.Sectors {
 		precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
-		if !found {
+		if !found || err != nil {
 			// This relies on the precommit having been checked in ProveCommitSector and not removed (expired) before
 			// this call. This in turn relies on the call from the power actor reliably coming in the same
 			// epoch as ProveCommitSector.
-			//
-			// It is possible to hit this case if precommit expires in this epoch because precommit expiries are
-			// processed before porep verify / sector proof confirmation
-			rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
+
+			// TODO #564 log: "failed to get precommitted sector on sector %d, dropping from prove commit set"
+			continue
 		}
 
 		if precommit.Info.ReplaceCapacity {
 			replaceSector := precommit.Info.ReplaceSector
 			info, exists, err := st.GetSector(store, replaceSector)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector %v", replaceSector)
+			if err != nil {
+				// TODO #564 log "failed to check sector %d, dropping from prove commit set"
+				continue
+			}
 			faulty, err := st.Faults.IsSet(uint64(replaceSector))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector %v fault state", replaceSector)
+			if err != nil {
+				// TODO #564 log "failed to check sector %d fault state, dropping from prove commit set"
+				continue
+			}
 			_, set := replaceSectorKeys[replaceSector]
 			// It doesn't matter if the committed-capacity sector no longer exists, or if multiple sectors attempt to
 			// replace the same committed-capacity sector, so long as we don't try to terminate it more than once.
@@ -566,12 +571,21 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			},
 			abi.NewTokenAmount(0),
 		)
-		builtin.RequireSuccess(rt, code, "failed to activate deals")
+		if code != exitcode.Ok {
+			// TODO #564 log: "failed to activate deals on sector %d, dropping from prove commit set"
+			continue
+		}
 
 		preCommits = append(preCommits, precommit)
 	}
 
-	// Batch update state, any failure processing an individual sector aborts the whole call
+	// When all prove commits have failed abort early
+	if len(preCommits) == 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "all prove commits failed to validate")
+	}
+
+	// This transaction should replace the one inside the loop above.
+	// Migrate state mutations into here.
 	totalPledge := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
