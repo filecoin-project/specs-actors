@@ -1954,7 +1954,7 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 // Requests the current epoch target block reward from the reward actor.
 func requestCurrentEpochBlockReward(rt Runtime) abi.TokenAmount {
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
 	epochReward := abi.NewTokenAmount(0)
 	err := rwret.Into(&epochReward)

@@ -57,8 +57,8 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.LastPerEpochReward (big.Int) (struct)
-	if err := t.LastPerEpochReward.MarshalCBOR(w); err != nil {
+	// t.ThisEpochReward (big.Int) (struct)
+	if err := t.ThisEpochReward.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -153,12 +153,12 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.LastPerEpochReward (big.Int) (struct)
+	// t.ThisEpochReward (big.Int) (struct)
 
 	{
 
-		if err := t.LastPerEpochReward.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.LastPerEpochReward: %w", err)
+		if err := t.ThisEpochReward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochReward: %w", err)
 		}
 
 	}
