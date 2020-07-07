@@ -171,20 +171,21 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectTotalPower(rt, expectedTotalBelow, mul(expectedTotalBelow, 2))
 
 		// Above threshold (power.ConsensusMinerMinMiners = 3) small miner power is ignored
-		actor.updateClaimedPower(rt, miner3, powerUnit, mul(powerUnit, 2))
-		expectedTotalAbove := big.Sum(smallPowerUnit, mul(powerUnit, 3))
+		delta := big.Sub(powerUnit, smallPowerUnit)
+		actor.updateClaimedPower(rt, miner3, delta, mul(delta, 2))
+		expectedTotalAbove := mul(powerUnit, 3)
 		actor.expectTotalPower(rt, expectedTotalAbove, mul(expectedTotalAbove, 2))
 
 		st := getState(rt)
 		assert.Equal(t, int64(3), st.NumMinersMeetingMinPower)
 
-		// Less than 3 miners below threshold again small miner power is counted again
-		negPowerUnit := powerUnit.Neg()
-		actor.updateClaimedPower(rt, miner3, negPowerUnit, mul(negPowerUnit, 2))
+		// Less than 3 miners above threshold again small miner power is counted again
+	
+		actor.updateClaimedPower(rt, miner3, delta.Neg(), mul(delta.Neg(), 2))
 		actor.expectTotalPower(rt, expectedTotalBelow, mul(expectedTotalBelow, 2))
 	})
 
-	t.Run("all miner power dissapears when miner dips below min power threshold", func(t *testing.T) {
+	t.Run("all of one miner's power dissapears when that miner dips below min power threshold", func(t *testing.T) {
 		// Setup four miners above threshold
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -230,7 +231,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		assert.Equal(t, int64(3), st.NumMinersMeetingMinPower)
 	})
 
-	t.Run("slashing miner below minimum does not impact power", func(t *testing.T) {
+	t.Run("slashing miner that is already below minimum does not impact power", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
