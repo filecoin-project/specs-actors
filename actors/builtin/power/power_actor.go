@@ -479,13 +479,16 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
-	err := rt.State().Transaction(&st, func() interface{} {
-		if err := st.deleteClaim(adt.AsStore(rt), miner); err != nil {
-			return errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
+	var err error
+	rt.State().Transaction(&st, func() interface{} {
+		err = st.deleteClaim(adt.AsStore(rt), miner)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
+			return nil
 		}
 
 		st.MinerCount -= 1
 		return nil
-	}).(error)
+	})
 	return err
 }
