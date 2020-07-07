@@ -22,6 +22,7 @@ func (a Actor) Exports() []interface{} {
 		4:                         a.AddVerifiedClient,
 		5:                         a.UseBytes,
 		6:                         a.RestoreBytes,
+		7:                         a.ReplaceRootKey,
 	}
 }
 
@@ -41,6 +42,19 @@ func (a Actor) Constructor(rt vmr.Runtime, rootKey *addr.Address) *adt.EmptyValu
 
 	st := ConstructState(emptyMap, *rootKey)
 	rt.State().Create(st)
+	return nil
+}
+
+func (a Actor) ReplaceRootKey(rt vmr.Runtime, rootAddr *addr.Address) *adt.EmptyValue {
+	var st State
+	rt.State().Readonly(&st)
+	rt.ValidateImmediateCallerIs(st.RootKey)
+
+	rt.State().Transaction(&st, func() interface{} {
+		st.RootKey = *rootAddr
+		return nil
+	})
+
 	return nil
 }
 

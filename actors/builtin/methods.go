@@ -105,4 +105,5 @@ var MethodsVerifiedRegistry = struct {
 	AddVerifiedClient abi.MethodNum
 	UseBytes          abi.MethodNum
 	RestoreBytes      abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6}
+	ReplaceRootKey    abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7}

@@ -8,6 +8,8 @@ import (
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
+	logging "github.com/ipfs/go-log/v2"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -17,6 +19,8 @@ import (
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
+
+var log = logging.Logger("power_actor")
 
 type Runtime = vmr.Runtime
 
@@ -154,6 +158,7 @@ type UpdateClaimedPowerParams struct {
 func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
+	log.Infof("updating power power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
