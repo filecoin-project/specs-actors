@@ -50,7 +50,6 @@ func TestRemoveAllError(t *testing.T) {
 }
 
 func TestMarketActor(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -109,7 +108,7 @@ func TestMarketActor(t *testing.T) {
 
 			// Test adding provider funds from both worker and owner address
 			for _, callerAddr := range []address.Address{owner, worker} {
-				rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+				rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 				for _, tc := range testCases {
 					rt.SetCaller(callerAddr, builtin.AccountActorCodeID)
@@ -127,7 +126,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("fails unless called by an account actor", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			rt.SetReceived(abi.NewTokenAmount(10))
 			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
@@ -152,7 +151,7 @@ func TestMarketActor(t *testing.T) {
 
 			// Test adding non-provider funds from both worker and client addresses
 			for _, callerAddr := range []address.Address{client, worker} {
-				rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+				rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 				for _, tc := range testCases {
 					rt.SetCaller(callerAddr, builtin.AccountActorCodeID)
@@ -176,7 +175,7 @@ func TestMarketActor(t *testing.T) {
 		publishEpoch := abi.ChainEpoch(5)
 
 		t.Run("fails with a negative withdraw amount", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			params := market.WithdrawBalanceParams{
 				ProviderOrClientAddress: provider,
@@ -191,7 +190,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("withdraws from provider escrow funds and sends to owner", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
 
@@ -207,7 +206,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("withdraws from non-provider escrow funds", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20))
 
 			rt.GetState(&st)
@@ -221,7 +220,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("client withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20))
 
 			// withdraw amount greater than escrow balance
@@ -234,7 +233,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("worker withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
 
 			rt.GetState(&st)
@@ -250,7 +249,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("balance after withdrawal must ALWAYS be greater than or equal to locked amount", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			// create the deal to publish
 			deal := actor.generateDealAndAddFunds(rt, client, minerAddrs, startEpoch, endEpoch)
@@ -281,7 +280,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("worker balance after withdrawal must account for slashed funds", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			// create the deal to publish
 			deal := actor.generateDealAndAddFunds(rt, client, minerAddrs, startEpoch, endEpoch)
@@ -318,7 +317,6 @@ func TestMarketActor(t *testing.T) {
 }
 
 func TestPublishStorageDeals(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -331,7 +329,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		endEpoch := abi.ChainEpoch(2000)
 		publishEpoch := abi.ChainEpoch(1)
 
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		deal1 := actor.generateDealAndAddFunds(rt, client, mAddr, startEpoch, endEpoch)
 
 		// publish the deal and activate it
@@ -350,7 +348,7 @@ func TestPublishStorageDeals(t *testing.T) {
 	})
 
 	t.Run("publish multiple deals for different clients and ensure balances are correct", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		client1 := tutil.NewIDAddr(t, 900)
 		client2 := tutil.NewIDAddr(t, 901)
 		client3 := tutil.NewIDAddr(t, 902)
@@ -442,7 +440,6 @@ func TestPublishStorageDeals(t *testing.T) {
 }
 
 func TestPublishStorageDealsFailures(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -559,7 +556,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 		for name, tc := range tcs {
 			t.Run(name, func(t *testing.T) {
-				rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+				rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 				dealProposal := generateDealProposal(client, provider, startEpoch, endEpoch)
 				rt.SetEpoch(currentEpoch)
 				tc.setup(rt, actor, &dealProposal)
@@ -581,7 +578,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 	// fails when client or provider has some funds but not enough to cover a deal
 	{
 		t.Run("fail when client has some funds but not enough for a deal", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			//
 			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(100))
@@ -601,7 +598,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		})
 
 		t.Run("fail when provider has some funds but not enough for a deal", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			actor.addProviderFunds(rt, abi.NewTokenAmount(1), mAddrs)
 			deal1 := generateDealProposal(client, provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
@@ -624,7 +621,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 	// fail when deals have different providers
 	{
 		t.Run("fail when deals have different providers", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			deal1 := actor.generateDealAndAddFunds(rt, client, mAddrs, abi.ChainEpoch(42), abi.ChainEpoch(100))
 			m2 := &minerAddrs{owner, worker, tutil.NewIDAddr(t, 1000)}
 
@@ -646,7 +643,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 		//  failures because of incorrect call params
 		t.Run("fail when caller is not of signable type", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			params := mkPublishStorageParams(generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5)))
 			w := tutil.NewIDAddr(t, 1000)
 			rt.SetCaller(w, builtin.StorageMinerActorCodeID)
@@ -657,7 +654,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		})
 
 		t.Run("fail when no deals in params", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			params := mkPublishStorageParams()
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -667,7 +664,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		})
 
 		t.Run("fail to resolve provider address", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			deal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5))
 			deal.Provider = tutil.NewBLSAddr(t, 100)
 
@@ -680,7 +677,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		})
 
 		t.Run("caller is not the same as the worker address for miner", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			deal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(5))
 			params := mkPublishStorageParams(deal)
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -696,7 +693,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 }
 
 func TestActivateDeals(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
+
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -709,7 +706,7 @@ func TestActivateDeals(t *testing.T) {
 	sectorExpiry := abi.ChainEpoch(100)
 
 	t.Run("active deals multiple times with different providers", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		// provider 1 publishes deals1 and deals2 and deal3
@@ -738,7 +735,6 @@ func TestActivateDeals(t *testing.T) {
 }
 
 func TestActivateDealFailures(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -752,7 +748,7 @@ func TestActivateDealFailures(t *testing.T) {
 	// caller is not the provider
 	{
 		t.Run("fail when caller is not the provider of the deal", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			provider2 := tutil.NewIDAddr(t, 201)
 			mAddrs2 := &minerAddrs{owner, worker, provider2}
 			dealId := actor.generateAndPublishDeal(rt, client, mAddrs2, startEpoch, endEpoch)
@@ -772,7 +768,7 @@ func TestActivateDealFailures(t *testing.T) {
 	// caller is not a StorageMinerActor
 	{
 		t.Run("fail when caller is not a StorageMinerActor", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.AccountActorCodeID)
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
@@ -786,7 +782,7 @@ func TestActivateDealFailures(t *testing.T) {
 	// deal has not been published before
 	{
 		t.Run("fail when deal has not been published before", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			params := mkActivateDealParams(sectorExpiry, abi.DealID(42))
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
@@ -802,7 +798,7 @@ func TestActivateDealFailures(t *testing.T) {
 	// deal has ALREADY been activated
 	{
 		t.Run("fail when deal has already been activated", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
 			actor.activateDeals(rt, sectorExpiry, provider, 0, dealId)
 
@@ -819,7 +815,7 @@ func TestActivateDealFailures(t *testing.T) {
 	// deal has invalid params
 	{
 		t.Run("fail when current epoch greater than start epoch of deal", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
@@ -833,7 +829,7 @@ func TestActivateDealFailures(t *testing.T) {
 		})
 
 		t.Run("fail when end epoch of deal greater than sector expiry", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
@@ -849,7 +845,7 @@ func TestActivateDealFailures(t *testing.T) {
 	// all fail if one fails
 	{
 		t.Run("fail to activate all deals if one deal fails", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			// activate deal1 so it fails later
 			dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
@@ -880,7 +876,6 @@ func TestActivateDealFailures(t *testing.T) {
 }
 
 func TestOnMinerSectorsTerminate(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -893,7 +888,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	sectorExpiry := abi.ChainEpoch(100)
 
 	t.Run("terminate multiple deals from multiple providers", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		// provider1 publishes deal1,2 and 3
@@ -914,7 +909,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		actor.assertDealsTerminated(rt, currentEpoch, dealId1)
 		actor.assertDeaslNotTerminated(rt, dealId2, dealId3, dealId4, dealId5)
 
-		// provider2 terminates deal5 but that does not terminate del2-4
+		// provider2 terminates deal5 but that does not terminate delals 2-4
 		actor.terminateDeals(rt, provider2, dealId5)
 		actor.assertDealsTerminated(rt, currentEpoch, dealId5)
 		actor.assertDeaslNotTerminated(rt, dealId2, dealId3, dealId4)
@@ -930,7 +925,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("ignore deal proposal that does not exist", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		// deal1 will be terminated and the other deal will be ignored because it does not exist
@@ -943,7 +938,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("terminate valid deals along with expired deals - only valid deals are terminated", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		// provider1 publishes deal1 and 2 and deal3 -> deal3 has the lowest endepoch
@@ -964,7 +959,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("do not terminate deal if end epoch is equal to or less than current epoch", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		// deal1 has endepoch equal to current epoch when terminate is called
@@ -984,7 +979,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("fail when caller is not a StorageMinerActor", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider, builtin.AccountActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
@@ -995,7 +990,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("fail when caller is not the provider of the deal", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
@@ -1014,7 +1009,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("fail when deal has been published but not activated", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
@@ -1022,7 +1017,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		params := mkTerminateDealParams(dealId)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.OnMinerSectorsTerminate, params)
 		})
 
@@ -1030,7 +1025,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 
 	t.Run("termination of all deals should fail when one deal fails", func(t *testing.T) {
-		rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.SetEpoch(currentEpoch)
 
 		// deal1 would terminate but deal2 will fail because deal2 has not been activated
@@ -1041,7 +1036,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		params := mkTerminateDealParams(dealId1, dealId2)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.OnMinerSectorsTerminate, params)
 		})
 
@@ -1053,7 +1048,6 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 }
 
 func TestMarketActorDeals(t *testing.T) {
-	marketActor := tutil.NewIDAddr(t, 100)
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
 	worker := tutil.NewIDAddr(t, 103)
@@ -1063,7 +1057,7 @@ func TestMarketActorDeals(t *testing.T) {
 	var st market.State
 
 	// Test adding provider funds from both worker and owner address
-	rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+	rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 	actor.addProviderFunds(rt, abi.NewTokenAmount(10000), minerAddrs)
 	rt.GetState(&st)
 	assert.Equal(t, abi.NewTokenAmount(10000), st.GetEscrowBalance(rt, provider))
@@ -1321,7 +1315,7 @@ func (h *marketActorTestHarness) assertDealsTerminated(rt *mock.Runtime, epoch a
 func (h *marketActorTestHarness) assertDeaslNotTerminated(rt *mock.Runtime, dealIds ...abi.DealID) {
 	for _, d := range dealIds {
 		s := h.getDealState(rt, d)
-		require.EqualValues(h.t, market.EpochUndefined, s.SlashEpoch)
+		require.EqualValues(h.t, abi.ChainEpoch(-1), s.SlashEpoch)
 	}
 }
 
@@ -1363,8 +1357,8 @@ func generateDealProposal(client, provider address.Address, startEpoch, endEpoch
 		endEpoch, storagePerEpoch, providerCollateral, clientCollateral}
 }
 
-func basicMarketSetup(t *testing.T, ma, owner, provider, worker, client address.Address) (*mock.Runtime, *marketActorTestHarness) {
-	builder := mock.NewBuilder(context.Background(), ma).
+func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Address) (*mock.Runtime, *marketActorTestHarness) {
+	builder := mock.NewBuilder(context.Background(), builtin.StorageMarketActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).

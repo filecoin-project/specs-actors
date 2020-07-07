@@ -16,7 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-const EpochUndefined = abi.ChainEpoch(-1)
+const epochUndefined = abi.ChainEpoch(-1)
 
 // Market mutations
 // add / rm balance
@@ -87,15 +87,15 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
 	amountSlashed := abi.NewTokenAmount(0)
 
-	everUpdated := state.LastUpdatedEpoch != EpochUndefined
-	everSlashed := state.SlashEpoch != EpochUndefined
+	everUpdated := state.LastUpdatedEpoch != epochUndefined
+	everSlashed := state.SlashEpoch != epochUndefined
 
 	Assert(!everUpdated || (state.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
 
 	// This would be the case that the first callback somehow triggers before it is scheduled to
 	// This is expected not to be able to happen
 	if deal.StartEpoch > epoch {
-		return amountSlashed, EpochUndefined
+		return amountSlashed, epochUndefined
 	}
 
 	dealEnd := deal.EndEpoch
@@ -143,12 +143,12 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		}
 
 		st.deleteDeal(rt, dealID)
-		return amountSlashed, EpochUndefined
+		return amountSlashed, epochUndefined
 	}
 
 	if epoch >= deal.EndEpoch {
 		st.processDealExpired(rt, deal, state, lt, dealID)
-		return amountSlashed, EpochUndefined
+		return amountSlashed, epochUndefined
 	}
 
 	next := epoch + DealUpdatesInterval
@@ -212,7 +212,7 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
 func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
-	Assert(state.SectorStartEpoch == EpochUndefined)
+	Assert(state.SectorStartEpoch == epochUndefined)
 
 	if err := st.unlockBalance(lt, deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client storage fee: %s", err)
@@ -238,7 +238,7 @@ func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, d
 
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
 func (st *State) processDealExpired(rt Runtime, deal *DealProposal, state *DealState, lt *adt.BalanceTable, dealID abi.DealID) {
-	Assert(state.SectorStartEpoch != EpochUndefined)
+	Assert(state.SectorStartEpoch != epochUndefined)
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
 	if err := st.unlockBalance(lt, deal.Provider, deal.ProviderCollateral, ProviderCollateral); err != nil {
