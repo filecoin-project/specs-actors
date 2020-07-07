@@ -73,12 +73,10 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 101)
 	miner1 := tutil.NewIDAddr(t, 111)
 	miner2 := tutil.NewIDAddr(t, 112)
+	miner3 := tutil.NewIDAddr(t, 113)
 
-	// These tests use the min power for consensus to check the accounting above that value.
-	// TODO: tests for crossing the consensus minimum boundary after settling the behaviour.
-	// See https://github.com/filecoin-project/specs-actors/issues/266
+	// These tests use the min power for consensus to check the accounting above and below that value.
 	powerUnit := power.ConsensusMinerMinPower
-
 	mul := func(a big.Int, b int64) big.Int {
 		return big.Mul(a, big.NewInt(b))
 	}
@@ -86,12 +84,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
-	t.Run("power & pledge accounted", func(t *testing.T) {
+	t.Run("power & pledge accounted below threshold", func(t *testing.T) {
+		smallPowerUnit := big.NewInt(1_000_000)
+		require.True(t, smallPowerUnit.LessThan(powerUnit), "power.CosensusMinerMinPower has changed requiring update to this test")
+
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
+		actor.createMinerBasic(rt, owner, owner, miner3)
 
 		ret := actor.currentPowerTotal(rt)
 		assert.Equal(t, big.Zero(), ret.RawBytePower)
@@ -99,18 +101,18 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		assert.Equal(t, big.Zero(), ret.PledgeCollateral)
 
 		// Add power for miner1
-		actor.updateClaimedPower(rt, miner1, powerUnit, mul(powerUnit, 2))
+		actor.updateClaimedPower(rt, miner1, smallPowerUnit, mul(smallPowerUnit, 2))
 		ret = actor.currentPowerTotal(rt)
-		assert.Equal(t, powerUnit, ret.RawBytePower)
-		assert.Equal(t, mul(powerUnit, 2), ret.QualityAdjPower)
+		assert.Equal(t, smallPowerUnit, ret.RawBytePower)
+		assert.Equal(t, mul(smallPowerUnit, 2), ret.QualityAdjPower)
 		assert.Equal(t, big.Zero(), ret.PledgeCollateral)
 
 		// Add power and pledge for miner2
-		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner2, smallPowerUnit, smallPowerUnit)
 		actor.updatePledgeTotal(rt, miner1, abi.NewTokenAmount(1e6))
 		ret = actor.currentPowerTotal(rt)
-		assert.Equal(t, mul(powerUnit, 2), ret.RawBytePower)
-		assert.Equal(t, mul(powerUnit, 3), ret.QualityAdjPower)
+		assert.Equal(t, mul(smallPowerUnit, 2), ret.RawBytePower)
+		assert.Equal(t, mul(smallPowerUnit, 3), ret.QualityAdjPower)
 		assert.Equal(t, abi.NewTokenAmount(1e6), ret.PledgeCollateral)
 
 		rt.Verify()
@@ -121,21 +123,21 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.Equal(t, powerUnit, claim1.RawBytePower)
-		require.Equal(t, mul(powerUnit, 2), claim1.QualityAdjPower)
+		require.Equal(t, smallPowerUnit, claim1.RawBytePower)
+		require.Equal(t, mul(smallPowerUnit, 2), claim1.QualityAdjPower)
 
 		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.Equal(t, powerUnit, claim2.RawBytePower)
-		require.Equal(t, powerUnit, claim2.QualityAdjPower)
+		require.Equal(t, smallPowerUnit, claim2.RawBytePower)
+		require.Equal(t, smallPowerUnit, claim2.QualityAdjPower)
 
 		// Subtract power and some pledge for miner2
-		actor.updateClaimedPower(rt, miner2, powerUnit.Neg(), powerUnit.Neg())
+		actor.updateClaimedPower(rt, miner2, smallPowerUnit.Neg(), smallPowerUnit.Neg())
 		actor.updatePledgeTotal(rt, miner2, abi.NewTokenAmount(1e5).Neg())
 		ret = actor.currentPowerTotal(rt)
-		assert.Equal(t, mul(powerUnit, 1), ret.RawBytePower)
-		assert.Equal(t, mul(powerUnit, 2), ret.QualityAdjPower)
+		assert.Equal(t, mul(smallPowerUnit, 1), ret.RawBytePower)
+		assert.Equal(t, mul(smallPowerUnit, 2), ret.QualityAdjPower)
 		assert.Equal(t, abi.NewTokenAmount(9e5), ret.PledgeCollateral)
 
 		rt.GetState(&st)
@@ -144,6 +146,10 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		require.True(t, found)
 		require.Equal(t, big.Zero(), claim2.RawBytePower)
 		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
+	})
+
+	t.Run("power accounting below miner minimums", func(t *testing.T) {
+
 	})
 }
 
@@ -281,7 +287,9 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	var st power.State
 	rt.GetState(&st)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePower)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePowerNoMin)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPowerNoMin)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
 	assert.Equal(h.t, abi.ChainEpoch(-1), st.LastEpochTick)
 	assert.Equal(h.t, int64(0), st.MinerCount)

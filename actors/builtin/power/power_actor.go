@@ -239,9 +239,8 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 		}
 		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-
-		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
-		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
+		err = st.AddToClaim(adt.AsStore(rt), minerAddr, claim.QualityAdjPower.Neg(), claim.RawBytePower.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not add to claim for %s after loading existing claim for this address", minerAddr)
 
 		st.addPledgeTotal(pledgeAmount.Neg())
 		return nil
@@ -304,6 +303,13 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
+	if st.NumMinersMeetingMinPower < ConsensusMinerMinMiners {
+		return &CurrentTotalPowerReturn{
+			RawBytePower:     st.TotalRawBytePowerNoMin,
+			QualityAdjPower:  st.TotalQualityAdjPowerNoMin,
+			PledgeCollateral: st.TotalPledgeCollateral,
+		}
+	}
 	return &CurrentTotalPowerReturn{
 		RawBytePower:     st.TotalRawBytePower,
 		QualityAdjPower:  st.TotalQualityAdjPower,

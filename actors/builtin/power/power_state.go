@@ -15,10 +15,12 @@ import (
 )
 
 type State struct {
-	TotalRawBytePower     abi.StoragePower
-	TotalQualityAdjPower  abi.StoragePower
-	TotalPledgeCollateral abi.TokenAmount
-	MinerCount            int64
+	TotalRawBytePower         abi.StoragePower
+	TotalRawBytePowerNoMin    abi.StoragePower
+	TotalQualityAdjPower      abi.StoragePower
+	TotalQualityAdjPowerNoMin abi.StoragePower
+	TotalPledgeCollateral     abi.TokenAmount
+	MinerCount                int64
 
 	// A queue of events to be triggered by cron, indexed by epoch.
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
@@ -52,13 +54,15 @@ type AddrKey = adt.AddrKey
 
 func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 	return &State{
-		TotalRawBytePower:        abi.NewStoragePower(0),
-		TotalQualityAdjPower:     abi.NewStoragePower(0),
-		TotalPledgeCollateral:    abi.NewTokenAmount(0),
-		LastEpochTick:            -1,
-		CronEventQueue:           emptyMapCid,
-		Claims:                   emptyMapCid,
-		NumMinersMeetingMinPower: 0,
+		TotalRawBytePower:         abi.NewStoragePower(0),
+		TotalRawBytePowerNoMin:    abi.NewStoragePower(0),
+		TotalQualityAdjPower:      abi.NewStoragePower(0),
+		TotalQualityAdjPowerNoMin: abi.NewStoragePower(0),
+		TotalPledgeCollateral:     abi.NewTokenAmount(0),
+		LastEpochTick:             -1,
+		CronEventQueue:            emptyMapCid,
+		Claims:                    emptyMapCid,
+		NumMinersMeetingMinPower:  0,
 	}
 }
 
@@ -145,6 +149,10 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, qapower)
 		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
 	}
+
+	// NoMin powers always update directly
+	st.TotalQualityAdjPowerNoMin = big.Add(st.TotalQualityAdjPowerNoMin, qapower)
+	st.TotalRawBytePowerNoMin = big.Add(st.TotalRawBytePowerNoMin, power)
 
 	AssertMsg(newClaim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", newClaim.RawBytePower)
 	AssertMsg(newClaim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)

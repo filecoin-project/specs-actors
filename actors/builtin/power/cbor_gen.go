@@ -18,7 +18,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{137}); err != nil {
+	if _, err := w.Write([]byte{139}); err != nil {
 		return err
 	}
 
@@ -27,8 +27,18 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.TotalRawBytePowerNoMin (big.Int) (struct)
+	if err := t.TotalRawBytePowerNoMin.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.TotalQualityAdjPower (big.Int) (struct)
 	if err := t.TotalQualityAdjPower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.TotalQualityAdjPowerNoMin (big.Int) (struct)
+	if err := t.TotalQualityAdjPowerNoMin.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -108,7 +118,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -121,12 +131,30 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.TotalRawBytePowerNoMin (big.Int) (struct)
+
+	{
+
+		if err := t.TotalRawBytePowerNoMin.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalRawBytePowerNoMin: %w", err)
+		}
+
+	}
 	// t.TotalQualityAdjPower (big.Int) (struct)
 
 	{
 
 		if err := t.TotalQualityAdjPower.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.TotalQualityAdjPower: %w", err)
+		}
+
+	}
+	// t.TotalQualityAdjPowerNoMin (big.Int) (struct)
+
+	{
+
+		if err := t.TotalQualityAdjPowerNoMin.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalQualityAdjPowerNoMin: %w", err)
 		}
 
 	}
