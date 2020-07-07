@@ -126,7 +126,7 @@ func TestMarketActor(t *testing.T) {
 		})
 
 		t.Run("fails when called with negative value", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, marketActor, owner, provider, worker, client)
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			rt.SetCaller(owner, builtin.AccountActorCodeID)
 			rt.SetReceived(abi.NewTokenAmount(-1))
