@@ -450,7 +450,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				continue
 			}
 
-			Assert(deal.Provider == minerAddr)
+			AssertMsg(deal.Provider == minerAddr, "caller is not the provider of the deal")
 
 			// do not slash expired deals
 			if deal.EndEpoch <= rt.CurrEpoch() {
@@ -462,7 +462,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
 			if !found {
-				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
+				rt.Abortf(exitcode.ErrIllegalArgument, "no state found for deal in sector being terminated")
 			}
 
 			// mark the deal for slashing here.
