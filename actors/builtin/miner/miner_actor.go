@@ -771,20 +771,28 @@ type DeclareFaultsParams struct {
 }
 
 type FaultDeclaration struct {
-	Deadline uint64 // In range [0..WPoStPeriodDeadlines)
-	Sectors  *abi.BitField
+	// The deadline to which the faulty sectors are assigned, in range [0..WPoStPeriodDeadlines)
+	Deadline uint64
+	// Partition index within the deadline containing the faulty sectors.
+	Partition uint64
+	// Sectors in the partition being declared faulty.
+	Sectors *abi.BitField
 }
 
+// TODO minerstate: set this so a miner could confidently fault all their sectors in a reasonable period of time.
+const MaxFaultDeclarationPartitions = 100
+
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
-	if uint64(len(params.Faults)) > WPoStPeriodDeadlines {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Faults), WPoStPeriodDeadlines)
+	if uint64(len(params.Faults)) > MaxFaultDeclarationPartitions {
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Faults), MaxFaultDeclarationPartitions)
 	}
+	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
 
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
-	var declaredFaultSectors []*SectorOnChainInfo
-	var detectedFaultSectors []*SectorOnChainInfo
+	var newFaultSectors []*SectorOnChainInfo
+	//var detectedFaultSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
 
 	epochReward := requestCurrentEpochBlockReward(rt)
@@ -795,95 +803,128 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
-		currDeadline := st.DeadlineInfo(currEpoch)
+		//currDeadline := st.DeadlineInfo(currEpoch)
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
+		// TODO no-deadline-cron: restore this if we *don't* do per-deadline cron to detect faults.
 		// Traverse earlier submissions and enact detected faults.
 		// This is necessary to move the NextDeadlineToProcessFaults index past the deadline that this recovery
 		// is targeting, so that the recovery won't be declared failed next time it's checked during this proving period.
-		detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
+		//detectedFaultSectors, penalty = detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
 
-		var decaredSectors []*abi.BitField
+		// Group declarations by deadline, and remember iteration order.
+		declsByDeadline := map[uint64][]*FaultDeclaration{}
+		var deadlinesToLoad []uint64
+
 		for _, decl := range params.Faults {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, decl.Deadline, currEpoch)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline")
-
-			err = validateFRDeclaration(deadlines, targetDeadline, decl.Sectors)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration")
-			decaredSectors = append(decaredSectors, decl.Sectors)
+			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
-		allDeclared, err := bitfield.MultiMerge(decaredSectors...)
+		var newFaultDecls []*abi.BitField
+		for _, dlIdx := range deadlinesToLoad {
+			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
+			err = validateFRDeclarationDeadline(targetDeadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed fault declaration at deadline %d", dlIdx)
+
+			deadline, err := deadlines.LoadDeadline(store, dlIdx)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+
+			partitions, err := deadline.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
+
+			// Record partitions with some fault, for subsequently indexing in the deadline.
+			partitionsWithFault := map[uint64]struct{}{}
+
+			for _, decl := range declsByDeadline[dlIdx] {
+				key := PartitionKey{dlIdx, decl.Partition}
+				var partition Partition
+				found, err := partitions.Get(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load for partition %v", key)
+				if !found {
+					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
+				}
+
+				err = validateFRDeclarationPartition(key, &partition, decl.Sectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed fault declaration for partition %v")
+
+				// Split declarations into declarations of new faults, and retraction of declared recoveries.
+				retractedRecoveries, err := bitfield.IntersectBitField(partition.Recoveries, decl.Sectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
+
+				newFaults, err := bitfield.SubtractBitField(decl.Sectors, retractedRecoveries)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from sectors")
+				// Ignore any previously declared or detected faults
+				newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from faults")
+
+				empty, err := newFaults.IsEmpty()
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
+				if !empty {
+					// Add new faults to state and charge fee.
+					// Note: this sets the fault epoch for all declarations to be the beginning of this proving period,
+					// even if some sectors have already been proven in this period.
+					// TODO deadline-cron: use the deadline epoch rather than PP start epoch
+					err = partition.AddFaults(store, newFaults, st.ProvingPeriodStart)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
+
+					// Note: this charges a fee for all new declarations, even if the sectors have already been proven
+					// in this proving period. This discourages early declaration compared with waiting for
+					// the proving period to roll over.
+					// It would be better to charge a fee for this proving period only if the target deadline has
+					// not already passed. If it _has_ already passed then either:
+					// - the miner submitted PoSt successfully and should not be penalised more relative to
+					//   submitting this declaration after the proving period rolls over, or
+					// - the miner failed to submit PoSt and will be penalised at the proving period end
+					// In either case, the miner will pay a fee for the subsequent proving period at the start
+					// of that period, unless faults are recovered sooner.
+					// Retracted recoveries don't attract a new fee.
+					newFaultDecls = append(newFaultDecls, newFaults)
+
+					partitionsWithFault[decl.Partition] = struct{}{}
+				}
+
+				// Remove faulty recoveries
+				empty, err = retractedRecoveries.IsEmpty()
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
+				if !empty {
+					err = partition.RemoveRecoveries(retractedRecoveries)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+				}
+
+				err = partitions.Set(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partition %v", key)
+			}
+			deadline.Partitions, err = partitions.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions root", dlIdx)
+
+			// TODO XXX: update the deadline FaultsEpochs to point to all faulty partitions with this epoch.
+
+			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions", dlIdx)
+		}
+
+		allNewFaults, err := bitfield.MultiMerge(newFaultDecls...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union faults")
 
-		// Split declarations into declarations of new faults, and retraction of declared recoveries.
-		retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, allDeclared)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
+		newFaultSectors, err = st.LoadSectorInfos(store, allNewFaults)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
-		newFaults, err := bitfield.SubtractBitField(allDeclared, retractedRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from sectors")
+		// Unlock penalty for declared faults.
+		declaredPenalty, err := unlockDeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, pwrTotal.QualityAdjPower, newFaultSectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+		penalty = big.Add(penalty, declaredPenalty)
 
-		empty, err := newFaults.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-
-		if !empty {
-			// Check new fault are really new.
-			contains, err := abi.BitFieldContainsAny(st.Faults, newFaults)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect existing faults")
-			if contains {
-				// This could happen if attempting to declare a fault for a deadline that's already passed,
-				// detected and added to Faults above.
-				// The miner must for the fault detection at proving period end, or submit again omitting
-				// sectors in deadlines that have passed.
-				// Alternatively, we could subtract the just-detected faults from new faults.
-				rt.Abortf(exitcode.ErrIllegalArgument, "attempted to re-declare fault")
-			}
-
-			// Add new faults to state and charge fee.
-			// Note: this sets the fault epoch for all declarations to be the beginning of this proving period,
-			// even if some sectors have already been proven in this period.
-			// It would better to use the target deadline's proving period start (which may be the one subsequent
-			// to the current).
-			err = st.AddFaults(store, newFaults, st.ProvingPeriodStart)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
-
-			// Note: this charges a fee for all declarations, even if the sectors have already been proven
-			// in this proving period. This discourages early declaration compared with waiting for
-			// the proving period to roll over.
-			// It would be better to charge a fee for this proving period only if the target deadline has
-			// not already passed. If it _has_ already passed then either:
-			// - the miner submitted PoSt successfully and should not be penalised more relative to
-			//   submitting this declaration after the proving period rolls over, or
-			// - the miner failed to submit PoSt and will be penalised at the proving period end
-			// In either case, the miner will pay a fee for the subsequent proving period at the start
-			// of that period, unless faults are recovered sooner.
-
-			// Load info for sectors.
-			declaredFaultSectors, err = st.LoadSectorInfos(store, newFaults)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-
-			// Unlock penalty for declared faults.
-			declaredPenalty, err := unlockDeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, pwrTotal.QualityAdjPower, declaredFaultSectors)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
-			penalty = big.Add(penalty, declaredPenalty)
-		}
-
-		// Remove faulty recoveries
-		empty, err = retractedRecoveries.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-
-		if !empty {
-			err = st.RemoveRecoveries(retractedRecoveries)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
-		}
 		return nil
 	})
 
 	// Remove power for new faulty sectors.
-	requestUpdateSectorPower(rt, info.SectorSize, nil, append(detectedFaultSectors, declaredFaultSectors...))
+	// TODO: defer power loss until the respective deadline https://github.com/filecoin-project/specs-actors/issues/414
+	// TODO: no-deadline-cron: penalize detected faults here too
+	requestUpdateSectorPower(rt, info.SectorSize, nil, newFaultSectors)
 	burnFundsAndNotifyPledgeChange(rt, penalty)
-
 	return nil
 }
 
@@ -2091,23 +2132,32 @@ func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, cur
 	return deadline, nil
 }
 
-// Checks that a fault or recovery declaration of sectors at a specific deadline is valid and not within
-// the exclusion window for the deadline.
-func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declaredSectors *abi.BitField) error {
+// Checks that a fault or recovery declaration at a specific deadline is outside the exclusion window for the deadline.
+func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
 	if deadline.FaultCutoffPassed() {
 		return fmt.Errorf("late fault or recovery declaration at %v", deadline)
 	}
+	return nil
+}
 
-	// Check that the declared sectors are actually due at the deadline.
-	deadlineSectors := deadlines.Due[deadline.Index]
-	contains, err := abi.BitFieldContainsAll(deadlineSectors, declaredSectors)
+// Validates that a fault or recovery declaration for a partition is valid.
+func validateFRDeclarationPartition(key PartitionKey, partition *Partition, sectors *abi.BitField) error {
+	// Check that the declared sectors are actually assigned to the partition.
+	contains, err := abi.BitFieldContainsAll(partition.Sectors, sectors)
 	if err != nil {
-		return fmt.Errorf("failed to check sectors at deadline: %w", err)
+		return fmt.Errorf("failed to check sectors for %v: %w", key, err)
 	}
 	if !contains {
-		return fmt.Errorf("sectors not all due at deadline %d", deadline.Index)
+		return fmt.Errorf("sectors not all due at %v", key)
 	}
 	return nil
+}
+
+// Checks that a fault or recovery declaration of sectors at a specific deadline is valid and not within
+// the exclusion window for the deadline.
+func validateFRDeclaration(deadlines *Deadlines, deadline *DeadlineInfo, declaredSectors *abi.BitField) error {
+	panic("deprecated")
+
 }
 
 // qaPowerForSectors sums the quality adjusted power of all sectors
