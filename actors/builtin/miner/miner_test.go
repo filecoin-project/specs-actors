@@ -683,6 +683,31 @@ func TestWindowPost(t *testing.T) {
 		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
 	})
 
+	t.Run("skipped all sectors in a deadline may be skipped", func(t *testing.T) {
+		rt := builder.Build(t)
+		deadline, infos, partitions := runTillFirstDeadline(rt)
+
+		// skip all sectors in deadline
+		st := getState(rt)
+		deadlines, err := st.LoadDeadlines(rt.AdtStore())
+		require.NoError(t, err)
+		skipped := deadlines.Due[deadline.Index]
+
+		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos)
+
+		// expected penalty is the fee for an undeclared fault
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+
+		cfg := &poStConfig{
+			skipped:               skipped,
+			expectedRawPowerDelta: rawPower.Neg(),
+			expectedQAPowerDelta:  qaPower.Neg(),
+			expectedPenalty:       expectedPenalty,
+		}
+
+		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
+	})
+
 	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
 		rt := builder.Build(t)
 		deadline, infos, partitions := runTillFirstDeadline(rt)
@@ -1720,29 +1745,30 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
 
-	{
+	var goodInfo *miner.SectorOnChainInfo
+	if poStCfg != nil {
+		// find the first non-faulty sector in poSt to replace all faulty sectors.
+		for _, ci := range infos {
+			contains, err := poStCfg.skipped.IsSet(uint64(ci.SectorNumber))
+			require.NoError(h.t, err)
+			if !contains {
+				goodInfo = ci
+				break
+			}
+		}
+	}
+	// goodInfo == nil indicates all the sectors have been skipped and should PoSt verification should not occur
+	if poStCfg == nil || goodInfo != nil {
 		var buf bytes.Buffer
 		err := rt.Receiver().MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 
 		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
-	}
-	{
-		// find the first non-faulty sector in poSt to replace all faulty sectors.
-		var goodInfo *miner.SectorOnChainInfo
-		if poStCfg != nil {
-			for _, ci := range infos {
-				contains, err := poStCfg.skipped.IsSet(uint64(ci.SectorNumber))
-				require.NoError(h.t, err)
-				if !contains {
-					goodInfo = ci
-					break
-				}
-			}
-		}
+
 		actorId, err := addr.IDFromAddress(h.receiver)
 		require.NoError(h.t, err)
 
+		// if not all sectors are skipped
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			si := ci

@@ -293,9 +293,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
-		// Verify the proof.
-		// A failed verification doesn't immediately cause a penalty; the miner can try again.
-		verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		// Skip verification if all sectors are faults
+		if len(sectorInfos) > 0 {
+			// Verify the proof.
+			// A failed verification doesn't immediately cause a penalty; the miner can try again.
+			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		}
 
 		// Record the successful submission
 		postedPartitions := bitfield.NewFromSet(params.Partitions)
