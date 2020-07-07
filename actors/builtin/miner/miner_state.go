@@ -764,12 +764,13 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.Bit
 		return nil, nil, xerrors.Errorf("failed to diff bitfields: %w", err)
 	}
 
+	// return empty if no non-faults
 	empty, err := nonFaults.IsEmpty()
 	if err != nil {
 		return nil, nil, xerrors.Errorf("failed to check if bitfield was empty: %w", err)
 	}
 	if empty {
-		return nil, nil, xerrors.Errorf("no non-faulty sectors in partitions: %w", err)
+		return nil, recoveries, nil
 	}
 
 	// Select a non-faulty sector as a substitute for faulty ones.

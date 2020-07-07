@@ -293,9 +293,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
-		// Verify the proof.
-		// A failed verification doesn't immediately cause a penalty; the miner can try again.
-		verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		// Skip verification if all sectors are faults
+		if len(sectorInfos) > 0 {
+			// Verify the proof.
+			// A failed verification doesn't immediately cause a penalty; the miner can try again.
+			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		}
 
 		// Record the successful submission
 		postedPartitions := bitfield.NewFromSet(params.Partitions)
@@ -1324,9 +1327,10 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
 	// Unlock sector penalty for all undeclared faults.
-	penalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, penalizedSectors)
+	latePenalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
+	penalty, err := unlockUndeclaredLateFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, latePenalizedSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
+
 	return detectedFaultSectors, penalty
 }
 
@@ -2144,6 +2148,12 @@ func unlockDeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.Secto
 func unlockUndeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalQAPower := qaPowerForSectors(sectorSize, sectors)
 	fee := PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+func unlockUndeclaredLateFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+	totalQAPower := qaPowerForSectors(sectorSize, sectors)
+	fee := PledgePenaltyForLateUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
