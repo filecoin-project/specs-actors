@@ -367,7 +367,7 @@ func (st *State) PopExpiredSectors(store adt.Store, epoch abi.ChainEpoch) (*abi.
 			return err
 		}
 
-		partitions, err := adt.AsArray(store, dl.Partitions)
+		partitions, err := dl.PartitionsArray(store)
 		if err != nil {
 			return err
 		}

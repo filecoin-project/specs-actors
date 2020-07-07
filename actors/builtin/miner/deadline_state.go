@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -10,6 +11,8 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+
+	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 // A bitfield of sector numbers due at each deadline.
@@ -33,9 +36,6 @@ type Deadline struct {
 	// re-numbered when activated.
 	PendingPartitions cid.Cid // AMT[PartitionNumber]Partition
 
-	// Partitions numbers with PoSt submissions since the proving period started.
-	PostSubmissions *abi.BitField
-
 	// Number active sectors in the deadline. This number does not include
 	// terminated or pending sectors.
 	ActiveSectors uint64
@@ -45,6 +45,13 @@ type Deadline struct {
 
 	// Maps epochs to partitions with sectors that expire in that epoch.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
+
+	// Partitions numbers with PoSt submissions since the proving period started.
+	PostSubmissions *abi.BitField
+
+	LiveSectors uint64
+
+	TotalSectors uint64
 }
 
 //
@@ -97,25 +104,6 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 	return nil
 }
 
-// Adds sector numbers to a deadline.
-// The sector numbers are given as uint64 to avoid pointless conversions for bitfield use.
-func (d *Deadlines) AddToDeadline(deadline uint64, newSectors ...uint64) (err error) {
-	ns := bitfield.NewFromSet(newSectors)
-	d.Due[deadline], err = bitfield.MergeBitFields(d.Due[deadline], ns)
-	return err
-}
-
-// Removes sector numbers from all deadlines.
-func (d *Deadlines) RemoveFromAllDeadlines(sectorNos *abi.BitField) (err error) {
-	for i := range d.Due {
-		d.Due[i], err = bitfield.SubtractBitField(d.Due[i], sectorNos)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 //
 // Deadline (singular)
 //
@@ -134,6 +122,57 @@ func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
 	return adt.AsArray(store, d.Partitions)
 }
 
+func (d *Deadline) PendingPartitionsArray(store adt.Store) (*adt.Array, error) {
+	return adt.AsArray(store, d.PendingPartitions)
+}
+
+// ActivatePendingPartitions merges pending partitions into the deadline.
+func (d *Deadline) ActivatatePendingPartitions(store adt.Store) error {
+	pendingPartitions, err := d.PendingPartitionsArray(store)
+	if err != nil {
+		return err
+	}
+
+	partitions, err := d.PartitionsArray(store)
+	if err != nil {
+		return err
+	}
+	var newPartLazy, oldPartLazy cbg.Deferred
+	err = pendingPartitions.ForEach(&newPartLazy, func(i int64) error {
+		// TODO: Only allow merging the _first_ partition?
+		found, err := partitions.Get(uint64(i), &oldPartLazy)
+		if err != nil {
+			return err
+		}
+		if !found {
+			partitions.Set(uint64(i), &newPartLazy)
+		}
+		var oldPart, newPart Partition
+		err = oldPart.UnmarshalCBOR(bytes.NewReader(oldPartLazy.Raw))
+		if err != nil {
+			return err
+		}
+		err = newPart.UnmarshalCBOR(bytes.NewReader(newPartLazy.Raw))
+		if err != nil {
+			return err
+		}
+		oldPart.Merge(store, &newPart)
+		return partitions.Set(uint64(i), &oldPart)
+	})
+	if err != nil {
+		return err
+	}
+	d.PendingPartitions, err = adt.MakeEmptyArray(store).Root()
+	if err != nil {
+		return err
+	}
+	d.Partitions, err = partitions.Root()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) (*bitfield.BitField, error) {
 	stopErr := fmt.Errorf("stop")
 
@@ -142,18 +181,19 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 		return nil, err
 	}
 
-	partitionsWithExpiredSectors := bitfield.NewBitField()
+	partitionsWithExpiredSectors := abi.NewBitField()
 	var expiredEpochs []uint64
 	var bf bitfield.BitField
 	err = partitionExpirationQ.ForEach(&bf, func(i int64) error {
-		if i > until {
+		if abi.ChainEpoch(i) > until {
 			return stopErr
 		}
 		expiredEpochs = append(expiredEpochs, uint64(i))
-		partitionsWithExpiredSectors, err = bitfield.MergeBitFields(partitionsWithExpiredSectors, bf)
+		partitionsWithExpiredSectors, err = bitfield.MergeBitFields(partitionsWithExpiredSectors, &bf)
 		if err != nil {
 			return err
 		}
+		return nil
 	})
 	switch err {
 	case nil, stopErr:
@@ -162,7 +202,7 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 	}
 
 	err = partitionExpirationQ.BatchDelete(expiredEpochs)
-	if err = nil {
+	if err == nil {
 		return nil, err
 	}
 
