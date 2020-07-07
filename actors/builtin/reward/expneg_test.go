@@ -1,8 +1,12 @@
 package reward
 
 import (
+	"bytes"
+	"fmt"
 	"math/big"
 	"testing"
+
+	"github.com/xorcare/golden"
 )
 
 var Res big.Word
@@ -22,4 +26,24 @@ func BenchmarkExpneg(b *testing.B) {
 		x.Sub(x, dec)
 	}
 	Res += res
+}
+
+func TestExpFunction(t *testing.T) {
+	const N = 256
+
+	step := big.NewInt(5)
+	step = step.Lsh(step, precision) // Q.128
+	step = step.Div(step, big.NewInt(N-1))
+
+	x := big.NewInt(0)
+	b := &bytes.Buffer{}
+
+	b.WriteString("x, y\n")
+	for i := 0; i < N; i++ {
+		y := expneg(x)
+		fmt.Fprintf(b, "%s,%s\n", x, y)
+		x = x.Add(x, step)
+	}
+
+	golden.Assert(t, b.Bytes())
 }
