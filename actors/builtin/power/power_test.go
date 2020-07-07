@@ -224,6 +224,9 @@ func TestCron(t *testing.T) {
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 
+		// expect cron failure was logged
+		rt.ExpectLogsContain("OnDeferredCronEvent failed for miner")
+
 		newPow := actor.currentPowerTotal(rt)
 		assert.Equal(t, abi.NewStoragePower(0), newPow.RawBytePower)
 		assert.Equal(t, abi.NewStoragePower(0), newPow.QualityAdjPower)
