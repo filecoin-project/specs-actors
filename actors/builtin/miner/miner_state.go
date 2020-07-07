@@ -52,9 +52,6 @@ type State struct {
 	// Updated at the end of every period by a power actor cron event.
 	ProvingPeriodStart abi.ChainEpoch
 
-	// Sector numbers prove-committed since period start, to be added to Deadlines at next proving period boundary.
-	NewSectors *abi.BitField
-
 	// The sector numbers due for PoSt at each deadline in the current proving period, frozen at period start.
 	// New sectors are added and expired ones removed at proving period boundary.
 	// Faults are not subtracted from this in state, but on the fly.
@@ -140,15 +137,31 @@ type SectorOnChainInfo struct {
 // A bitfield of sector numbers due at each deadline.
 // The sectors for each deadline are logically grouped into sequential partitions for proving.
 type Deadlines struct {
+	// TODO: Consider inlining part of the deadline struct (e.g.,
+	// active/assigned sectors) to make sector assignment cheaper. At the
+	// moment, assigning a sector requires loading all deadlines to figure
+	// out where best to assign new sectors.
 	Due [WPoStPeriodDeadlines]cid.Cid // []Deadline
 }
 
 type Deadline struct {
+	// Partitions in this deadline.
 	Partitions      cid.Cid // AMT[PartitionNumber]Partition
+
+	// Partitions that will be scheduled at the start of the next proving period.
+	// Pending partitions will be _merged_ with existing partitions.
+	PendingPartitions cid.Cid // AMT[PartitionNumber]Partition
+
+	// Partitions with PoSt submissions since the proving period started.
 	PostSubmissions *abi.BitField
+
+	// Number active sectors in the deadline. This number does not include
+	// terminated or pending sectors.
+	ActiveSectors uint64
 
 	// Maps epochs to partitions with sectors that became faulty during that epoch.
 	FaultsEpochs cid.Cid // AMT[ChainEpoch]BitField
+
 	// Maps epochs to partitions with sectors that expire in that epoch.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 }
@@ -387,31 +400,12 @@ func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 	})
 }
 
-// Adds some sector numbers to the new sectors bitfield.
-func (st *State) AddNewSectors(sectorNos ...abi.SectorNumber) (err error) {
-	ns := abi.NewBitField()
-	for _, sector := range sectorNos {
-		ns.Set(uint64(sector))
-	}
-	st.NewSectors, err = bitfield.MergeBitFields(st.NewSectors, ns)
-	if err != nil {
-		return err
-	}
-
-	count, err := st.NewSectors.Count()
-	if err != nil {
-		return err
-	}
-	if count > NewSectorsPerPeriodMax {
-		return fmt.Errorf("too many new sectors %d, max %d", count, NewSectorsPerPeriodMax)
-	}
-	return nil
-}
-
-// Removes some sector numbers from the new sectors bitfield, if present.
-func (st *State) RemoveNewSectors(sectorNos *abi.BitField) (err error) {
-	st.NewSectors, err = bitfield.SubtractBitField(st.NewSectors, sectorNos)
-	return err
+// Assign new sectors to pending partitions
+func (st *State) AssignPendingPartitions(store adt.Store, sectors ...*SectorOnChainInfo) (err error) {
+	// TODO: Assign all sectors to "pending" partitions.
+	// We should definitely sort by sector number.
+	// Should we try to find a deadline with nearby sectors? That's probably really expensive.
+	panic("TODO")
 }
 
 // Removes and returns sector numbers (from the per-deadline expiration queue)
@@ -1279,6 +1273,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*b
 func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 	return &Deadline{
 		Partitions:        emptyArrayCid,
+		PendingPartitions:        emptyArrayCid,
 		PostSubmissions:   abi.NewBitField(),
 		FaultsEpochs:      emptyArrayCid,
 		ExpirationsEpochs: emptyArrayCid,
