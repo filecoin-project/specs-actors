@@ -125,19 +125,6 @@ func TestMarketActor(t *testing.T) {
 			}
 		})
 
-		t.Run("fails when called with negative value", func(t *testing.T) {
-			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
-
-			rt.SetCaller(owner, builtin.AccountActorCodeID)
-			rt.SetReceived(abi.NewTokenAmount(-1))
-
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				rt.Call(actor.AddBalance, &provider)
-			})
-
-			rt.Verify()
-		})
-
 		t.Run("fails unless called by an account actor", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
@@ -969,6 +956,52 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		actor.assertDealsTerminated(rt, newEpoch, dealId1, dealId2)
 		actor.assertDeaslNotTerminated(rt, dealId3)
 
+	})
+
+	t.Run("terminating a deal the second time does not change it's slash epoch", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		rt.SetEpoch(currentEpoch)
+
+		dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
+		actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId1)
+
+		// terminating the deal so slash epoch is the current epoch
+		actor.terminateDeals(rt, provider, dealId1)
+
+		// set a new epoch and terminate again -> however slash epoch will still be the old epoch.
+		newEpoch := currentEpoch + 1
+		rt.SetEpoch(newEpoch)
+		actor.terminateDeals(rt, provider, dealId1)
+		st := actor.getDealState(rt, dealId1)
+		require.EqualValues(t, currentEpoch, st.SlashEpoch)
+	})
+
+	t.Run("terminating new deals and an already terminated deal only terminates the new deals", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		rt.SetEpoch(currentEpoch)
+
+		// provider1 publishes deal1 and 2 and deal3 -> deal3 has the lowest endepoch
+		dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
+		dealId2 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch+1)
+		dealId3 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch-1)
+		actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId1, dealId2, dealId3)
+
+		// terminating the deal so slash epoch is the current epoch
+		actor.terminateDeals(rt, provider, dealId1)
+
+		// set a new epoch and terminate again -> however slash epoch will still be the old epoch.
+		newEpoch := currentEpoch + 1
+		rt.SetEpoch(newEpoch)
+		actor.terminateDeals(rt, provider, dealId1, dealId2, dealId3)
+
+		st := actor.getDealState(rt, dealId1)
+		require.EqualValues(t, currentEpoch, st.SlashEpoch)
+
+		st2 := actor.getDealState(rt, dealId2)
+		require.EqualValues(t, newEpoch, st2.SlashEpoch)
+
+		st3 := actor.getDealState(rt, dealId3)
+		require.EqualValues(t, newEpoch, st3.SlashEpoch)
 	})
 
 	t.Run("do not terminate deal if end epoch is equal to or less than current epoch", func(t *testing.T) {
