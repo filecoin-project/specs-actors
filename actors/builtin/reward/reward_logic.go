@@ -5,7 +5,7 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
-func BaselinePowerAt(epoch abi.ChainEpoch) abi.StoragePower {
+var BaselinePowerAt = func(epoch abi.ChainEpoch) abi.StoragePower {
 	return big.NewInt(1 << 40)
 }
 
