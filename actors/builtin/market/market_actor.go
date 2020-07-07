@@ -118,11 +118,15 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	msgValue := rt.Message().ValueReceived()
+	if msgValue.LessThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "add balance called with negative value %v", msgValue)
+	}
+
 	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msgValue := rt.Message().ValueReceived()
 
 		err := st.AddEscrowBalance(adt.AsStore(rt), nominal, msgValue)
 		if err != nil {
