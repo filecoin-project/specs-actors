@@ -692,6 +692,9 @@ func TestWindowPost(t *testing.T) {
 		deadlines, err := st.LoadDeadlines(rt.AdtStore())
 		require.NoError(t, err)
 		skipped := deadlines.Due[deadline.Index]
+		count, err := skipped.Count()
+		require.NoError(t, err)
+		assert.Greater(t, count, uint64(0))
 
 		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos)
 
@@ -784,8 +787,7 @@ func TestWindowPost(t *testing.T) {
 		// expect power to be deducted for all sectors in first two deadlines
 		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
 
-		// expected penalty is the undeclared fault penalty for all sectors in previous deadline
-		// and the undeclared late penalty for new faults preceding that.
+		// expected penalty is the late undeclared fault penalty for all faulted sectors including retracted recoveries..
 		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
 
 		cfg := &poStConfig{
