@@ -499,6 +499,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
 		}
 
+		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "get deal proposals: %v", err)
+		}
+
 		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
@@ -534,17 +539,26 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					// Not yet appeared in proven sector; check for timeout.
 					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
 
-					slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
+					slashed := st.processDealInitTimedOut(rt, et, lt, deal)
 					if !slashed.IsZero() {
 						amountSlashed = big.Add(amountSlashed, slashed)
 					}
 					if deal.VerifiedDeal {
 						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
 					}
+
+					if err := deleteDeal(dealID, states, proposals); err != nil {
+						rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal %d: %v", dealID, err)
+					}
 					return nil
 				}
 
-				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
+				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
+				if removeDeal {
+					if err := deleteDeal(dealID, states, proposals); err != nil {
+						rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal %d: %v", dealID, err)
+					}
+				}
 				if !slashAmount.IsZero() {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
@@ -606,6 +620,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
 		}
 
+		st.Proposals, err = proposals.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal proposals: %s", err)
+		}
+
 		return nil
 	})
 
@@ -625,6 +644,18 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
 	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	return nil
+}
+
+func deleteDeal(dealId abi.DealID, states *DealMetaArray, proposals *DealArray) error {
+	if err := states.Delete(dealId); err != nil {
+		return fmt.Errorf("failed to delete deal state: %w", err)
+	}
+
+	if err := proposals.Delete(uint64(dealId)); err != nil {
+		return fmt.Errorf("failed to delete deal proposal: %w", err)
+	}
+
 	return nil
 }
 
