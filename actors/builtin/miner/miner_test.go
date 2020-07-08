@@ -1207,7 +1207,8 @@ func TestTerminateSectors(t *testing.T) {
 		sector := commitSector(t, rt)
 		var initialLockedFunds abi.TokenAmount
 
-		// simplify math by adding enough locked funds (~1FIL) to fully penalize terminated sectors
+		// A miner will path the minimum of termination fee and locked funds. Add some locked funds to ensure
+		// correct fee calculation is used.
 		actor.addLockedFund(rt, big.NewInt(1<<61))
 
 		{
