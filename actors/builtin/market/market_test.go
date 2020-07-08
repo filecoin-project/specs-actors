@@ -1340,6 +1340,14 @@ func TestCronTickDealSlashing(t *testing.T) {
 			cronTickEpoch:    abi.ChainEpoch(10),
 			payment:          abi.NewTokenAmount(0), // (10 - 10) * 10
 		},
+		"deal is slashed and then deal expiry happens on crontick, but slashing still occurs": {
+			dealStart:        abi.ChainEpoch(10),
+			dealEnd:          abi.ChainEpoch(20),
+			activationEpoch:  abi.ChainEpoch(5),
+			terminationEpoch: abi.ChainEpoch(15),
+			cronTickEpoch:    abi.ChainEpoch(25),
+			payment:          abi.NewTokenAmount(50),
+		},
 	}
 
 	for n, tc := range tcs {
