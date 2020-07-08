@@ -120,7 +120,7 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		// Process deal payment for the elapsed epochs.
 		totalPayment := big.Mul(big.NewInt(int64(numEpochsElapsed)), deal.StoragePricePerEpoch)
 
-		st.transferBalance(rt, deal.Client, deal.Provider, totalPayment)
+		st.transferBalance(rt, deal.Client, deal.Provider, totalPayment, et, lt)
 	}
 
 	if everSlashed {
@@ -369,17 +369,8 @@ func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount a
 }
 
 // move funds from locked in client to available in provider
-func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount) {
+func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount, et, lt *adt.BalanceTable) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
-	}
-	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
-	}
 
 	if err := et.MustSubtract(fromAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
@@ -392,18 +383,6 @@ func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.
 	if err := et.Add(toAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "add to escrow: %v", err)
 	}
-
-	ltc, err := lt.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
-	}
-	etc, err := et.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
-	}
-
-	st.LockedTable = ltc
-	st.EscrowTable = etc
 }
 
 func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount, reason BalanceLockingReason) error {
