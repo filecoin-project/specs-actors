@@ -1118,7 +1118,7 @@ func TestCronTick(t *testing.T) {
 		})
 	})
 
-	// TODO
+	// TODO Blocked on https://github.com/filecoin-project/specs-actors/pull/620
 	t.Run("slash timed-out deals", func(t *testing.T) {
 
 	})
@@ -1179,8 +1179,28 @@ func TestCronTick(t *testing.T) {
 		require.EqualValues(t, pLocked, actor.getLockedBalance(rt, provider))
 	})
 
-	t.Run("expired deals should unlock the remaining client and provider locked balance and deal should be deletd", func(t *testing.T) {
+	t.Run("expired deals should unlock the remaining client and provider locked balance and deal should be deleted", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
+		deal := actor.getDealProposal(rt, dealId)
 
+		cLocked := actor.getLockedBalance(rt, client)
+		cEscrow := actor.getEscrowBalance(rt, client)
+
+		pLocked := actor.getLockedBalance(rt, provider)
+		pEscrow := actor.getEscrowBalance(rt, provider)
+
+		// move the current epoch to startEpoch + 5 so payment is made
+		rt.SetEpoch(startEpoch + 5)
+		actor.cronTick(rt)
+
+		// assert payment
+		payment := big.Mul(big.NewInt(int64(5)), deal.StoragePricePerEpoch)
+
+		require.EqualValues(t, big.Sub(cEscrow, payment), actor.getEscrowBalance(rt, client))
+		require.EqualValues(t, big.Sub(cLocked, payment), actor.getLockedBalance(rt, client))
+		require.EqualValues(t, big.Add(pEscrow, payment), actor.getEscrowBalance(rt, provider))
+		require.EqualValues(t, pLocked, actor.getLockedBalance(rt, provider))
 	})
 
 	t.Run("deal slashing should slash provider collateral, unlock remaining client balance and delete the deal", func(t *testing.T) {
