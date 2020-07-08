@@ -605,6 +605,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 		st.LastCron = rt.CurrEpoch()
 
+		st.States, err = states.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
+		}
+
 		return nil
 	})
 
