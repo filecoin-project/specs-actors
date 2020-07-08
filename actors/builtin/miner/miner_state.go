@@ -264,15 +264,17 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	return &info, found, nil
 }
 
-func (st *State) DeletePrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) error {
+func (st *State) DeletePrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) error {
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
 	if err != nil {
 		return err
 	}
 
-	err = precommitted.Delete(SectorKey(sectorNo))
-	if err != nil {
-		return errors.Wrapf(err, "failed to delete precommitment for %v", sectorNo)
+	for _, sectorNo := range sectorNos {
+		err = precommitted.Delete(SectorKey(sectorNo))
+		if err != nil {
+			return xerrors.Errorf("failed to delete precommitment for %v: %w", sectorNo, err)
+		}
 	}
 	st.PreCommittedSectors, err = precommitted.Root()
 	return err
@@ -292,17 +294,23 @@ func (st *State) HasSectorNo(store adt.Store, sectorNo abi.SectorNumber) (bool, 
 	return found, nil
 }
 
-func (st *State) PutSector(store adt.Store, sector *SectorOnChainInfo) error {
+func (st *State) PutSectors(store adt.Store, newSectors ...*SectorOnChainInfo) error {
 	sectors, err := adt.AsArray(store, st.Sectors)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to load sectors: %w", err)
 	}
 
-	if err := sectors.Set(uint64(sector.SectorNumber), sector); err != nil {
-		return errors.Wrapf(err, "failed to put sector %v", sector)
+	for _, sector := range newSectors {
+		if err := sectors.Set(uint64(sector.SectorNumber), sector); err != nil {
+			return xerrors.Errorf("failed to put sector %v: %w", sector, err)
+		}
 	}
+
 	st.Sectors, err = sectors.Root()
-	return err
+	if err != nil {
+		return xerrors.Errorf("failed to persist sectors: %w", err)
+	}
+	return nil
 }
 
 func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorOnChainInfo, bool, error) {
@@ -404,9 +412,8 @@ func (st *State) ForEachSectorExpiration(store adt.Store, f func(expiry abi.Chai
 	}
 
 	var bf bitfield.BitField
-	empty := abi.NewBitField()
 	return arr.ForEach(&bf, func(i int64) error {
-		bfCopy, err := bitfield.MergeBitFields(&bf, empty)
+		bfCopy, err := bf.Copy()
 		if err != nil {
 			return err
 		}
@@ -416,72 +423,86 @@ func (st *State) ForEachSectorExpiration(store adt.Store, f func(expiry abi.Chai
 
 // Adds some sector numbers to the set expiring at an epoch.
 // The sector numbers are given as uint64s to avoid pointless conversions.
-func (st *State) AddSectorExpirations(store adt.Store, expiry abi.ChainEpoch, sectors ...uint64) error {
-	arr, err := adt.AsArray(store, st.SectorExpirations)
-	if err != nil {
-		return err
-	}
-
-	bf := abi.NewBitField()
-	_, err = arr.Get(uint64(expiry), bf)
-	if err != nil {
-		return err
-	}
-
-	bf, err = bitfield.MergeBitFields(bf, bitfield.NewFromSet(sectors))
-	if err != nil {
-		return err
-	}
-	count, err := bf.Count()
-	if err != nil {
-		return err
-	}
-	if count > SectorsMax {
-		return fmt.Errorf("too many sectors at expiration %d, %d, max %d", expiry, count, SectorsMax)
-	}
-
-	if err = arr.Set(uint64(expiry), bf); err != nil {
-		return err
-	}
-
-	st.SectorExpirations, err = arr.Root()
-	return err
-}
-
-// Removes some sector numbers from the set expiring at an epoch.
-func (st *State) RemoveSectorExpirations(store adt.Store, expiry abi.ChainEpoch, sectors ...uint64) error {
+func (st *State) AddSectorExpirations(store adt.Store, sectors ...*SectorOnChainInfo) error {
 	if len(sectors) == 0 {
 		return nil
 	}
 
 	arr, err := adt.AsArray(store, st.SectorExpirations)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
 
-	bf := abi.NewBitField()
-	_, err = arr.Get(uint64(expiry), bf)
-	if err != nil {
-		return err
-	}
-
-	bf, err = bitfield.SubtractBitField(bf, bitfield.NewFromSet(sectors))
-	if err != nil {
-		return err
-	}
-
-	if empty, err := bf.IsEmpty(); err != nil {
-		return err
-	} else if empty {
-		if err := arr.Delete(uint64(expiry)); err != nil {
-			return err
+	for _, epochSet := range groupSectorsByExpiration(sectors) {
+		bf := new(abi.BitField)
+		_, err = arr.Get(uint64(epochSet.epoch), bf)
+		if err != nil {
+			return xerrors.Errorf("failed to lookup sector expirations at epoch %v: %w", epochSet.epoch, err)
 		}
-	} else if err = arr.Set(uint64(expiry), bf); err != nil {
-		return err
+
+		bf, err = bitfield.MergeBitFields(bf, bitfield.NewFromSet(epochSet.sectors))
+		if err != nil {
+			return xerrors.Errorf("failed to update sector expirations at epoch %v: %w", epochSet.epoch, err)
+		}
+		count, err := bf.Count()
+		if err != nil {
+			return xerrors.Errorf("failed to count sector expirations at epoch %v: %w", epochSet.epoch, err)
+		}
+		if count > SectorsMax {
+			return fmt.Errorf("too many sectors at expiration %d, %d, max %d", epochSet.epoch, count, SectorsMax)
+		}
+
+		if err = arr.Set(uint64(epochSet.epoch), bf); err != nil {
+			return xerrors.Errorf("failed to set sector expirations at epoch %v: %w", epochSet.epoch, err)
+		}
 	}
 
 	st.SectorExpirations, err = arr.Root()
-	return err
+	if err != nil {
+		return xerrors.Errorf("failed to persist sector expirations: %w", err)
+	}
+	return nil
+}
+
+// Removes some sector numbers from the set expiring at an epoch.
+func (st *State) RemoveSectorExpirations(store adt.Store, sectors ...*SectorOnChainInfo) error {
+	if len(sectors) == 0 {
+		return nil
+	}
+
+	arr, err := adt.AsArray(store, st.SectorExpirations)
+	if err != nil {
+		return xerrors.Errorf("failed to load sector expirations: %w", err)
+	}
+
+	for _, epochSet := range groupSectorsByExpiration(sectors) {
+		bf := new(abi.BitField)
+		_, err = arr.Get(uint64(epochSet.epoch), bf)
+		if err != nil {
+			return xerrors.Errorf("failed to lookup sector expirations at epoch %v: %w", epochSet.epoch, err)
+		}
+
+		bf, err = bitfield.SubtractBitField(bf, bitfield.NewFromSet(epochSet.sectors))
+		if err != nil {
+			return xerrors.Errorf("failed to update sector expirations at epoch %v: %w", epochSet.epoch, err)
+		}
+
+		if empty, err := bf.IsEmpty(); err != nil {
+			return xerrors.Errorf("corrupted sector expirations bitfield at epoch %v: %w", epochSet.epoch, err)
+		} else if empty {
+			if err := arr.Delete(uint64(epochSet.epoch)); err != nil {
+				return xerrors.Errorf("failed to delete sector expirations at epoch %v: %w", epochSet.epoch, err)
+			}
+		} else if err = arr.Set(uint64(epochSet.epoch), bf); err != nil {
+			return xerrors.Errorf("failed to set sector expirations at epoch %v: %w", epochSet.epoch, err)
+		}
+	}
+
+	st.SectorExpirations, err = arr.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to persist sector expirations: %w", err)
+	}
+	return nil
 }
 
 // Removes all sector numbers from the set expiring some epochs.
@@ -576,7 +597,15 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 		return err
 	}
 
-	epochsChanged := map[uint64]*abi.BitField{}
+	type change struct {
+		index uint64
+		value *abi.BitField
+	}
+
+	var (
+		epochsChanged []change
+		epochsDeleted []uint64
+	)
 
 	epochFaultsOld := &abi.BitField{}
 	err = arr.ForEach(epochFaultsOld, func(i int64) error {
@@ -595,8 +624,10 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 			return err
 		}
 
-		if countOld != countNew {
-			epochsChanged[uint64(i)] = epochFaultsNew
+		if countNew == 0 {
+			epochsDeleted = append(epochsDeleted, uint64(i))
+		} else if countOld != countNew {
+			epochsChanged = append(epochsChanged, change{index: uint64(i), value: epochFaultsNew})
 		}
 
 		return nil
@@ -605,14 +636,14 @@ func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
 		return err
 	}
 
-	for i, newFaults := range epochsChanged {
-		if empty, err := newFaults.IsEmpty(); err != nil {
-			return err
-		} else if empty {
-			if err := arr.Delete(i); err != nil {
-				return err
-			}
-		} else if err = arr.Set(i, newFaults); err != nil {
+	err = arr.BatchDelete(epochsDeleted)
+	if err != nil {
+		return err
+	}
+
+	for _, change := range epochsChanged {
+		err = arr.Set(change.index, change.value)
+		if err != nil {
 			return err
 		}
 	}
@@ -629,9 +660,8 @@ func (st *State) ForEachFaultEpoch(store adt.Store, cb func(epoch abi.ChainEpoch
 	}
 
 	var bf bitfield.BitField
-	empty := abi.NewBitField()
 	return arr.ForEach(&bf, func(i int64) error {
-		bfCopy, err := bitfield.MergeBitFields(&bf, empty)
+		bfCopy, err := bf.Copy()
 		if err != nil {
 			return err
 		}
@@ -699,7 +729,7 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 	err := sectors.ForEach(func(i uint64) error {
 		sectorOnChain, found, err := st.GetSector(store, abi.SectorNumber(i))
 		if err != nil {
-			return fmt.Errorf("failed to load sector %d: %v", i, err)
+			return xerrors.Errorf("failed to load sector %d: %w", i, err)
 		} else if !found {
 			return fmt.Errorf("can't find sector %d", i)
 		}
@@ -734,12 +764,13 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.Bit
 		return nil, nil, xerrors.Errorf("failed to diff bitfields: %w", err)
 	}
 
+	// return empty if no non-faults
 	empty, err := nonFaults.IsEmpty()
 	if err != nil {
 		return nil, nil, xerrors.Errorf("failed to check if bitfield was empty: %w", err)
 	}
 	if empty {
-		return nil, nil, xerrors.Errorf("no non-faulty sectors in partitions: %w", err)
+		return nil, recoveries, nil
 	}
 
 	// Select a non-faulty sector as a substitute for faulty ones.
@@ -758,34 +789,33 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.Bit
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
 func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitField, faults *abi.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
-	sectorOnChain, found, err := st.GetSector(store, faultStandIn)
+	standInInfo, found, err := st.GetSector(store, faultStandIn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load stand-in sector %d: %v", faultStandIn, err)
 	} else if !found {
 		return nil, fmt.Errorf("can't find stand-in sector %d", faultStandIn)
 	}
-	standInInfo := sectorOnChain
 
 	// Expand faults into a map for quick lookups.
 	// The faults bitfield should already be a subset of the sectors bitfield.
-	faultMax, err := sectors.Count()
+	sectorCount, err := sectors.Count()
 	if err != nil {
 		return nil, err
 	}
-	faultSet, err := faults.AllMap(faultMax)
+	faultSet, err := faults.AllMap(sectorCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand faults: %w", err)
 	}
 
 	// Load the sector infos, masking out fault sectors with a good one.
-	var sectorInfos []*SectorOnChainInfo
+	sectorInfos := make([]*SectorOnChainInfo, 0, sectorCount)
 	err = sectors.ForEach(func(i uint64) error {
 		sector := standInInfo
 		faulty := faultSet[i]
 		if !faulty {
-			sectorOnChain, found, err = st.GetSector(store, abi.SectorNumber(i))
+			sectorOnChain, found, err := st.GetSector(store, abi.SectorNumber(i))
 			if err != nil {
-				return fmt.Errorf("failed to load sector %d: %v", i, err)
+				return xerrors.Errorf("failed to load sector %d: %w", i, err)
 			} else if !found {
 				return fmt.Errorf("can't find sector %d", i)
 			}

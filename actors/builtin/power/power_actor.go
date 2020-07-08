@@ -158,8 +158,6 @@ type UpdateClaimedPowerParams struct {
 func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
-	log.Infof("updating power power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
-
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
@@ -259,13 +257,16 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 	return nil
 }
 
+// GasOnSubmitVerifySeal is amount of gas charged for SubmitPoRepForBulkVerify
+// This number is empirically determined
+const GasOnSubmitVerifySeal = 132166313
+
 func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Message().Caller()
 
-	// TODO: charge a LOT of gas
-	// https://github.com/filecoin-project/specs-actors/issues/442
+	rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
@@ -431,18 +432,46 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		st.LastEpochTick = rtEpoch
 		return nil
 	})
-
+	failedMinerCrons := make([]addr.Address, 0)
 	for _, event := range cronEvents {
-		_, _ = rt.Send(
+		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
 			vmr.CBORBytes(event.CallbackPayload),
 			abi.NewTokenAmount(0),
 		)
-		// The exit code is ignored. If a callback fails, this actor continues to invoke other callbacks
+		// If a callback fails, this actor continues to invoke other callbacks
 		// and persists state removing the failed event from the event queue. It won't be tried again.
-		// A log message would really help here, though.
+		// Failures are unexpected here but will result in removal of miner power
+		// A log message would really help here.
+		if code != exitcode.Ok {
+			rt.Log(vmr.WARN, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
+			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
+		}
 	}
+	rt.State().Transaction(&st, func() interface{} {
+		store := adt.AsStore(rt)
+		// Remove power and leave miner frozen
+		for _, minerAddr := range failedMinerCrons {
+			claim, found, err := st.GetClaim(store, minerAddr)
+			if err != nil {
+				rt.Log(vmr.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+				continue
+			}
+			if !found {
+				rt.Log(vmr.WARN, "miner OnDeferredCronEvent failed for miner %s with no power", minerAddr)
+				continue
+			}
+
+			// zero out miner power
+			err = st.AddToClaim(store, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
+			if err != nil {
+				rt.Log(vmr.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
+				continue
+			}
+		}
+		return nil
+	})
 	return nil
 }
 

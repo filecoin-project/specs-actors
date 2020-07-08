@@ -1,11 +1,10 @@
 package market
 
 import (
-	"github.com/ipfs/go-cid"
-	"github.com/pkg/errors"
-
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	. "github.com/filecoin-project/specs-actors/actors/util/adt"
+
+	"github.com/ipfs/go-cid"
 )
 
 // A specialization of a array to deals.
@@ -29,16 +28,10 @@ func (t *DealArray) Root() (cid.Cid, error) {
 }
 
 // Gets the deal for a key. The entry must have been previously initialized.
-func (t *DealArray) Get(id abi.DealID) (*DealProposal, error) {
+func (t *DealArray) Get(id abi.DealID) (*DealProposal, bool, error) {
 	var value DealProposal
 	found, err := t.Array.Get(uint64(id), &value)
-	if err != nil {
-		return nil, err // The errors from Map carry good information, no need to wrap here.
-	}
-	if !found {
-		return nil, errors.Errorf("deal %d not found", id)
-	}
-	return &value, nil
+	return &value, found, err
 }
 
 func (t *DealArray) Set(k abi.DealID, value *DealProposal) error {
@@ -91,6 +84,6 @@ func (t *DealMetaArray) Set(k abi.DealID, value *DealState) error {
 	return t.Array.Set(uint64(k), value)
 }
 
-func (t *DealMetaArray) Delete(key uint64) error {
-	return t.Array.Delete(key)
+func (t *DealMetaArray) Delete(id abi.DealID) error {
+	return t.Array.Delete(uint64(id))
 }

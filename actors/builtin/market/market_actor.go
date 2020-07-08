@@ -82,7 +82,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	nominal, recipient := escrowAddress(rt, params.ProviderOrClientAddress)
 
-	amountSlashedTotal := abi.NewTokenAmount(0)
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -110,11 +109,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		return nil
 	})
 
-	if amountSlashedTotal.GreaterThan(big.Zero()) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
-	}
-
 	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
@@ -122,11 +116,12 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	msgValue := rt.Message().ValueReceived()
+
 	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msgValue := rt.Message().ValueReceived()
 
 		err := st.AddEscrowBalance(adt.AsStore(rt), nominal, msgValue)
 		if err != nil {
@@ -227,8 +222,9 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			deal.Proposal.Provider = provider
 			deal.Proposal.Client = client
 
-			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientBalanceRequirement())
-			st.lockBalanceOrAbort(rt, provider, deal.Proposal.ProviderBalanceRequirement())
+			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientCollateral, ClientCollateral)
+			st.lockBalanceOrAbort(rt, client, deal.Proposal.TotalStorageFee(), ClientStorageFee)
+			st.lockBalanceOrAbort(rt, provider, deal.Proposal.ProviderCollateral, ProviderCollateral)
 
 			id := st.generateStorageDealID()
 
@@ -348,14 +344,15 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			// This construction could be replaced with a single "update deal state" state method, possibly batched
 			// over all deal ids at once.
 			_, found, err := states.Get(dealID)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal")
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state for dealId %d", dealID)
 			if found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
 			}
 
-			proposal, err := proposals.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal %v", err)
+			proposal, found, err := proposals.Get(dealID)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
+			if !found {
+				rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
 			}
 
 			propc, err := proposal.Cid()
@@ -441,24 +438,38 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 		}
 
 		for _, dealID := range params.DealIDs {
-			deal, err := proposals.Get(dealID)
+			deal, found, err := proposals.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
-			Assert(deal.Provider == minerAddr)
+			// deal could have terminated and hence deleted before the sector is terminated.
+			// we should simply continue instead of aborting execution here if a deal is not found.
+			if !found {
+				continue
+			}
+
+			AssertMsg(deal.Provider == minerAddr, "caller is not the provider of the deal")
+
+			// do not slash expired deals
+			if deal.EndEpoch <= rt.CurrEpoch() {
+				continue
+			}
 
 			state, found, err := states.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
 			if !found {
-				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
+				rt.Abortf(exitcode.ErrIllegalArgument, "no state found for deal in sector being terminated")
 			}
 
-			// Note: we do not perform the balance transfers here, but rather simply record the flag
-			// to indicate that processDealSlashed should be called when the deferred state computation
-			// is performed. // TODO: Do that here. https://github.com/filecoin-project/specs-actors/issues/462
+			// if a deal is already slashed, we don't need to do anything here.
+			if state.SlashEpoch != epochUndefined {
+				continue
+			}
 
+			// mark the deal for slashing here.
+			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
 			state.SlashEpoch = rt.CurrEpoch()
 
 			if err := states.Set(dealID, state); err != nil {
@@ -601,6 +612,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 		st.LastCron = rt.CurrEpoch()
 
+		st.States, err = states.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
+		}
+
 		return nil
 	})
 
@@ -640,9 +656,12 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
-		proposal, err := proposals.Get(dealID)
+		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
 			return big.Int{}, big.Int{}, fmt.Errorf("failed to load deal %d: %w", dealID, err)
+		}
+		if !found {
+			return big.Int{}, big.Int{}, fmt.Errorf("dealId %d not found", dealID)
 		}
 		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
 			return big.Int{}, big.Int{}, fmt.Errorf("cannot activate deal %d: %w", dealID, err)
@@ -682,6 +701,10 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 	}
 
 	proposal := deal.Proposal
+
+	if proposal.EndEpoch <= proposal.StartEpoch {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal end before proposal start")
+	}
 
 	if rt.CurrEpoch() > proposal.StartEpoch {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
