@@ -11,8 +11,6 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	logging "github.com/ipfs/go-log/v2"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -24,8 +22,6 @@ import (
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
-
-var log = logging.Logger("miner_actor")
 
 type Runtime = vmr.Runtime
 
@@ -422,10 +418,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		st.AddPreCommitDeposit(depositReq)
 		st.AssertBalanceInvariants(rt.CurrentBalance())
-
-		a, _ := dealWeight.DealWeight.Bytes()
-		b, _ := dealWeight.VerifiedDealWeight.Bytes()
-		log.Infof("Adding precommitted sector %w %w", a, b)
 
 		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:               *params,

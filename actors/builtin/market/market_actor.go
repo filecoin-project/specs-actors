@@ -7,8 +7,6 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
-	logging "github.com/ipfs/go-log/v2"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -18,8 +16,6 @@ import (
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
-
-var log = logging.Logger("market_actor")
 
 type Actor struct{}
 
@@ -150,8 +146,6 @@ type PublishStorageDealsReturn struct {
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
 
-	log.Info("doing something")
-
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -176,7 +170,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		// Either the DealSize is within the available DataCap of the VerifiedClient
 		// or this message will fail. We do not allow a deal that is partially verified.
 		if deal.Proposal.VerifiedDeal {
-			log.Info("using bytes")
 			_, code := rt.Send(
 				builtin.VerifiedRegistryActorAddr,
 				builtin.MethodsVerifiedRegistry.UseBytes,
