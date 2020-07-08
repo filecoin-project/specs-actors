@@ -1,12 +1,15 @@
 package reward
 
 import (
+	"bytes"
+	"fmt"
 	gbig "math/big"
 	"testing"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/stretchr/testify/assert"
+	"github.com/xorcare/golden"
 )
 
 func q128ToF(x big.Int) float64 {
@@ -36,4 +39,31 @@ func TestComputeRTeta(t *testing.T) {
 	assert.Equal(t, 15.25, q128ToF(computeRTheta(16,
 		big.Add(cumsum15, big.Div(BaselinePowerAt(16), big.NewInt(4))),
 		big.Add(cumsum15, BaselinePowerAt(16)))))
+}
+
+func TestBaselineReward(t *testing.T) {
+	step := gbig.NewInt(5000)
+	step = step.Lsh(step, precision)
+	step = step.Sub(step, gbig.NewInt(77777777777)) // offset from full integers
+
+	delta := gbig.NewInt(1)
+	delta = delta.Lsh(delta, precision)
+	delta = delta.Sub(delta, gbig.NewInt(33333333333)) // offset from full integers
+
+	prevTheta := new(gbig.Int)
+	theta := new(gbig.Int).Set(delta)
+
+	b := &bytes.Buffer{}
+	b.WriteString("t0, t1, y\n")
+	simple := computeReward(0, big.Zero(), big.Zero())
+
+	for i := 0; i < 512; i++ {
+		reward := computeReward(0, big.Int{Int: prevTheta}, big.Int{Int: theta})
+		reward = big.Sub(reward, simple)
+		fmt.Fprintf(b, "%s,%s,%s\n", prevTheta, theta, reward.Int)
+		prevTheta = prevTheta.Add(prevTheta, step)
+		theta = theta.Add(theta, step)
+	}
+
+	golden.Assert(t, b.Bytes())
 }
