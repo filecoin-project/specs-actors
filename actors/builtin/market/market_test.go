@@ -1093,6 +1093,80 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 	})
 }
 
+func TestCronTick(t *testing.T) {
+	owner := tutil.NewIDAddr(t, 101)
+	provider := tutil.NewIDAddr(t, 102)
+	worker := tutil.NewIDAddr(t, 103)
+	client := tutil.NewIDAddr(t, 104)
+	mAddrs := &minerAddrs{owner, worker, provider}
+
+	startEpoch := abi.ChainEpoch(10)
+	endEpoch := abi.ChainEpoch(20)
+	currentEpoch := abi.ChainEpoch(5)
+	sectorExpiry := abi.ChainEpoch(100)
+
+	t.Run("ignore deal if it has not been activated", func(t *testing.T) {
+
+	})
+
+	t.Run("fail when deal is activated but proposal is not found", func(t *testing.T) {
+
+	})
+
+	t.Run("fail when deal update epoch is in the future", func(t *testing.T) {
+
+	})
+
+	t.Run("ignore when deal start epoch is greater than current epoch", func(t *testing.T) {
+
+	})
+
+	t.Run("fail if deal slash epoch is greater than current epoch", func(t *testing.T) {
+
+	})
+
+	t.Run("payment transfer should be processed for the elapsed duration on a tick", func(t *testing.T) {
+
+	})
+
+	t.Run("expired deals should unlock the remaining client and provider locked balance and deal should be deletd", func(t *testing.T) {
+
+	})
+
+	t.Run("deal slashing should slash provider collateral, unlock remaining client balance and delete the deal", func(t *testing.T) {
+
+	})
+
+	t.Run("after a crontick, the next deal update should only be processed after a 100 epochs if deal end is after that", func(t *testing.T) {
+
+	})
+
+	t.Run("after a crontick, the next deal update should be processed on the deal end epoch if the end is less than current epoch plus 100 epochs", func(t *testing.T) {
+
+	})
+
+	t.Run("all slahsed funds should be sent to the burn actor", func(t *testing.T) {
+
+	})
+
+	// TODO This should be a separate test
+	t.Run("The locked fund tracking states should be updated correctly", func(t *testing.T) {
+
+	})
+
+	t.Run("payment transfer should be made for elapsed durations across multiple ticks till the deal ends", func(t *testing.T) {
+
+	})
+
+	t.Run("process ALL deals thah haven't been processed since the last cron update", func(t *testing.T) {
+
+	})
+
+	t.Run("multiple cron ticks do not abort after a deal is deleted", func(t *testing.T) {
+
+	})
+}
+
 func TestMarketActorDeals(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
