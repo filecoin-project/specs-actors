@@ -213,19 +213,22 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt
 // WindowedPoSt //
 //////////////////
 
+type PoStPartition struct {
+	// Partitions are numbered per-deadline, from zero.
+	Index uint64
+	// Sectors skipped while proving that weren't already declared faulty
+	Skipped *abi.BitField
+}
+
 // Information submitted by a miner to provide a Window PoSt.
 type SubmitWindowedPoStParams struct {
 	// The deadline index which the submission targets.
 	Deadline uint64
-	// The partition indices being proven.
-	// Partitions are counted across all deadlines, such that all partition indices in the second deadline are greater
-	// than the partition numbers in the first deadlines.
-	Partitions []uint64
+	// The partitions being proven.
+	Partitions []PoStPartition
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
-	// Sectors skipped while proving that weren't already declared faulty
-	Skipped abi.BitField
 }
 
 // Invoked by miner's worker address to submit their fallback post
@@ -236,6 +239,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var newFaultSectors []*SectorOnChainInfo
 	var recoveredSectors []*SectorOnChainInfo
 	penalty := abi.NewTokenAmount(0)
+
+	if params.Deadline > WPoStPeriodDeadlines {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
+	}
+	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
 
 	// Get the total power/reward. We need these to compute penalties.
 	epochReward := requestCurrentEpochBlockReward(rt)
@@ -259,6 +267,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Double check that the current proving period has started. This should only happen if the cron actor wasn't invoked.
+		// TODO deadline-cron: check instead that the prior deadline cron has executed
 		if !currDeadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalState, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
 		}
@@ -269,68 +278,120 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
-		// Detect and mark faults from any missed deadlines (doesn't including the current deadline).
-		// Traverse earlier submissions and enact detected faults.
-		// This isn't strictly necessary, but keeps the power table up to date eagerly and can force payment
-		// of penalties if locked pledge drops too low.
-		detectedFaultSectors, detectedFaultPenalty := detectFaultsThisPeriod(rt, &st, store, currDeadline, deadlines, epochReward, pwrTotal.QualityAdjPower)
-		penalty = big.Add(penalty, detectedFaultPenalty)
-		newFaultSectors = append(newFaultSectors, detectedFaultSectors...)
+		deadline, err := deadlines.LoadDeadline(store, params.Deadline)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", params.Deadline)
 
-		// Add skipped as faults
-		skippedFaultSectors, skippedPenalty := processSkippedFaults(rt, &st, store, currDeadline, info, deadlines, epochReward, pwrTotal.QualityAdjPower, &params.Skipped)
-		penalty = big.Add(penalty, skippedPenalty)
-		newFaultSectors = append(newFaultSectors, skippedFaultSectors...)
+		partitions, err := deadline.PartitionsArray(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d partitions", params.Deadline)
 
-		// Work out which sectors are due in the declared partitions at this deadline.
-		partitionsSectors, err := ComputePartitionsSectors(deadlines, partitionSize, currDeadline.Index, params.Partitions)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute partitions sectors at deadline %d, partitions %s",
-			currDeadline.Index, params.Partitions)
+		// TODO deadline-cron: defer fault epoch (and power loss/penalty?) to end of deadline
+		faultEpoch := currDeadline.PeriodStart
 
-		provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union %d partitions of sectors", len(partitionsSectors))
+		partitionIdxs := make([]uint64, 0, len(params.Partitions))
+		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
+		allFaults := make([]*abi.BitField, 0, len(params.Partitions))
+		allRecoveries := make([]*abi.BitField, 0, len(params.Partitions))
+		allNewFaults := make([]*abi.BitField, 0, len(params.Partitions))
+		allRetractedRecoveries := make([]*abi.BitField, 0, len(params.Partitions))
 
-		// Load sector infos, substituting a known-good sector for known-faulty sectors.
-		// NOTE: ErrIllegalState isn't quite correct. This can fail if the user submits a proof for a partition
-		// with only faulty sectors. Ideally we'd distinguish between the two cases, but that's tricky to do at the moment.
-		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
+		// Check and record skipped faults for each partition.
+		// Accumulate sectors info for proof verification.
+		for _, post := range params.Partitions {
+			key := PartitionKey{params.Deadline, post.Index}
+			set, err := deadline.PostSubmissions.IsSet(post.Index)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if partition %v already posted", key)
+			if set {
+				// Skip partitions already proven for this deadline.
+				continue
+			}
+
+			var partition Partition
+			found, err := partitions.Get(post.Index, &partition)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %v", key)
+			if !found {
+				rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
+			}
+
+			newFaults, retractedRecoveries := processSkippedFaults(rt, store, faultEpoch, &partition, post.Skipped)
+
+			partitionIdxs = append(partitionIdxs, post.Index)
+			allSectors = append(allSectors, partition.Sectors)
+			allFaults = append(allFaults, partition.Faults)
+			allRecoveries = append(allRecoveries, partition.Recoveries)
+			allNewFaults = append(allNewFaults, newFaults)
+			allRetractedRecoveries = append(allRetractedRecoveries, retractedRecoveries)
+
+			// Assume the proof will be successful, restore declared recoveries.
+			// This will be rolled back if the method aborts with a failed proof.
+			err = partition.RemoveFaults(store, partition.Recoveries)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
+
+			err = st.RemoveRecoveries(partition.Recoveries)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+
+			err = partitions.Set(post.Index, &partition)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
+		}
+
+		// TODO minerstate: factor out a method for the miner node to calculate and load all sectors for proof,
+		// with reference to faults, skipped etc
+
+		// Collect all sectors, faults, and recoveries for proof verification.
+		provenSectors, err := bitfield.MultiMerge(allSectors...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union sectors")
+
+		faults, err := bitfield.MultiMerge(allFaults...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union faults")
+
+		recoveries, err := bitfield.MultiMerge(allRecoveries...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union recoveries")
+
+		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
+		sectorInfos, err := st.LoadSectorInfosForProof(store, provenSectors, faults, recoveries)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
-		// Skip verification if all sectors are faults
+		// Skip verification if all sectors are faults.
+		// We still need to allow this call to succeed so the miner can declare a whole partition as skipped.
 		if len(sectorInfos) > 0 {
 			// Verify the proof.
 			// A failed verification doesn't immediately cause a penalty; the miner can try again.
 			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 		}
 
+		// Collect all new faults and retractions for penalization.
+		// Faults declared here pay a higher fee than those declared earlier or ongoing.
+		// Retracted recoveries pay a high fee, rather than no fee if declared "on time".
+		newFaults, err := bitfield.MultiMerge(allNewFaults...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union new faults")
+		newFaultSectors, err = st.LoadSectorInfos(store, newFaults)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
+
+		retractedRecoveries, err := bitfield.MultiMerge(allRetractedRecoveries...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union retracted recoveries")
+		retractedRecoverySectors, err := st.LoadSectorInfos(store, retractedRecoveries)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
+
+		// Penalize new skipped faults and retracted recoveries
+		penalizeFaultSectors := append(newFaultSectors, retractedRecoverySectors...)
+		penalty, err = unlockUndeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, pwrTotal.QualityAdjPower, penalizeFaultSectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+
 		// Record the successful submission
-		postedPartitions := bitfield.NewFromSet(params.Partitions)
-		contains, err := abi.BitFieldContainsAny(st.PostSubmissions, postedPartitions)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect post partitions")
-		if contains {
-			rt.Abortf(exitcode.ErrIllegalArgument, "duplicate PoSt partition")
-		}
+		postedPartitions := bitfield.NewFromSet(partitionIdxs)
 		err = st.AddPoStSubmissions(postedPartitions)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record submissions for partitions %s", params.Partitions)
-
-		// If the PoSt was successful, restore declared recoveries.
-		err = st.RemoveFaults(store, declaredRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
-
-		err = st.RemoveRecoveries(declaredRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record submissions for deadline %d partitions %s",
+			params.Deadline, postedPartitions)
 
 		// Load info for recovered sectors for recovery of power outside this state transaction.
-		empty, err := declaredRecoveries.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty: %s")
-
+		empty, err := recoveries.IsEmpty()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield empty")
 		if !empty {
 			sectorsByNumber := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectorInfos))
 			for _, s := range sectorInfos {
 				sectorsByNumber[s.SectorNumber] = s
 			}
 
-			_ = declaredRecoveries.ForEach(func(i uint64) error {
+			_ = recoveries.ForEach(func(i uint64) error {
 				recoveredSectors = append(recoveredSectors, sectorsByNumber[abi.SectorNumber(i)])
 				return nil
 			})
@@ -1289,56 +1350,38 @@ func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline
 // result in a change in power (the power has already been removed).
 // - Skipped faults that are already declared, but not recovered will be ignored.
 // - The rest will be penalized as undeclared faults and have their power removed.
-func processSkippedFaults(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, minerInfo *MinerInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower, skipped *bitfield.BitField) ([]*SectorOnChainInfo, abi.TokenAmount) {
+// FIXME update comment
+func processSkippedFaults(rt Runtime, store adt.Store, faultEpoch abi.ChainEpoch, partition *Partition, skipped *bitfield.BitField) (newFaults, retractedRecoveries *abi.BitField) {
 	empty, err := skipped.IsEmpty()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
 	if empty {
-		return nil, abi.NewTokenAmount(0)
+		return nil, nil
 	}
 
-	currEpoch := rt.CurrEpoch()
-	var newFaultSectors []*SectorOnChainInfo
-
-	// Check that the declared sectors are actually due at the deadline.
-	deadlineSectors := deadlines.Due[currDeadline.Index]
-	contains, err := abi.BitFieldContainsAll(deadlineSectors, skipped)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not check if skipped faults are in deadline")
+	// Check that the declared sectors are actually in the partition.
+	contains, err := abi.BitFieldContainsAll(partition.Sectors, skipped)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if skipped faults are in partition")
 	if !contains {
-		rt.Abortf(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline %d", currDeadline.Index)
+		rt.Abortf(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition")
 	}
 
 	// Find all skipped faults that have been labeled recovered
-	retractedRecoveries, err := bitfield.IntersectBitField(st.Recoveries, skipped)
+	retractedRecoveries, err = bitfield.IntersectBitField(partition.Recoveries, skipped)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
 
 	// Ignore skipped faults that are already faults
-	newFaults, err := bitfield.SubtractBitField(skipped, st.Faults)
+	newFaults, err = bitfield.SubtractBitField(skipped, partition.Faults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
 
-	// Add Faults
-	err = st.AddFaults(store, newFaults, currDeadline.PeriodStart)
+	// Record new faults
+	err = partition.AddFaults(store, newFaults, faultEpoch)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
 
 	// Remove faulty recoveries
-	err = st.RemoveRecoveries(retractedRecoveries)
+	err = partition.RemoveRecoveries(retractedRecoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
-	// Load info for sectors.
-	newFaultSectors, err = st.LoadSectorInfos(store, newFaults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-
-	// load info for retractions
-	retractedRecoveryInfos, err := st.LoadSectorInfos(store, retractedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
-
-	// Penalize new skipped faults and retracted recoveries
-	// This differs from declaring faults "on time", where retracting recoveries doesn't attract an extra penalty
-	penalizeFaultSectors := append(newFaultSectors, retractedRecoveryInfos...)
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, minerInfo.SectorSize, currEpoch, epochReward, currentTotalPower, penalizeFaultSectors)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
-
-	// Return only new faulty sectors (excluding retracted recoveries) for power updates
-	return newFaultSectors, penalty
+	return newFaults, retractedRecoveries
 }
 
 // Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves

@@ -590,49 +590,36 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 // Loads info for a set of sectors to be proven.
 // If any of the sectors are declared faulty and not to be recovered, info for the first non-faulty sector is substituted instead.
 // If any of the sectors are declared recovered, they are returned from this method.
-func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.BitField) (sectorInfos []*SectorOnChainInfo, recoveries *bitfield.BitField, err error) {
-	// Extract a fault set relevant to the sectors being submitted, for expansion into a map.
-	declaredFaults, err := bitfield.IntersectBitField(provenSectors, st.Faults)
+func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, declaredFaults, declaredRecoveries *abi.BitField) ([]*SectorOnChainInfo, error) {
+	expectedFaults, err := bitfield.SubtractBitField(declaredFaults, declaredRecoveries)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to intersect proof sectors with faults: %w", err)
-	}
-
-	recoveries, err = bitfield.IntersectBitField(declaredFaults, st.Recoveries)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to intersect recoveries with faults: %w", err)
-	}
-
-	expectedFaults, err := bitfield.SubtractBitField(declaredFaults, recoveries)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to subtract recoveries from faults: %w", err)
+		return nil, xerrors.Errorf("failed to subtract recoveries from faults: %w", err)
 	}
 
 	nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to diff bitfields: %w", err)
+		return nil, xerrors.Errorf("failed to diff bitfields: %w", err)
 	}
 
-	// return empty if no non-faults
-	empty, err := nonFaults.IsEmpty()
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to check if bitfield was empty: %w", err)
-	}
-	if empty {
-		return nil, recoveries, nil
+	// Return empty if no non-faults
+	if empty, err := nonFaults.IsEmpty(); err != nil {
+		return nil, xerrors.Errorf("failed to check if bitfield was empty: %w", err)
+	} else if empty {
+		return nil, nil
 	}
 
 	// Select a non-faulty sector as a substitute for faulty ones.
 	goodSectorNo, err := nonFaults.First()
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to get first good sector: %w", err)
+		return nil, xerrors.Errorf("failed to get first good sector: %w", err)
 	}
 
 	// Load sector infos
-	sectorInfos, err = st.LoadSectorInfosWithFaultMask(store, provenSectors, expectedFaults, abi.SectorNumber(goodSectorNo))
+	sectorInfos, err := st.LoadSectorInfosWithFaultMask(store, provenSectors, expectedFaults, abi.SectorNumber(goodSectorNo))
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to load sector infos: %w", err)
+		return nil, xerrors.Errorf("failed to load sector infos: %w", err)
 	}
-	return
+	return sectorInfos, nil
 }
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
