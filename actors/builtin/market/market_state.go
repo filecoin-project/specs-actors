@@ -211,9 +211,7 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
-	Assert(state.SectorStartEpoch == epochUndefined)
-
+func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal) abi.TokenAmount {
 	if err := st.unlockBalance(lt, deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client storage fee: %s", err)
 	}
