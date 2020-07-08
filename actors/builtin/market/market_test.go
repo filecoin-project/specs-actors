@@ -1162,7 +1162,6 @@ func TestCronTick(t *testing.T) {
 
 		cLocked := actor.getLockedBalance(rt, client)
 		cEscrow := actor.getEscrowBalance(rt, client)
-
 		pLocked := actor.getLockedBalance(rt, provider)
 		pEscrow := actor.getEscrowBalance(rt, provider)
 
@@ -1179,28 +1178,29 @@ func TestCronTick(t *testing.T) {
 		require.EqualValues(t, pLocked, actor.getLockedBalance(rt, provider))
 	})
 
-	t.Run("expired deals should unlock the remaining client and provider locked balance and deal should be deleted", func(t *testing.T) {
+	t.Run("expired deals should unlock the remaining client and provider locked balance after payment and deal should be deleted", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		deal := actor.getDealProposal(rt, dealId)
 
-		cLocked := actor.getLockedBalance(rt, client)
 		cEscrow := actor.getEscrowBalance(rt, client)
-
-		pLocked := actor.getLockedBalance(rt, provider)
 		pEscrow := actor.getEscrowBalance(rt, provider)
 
-		// move the current epoch to startEpoch + 5 so payment is made
-		rt.SetEpoch(startEpoch + 5)
+		// move the current epoch so that deal is expired
+		rt.SetEpoch(startEpoch + 1000)
 		actor.cronTick(rt)
 
-		// assert payment
-		payment := big.Mul(big.NewInt(int64(5)), deal.StoragePricePerEpoch)
+		// assert balances
+		payment := deal.TotalStorageFee()
 
 		require.EqualValues(t, big.Sub(cEscrow, payment), actor.getEscrowBalance(rt, client))
-		require.EqualValues(t, big.Sub(cLocked, payment), actor.getLockedBalance(rt, client))
+		require.EqualValues(t, big.Zero(), actor.getLockedBalance(rt, client))
+
 		require.EqualValues(t, big.Add(pEscrow, payment), actor.getEscrowBalance(rt, provider))
-		require.EqualValues(t, pLocked, actor.getLockedBalance(rt, provider))
+		require.EqualValues(t, big.Zero(), actor.getLockedBalance(rt, provider))
+
+		// deal should be deleted
+		actor.assertDealDeleted(rt, dealId)
 	})
 
 	t.Run("deal slashing should slash provider collateral, unlock remaining client balance and delete the deal", func(t *testing.T) {
@@ -1508,6 +1508,25 @@ func (h *marketActorTestHarness) getDealState(rt *mock.Runtime, dealID abi.DealI
 	require.NotNil(h.t, s)
 
 	return s
+}
+
+func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.DealID) {
+	var st market.State
+	rt.GetState(&st)
+
+	proposals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	require.NoError(h.t, err)
+	_, found, err := proposals.Get(dealId)
+	require.NoError(h.t, err)
+	require.False(h.t, found)
+
+	states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
+	require.NoError(h.t, err)
+
+	s, found, err := states.Get(dealId)
+	require.NoError(h.t, err)
+	require.False(h.t, found)
+	require.Nil(h.t, s)
 }
 
 func (h *marketActorTestHarness) assertDealsTerminated(rt *mock.Runtime, epoch abi.ChainEpoch, dealIds ...abi.DealID) {
