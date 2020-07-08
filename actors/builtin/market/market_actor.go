@@ -627,8 +627,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
 	}
 
-	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
-	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	if !amountSlashed.IsZero() {
+		_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+		builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	}
+
 	return nil
 }
 
