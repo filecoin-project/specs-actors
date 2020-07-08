@@ -40,87 +40,19 @@ type Partition struct {
 	TotalPledge abi.TokenAmount
 }
 
-// mergeBitFieldArrays merges two AMTs of bitfields.
-func mergeBitFieldArrays(store adt.Store, a, b cid.Cid) (cid.Cid, error) {
-	if a == b {
-		return a, nil
+func ConstructPartition(emptyArray cid.Cid) *Partition {
+	return &Partition{
+		Sectors:           abi.NewBitField(),
+		Faults:            abi.NewBitField(),
+		Recoveries:        abi.NewBitField(),
+		Terminated:        abi.NewBitField(),
+		EarlyTerminated:   emptyArray,
+		FaultsEpochs:      emptyArray,
+		ExpirationsEpochs: emptyArray,
+		TotalPower:        big.Zero(),
+		FaultyPower:       big.Zero(),
+		TotalPledge:       big.Zero(),
 	}
-
-	bArr, err := adt.AsArray(store, b)
-	if err != nil {
-		return cid.Undef, err
-	}
-	if bArr.IsEmpty() {
-		return a, nil
-	}
-
-	aArr, err := adt.AsArray(store, a)
-	if err != nil {
-		return cid.Undef, err
-	}
-	if aArr.IsEmpty() {
-		return b, nil
-	}
-
-	// Copy from B to A. If B has more elements than A, swap them to copy
-	// fewer items.
-
-	if bArr.Length() > aArr.Length() {
-		aArr, bArr = bArr, aArr
-	}
-
-	var aBf, bBf bitfield.BitField
-	bArr.ForEach(&bBf, func(idx uint64) error {
-		found, err := aArr.Get(idx, &aBf)
-		if err != nil {
-			return err
-		}
-		// Move. No need to copy.
-		if !found {
-			return aArr.Set(idx, &bBf)
-		}
-		merged, err := abi.MergeBitFields(&aBf, &bBf)
-		if err != nil {
-			return err
-		}
-		return aArr.Set(idx, merged)
-	})
-	return bArr.Root()
-}
-
-// Merge merges the other partition into this partition.
-func (p *Partition) Merge(store adt.Store, other *Partition) (err error) {
-	p.Sectors, err = bitfield.MergeBitFields(p.Sectors, other.Sectors)
-	if err != nil {
-		return err
-	}
-	p.Faults, err = bitfield.MergeBitFields(p.Faults, other.Faults)
-	if err != nil {
-		return err
-	}
-	p.Recoveries, err = bitfield.MergeBitFields(p.Recoveries, other.Recoveries)
-	if err != nil {
-		return err
-	}
-	p.Terminated, err = bitfield.MergeBitFields(p.Termianted, other.Termianted)
-	if err != nil {
-		return err
-	}
-	p.EarlyTermianted, err = mergeBitFieldArrays(p.EarlyTermianted, other.EarlyTerminated)
-	if err != nil {
-		return err
-	}
-	p.FaultsEpochs, err = mergeBitFieldArrays(p.FaultsEpochs, other.FaultsEpochs)
-	if err != nil {
-		return err
-	}
-	p.ExpirationsEpochs, err = mergeBitFieldArrays(p.ExpirationsEpochs, other.ExpirationsEpochs)
-	if err != nil {
-		return err
-	}
-	p.TotalPower = big.Add(p.TotalPower, other.TotalPower)
-	p.FaultyPower = big.Add(p.FaultyPower, other.FaultyPower)
-	p.TotalPledge = big.Add(p.TotalPledge, other.TotalPledge)
 }
 
 func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, faultEpoch abi.ChainEpoch) (err error) {
@@ -289,7 +221,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*b
 	}
 
 	err = sectorExpirationQ.BatchDelete(expiredEpochs)
-	if err = nil {
+	if err != nil {
 		return nil, err
 	}
 

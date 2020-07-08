@@ -2,9 +2,6 @@ package miner
 
 import (
 	"errors"
-	"fmt"
-	"math"
-	"sort"
 
 	"golang.org/x/xerrors"
 
@@ -102,101 +99,6 @@ func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch a
 			FaultCutoff:  0,
 		}
 	}
-}
-
-// Assigns a sequence of sector numbers to deadlines by:
-// - filling any non-full partitions, in round-robin order across the deadlines
-// - repeatedly adding a new partition to the deadline with the fewest partitions
-// When multiple partitions share the minimal sector count, one is chosen at random (from a seed).
-func AssignNewSectors(deadlines *Deadlines, partitionSize uint64, newSectors []uint64, seed abi.Randomness) error {
-	nextNewSector := uint64(0)
-	// The first deadline is left empty since it's more difficult for a miner to orchestrate proofs.
-	// The set of sectors due at the deadline isn't known until the proving period actually starts and any
-	// new sectors are assigned to it (here).
-	// Practically, a miner must also wait for some probabilistic finality after that before beginning proof
-	// calculations.
-	// It's left empty so a miner has at least one challenge duration to prepare for proving after new sectors
-	// are assigned.
-	firstAssignableDeadline := uint64(1)
-
-	// Assigns up to `count` sectors to `deadline` and advances `nextNewSector`.
-	assignToDeadline := func(count uint64, deadline uint64) error {
-		countToAdd := min64(count, uint64(len(newSectors))-nextNewSector)
-		sectorsToAdd := newSectors[nextNewSector : nextNewSector+countToAdd]
-		err := deadlines.AddToDeadline(deadline, sectorsToAdd...)
-		if err != nil {
-			return fmt.Errorf("failed to add %d sectors to deadline %d: %w", countToAdd, deadline, err)
-		}
-		nextNewSector += countToAdd
-		return nil
-	}
-
-	// Iterate deadlines and fill any partial partitions. There's no great advantage to filling more- or less-
-	// full ones first, so they're filled in sequence order.
-	// Meanwhile, record the partition count at each deadline.
-	deadlinePartitionCounts := make([]uint64, WPoStPeriodDeadlines)
-	for i := uint64(0); i < WPoStPeriodDeadlines && nextNewSector < uint64(len(newSectors)); i++ {
-		if i < firstAssignableDeadline {
-			// Mark unassignable deadlines as "full" so nothing more will be assigned.
-			deadlinePartitionCounts[i] = math.MaxUint64
-			continue
-		}
-		partitionCount, sectorCount, err := DeadlineCount(deadlines, partitionSize, i)
-		if err != nil {
-			return fmt.Errorf("failed to count sectors in partition %d: %w", i, err)
-		}
-		deadlinePartitionCounts[i] = partitionCount
-
-		gap := partitionSize - (sectorCount % partitionSize)
-		if gap != partitionSize {
-			err = assignToDeadline(gap, i)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// While there remain new sectors to assign, fill a new partition in one of the deadlines that is least full.
-	// Do this by maintaining a slice of deadline indexes sorted by partition count.
-	// Shuffling this slice to re-sort as weights change is O(n^2).
-	// For a large number of partitions, a heap would be the way to do this in O(n*log n), but for small numbers
-	// is probably overkill.
-	// A miner onboarding a monumental 1EiB of 32GiB sectors uniformly throughout a year will fill 40 partitions
-	// per proving period (40^2=1600). With 64GiB sectors, half that (20^2=400).
-	// TODO: randomize assignment among equally-full deadlines https://github.com/filecoin-project/specs-actors/issues/432
-
-	dlIdxs := make([]uint64, WPoStPeriodDeadlines)
-	for i := range dlIdxs {
-		dlIdxs[i] = uint64(i)
-	}
-
-	sortDeadlines := func() {
-		// Order deadline indexes by corresponding partition count (then secondarily by index) to form a queue.
-		sort.SliceStable(dlIdxs, func(i, j int) bool {
-			idxI, idxJ := dlIdxs[i], dlIdxs[j]
-			countI, countJ := deadlinePartitionCounts[idxI], deadlinePartitionCounts[idxJ]
-			if countI == countJ {
-				return idxI < idxJ
-			}
-			return countI < countJ
-		})
-	}
-
-	sortDeadlines()
-	for nextNewSector < uint64(len(newSectors)) {
-		// Assign a full partition to the least-full deadline.
-		targetDeadline := dlIdxs[0]
-		err := assignToDeadline(partitionSize, targetDeadline)
-		if err != nil {
-			return err
-		}
-		deadlinePartitionCounts[targetDeadline]++
-		// Re-sort the queue.
-		// Only the first element has changed, the remainder is still sorted, so with an insertion-sort under
-		// the hood this will be linear.
-		sortDeadlines()
-	}
-	return nil
 }
 
 // FindDeadline returns the deadline index for a given sector number.
