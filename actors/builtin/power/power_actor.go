@@ -239,9 +239,8 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 		}
 		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-
-		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
-		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
+		err = st.AddToClaim(adt.AsStore(rt), minerAddr, claim.QualityAdjPower.Neg(), claim.RawBytePower.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not add to claim for %s after loading existing claim for this address", minerAddr)
 
 		st.addPledgeTotal(pledgeAmount.Neg())
 		return nil
@@ -304,9 +303,11 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
+
+	rawBytePower, qaPower := CurrentTotalPower(&st)
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.TotalRawBytePower,
-		QualityAdjPower:  st.TotalQualityAdjPower,
+		RawBytePower:     rawBytePower,
+		QualityAdjPower:  qaPower,
 		PledgeCollateral: st.TotalPledgeCollateral,
 	}
 }
@@ -473,13 +474,16 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
-	err := rt.State().Transaction(&st, func() interface{} {
-		if err := st.deleteClaim(adt.AsStore(rt), miner); err != nil {
-			return errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
+	var err error
+	rt.State().Transaction(&st, func() interface{} {
+		err = st.deleteClaim(adt.AsStore(rt), miner)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
+			return nil
 		}
 
 		st.MinerCount -= 1
 		return nil
-	}).(error)
+	})
 	return err
 }
