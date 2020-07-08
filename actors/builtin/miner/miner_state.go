@@ -1,8 +1,10 @@
 package miner
 
 import (
+	"container/heap"
 	"fmt"
 	"reflect"
+	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -288,6 +290,10 @@ func (st *State) PutSectors(store adt.Store, newSectors ...*SectorOnChainInfo) e
 		}
 	}
 
+	if sectors.Length() > SectorsMax {
+		return xerrors.Errorf("too many sectors")
+	}
+
 	st.Sectors, err = sectors.Root()
 	if err != nil {
 		return xerrors.Errorf("failed to persist sectors: %w", err)
@@ -342,114 +348,78 @@ func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 	})
 }
 
-// Assign new sectors to pending partitions
-func (st *State) AssignPendingPartitions(store adt.Store, sectors ...*SectorOnChainInfo) (err error) {
+// Assign new sectors to deadlines.
+func (st *State) AssignSectorsToDeadlines(
+	currentEpoch abi.ChainEpoch,
+	store adt.Store,
+	sectors ...*SectorOnChainInfo,
+) error {
+
+	// TODO/XXX: we need to skip the current deadline and the next deadline,
+	// based on the current epoch.
+
+	// TODO: We shouldn't need to do this. We should store the partition
+	// size somewhere else (maybe)?
+
+	info, err := st.GetInfo(store)
+	if err != nil {
+		return err
+	}
+
+	partitionSize := info.WindowPoStPartitionSectors
+	sectorSize, err := info.SealProofType.SectorSize()
+	if err != nil {
+		return err
+	}
+
 	// TODO: Assign all sectors to "pending" partitions.
 	// We should definitely sort by sector number.
 	// Should we try to find a deadline with nearby sectors? That's probably really expensive.
-	panic("TODO")
-}
-
-// Removes and returns sector numbers (from the per-deadline expiration queue)
-// that expire at or before an epoch.
-func (st *State) PopExpiredSectors(store adt.Store, epoch abi.ChainEpoch) (*abi.BitField, error) {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return nil, err
-	}
-
-	var expiredSectors []*abi.BitField
-	err = deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
-		partitionsWithExpiredSectors, err := dl.PopExpiredPartitions(store, epoch)
-		if err != nil {
-			return err
-		}
-
-		if empty, err := partitionsWithExpiredSectors.IsEmpty(); empty || err != nil {
-			return err
-		}
-
-		partitions, err := dl.PartitionsArray(store)
-		if err != nil {
-			return err
-		}
-
-		// For each partition with an expired sector, collect the
-		// expired sectors and remove them from the queues.
-		err = partitionsWithExpiredSectors.ForEach(func(partIdx uint64) error {
-			var partition Partition
-			found, err := partitions.Get(partIdx, &partition)
-			if err != nil {
-				return err
-			}
-			if !found {
-				return fmt.Errorf("missing an expected partition")
-			}
-			partitionExpiredSectors, err := partition.PopExpiredSectors(store, epoch)
-			if err != nil {
-				return err
-			}
-			expiredSectors = append(expiredSectors, partitionExpiredSectors)
-			return partitions.Set(partIdx, &partition)
-		})
-		if err != nil {
-			return err
-		}
-		dl.Partitions, err = partitions.Root()
 		return err
+	}
+
+	// Sort sectors by number to get better runs in partitions.
+	// TODO: Assert and require these to be pre-sorted by the miner?
+	sort.Slice(sectors, func(i, j int) bool {
+		return sectors[i].SectorNumber < sectors[j].SectorNumber
 	})
-	if err != nil {
-		return nil, err
-	}
 
-	allExpiries, err := bitfield.MultiMerge(expiredSectors...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to union expired sectors: %w", err)
-	}
-	return allExpiries, err
-}
-
-// Adds some sector numbers to the set expiring at an epoch.
-// The sector numbers are given as uint64s to avoid pointless conversions.
-func (st *State) AddSectorExpirations(store adt.Store, sectors ...*SectorOnChainInfo) error {
-	if len(sectors) == 0 {
+	// TODO: We should either:
+	// 1. Inline entire deadlines into the Deadlines struct, putting PostSubmissions bitfield behind a CID.
+	//   Pro: Clean.
+	//   Con: Large Deadlines object.
+	// 2. Split deadlines into a header/details section, inlining the headers.
+	//   Pro: Small Deadlines object.
+	//   Con: Walking deadlines is now kind of funky, but not terrible.
+	// 3. Keep a separate arrays for total sectors and live sectors.
+	//   Con: Annoying to update.
+	var deadlineArr [WPoStPeriodDeadlines]*Deadline
+	deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
+		deadlineArr[int(idx)] = dl
 		return nil
-	}
+	})
 
-	arr, err := adt.AsArray(store, st.SectorExpirations)
-	if err != nil {
-		return xerrors.Errorf("failed to load sector expirations: %w", err)
-	}
+	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
+		if len(newPartitions) == 0 {
+			continue
+		}
 
-	for _, epochSet := range groupSectorsByExpiration(sectors) {
-		bf := new(abi.BitField)
-		_, err = arr.Get(uint64(epochSet.epoch), bf)
+		dl := deadlineArr[dlIdx]
+
+		err = dl.AddSectors(store, partitionSize, sectorSize, newPartitions)
 		if err != nil {
-			return xerrors.Errorf("failed to lookup sector expirations at epoch %v: %w", epochSet.epoch, err)
+			return err
 		}
 
-		bf, err = bitfield.MergeBitFields(bf, bitfield.NewFromSet(epochSet.sectors))
+		err = deadlines.UpdateDeadline(store, uint64(dlIdx), dl)
 		if err != nil {
-			return xerrors.Errorf("failed to update sector expirations at epoch %v: %w", epochSet.epoch, err)
-		}
-		count, err := bf.Count()
-		if err != nil {
-			return xerrors.Errorf("failed to count sector expirations at epoch %v: %w", epochSet.epoch, err)
-		}
-		if count > SectorsMax {
-			return fmt.Errorf("too many sectors at expiration %d, %d, max %d", epochSet.epoch, count, SectorsMax)
-		}
-
-		if err = arr.Set(uint64(epochSet.epoch), bf); err != nil {
-			return xerrors.Errorf("failed to set sector expirations at epoch %v: %w", epochSet.epoch, err)
+			return err
 		}
 	}
 
-	st.SectorExpirations, err = arr.Root()
-	if err != nil {
-		return xerrors.Errorf("failed to persist sector expirations: %w", err)
-	}
-	return nil
+	return st.SaveDeadlines(store, deadlines)
 }
 
 // Removes some sector numbers from the set expiring at an epoch.
