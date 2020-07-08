@@ -393,10 +393,15 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 	return nil
 }
 
-func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.TokenAmount {
-	Assert(epoch <= deal.EndEpoch)
+func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.TokenAmount {
+	Assert(slashEpoch <= deal.EndEpoch)
 
-	durationRemaining := deal.EndEpoch - epoch
+	// Payments are always for start -> end epoch irrespective of when the deal is slashed.
+	if slashEpoch < deal.StartEpoch {
+		slashEpoch = deal.StartEpoch
+	}
+
+	durationRemaining := deal.EndEpoch - slashEpoch
 	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
