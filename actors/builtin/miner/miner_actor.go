@@ -692,11 +692,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
 
-		err = st.AddSectorExpirations(store, newSectors...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sector expirations")
-
-		err = st.AddNewSectors(newSectorNos...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add new sectors to new sectors bitfield")
+		err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
