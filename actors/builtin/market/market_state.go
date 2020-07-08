@@ -117,7 +117,10 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		// Process deal payment for the elapsed epochs.
 		totalPayment := big.Mul(big.NewInt(int64(numEpochsElapsed)), deal.StoragePricePerEpoch)
 
-		st.transferBalance(rt, deal.Client, deal.Provider, totalPayment, et, lt)
+		// the transfer amount can be less than or equal to zero if a deal is slashed before or at the deal's start epoch.
+		if totalPayment.GreaterThan(big.Zero()) {
+			st.transferBalance(rt, deal.Client, deal.Provider, totalPayment, et, lt)
+		}
 	}
 
 	if everSlashed {
