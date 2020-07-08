@@ -396,7 +396,7 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.TokenAmount {
 	Assert(epoch <= deal.EndEpoch)
 
-	durationRemaining := deal.EndEpoch - (epoch - 1)
+	durationRemaining := deal.EndEpoch - epoch
 	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
