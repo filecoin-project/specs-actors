@@ -1244,10 +1244,12 @@ func TestCronTick(t *testing.T) {
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, start, end, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
 
+		// deal is slashed at epoch = 1 which is less than it's start epoch
 		current := abi.ChainEpoch(1)
 		rt.SetEpoch(current)
 		actor.terminateDeals(rt, provider, dealId)
 
+		// cron tick happens at startEpoch
 		current = startEpoch
 		rt.SetEpoch(current)
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
