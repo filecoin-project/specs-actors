@@ -303,16 +303,11 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
-	if st.NumMinersMeetingMinPower < ConsensusMinerMinMiners {
-		return &CurrentTotalPowerReturn{
-			RawBytePower:     st.TotalRawBytePowerNoMin,
-			QualityAdjPower:  st.TotalQualityAdjPowerNoMin,
-			PledgeCollateral: st.TotalPledgeCollateral,
-		}
-	}
+
+	rawBytePower, qaPower := CurrentTotalPower(&st)
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.TotalRawBytePower,
-		QualityAdjPower:  st.TotalQualityAdjPower,
+		RawBytePower:     rawBytePower,
+		QualityAdjPower:  qaPower,
 		PledgeCollateral: st.TotalPledgeCollateral,
 	}
 }

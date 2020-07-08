@@ -15,12 +15,16 @@ import (
 )
 
 type State struct {
-	TotalRawBytePower         abi.StoragePower
-	TotalRawBytePowerNoMin    abi.StoragePower
-	TotalQualityAdjPower      abi.StoragePower
-	TotalQualityAdjPowerNoMin abi.StoragePower
-	TotalPledgeCollateral     abi.TokenAmount
-	MinerCount                int64
+	TotalRawBytePower abi.StoragePower
+	// TotalBytesCommitted includes claims from miners below min power threshold
+	TotalBytesCommitted  abi.StoragePower
+	TotalQualityAdjPower abi.StoragePower
+	// TotalQABytesCommitted includes claims from miners below min power threshold
+	TotalQABytesCommitted abi.StoragePower
+	TotalPledgeCollateral abi.TokenAmount
+	MinerCount            int64
+	// Number of miners having proven the minimum consensus power.
+	MinerAboveMinPowerCount int64
 
 	// A queue of events to be triggered by cron, indexed by epoch.
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
@@ -30,9 +34,6 @@ type State struct {
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
-
-	// Number of miners having proven the minimum consensus power.
-	NumMinersMeetingMinPower int64
 
 	ProofValidationBatch *cid.Cid
 }
@@ -54,15 +55,16 @@ type AddrKey = adt.AddrKey
 
 func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 	return &State{
-		TotalRawBytePower:         abi.NewStoragePower(0),
-		TotalRawBytePowerNoMin:    abi.NewStoragePower(0),
-		TotalQualityAdjPower:      abi.NewStoragePower(0),
-		TotalQualityAdjPowerNoMin: abi.NewStoragePower(0),
-		TotalPledgeCollateral:     abi.NewTokenAmount(0),
-		LastEpochTick:             -1,
-		CronEventQueue:            emptyMapCid,
-		Claims:                    emptyMapCid,
-		NumMinersMeetingMinPower:  0,
+		TotalRawBytePower:       abi.NewStoragePower(0),
+		TotalBytesCommitted:     abi.NewStoragePower(0),
+		TotalQualityAdjPower:    abi.NewStoragePower(0),
+		TotalQABytesCommitted:   abi.NewStoragePower(0),
+		TotalPledgeCollateral:   abi.NewTokenAmount(0),
+		LastEpochTick:           -1,
+		CronEventQueue:          emptyMapCid,
+		Claims:                  emptyMapCid,
+		MinerCount:              0,
+		MinerAboveMinPowerCount: 0,
 	}
 }
 
@@ -86,7 +88,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	// otherwise, if another miner meets min power requirement, return false
-	if st.NumMinersMeetingMinPower > 0 {
+	if st.MinerAboveMinPowerCount > 0 {
 		return false, nil
 	}
 
@@ -126,6 +128,10 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
+	// TotalBytes always update directly
+	st.TotalQABytesCommitted = big.Add(st.TotalQABytesCommitted, qapower)
+	st.TotalBytesCommitted = big.Add(st.TotalBytesCommitted, power)
+
 	newClaim := Claim{
 		RawBytePower:    big.Add(oldClaim.RawBytePower, power),
 		QualityAdjPower: big.Add(oldClaim.QualityAdjPower, qapower),
@@ -136,12 +142,12 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 
 	if prevBelow && !stillBelow {
 		// just passed min miner size
-		st.NumMinersMeetingMinPower++
+		st.MinerAboveMinPowerCount++
 		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newClaim.QualityAdjPower)
 		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, newClaim.RawBytePower)
 	} else if !prevBelow && stillBelow {
 		// just went below min miner size
-		st.NumMinersMeetingMinPower--
+		st.MinerAboveMinPowerCount--
 		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldClaim.QualityAdjPower)
 		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, oldClaim.RawBytePower)
 	} else if !prevBelow && !stillBelow {
@@ -150,13 +156,9 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
 	}
 
-	// NoMin powers always update directly
-	st.TotalQualityAdjPowerNoMin = big.Add(st.TotalQualityAdjPowerNoMin, qapower)
-	st.TotalRawBytePowerNoMin = big.Add(st.TotalRawBytePowerNoMin, power)
-
 	AssertMsg(newClaim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", newClaim.RawBytePower)
 	AssertMsg(newClaim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)
-	AssertMsg(st.NumMinersMeetingMinPower >= 0, "negative number of miners larger than min: %v", st.NumMinersMeetingMinPower)
+	AssertMsg(st.MinerAboveMinPowerCount >= 0, "negative number of miners larger than min: %v", st.MinerAboveMinPowerCount)
 	return st.setClaim(s, miner, &newClaim)
 }
 
@@ -265,6 +267,15 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 		return err
 	}
 	return nil
+}
+
+// CurrentTotalPower returns current power values accounting for minimum miner
+// and minimum power thresholds.
+func CurrentTotalPower(st *State) (abi.StoragePower, abi.StoragePower) {
+	if st.MinerAboveMinPowerCount < ConsensusMinerMinMiners {
+		return st.TotalBytesCommitted, st.TotalQABytesCommitted
+	}
+	return st.TotalRawBytePower, st.TotalQualityAdjPower
 }
 
 func epochKey(e abi.ChainEpoch) adt.Keyer {

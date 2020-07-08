@@ -51,7 +51,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, int64(1), st.MinerCount)
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
 		assert.Equal(t, abi.NewStoragePower(0), st.TotalRawBytePower)
-		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
+		assert.Equal(t, int64(0), st.MinerAboveMinPowerCount)
 
 		claim, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 		assert.NoError(t, err)
@@ -82,8 +82,13 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	mul := func(a big.Int, b int64) big.Int {
 		return big.Mul(a, big.NewInt(b))
 	}
+	div := func(a big.Int, b int64) big.Int {
+		return big.Div(a, big.NewInt(b))
+	}
 	smallPowerUnit := big.NewInt(1_000_000)
 	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.CosensusMinerMinPower has changed requiring update to this test")
+	// Subtests implicitly rely on ConsensusMinerMinMiners = 3
+	require.Equal(t, 3, power.ConsensusMinerMinMiners)
 
 	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
@@ -159,30 +164,30 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner4)				
 		actor.createMinerBasic(rt, owner, owner, miner5)
 
-		actor.updateClaimedPower(rt, miner1, smallPowerUnit, mul(smallPowerUnit, 2))
-		actor.updateClaimedPower(rt, miner2, smallPowerUnit, mul(smallPowerUnit, 2))		
-		actor.updateClaimedPower(rt, miner3, smallPowerUnit, mul(smallPowerUnit, 2))				
+		actor.updateClaimedPower(rt, miner1, div(smallPowerUnit, 2), smallPowerUnit)
+		actor.updateClaimedPower(rt, miner2, div(smallPowerUnit, 2), smallPowerUnit)		
+		actor.updateClaimedPower(rt, miner3, div(smallPowerUnit, 2), smallPowerUnit)				
 
-		actor.updateClaimedPower(rt, miner4, powerUnit, mul(powerUnit, 2))
-		actor.updateClaimedPower(rt, miner5, powerUnit, mul(powerUnit, 2))		
+		actor.updateClaimedPower(rt, miner4, div(powerUnit, 2), powerUnit)
+		actor.updateClaimedPower(rt, miner5, div(powerUnit, 2), powerUnit)		
 
 		// Below threshold small miner power is counted
 		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 3), mul(powerUnit, 2))
-		actor.expectTotalPower(rt, expectedTotalBelow, mul(expectedTotalBelow, 2))
+		actor.expectTotalPower(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 
 		// Above threshold (power.ConsensusMinerMinMiners = 3) small miner power is ignored
 		delta := big.Sub(powerUnit, smallPowerUnit)
-		actor.updateClaimedPower(rt, miner3, delta, mul(delta, 2))
+		actor.updateClaimedPower(rt, miner3, div(delta, 2), delta)
 		expectedTotalAbove := mul(powerUnit, 3)
-		actor.expectTotalPower(rt, expectedTotalAbove, mul(expectedTotalAbove, 2))
+		actor.expectTotalPower(rt, div(expectedTotalAbove, 2), expectedTotalAbove)
 
 		st := getState(rt)
-		assert.Equal(t, int64(3), st.NumMinersMeetingMinPower)
+		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
 
 		// Less than 3 miners above threshold again small miner power is counted again
 	
-		actor.updateClaimedPower(rt, miner3, delta.Neg(), mul(delta.Neg(), 2))
-		actor.expectTotalPower(rt, expectedTotalBelow, mul(expectedTotalBelow, 2))
+		actor.updateClaimedPower(rt, miner3, div(delta.Neg(), 2), delta.Neg())
+		actor.expectTotalPower(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 	})
 
 	t.Run("all of one miner's power dissapears when that miner dips below min power threshold", func(t *testing.T) {
@@ -222,13 +227,13 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.updateClaimedPower(rt, miner2, powerUnit, big.Zero())
 		actor.updateClaimedPower(rt, miner3, powerUnit, big.Zero())
 		st := getState(rt)
-		assert.Equal(t, int64(0), st.NumMinersMeetingMinPower)
+		assert.Equal(t, int64(0), st.MinerAboveMinPowerCount)
 
 		actor.updateClaimedPower(rt, miner1, big.Zero(), powerUnit)
 		actor.updateClaimedPower(rt, miner2, big.Zero(), powerUnit)
 		actor.updateClaimedPower(rt, miner3, big.Zero(), powerUnit)
 		st = getState(rt)
-		assert.Equal(t, int64(3), st.NumMinersMeetingMinPower)
+		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
 	})
 
 	t.Run("slashing miner that is already below minimum does not impact power", func(t *testing.T) {
@@ -394,13 +399,13 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	var st power.State
 	rt.GetState(&st)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePower)
-	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePowerNoMin)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalBytesCommitted)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
-	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPowerNoMin)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
 	assert.Equal(h.t, abi.ChainEpoch(-1), st.LastEpochTick)
 	assert.Equal(h.t, int64(0), st.MinerCount)
-	assert.Equal(h.t, int64(0), st.NumMinersMeetingMinPower)
+	assert.Equal(h.t, int64(0), st.MinerAboveMinPowerCount)
 
 	verifyEmptyMap(h.t, rt, st.Claims)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)

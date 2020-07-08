@@ -27,8 +27,8 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TotalRawBytePowerNoMin (big.Int) (struct)
-	if err := t.TotalRawBytePowerNoMin.MarshalCBOR(w); err != nil {
+	// t.TotalBytesCommitted (big.Int) (struct)
+	if err := t.TotalBytesCommitted.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -37,8 +37,8 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.TotalQualityAdjPowerNoMin (big.Int) (struct)
-	if err := t.TotalQualityAdjPowerNoMin.MarshalCBOR(w); err != nil {
+	// t.TotalQABytesCommitted (big.Int) (struct)
+	if err := t.TotalQABytesCommitted.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -81,13 +81,13 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.Claims: %w", err)
 	}
 
-	// t.NumMinersMeetingMinPower (int64) (int64)
-	if t.NumMinersMeetingMinPower >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.NumMinersMeetingMinPower))); err != nil {
+	// t.MinerAboveMinPowerCount (int64) (int64)
+	if t.MinerAboveMinPowerCount >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MinerAboveMinPowerCount))); err != nil {
 			return err
 		}
 	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.NumMinersMeetingMinPower)-1)); err != nil {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.MinerAboveMinPowerCount)-1)); err != nil {
 			return err
 		}
 	}
@@ -131,12 +131,12 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.TotalRawBytePowerNoMin (big.Int) (struct)
+	// t.TotalBytesCommitted (big.Int) (struct)
 
 	{
 
-		if err := t.TotalRawBytePowerNoMin.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalRawBytePowerNoMin: %w", err)
+		if err := t.TotalBytesCommitted.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalBytesCommitted: %w", err)
 		}
 
 	}
@@ -149,12 +149,12 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.TotalQualityAdjPowerNoMin (big.Int) (struct)
+	// t.TotalQABytesCommitted (big.Int) (struct)
 
 	{
 
-		if err := t.TotalQualityAdjPowerNoMin.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalQualityAdjPowerNoMin: %w", err)
+		if err := t.TotalQABytesCommitted.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalQABytesCommitted: %w", err)
 		}
 
 	}
@@ -241,7 +241,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.Claims = c
 
 	}
-	// t.NumMinersMeetingMinPower (int64) (int64)
+	// t.MinerAboveMinPowerCount (int64) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeader(br)
 		var extraI int64
@@ -264,7 +264,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.NumMinersMeetingMinPower = int64(extraI)
+		t.MinerAboveMinPowerCount = int64(extraI)
 	}
 	// t.ProofValidationBatch (cid.Cid) (struct)
 
