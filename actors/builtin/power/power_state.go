@@ -2,7 +2,6 @@ package power
 
 import (
 	"reflect"
-	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
@@ -87,35 +86,13 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return true, nil
 	}
 
-	// otherwise, if another miner meets min power requirement, return false
-	if st.MinerAboveMinPowerCount > 0 {
+	// otherwise, if ConsensusMinerMinMiners miners meets min power requirement, return false
+	if st.MinerAboveMinPowerCount > ConsensusMinerMinMiners {
 		return false, nil
 	}
 
-	// else if none do, check whether in MIN_MINER_SIZE_TARG miners
-	if st.MinerCount <= ConsensusMinerMinMiners {
-		// miner should pass
-		return true, nil
-	}
-
-	m, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return false, err
-	}
-
-	var minerSizes []abi.StoragePower
-	var claimed Claim
-	if err = m.ForEach(&claimed, func(k string) error {
-		nominalPower := claimed.QualityAdjPower
-		minerSizes = append(minerSizes, nominalPower)
-		return nil
-	}); err != nil {
-		return false, errors.Wrap(err, "failed to iterate power table")
-	}
-
-	// get size of MIN_MINER_SIZE_TARGth largest miner
-	sort.Slice(minerSizes, func(i, j int) bool { return i > j })
-	return minerNominalPower.GreaterThanEqual(minerSizes[ConsensusMinerMinMiners-1]), nil
+	// If fewer than ConsensusMinerMinMiners over threshold miner can win a block with non-zero power
+	return minerNominalPower.GreaterThanEqual(abi.NewStoragePower(0)), nil
 }
 
 // Parameters may be negative to subtract.
@@ -270,7 +247,7 @@ func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
 }
 
 // CurrentTotalPower returns current power values accounting for minimum miner
-// and minimum power thresholds.
+// and minimum power
 func CurrentTotalPower(st *State) (abi.StoragePower, abi.StoragePower) {
 	if st.MinerAboveMinPowerCount < ConsensusMinerMinMiners {
 		return st.TotalBytesCommitted, st.TotalQABytesCommitted
