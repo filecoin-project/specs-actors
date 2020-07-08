@@ -29,12 +29,6 @@ type Deadline struct {
 	// The keys of this AMT are always sequential integers beginning with zero.
 	Partitions cid.Cid // AMT[PartitionNumber]Partition
 
-	// Partitions that will be scheduled at the start of the next proving period.
-	// Pending partitions will be _merged_ with existing partitions.
-	// The keys of this AMT are always sequential integers beginning with zero, but the partitions will be
-	// re-numbered when activated.
-	PendingPartitions cid.Cid // AMT[PartitionNumber]Partition
-
 	// Maps epochs to partitions with sectors that became faulty during that epoch.
 	FaultsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
@@ -107,19 +101,14 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 	return &Deadline{
 		Partitions:        emptyArrayCid,
-		PendingPartitions: emptyArrayCid,
-		PostSubmissions:   abi.NewBitField(),
 		FaultsEpochs:      emptyArrayCid,
 		ExpirationsEpochs: emptyArrayCid,
+		PostSubmissions:   abi.NewBitField(),
 	}
 }
 
 func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
 	return adt.AsArray(store, d.Partitions)
-}
-
-func (d *Deadline) PendingPartitionsArray(store adt.Store) (*adt.Array, error) {
-	return adt.AsArray(store, d.PendingPartitions)
 }
 
 // Adds some partition numbers to the set with faults at an epoch.
@@ -148,13 +137,13 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 
 	totalPledge := big.Zero()
 	totalPower := big.Zero()
-	var partitionExpiration Expiration
+	var partitionExpiration PowerSet
 	err = partitionExpirationQ.ForEach(&partitionExpiration, func(i int64) error {
 		if abi.ChainEpoch(i) > until {
 			return stopErr
 		}
 		expiredEpochs = append(expiredEpochs, uint64(i))
-		partitionsWithExpiredSectors, err = bitfield.MergeBitFields(partitionsWithExpiredSectors, partitionExpiration.Expired)
+		partitionsWithExpiredSectors, err = bitfield.MergeBitFields(partitionsWithExpiredSectors, partitionExpiration.Values)
 		if err != nil {
 			return err
 		}
@@ -428,12 +417,12 @@ func (dl *Deadline) AddSectors(
 
 			// Update it.
 			for _, partIdx := range update.partitions {
-				exp.Expired.Set(partIdx)
+				exp.Values.Set(partIdx)
 			}
 			exp.TotalPledge = big.Add(exp.TotalPledge, update.newPledge)
 			exp.TotalPower = big.Add(exp.TotalPower, update.newPower)
 
-			// Put it bakc.
+			// Put it back.
 			deadlineExpirations.Set(uint64(epoch), exp)
 		}
 
@@ -442,6 +431,8 @@ func (dl *Deadline) AddSectors(
 			return err
 		}
 	}
+
+	dl.LiveSectors += uint64(len(sectors))
 
 	return nil
 }

@@ -347,8 +347,8 @@ func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 
 // Assign new sectors to deadlines.
 func (st *State) AssignSectorsToDeadlines(
-	currentEpoch abi.ChainEpoch,
 	store adt.Store,
+	currentEpoch abi.ChainEpoch,
 	sectors ...*SectorOnChainInfo,
 ) error {
 
