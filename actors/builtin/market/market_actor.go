@@ -534,20 +534,6 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to delete pending proposal: %v", err)
 				}
 
-				if state.SectorStartEpoch == epochUndefined {
-					// Not yet appeared in proven sector; check for timeout.
-					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
-
-					slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
-					if !slashed.IsZero() {
-						amountSlashed = big.Add(amountSlashed, slashed)
-					}
-					if deal.VerifiedDeal {
-						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
-					}
-					return nil
-				}
-
 				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
 				if !slashAmount.IsZero() {
 					amountSlashed = big.Add(amountSlashed, slashAmount)

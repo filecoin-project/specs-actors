@@ -28,11 +28,6 @@ func dealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.Chai
 	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
 }
 
-// Penalty to provider deal collateral if the deadline expires before sector commitment.
-func collateralPenaltyForDealActivationMissed(providerCollateral abi.TokenAmount) abi.TokenAmount {
-	return providerCollateral // PARAM_FINISH
-}
-
 // Computes the weight for a deal proposal, which is a function of its size and duration.
 func DealWeight(proposal *DealProposal) abi.DealWeight {
 	dealDuration := big.NewInt(int64(proposal.Duration()))
