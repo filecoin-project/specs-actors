@@ -1214,62 +1214,6 @@ func TestCronTick(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId)
 	})
 
-	t.Run("deal lifecycle -> payment and slashing for a deal if it is slashed after the startepoch and then the first crontick happens", func(t *testing.T) {
-		start := abi.ChainEpoch(5)
-		end := abi.ChainEpoch(20)
-
-		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
-		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, start, end, 0, sectorExpiry)
-		d := actor.getDealProposal(rt, dealId)
-
-		current := abi.ChainEpoch(10)
-		rt.SetEpoch(current)
-		actor.terminateDeals(rt, provider, dealId)
-
-		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
-		require.EqualValues(t, d.ProviderCollateral, slashed)
-
-		actor.assertDealDeleted(rt, dealId)
-
-		// running cron tick again dosen't do anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
-	})
-
-	t.Run("deal lifecycle -> payment and slashing for a deal if it is slashed before the startepoch and then the first crontick happens", func(t *testing.T) {
-		start := abi.ChainEpoch(5)
-		end := abi.ChainEpoch(20)
-
-		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
-		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, start, end, 0, sectorExpiry)
-		d := actor.getDealProposal(rt, dealId)
-
-		// deal is slashed at epoch = 1 which is less than it's start epoch
-		current := abi.ChainEpoch(1)
-		rt.SetEpoch(current)
-		actor.terminateDeals(rt, provider, dealId)
-
-		// cron tick happens at startEpoch
-		current = startEpoch
-		rt.SetEpoch(current)
-		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
-		require.EqualValues(t, d.ProviderCollateral, slashed)
-
-		actor.assertDealDeleted(rt, dealId)
-
-		// running cron tick again dosen't do anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
-	})
-
-	t.Run("deal lifecycle -> deal is slashed in the same epoch as activation", func(t *testing.T) {
-
-	})
-
-	t.Run("slashing a deal after expiry does not affect balances", func(t *testing.T) {
-
-	})
-
 	t.Run("fail when deal is activated but proposal is not found", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
@@ -1286,10 +1230,6 @@ func TestCronTick(t *testing.T) {
 
 	// TODO Blocked on https://github.com/filecoin-project/specs-actors/pull/620
 	t.Run("slash timed-out deals", func(t *testing.T) {
-
-	})
-
-	t.Run("do not slash a deal if it's not scheduled for a cron tick", func(t *testing.T) {
 
 	})
 
@@ -1346,38 +1286,87 @@ func TestCronTick(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId)
 	})
 
-	t.Run("if deal has been marked for slashing, it is slashed even if it has expired", func(t *testing.T) {
-
-	})
-
-	t.Run("after a crontick, the next deal update should only be processed after a 100 epochs if deal end is after that", func(t *testing.T) {
-
-	})
-
-	t.Run("after a crontick, the next deal update should be processed on the deal end epoch if the end is less than current epoch plus 100 epochs", func(t *testing.T) {
-
-	})
-
-	t.Run("all slahsed funds should be sent to the burn actor", func(t *testing.T) {
-
-	})
-
 	// TODO This should be a separate test
 	t.Run("The locked fund tracking states should be updated correctly", func(t *testing.T) {
 
 	})
+}
 
-	t.Run("payment transfer should be made for elapsed durations across multiple ticks till the deal ends", func(t *testing.T) {
+func TestCronTickDealSlashing(t *testing.T) {
+	owner := tutil.NewIDAddr(t, 101)
+	provider := tutil.NewIDAddr(t, 102)
+	worker := tutil.NewIDAddr(t, 103)
+	client := tutil.NewIDAddr(t, 104)
+	mAddrs := &minerAddrs{owner, worker, provider}
+	sectorExpiry := abi.ChainEpoch(400)
 
-	})
+	tcs := map[string]struct {
+		dealStart        abi.ChainEpoch
+		dealEnd          abi.ChainEpoch
+		activationEpoch  abi.ChainEpoch
+		terminationEpoch abi.ChainEpoch
+		cronTickEpoch    abi.ChainEpoch
+		payment          abi.TokenAmount
+	}{
+		"deal is slashed after the startepoch and then the first crontick happens": {
+			dealStart:        abi.ChainEpoch(10),
+			dealEnd:          abi.ChainEpoch(20),
+			activationEpoch:  abi.ChainEpoch(5),
+			terminationEpoch: abi.ChainEpoch(15),
+			cronTickEpoch:    abi.ChainEpoch(16),
+			payment:          abi.NewTokenAmount(50), // (15 - 5) * 10 as deal storage fee is 10 per epoch
+		},
+		"deal is slashed at the startepoch and then the first crontick happens": {
+			dealStart:        abi.ChainEpoch(10),
+			dealEnd:          abi.ChainEpoch(20),
+			activationEpoch:  abi.ChainEpoch(5),
+			terminationEpoch: abi.ChainEpoch(10),
+			cronTickEpoch:    abi.ChainEpoch(11),
+			payment:          abi.NewTokenAmount(0), // (10 - 10) * 10
+		},
+		"deal is slashed before the startepoch and then the first crontick happens": {
+			dealStart:        abi.ChainEpoch(10),
+			dealEnd:          abi.ChainEpoch(20),
+			activationEpoch:  abi.ChainEpoch(5),
+			terminationEpoch: abi.ChainEpoch(6),
+			cronTickEpoch:    abi.ChainEpoch(10),
+			payment:          abi.NewTokenAmount(0), // (10 - 10) * 10
+		},
+		"deal is terminated at the activation epoch and then the first crontick happens": {
+			dealStart:        abi.ChainEpoch(10),
+			dealEnd:          abi.ChainEpoch(20),
+			activationEpoch:  abi.ChainEpoch(5),
+			terminationEpoch: abi.ChainEpoch(5),
+			cronTickEpoch:    abi.ChainEpoch(10),
+			payment:          abi.NewTokenAmount(0), // (10 - 10) * 10
+		},
+	}
 
-	t.Run("process ALL deals thah haven't been processed since the last cron update", func(t *testing.T) {
+	for n, tc := range tcs {
+		t.Run(n, func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
-	})
+			// publish and activate
+			rt.SetEpoch(tc.activationEpoch)
+			dealId := actor.publishAndActivateDeal(rt, client, mAddrs, tc.dealStart, tc.dealEnd, tc.activationEpoch, sectorExpiry)
+			d := actor.getDealProposal(rt, dealId)
 
-	t.Run("multiple cron ticks do not abort after a deal is deleted", func(t *testing.T) {
+			// terminate
+			rt.SetEpoch(tc.terminationEpoch)
+			actor.terminateDeals(rt, provider, dealId)
 
-	})
+			//  cron tick
+			rt.SetEpoch(tc.cronTickEpoch)
+			pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, tc.cronTickEpoch, dealId)
+			require.EqualValues(t, tc.payment, pay)
+			require.EqualValues(t, d.ProviderCollateral, slashed)
+
+			actor.assertDealDeleted(rt, dealId)
+
+			// running cron tick again dosen't do anything
+			actor.cronTickNoChangeBalances(rt, client, provider)
+		})
+	}
 }
 
 func TestMarketActorDeals(t *testing.T) {
@@ -1546,8 +1535,13 @@ func (h *marketActorTestHarness) cronTickAndAssertBalances(rt *mock.Runtime, cli
 	paymentEnd := d.EndEpoch
 	if s.SlashEpoch != -1 {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d.ProviderCollateral, nil, exitcode.Ok)
-		paymentEnd = s.SlashEpoch
 		amountSlashed = d.ProviderCollateral
+
+		if s.SlashEpoch < d.StartEpoch {
+			paymentEnd = d.StartEpoch
+		} else {
+			paymentEnd = s.SlashEpoch
+		}
 	} else if currentEpoch < paymentEnd {
 		paymentEnd = currentEpoch
 	}
@@ -1562,7 +1556,8 @@ func (h *marketActorTestHarness) cronTickAndAssertBalances(rt *mock.Runtime, cli
 
 	// expected updated amounts
 	updatedClientEscrow := big.Sub(cEscrow, payment)
-	updatedProviderEscrow := big.Sub(big.Add(pEscrow, payment), amountSlashed)
+	updatedProviderEscrow := big.Add(pEscrow, payment)
+	updatedProviderEscrow = big.Sub(updatedProviderEscrow, amountSlashed)
 	updatedClientLocked := big.Sub(cLocked, payment)
 	updatedProviderLocked := pLocked
 	// if the deal has expired or been slashed, locked amount will be zero for provider and client.
@@ -1576,8 +1571,8 @@ func (h *marketActorTestHarness) cronTickAndAssertBalances(rt *mock.Runtime, cli
 
 	require.EqualValues(h.t, updatedClientEscrow, h.getEscrowBalance(rt, client))
 	require.EqualValues(h.t, updatedClientLocked, h.getLockedBalance(rt, client))
-	require.EqualValues(h.t, updatedProviderEscrow, h.getEscrowBalance(rt, provider))
-	require.EqualValues(h.t, updatedProviderLocked, h.getLockedBalance(rt, provider))
+	require.Equal(h.t, updatedProviderLocked, h.getLockedBalance(rt, provider))
+	require.Equal(h.t, updatedProviderEscrow.Int64(), h.getEscrowBalance(rt, provider).Int64())
 
 	return
 }
