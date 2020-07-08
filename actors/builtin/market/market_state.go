@@ -98,23 +98,20 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		return amountSlashed, epochUndefined, false
 	}
 
-	dealEnd := deal.EndEpoch
+	paymentEndEpoch := deal.EndEpoch
 	if everSlashed {
-		Assert(state.SlashEpoch <= dealEnd)
-		dealEnd = state.SlashEpoch
+		Assert(state.SlashEpoch <= paymentEndEpoch)
+		paymentEndEpoch = state.SlashEpoch
+	} else if epoch < paymentEndEpoch {
+		paymentEndEpoch = epoch
 	}
 
-	elapsedStart := deal.StartEpoch
-	if everUpdated && state.LastUpdatedEpoch > elapsedStart {
-		elapsedStart = state.LastUpdatedEpoch
+	paymentStartEpoch := deal.StartEpoch
+	if everUpdated && state.LastUpdatedEpoch > paymentStartEpoch {
+		paymentStartEpoch = state.LastUpdatedEpoch
 	}
 
-	elapsedEnd := dealEnd
-	if epoch < elapsedEnd {
-		elapsedEnd = epoch
-	}
-
-	numEpochsElapsed := elapsedEnd - elapsedStart
+	numEpochsElapsed := paymentEndEpoch - paymentStartEpoch
 
 	{
 		// Process deal payment for the elapsed epochs.
