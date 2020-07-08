@@ -126,6 +126,19 @@ func (d *Deadline) PendingPartitionsArray(store adt.Store) (*adt.Array, error) {
 	return adt.AsArray(store, d.PendingPartitions)
 }
 
+// Adds some partition numbers to the set with faults at an epoch.
+func (d *Deadline) AddFaultEpochPartitions(store adt.Store, epoch abi.ChainEpoch, partitions ...uint64) error {
+	queue, err := loadEpochQueue(store, d.FaultsEpochs)
+	if err != nil {
+		return xerrors.Errorf("failed to load fault epoch partitions: %w", err)
+	}
+	if err := queue.AddToQueueValues(epoch, partitions...); err != nil {
+		return xerrors.Errorf("failed to mutate deadline fault epochs: %w", err)
+	}
+	d.FaultsEpochs, err = queue.Root()
+	return nil
+}
+
 // ActivatePendingPartitions merges pending partitions into the deadline.
 func (d *Deadline) ActivatatePendingPartitions(store adt.Store) error {
 	pendingPartitions, err := d.PendingPartitionsArray(store)

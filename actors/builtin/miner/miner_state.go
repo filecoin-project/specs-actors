@@ -62,7 +62,9 @@ type State struct {
 	// Eager fault detection processing on fault/recovery declarations or PoSt may set a smaller number,
 	// indicating partial progress, from which subsequent processing should continue.
 	// In the range [0, WPoStProvingPeriodDeadlines).
-	NextDeadlineToProcessFaults uint64
+	//NextDeadlineToProcessFaults uint64
+	// TODO minerstate: probably need a LastDeadlineProcessed to record successfull deadline cron
+	// (to handle no cron on empty tipsets)
 }
 
 type MinerInfo struct {

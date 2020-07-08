@@ -88,6 +88,10 @@ const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 // The maximum age of a fault before the sector is terminated.
 const FaultMaxAge = WPoStProvingPeriod*14 - 1
 
+// With 48 deadlines (half-hour), 200 partitions per declaration permits faulting a full EiB of 32GiB
+// sectors with 1 message per epoch within a single half-hour deadline. A miner can of course submit more messages.
+const FaultMaxPartitions = 200
+
 // Staging period for a miner worker key change.
 // Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
 // it can be changed. It's the only safe value, though. We may implement a mitigation mechanism such as a second
