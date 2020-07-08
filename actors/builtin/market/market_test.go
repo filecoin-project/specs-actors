@@ -1178,7 +1178,7 @@ func TestCronTick(t *testing.T) {
 		require.EqualValues(t, pLocked, actor.getLockedBalance(rt, provider))
 	})
 
-	t.Run("expired deals should unlock the remaining client and provider locked balance after payment and deal should be deleted", func(t *testing.T) {
+	t.Run("expired deal should unlock the remaining client and provider locked balance after payment and deal should be deleted", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		deal := actor.getDealProposal(rt, dealId)
@@ -1203,7 +1203,37 @@ func TestCronTick(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId)
 	})
 
-	t.Run("deal slashing should slash provider collateral, unlock remaining client balance and delete the deal", func(t *testing.T) {
+	t.Run("deal slashing should pay fees upto the slashing epoch to provider,"+
+		"slash provider collateral, unlock remaining client balance and delete the deal", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
+		deal := actor.getDealProposal(rt, dealId)
+
+		// slash at start + 2
+		rt.SetEpoch(startEpoch + 2)
+		actor.terminateDeals(rt, provider, dealId)
+
+		cEscrow := actor.getEscrowBalance(rt, client)
+		pEscrow := actor.getEscrowBalance(rt, provider)
+
+		// move the current epoch so that deal is process but not expired
+		rt.SetEpoch(endEpoch - 1)
+		actor.cronTick(rt)
+
+		// assert balances
+		payment := deal.TotalStorageFee()
+
+		require.EqualValues(t, big.Sub(cEscrow, payment), actor.getEscrowBalance(rt, client))
+		require.EqualValues(t, big.Zero(), actor.getLockedBalance(rt, client))
+
+		require.EqualValues(t, big.Add(pEscrow, payment), actor.getEscrowBalance(rt, provider))
+		require.EqualValues(t, big.Zero(), actor.getLockedBalance(rt, provider))
+
+		// deal should be deleted
+		actor.assertDealDeleted(rt, dealId)
+	})
+
+	t.Run("if deal has been marked for slashing, it is slashed even if it has expired", func(t *testing.T) {
 
 	})
 
@@ -1520,13 +1550,14 @@ func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 
-	states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
+	// TODO Uncomment after https://github.com/filecoin-project/specs-actors/pull/618
+	/*states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
 	require.NoError(h.t, err)
 
 	s, found, err := states.Get(dealId)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
-	require.Nil(h.t, s)
+	require.Nil(h.t, s)*/
 }
 
 func (h *marketActorTestHarness) assertDealsTerminated(rt *mock.Runtime, epoch abi.ChainEpoch, dealIds ...abi.DealID) {
