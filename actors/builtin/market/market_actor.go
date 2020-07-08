@@ -78,7 +78,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	nominal, recipient := escrowAddress(rt, params.ProviderOrClientAddress)
 
-	amountSlashedTotal := abi.NewTokenAmount(0)
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -106,11 +105,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		return nil
 	})
 
-	if amountSlashedTotal.GreaterThan(big.Zero()) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
-	}
-
 	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
@@ -119,9 +113,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
 	msgValue := rt.Message().ValueReceived()
-	if msgValue.LessThan(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "add balance called with negative value %v", msgValue)
-	}
 
 	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
@@ -463,6 +454,11 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 			if !found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "no state found for deal in sector being terminated")
+			}
+
+			// if a deal is already slashed, we don't need to do anything here.
+			if state.SlashEpoch != epochUndefined {
+				continue
 			}
 
 			// mark the deal for slashing here.
