@@ -516,15 +516,6 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
-				state, found, err := states.Get(dealID)
-				if err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
-				}
-
-				if !found {
-					return nil
-				}
-
 				deal := st.mustGetDeal(rt, dealID)
 				dcid, err := deal.Cid()
 				if err != nil {
@@ -532,6 +523,25 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				}
 				if err := pending.Delete(adt.CidKey(dcid)); err != nil {
 					rt.Abortf(exitcode.ErrIllegalState, "failed to delete pending proposal: %v", err)
+				}
+
+				state, found, err := states.Get(dealID)
+				if err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
+				}
+				// deal has been published but not activated yet -> terminate it as it has timed out
+				if !found {
+					// Not yet appeared in proven sector; check for timeout.
+					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
+
+					slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
+					if !slashed.IsZero() {
+						amountSlashed = big.Add(amountSlashed, slashed)
+					}
+					if deal.VerifiedDeal {
+						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
+					}
+					return nil
 				}
 
 				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())

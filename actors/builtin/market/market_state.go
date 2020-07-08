@@ -208,6 +208,34 @@ func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
 	}
 }
 
+// Deal start deadline elapsed without appearing in a proven sector.
+// Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
+// for both provider and client.
+func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
+	Assert(state.SectorStartEpoch == epochUndefined)
+
+	if err := st.unlockBalance(lt, deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client storage fee: %s", err)
+	}
+	if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client collateral: %s", err)
+	}
+
+	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
+	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
+
+	if err := st.slashBalance(et, lt, deal.Provider, amountSlashed, ProviderCollateral); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to slash balance: %s", err)
+	}
+
+	if err := st.unlockBalance(lt, deal.Provider, amountRemaining, ProviderCollateral); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to unlock deal provider balance: %s", err)
+	}
+
+	st.deleteDeal(rt, dealID)
+	return amountSlashed
+}
+
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
 func (st *State) processDealExpired(rt Runtime, deal *DealProposal, state *DealState, lt *adt.BalanceTable, dealID abi.DealID) {
 	Assert(state.SectorStartEpoch != epochUndefined)
