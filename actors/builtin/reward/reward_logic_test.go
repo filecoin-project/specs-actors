@@ -67,3 +67,15 @@ func TestBaselineReward(t *testing.T) {
 
 	golden.Assert(t, b.Bytes())
 }
+
+func TestSimpleRewrad(t *testing.T) {
+	b := &bytes.Buffer{}
+	b.WriteString("x, y\n")
+	for i := int64(0); i < 512; i++ {
+		x := i * 5000
+		reward := computeReward(abi.ChainEpoch(x), big.Zero(), big.Zero())
+		fmt.Fprintf(b, "%d,%s\n", x, reward.Int)
+	}
+
+	golden.Assert(t, b.Bytes())
+}
