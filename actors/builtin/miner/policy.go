@@ -42,7 +42,9 @@ func activePartitionsMax(partitionSectorCount uint64) uint64 {
 // The maximum number of partitions that may be submitted in a single message.
 // This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
 func windowPoStMessagePartitionsMax(partitionSectorCount uint64) uint64 {
-	return 100_000 / partitionSectorCount
+	// Load at most 50 partitions, or 10k sector infos
+	const sectorInfosMax = 10_000
+	return min64(sectorInfosMax/partitionSectorCount, 50)
 }
 
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
