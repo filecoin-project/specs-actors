@@ -6,6 +6,7 @@ import (
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -131,47 +132,20 @@ func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, faultEpo
 		return nil
 	}
 
-	{
-		p.Faults, err = bitfield.MergeBitFields(p.Faults, sectorNos)
-		if err != nil {
-			return err
-		}
-
-		count, err := p.Faults.Count()
-		if err != nil {
-			return err
-		}
-		if count > SectorsMax {
-			return fmt.Errorf("too many faults %d, max %d", count, SectorsMax)
-		}
+	p.Faults, err = bitfield.MergeBitFields(p.Faults, sectorNos)
+	if err != nil {
+		return err
 	}
-	{
-		epochFaultArr, err := adt.AsArray(store, p.FaultsEpochs)
-		if err != nil {
-			return err
-		}
 
-		bf := abi.NewBitField()
-		_, err = epochFaultArr.Get(uint64(faultEpoch), bf)
-		if err != nil {
-			return err
-		}
-
-		bf, err = bitfield.MergeBitFields(bf, sectorNos)
-		if err != nil {
-			return err
-		}
-
-		if err = epochFaultArr.Set(uint64(faultEpoch), bf); err != nil {
-			return err
-		}
-
-		p.FaultsEpochs, err = epochFaultArr.Root()
-		if err != nil {
-			return err
-		}
+	queue, err := loadEpochQueue(store, p.FaultsEpochs)
+	if err != nil {
+		return xerrors.Errorf("failed to load partition fault epochs: %w", err)
 	}
-	return nil
+	if err := queue.AddToQueueBitfield(faultEpoch, sectorNos); err != nil {
+		return xerrors.Errorf("failed to add faults to partition: %w", err)
+	}
+	p.FaultsEpochs, err = queue.Root()
+	return err
 }
 
 // Removes sector numbers from faults and fault epochs, if present.
@@ -326,7 +300,6 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*b
 
 	return expiredSectors, nil
 }
-
 
 func (p *Partition) MarshalCBOR(w io.Writer) error {
 	panic("implement me")
