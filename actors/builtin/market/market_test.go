@@ -1213,13 +1213,10 @@ func TestLockedFundTrackingStates(t *testing.T) {
 	rt.SetEpoch(curr)
 	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d3.ProviderCollateral, nil, exitcode.Ok)
 	actor.cronTick(rt)
-
-	// subtract payment of deal1 and deal2 and slashing of deal3 as deal3 have timed out
 	payment := big.Product(big.NewInt(2), d1.StoragePricePerEpoch)
 	csf = big.Sub(big.Sub(csf, payment), d3.TotalStorageFee())
 	plc = big.Sub(plc, d3.ProviderCollateral)
 	clc = big.Sub(clc, d3.ClientCollateral)
-
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// deal1 and deal2 will now be charged at epoch = 51 + 100 = 151, so nothing changes before that
