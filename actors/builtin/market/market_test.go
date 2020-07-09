@@ -1368,6 +1368,31 @@ func TestCronTickDealSlashing(t *testing.T) {
 	startEpoch := abi.ChainEpoch(50)
 	endEpoch := abi.ChainEpoch(300)
 
+	{
+		t.Run("deal is slashed AT the end epoch -> should NOT be slashed and should be considered expired", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+			dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
+			d := actor.getDealProposal(rt, dealId)
+
+			// set current epoch to deal end epoch and attempt to slash it -> should not be slashed
+			// as deal is considered to be expired.
+			current := endEpoch
+			rt.SetEpoch(current)
+			actor.terminateDeals(rt, provider, dealId)
+
+			// on the next cron tick, it will be processed as expired
+			current = 300
+			rt.SetEpoch(current)
+			pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
+			duration := big.NewInt(250)
+			require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
+			require.EqualValues(t, big.Zero(), slashed)
+
+			// deal should be deleted as it should have expired
+			actor.assertDealDeleted(rt, dealId)
+		})
+	}
+
 	// end-end test for slashing
 	{
 		t.Run("regular payments till deal is slashed and then slashing is processed", func(t *testing.T) {
@@ -1820,14 +1845,12 @@ func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 
-	// TODO Uncomment after https://github.com/filecoin-project/specs-actors/pull/618
-	/*states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
+	states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
 	require.NoError(h.t, err)
-
 	s, found, err := states.Get(dealId)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
-	require.Nil(h.t, s)*/
+	require.Nil(h.t, s)
 }
 
 func (h *marketActorTestHarness) assertDealsTerminated(rt *mock.Runtime, epoch abi.ChainEpoch, dealIds ...abi.DealID) {
