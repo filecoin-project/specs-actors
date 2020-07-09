@@ -44,6 +44,11 @@ func (d *DeadlineInfo) HasElapsed() bool {
 	return d.CurrentEpoch >= d.Close
 }
 
+// Epoch at which the subsequent deadline opens.
+func (d *DeadlineInfo) NextOpen() abi.ChainEpoch {
+	return d.Close + 1
+}
+
 // Whether the deadline's fault cutoff has passed.
 func (d *DeadlineInfo) FaultCutoffPassed() bool {
 	return d.CurrentEpoch >= d.FaultCutoff

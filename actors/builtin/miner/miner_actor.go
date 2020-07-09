@@ -30,7 +30,8 @@ type CronEventType int64
 const (
 	CronEventWorkerKeyChange CronEventType = iota
 	CronEventPreCommitExpiry
-	CronEventProvingPeriod
+	//CronEventProvingPeriod
+	CronEventProvingDeadline
 )
 
 type CronEventPayload struct {
@@ -114,9 +115,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
-	// Register cron callback for epoch before the first proving period starts.
+	// Register first cron callback for epoch before the first proving period starts.
 	enrollCronEvent(rt, periodStart-1, &CronEventPayload{
-		EventType: CronEventProvingPeriod,
+		EventType: CronEventProvingDeadline,
 	})
 	return nil
 }
@@ -267,7 +268,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Double check that the current proving period has started. This should only happen if the cron actor wasn't invoked.
-		// TODO deadline-cron: check instead that the prior deadline cron has executed
+		// TODO deadline-cron: check instead that the prior deadline cron has executed.
+		// Or remove this check now that sector deadline allocation is immediate?
 		if !currDeadline.PeriodStarted() {
 			rt.Abortf(exitcode.ErrIllegalState, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
 		}
@@ -284,8 +286,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		partitions, err := deadline.PartitionsArray(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d partitions", params.Deadline)
 
-		// TODO deadline-cron: defer fault epoch (and power loss/penalty?) to end of deadline
-		faultEpoch := currDeadline.PeriodStart
+		faultEpoch := currDeadline.NextOpen()
 
 		partitionIdxs := make([]uint64, 0, len(params.Partitions))
 		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
@@ -372,6 +373,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
 
 		// Penalize new skipped faults and retracted recoveries
+		// TODO deadline-cron: defer power loss and penalty to end of deadline
 		penalizeFaultSectors := append(newFaultSectors, retractedRecoverySectors...)
 		penalty, err = unlockUndeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, pwrTotal.QualityAdjPower, penalizeFaultSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
@@ -400,7 +402,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	})
 
 	// Restore power for recovered sectors. Remove power for new faults.
-	requestUpdateSectorPower(rt, info.SectorSize, recoveredSectors, newFaultSectors)
+	requestUpdatePowerForSectors(rt, info.SectorSize, recoveredSectors, newFaultSectors)
 	// Burn penalties.
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 	return nil
@@ -720,7 +722,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	}).(abi.TokenAmount)
 
 	// Request power and pledge update for activated sector.
-	requestUpdateSectorPower(rt, info.SectorSize, newSectors, nil)
+	requestUpdatePowerForSectors(rt, info.SectorSize, newSectors, nil)
 	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVestedAmount))
 
 	return nil
@@ -917,8 +919,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 					// Add new faults to state and charge fee.
 					// Note: this sets the fault epoch for all declarations to be the beginning of this proving period,
 					// even if some sectors have already been proven in this period.
-					// TODO deadline-cron: use the deadline epoch rather than PP start epoch
-					err = partition.AddFaults(store, newFaults, st.ProvingPeriodStart)
+					err = partition.AddFaults(store, newFaults, targetDeadline.NextOpen())
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
 
 					// Note: this charges a fee for all new declarations, even if the sectors have already been proven
@@ -975,7 +976,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 
 	// Remove power for new faulty sectors.
 	// TODO: defer power loss until the respective deadline https://github.com/filecoin-project/specs-actors/issues/414
-	requestUpdateSectorPower(rt, info.SectorSize, nil, newFaultSectors)
+	requestUpdatePowerForSectors(rt, info.SectorSize, nil, newFaultSectors)
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 	return nil
 }
@@ -1154,6 +1155,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		}
 
 		// Verify locked funds are are at least the sum of sector initial pledges after vesting.
+		// TODO: simplify this just to refuse to vest if pledge requirement is unmet https://github.com/filecoin-project/specs-actors/issues/537
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
 		return newlyVestedFund
@@ -1181,8 +1183,10 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	switch payload.EventType {
-	case CronEventProvingPeriod:
-		handleProvingPeriod(rt)
+	//case CronEventProvingPeriod:
+	//	handleProvingPeriod(rt)
+	case CronEventProvingDeadline:
+		handleProvingDeadline(rt)
 	case CronEventPreCommitExpiry:
 		if payload.Sectors != nil {
 			checkPrecommitExpiry(rt, payload.Sectors)
@@ -1206,17 +1210,17 @@ func handleProvingPeriod(rt Runtime) {
 	pwrTotal := requestCurrentTotalPower(rt)
 
 	var st State
-	{
-		// Vest locked funds.
-		// This happens first so that any subsequent penalties are taken from locked pledge, rather than free funds.
-		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
-			return newlyVestedFund
-		}).(abi.TokenAmount)
-
-		notifyPledgeChanged(rt, newlyVestedAmount.Neg())
-	}
+	//{
+	//	// Vest locked funds.
+	//	// This happens first so that any subsequent penalties are taken from locked pledge, rather than free funds.
+	//	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+	//		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+	//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+	//		return newlyVestedFund
+	//	}).(abi.TokenAmount)
+	//
+	//	notifyPledgeChanged(rt, newlyVestedAmount.Neg())
+	//}
 
 	// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
 	// exactly the final epoch of the period; it may be slightly later (i.e. in the subsequent period).
@@ -1225,28 +1229,28 @@ func handleProvingPeriod(rt Runtime) {
 	// Use deadline.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
 	deadline := NewDeadlineInfo(0, 0, 0)
 	var info *MinerInfo
-	{
-		// Detect and penalize missing proofs.
-		var detectedFaultSectors []*SectorOnChainInfo
-		currEpoch := rt.CurrEpoch()
-		penalty := abi.NewTokenAmount(0)
-		rt.State().Transaction(&st, func() interface{} {
-			info = getMinerInfo(rt, &st)
-			deadline = st.DeadlineInfo(currEpoch)
-			if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
-				deadlines, err := st.LoadDeadlines(store)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-				detectedFaultSectors, penalty = processMissingPoStFaults(rt, &st, store, deadlines,
-					deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd(), epochReward,
-					pwrTotal.QualityAdjPower)
-			}
-			return nil
-		})
-
-		// Remove power for new faults, and burn penalties.
-		requestUpdateSectorPower(rt, info.SectorSize, nil, detectedFaultSectors)
-		burnFundsAndNotifyPledgeChange(rt, penalty)
-	}
+	//{
+	//	// Detect and penalize missing proofs.
+	//	var detectedFaultSectors []*SectorOnChainInfo
+	//	currEpoch := rt.CurrEpoch()
+	//	penalty := abi.NewTokenAmount(0)
+	//	rt.State().Transaction(&st, func() interface{} {
+	//		info = getMinerInfo(rt, &st)
+	//		deadline = st.DeadlineInfo(currEpoch)
+	//		if deadline.PeriodStarted() { // Skip checking faults on the first, incomplete period.
+	//			deadlines, err := st.LoadDeadlines(store)
+	//			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+	//			detectedFaultSectors, penalty = processMissingPoStFaults(rt, &st, store, deadlines,
+	//				deadline.PeriodStart, WPoStPeriodDeadlines, deadline.PeriodEnd(), epochReward,
+	//				pwrTotal.QualityAdjPower)
+	//		}
+	//		return nil
+	//	})
+	//
+	//	// Remove power for new faults, and burn penalties.
+	//	requestUpdatePowerForSectors(rt, info.SectorSize, nil, detectedFaultSectors)
+	//	burnFundsAndNotifyPledgeChange(rt, penalty)
+	//}
 
 	{
 		// Expire sectors that are due.
@@ -1291,30 +1295,30 @@ func handleProvingPeriod(rt Runtime) {
 	{
 		// Establish new proving sets and clear proofs.
 		rt.State().Transaction(&st, func() interface{} {
-			deadlines, err := st.LoadDeadlines(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-
-			// Assign new sectors to deadlines.
-			newSectors, err := st.NewSectors.All(NewSectorsPerPeriodMax)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expand new sectors")
-
-			if len(newSectors) > 0 {
-				//if period end is not in the future, get randomness from previous epoch
-				randomnessEpoch := minEpoch(deadline.PeriodEnd(), rt.CurrEpoch()-ElectionLookback)
-				assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randomnessEpoch, nil)
-				err = AssignNewSectors(deadlines, info.WindowPoStPartitionSectors, newSectors, assignmentSeed)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
-
-				// Store updated deadline state.
-				err = st.SaveDeadlines(store, deadlines)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
-
-				st.NewSectors = abi.NewBitField()
-			}
+			//deadlines, err := st.LoadDeadlines(store)
+			//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+			//
+			//// Assign new sectors to deadlines.
+			//newSectors, err := st.NewSectors.All(NewSectorsPerPeriodMax)
+			//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expand new sectors")
+			//
+			//if len(newSectors) > 0 {
+			//	//if period end is not in the future, get randomness from previous epoch
+			//	randomnessEpoch := minEpoch(deadline.PeriodEnd(), rt.CurrEpoch()-ElectionLookback)
+			//	assignmentSeed := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, randomnessEpoch, nil)
+			//	err = AssignNewSectors(deadlines, info.WindowPoStPartitionSectors, newSectors, assignmentSeed)
+			//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
+			//
+			//	// Store updated deadline state.
+			//	err = st.SaveDeadlines(store, deadlines)
+			//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
+			//
+			//	st.NewSectors = abi.NewBitField()
+			//}
 
 			// Reset PoSt submissions for next period.
-			err = st.ClearPoStSubmissions()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to clear PoSt submissions")
+			//err = st.ClearPoStSubmissions()
+			//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to clear PoSt submissions")
 
 			// Set new proving period start.
 			if deadline.PeriodStarted() {
@@ -1331,16 +1335,122 @@ func handleProvingPeriod(rt Runtime) {
 	})
 }
 
-// Detects faults from PoSt submissions that have not arrived in schedule earlier in the current proving period.
-func detectFaultsThisPeriod(rt Runtime, st *State, store adt.Store, currDeadline *DeadlineInfo, deadlines *Deadlines, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower) ([]*SectorOnChainInfo, abi.TokenAmount) {
-	if currDeadline.PeriodElapsed() {
-		// A cron event has not yet processed the previous proving period and established the next one.
-		// This is possible in the first non-empty epoch of a proving period if there was an empty tipset on the
-		// last epoch of the previous period.
-		// The period must be reset before processing missing-post faults.
-		rt.Abortf(exitcode.ErrIllegalState, "proving period at %d elapsed, next one not yet opened", currDeadline.PeriodStart)
+func handleProvingDeadline(rt Runtime) {
+	store := adt.AsStore(rt)
+
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+
+	var st State
+	{
+		// Vest locked funds.
+		// This happens first so that any subsequent penalties are taken from locked pledge, rather than free funds.
+		// TODO minerstate: collapse state transactions into one
+		newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+			newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+			return newlyVestedFund
+		}).(abi.TokenAmount)
+
+		notifyPledgeChanged(rt, newlyVestedAmount.Neg())
 	}
-	return processMissingPoStFaults(rt, st, store, deadlines, currDeadline.PeriodStart, currDeadline.Index, currDeadline.CurrentEpoch, epochReward, currentTotalPower)
+
+	// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
+	// exactly the final epoch of the deadline; it may be slightly later (i.e. in the subsequent deadline/period).
+	// Further, this method is invoked once *before* the first proving period starts, after the actor is first
+	// constructed; this is detected by !dlInfo.PeriodStarted().
+	// Use dlInfo.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
+	dlInfo := NewDeadlineInfo(0, 0, 0)
+	var info *MinerInfo
+	{
+		currEpoch := rt.CurrEpoch()
+		lostPowerTotal := PowerPair{big.Zero(), big.Zero()}
+		penalty := abi.NewTokenAmount(0)
+		rt.State().Transaction(&st, func() interface{} {
+			info = getMinerInfo(rt, &st)
+			dlInfo = st.DeadlineInfo(currEpoch)
+			if !dlInfo.PeriodStarted() {
+				return nil // Skip checking faults on the first, incomplete period.
+			}
+			deadlines, err := st.LoadDeadlines(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+			deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
+
+			partitions, err := deadline.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlInfo.Index)
+
+			{
+				// Detect and penalize missing proofs.
+				faultEpoch := dlInfo.NextOpen()
+				penalizePowerTotal := big.Zero()
+
+				for i := uint64(0); i < partitions.Length(); i++ {
+					key := PartitionKey{dlInfo.Index, i}
+					proven, err := deadline.PostSubmissions.IsSet(i)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check submission for %v", key)
+					if proven {
+						continue
+					}
+
+					var partition Partition
+					found, err := partitions.Get(i, &partition)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions %v", key)
+					if !found {
+						rt.Abortf(exitcode.ErrIllegalState, "no partition %v", key)
+					}
+
+					newFaultPower, failedRecoveryPower, err := partition.RecordMissedPost(store, faultEpoch)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record missed PoSt for %v", key)
+
+					// Failed recoveries attract a penalty, but not repeated subtraction of the power.
+					lostPowerTotal = lostPowerTotal.Add(newFaultPower)
+					penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultPower.QA, failedRecoveryPower.QA)
+
+					// Save new partition state.
+					err = partitions.Set(i, &partition)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
+				}
+
+				// Unlock sector penalty for all undeclared faults.
+				penaltyTarget := PledgePenaltyForLateUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal)
+				penalty, err = st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
+
+				// Reset PoSt submissions.
+				deadline.PostSubmissions = abi.NewBitField()
+			}
+
+			{
+				// Expire sectors that are due.
+				expired := NewPowerSet()
+				rt.State().Transaction(&st, func() interface{} {
+					var err error
+					expired, err = deadline.PopExpiredSectors(store, dlInfo.Close)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
+					return nil
+				})
+
+				// Terminate expired sectors (sends messages to power and market actors).
+				terminateSectors(rt, expired.Values, power.SectorTerminationExpired, epochReward, pwrTotal.QualityAdjPower)
+			}
+
+
+
+			// Save new deadline state.
+			err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %v", dlInfo.Index)
+
+			return nil
+		})
+
+		// Remove power for new faults, and burn penalties.
+		requestUpdatePower(rt, lostPowerTotal.Neg())
+		burnFundsAndNotifyPledgeChange(rt, penalty)
+	}
+
+
+
+	// TODO: bump current deadline index forward
 }
 
 // Discovers how skipped faults declared during post intersect with existing faults and recoveries, then unlocks funds
@@ -1382,109 +1492,6 @@ func processSkippedFaults(rt Runtime, store adt.Store, faultEpoch abi.ChainEpoch
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
 	return newFaults, retractedRecoveries
-}
-
-// Detects faults from missing PoSt submissions that did not arrive by some deadline, and moves
-// the NextDeadlineToProcessFaults index up to that deadline.
-func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines *Deadlines, periodStart abi.ChainEpoch, beforeDeadline uint64, currEpoch abi.ChainEpoch, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower) ([]*SectorOnChainInfo, abi.TokenAmount) {
-	// This method must be called to process the end of one proving period before moving on to the process something
-	// the next. Usually, sinceDeadline would be <= beforeDeadline since the former is updated to match the latter
-	// and the call during proving period cron will set NextDeadlineToProcessFaults back to zero.
-	// In the odd case where the proving period's penultimate tipset is empty, this method must be invoked by the cron
-	// callback before allowing any fault/recovery declaration or PoSt to do partial processing.
-	AssertMsg(st.NextDeadlineToProcessFaults <= beforeDeadline, "invalid next-deadline %d after before-deadline %d while detecting faults",
-		st.NextDeadlineToProcessFaults, beforeDeadline)
-
-	info := getMinerInfo(rt, st)
-	detectedFaults, failedRecoveries, err := computeFaultsFromMissingPoSts(info.WindowPoStPartitionSectors, st.Faults, st.Recoveries, st.PostSubmissions, deadlines, st.NextDeadlineToProcessFaults, beforeDeadline)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute detected faults")
-	st.NextDeadlineToProcessFaults = beforeDeadline % WPoStPeriodDeadlines
-
-	err = st.AddFaults(store, detectedFaults, periodStart)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record new faults")
-
-	err = st.RemoveRecoveries(failedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record failed recoveries")
-
-	// Load info for sectors.
-	// TODO: this is potentially super expensive for a large miner failing to submit proofs.
-	// https://github.com/filecoin-project/specs-actors/issues/411
-	detectedFaultSectors, err := st.LoadSectorInfos(store, detectedFaults)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-	failedRecoverySectors, err := st.LoadSectorInfos(store, failedRecoveries)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
-
-	// Unlock sector penalty for all undeclared faults.
-	latePenalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
-	penalty, err := unlockUndeclaredLateFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, latePenalizedSectors)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
-
-	return detectedFaultSectors, penalty
-}
-
-// Computes the sectors that were expected to be present in partitions of a PoSt submission but were not, in the
-// deadlines from sinceDeadline (inclusive) to beforeDeadline (exclusive).
-func computeFaultsFromMissingPoSts(partitionSize uint64, faults, recoveries, postSubmissions *abi.BitField, deadlines *Deadlines, sinceDeadline, beforeDeadline uint64) (detectedFaults, failedRecoveries *abi.BitField, err error) {
-	// TODO: Iterating this bitfield and keeping track of what partitions we're expecting could remove the
-	// need to expand this into a potentially-giant map. But it's tricksy.
-	// https://github.com/filecoin-project/specs-actors/issues/477
-	submissions, err := postSubmissions.AllMap(activePartitionsMax(partitionSize))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to expand submissions: %w", err)
-	}
-
-	deadlineFirstPartition := uint64(0)
-	var fGroups, rGroups []*abi.BitField
-	for dlIdx := uint64(0); dlIdx < beforeDeadline; dlIdx++ {
-		dlPartCount, dlSectorCount, err := DeadlineCount(deadlines, partitionSize, dlIdx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to count deadline %d partitions: %w", dlIdx, err)
-		}
-		if dlIdx < sinceDeadline {
-			deadlineFirstPartition += dlPartCount
-			continue
-		}
-		deadlineSectors := deadlines.Due[dlIdx]
-		for dlPartIdx := uint64(0); dlPartIdx < dlPartCount; dlPartIdx++ {
-			if !submissions[deadlineFirstPartition+dlPartIdx] {
-				// No PoSt received in prior period.
-				partFirstSectorIdx := dlPartIdx * partitionSize
-				partSectorCount := min64(partitionSize, dlSectorCount-partFirstSectorIdx)
-
-				partitionSectors, err := deadlineSectors.Slice(partFirstSectorIdx, partSectorCount)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to slice deadline %d partition %d sectors %d..%d: %w",
-						dlIdx, dlPartIdx, partFirstSectorIdx, partFirstSectorIdx+dlPartCount, err)
-				}
-
-				// Record newly-faulty sectors.
-				newFaults, err := bitfield.SubtractBitField(partitionSectors, faults)
-				if err != nil {
-					return nil, nil, fmt.Errorf("bitfield subtract failed: %s", err)
-				}
-				fGroups = append(fGroups, newFaults)
-
-				// Record failed recoveries.
-				// By construction, these are already faulty and thus not in newFaults.
-				failedRecovery, err := bitfield.IntersectBitField(partitionSectors, recoveries)
-				if err != nil {
-					return nil, nil, fmt.Errorf("bitfield intersect failed: %s", err)
-				}
-				rGroups = append(rGroups, failedRecovery)
-			}
-		}
-
-		deadlineFirstPartition += dlPartCount
-	}
-	detectedFaults, err = bitfield.MultiMerge(fGroups...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to union detected fault groups: %w", err)
-	}
-	failedRecoveries, err = bitfield.MultiMerge(rGroups...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to union failed recovery groups: %w", err)
-	}
-	return
 }
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
@@ -1770,7 +1777,7 @@ func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power
 	// TODO: could we compress the multiple calls to power actor into one sector termination call?
 	// https://github.com/filecoin-project/specs-actors/issues/478
 	// Compute the power delta as if recovering all the currently-faulty sectors before terminating all of them.
-	requestUpdateSectorPower(rt, info.SectorSize, faultySectors, terminatedSectors)
+	requestUpdatePowerForSectors(rt, info.SectorSize, faultySectors, terminatedSectors)
 	requestTerminateDeals(rt, dealIDs)
 
 	burnFundsAndNotifyPledgeChange(rt, penalty)
@@ -1816,26 +1823,31 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
 
-func requestUpdateSectorPower(rt Runtime, sectorSize abi.SectorSize, sectorsAdded, sectorsRemoved []*SectorOnChainInfo) (rawDelta, qaDelta big.Int) {
+func requestUpdatePowerForSectors(rt Runtime, sectorSize abi.SectorSize, sectorsAdded, sectorsRemoved []*SectorOnChainInfo) (delta PowerPair) {
 	if len(sectorsAdded)+len(sectorsRemoved) == 0 {
 		return
 	}
 	addRawPower, addQAPower := PowerForSectors(sectorSize, sectorsAdded)
 	remRawPower, remQAPower := PowerForSectors(sectorSize, sectorsRemoved)
-	rawDelta = big.Sub(addRawPower, remRawPower)
-	qaDelta = big.Sub(addQAPower, remQAPower)
+	delta = PowerPair{
+		Raw: big.Sub(addRawPower, remRawPower),
+		QA:  big.Sub(addQAPower, remQAPower),
+	}
+	requestUpdatePower(rt, delta)
+	return delta
+}
 
+func requestUpdatePower(rt Runtime, delta PowerPair) {
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,
 		&power.UpdateClaimedPowerParams{
-			RawByteDelta:         rawDelta,
-			QualityAdjustedDelta: qaDelta,
+			RawByteDelta:         delta.Raw,
+			QualityAdjustedDelta: delta.QA,
 		},
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to update power for sectors added %v, removed %v", sectorsAdded, sectorsRemoved)
-	return
+	builtin.RequireSuccess(rt, code, "failed to update power with %v", delta)
 }
 
 func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {

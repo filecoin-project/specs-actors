@@ -48,25 +48,21 @@ type State struct {
 	// The first epoch in this miner's current proving period. This is the first epoch in which a PoSt for a
 	// partition at the miner's first deadline may arrive. Alternatively, it is after the last epoch at which
 	// a PoSt for the previous window is valid.
-	// Always greater than zero, his may be greater than the current epoch for genesis miners in the first
+	// Always greater than zero, this may be greater than the current epoch for genesis miners in the first
 	// WPoStProvingPeriod epochs of the chain; the epochs before the first proving period starts are exempt from Window
 	// PoSt requirements.
-	// Updated at the end of every period by a power actor cron event.
+	// Updated at the end of every period by a cron callback.
 	ProvingPeriodStart abi.ChainEpoch
+
+	// Index of the deadline within the proving period beginning at ProvingPeriodStart that has not yet been
+	// finalized.
+	// Updated at the end of each deadline window by a cron callback.
+	CurrentDeadline uint64
 
 	// The sector numbers due for PoSt at each deadline in the current proving period, frozen at period start.
 	// New sectors are added and expired ones removed at proving period boundary.
 	// Faults are not subtracted from this in state, but on the fly.
 	Deadlines cid.Cid
-
-	// The index of the next deadline for which faults should been detected and processed (after it's closed).
-	// The proving period cron handler will always reset this to 0, for the subsequent period.
-	// Eager fault detection processing on fault/recovery declarations or PoSt may set a smaller number,
-	// indicating partial progress, from which subsequent processing should continue.
-	// In the range [0, WPoStProvingPeriodDeadlines).
-	//NextDeadlineToProcessFaults uint64
-	// TODO minerstate: probably need a LastDeadlineProcessed to record successfull deadline cron
-	// (to handle no cron on empty tipsets)
 }
 
 type MinerInfo struct {
@@ -154,6 +150,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, 
 		PreCommittedSectors: emptyMapCid,
 		Sectors:             emptyArrayCid,
 		ProvingPeriodStart:  periodStart,
+		CurrentDeadline:     0,
 		Deadlines:           emptyDeadlinesCid,
 	}, nil
 }
@@ -198,9 +195,9 @@ func (st *State) SaveInfo(store adt.Store, info *MinerInfo) error {
 	return nil
 }
 
-// Returns deadline calculations for the current proving period.
+// Returns deadline calculations for the current (according to state) proving period.
 func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *DeadlineInfo {
-	return ComputeProvingPeriodDeadline(st.ProvingPeriodStart, currEpoch)
+	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
 }
 
 func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
@@ -481,16 +478,6 @@ func (st *State) ClearSectorExpirations(store adt.Store, expirations ...abi.Chai
 	return err
 }
 
-// Adds sectors numbers to faults and fault epochs.
-func (st *State) AddFaults(store adt.Store, sectorNos *abi.BitField, faultEpoch abi.ChainEpoch) (err error) {
-	panic("deprecated")
-}
-
-// Removes sector numbers from faults and fault epochs, if present.
-func (st *State) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
-	panic("deprecated")
-}
-
 // Iterates faults by declaration epoch, in order.
 func (st *State) ForEachFaultEpoch(store adt.Store, cb func(epoch abi.ChainEpoch, faults *abi.BitField) error) error {
 	arr, err := adt.AsArray(store, st.FaultEpochs)
@@ -523,16 +510,6 @@ func (st *State) ClearFaultEpochs(store adt.Store, epochs ...abi.ChainEpoch) err
 
 	st.FaultEpochs, err = arr.Root()
 	return err
-}
-
-// Adds sectors to recoveries.
-func (st *State) AddRecoveries(sectorNos *abi.BitField) (err error) {
-	panic("deprecated")
-}
-
-// Removes sectors from recoveries, if present.
-func (st *State) RemoveRecoveries(sectorNos *abi.BitField) (err error) {
-	panic("deprecated")
 }
 
 // Loads sector info for a sequence of sectors.

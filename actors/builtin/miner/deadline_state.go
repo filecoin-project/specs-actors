@@ -191,6 +191,7 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 }
 
 // TODO: Change this to ForEachExpired... to avoid creating a bitfield that's too large.
+// TODO: This must update the partitions' state with Terminate bits, updated power total etc
 func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*PowerSet, error) {
 	partitionExpiration, err := dl.PopExpiredPartitions(store, until)
 	if err != nil {
