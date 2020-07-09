@@ -252,7 +252,7 @@ func (dl *Deadline) AddSectors(
 
 	type partitionSet struct {
 		partitions []uint64
-		newPower   abi.StoragePower
+		newPower   PowerPair
 		newPledge  abi.StoragePower
 	}
 
@@ -327,7 +327,7 @@ func (dl *Deadline) AddSectors(
 
 				if set, ok := partitionDeadlineUpdates[group.epoch]; ok {
 					set.partitions = append(set.partitions, partIdx)
-					set.newPower = big.Add(set.newPower, group.totalPower)
+					set.newPower = set.newPower.Add(group.totalPower)
 					set.newPledge = big.Add(set.newPledge, group.totalPledge)
 				} else {
 					partitionDeadlineUpdates[group.epoch] = &partitionSet{
@@ -342,7 +342,7 @@ func (dl *Deadline) AddSectors(
 				//
 
 				partition.TotalPledge = big.Add(partition.TotalPledge, group.totalPledge)
-				partition.TotalPower = big.Add(partition.TotalPledge, group.totalPower)
+				partition.TotalPower = partition.TotalPower.Add(group.totalPower)
 
 				//
 				// Update partition sectors bitfields.
@@ -420,7 +420,7 @@ func (dl *Deadline) AddSectors(
 				exp.Values.Set(partIdx)
 			}
 			exp.TotalPledge = big.Add(exp.TotalPledge, update.newPledge)
-			exp.TotalPower = big.Add(exp.TotalPower, update.newPower)
+			exp.TotalPower = exp.TotalPower.Add(update.newPower)
 
 			// Put it back.
 			deadlineExpirations.Set(uint64(epoch), exp)

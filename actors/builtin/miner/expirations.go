@@ -10,7 +10,7 @@ import (
 type sectorEpochSet struct {
 	epoch       abi.ChainEpoch
 	sectors     []uint64
-	totalPower  abi.StoragePower
+	totalPower  PowerPair
 	totalPledge abi.TokenAmount
 }
 
@@ -23,7 +23,7 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 	sectorsByExpiration := make(map[abi.ChainEpoch][]*SectorOnChainInfo)
 
 	for _, sector := range sectors {
-		sectorsByExpiration[sector.Expiration] = append(sectorsByExpiration[sector.Expiration], uint64(sector.SectorNumber))
+		sectorsByExpiration[sector.Expiration] = append(sectorsByExpiration[sector.Expiration], sector)
 	}
 
 	sectorEpochSets := make([]sectorEpochSet, 0, len(sectorsByExpiration))
@@ -31,10 +31,13 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 	// This map iteration is non-deterministic but safe because we sort by epoch below.
 	for expiration, sectors := range sectorsByExpiration { //nolint:nomaprange // this is copy and sort
 		sectorNumbers := make([]uint64, len(sectors))
-		totalPower := big.Zero()
+		totalPower := PowerPairZero()
 		totalPledge := big.Zero()
-		for i, sector := range sectors {
-			totalPower = big.Add(totalPower, QAPowerForSector(sectorSize, sector))
+		for _, sector := range sectors {
+			totalPower = totalPower.Add(PowerPair{
+				Raw: big.NewIntUnsigned(uint64(sectorSize)),
+				QA:  QAPowerForSector(sectorSize, sector),
+			})
 			totalPledge = big.Add(totalPledge, sector.InitialPledge)
 		}
 		sectorEpochSets = append(sectorEpochSets, sectorEpochSet{
