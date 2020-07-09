@@ -33,8 +33,6 @@ type Deadline struct {
 	FaultsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
 	// Maps epochs to partitions with sectors that expire in that epoch.
-	// NOTE: Partitions in this queue may be pending. Apply pending
-	// partitions before processing.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]PowerSet
 
 	// Partitions numbers with PoSt submissions since the proving period started.
