@@ -100,7 +100,8 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 
 	dealEnd := deal.EndEpoch
 	if everSlashed {
-		Assert(state.SlashEpoch <= dealEnd)
+		AssertMsg(epoch >= state.SlashEpoch, "current epoch less than slash epoch")
+		AssertMsg(state.SlashEpoch <= dealEnd, "slash epoch greater than deal end epoch")
 		dealEnd = state.SlashEpoch
 	}
 
