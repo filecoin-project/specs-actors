@@ -15,16 +15,14 @@ import (
 // PowerSet represents a set of "values" and their total power + pledge.
 // "things" can be either partitions or sectors, depending on the context.
 type PowerSet struct {
-	Values      *abi.BitField
-	TotalPower  PowerPair
-	TotalPledge abi.TokenAmount // XXX: do we need this if releasing pledge is always deferred to miner defrag?
+	Values     *abi.BitField
+	TotalPower PowerPair
 }
 
 func NewPowerSet() *PowerSet {
 	return &PowerSet{
-		Values:      abi.NewBitField(),
-		TotalPower:  PowerPairZero(),
-		TotalPledge: big.Zero(),
+		Values:     abi.NewBitField(),
+		TotalPower: PowerPairZero(),
 	}
 }
 
@@ -63,7 +61,7 @@ func (q epochPowerQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, 
 }
 
 // Removes values from any and all queue entries in which they appear.
-func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[uint64]PowerPair, pledges map[uint64]abi.TokenAmount) error {
+func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[uint64]PowerPair) error {
 	var epochsDeleted []uint64
 	var epochFaults PowerSet
 	if err := q.Array.ForEach(&epochFaults, func(i int64) error {
@@ -89,13 +87,6 @@ func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[uin
 					return xerrors.Errorf("no power for sector %d", sno)
 				}
 				epochFaults.TotalPower = epochFaults.TotalPower.Sub(pwr)
-			}
-			if pledges != nil {
-				pledge, ok := pledges[sno]
-				if !ok {
-					return xerrors.Errorf("no pledge for sector %d", sno)
-				}
-				epochFaults.TotalPledge = big.Sub(epochFaults.TotalPledge, pledge)
 			}
 			return nil
 		}); err != nil {
