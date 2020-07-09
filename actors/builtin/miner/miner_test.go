@@ -578,7 +578,7 @@ func TestCommitments(t *testing.T) {
 
 		makeDealIDs := func(n int) []abi.DealID {
 			ids := make([]abi.DealID, n)
-			for i, _ := range ids {
+			for i := range ids {
 				ids[i] = abi.DealID(i)
 			}
 			return ids
