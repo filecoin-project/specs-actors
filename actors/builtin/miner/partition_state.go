@@ -159,12 +159,12 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*b
 		return nil, err
 	}
 
-	expiredSectors := bitfield.NewBitField()
+	expiredSectors := abi.NewBitField()
 
 	var expiredEpochs []uint64
 	var bf bitfield.BitField
 	err = sectorExpirationQ.ForEach(&bf, func(i int64) error {
-		if i > until {
+		if abi.ChainEpoch(i) > until {
 			return stopErr
 		}
 		expiredEpochs = append(expiredEpochs, uint64(i))
