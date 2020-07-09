@@ -562,6 +562,52 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 	})
+
+	t.Run("fails with too many deals", func(t *testing.T) {
+		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *miner.DeadlineInfo) {
+			actor := newHarness(t, periodOffset)
+			actor.setProofType(proof)
+			rt := builderForHarness(actor).
+				WithBalance(bigBalance, big.Zero()).
+				Build(t)
+			rt.SetEpoch(periodOffset + 1)
+			actor.constructAndVerify(rt)
+			deadline := actor.deadline(rt)
+			return rt, actor, deadline
+		}
+
+		makeDealIDs := func(n int) []abi.DealID {
+			ids := make([]abi.DealID, n)
+			for i, _ := range ids {
+				ids[i] = abi.DealID(i)
+			}
+			return ids
+		}
+
+		// Make a good commitment for the proof to target.
+		sectorNo := abi.SectorNumber(100)
+
+		dealLimits := map[abi.RegisteredSealProof]int{
+			abi.RegisteredSealProof_StackedDrg2KiBV1:  1,
+			abi.RegisteredSealProof_StackedDrg32GiBV1: 256,
+			abi.RegisteredSealProof_StackedDrg64GiBV1: 512,
+		}
+
+		for proof, limit := range dealLimits {
+			// attempt to pre-commmit a sector with too many sectors
+			rt, actor, deadline := setup(proof)
+			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, deadline.PeriodEnd(), makeDealIDs(limit+1))
+			rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
+				actor.preCommitSector(rt, precommit)
+			})
+
+			// sector at or below limit succeeds
+			rt, actor, deadline = setup(proof)
+			precommit = actor.makePreCommit(sectorNo, rt.Epoch()-1, deadline.PeriodEnd(), makeDealIDs(limit))
+			actor.preCommitSector(rt, precommit)
+		}
+
+	})
 }
 
 func TestWindowPost(t *testing.T) {

@@ -145,13 +145,13 @@ func precommitDeposit(qaSectorPower abi.StoragePower, networkQAPower abi.Storage
 }
 
 // Determine maximum number of deal miner's sector can hold
-//func dealPerSectorLimit(size abi.SectorSize) uint64 {
-//	maxDeals := uint64(size / DealLimitDenominator)
-//	if maxDeals == 0 {
-//		maxDeals = 1
-//	}
-//	return maxDeals
-//}
+func dealPerSectorLimit(size abi.SectorSize) uint64 {
+	maxDeals := uint64(size / DealLimitDenominator)
+	if maxDeals == 0 {
+		maxDeals = 1
+	}
+	return maxDeals
+}
 
 type BigFrac struct {
 	numerator   big.Int
