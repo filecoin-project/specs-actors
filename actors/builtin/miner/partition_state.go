@@ -28,7 +28,7 @@ type Partition struct {
 	EarlyTerminated cid.Cid // AMT[ChainEpoch]BitField
 
 	// Maps epochs to sectors that became faulty during that epoch.
-	FaultsEpochs cid.Cid // AMT[ChainEpoch]BitField
+	FaultsEpochs cid.Cid // AMT[ChainEpoch]PowerSet, with pledge always zero
 	// Maps epochs sectors that expire in that epoch.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
@@ -64,107 +64,61 @@ func ConstructPartition(emptyArray cid.Cid) *Partition {
 	}
 }
 
-func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, faultEpoch abi.ChainEpoch) (err error) {
-	empty, err := sectorNos.IsEmpty()
-	if err != nil {
-		return err
-	}
-	if empty {
-		return nil
-	}
-
+// Records a set of sectors as faulty at some epoch.
+// The sectors are added to the Faults bitfield and the FaultyPower is increased.
+// The sectors are also added to the FaultEpochs queue, recording the associated power.
+func (p *Partition) AddFaults(store adt.Store, faultEpoch abi.ChainEpoch, sectorNos *abi.BitField, power PowerPair) (err error) {
 	p.Faults, err = bitfield.MergeBitFields(p.Faults, sectorNos)
 	if err != nil {
 		return err
 	}
+	p.FaultyPower = p.FaultyPower.Add(power)
 
-	queue, err := loadEpochQueue(store, p.FaultsEpochs)
+	queue, err := loadPowerQueue(store, p.FaultsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load partition fault epochs: %w", err)
 	}
-	if err := queue.AddToQueueBitfield(faultEpoch, sectorNos); err != nil {
-		return xerrors.Errorf("failed to add faults to partition: %w", err)
+	if err := queue.AddToQueue(faultEpoch, sectorNos, power, big.Zero()); err != nil {
+		return xerrors.Errorf("failed to add faults to partition queue: %w", err)
 	}
 	p.FaultsEpochs, err = queue.Root()
 	return err
 }
 
-// Removes sector numbers from faults and fault epochs, if present.
-func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField) error {
+// Removes sector numbers from faults and whichever fault epochs they belong to.
+// The sectors are removed from the Faults bitfield and FaultyPower reduced.
+// The sectors are removed from the FaultEpochsQueue, reducing the queue power by the sum of sector powers.
+// Consistency between the partition totals and queue depend on the reported sectors actually being faulty.
+func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField, power PowerPair, powers map[uint64]PowerPair) error {
 	if empty, err := sectorNos.IsEmpty(); err != nil {
 		return err
 	} else if empty {
 		return nil
 	}
 
+	// XXX: sanity check containsAll?
 	if newFaults, err := bitfield.SubtractBitField(p.Faults, sectorNos); err != nil {
 		return err
 	} else {
 		p.Faults = newFaults
 	}
+	p.FaultyPower = p.FaultyPower.Sub(power)
 
-	arr, err := adt.AsArray(store, p.FaultsEpochs)
+	queue, err := loadPowerQueue(store, p.FaultsEpochs)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to load partition fault epochs: %w", err)
 	}
-
-	type change struct {
-		index uint64
-		value *abi.BitField
-	}
-
-	var (
-		epochsChanged []change
-		epochsDeleted []uint64
-	)
-
-	epochFaultsOld := &abi.BitField{}
-	err = arr.ForEach(epochFaultsOld, func(i int64) error {
-		countOld, err := epochFaultsOld.Count()
-		if err != nil {
-			return err
-		}
-
-		epochFaultsNew, err := bitfield.SubtractBitField(epochFaultsOld, sectorNos)
-		if err != nil {
-			return err
-		}
-
-		countNew, err := epochFaultsNew.Count()
-		if err != nil {
-			return err
-		}
-
-		if countNew == 0 {
-			epochsDeleted = append(epochsDeleted, uint64(i))
-		} else if countOld != countNew {
-			epochsChanged = append(epochsChanged, change{index: uint64(i), value: epochFaultsNew})
-		}
-
-		return nil
-	})
+	err = queue.RemoveFromQueueAll(sectorNos, powers, nil)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to remove faults from partition queue: %w", err)
 	}
 
-	err = arr.BatchDelete(epochsDeleted)
-	if err != nil {
-		return err
-	}
-
-	for _, change := range epochsChanged {
-		err = arr.Set(change.index, change.value)
-		if err != nil {
-			return err
-		}
-	}
-
-	p.FaultsEpochs, err = arr.Root()
+	p.FaultsEpochs, err = queue.Root()
 	return err
 }
 
-// Adds sectors to recoveries.
-func (p *Partition) AddRecoveries(sectorNos *abi.BitField) (err error) {
+// Adds sectors to recoveries and recovering power. Assumes not already present.
+func (p *Partition) AddRecoveries(sectorNos *abi.BitField, power PowerPair) (err error) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
 		return err
@@ -176,19 +130,12 @@ func (p *Partition) AddRecoveries(sectorNos *abi.BitField) (err error) {
 	if err != nil {
 		return err
 	}
-
-	count, err := p.Recoveries.Count()
-	if err != nil {
-		return err
-	}
-	if count > SectorsMax {
-		return fmt.Errorf("too many recoveries %d, max %d", count, SectorsMax)
-	}
+	p.RecoveringPower = p.RecoveringPower.Add(power)
 	return nil
 }
 
-// Removes sectors from recoveries, if present.
-func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField) (err error) {
+// Removes sectors from recoveries and recovering power. Assumes sectors are present.
+func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField, power PowerPair) (err error) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
 		return err
@@ -197,7 +144,11 @@ func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField) (err error) {
 		return nil
 	}
 	p.Recoveries, err = bitfield.SubtractBitField(p.Recoveries, sectorNos)
-	return err
+	if err != nil {
+		return err
+	}
+	p.RecoveringPower = p.RecoveringPower.Sub(power)
+	return nil
 }
 
 func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*bitfield.BitField, error) {
@@ -256,15 +207,14 @@ func (p *Partition) RecordMissedPost(store adt.Store, faultEpoch abi.ChainEpoch)
 		return newFaultPower, failedRecoveryPower, xerrors.Errorf("bitfield intersect failed: %w", err)
 	}
 
-	// Compute faulty power for penalization.
+	// Compute faulty power for penalization. New faulty power is the total power minus already faulty.
 	newFaultPower = p.TotalPower.Sub(p.FaultyPower)
 	failedRecoveryPower = p.RecoveringPower
 
 	// Mark all sectors faulty and not recovering.
-	if err := p.AddFaults(store, newFaults, faultEpoch); err != nil {
+	if err := p.AddFaults(store, faultEpoch, newFaults, newFaultPower); err != nil {
 		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record new faults: %w", err)
 	}
-	p.FaultyPower = p.TotalPower
 
 	if err := p.RemoveRecoveries(failedRecoveries); err != nil {
 		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record failed recoveries: %w", err)

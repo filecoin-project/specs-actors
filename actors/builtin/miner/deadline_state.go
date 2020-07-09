@@ -136,7 +136,7 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 	var expiredEpochs []uint64
 
 	totalPledge := big.Zero()
-	totalPower := big.Zero()
+	totalPower := PowerPairZero()
 	var partitionExpiration PowerSet
 	err = partitionExpirationQ.ForEach(&partitionExpiration, func(i int64) error {
 		if abi.ChainEpoch(i) > until {
@@ -147,8 +147,8 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 		if err != nil {
 			return err
 		}
-		totalPledge = big.Add(totalPower, partitionExpiration.TotalPledge)
-		totalPower = big.Add(totalPower, partitionExpiration.TotalPower)
+		totalPledge = big.Add(totalPledge, partitionExpiration.TotalPledge)
+		totalPower = totalPower.Add(partitionExpiration.TotalPower)
 		return nil
 	})
 	switch err {
