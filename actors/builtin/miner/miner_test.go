@@ -695,11 +695,11 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		rt.ReplaceState(st)
 
-		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos)
+		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
 		cfg := &poStConfig{
-			expectedRawPowerDelta: rawPower,
-			expectedQAPowerDelta:  qaPower,
+			expectedRawPowerDelta: pwr.Raw,
+			expectedQAPowerDelta:  pwr.QA,
 			expectedPenalty:       big.Zero(),
 			skipped:               abi.NewBitField(),
 		}
@@ -714,15 +714,15 @@ func TestWindowPost(t *testing.T) {
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
 
-		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos[:1])
+		pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
 
 		// expected penalty is the fee for an undeclared fault
-		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
 
 		cfg := &poStConfig{
 			skipped:               skipped,
-			expectedRawPowerDelta: rawPower.Neg(),
-			expectedQAPowerDelta:  qaPower.Neg(),
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
 			expectedPenalty:       expectedPenalty,
 		}
 
@@ -742,15 +742,15 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		assert.Greater(t, count, uint64(0))
 
-		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, infos)
+		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
 		// expected penalty is the fee for an undeclared fault
-		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
 
 		cfg := &poStConfig{
 			skipped:               skipped,
-			expectedRawPowerDelta: rawPower.Neg(),
-			expectedQAPowerDelta:  qaPower.Neg(),
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
 			expectedPenalty:       expectedPenalty,
 		}
 
@@ -770,12 +770,12 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		rt.ReplaceState(st)
 
-		_, qaPower := miner.PowerForSectors(actor.sectorSize, infos[:1])
+		pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
 
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
 		// expected penalty is the fee for an undeclared fault
-		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
 
 		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
@@ -798,12 +798,12 @@ func TestWindowPost(t *testing.T) {
 		nextDeadline := st.DeadlineInfo(deadline.Close + 1)
 		nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline.Index)
 
-		_, qaPower := miner.PowerForSectors(actor.sectorSize, nextInfos[:1])
+		pwr := miner.PowerForSectors(actor.sectorSize, nextInfos[:1])
 
 		// skip the first sector in the partition
 		skipped := bitfield.NewFromSet([]uint64{uint64(nextInfos[0].SectorNumber)})
 		// expected penalty is the fee for an undeclared fault
-		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
 
 		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
@@ -831,15 +831,15 @@ func TestWindowPost(t *testing.T) {
 		assert.Greater(t, len(infos3), 0)
 
 		// expect power to be deducted for all sectors in first two deadlines
-		rawPower, qaPower := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
+		pwr := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
 
 		// expected penalty is the late undeclared fault penalty for all faulted sectors including retracted recoveries..
-		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
 
 		cfg := &poStConfig{
 			skipped:               abi.NewBitField(),
-			expectedRawPowerDelta: rawPower.Neg(),
-			expectedQAPowerDelta:  qaPower.Neg(),
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
 			expectedPenalty:       expectedPenalty,
 		}
 
