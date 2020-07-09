@@ -2157,14 +2157,14 @@ func unlockUndeclaredLateFaultPenalty(st *State, store adt.Store, sectorSize abi
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func unlockTerminationPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, curEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+func unlockTerminationPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.InitialPledge, curEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
+		fee := PledgePenaltyForTermination(s.InitialPledge, currEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
-	return totalFee, nil
+	return st.UnlockUnvestedFunds(store, currEpoch, totalFee)
 }
 
 // Returns the sum of the raw byte and quality-adjusted power for sectors.
