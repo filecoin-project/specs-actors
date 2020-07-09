@@ -1207,7 +1207,7 @@ func TestTerminateSectors(t *testing.T) {
 		sector := commitSector(t, rt)
 		var initialLockedFunds abi.TokenAmount
 
-		// A miner will path the minimum of termination fee and locked funds. Add some locked funds to ensure
+		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
 		// correct fee calculation is used.
 		actor.addLockedFund(rt, big.NewInt(1<<61))
 

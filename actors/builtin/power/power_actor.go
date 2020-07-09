@@ -2,6 +2,7 @@ package power
 
 import (
 	"bytes"
+	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
