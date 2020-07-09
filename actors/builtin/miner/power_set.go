@@ -11,14 +11,14 @@ import (
 // "things" can be either partitions or sectors, depending on the context.
 type PowerSet struct {
 	Values      *abi.BitField
-	TotalPower  abi.StoragePower
+	TotalPower  PowerPair
 	TotalPledge abi.TokenAmount
 }
 
 func NewPowerSet() *PowerSet {
 	return &PowerSet{
 		Values:      abi.NewBitField(),
-		TotalPower:  big.Zero(),
+		TotalPower:  PowerPairZero(),
 		TotalPledge: big.Zero(),
 	}
 }

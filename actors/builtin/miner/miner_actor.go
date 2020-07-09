@@ -1361,7 +1361,7 @@ func handleProvingDeadline(rt Runtime) {
 	var info *MinerInfo
 	{
 		currEpoch := rt.CurrEpoch()
-		lostPowerTotal := PowerPair{big.Zero(), big.Zero()}
+		powerDelta := PowerPair{big.Zero(), big.Zero()}
 		penalty := abi.NewTokenAmount(0)
 		rt.State().Transaction(&st, func() interface{} {
 			info = getMinerInfo(rt, &st)
@@ -1401,7 +1401,7 @@ func handleProvingDeadline(rt Runtime) {
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record missed PoSt for %v", key)
 
 					// Failed recoveries attract a penalty, but not repeated subtraction of the power.
-					lostPowerTotal = lostPowerTotal.Add(newFaultPower)
+					powerDelta = powerDelta.Sub(newFaultPower)
 					penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultPower.QA, failedRecoveryPower.QA)
 
 					// Save new partition state.
@@ -1419,19 +1419,26 @@ func handleProvingDeadline(rt Runtime) {
 
 			{
 				// Expire sectors that are due.
-				expired := NewPowerSet()
-				rt.State().Transaction(&st, func() interface{} {
-					var err error
-					expired, err = deadline.PopExpiredSectors(store, dlInfo.Close)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
-					return nil
-				})
+				// XXX Assuming that this updates all the deadline and partition state for the expiring sectors,
+				// marking them terminated, subtracting power etc.
+				expired, err := deadline.PopExpiredSectors(store, dlInfo.Close)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
 
-				// Terminate expired sectors (sends messages to power and market actors).
-				terminateSectors(rt, expired.Values, power.SectorTerminationExpired, epochReward, pwrTotal.QualityAdjPower)
+				// FIXME minerstate: ensure that power that was faulty at expiration is not deducted again.
+				// We might do that by having fault declaration subtract the faulty power from the expiration queue
+				// entries
+				// Similarly, ensure that the expiration queue doesn't contain any already-expired sectors.
+
+				// XXX: the deals are not terminated yet, that is left for a defrag. Since the sector is
+				// terminating healthily, this just results in the miner's collateral being locked up.
+				// Maybe we should have a deal termination queue to do this work, but spread out.
+
+				// Release pledge requirement
+				st.AddInitialPledgeRequirement(expired.TotalPledge.Neg())
+
+				// Record power reduction
+				powerDelta = powerDelta.Sub(expired.TotalPower)
 			}
-
-
 
 			// Save new deadline state.
 			err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
@@ -1441,10 +1448,9 @@ func handleProvingDeadline(rt Runtime) {
 		})
 
 		// Remove power for new faults, and burn penalties.
-		requestUpdatePower(rt, lostPowerTotal.Neg())
+		requestUpdatePower(rt, powerDelta)
 		burnFundsAndNotifyPledgeChange(rt, penalty)
 	}
-
 
 
 	// TODO: bump current deadline index forward
