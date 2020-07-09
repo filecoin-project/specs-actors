@@ -33,11 +33,19 @@ type Partition struct {
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
 	// Power of not-yet-terminated sectors (incl faulty)
-	TotalPower abi.StoragePower
+	TotalPower PowerPair
 	// Power of currently-faulty sectors
-	FaultyPower abi.StoragePower
+	FaultyPower PowerPair
+	// Power of expected-to-recover sectors
+	RecoveringPower PowerPair
 	// Sum of initial pledge of sectors
 	TotalPledge abi.TokenAmount
+}
+
+// Value type for a pair of raw and QA power.
+type PowerPair struct {
+	Raw abi.StoragePower
+	QA  abi.StoragePower
 }
 
 func ConstructPartition(emptyArray cid.Cid) *Partition {
@@ -49,8 +57,9 @@ func ConstructPartition(emptyArray cid.Cid) *Partition {
 		EarlyTerminated:   emptyArray,
 		FaultsEpochs:      emptyArray,
 		ExpirationsEpochs: emptyArray,
-		TotalPower:        big.Zero(),
-		FaultyPower:       big.Zero(),
+		TotalPower:        PowerPairZero(),
+		FaultyPower:       PowerPairZero(),
+		RecoveringPower:   PowerPairZero(),
 		TotalPledge:       big.Zero(),
 	}
 }
@@ -233,10 +242,75 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*b
 	return expiredSectors, nil
 }
 
+// Marks all non-faulty sectors in the partition as faulty and clears recoveries, updating power memos appropriately.
+// Returns the power of the newly faulty and failed recovery sectors.
+func (p *Partition) RecordMissedPost(store adt.Store, faultEpoch abi.ChainEpoch) (newFaultPower, failedRecoveryPower PowerPair, err error) {
+	newFaults, err := bitfield.SubtractBitField(p.Sectors, p.Faults)
+	if err != nil {
+		return newFaultPower, failedRecoveryPower, xerrors.Errorf("bitfield subtract failed: %w", err)
+	}
+
+	// By construction, declared recoveries are currently faulty and thus not in newFaults.
+	failedRecoveries, err := bitfield.IntersectBitField(p.Sectors, p.Recoveries)
+	if err != nil {
+		return newFaultPower, failedRecoveryPower, xerrors.Errorf("bitfield intersect failed: %w", err)
+	}
+
+	// Compute faulty power for penalization.
+	newFaultPower = p.TotalPower.Sub(p.FaultyPower)
+	failedRecoveryPower = p.RecoveringPower
+
+	// Mark all sectors faulty and not recovering.
+	if err := p.AddFaults(store, newFaults, faultEpoch); err != nil {
+		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record new faults: %w", err)
+	}
+	p.FaultyPower = p.TotalPower
+
+	if err := p.RemoveRecoveries(failedRecoveries); err != nil {
+		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record failed recoveries: %w", err)
+	}
+	p.RecoveringPower = PowerPairZero()
+	return newFaultPower, failedRecoveryPower, nil
+}
+
+//
+// PowerPair
+//
+
+func PowerPairZero() PowerPair {
+	return PowerPair{big.Zero(), big.Zero()}
+}
+
+func (pp PowerPair) Add(other PowerPair) PowerPair {
+	return PowerPair{
+		Raw: big.Add(pp.Raw, other.Raw),
+		QA:  big.Add(pp.QA, other.QA),
+	}
+}
+
+func (pp PowerPair) Sub(other PowerPair) PowerPair {
+	return PowerPair{
+		Raw: big.Sub(pp.Raw, other.Raw),
+		QA:  big.Sub(pp.QA, other.QA),
+	}
+}
+
+func (pp PowerPair) Neg() PowerPair {
+	return PowerPair{
+		Raw: pp.Raw.Neg(),
+		QA:  pp.QA.Neg(),
+	}
+}
+
 func (p *Partition) MarshalCBOR(w io.Writer) error {
 	panic("implement me")
 }
-
 func (p *Partition) UnmarshalCBOR(r io.Reader) error {
+	panic("implement me")
+}
+func (p *PowerPair) MarshalCBOR(w io.Writer) error {
+	panic("implement me")
+}
+func (p *PowerPair) UnmarshalCBOR(r io.Reader) error {
 	panic("implement me")
 }
