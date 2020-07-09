@@ -83,9 +83,9 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (abi.TokenAmount,
-	abi.ChainEpoch, bool) {
-	amountSlashed := abi.NewTokenAmount(0)
+func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount,
+	nextEpoch abi.ChainEpoch, removeDeal bool) {
+	amountSlashed = abi.NewTokenAmount(0)
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
 	everSlashed := state.SlashEpoch != epochUndefined
@@ -151,12 +151,12 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		return amountSlashed, epochUndefined, true
 	}
 
-	next := epoch + DealUpdatesInterval
-	if next > deal.EndEpoch {
-		next = deal.EndEpoch
+	nextEpoch = epoch + DealUpdatesInterval
+	if nextEpoch > deal.EndEpoch {
+		nextEpoch = deal.EndEpoch
 	}
 
-	return amountSlashed, next, false
+	return amountSlashed, nextEpoch, false
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.

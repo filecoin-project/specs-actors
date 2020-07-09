@@ -489,34 +489,34 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	rt.State().Transaction(&st, func() interface{} {
 		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal opts set: %s", err)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
 		}
 
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
 		}
 
 		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "get deal proposals: %v", err)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
 		}
 
 		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 		}
 
 		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
 		}
 
 		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
 		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "loading pending proposals map: %s", err)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
 		}
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
@@ -527,12 +527,12 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
 				}
 				if err := pending.Delete(adt.CidKey(dcid)); err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to delete pending proposal: %v", err)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pending proposal")
 				}
 
 				state, found, err := states.Get(dealID)
 				if err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
 				}
 				// deal has been published but not activated yet -> terminate it as it has timed out
 				if !found {
@@ -547,16 +547,17 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
 					}
 
-					if err := deleteDeal(dealID, states, proposals); err != nil {
-						rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal %d: %v", dealID, err)
+					// we should not attempt to delete the DealState because it does NOT exist
+					if err := deleteDealProposalAndState(dealID, states, proposals, true, false); err != nil {
+						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 					return nil
 				}
 
 				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
 				if removeDeal {
-					if err := deleteDeal(dealID, states, proposals); err != nil {
-						rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal %d: %v", dealID, err)
+					if err := deleteDealProposalAndState(dealID, states, proposals, true, true); err != nil {
+						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 				}
 				if !slashAmount.IsZero() {
@@ -579,10 +580,10 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 				return nil
 			}); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to iterate deals for epoch: %s", err)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deals for epoch")
 			}
 			if err := dbe.RemoveAll(i); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to delete deals from set: %s", err)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deals from set")
 			}
 		}
 
@@ -647,13 +648,19 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func deleteDeal(dealId abi.DealID, states *DealMetaArray, proposals *DealArray) error {
-	if err := states.Delete(dealId); err != nil {
-		return fmt.Errorf("failed to delete deal state: %w", err)
+func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
+	removeState bool) error {
+	if removeProposal {
+		if err := proposals.Delete(uint64(dealId)); err != nil {
+			return fmt.Errorf("failed to delete deal proposal: %w", err)
+		}
+
 	}
 
-	if err := proposals.Delete(uint64(dealId)); err != nil {
-		return fmt.Errorf("failed to delete deal proposal: %w", err)
+	if removeState {
+		if err := states.Delete(dealId); err != nil {
+			return fmt.Errorf("failed to delete deal state: %w", err)
+		}
 	}
 
 	return nil
