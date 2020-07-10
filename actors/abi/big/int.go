@@ -50,8 +50,8 @@ func (bi Int) Copy() Int {
 	return cpy
 }
 
-func Product(num1 Int, ints ...Int) Int {
-	p := num1
+func Product(ints ...Int) Int {
+	p := NewInt(1)
 	for _, i := range ints {
 		p = Mul(p, i)
 	}
@@ -74,8 +74,8 @@ func Add(a, b Int) Int {
 	return Int{big.NewInt(0).Add(a.Int, b.Int)}
 }
 
-func Sum(num1 Int, ints ...Int) Int {
-	sum := num1
+func Sum(ints ...Int) Int {
+	sum := Zero()
 	for _, i := range ints {
 		sum = Add(sum, i)
 	}

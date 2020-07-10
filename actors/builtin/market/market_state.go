@@ -354,7 +354,7 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	proposal, found, err := proposals.Get(dealID)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
 	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
+		rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
 	}
 
 	return proposal

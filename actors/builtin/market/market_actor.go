@@ -488,26 +488,18 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
 
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
 
 		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
 
 		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 
 		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 		if err != nil {
