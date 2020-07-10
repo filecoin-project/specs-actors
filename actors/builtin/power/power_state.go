@@ -67,10 +67,11 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 	}
 }
 
-// Note: this method is currently (Feb 2020) unreferenced in the actor code, but expected to be used to validate
-// Election PoSt winners outside the chain state. We may remove it.
-// See https://github.com/filecoin-project/specs-actors/issues/266
-func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) { //nolint:deadcode,unused
+// MinerNominalPowerMeetsConsensusMinimum is used to validate Election PoSt
+// winners outside the chain state. If the miner has over a threshold of power
+// the miner meets the minimum.  If the network is a below a threshold of
+// miners and has power > zero the miner meets the minimum.
+func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) { //nolint:deadcode,unused
 	claim, ok, err := st.GetClaim(s, miner)
 	if err != nil {
 		return false, err
@@ -86,7 +87,7 @@ func (st *State) minerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return true, nil
 	}
 
-	// otherwise, if ConsensusMinerMinMiners miners meets min power requirement, return false
+	// otherwise, if ConsensusMinerMinMiners miners meet min power requirement, return false
 	if st.MinerAboveMinPowerCount > ConsensusMinerMinMiners {
 		return false, nil
 	}
