@@ -9,7 +9,7 @@ import (
 
 type sectorEpochSet struct {
 	epoch      abi.ChainEpoch
-	sectors    []uint64
+	sectors    []uint64 // TODO: consider a bitfield if it will be always used that way
 	totalPower PowerPair
 }
 
