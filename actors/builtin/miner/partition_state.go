@@ -188,6 +188,57 @@ func (p *Partition) AddSectors(store adt.Store, sectorSize abi.SectorSize, secto
 	return err
 }
 
+// RescheduleExpirations moves expiring sectors to the target expiration.
+func (p *Partition) RescheduleExpirations(store adt.Store, sectorSize abi.SectorSize, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo) error {
+	expirations, err := adt.AsArray(store, p.ExpirationsEpochs)
+	if err != nil {
+		return xerrors.Errorf("failed to load sector expirations: %w", err)
+	}
+
+	targetExp := NewPowerSet()
+	_, err = expirations.Get(uint64(epoch), targetExp)
+	if err != nil {
+		return err
+	}
+
+	for _, group := range groupSectorsByExpiration(sectorSize, sectors) {
+		exp := NewPowerSet()
+		_, err := expirations.Get(uint64(group.epoch), exp)
+		if err != nil {
+			return err
+		}
+
+		for _, sectorNo := range group.sectors {
+			exp.Values.Unset(sectorNo)
+			targetExp.Values.Set(sectorNo)
+		}
+
+		// TODO: check underflow
+		exp.TotalPower = exp.TotalPower.Sub(group.totalPower)
+		targetExp.TotalPower = targetExp.TotalPower.Add(group.totalPower)
+
+		if empty, err := exp.Values.IsEmpty(); err != nil {
+			return err
+		} else if empty {
+			err = expirations.Delete(uint64(group.epoch))
+		} else {
+			err = expirations.Set(uint64(group.epoch), exp)
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	// Update the target expiration.
+	err = expirations.Set(uint64(epoch), targetExp)
+	if err != nil {
+		return err
+	}
+
+	p.ExpirationsEpochs, err = expirations.Root()
+	return err
+}
+
 func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*PowerSet, error) {
 	stopErr := fmt.Errorf("stop")
 

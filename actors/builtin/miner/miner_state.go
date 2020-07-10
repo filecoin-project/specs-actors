@@ -133,6 +133,12 @@ type SectorOnChainInfo struct {
 	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
 }
 
+// Location of a specific sector
+type SectorLocation struct {
+	Deadline, Partition uint64
+	SectorNumber        abi.SectorNumber
+}
+
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 
 	return &State{
@@ -342,6 +348,117 @@ func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 		f(&sector)
 		return nil
 	})
+}
+
+// Walks the given sectors, deadline by deadline, partition by partition,
+// skipping missing partitions/sectors.
+func (st *State) WalkSectors(
+	store adt.Store,
+	locations []SectorLocation,
+	partitionCb func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (update bool, err error),
+	afterDeadlineCb func(dlIdx uint64, dl *Deadline) (update bool, err error),
+) error {
+	deadlines, err := st.LoadDeadlines(store)
+	if err != nil {
+		return err
+	}
+
+	var toVisit [WPoStPeriodDeadlines]map[uint64][]uint64
+	for _, loc := range locations {
+		dl := toVisit[loc.Deadline]
+		if dl == nil {
+			dl = make(map[uint64][]uint64, 1)
+			toVisit[loc.Deadline] = dl
+		}
+		dl[loc.Partition] = append(dl[loc.Partition], uint64(loc.SectorNumber))
+	}
+
+	var deadlinesUpdated bool
+	for dlIdx, partitions := range toVisit {
+		if partitions == nil {
+			continue
+		}
+
+		var deadlineUpdated bool
+		dl, err := deadlines.LoadDeadline(store, uint64(dlIdx))
+		if err != nil {
+			return err
+		}
+
+		deadlineUpdated, err = beforeDeadlineCb(dl, dlIdx)
+		if err != nil {
+			return err
+		}
+
+		partitionsArr, err := dl.PartitionsArray(store)
+		if err != nil {
+			return err
+		}
+
+		partitionNumbers := make([]uint64, 0, len(partitions))
+		for partIdx := range partitions {
+			partitionNumbers = append(partitionNumbers, partIdx)
+		}
+		sort.Slice(partitionNumbers, func(i, j int) bool {
+			return partitionNumbers[i] < partitionNumbers[j]
+		})
+
+		for _, partIdx := range partitionNumbers {
+			var partition Partition
+			found, err := partitionsArr.Get(partIdx, &partition)
+			if err != nil {
+				return err
+			}
+			if !found {
+				continue
+			}
+
+			sectorNos := partitions[partIdx]
+			foundSectors, errs := bitfield.IntersectBitField(bitfield.NewFromSet(sectorNos), partition.Sectors)
+
+			// Anything to update?
+			if foundSectors.IsEmpty() {
+				// no.
+				continue
+			}
+
+			if updated, err := partitionCb(dl, &partition, dlIdx, partIdx, foundSectors); err != nil {
+				return err
+			} else if updated {
+				if empty, err := partition.Sectors.IsEmpty(); err != nil {
+					return err
+				} else if empty {
+					err := partitionsArr.Delete(partIdx)
+					if err != nil {
+						return err
+					}
+				} else {
+					partitionsArr.Set(partIdx, &partition)
+				}
+				deadlineUpdated = true
+			}
+		}
+		if deadlineUpdated {
+			dl.Partitions, err = partitionsArr.Root()
+			if err != nil {
+				return err
+			}
+		}
+		if updated, err := afterDeadlineCb(dl, dlIdx); err != nil {
+			return err
+		} else if updated || deadlineUpdated {
+			if err := deadlines.UpdateDeadline(store, dlIdx, dl); err != nil {
+				return err
+			}
+			deadlinesUpdated = true
+		}
+	}
+	if deadlinesUpdated {
+		if err := st.SaveDeadlines(store, deadlines); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Assign new sectors to deadlines.
