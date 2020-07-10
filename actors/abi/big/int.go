@@ -35,6 +35,16 @@ func PositiveFromUnsignedBytes(b []byte) Int {
 	return Int{i}
 }
 
+// MustFromString convers dec string into big integer and panics if conversion
+// is not sucessful.
+func MustFromString(s string) Int {
+	v, err := FromString(s)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
 func FromString(s string) (Int, error) {
 	v, ok := big.NewInt(0).SetString(s, 10)
 	if !ok {
@@ -48,6 +58,14 @@ func (bi Int) Copy() Int {
 	cpy := Int{}
 	cpy.Int.Set(bi.Int)
 	return cpy
+}
+
+func Product(ints ...Int) Int {
+	p := NewInt(1)
+	for _, i := range ints {
+		p = Mul(p, i)
+	}
+	return p
 }
 
 func Mul(a, b Int) Int {
@@ -66,12 +84,20 @@ func Add(a, b Int) Int {
 	return Int{big.NewInt(0).Add(a.Int, b.Int)}
 }
 
-func Sum(num1 Int, ints ...Int) Int {
-	sum := num1
+func Sum(ints ...Int) Int {
+	sum := Zero()
 	for _, i := range ints {
 		sum = Add(sum, i)
 	}
 	return sum
+}
+
+func Subtract(num1 Int, ints ...Int) Int {
+	sub := num1
+	for _, i := range ints {
+		sub = Sub(sub, i)
+	}
+	return sub
 }
 
 func Sub(a, b Int) Int {

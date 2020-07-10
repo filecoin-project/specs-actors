@@ -79,7 +79,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	nominal, recipient := escrowAddress(rt, params.ProviderOrClientAddress)
 
-	amountSlashedTotal := abi.NewTokenAmount(0)
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -107,11 +106,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		return nil
 	})
 
-	if amountSlashedTotal.GreaterThan(big.Zero()) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashedTotal)
-		builtin.RequireSuccess(rt, code, "failed to burn slashed funds")
-	}
-
 	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
@@ -119,11 +113,12 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	msgValue := rt.Message().ValueReceived()
+
 	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msgValue := rt.Message().ValueReceived()
 
 		err := st.AddEscrowBalance(adt.AsStore(rt), nominal, msgValue)
 		if err != nil {
@@ -447,7 +442,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				continue
 			}
 
-			Assert(deal.Provider == minerAddr)
+			AssertMsg(deal.Provider == minerAddr, "caller is not the provider of the deal")
 
 			// do not slash expired deals
 			if deal.EndEpoch <= rt.CurrEpoch() {
@@ -459,7 +454,12 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
 			if !found {
-				rt.Abortf(exitcode.ErrIllegalState, "no state found for deal in sector being terminated")
+				rt.Abortf(exitcode.ErrIllegalArgument, "no state found for deal in sector being terminated")
+			}
+
+			// if a deal is already slashed, we don't need to do anything here.
+			if state.SlashEpoch != epochUndefined {
+				continue
 			}
 
 			// mark the deal for slashing here.
@@ -489,67 +489,64 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal opts set: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
 
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "get state state: %v", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
+
+		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
 
 		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 
 		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
 
 		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "loading pending proposals map: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
-				state, found, err := states.Get(dealID)
-				if err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to get deal: %d", dealID)
-				}
-
-				if !found {
-					return nil
-				}
-
 				deal := st.mustGetDeal(rt, dealID)
 				dcid, err := deal.Cid()
 				if err != nil {
 					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
 				}
-				if err := pending.Delete(adt.CidKey(dcid)); err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to delete pending proposal: %v", err)
-				}
 
-				if state.SectorStartEpoch == epochUndefined {
+				builtin.RequireNoErr(rt, pending.Delete(adt.CidKey(dcid)), exitcode.ErrIllegalState, "failed to delete pending proposal")
+
+				state, found, err := states.Get(dealID)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
+
+				// deal has been published but not activated yet -> terminate it as it has timed out
+				if !found {
 					// Not yet appeared in proven sector; check for timeout.
 					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
 
-					slashed := st.processDealInitTimedOut(rt, et, lt, dealID, deal, state)
+					slashed := st.processDealInitTimedOut(rt, et, lt, deal)
 					if !slashed.IsZero() {
 						amountSlashed = big.Add(amountSlashed, slashed)
 					}
 					if deal.VerifiedDeal {
 						timedOutVerifiedDeals = append(timedOutVerifiedDeals, deal)
 					}
+
+					// we should not attempt to delete the DealState because it does NOT exist
+					if err := deleteDealProposalAndState(dealID, states, proposals, true, false); err != nil {
+						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
+					}
 					return nil
 				}
 
-				slashAmount, nextEpoch := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
+				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
+				if removeDeal {
+					if err := deleteDealProposalAndState(dealID, states, proposals, true, true); err != nil {
+						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
+					}
+				}
 				if !slashAmount.IsZero() {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
@@ -570,11 +567,9 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 				return nil
 			}); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to iterate deals for epoch: %s", err)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deals for epoch")
 			}
-			if err := dbe.RemoveAll(i); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to delete deals from set: %s", err)
-			}
+			builtin.RequireNoErr(rt, dbe.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
 		}
 
 		// Iterate changes in sorted order to ensure that loads/stores
@@ -613,6 +608,16 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 		st.LastCron = rt.CurrEpoch()
 
+		st.States, err = states.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
+		}
+
+		st.Proposals, err = proposals.Root()
+		if err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal proposals: %s", err)
+		}
+
 		return nil
 	})
 
@@ -630,8 +635,29 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
 	}
 
-	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
-	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	if !amountSlashed.IsZero() {
+		_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+		builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	}
+
+	return nil
+}
+
+func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
+	removeState bool) error {
+	if removeProposal {
+		if err := proposals.Delete(uint64(dealId)); err != nil {
+			return fmt.Errorf("failed to delete deal proposal: %w", err)
+		}
+
+	}
+
+	if removeState {
+		if err := states.Delete(dealId); err != nil {
+			return fmt.Errorf("failed to delete deal state: %w", err)
+		}
+	}
+
 	return nil
 }
 

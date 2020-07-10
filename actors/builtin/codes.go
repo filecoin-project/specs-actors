@@ -69,16 +69,17 @@ func ActorNameByCode(code cid.Cid) string {
 	}
 
 	names := map[cid.Cid]string{
-		SystemActorCodeID:         "fil/1/system",
-		InitActorCodeID:           "fil/1/init",
-		CronActorCodeID:           "fil/1/cron",
-		AccountActorCodeID:        "fil/1/account",
-		StoragePowerActorCodeID:   "fil/1/storagepower",
-		StorageMinerActorCodeID:   "fil/1/storageminer",
-		StorageMarketActorCodeID:  "fil/1/storagemarket",
-		PaymentChannelActorCodeID: "fil/1/paymentchannel",
-		MultisigActorCodeID:       "fil/1/multisig",
-		RewardActorCodeID:         "fil/1/reward",
+		SystemActorCodeID:           "fil/1/system",
+		InitActorCodeID:             "fil/1/init",
+		CronActorCodeID:             "fil/1/cron",
+		AccountActorCodeID:          "fil/1/account",
+		StoragePowerActorCodeID:     "fil/1/storagepower",
+		StorageMinerActorCodeID:     "fil/1/storageminer",
+		StorageMarketActorCodeID:    "fil/1/storagemarket",
+		PaymentChannelActorCodeID:   "fil/1/paymentchannel",
+		MultisigActorCodeID:         "fil/1/multisig",
+		RewardActorCodeID:           "fil/1/reward",
+		VerifiedRegistryActorCodeID: "fil/1/verifiedregistry",
 	}
 	name, ok := names[code]
 	if !ok {

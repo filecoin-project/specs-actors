@@ -293,9 +293,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		sectorInfos, declaredRecoveries, err := st.LoadSectorInfosForProof(store, provenSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
-		// Verify the proof.
-		// A failed verification doesn't immediately cause a penalty; the miner can try again.
-		verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		// Skip verification if all sectors are faults
+		if len(sectorInfos) > 0 {
+			// Verify the proof.
+			// A failed verification doesn't immediately cause a penalty; the miner can try again.
+			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		}
 
 		// Record the successful submission
 		postedPartitions := bitfield.NewFromSet(params.Partitions)
@@ -526,22 +529,27 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	for _, sectorNo := range params.Sectors {
 		precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
-		if !found {
+		if !found || err != nil {
 			// This relies on the precommit having been checked in ProveCommitSector and not removed (expired) before
 			// this call. This in turn relies on the call from the power actor reliably coming in the same
 			// epoch as ProveCommitSector.
-			//
-			// It is possible to hit this case if precommit expires in this epoch because precommit expiries are
-			// processed before porep verify / sector proof confirmation
-			rt.Abortf(exitcode.ErrNotFound, "no precommitted sector %v", sectorNo)
+
+			// TODO #564 log: "failed to get precommitted sector on sector %d, dropping from prove commit set"
+			continue
 		}
 
 		if precommit.Info.ReplaceCapacity {
 			replaceSector := precommit.Info.ReplaceSector
 			info, exists, err := st.GetSector(store, replaceSector)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector %v", replaceSector)
+			if err != nil {
+				// TODO #564 log "failed to check sector %d, dropping from prove commit set"
+				continue
+			}
 			faulty, err := st.Faults.IsSet(uint64(replaceSector))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector %v fault state", replaceSector)
+			if err != nil {
+				// TODO #564 log "failed to check sector %d fault state, dropping from prove commit set"
+				continue
+			}
 			_, set := replaceSectorKeys[replaceSector]
 			// It doesn't matter if the committed-capacity sector no longer exists, or if multiple sectors attempt to
 			// replace the same committed-capacity sector, so long as we don't try to terminate it more than once.
@@ -566,12 +574,21 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			},
 			abi.NewTokenAmount(0),
 		)
-		builtin.RequireSuccess(rt, code, "failed to activate deals")
+		if code != exitcode.Ok {
+			// TODO #564 log: "failed to activate deals on sector %d, dropping from prove commit set"
+			continue
+		}
 
 		preCommits = append(preCommits, precommit)
 	}
 
-	// Batch update state, any failure processing an individual sector aborts the whole call
+	// When all prove commits have failed abort early
+	if len(preCommits) == 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "all prove commits failed to validate")
+	}
+
+	// This transaction should replace the one inside the loop above.
+	// Migrate state mutations into here.
 	totalPledge := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
@@ -1310,9 +1327,10 @@ func processMissingPoStFaults(rt Runtime, st *State, store adt.Store, deadlines 
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load failed recovery sectors")
 
 	// Unlock sector penalty for all undeclared faults.
-	penalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
-	penalty, err := unlockUndeclaredFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, penalizedSectors)
+	latePenalizedSectors := append(detectedFaultSectors, failedRecoverySectors...)
+	penalty, err := unlockUndeclaredLateFaultPenalty(st, store, info.SectorSize, currEpoch, epochReward, currentTotalPower, latePenalizedSectors)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge sector penalty")
+
 	return detectedFaultSectors, penalty
 }
 
@@ -1940,7 +1958,7 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 
 // Requests the current epoch target block reward from the reward actor.
 func requestCurrentEpochBlockReward(rt Runtime) abi.TokenAmount {
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.LastPerEpochReward, nil, big.Zero())
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
 	epochReward := abi.NewTokenAmount(0)
 	err := rwret.Into(&epochReward)
@@ -2133,14 +2151,20 @@ func unlockUndeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.Sec
 	return st.UnlockUnvestedFunds(store, currEpoch, fee)
 }
 
-func unlockTerminationPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, curEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+func unlockUndeclaredLateFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+	totalQAPower := qaPowerForSectors(sectorSize, sectors)
+	fee := PledgePenaltyForLateUndeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
+	return st.UnlockUnvestedFunds(store, currEpoch, fee)
+}
+
+func unlockTerminationPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.InitialPledge, curEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
+		fee := PledgePenaltyForTermination(s.InitialPledge, currEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
-	return totalFee, nil
+	return st.UnlockUnvestedFunds(store, currEpoch, totalFee)
 }
 
 // Returns the sum of the raw byte and quality-adjusted power for sectors.

@@ -2,7 +2,6 @@ package market
 
 import (
 	"bytes"
-	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -84,8 +83,9 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (abi.TokenAmount, abi.ChainEpoch) {
-	amountSlashed := abi.NewTokenAmount(0)
+func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount,
+	nextEpoch abi.ChainEpoch, removeDeal bool) {
+	amountSlashed = abi.NewTokenAmount(0)
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
 	everSlashed := state.SlashEpoch != epochUndefined
@@ -95,32 +95,33 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 	// This would be the case that the first callback somehow triggers before it is scheduled to
 	// This is expected not to be able to happen
 	if deal.StartEpoch > epoch {
-		return amountSlashed, epochUndefined
+		return amountSlashed, epochUndefined, false
 	}
 
-	dealEnd := deal.EndEpoch
+	paymentEndEpoch := deal.EndEpoch
 	if everSlashed {
-		Assert(state.SlashEpoch <= dealEnd)
-		dealEnd = state.SlashEpoch
+		AssertMsg(epoch >= state.SlashEpoch, "current epoch less than slash epoch")
+		Assert(state.SlashEpoch <= deal.EndEpoch)
+		paymentEndEpoch = state.SlashEpoch
+	} else if epoch < paymentEndEpoch {
+		paymentEndEpoch = epoch
 	}
 
-	elapsedStart := deal.StartEpoch
-	if everUpdated && state.LastUpdatedEpoch > elapsedStart {
-		elapsedStart = state.LastUpdatedEpoch
+	paymentStartEpoch := deal.StartEpoch
+	if everUpdated && state.LastUpdatedEpoch > paymentStartEpoch {
+		paymentStartEpoch = state.LastUpdatedEpoch
 	}
 
-	elapsedEnd := dealEnd
-	if epoch < elapsedEnd {
-		elapsedEnd = epoch
-	}
-
-	numEpochsElapsed := elapsedEnd - elapsedStart
+	numEpochsElapsed := paymentEndEpoch - paymentStartEpoch
 
 	{
 		// Process deal payment for the elapsed epochs.
 		totalPayment := big.Mul(big.NewInt(int64(numEpochsElapsed)), deal.StoragePricePerEpoch)
 
-		st.transferBalance(rt, deal.Client, deal.Provider, totalPayment)
+		// the transfer amount can be less than or equal to zero if a deal is slashed before or at the deal's start epoch.
+		if totalPayment.GreaterThan(big.Zero()) {
+			st.transferBalance(rt, deal.Client, deal.Provider, totalPayment, et, lt)
+		}
 	}
 
 	if everSlashed {
@@ -142,78 +143,26 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 			rt.Abortf(exitcode.ErrIllegalState, "slashing balance: %s", err)
 		}
 
-		st.deleteDeal(rt, dealID)
-		return amountSlashed, epochUndefined
+		return amountSlashed, epochUndefined, true
 	}
 
 	if epoch >= deal.EndEpoch {
 		st.processDealExpired(rt, deal, state, lt, dealID)
-		return amountSlashed, epochUndefined
+		return amountSlashed, epochUndefined, true
 	}
 
-	next := epoch + DealUpdatesInterval
-	if next > deal.EndEpoch {
-		next = deal.EndEpoch
+	nextEpoch = epoch + DealUpdatesInterval
+	if nextEpoch > deal.EndEpoch {
+		nextEpoch = deal.EndEpoch
 	}
 
-	return amountSlashed, next
-}
-
-func (st *State) mutateDealProposals(rt Runtime, f func(*DealArray)) {
-	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to load deal proposals array: %s", err)
-	}
-
-	f(proposals)
-
-	rcid, err := proposals.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "flushing deal proposals set failed: %s", err)
-	}
-
-	st.Proposals = rcid
-}
-
-func (st *State) mutateDealStates(store adt.Store, f func(*DealMetaArray)) error {
-	states, err := AsDealStateArray(store, st.States)
-	if err != nil {
-		return fmt.Errorf("failed to load deal states array: %w", err)
-	}
-
-	f(states)
-
-	scid, err := states.Root()
-	if err != nil {
-		return fmt.Errorf("flushing deal states set failed: %w", err)
-	}
-
-	st.States = scid
-	return nil
-}
-
-func (st *State) deleteDeal(rt Runtime, dealID abi.DealID) {
-	st.mutateDealProposals(rt, func(proposals *DealArray) {
-		if err := proposals.Delete(uint64(dealID)); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal: %v", err)
-		}
-	})
-
-	if err := st.mutateDealStates(adt.AsStore(rt), func(states *DealMetaArray) {
-		if err := states.Delete(dealID); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal state: %v", err)
-		}
-	}); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to delete deal state: %v", err)
-	}
+	return amountSlashed, nextEpoch, false
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, dealID abi.DealID, deal *DealProposal, state *DealState) abi.TokenAmount {
-	Assert(state.SectorStartEpoch == epochUndefined)
-
+func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, deal *DealProposal) abi.TokenAmount {
 	if err := st.unlockBalance(lt, deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client storage fee: %s", err)
 	}
@@ -232,7 +181,6 @@ func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, d
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unlock deal provider balance: %s", err)
 	}
 
-	st.deleteDeal(rt, dealID)
 	return amountSlashed
 }
 
@@ -248,8 +196,6 @@ func (st *State) processDealExpired(rt Runtime, deal *DealProposal, state *DealS
 	if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal client balance: %s", err)
 	}
-
-	st.deleteDeal(rt, dealID)
 }
 
 func (st *State) generateStorageDealID() abi.DealID {
@@ -369,17 +315,8 @@ func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount a
 }
 
 // move funds from locked in client to available in provider
-func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount) {
+func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount, et, lt *adt.BalanceTable) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "loading escrow table: %s", err)
-	}
-	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "loading locked balance table: %s", err)
-	}
 
 	if err := et.MustSubtract(fromAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
@@ -392,18 +329,6 @@ func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.
 	if err := et.Add(toAddr, amount); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "add to escrow: %v", err)
 	}
-
-	ltc, err := lt.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
-	}
-	etc, err := et.Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
-	}
-
-	st.LockedTable = ltc
-	st.EscrowTable = etc
 }
 
 func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount, reason BalanceLockingReason) error {
@@ -429,7 +354,7 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	proposal, found, err := proposals.Get(dealID)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
 	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
+		rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
 	}
 
 	return proposal
@@ -469,10 +394,15 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 	return nil
 }
 
-func dealGetPaymentRemaining(deal *DealProposal, epoch abi.ChainEpoch) abi.TokenAmount {
-	Assert(epoch <= deal.EndEpoch)
+func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.TokenAmount {
+	Assert(slashEpoch <= deal.EndEpoch)
 
-	durationRemaining := deal.EndEpoch - (epoch - 1)
+	// Payments are always for start -> end epoch irrespective of when the deal is slashed.
+	if slashEpoch < deal.StartEpoch {
+		slashEpoch = deal.StartEpoch
+	}
+
+	durationRemaining := deal.EndEpoch - slashEpoch
 	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)

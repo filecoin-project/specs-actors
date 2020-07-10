@@ -8,6 +8,7 @@ import "fmt"
 // can override it at runtime. Doing so requires changing all the static references to it in this repo to go through
 // late-binding function calls, or they'll see the "wrong" value.
 // https://github.com/filecoin-project/specs-actors/issues/353
+// If EpochDurationSeconds is changed, update `lambda` and `expLamSubOne` in ./reward/reward_logic.go
 const EpochDurationSeconds = 25
 const SecondsInHour = 3600
 const SecondsInDay = 86400

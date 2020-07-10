@@ -239,9 +239,8 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 		}
 		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-
-		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, claim.QualityAdjPower)
-		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, claim.RawBytePower)
+		err = st.AddToClaim(adt.AsStore(rt), minerAddr, claim.QualityAdjPower.Neg(), claim.RawBytePower.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not add to claim for %s after loading existing claim for this address", minerAddr)
 
 		st.addPledgeTotal(pledgeAmount.Neg())
 		return nil
@@ -253,13 +252,16 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 	return nil
 }
 
+// GasOnSubmitVerifySeal is amount of gas charged for SubmitPoRepForBulkVerify
+// This number is empirically determined
+const GasOnSubmitVerifySeal = 132166313
+
 func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Message().Caller()
 
-	// TODO: charge a LOT of gas
-	// https://github.com/filecoin-project/specs-actors/issues/442
+	rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
@@ -301,9 +303,11 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
+
+	rawBytePower, qaPower := CurrentTotalPower(&st)
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.TotalRawBytePower,
-		QualityAdjPower:  st.TotalQualityAdjPower,
+		RawBytePower:     rawBytePower,
+		QualityAdjPower:  qaPower,
 		PledgeCollateral: st.TotalPledgeCollateral,
 	}
 }
@@ -438,6 +442,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		// Failures are unexpected here but will result in removal of miner power
 		// A log message would really help here.
 		if code != exitcode.Ok {
+			rt.Log(vmr.WARN, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
 			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
 		}
 	}
@@ -447,18 +452,18 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		for _, minerAddr := range failedMinerCrons {
 			claim, found, err := st.GetClaim(store, minerAddr)
 			if err != nil {
-				// TODO #564 log this, failing without deducting power: bad
+				rt.Log(vmr.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 				continue
 			}
 			if !found {
-				// TODO #564 log this, failing without deducting power, but power doesn't exist so maybe ok?
+				rt.Log(vmr.WARN, "miner OnDeferredCronEvent failed for miner %s with no power", minerAddr)
 				continue
 			}
 
 			// zero out miner power
 			err = st.AddToClaim(store, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
 			if err != nil {
-				// TODO #564 log this, failing without deducting power: bad
+				rt.Log(vmr.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
 				continue
 			}
 		}
@@ -469,13 +474,16 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
-	err := rt.State().Transaction(&st, func() interface{} {
-		if err := st.deleteClaim(adt.AsStore(rt), miner); err != nil {
-			return errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
+	var err error
+	rt.State().Transaction(&st, func() interface{} {
+		err = st.deleteClaim(adt.AsStore(rt), miner)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
+			return nil
 		}
 
 		st.MinerCount -= 1
 		return nil
-	}).(error)
+	})
 	return err
 }
