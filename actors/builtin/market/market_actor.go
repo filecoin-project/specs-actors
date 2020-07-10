@@ -502,14 +502,10 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 
 		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
 
 		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
@@ -518,14 +514,12 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				if err != nil {
 					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
 				}
-				if err := pending.Delete(adt.CidKey(dcid)); err != nil {
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pending proposal")
-				}
+
+				builtin.RequireNoErr(rt, pending.Delete(adt.CidKey(dcid)), exitcode.ErrIllegalState, "failed to delete pending proposal")
 
 				state, found, err := states.Get(dealID)
-				if err != nil {
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
-				}
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
+
 				// deal has been published but not activated yet -> terminate it as it has timed out
 				if !found {
 					// Not yet appeared in proven sector; check for timeout.
@@ -574,9 +568,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			}); err != nil {
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deals for epoch")
 			}
-			if err := dbe.RemoveAll(i); err != nil {
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deals from set")
-			}
+			builtin.RequireNoErr(rt, dbe.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
 		}
 
 		// NB: its okay that we're doing a 'random' golang map iteration here
