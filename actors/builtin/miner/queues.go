@@ -47,3 +47,42 @@ func (q epochQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) err
 	}
 	return q.AddToQueueBitfield(epoch, bitfield.NewFromSet(values))
 }
+
+// Removes values to the queue entry for an epoch.
+// The queue AMT root is loaded from a CID, and that CID is overwritten with the new root when this method returns.
+func (q epochQueue) RemoveFromQueueBitfield(epoch abi.ChainEpoch, values *abi.BitField) error {
+	bf := abi.NewBitField()
+	if found, err := q.Array.Get(uint64(epoch), bf); err != nil {
+		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
+	} if !found {
+		// nothing to do.
+		// TODO: be paranoid and fail if the values we're trying to remove don't exist?
+		return nil
+	}
+
+	bf, err := bitfield.SubtractBitField(bf, values)
+	if err != nil {
+		return xerrors.Errorf("failed to merge bitfields for queue epoch %v: %w", epoch, err)
+	}
+
+	if empty, err := bf.IsEmpty(); err != nil {
+		return err
+	} else if empty {
+		if err = q.Array.Delete(uint64(epoch)); err != nil {
+			return xerrors.Errorf("failed to delete queue epoch %v: %w", epoch, err)
+		}
+	} else {
+		if err = q.Array.Set(uint64(epoch), bf); err != nil {
+			return xerrors.Errorf("failed to set queue epoch %v: %w", epoch, err)
+		}
+	}
+
+	return nil
+}
+
+func (q epochQueue) RemoveFromQueueValues(epoch abi.ChainEpoch, values ...uint64) error {
+	if len(values) == 0 {
+		return nil
+	}
+	return q.RemoveFromQueueBitfield(epoch, bitfield.NewFromSet(values))
+}

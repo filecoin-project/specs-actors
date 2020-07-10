@@ -107,8 +107,9 @@ type SectorPreCommitInfo struct {
 	SealRandEpoch   abi.ChainEpoch
 	DealIDs         []abi.DealID
 	Expiration      abi.ChainEpoch
-	ReplaceCapacity bool             // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
-	ReplaceSector   abi.SectorNumber // The committed capacity sector to replace
+	ReplaceCapacity bool // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
+	// TODO: just store this as 3 separate fields?
+	ReplaceSector SectorLocation // The committed capacity sector to replace
 }
 
 // Information stored on-chain for a pre-committed sector.
@@ -138,6 +139,15 @@ type SectorLocation struct {
 	Deadline, Partition uint64
 	SectorNumber        abi.SectorNumber
 }
+
+type SectorStatus int
+
+const (
+	SectorNotFound SectorStatus = iota
+	SectorFaulty
+	SectorTerminated
+	SectorHealthy
+)
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 
@@ -250,6 +260,32 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	return &info, found, nil
 }
 
+// This method gets and returns the requested pre-committed sectors, skipping
+// missing sectors.
+func (st *State) GetExistingPrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) ([]*SectorPreCommitOnChainInfo, error) {
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*SectorPreCommitOnChainInfo, 0, len(sectorNos))
+
+	for _, sectorNo := range sectorNos {
+		var info SectorPreCommitOnChainInfo
+		found, err := precommitted.Get(SectorKey(sectorNo), &info)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to load precommitment for %v", sectorNo)
+		}
+		if !found {
+			// TODO #564 log: "failed to get precommitted sector on sector %d, dropping from prove commit set"
+			continue
+		}
+		result = append(result, &info)
+	}
+
+	return result, nil
+}
+
 func (st *State) DeletePrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) error {
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
 	if err != nil {
@@ -355,6 +391,7 @@ func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 func (st *State) WalkSectors(
 	store adt.Store,
 	locations []SectorLocation,
+	beforeDeadlineCb func(dlIdx uint64, dl *Deadline) (update bool, err error),
 	partitionCb func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (update bool, err error),
 	afterDeadlineCb func(dlIdx uint64, dl *Deadline) (update bool, err error),
 ) error {
@@ -385,7 +422,7 @@ func (st *State) WalkSectors(
 			return err
 		}
 
-		deadlineUpdated, err = beforeDeadlineCb(dl, dlIdx)
+		deadlineUpdated, err = beforeDeadlineCb(uint64(dlIdx), dl)
 		if err != nil {
 			return err
 		}
@@ -414,15 +451,20 @@ func (st *State) WalkSectors(
 			}
 
 			sectorNos := partitions[partIdx]
-			foundSectors, errs := bitfield.IntersectBitField(bitfield.NewFromSet(sectorNos), partition.Sectors)
+			foundSectors, err := bitfield.IntersectBitField(bitfield.NewFromSet(sectorNos), partition.Sectors)
+			if err != nil {
+				return err
+			}
 
 			// Anything to update?
-			if foundSectors.IsEmpty() {
+			if empty, err := foundSectors.IsEmpty(); err != nil {
+				return err
+			} else if empty {
 				// no.
 				continue
 			}
 
-			if updated, err := partitionCb(dl, &partition, dlIdx, partIdx, foundSectors); err != nil {
+			if updated, err := partitionCb(dl, &partition, uint64(dlIdx), partIdx, foundSectors); err != nil {
 				return err
 			} else if updated {
 				if empty, err := partition.Sectors.IsEmpty(); err != nil {
@@ -444,10 +486,10 @@ func (st *State) WalkSectors(
 				return err
 			}
 		}
-		if updated, err := afterDeadlineCb(dl, dlIdx); err != nil {
+		if updated, err := afterDeadlineCb(uint64(dlIdx), dl); err != nil {
 			return err
 		} else if updated || deadlineUpdated {
-			if err := deadlines.UpdateDeadline(store, dlIdx, dl); err != nil {
+			if err := deadlines.UpdateDeadline(store, uint64(dlIdx), dl); err != nil {
 				return err
 			}
 			deadlinesUpdated = true
@@ -459,6 +501,158 @@ func (st *State) WalkSectors(
 		}
 	}
 	return nil
+}
+
+// Schedule's each sector to expire after it's next deadline ends (based on the
+// given currEpoch).
+//
+// If it can't find any given sector, it skips it.
+//
+// TODO: this function doesn't actually generalize well (it can only be used for
+// "replaced" sectors, otherwise it'll mess with power. We should either
+// move/rename it, or try to find some way to generalize it (i.e., not mess with
+// power).
+//
+// TODO: This function can return errors for both illegal arguments, and invalid
+// state. However, we have no way to distinguish between them. We should fix
+// this.
+func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectorSize abi.SectorSize, sectors []SectorLocation) error {
+	// Mark replaced sectors for on-time expiration at the end of the current proving period.
+	// They can't be removed right now because they may yet be challenged for Window PoSt in this period,
+	// and the deadline assignments can't be changed mid-period.
+	// If their initial pledge hasn't finished vesting yet, it just continues vesting (like other termination paths).
+	// Note that a sector's weight and power were calculated from its lifetime when the sector was first
+	// committed, but are not recalculated here. We only get away with this because we know the replaced sector
+	// has no deals and so its power does not vary with lifetime.
+	// That's a very brittle constraint, and would be much better with two-phase termination (where we could
+	// deduct power immediately).
+	// See https://github.com/filecoin-project/specs-actors/issues/535
+
+	var (
+		newEpoch         abi.ChainEpoch
+		movedExpirations map[abi.ChainEpoch][]uint64 // track moved partition expirations.
+	)
+	return st.WalkSectors(store, sectors,
+		// Prepare to process deadline.
+		func(dlIdx uint64, dl *Deadline) (bool, error) {
+			movedExpirations = make(map[abi.ChainEpoch][]uint64)
+
+			//
+			// Figure out the next deadline end.
+			//
+
+			// TODO: is the proving period start always going to be
+			// correct here? Can we assume that cron has already
+			// updated it?
+			dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch)
+			if dlInfo.HasElapsed() {
+				// pick the next one.
+				dlInfo = NewDeadlineInfo(dlInfo.NextPeriodStart(), dlIdx, currEpoch)
+			}
+			newEpoch = dlInfo.Close // TODO: make sure this isn't off by one, or anyting.
+			return false, nil
+		},
+		// Process partitions in deadline.
+		func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (bool, error) {
+			nonTerminated, err := bitfield.SubtractBitField(sectors, partition.Terminated)
+			if err != nil {
+				return false, err
+			}
+
+			nonFaulty, err := bitfield.SubtractBitField(nonTerminated, partition.Faults)
+			if err != nil {
+				return false, err
+			}
+
+			sectorInfos, err := st.LoadSectorInfos(store, nonFaulty)
+			if err != nil {
+				return false, err
+			}
+
+			if len(sectorInfos) == 0 {
+				// Nothing to do
+				return false, nil
+			}
+
+			// TODO: What if I replace the same sector multiple times? I guess that's OK...
+			err = partition.RescheduleExpirations(store, sectorSize, newEpoch, sectorInfos)
+			if err != nil {
+				return false, err
+			}
+
+			// Record the old epochs so we can fix the deadline's queue.
+			for _, sector := range sectorInfos {
+				partitions := movedExpirations[sector.Expiration]
+				if len(partitions) > 0 && partitions[len(partitions)-1] == partIdx {
+					continue
+				}
+				movedExpirations[sector.Expiration] = append(partitions, partIdx)
+			}
+
+			// Update the expirations.
+			for _, sector := range sectorInfos {
+				powerBefore := QAPowerForSector(sectorSize, sector)
+				sector.Expiration = newEpoch
+				powerAfter := QAPowerForSector(sectorSize, sector)
+				if !powerBefore.Equals(powerAfter) {
+					return false, xerrors.Errorf(
+						"failed to schedule early expiration for replaced sector: power changes from %s to %s",
+						powerBefore, powerAfter,
+					)
+				}
+			}
+
+			// TODO: Do we _really_ need to do this? This only
+			// happens to not mess with sector powers because these
+			// sectors can't have deals.
+			// TODO: Check to make sure these sectors don't have deals?
+			err = st.PutSectors(store, sectorInfos...)
+			if err != nil {
+				return false, xerrors.Errorf("failed to put back sector infos after updating expirations: %w", err)
+			}
+
+			return true, nil
+		},
+		// Update deadline.
+		func(dlIdx uint64, dl *Deadline) (bool, error) {
+			if len(movedExpirations) == 0 {
+				return false, nil
+			}
+
+			q, err := loadEpochQueue(store, dl.ExpirationsEpochs)
+			if err != nil {
+				return false, err
+			}
+			epochs := make([]abi.ChainEpoch, 0, len(movedExpirations))
+			for epoch := range movedExpirations {
+				epochs = append(epochs, epoch)
+			}
+			sort.Slice(epochs, func(i, j int) bool {
+				return epochs[i] < epochs[j]
+			})
+
+			var movedPartitions []uint64
+			for _, epoch := range epochs {
+				partitions := movedExpirations[epoch]
+				err := q.RemoveFromQueueValues(epoch, partitions...)
+				if err != nil {
+					return false, err
+				}
+				movedPartitions = append(movedPartitions, partitions...)
+			}
+
+			err = q.AddToQueueValues(newEpoch, movedPartitions...)
+			if err != nil {
+				return false, err
+			}
+
+			dl.ExpirationsEpochs, err = q.Root()
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		},
+	)
 }
 
 // Assign new sectors to deadlines.
@@ -625,6 +819,53 @@ func (st *State) ClearFaultEpochs(store adt.Store, epochs ...abi.ChainEpoch) err
 
 	st.FaultEpochs, err = arr.Root()
 	return err
+}
+
+// TODO: take multiple sector locations?
+// Returns the sector's status (healthy, faulty, missing, not found, terminated)
+func (st *State) SectorStatus(store adt.Store, sector SectorLocation) (SectorStatus, error) {
+	dls, err := st.LoadDeadlines(store)
+	if err != nil {
+		return SectorNotFound, err
+	}
+
+	// Pre-check this because LoadDeadline will return an actual error.
+	if sector.Deadline >= WPoStPeriodDeadlines {
+		return SectorNotFound, nil
+	}
+
+	dl, err := dls.LoadDeadline(store, sector.Deadline)
+	if err != nil {
+		return SectorNotFound, err
+	}
+
+	// TODO: this will return an error if we can't find the given partition.
+	// That will lead to an illegal _state_ error, not an illegal argument
+	// error. We should fix that.
+	partition, err := dl.LoadPartition(store, sector.Partition)
+	if err != nil {
+		return SectorNotFound, xerrors.Errorf("in deadline %d: %w", sector.Deadline, err)
+	}
+
+	if exists, err := partition.Sectors.IsSet(uint64(sector.SectorNumber)); err != nil {
+		return SectorNotFound, err
+	} else if !exists {
+		return SectorNotFound, nil
+	}
+
+	if faulty, err := partition.Faults.IsSet(uint64(sector.SectorNumber)); err != nil {
+		return SectorNotFound, err
+	} else if faulty {
+		return SectorFaulty, nil
+	}
+
+	if terminated, err := partition.Terminated.IsSet(uint64(sector.SectorNumber)); err != nil {
+		return SectorNotFound, err
+	} else if terminated {
+		return SectorTerminated, nil
+	}
+
+	return SectorHealthy, nil
 }
 
 // Loads sector info for a sequence of sectors.

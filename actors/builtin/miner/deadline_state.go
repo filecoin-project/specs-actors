@@ -108,6 +108,22 @@ func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
 	return adt.AsArray(store, d.Partitions)
 }
 
+func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, error) {
+	partitions, err := d.PartitionsArray(store)
+	if err != nil {
+		return nil, err
+	}
+	var partition Partition
+	found, err := partitions.Get(partIdx, &partition)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, xerrors.Errorf("no partition %d", partIdx)
+	}
+	return &partition, nil
+}
+
 // Adds some partition numbers to the set with faults at an epoch.
 func (d *Deadline) AddFaultEpochPartitions(store adt.Store, epoch abi.ChainEpoch, partitions ...uint64) error {
 	queue, err := loadEpochQueue(store, d.FaultsEpochs)
@@ -215,6 +231,13 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*P
 	if err != nil {
 		return nil, err
 	}
+
+	// Update live sector count.
+	nExpired, err := allExpiries.Count()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to count expired sectors: %w", err)
+	}
+	dl.LiveSectors -= nExpired
 
 	return &PowerSet{
 		Values:     allExpiries,
@@ -334,7 +357,7 @@ func (dl *Deadline) AddSectors(
 	// Next, update the per-deadline expiration queues.
 
 	{
-		deadlineExpirations, err := adt.AsArray(store, dl.ExpirationsEpochs)
+		deadlineExpirations, err := loadEpochQueue(store, dl.ExpirationsEpochs)
 		if err != nil {
 			return xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
@@ -349,22 +372,7 @@ func (dl *Deadline) AddSectors(
 		})
 
 		for _, epoch := range updatedEpochs {
-			update := partitionDeadlineUpdates[epoch]
-
-			// Get or create the expiration at this epoch.
-			bf := abi.NewBitField()
-			_, err := deadlineExpirations.Get(uint64(epoch), bf)
-			if err != nil {
-				return err
-			}
-
-			// Update it.
-			for _, partIdx := range update {
-				bf.Set(partIdx)
-			}
-
-			// Put it back.
-			deadlineExpirations.Set(uint64(epoch), bf)
+			deadlineExpirations.AddToQueueValues(epoch, partitionDeadlineUpdates[epoch]...)
 		}
 
 		dl.ExpirationsEpochs, err = deadlineExpirations.Root()
