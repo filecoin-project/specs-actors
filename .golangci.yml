@@ -1,0 +1,13 @@
+linters-settings:
+  custom:
+    nomaprange:
+      path: .nomaprange.so
+      description: Checks for range over maps
+      original-url: github.com/Kubuxu/go-no-map-range
+
+linters:
+  enable:
+    - nomaprange
+
+run:
+  skip-dirs-use-default: false
