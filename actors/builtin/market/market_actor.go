@@ -571,10 +571,8 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			builtin.RequireNoErr(rt, dbe.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
 		}
 
-		// NB: its okay that we're doing a 'random' golang map iteration here
-		// because HAMTs and AMTs are insertion order independent, the same set of
-		// data inserted will always produce the same structure, no matter the order
-		for epoch, deals := range updatesNeeded {
+		// TODO FIXME: iteration over map
+		for epoch, deals := range updatesNeeded { //nolint:nomaprange
 			if err := dbe.PutMany(epoch, deals); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to reinsert deal IDs into epoch set: %s", err)
 			}
