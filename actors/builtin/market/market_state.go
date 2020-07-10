@@ -100,7 +100,7 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 
 	paymentEndEpoch := deal.EndEpoch
 	if everSlashed {
-		Assert(epoch >= state.SlashEpoch)
+		AssertMsg(epoch >= state.SlashEpoch, "current epoch less than slash epoch")
 		Assert(state.SlashEpoch <= deal.EndEpoch)
 		paymentEndEpoch = state.SlashEpoch
 	} else if epoch < paymentEndEpoch {
@@ -354,7 +354,7 @@ func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
 	proposal, found, err := proposals.Get(dealID)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
 	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "dealId %d not found", dealID)
+		rt.Abortf(exitcode.ErrIllegalState, "dealId %d not found", dealID)
 	}
 
 	return proposal

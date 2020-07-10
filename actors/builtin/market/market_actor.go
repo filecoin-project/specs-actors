@@ -488,36 +488,24 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
 
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
 
 		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
 
 		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 
 		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
 
 		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
-		if err != nil {
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
 			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
@@ -526,14 +514,12 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				if err != nil {
 					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
 				}
-				if err := pending.Delete(adt.CidKey(dcid)); err != nil {
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pending proposal")
-				}
+
+				builtin.RequireNoErr(rt, pending.Delete(adt.CidKey(dcid)), exitcode.ErrIllegalState, "failed to delete pending proposal")
 
 				state, found, err := states.Get(dealID)
-				if err != nil {
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
-				}
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
+
 				// deal has been published but not activated yet -> terminate it as it has timed out
 				if !found {
 					// Not yet appeared in proven sector; check for timeout.
@@ -582,9 +568,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			}); err != nil {
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deals for epoch")
 			}
-			if err := dbe.RemoveAll(i); err != nil {
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deals from set")
-			}
+			builtin.RequireNoErr(rt, dbe.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
 		}
 
 		// NB: its okay that we're doing a 'random' golang map iteration here
@@ -643,8 +627,11 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
 	}
 
-	_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
-	builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	if !amountSlashed.IsZero() {
+		_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+		builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
+	}
+
 	return nil
 }
 
