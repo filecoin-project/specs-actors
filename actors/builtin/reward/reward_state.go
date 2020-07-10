@@ -10,7 +10,7 @@ type Spacetime = big.Int
 
 type State struct {
 	// CumsumBaseline is a target CumsumRealized needs to reach for EffectiveNetworkTime to increase
-	// CumsumBaseline and CumsumRealized and expressed in bytes
+	// CumsumBaseline and CumsumRealized are expressed in byte-epochs.
 	CumsumBaseline Spacetime
 
 	// CumsumRealized is cumulative sum of network power capped by BalinePower(epoch)

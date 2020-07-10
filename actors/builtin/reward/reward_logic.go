@@ -6,8 +6,12 @@ import (
 )
 
 var BaselinePowerAt = func(epoch abi.ChainEpoch) abi.StoragePower {
-	return big.NewInt(1 << 40)
+	return big.NewInt(1 << 40) // PARAM_FINISH
 }
+
+// These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
+var SimpleTotal = big.Mul(big.NewInt(100e6), big.NewInt(1e18))   // 100M for testnet, PARAM_FINISH
+var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for testnet, PARAM_FINISH
 
 // Computes RewardTheta which is is precise fractional value of effectiveNetworkTime.
 // The effectiveNetworkTime is defined by CumsumBaselinePower(theta) == CumsumRealizedPower
@@ -30,10 +34,6 @@ func computeRTheta(effectiveNetworkTime abi.ChainEpoch, cumsumRealized, cumsumBa
 	}
 	return rewardTheta
 }
-
-// These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
-var SimpleTotal = big.Mul(big.NewInt(100e6), big.NewInt(1e18))   // 100M for testnet, PARAM_FINISH
-var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for testnet, PARAM_FINISH
 
 var (
 	// parameters in Q.128 format
