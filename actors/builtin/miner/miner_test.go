@@ -850,7 +850,7 @@ func TestProveCommit(t *testing.T) {
 		actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 	})
 
-	t.Run ("drop invalid prove commit while processing valid one", func (t *testing.T) { 
+	t.Run("drop invalid prove commit while processing valid one", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -866,15 +866,15 @@ func TestProveCommit(t *testing.T) {
 		actor.preCommitSector(rt, precommitB)
 		sectorNoB := actor.nextSectorNo
 
-		// handle both prove commits in the same epoch 
+		// handle both prove commits in the same epoch
 		info := actor.getInfo(rt)
 		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
 
 		actor.proveCommitSector(rt, precommitA, precommitEpoch, makeProveCommit(sectorNoA))
 		actor.proveCommitSector(rt, precommitB, precommitEpoch, makeProveCommit(sectorNoB))
 
-		conf := proveCommitConf {
-			verifyDealsExit: map[abi.SectorNumber]exitcode.ExitCode{ 
+		conf := proveCommitConf{
+			verifyDealsExit: map[abi.SectorNumber]exitcode.ExitCode{
 				sectorNoA: exitcode.ErrIllegalArgument,
 			},
 		}
@@ -1205,6 +1205,11 @@ func TestTerminateSectors(t *testing.T) {
 	t.Run("removes sector with correct accounting", func(t *testing.T) {
 		rt := builder.Build(t)
 		sector := commitSector(t, rt)
+		var initialLockedFunds abi.TokenAmount
+
+		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
+		// correct fee calculation is used.
+		actor.addLockedFund(rt, big.NewInt(1<<61))
 
 		{
 			// Verify that a sector expiration was registered.
@@ -1215,6 +1220,7 @@ func TestTerminateSectors(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, expiringSectorNos, 1)
 			assert.Equal(t, sector.SectorNumber, abi.SectorNumber(expiringSectorNos[0]))
+			initialLockedFunds = st.LockedFunds
 		}
 
 		sectorSize, err := sector.SealProof.SectorSize()
@@ -1241,6 +1247,9 @@ func TestTerminateSectors(t *testing.T) {
 			_, found, err := st.GetSector(rt.AdtStore(), sector.SectorNumber)
 			require.NoError(t, err)
 			assert.False(t, found)
+
+			// expect fee to have been unlocked and burnt
+			assert.Equal(t, big.Sub(initialLockedFunds, expectedFee), st.LockedFunds)
 
 			// expect pledge requirement to have been decremented
 			assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
@@ -1567,48 +1576,48 @@ type proveCommitConf struct {
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, precommitEpoch abi.ChainEpoch,
 	params *miner.ProveCommitSectorParams) {
-		commd := cbg.CborCid(tutil.MakeCID("commd"))
-		sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
-		sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
-		interactiveEpoch := precommitEpoch + miner.PreCommitChallengeDelay
-	
-		// Prepare for and receive call to ProveCommitSector
-		{
-			cdcParams := market.ComputeDataCommitmentParams{
-				DealIDs:    precommit.DealIDs,
-				SectorType: precommit.SealProof,
-			}
-			rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &commd, exitcode.Ok)
+	commd := cbg.CborCid(tutil.MakeCID("commd"))
+	sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
+	sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
+	interactiveEpoch := precommitEpoch + miner.PreCommitChallengeDelay
+
+	// Prepare for and receive call to ProveCommitSector
+	{
+		cdcParams := market.ComputeDataCommitmentParams{
+			DealIDs:    precommit.DealIDs,
+			SectorType: precommit.SealProof,
 		}
-		{
-			var buf bytes.Buffer
-			err := rt.Receiver().MarshalCBOR(&buf)
-			require.NoError(h.t, err)
-			rt.ExpectGetRandomness(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
-			rt.ExpectGetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &commd, exitcode.Ok)
+	}
+	{
+		var buf bytes.Buffer
+		err := rt.Receiver().MarshalCBOR(&buf)
+		require.NoError(h.t, err)
+		rt.ExpectGetRandomness(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
+		rt.ExpectGetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
+	}
+	{
+		actorId, err := addr.IDFromAddress(h.receiver)
+		require.NoError(h.t, err)
+		seal := abi.SealVerifyInfo{
+			SectorID: abi.SectorID{
+				Miner:  abi.ActorID(actorId),
+				Number: precommit.SectorNumber,
+			},
+			SealedCID:             precommit.SealedCID,
+			SealProof:             precommit.SealProof,
+			Proof:                 params.Proof,
+			DealIDs:               precommit.DealIDs,
+			Randomness:            sealRand,
+			InteractiveRandomness: sealIntRand,
+			UnsealedCID:           cid.Cid(commd),
 		}
-		{
-			actorId, err := addr.IDFromAddress(h.receiver)
-			require.NoError(h.t, err)
-			seal := abi.SealVerifyInfo{
-				SectorID: abi.SectorID{
-					Miner:  abi.ActorID(actorId),
-					Number: precommit.SectorNumber,
-				},
-				SealedCID:             precommit.SealedCID,
-				SealProof:             precommit.SealProof,
-				Proof:                 params.Proof,
-				DealIDs:               precommit.DealIDs,
-				Randomness:            sealRand,
-				InteractiveRandomness: sealIntRand,
-				UnsealedCID:           cid.Cid(commd),
-			}
-			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.SubmitPoRepForBulkVerify, &seal, abi.NewTokenAmount(0), nil, exitcode.Ok)
-		}
-		rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAny()
-		rt.Call(h.a.ProveCommitSector, params)
-		rt.Verify()
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.SubmitPoRepForBulkVerify, &seal, abi.NewTokenAmount(0), nil, exitcode.Ok)
+	}
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAny()
+	rt.Call(h.a.ProveCommitSector, params)
+	rt.Verify()
 }
 
 func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommitEpoch abi.ChainEpoch, precommits ...*miner.SectorPreCommitInfo) {
@@ -1633,7 +1642,7 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	// expected pledge is the sum of precommit deposits
 	if len(validPrecommits) > 0 {
 		expectPledge := big.Zero()
-		
+
 		expectQAPower := big.Zero()
 		expectRawPower := big.Zero()
 		for _, precommit := range validPrecommits {
