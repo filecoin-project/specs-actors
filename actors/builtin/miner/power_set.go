@@ -26,40 +26,67 @@ func NewPowerSet() *PowerSet {
 }
 
 // Wrapper for working with an AMT[ChainEpoch]*PowerSet functioning as a queue, bucketed by epoch.
-type epochPowerQueue struct {
+type sectorQueue struct {
 	*adt.Array
 }
 
-func loadPowerQueue(store adt.Store, root cid.Cid) (epochPowerQueue, error) {
+func loadSectorQueue(store adt.Store, root cid.Cid) (sectorQueue, error) {
 	arr, err := adt.AsArray(store, root)
 	if err != nil {
-		return epochPowerQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
+		return sectorQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}
-	return epochPowerQueue{arr}, nil
+	return sectorQueue{arr}, nil
 }
 
 // Adds values to the queue entry for an epoch.
-func (q epochPowerQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, power PowerPair) error {
-	var ps PowerSet
-	var err error
-	if _, err := q.Array.Get(uint64(epoch), &ps); err != nil {
+func (q sectorQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, power PowerPair) error {
+	ps := NewPowerSet()
+	if _, err := q.Array.Get(uint64(epoch), ps); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
 	}
 
+	var err error
 	ps.Values, err = bitfield.MergeBitFields(ps.Values, values)
 	if err != nil {
 		return xerrors.Errorf("failed to merge bitfields for queue epoch %v: %w", epoch, err)
 	}
 	ps.TotalPower = ps.TotalPower.Add(power)
 
-	if err = q.Array.Set(uint64(epoch), &ps); err != nil {
+	if err = q.Array.Set(uint64(epoch), ps); err != nil {
+		return xerrors.Errorf("failed to set queue epoch %v: %w", epoch, err)
+	}
+	return nil
+}
+
+// Adds values to the queue entry for an epoch.
+func (q sectorQueue) RemoveFromQueue(epoch abi.ChainEpoch, values *abi.BitField, power PowerPair) error {
+	ps := NewPowerSet()
+	if _, err := q.Array.Get(uint64(epoch), ps); err != nil {
+		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
+	}
+
+	var err error
+	ps.Values, err = bitfield.SubtractBitField(ps.Values, values)
+	if err != nil {
+		return xerrors.Errorf("failed to subtract bitfields for queue epoch %v: %w", epoch, err)
+	}
+	// XXX: check underflow
+	ps.TotalPower = ps.TotalPower.Sub(power)
+
+	if empty, err := ps.Values.IsEmpty(); err != nil {
+		return err
+	} else if empty {
+		if err := q.Array.Delete(uint64(epoch)); err != nil {
+			return xerrors.Errorf("failed to delete queue epoch %d: %w", epoch, err)
+		}
+	} else if err := q.Array.Set(uint64(epoch), ps); err != nil {
 		return xerrors.Errorf("failed to set queue epoch %v: %w", epoch, err)
 	}
 	return nil
 }
 
 // Removes values from any and all queue entries in which they appear.
-func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[abi.SectorNumber]PowerPair) error {
+func (q sectorQueue) RemoveFromQueueAll(values *abi.BitField, powers map[abi.SectorNumber]PowerPair) error {
 	var epochsDeleted []uint64
 	var epochFaults PowerSet
 	if err := q.Array.ForEach(&epochFaults, func(i int64) error {

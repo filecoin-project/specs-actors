@@ -28,9 +28,9 @@ type Partition struct {
 	EarlyTerminated cid.Cid // AMT[ChainEpoch]BitField
 
 	// Maps epochs to sectors that became faulty during that epoch.
-	FaultsEpochs cid.Cid // AMT[ChainEpoch]PowerSet, with pledge always zero
+	FaultsEpochs cid.Cid // AMT[ChainEpoch]PowerSet
 	// Maps epochs sectors that expire in that epoch.
-	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
+	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]PowerSet
 
 	// Power of not-yet-terminated sectors (incl faulty)
 	TotalPower PowerPair
@@ -74,7 +74,7 @@ func (p *Partition) AddFaults(store adt.Store, faultEpoch abi.ChainEpoch, sector
 	}
 	p.FaultyPower = p.FaultyPower.Add(power)
 
-	queue, err := loadPowerQueue(store, p.FaultsEpochs)
+	queue, err := loadSectorQueue(store, p.FaultsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load partition fault epochs: %w", err)
 	}
@@ -104,7 +104,7 @@ func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField, power
 	}
 	p.FaultyPower = p.FaultyPower.Sub(power)
 
-	queue, err := loadPowerQueue(store, p.FaultsEpochs)
+	queue, err := loadSectorQueue(store, p.FaultsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load partition fault epochs: %w", err)
 	}
@@ -159,29 +159,18 @@ func (p *Partition) AddSectors(store adt.Store, sectorSize abi.SectorSize, secto
 	}
 
 	// Update the expirations (and power).
-	expirations, err := adt.AsArray(store, p.ExpirationsEpochs)
+	expirations, err := loadSectorQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
 
 	for _, group := range groupSectorsByExpiration(sectorSize, sectors) {
-		// Update partition power. We do this here because we calculate
-		// power when grouping.
+		// Update partition total power (saves redundant arithmetic over doing it in the initial loop over sectors).
 		p.TotalPower = p.TotalPower.Add(group.totalPower)
 
-		// Update per-partition expiration queue.
-		exp := NewPowerSet()
-		_, err := expirations.Get(uint64(group.epoch), exp)
-		if err != nil {
-			return err
-		}
-
-		for _, sectorNo := range group.sectors {
-			exp.Values.Set(sectorNo)
-		}
-
-		if err := expirations.Set(uint64(group.epoch), exp); err != nil {
-			return err
+		// Update expiration queue.
+		if err := expirations.AddToQueue(group.epoch, bitfield.NewFromSet(group.sectors), group.totalPower); err != nil {
+			return xerrors.Errorf("failed to record new sector expirations: %w", err)
 		}
 	}
 	p.ExpirationsEpochs, err = expirations.Root()
@@ -190,49 +179,26 @@ func (p *Partition) AddSectors(store adt.Store, sectorSize abi.SectorSize, secto
 
 // RescheduleExpirations moves expiring sectors to the target expiration.
 func (p *Partition) RescheduleExpirations(store adt.Store, sectorSize abi.SectorSize, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo) error {
-	expirations, err := adt.AsArray(store, p.ExpirationsEpochs)
+	expirations, err := loadSectorQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
 
-	targetExp := NewPowerSet()
-	_, err = expirations.Get(uint64(epoch), targetExp)
-	if err != nil {
-		return err
-	}
+	var sectorsTotal []*abi.BitField
+	powerTotal := PowerPairZero()
 
 	for _, group := range groupSectorsByExpiration(sectorSize, sectors) {
-		exp := NewPowerSet()
-		_, err := expirations.Get(uint64(group.epoch), exp)
-		if err != nil {
+		sectorsBf := bitfield.NewFromSet(group.sectors)
+		if err = expirations.RemoveFromQueue(group.epoch, sectorsBf, group.totalPower); err != nil {
 			return err
 		}
 
-		for _, sectorNo := range group.sectors {
-			exp.Values.Unset(sectorNo)
-			targetExp.Values.Set(sectorNo)
-		}
-
-		// TODO: check underflow
-		exp.TotalPower = exp.TotalPower.Sub(group.totalPower)
-		targetExp.TotalPower = targetExp.TotalPower.Add(group.totalPower)
-
-		if empty, err := exp.Values.IsEmpty(); err != nil {
-			return err
-		} else if empty {
-			err = expirations.Delete(uint64(group.epoch))
-		} else {
-			err = expirations.Set(uint64(group.epoch), exp)
-		}
-		if err != nil {
-			return err
-		}
+		sectorsTotal = append(sectorsTotal, sectorsBf)
+		powerTotal = powerTotal.Add(group.totalPower)
 	}
 
-	// Update the target expiration.
-	err = expirations.Set(uint64(epoch), targetExp)
-	if err != nil {
-		return err
+	if err = expirations.AddToQueue(epoch, sectorsTotal, powerTotal); err != nil {
+		return err // XXX ANORTH HERE merge sectorstotal
 	}
 
 	p.ExpirationsEpochs, err = expirations.Root()
