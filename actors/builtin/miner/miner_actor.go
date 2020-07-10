@@ -237,9 +237,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
-	var newFaultSectors []*SectorOnChainInfo
-	var recoveredSectors []*SectorOnChainInfo
-	penalty := abi.NewTokenAmount(0)
 
 	if params.Deadline > WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
@@ -249,6 +246,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	// Get the total power/reward. We need these to compute penalties.
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
+
+	newFaultPowerTotal := PowerPairZero()
+	retractedRecoveryPowerTotal := PowerPairZero()
+	recoveredPowerTotal := PowerPairZero()
+	penalty := abi.NewTokenAmount(0)
 
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
@@ -291,17 +293,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		partitionIdxs := make([]uint64, 0, len(params.Partitions))
 		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
 		allFaults := make([]*abi.BitField, 0, len(params.Partitions))
-		allRecoveries := make([]*abi.BitField, 0, len(params.Partitions))
-		allNewFaults := make([]*abi.BitField, 0, len(params.Partitions))
-		allRetractedRecoveries := make([]*abi.BitField, 0, len(params.Partitions))
 
 		// Check and record skipped faults for each partition.
 		// Accumulate sectors info for proof verification.
 		for _, post := range params.Partitions {
 			key := PartitionKey{params.Deadline, post.Index}
-			set, err := deadline.PostSubmissions.IsSet(post.Index)
+			alreadyProven, err := deadline.PostSubmissions.IsSet(post.Index)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if partition %v already posted", key)
-			if set {
+			if alreadyProven {
 				// Skip partitions already proven for this deadline.
 				continue
 			}
@@ -313,45 +312,34 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 				rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
 			}
 
-			newFaults, retractedRecoveries := processSkippedFaults(rt, store, faultEpoch, &partition, post.Skipped)
+			// Process new faults and accumulate new faulty power.
+			newFaultPower, retractedRecoveryPower := processSkippedFaults(rt, &st, store, info.SectorSize, faultEpoch, &partition, post.Skipped)
 
-			partitionIdxs = append(partitionIdxs, post.Index)
-			allSectors = append(allSectors, partition.Sectors)
-			allFaults = append(allFaults, partition.Faults)
-			allRecoveries = append(allRecoveries, partition.Recoveries)
-			allNewFaults = append(allNewFaults, newFaults)
-			allRetractedRecoveries = append(allRetractedRecoveries, retractedRecoveries)
-
-			// Assume the proof will be successful, restore declared recoveries.
+			// Process recoveries, assuming the proof will be successful.
 			// This will be rolled back if the method aborts with a failed proof.
-			// XXX ANORTH IS HERE
-			err = partition.RemoveFaults(store, partition.Recoveries)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
-
-			err = partition.RemoveRecoveries(partition.Recoveries)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+			recoveredPower := processRecoveries(rt, &st, store, info.SectorSize, &partition)
 
 			err = partitions.Set(post.Index, &partition)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
+
+			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultPower)
+			retractedRecoveryPowerTotal = retractedRecoveryPowerTotal.Add(retractedRecoveryPower)
+			recoveredPowerTotal = recoveredPowerTotal.Add(recoveredPower)
+
+			// At this point, the partition faults represents the expected faults for the proof, with new skipped
+			// faults and recoveries taken into account.
+			partitionIdxs = append(partitionIdxs, post.Index)
+			allSectors = append(allSectors, partition.Sectors)
+			allFaults = append(allFaults, partition.Faults)
 		}
 
 		// TODO minerstate: factor out a method for the miner node to calculate and load all sectors for proof,
 		// with reference to faults, skipped etc
 
-		// Collect all sectors, faults, and recoveries for proof verification.
-		provenSectors, err := bitfield.MultiMerge(allSectors...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union sectors")
-
-		faults, err := bitfield.MultiMerge(allFaults...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union faults")
-
-		recoveries, err := bitfield.MultiMerge(allRecoveries...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union recoveries")
-
 		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
 		// Note: this is slightly sub-optimal, loading info for the recovering sectors again after they were already
 		// loaded above.
-		sectorInfos, err := st.LoadSectorInfosForProof(store, provenSectors, faults, recoveries)
+		sectorInfos, err := st.LoadSectorInfosForProof(store, allSectors, allFaults)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		// Skip verification if all sectors are faults.
@@ -362,51 +350,26 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 		}
 
-		// Collect all new faults and retractions for penalization.
+		// Penalize new skipped faults and retracted recoveries.
 		// Faults declared here pay a higher fee than those declared earlier or ongoing.
 		// Retracted recoveries pay a high fee, rather than no fee if declared "on time".
-		newFaults, err := bitfield.MultiMerge(allNewFaults...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union new faults")
-		newFaultSectors, err = st.LoadSectorInfos(store, newFaults)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-
-		retractedRecoveries, err := bitfield.MultiMerge(allRetractedRecoveries...)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to union retracted recoveries")
-		retractedRecoverySectors, err := st.LoadSectorInfos(store, retractedRecoveries)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load retracted recovery secrtors")
-
-		// Penalize new skipped faults and retracted recoveries
 		// TODO deadline-cron: defer power loss and penalty to end of deadline
 		// XXX at the deadline cron the faulty sectors will pay FF. Here we need to charge SP-FF (or defer the charge of SP)
-		penalizeFaultSectors := append(newFaultSectors, retractedRecoverySectors...)
-		penalty, err = unlockUndeclaredFaultPenalty(&st, store, info.SectorSize, currEpoch, epochReward, pwrTotal.QualityAdjPower, penalizeFaultSectors)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to charge fault fee")
+		penalizedPower := newFaultPowerTotal.Add(retractedRecoveryPowerTotal)
+		penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizedPower.QA)
+		penalty, err = st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", penalizedPower)
 
 		// Record the successful submission
 		postedPartitions := bitfield.NewFromSet(partitionIdxs)
 		err = st.AddPoStSubmissions(postedPartitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record submissions for deadline %d partitions %s",
 			params.Deadline, postedPartitions)
-
-		// Load info for recovered sectors for recovery of power outside this state transaction.
-		empty, err := recoveries.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield empty")
-		if !empty {
-			sectorsByNumber := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectorInfos))
-			for _, s := range sectorInfos {
-				sectorsByNumber[s.SectorNumber] = s
-			}
-
-			_ = recoveries.ForEach(func(i uint64) error {
-				recoveredSectors = append(recoveredSectors, sectorsByNumber[abi.SectorNumber(i)])
-				return nil
-			})
-		}
 		return nil
 	})
 
 	// Restore power for recovered sectors. Remove power for new faults.
-	requestUpdatePowerForSectors(rt, info.SectorSize, recoveredSectors, newFaultSectors)
+	requestUpdatePower(rt, recoveredPowerTotal.Sub(newFaultPowerTotal))
 	// Burn penalties.
 	burnFundsAndNotifyPledgeChange(rt, penalty)
 	return nil
@@ -1027,6 +990,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing recoveries")
 
 				// Record the new recoveries for processing at Window PoSt or deadline cron.
+				// XXX ANORTH HERE
 				err = partition.AddRecoveries(recoveries)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add recoveries")
 			}
@@ -1352,11 +1316,11 @@ func handleProvingDeadline(rt Runtime) {
 // - Skipped faults that are already declared, but not recovered will be ignored.
 // - The rest will be penalized as undeclared faults and have their power removed.
 // FIXME update comment
-func processSkippedFaults(rt Runtime, store adt.Store, faultEpoch abi.ChainEpoch, partition *Partition, skipped *bitfield.BitField) (newFaults, retractedRecoveries *abi.BitField) {
+func processSkippedFaults(rt Runtime, st *State, store adt.Store, ssize abi.SectorSize, faultEpoch abi.ChainEpoch, partition *Partition, skipped *bitfield.BitField) (newFaultPower, retractedRecoveryPower PowerPair) {
 	empty, err := skipped.IsEmpty()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
 	if empty {
-		return nil, nil
+		return PowerPairZero(), PowerPairZero()
 	}
 
 	// Check that the declared sectors are actually in the partition.
@@ -1367,22 +1331,42 @@ func processSkippedFaults(rt Runtime, store adt.Store, faultEpoch abi.ChainEpoch
 	}
 
 	// Find all skipped faults that have been labeled recovered
-	retractedRecoveries, err = bitfield.IntersectBitField(partition.Recoveries, skipped)
+	retractedRecoveries, err := bitfield.IntersectBitField(partition.Recoveries, skipped)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
+	retractedRecoverySectors, err := st.LoadSectorInfos(store, retractedRecoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+	retractedRecoveryPower = PowerForSectors(ssize, retractedRecoverySectors)
 
 	// Ignore skipped faults that are already faults
-	newFaults, err = bitfield.SubtractBitField(skipped, partition.Faults)
+	newFaults, err := bitfield.SubtractBitField(skipped, partition.Faults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
+	newFaultSectors, err := st.LoadSectorInfos(store, newFaults)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+	newFaultPower = PowerForSectors(ssize, newFaultSectors)
 
 	// Record new faults
-	err = partition.AddFaults(store, newFaults, faultEpoch)
+	err = partition.AddFaults(store, faultEpoch, newFaults, newFaultPower)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
 
 	// Remove faulty recoveries
-	err = partition.RemoveRecoveries(retractedRecoveries)
+	err = partition.RemoveRecoveries(retractedRecoveries, retractedRecoveryPower)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
-	return newFaults, retractedRecoveries
+	return newFaultPower, retractedRecoveryPower
+}
+
+func processRecoveries(rt Runtime, st *State, store adt.Store, ssize abi.SectorSize, partition *Partition) PowerPair {
+	recoveredSectors, err := st.LoadSectorInfos(store, partition.Recoveries)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load recovered sectors")
+	recoveredPower, each := PowerForEachSector(ssize, recoveredSectors)
+
+	err = partition.RemoveFaults(store, partition.Recoveries, recoveredPower, each)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
+
+	err = partition.RemoveRecoveries(partition.Recoveries, recoveredPower)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
+
+	return recoveredPower
 }
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
@@ -2108,6 +2092,7 @@ func qaPowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) 
 	return power
 }
 
+// XXX minerstate: deprecate these, compute the power first
 func unlockDeclaredFaultPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
 	totalQAPower := qaPowerForSectors(sectorSize, sectors)
 	fee := PledgePenaltyForDeclaredFault(epochTargetReward, networkQAPower, totalQAPower)
@@ -2142,6 +2127,22 @@ func PowerForSectors(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) Po
 		Raw: big.Mul(big.NewIntUnsigned(uint64(sectorSize)), big.NewIntUnsigned(uint64(len(sectors)))),
 		QA:  qaPowerForSectors(sectorSize, sectors),
 	}
+}
+
+// Returns the sum of power for sectors, and a map with each by sector number.
+func PowerForEachSector(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) (PowerPair, map[abi.SectorNumber]PowerPair) {
+	each := make(map[abi.SectorNumber]PowerPair, len(sectors))
+	total := PowerPairZero()
+	ssize := big.NewIntUnsigned(uint64(sectorSize))
+	for _, s := range sectors {
+		pp := PowerPair{
+			Raw: ssize,
+			QA:QAPowerForSector(sectorSize, s),
+		}
+		each[s.SectorNumber] = pp
+		total = total.Add(pp)
+	}
+	return total, each
 }
 
 // The oldest seal challenge epoch that will be accepted in the current epoch.
