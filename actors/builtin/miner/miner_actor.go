@@ -556,50 +556,36 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
+	// 1. Activate deals, skipping pre-commits with invalid deals.
+	//    - calls the market actor.
+	// 2. Reschedule replacement sector expiration.
+	//    - loads and saves sectors
+	//    - loads and saves deadlines/partitions
+	// 3. Add new sectors.
+	//    - loads and saves sectors.
+	//    - loads and saves deadlines/partitions
+	//
+	// Ideally, we'd combine some of these operations, but at least we have
+	// a constant number of them.
+
 	var st State
 	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
 	info := getMinerInfo(rt, &st)
+
+	//
+	// Activate storage deals.
+	//
+
+	// This skips missing pre-commits.
+	precommittedSectors, err := st.GetExistingPrecommittedSectors(store, params.Sectors...)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
+
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
-	var replaceSectors []*SectorOnChainInfo
-	replaceSectorKeys := map[abi.SectorNumber]struct{}{} // For de-duplication
+	var replaceSectorLocations []SectorLocation
+	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
-	for _, sectorNo := range params.Sectors {
-		precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
-		if !found || err != nil {
-			// This relies on the precommit having been checked in ProveCommitSector and not removed (expired) before
-			// this call. This in turn relies on the call from the power actor reliably coming in the same
-			// epoch as ProveCommitSector.
-
-			// TODO #564 log: "failed to get precommitted sector on sector %d, dropping from prove commit set"
-			continue
-		}
-
-		if precommit.Info.ReplaceCapacity {
-			replaceSector := precommit.Info.ReplaceSector
-			info, exists, err := st.GetSector(store, replaceSector)
-			if err != nil {
-				// TODO #564 log "failed to check sector %d, dropping from prove commit set"
-				continue
-			}
-			faulty, err := st.Faults.IsSet(uint64(replaceSector))
-			if err != nil {
-				// TODO #564 log "failed to check sector %d fault state, dropping from prove commit set"
-				continue
-			}
-			_, set := replaceSectorKeys[replaceSector]
-			// It doesn't matter if the committed-capacity sector no longer exists, or if multiple sectors attempt to
-			// replace the same committed-capacity sector, so long as we don't try to terminate it more than once.
-			// It just represents a lost opportunity to terminate a committed sector early.
-			// Similarly, if faulty, allow the new sector commitment to proceed but just decline to terminate the
-			// committed-capacity one.
-			if exists && !set && !faulty {
-				replaceSectorKeys[replaceSector] = struct{}{}
-				replaceSectors = append(replaceSectors, info)
-			}
-		}
-
+	for _, precommit := range precommittedSectors {
 		// Check (and activate) storage deals associated to sector. Abort if checks failed.
 		// TODO: we should batch these calls...
 		// https://github.com/filecoin-project/specs-actors/issues/474
@@ -612,12 +598,17 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			},
 			abi.NewTokenAmount(0),
 		)
+
 		if code != exitcode.Ok {
 			// TODO #564 log: "failed to activate deals on sector %d, dropping from prove commit set"
 			continue
 		}
 
 		preCommits = append(preCommits, precommit)
+
+		if precommit.Info.ReplaceCapacity {
+			replaceSectorLocations = append(replaceSectorLocations, precommit.Info.ReplaceSector)
+		}
 	}
 
 	// When all prove commits have failed abort early
@@ -625,12 +616,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		rt.Abortf(exitcode.ErrIllegalArgument, "all prove commits failed to validate")
 	}
 
-	// This transaction should replace the one inside the loop above.
-	// Migrate state mutations into here.
 	totalPledge := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
-		err := scheduleReplaceSectorsExpiration(rt, &st, store, replaceSectors)
+		// Schedule expiration for replaced sectors.
+		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectorLocations)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
@@ -1267,7 +1257,6 @@ func handleProvingDeadline(rt Runtime) {
 		{
 			deadline.PopExpiredFaults()
 
-
 			// Terminate sectors with faults that are too old, and pay fees for ongoing faults.
 			expiredFaults := abi.NewBitField()
 			ongoingFaults := abi.NewBitField()
@@ -1389,29 +1378,43 @@ func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainE
 }
 
 func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) *SectorOnChainInfo {
-	replaceSector, found, err := st.GetSector(store, params.ReplaceSector)
+	replaceSector, found, err := st.GetSector(store, params.ReplaceSector.SectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
 	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", params.ReplaceSector)
+		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", params.ReplaceSector.SectorNumber)
 	}
 
 	if len(replaceSector.DealIDs) > 0 {
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v which has deals", params.ReplaceSector)
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v which has deals", params.ReplaceSector.SectorNumber)
 	}
 	if params.SealProof != replaceSector.SealProof {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v seal proof %v with seal proof %v",
-			params.ReplaceSector, replaceSector.SealProof, params.SealProof)
+			params.ReplaceSector.SectorNumber, replaceSector.SealProof, params.SealProof)
 	}
 	if params.Expiration < replaceSector.Expiration {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v expiration %v with sooner expiration %v",
-			params.ReplaceSector, replaceSector.Expiration, params.Expiration)
+			params.ReplaceSector.SectorNumber, replaceSector.Expiration, params.Expiration)
 	}
-	faulty, err := st.Faults.IsSet(uint64(params.ReplaceSector))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check fault for sector %v", params.ReplaceSector)
-	if faulty {
-		// Note: the sector might still fault later, in which case we should not license its termination.
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace faulty sector %v", params.ReplaceSector)
+
+	status, err := st.SectorStatus(store, params.ReplaceSector)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector health %v", params.ReplaceSector)
+
+	switch status {
+	case SectorNotFound:
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector %d not found at %d:%d (deadline:partition)",
+			params.ReplaceSector.SectorNumber, params.ReplaceSector.Deadline, params.ReplaceSector.Partition,
+		)
+	case SectorFaulty:
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace faulty sector %d", params.ReplaceSector.SectorNumber)
+	case SectorTerminated:
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace terminated sector %d", params.ReplaceSector.SectorNumber)
+	case SectorHealthy:
+		// pass
+	default:
+		// TODO: Just panic?
+		rt.Abortf(exitcode.ErrIllegalState, "unexpected sector status %d", status)
 	}
+
 	return replaceSector
 }
 
