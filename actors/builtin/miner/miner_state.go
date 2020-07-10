@@ -1002,7 +1002,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 		return big.Zero(), err
 	}
 
-	err = deleteMany(vestingFunds, toDelete)
+	err = vestingFunds.BatchDelete(toDelete)
 	if err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during slash: %v", err)
 	}
@@ -1045,7 +1045,7 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 		return big.Zero(), err
 	}
 
-	err = deleteMany(vestingFunds, toDelete)
+	err = vestingFunds.BatchDelete(toDelete)
 	if err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest: %v", err)
 	}
@@ -1114,17 +1114,6 @@ func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 //
 // Misc helpers
 //
-
-func deleteMany(arr *adt.Array, keys []uint64) error {
-	// If AMT exposed a batch delete we could save some writes here.
-	for _, i := range keys {
-		err := arr.Delete(i)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // Rounds e to the nearest exact multiple of the quantization unit offset by
 // offsetSeed % unit, rounding up.

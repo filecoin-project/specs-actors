@@ -35,6 +35,16 @@ func PositiveFromUnsignedBytes(b []byte) Int {
 	return Int{i}
 }
 
+// MustFromString convers dec string into big integer and panics if conversion
+// is not sucessful.
+func MustFromString(s string) Int {
+	v, err := FromString(s)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
 func FromString(s string) (Int, error) {
 	v, ok := big.NewInt(0).SetString(s, 10)
 	if !ok {

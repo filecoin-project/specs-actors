@@ -2,6 +2,7 @@ package market
 
 import (
 	"fmt"
+	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -571,9 +572,18 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			builtin.RequireNoErr(rt, dbe.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
 		}
 
-		// TODO FIXME: iteration over map
-		for epoch, deals := range updatesNeeded { //nolint:nomaprange
-			if err := dbe.PutMany(epoch, deals); err != nil {
+		// Iterate changes in sorted order to ensure that loads/stores
+		// are deterministic. Otherwise, we could end up charging an
+		// inconsistent amount of gas.
+		changedEpochs := make([]abi.ChainEpoch, 0, len(updatesNeeded))
+		for epoch := range updatesNeeded { //nolint:nomaprange
+			changedEpochs = append(changedEpochs, epoch)
+		}
+
+		sort.Slice(changedEpochs, func(i, j int) bool { return changedEpochs[i] < changedEpochs[j] })
+
+		for _, epoch := range changedEpochs {
+			if err := dbe.PutMany(epoch, updatesNeeded[epoch]); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to reinsert deal IDs into epoch set: %s", err)
 			}
 		}
