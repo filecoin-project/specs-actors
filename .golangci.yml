@@ -11,3 +11,8 @@ linters:
 
 run:
   skip-dirs-use-default: false
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      text: "range iteration over map"
