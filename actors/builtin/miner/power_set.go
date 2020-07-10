@@ -8,7 +8,6 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -40,7 +39,7 @@ func loadPowerQueue(store adt.Store, root cid.Cid) (epochPowerQueue, error) {
 }
 
 // Adds values to the queue entry for an epoch.
-func (q epochPowerQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, power PowerPair, pledge abi.TokenAmount) error {
+func (q epochPowerQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, power PowerPair) error {
 	var ps PowerSet
 	var err error
 	if _, err := q.Array.Get(uint64(epoch), &ps); err != nil {
@@ -52,7 +51,6 @@ func (q epochPowerQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, 
 		return xerrors.Errorf("failed to merge bitfields for queue epoch %v: %w", epoch, err)
 	}
 	ps.TotalPower = ps.TotalPower.Add(power)
-	ps.TotalPledge = big.Add(ps.TotalPledge, pledge)
 
 	if err = q.Array.Set(uint64(epoch), &ps); err != nil {
 		return xerrors.Errorf("failed to set queue epoch %v: %w", epoch, err)
@@ -61,7 +59,7 @@ func (q epochPowerQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField, 
 }
 
 // Removes values from any and all queue entries in which they appear.
-func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[uint64]PowerPair) error {
+func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[abi.SectorNumber]PowerPair) error {
 	var epochsDeleted []uint64
 	var epochFaults PowerSet
 	if err := q.Array.ForEach(&epochFaults, func(i int64) error {
@@ -82,7 +80,7 @@ func (q epochPowerQueue) RemoveFromQueueAll(values *abi.BitField, powers map[uin
 		// Remove power and pledge from queue entry.
 		if err = removeThisEpoch.ForEach(func(sno uint64) error {
 			if powers != nil {
-				pwr, ok := powers[sno]
+				pwr, ok := powers[abi.SectorNumber(sno)]
 				if !ok {
 					return xerrors.Errorf("no power for sector %d", sno)
 				}

@@ -78,7 +78,7 @@ func (p *Partition) AddFaults(store adt.Store, faultEpoch abi.ChainEpoch, sector
 	if err != nil {
 		return xerrors.Errorf("failed to load partition fault epochs: %w", err)
 	}
-	if err := queue.AddToQueue(faultEpoch, sectorNos, power, big.Zero()); err != nil {
+	if err := queue.AddToQueue(faultEpoch, sectorNos, power); err != nil {
 		return xerrors.Errorf("failed to add faults to partition queue: %w", err)
 	}
 	p.FaultsEpochs, err = queue.Root()
@@ -89,7 +89,7 @@ func (p *Partition) AddFaults(store adt.Store, faultEpoch abi.ChainEpoch, sector
 // The sectors are removed from the Faults bitfield and FaultyPower reduced.
 // The sectors are removed from the FaultEpochsQueue, reducing the queue power by the sum of sector powers.
 // Consistency between the partition totals and queue depend on the reported sectors actually being faulty.
-func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField, power PowerPair, powers map[uint64]PowerPair) error {
+func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField, power PowerPair, powers map[abi.SectorNumber]PowerPair) error {
 	if empty, err := sectorNos.IsEmpty(); err != nil {
 		return err
 	} else if empty {
@@ -260,7 +260,7 @@ func (p *Partition) RecordMissedPost(store adt.Store, faultEpoch abi.ChainEpoch)
 		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record new faults: %w", err)
 	}
 
-	if err := p.RemoveRecoveries(failedRecoveries); err != nil {
+	if err := p.RemoveRecoveries(failedRecoveries, failedRecoveryPower); err != nil {
 		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record failed recoveries: %w", err)
 	}
 	p.RecoveringPower = PowerPairZero()
