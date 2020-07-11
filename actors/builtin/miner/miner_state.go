@@ -549,7 +549,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 				// pick the next one.
 				dlInfo = NewDeadlineInfo(dlInfo.NextPeriodStart(), dlIdx, currEpoch)
 			}
-			newEpoch = dlInfo.Close // TODO: make sure this isn't off by one, or anyting.
+			newEpoch = dlInfo.Last() // TODO: make sure this isn't off by one, or anyting.
 			return false, nil
 		},
 		// Process partitions in deadline.
@@ -619,7 +619,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 				return false, nil
 			}
 
-			q, err := loadEpochQueue(store, dl.ExpirationsEpochs)
+			q, err := loadUintQueue(store, dl.ExpirationsEpochs)
 			if err != nil {
 				return false, err
 			}

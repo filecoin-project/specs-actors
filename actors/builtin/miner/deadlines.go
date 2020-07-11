@@ -18,8 +18,8 @@ type DeadlineInfo struct {
 	CurrentEpoch abi.ChainEpoch // Epoch at which this info was calculated.
 	PeriodStart  abi.ChainEpoch // First epoch of the proving period (<= CurrentEpoch).
 	Index        uint64         // A deadline index, in [0..WPoStProvingPeriodDeadlines) unless period elapsed.
-	Open         abi.ChainEpoch // First epoch from which a proof may be submitted, inclusive (>= CurrentEpoch).
-	Close        abi.ChainEpoch // First epoch from which a proof may no longer be submitted, exclusive (>= Open).
+	Open         abi.ChainEpoch // First epoch from which a proof may be submitted (>= CurrentEpoch).
+	Close        abi.ChainEpoch // First epoch from which a proof may no longer be submitted (>= Open).
 	Challenge    abi.ChainEpoch // Epoch at which to sample the chain for challenge (< Open).
 	FaultCutoff  abi.ChainEpoch // First epoch at which a fault declaration is rejected (< Open).
 }
@@ -44,9 +44,14 @@ func (d *DeadlineInfo) HasElapsed() bool {
 	return d.CurrentEpoch >= d.Close
 }
 
+// The last epoch during which a proof may be submitted.
+func (d *DeadlineInfo) Last() abi.ChainEpoch {
+	return d.Close - 1
+}
+
 // Epoch at which the subsequent deadline opens.
 func (d *DeadlineInfo) NextOpen() abi.ChainEpoch {
-	return d.Close + 1
+	return d.Close
 }
 
 // Whether the deadline's fault cutoff has passed.

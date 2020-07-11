@@ -1,7 +1,6 @@
 package miner
 
 import (
-	"fmt"
 	"io"
 	"sort"
 
@@ -28,16 +27,13 @@ type Deadline struct {
 	// The keys of this AMT are always sequential integers beginning with zero.
 	Partitions cid.Cid // AMT[PartitionNumber]Partition
 
-	// Maps epochs to partitions with sectors that became faulty during that epoch.
-	FaultsEpochs cid.Cid // AMT[ChainEpoch]BitField
-
-	// Maps epochs to partitions with sectors that expire in that epoch.
+	// Maps epochs to partitions with sectors that expire in that epoch, either on-time or early as faults.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
 	// Partitions numbers with PoSt submissions since the proving period started.
 	PostSubmissions *abi.BitField
 
-	// The number of non-terminated sectors in this deadline.
+	// The number of non-terminated sectors in this deadline (incl faulty).
 	LiveSectors uint64
 }
 
@@ -98,7 +94,6 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 	return &Deadline{
 		Partitions:        emptyArrayCid,
-		FaultsEpochs:      emptyArrayCid,
 		ExpirationsEpochs: emptyArrayCid,
 		PostSubmissions:   abi.NewBitField(),
 	}
@@ -124,72 +119,29 @@ func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, e
 	return &partition, nil
 }
 
-// Adds some partition numbers to the set with faults at an epoch.
-func (d *Deadline) AddFaultEpochPartitions(store adt.Store, epoch abi.ChainEpoch, partitions ...uint64) error {
-	queue, err := loadEpochQueue(store, d.FaultsEpochs)
+// Adds some partition numbers to the set expiring at an epoch.
+func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions ...uint64) error {
+	queue, err := loadUintQueue(store, d.ExpirationsEpochs)
 	if err != nil {
-		return xerrors.Errorf("failed to load fault epoch partitions: %w", err)
+		return xerrors.Errorf("failed to load expiration queue: %w", err)
 	}
-	if err := queue.AddToQueueValues(epoch, partitions...); err != nil {
-		return xerrors.Errorf("failed to mutate deadline fault epochs: %w", err)
+	if err = queue.AddToQueueValues(expirationEpoch, partitions...); err != nil {
+		return xerrors.Errorf("failed to mutate expiration queue: %w", err)
 	}
-	d.FaultsEpochs, err = queue.Root()
+	if d.ExpirationsEpochs, err = queue.Root(); err != nil {
+		return xerrors.Errorf("failed to save expiration queue: %w", err)
+	}
 	return nil
 }
 
-func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) (*abi.BitField, error) {
-	stopErr := fmt.Errorf("stop")
-
-	partitionExpirationQ, err := adt.AsArray(store, dl.ExpirationsEpochs)
-	if err != nil {
-		return nil, err
-	}
-
-	partitionsWithExpiredSectors := abi.NewBitField()
-	var expiredEpochs []uint64
-
-	var bf abi.BitField
-	err = partitionExpirationQ.ForEach(&bf, func(i int64) error {
-		if abi.ChainEpoch(i) > until {
-			return stopErr
-		}
-		expiredEpochs = append(expiredEpochs, uint64(i))
-		partitionsWithExpiredSectors, err = bitfield.MergeBitFields(partitionsWithExpiredSectors, &bf)
-		return err
-	})
-	switch err {
-	case nil, stopErr:
-	default:
-		return nil, err
-	}
-
-	// Nothing expired.
-	if len(expiredEpochs) == 0 {
-		return nil, nil
-	}
-
-	err = partitionExpirationQ.BatchDelete(expiredEpochs)
-	if err == nil {
-		return nil, err
-	}
-
-	dl.ExpirationsEpochs, err = partitionExpirationQ.Root()
-	if err != nil {
-		return nil, err
-	}
-
-	return partitionsWithExpiredSectors, nil
-}
-
-// TODO: Change this to ForEachExpired... to avoid creating a bitfield that's too large.
-// TODO: This must update the partitions' state with Terminate bits, updated power total etc
+// PopExpiredSectors terminates expired sectors from all partitions.
+// Returns the expired sector aggregates.
 func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*ExpirationSet, error) {
-	partitionExpiration, err := dl.PopExpiredPartitions(store, until)
+	expiredPartitions, err := dl.popExpiredPartitions(store, until)
 	if err != nil {
 		return nil, err
-	} else if partitionExpiration == nil {
-		// nothing to do.
-		return nil, nil
+	} else if expiredPartitions == nil {
+		return nil, nil // nothing to do.
 	}
 
 	partitions, err := dl.PartitionsArray(store)
@@ -197,52 +149,60 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 		return nil, err
 	}
 
-	totalPower := NewPowerPairZero()
+	var onTimeSectors []*abi.BitField
+	var earlySectors []*abi.BitField
+	allActivePower := NewPowerPairZero()
+	allFaultyPower := NewPowerPairZero()
 
-	// For each partition with an expired sector, collect the
-	// expired sectors and remove them from the queues.
-	var expiredSectors []*abi.BitField
-	err = partitionExpiration.ForEach(func(partIdx uint64) error {
+	// For each partition with an expiry, remove and collect expirations from the partition queue.
+	if err = expiredPartitions.ForEach(func(partIdx uint64) error {
 		var partition Partition
-		found, err := partitions.Get(partIdx, &partition)
-		if err != nil {
+		if found, err := partitions.Get(partIdx, &partition); err != nil {
 			return err
+		} else if !found {
+			return xerrors.Errorf("missing expected partition %d", partIdx)
 		}
-		if !found {
-			return fmt.Errorf("missing an expected partition")
-		}
-		partitionExpiredSectors, err := partition.PopExpiredSectors(store, until)
+
+		partExpiration, err := partition.PopExpiredSectors(store, until)
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to pop expired sectors from partition %d: %w", partIdx, err)
 		}
-		expiredSectors = append(expiredSectors, partitionExpiredSectors.OnTimeSectors)
-		totalPower = totalPower.Add(partitionExpiredSectors.ActivePower)
+
+		onTimeSectors = append(onTimeSectors, partExpiration.OnTimeSectors)
+		earlySectors = append(earlySectors, partExpiration.EarlySectors)
+		allActivePower = allActivePower.Add(partExpiration.ActivePower)
+		allFaultyPower = allFaultyPower.Add(partExpiration.FaultyPower)
+
 		return partitions.Set(partIdx, &partition)
-	})
-	if err != nil {
-		return nil, err
-	}
-	dl.Partitions, err = partitions.Root()
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
-	allExpiries, err := bitfield.MultiMerge(expiredSectors...)
+	if dl.Partitions, err = partitions.Root(); err != nil {
+		return nil, err
+	}
+
+	allOnTimeSectors, err := bitfield.MultiMerge(onTimeSectors...)
+	if err != nil {
+		return nil, err
+	}
+	allEarlySectors, err := bitfield.MultiMerge(earlySectors...)
 	if err != nil {
 		return nil, err
 	}
 
 	// Update live sector count.
-	nExpired, err := allExpiries.Count()
+	onTimeCount, err := allOnTimeSectors.Count()
 	if err != nil {
-		return nil, xerrors.Errorf("failed to count expired sectors: %w", err)
+		return nil, xerrors.Errorf("failed to count on-time expired sectors: %w", err)
 	}
-	dl.LiveSectors -= nExpired
+	earlyCount, err := allEarlySectors.Count()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to count early expired sectors: %w", err)
+	}
+	dl.LiveSectors -= onTimeCount + earlyCount
 
-	return &ExpirationSet{
-		OnTimeSectors: allExpiries,
-		ActivePower:   totalPower,
-	}, nil
+	return NewExpirationSet(allOnTimeSectors, allEarlySectors, allActivePower, allFaultyPower), nil
 }
 
 // Adds sectors to a deadline. It's the caller's responsibility to make sure
@@ -357,7 +317,7 @@ func (dl *Deadline) AddSectors(
 	// Next, update the per-deadline expiration queues.
 
 	{
-		deadlineExpirations, err := loadEpochQueue(store, dl.ExpirationsEpochs)
+		deadlineExpirations, err := loadUintQueue(store, dl.ExpirationsEpochs)
 		if err != nil {
 			return xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
@@ -372,11 +332,12 @@ func (dl *Deadline) AddSectors(
 		})
 
 		for _, epoch := range updatedEpochs {
-			deadlineExpirations.AddToQueueValues(epoch, partitionDeadlineUpdates[epoch]...)
+			if err = deadlineExpirations.AddToQueueValues(epoch, partitionDeadlineUpdates[epoch]...); err != nil {
+				return err
+			}
 		}
 
-		dl.ExpirationsEpochs, err = deadlineExpirations.Root()
-		if err != nil {
+		if dl.ExpirationsEpochs, err = deadlineExpirations.Root(); err != nil {
 			return err
 		}
 	}
@@ -384,6 +345,28 @@ func (dl *Deadline) AddSectors(
 	dl.LiveSectors += uint64(len(sectors))
 
 	return nil
+}
+
+// Returns nil if nothing was popped.
+func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch) (*abi.BitField, error) {
+	expirations, err := loadUintQueue(store, dl.ExpirationsEpochs)
+	if err != nil {
+		return nil, err
+	}
+
+	popped, err := expirations.PopUntil(until)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to pop expiring partitions: %w", err)
+	}
+
+	if popped != nil {
+		dl.ExpirationsEpochs, err = expirations.Root()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return popped, nil
 }
 
 func (dl *Deadline) MarshalCBOR(w io.Writer) error {
