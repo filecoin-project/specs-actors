@@ -30,14 +30,6 @@ type State struct {
 	VestingFunds             cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
-	// Memoized power information
-	TotalPower  abi.StoragePower // XXX: Do we need this? Doesn't the power actor save this?
-	FaultyPower abi.StoragePower
-
-	// Number of pending early terminations that the miner needs to deal
-	// with in order to withdraw funds.
-	PendingEarlyTerminations uint64
-
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
@@ -62,6 +54,13 @@ type State struct {
 	// New sectors are added and expired ones removed at proving period boundary.
 	// Faults are not subtracted from this in state, but on the fly.
 	Deadlines cid.Cid
+
+	// Memoized power information
+	FaultyPower PowerPair
+
+	// Number of pending early terminations that the miner needs to deal
+	// with in order to withdraw funds.
+	PendingEarlyTerminations uint64
 }
 
 type MinerInfo struct {
@@ -150,7 +149,6 @@ const (
 )
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
-
 	return &State{
 		Info: infoCid,
 
@@ -159,14 +157,14 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, 
 		VestingFunds:             emptyArrayCid,
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
-		TotalPower:  abi.NewStoragePower(0),
-		FaultyPower: abi.NewStoragePower(0),
-
 		PreCommittedSectors: emptyMapCid,
 		Sectors:             emptyArrayCid,
 		ProvingPeriodStart:  periodStart,
 		CurrentDeadline:     0,
 		Deadlines:           emptyDeadlinesCid,
+
+		FaultyPower:              NewPowerPairZero(),
+		PendingEarlyTerminations: 0,
 	}, nil
 }
 
@@ -728,99 +726,6 @@ func (st *State) AssignSectorsToDeadlines(
 	return st.SaveDeadlines(store, deadlines)
 }
 
-// Removes some sector numbers from the set expiring at an epoch.
-func (st *State) RemoveSectorExpirations(store adt.Store, sectors ...*SectorOnChainInfo) error {
-	if len(sectors) == 0 {
-		return nil
-	}
-
-	arr, err := adt.AsArray(store, st.SectorExpirations)
-	if err != nil {
-		return xerrors.Errorf("failed to load sector expirations: %w", err)
-	}
-
-	for _, epochSet := range groupSectorsByExpiration(sectors) {
-		bf := new(abi.BitField)
-		_, err = arr.Get(uint64(epochSet.epoch), bf)
-		if err != nil {
-			return xerrors.Errorf("failed to lookup sector expirations at epoch %v: %w", epochSet.epoch, err)
-		}
-
-		bf, err = bitfield.SubtractBitField(bf, bitfield.NewFromSet(epochSet.sectors))
-		if err != nil {
-			return xerrors.Errorf("failed to update sector expirations at epoch %v: %w", epochSet.epoch, err)
-		}
-
-		if empty, err := bf.IsEmpty(); err != nil {
-			return xerrors.Errorf("corrupted sector expirations bitfield at epoch %v: %w", epochSet.epoch, err)
-		} else if empty {
-			if err := arr.Delete(uint64(epochSet.epoch)); err != nil {
-				return xerrors.Errorf("failed to delete sector expirations at epoch %v: %w", epochSet.epoch, err)
-			}
-		} else if err = arr.Set(uint64(epochSet.epoch), bf); err != nil {
-			return xerrors.Errorf("failed to set sector expirations at epoch %v: %w", epochSet.epoch, err)
-		}
-	}
-
-	st.SectorExpirations, err = arr.Root()
-	if err != nil {
-		return xerrors.Errorf("failed to persist sector expirations: %w", err)
-	}
-	return nil
-}
-
-// Removes all sector numbers from the set expiring some epochs.
-func (st *State) ClearSectorExpirations(store adt.Store, expirations ...abi.ChainEpoch) error {
-	arr, err := adt.AsArray(store, st.SectorExpirations)
-	if err != nil {
-		return err
-	}
-
-	for _, exp := range expirations {
-		err = arr.Delete(uint64(exp))
-		if err != nil {
-			return err
-		}
-	}
-
-	st.SectorExpirations, err = arr.Root()
-	return err
-}
-
-// Iterates faults by declaration epoch, in order.
-func (st *State) ForEachFaultEpoch(store adt.Store, cb func(epoch abi.ChainEpoch, faults *abi.BitField) error) error {
-	arr, err := adt.AsArray(store, st.FaultEpochs)
-	if err != nil {
-		return err
-	}
-
-	var bf bitfield.BitField
-	return arr.ForEach(&bf, func(i int64) error {
-		bfCopy, err := bf.Copy()
-		if err != nil {
-			return err
-		}
-		return cb(abi.ChainEpoch(i), bfCopy)
-	})
-}
-
-func (st *State) ClearFaultEpochs(store adt.Store, epochs ...abi.ChainEpoch) error {
-	arr, err := adt.AsArray(store, st.FaultEpochs)
-	if err != nil {
-		return err
-	}
-
-	for _, exp := range epochs {
-		err = arr.Delete(uint64(exp))
-		if err != nil {
-			return nil
-		}
-	}
-
-	st.FaultEpochs, err = arr.Root()
-	return err
-}
-
 // TODO: take multiple sector locations?
 // Returns the sector's status (healthy, faulty, missing, not found, terminated)
 func (st *State) SectorStatus(store adt.Store, sector SectorLocation) (SectorStatus, error) {
@@ -975,18 +880,6 @@ func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitF
 		return nil
 	})
 	return sectorInfos, err
-}
-
-// Adds partition numbers to the set of PoSt submissions
-func (st *State) AddPoStSubmissions(partitionNos *abi.BitField) (err error) {
-	st.PostSubmissions, err = bitfield.MergeBitFields(st.PostSubmissions, partitionNos)
-	return err
-}
-
-// Removes all PoSt submissions
-func (st *State) ClearPoStSubmissions() error {
-	st.PostSubmissions = abi.NewBitField()
-	return nil
 }
 
 func (st *State) LoadDeadlines(store adt.Store) (*Deadlines, error) {
@@ -1210,18 +1103,6 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
 	Assert(balance.GreaterThanEqual(big.Add(st.PreCommitDeposits, st.LockedFunds)))
-}
-
-//
-// Misc helpers
-//
-
-func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
-	return abi.SectorInfo{
-		SealProof:    s.SealProof,
-		SectorNumber: s.SectorNumber,
-		SealedCID:    s.SealedCID,
-	}
 }
 
 //
