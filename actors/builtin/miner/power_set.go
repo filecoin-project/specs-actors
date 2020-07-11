@@ -214,9 +214,9 @@ func (q expirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 // Power for the sectors is changes from faulty to active (whether rescheduled or not).
 // Returns the newly-recovered power.
 func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
-	infos := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectors))
+	remaining := make(map[abi.SectorNumber]struct{}, len(sectors))
 	for _, s := range sectors {
-		infos[s.SectorNumber] = s
+		remaining[s.SectorNumber] = struct{}{}
 	}
 
 	// Traverse the expiration queue once to find each recovering sector and remove it from early/faulty there.
@@ -226,7 +226,7 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 	var es ExpirationSet
 	errStop := fmt.Errorf("stop")
 	if err := q.Array.ForEach(&es, func(epoch int64) error {
-		if len(infos) == 0 {
+		if len(remaining) == 0 {
 			return errStop
 		}
 		onTimeSectors, err := es.OnTimeSectors.AllMap(SectorsMax)
@@ -249,8 +249,8 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 				// If the sector expires on-time at this epoch, leave it here but change faulty power to active.
 				power := PowerForSector(ssize, sector)
 				es.FaultyPower = es.FaultyPower.Sub(power)
-				delete(infos, sector.SectorNumber)
 				delete(onTimeSectors, sno)
+				delete(remaining, sector.SectorNumber)
 				changed = true
 				recoveredPower = recoveredPower.Add(power)
 			}
@@ -259,8 +259,8 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 				es.EarlySectors.Unset(sno)
 				power := PowerForSector(ssize, sector)
 				es.FaultyPower = es.FaultyPower.Sub(power)
-				delete(infos, sector.SectorNumber)
 				delete(earlySectors, sno)
+				delete(remaining, sector.SectorNumber)
 				changed = true
 				sectorsRescheduled = append(sectorsRescheduled, sector)
 				recoveredPower = recoveredPower.Add(power)
@@ -280,7 +280,7 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 	}); err != nil && err != errStop {
 		return NewPowerPairZero(), err
 	}
-	// XXX: assert that infos is now empty, i.e. all were found?
+	// XXX: assert that remaining is now empty, i.e. all were found?
 
 	if err := q.Array.BatchDelete(epochsEmptied); err != nil {
 		return NewPowerPairZero(), err
@@ -297,8 +297,10 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 
 // Removes and aggregates entries from the queue up to and including some epoch.
 func (q expirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) {
-	var poppedSectors []*abi.BitField
-	poppedPower := NewPowerPairZero()
+	var onTimeSectors []*abi.BitField
+	var earlySectors []*abi.BitField
+	activePower := NewPowerPairZero()
+	faultyPower := NewPowerPairZero()
 
 	var poppedKeys []uint64
 	var thisValue ExpirationSet
@@ -308,8 +310,10 @@ func (q expirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 			return stopErr
 		}
 		poppedKeys = append(poppedKeys, uint64(i))
-		poppedPower = poppedPower.Add(thisValue.ActivePower)
-		poppedSectors = append(poppedSectors, thisValue.OnTimeSectors)
+		onTimeSectors = append(onTimeSectors, thisValue.OnTimeSectors)
+		earlySectors = append(earlySectors, thisValue.EarlySectors)
+		activePower = activePower.Add(thisValue.ActivePower)
+		faultyPower = faultyPower.Add(thisValue.ActivePower)
 		return nil
 	}); err != nil && err != stopErr {
 		return nil, err
@@ -319,14 +323,15 @@ func (q expirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 		return nil, err
 	}
 
-	allSectors, err := bitfield.MultiMerge(poppedSectors...)
+	allOnTime, err := bitfield.MultiMerge(onTimeSectors...)
 	if err != nil {
 		return nil, err
 	}
-	return &ExpirationSet{
-		OnTimeSectors: allSectors,
-		ActivePower:   poppedPower,
-	}, nil
+	allEarly, err := bitfield.MultiMerge(earlySectors...)
+	if err != nil {
+		return nil, err
+	}
+	return NewExpirationSet(allOnTime, allEarly, activePower, faultyPower), nil
 }
 
 func (q expirationQueue) add(epoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair) error {
@@ -386,9 +391,9 @@ func (q expirationQueue) mustUpdate(epoch abi.ChainEpoch, es *ExpirationSet) err
 	return nil
 }
 
-func (e *ExpirationSet) MarshalCBOR(w io.Writer) error {
+func (e *ExpirationSet) MarshalCBOR(io.Writer) error {
 	panic("implement me")
 }
-func (e *ExpirationSet) UnmarshalCBOR(r io.Reader) error {
+func (e *ExpirationSet) UnmarshalCBOR(io.Reader) error {
 	panic("implement me")
 }

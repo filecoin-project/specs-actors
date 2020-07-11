@@ -802,13 +802,11 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	}
 	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
 
-	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
-	var info *MinerInfo
 	newFaultPowerTotal := NewPowerPairZero()
 	rt.State().Transaction(&st, func() interface{} {
-		info = getMinerInfo(rt, &st)
+		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
@@ -824,7 +822,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		}
 
 		for _, dlIdx := range deadlinesToLoad {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch)
+			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
 			err = validateFRDeclarationDeadline(targetDeadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed fault declaration at deadline %d", dlIdx)
@@ -894,18 +892,19 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			deadline.Partitions, err = partitions.Root()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions root", dlIdx)
 
-			err = deadline.AddFaultEpochPartitions(store, currEpoch, partitionsWithFault...)
+			err = deadline.AddExpirationPartitions(store, faultExpirationEpoch, partitionsWithFault...)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update fault epochs for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions", dlIdx)
 		}
-
 		return nil
 	})
 
 	// Remove power for new faulty sectors.
-	// TODO: defer power loss until the respective deadline https://github.com/filecoin-project/specs-actors/issues/414
+	// NOTE: It would be permissable to delay the power loss until the deadline closes, but that would require
+	// additional accounting state.
+	// https://github.com/filecoin-project/specs-actors/issues/414
 	requestUpdatePower(rt, newFaultPowerTotal.Neg())
 
 	// Payment of penalty for declared faults is deferred to the deadline cron.
@@ -930,7 +929,6 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Recoveries), FaultMaxPartitions)
 	}
 
-	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -950,7 +948,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		}
 
 		for _, dlIdx := range deadlinesToLoad {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch)
+			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration deadline %d", dlIdx)
 			err = validateFRDeclarationDeadline(targetDeadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed recovery declaration at deadline %d", dlIdx)
@@ -1137,26 +1135,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 // Utility functions & helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-// Invoked at the end of each proving period, at the end of the epoch before the next one starts.
-func handleProvingPeriod(rt Runtime) {
-	{
-		// Establish new proving sets and clear proofs.
-		rt.State().Transaction(&st, func() interface{} {
-			// Set new proving period start.
-			if deadline.PeriodStarted() {
-				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
-			}
-			return nil
-		})
-	}
-
-	// Schedule cron callback for next period
-	nextPeriodEnd := st.ProvingPeriodStart + WPoStProvingPeriod - 1
-	enrollCronEvent(rt, nextPeriodEnd, &CronEventPayload{
-		EventType: CronEventProvingPeriod,
-	})
-}
-
+// Invoked at the end of the last epoch for each proving deadline.
 func handleProvingDeadline(rt Runtime) {
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
@@ -1267,7 +1246,7 @@ func handleProvingDeadline(rt Runtime) {
 			// marking them terminated, subtracting power etc.
 			// XXX: This assumes that the power recorded with the expiration queue entries excludes
 			// already-faulty power. Fault detection/declaration/recovery needs to update the expiration queue.
-			expired, err := deadline.PopExpiredSectors(store, dlInfo.Close)
+			expired, err := deadline.PopExpiredSectors(store, dlInfo.Last())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
 
 			// XXX: the deals are not terminated yet, that is left for a defrag. Since the sector is
@@ -1284,7 +1263,13 @@ func handleProvingDeadline(rt Runtime) {
 		err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %v", dlInfo.Index)
 
-		// TODO: bump current deadline index forward
+		// Increment current deadline, and proving period if necessary.
+		if dlInfo.PeriodStarted() {
+			st.CurrentDeadline = (st.CurrentDeadline + 1) % WPoStPeriodDeadlines
+			if st.CurrentDeadline == 0 {
+				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
+			}
+		}
 		return nil
 	})
 
@@ -1292,6 +1277,12 @@ func handleProvingDeadline(rt Runtime) {
 	requestUpdatePower(rt, powerDelta)
 	burnFunds(rt, penalty)
 	notifyPledgeChanged(rt, big.Add(newlyVested, penalty).Neg())
+
+	// Schedule cron callback for next deadline's last epoch.
+	newDlInfo := st.DeadlineInfo(currEpoch)
+	enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
+		EventType: CronEventProvingDeadline,
+	})
 }
 
 // Discovers how skipped faults declared during post intersect with existing faults and recoveries, then unlocks funds
