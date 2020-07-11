@@ -23,13 +23,13 @@ type Partition struct {
 	Recoveries *abi.BitField
 	// Subset of sectors terminated but not yet removed from partition (excl. from PoSt)
 	Terminated *abi.BitField
+	// Maps epochs sectors that expire in or before that epoch.
+	// An expiration may be an "on-time" scheduled expiration, or early "faulty" expiration.
+	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]ExpirationSet
 	// Subset of terminated that were before their committed expiration epoch, by termination epoch.
 	// Termination fees have not yet been calculated or paid but effective
 	// power has already been adjusted.
 	EarlyTerminated cid.Cid // AMT[ChainEpoch]BitField
-	// Maps epochs sectors that expire in that epoch.
-	// The expiration may be an "on-time" scheduled expiration, or early "faulty" expiration
-	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]ExpirationSet
 
 	// Power of not-yet-terminated sectors (incl faulty).
 	LivePower PowerPair
@@ -57,8 +57,8 @@ func ConstructPartition(emptyArray cid.Cid) *Partition {
 		Faults:            abi.NewBitField(),
 		Recoveries:        abi.NewBitField(),
 		Terminated:        abi.NewBitField(),
-		EarlyTerminated:   emptyArray,
 		ExpirationsEpochs: emptyArray,
+		EarlyTerminated:   emptyArray,
 		LivePower:         NewPowerPairZero(),
 		FaultyPower:       NewPowerPairZero(),
 		RecoveringPower:   NewPowerPairZero(),

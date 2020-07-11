@@ -27,7 +27,7 @@ type Deadline struct {
 	// The keys of this AMT are always sequential integers beginning with zero.
 	Partitions cid.Cid // AMT[PartitionNumber]Partition
 
-	// Maps epochs to partitions with sectors that expire in that epoch, either on-time or early as faults.
+	// Maps epochs to partitions with sectors that expire in or before that epoch, either on-time or early as faults.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
 	// Partitions numbers with PoSt submissions since the proving period started.
@@ -345,6 +345,12 @@ func (dl *Deadline) AddSectors(
 	dl.LiveSectors += uint64(len(sectors))
 
 	return nil
+}
+
+func (dl *Deadline) AddPoStSubmissions(idxs []uint64) {
+	for _, pIdx := range idxs {
+		dl.PostSubmissions.Set(pIdx)
+	}
 }
 
 // Returns nil if nothing was popped.
