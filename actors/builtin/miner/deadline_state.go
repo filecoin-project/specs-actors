@@ -183,7 +183,7 @@ func (dl *Deadline) PopExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 
 // TODO: Change this to ForEachExpired... to avoid creating a bitfield that's too large.
 // TODO: This must update the partitions' state with Terminate bits, updated power total etc
-func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*PowerSet, error) {
+func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*ExpirationSet, error) {
 	partitionExpiration, err := dl.PopExpiredPartitions(store, until)
 	if err != nil {
 		return nil, err
@@ -197,7 +197,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*P
 		return nil, err
 	}
 
-	totalPower := PowerPairZero()
+	totalPower := NewPowerPairZero()
 
 	// For each partition with an expired sector, collect the
 	// expired sectors and remove them from the queues.
@@ -215,8 +215,8 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*P
 		if err != nil {
 			return err
 		}
-		expiredSectors = append(expiredSectors, partitionExpiredSectors.Values)
-		totalPower = totalPower.Add(partitionExpiredSectors.TotalPower)
+		expiredSectors = append(expiredSectors, partitionExpiredSectors.OnTimeSectors)
+		totalPower = totalPower.Add(partitionExpiredSectors.ActivePower)
 		return partitions.Set(partIdx, &partition)
 	})
 	if err != nil {
@@ -239,9 +239,9 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*P
 	}
 	dl.LiveSectors -= nExpired
 
-	return &PowerSet{
-		Values:     allExpiries,
-		TotalPower: totalPower,
+	return &ExpirationSet{
+		OnTimeSectors: allExpiries,
+		ActivePower:   totalPower,
 	}, nil
 }
 
@@ -319,7 +319,7 @@ func (dl *Deadline) AddSectors(
 			// Add sectors to partition.
 			//
 
-			err = partition.AddSectors(store, sectorSize, partitionSectors)
+			err = partition.AddSectors(store, partitionSectors, sectorSize)
 			if err != nil {
 				return err
 			}

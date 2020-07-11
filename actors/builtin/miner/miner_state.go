@@ -575,7 +575,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 			}
 
 			// TODO: What if I replace the same sector multiple times? I guess that's OK...
-			err = partition.RescheduleExpirations(store, sectorSize, newEpoch, sectorInfos)
+			err = partition.RescheduleExpirations(store, newEpoch, sectorInfos, sectorSize)
 			if err != nil {
 				return false, err
 			}
