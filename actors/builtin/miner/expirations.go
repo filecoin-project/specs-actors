@@ -8,9 +8,9 @@ import (
 )
 
 type sectorEpochSet struct {
-	epoch      abi.ChainEpoch
-	sectors    []uint64 // TODO: consider a bitfield if it will be always used that way
-	totalPower PowerPair
+	epoch   abi.ChainEpoch
+	sectors []uint64 // TODO: consider a bitfield if it will be always used that way
+	power   PowerPair
 }
 
 // Takes a slice of sector infos and returns sector info sets grouped and
@@ -21,6 +21,7 @@ type sectorEpochSet struct {
 func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) []sectorEpochSet {
 	sectorsByExpiration := make(map[abi.ChainEpoch][]*SectorOnChainInfo)
 
+	// XXX quantize expiration groups
 	for _, sector := range sectors {
 		sectorsByExpiration[sector.Expiration] = append(sectorsByExpiration[sector.Expiration], sector)
 	}
@@ -30,7 +31,7 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 	// This map iteration is non-deterministic but safe because we sort by epoch below.
 	for expiration, sectors := range sectorsByExpiration { //nolint:nomaprange // this is copy and sort
 		sectorNumbers := make([]uint64, len(sectors))
-		totalPower := PowerPairZero()
+		totalPower := NewPowerPairZero()
 		for _, sector := range sectors {
 			totalPower = totalPower.Add(PowerPair{
 				Raw: big.NewIntUnsigned(uint64(sectorSize)),
@@ -38,9 +39,9 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 			})
 		}
 		sectorEpochSets = append(sectorEpochSets, sectorEpochSet{
-			epoch:      expiration,
-			sectors:    sectorNumbers,
-			totalPower: totalPower,
+			epoch:   expiration,
+			sectors: sectorNumbers,
+			power:   totalPower,
 		})
 	}
 

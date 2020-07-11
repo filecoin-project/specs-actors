@@ -23,7 +23,6 @@ func loadEpochQueue(store adt.Store, root cid.Cid) (epochQueue, error) {
 }
 
 // Adds values to the queue entry for an epoch.
-// The queue AMT root is loaded from a CID, and that CID is overwritten with the new root when this method returns.
 func (q epochQueue) AddToQueueBitfield(epoch abi.ChainEpoch, values *abi.BitField) error {
 	bf := abi.NewBitField()
 	if _, err := q.Array.Get(uint64(epoch), bf); err != nil {
@@ -49,12 +48,11 @@ func (q epochQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) err
 }
 
 // Removes values to the queue entry for an epoch.
-// The queue AMT root is loaded from a CID, and that CID is overwritten with the new root when this method returns.
 func (q epochQueue) RemoveFromQueueBitfield(epoch abi.ChainEpoch, values *abi.BitField) error {
 	bf := abi.NewBitField()
 	if found, err := q.Array.Get(uint64(epoch), bf); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
-	} if !found {
+	} else if !found {
 		// nothing to do.
 		// TODO: be paranoid and fail if the values we're trying to remove don't exist?
 		return nil

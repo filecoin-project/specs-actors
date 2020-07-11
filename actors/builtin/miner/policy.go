@@ -88,7 +88,7 @@ const WPoStChallengeLookback = abi.ChainEpoch(20)
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
 // The maximum age of a fault before the sector is terminated.
-const FaultMaxAge = WPoStProvingPeriod*14 - 1
+const FaultMaxAge = WPoStProvingPeriod*14
 
 // With 48 deadlines (half-hour), 200 partitions per declaration permits faulting a full EiB of 32GiB
 // sectors with 1 message per epoch within a single half-hour deadline. A miner can of course submit more messages.

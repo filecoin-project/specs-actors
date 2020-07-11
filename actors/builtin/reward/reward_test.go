@@ -43,7 +43,7 @@ func TestConstructor(t *testing.T) {
 		assert.Equal(t, startRealizedPower, st.CumsumRealized)
 
 		// Note this check is sensative to the value of startRealizedPower and the minting function
-		// so it is somewhat brittle. Values of startRealizedPower below 1<<20 mint no coins
+		// so it is somewhat brittle. OnTimeSectors of startRealizedPower below 1<<20 mint no coins
 		assert.NotEqual(t, big.Zero(), st.ThisEpochReward)
 		assert.Equal(t, big.MustFromString("50336408296765376121"), st.ThisEpochReward)
 	})
