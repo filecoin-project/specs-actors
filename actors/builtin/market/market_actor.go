@@ -576,7 +576,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		// are deterministic. Otherwise, we could end up charging an
 		// inconsistent amount of gas.
 		changedEpochs := make([]abi.ChainEpoch, 0, len(updatesNeeded))
-		for epoch := range updatesNeeded {
+		for epoch := range updatesNeeded { //nolint:nomaprange
 			changedEpochs = append(changedEpochs, epoch)
 		}
 
