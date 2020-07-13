@@ -389,16 +389,15 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 
 	pieces := make([]abi.PieceInfo, 0)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
-		for _, dealID := range params.DealIDs {
-			deal := st.mustGetDeal(rt, dealID)
-			pieces = append(pieces, abi.PieceInfo{
-				PieceCID: deal.PieceCID,
-				Size:     deal.PieceSize,
-			})
-		}
-		return nil
-	})
+	rt.State().Readonly(&st)
+
+	for _, dealID := range params.DealIDs {
+		deal := st.mustGetDeal(rt, dealID)
+		pieces = append(pieces, abi.PieceInfo{
+			PieceCID: deal.PieceCID,
+			Size:     deal.PieceSize,
+		})
+	}
 
 	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorType, pieces)
 	if err != nil {
