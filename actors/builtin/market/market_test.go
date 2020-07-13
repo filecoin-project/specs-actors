@@ -1829,7 +1829,9 @@ func TestVerifyDealsForActivation(t *testing.T) {
 
 	t.Run("fail when caller is not a StorageMinerActor", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
-		param := &market.VerifyDealsForActivationParams{SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end)
+
+		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
