@@ -9,7 +9,7 @@ require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20190812055157-5d271430af9f // indirect
 	github.com/ipfs/go-block-format v0.0.2
-	github.com/ipfs/go-cid v0.0.5
+	github.com/ipfs/go-cid v0.0.6
 	github.com/ipfs/go-hamt-ipld v0.0.15-0.20200131012125-dd88a59d3f2e
 	github.com/ipfs/go-ipld-cbor v0.0.4
 	github.com/ipfs/go-ipld-format v0.0.2 // indirect
@@ -23,7 +23,7 @@ require (
 	github.com/smartystreets/goconvey v0.0.0-20190731233626-505e41936337 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/warpfork/go-wish v0.0.0-20190328234359-8b3e70f8e830 // indirect
-	github.com/whyrusleeping/cbor-gen v0.0.0-20200414195334-429a0b5e922e
+	github.com/whyrusleeping/cbor-gen v0.0.0-20200710004633-5379fc63235d
 	github.com/xorcare/golden v0.6.0
 	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
