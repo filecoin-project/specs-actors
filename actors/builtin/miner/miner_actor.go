@@ -358,7 +358,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// the end-of-deadline cron.
 		// (It would be permissible to delay the charge we make here until end of deadline, but that would require
 		// extra accounting state to keep track).
-		penaltyTarget = big.Sub(penaltyTarget,PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizedPower.QA))
+		penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizedPower.QA))
 		penalty, err = st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", penalizedPower)
 
@@ -433,7 +433,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
 		}
 
-		validateExpiration(rt, &st, rt.CurrEpoch(), params.Expiration, params.SealProof)
+		validateExpiration(rt, rt.CurrEpoch(), params.Expiration, params.SealProof)
 
 		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
@@ -709,57 +709,94 @@ func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *a
 /////////////////////////
 
 type ExtendSectorExpirationParams struct {
-	SectorNumber  abi.SectorNumber
+	Extensions []ExpirationExtension
+}
+
+type ExpirationExtension struct {
+	Deadline      uint64
+	Partition     uint64
+	Sectors       *abi.BitField
 	NewExpiration abi.ChainEpoch
 }
 
+// Changes the expiration epoch for a sector to a new, later one.
+// The sector must not be terminated or faulty.
+// The sector's power is recomputed for the new expiration.
 func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
-	var st State
-	rt.State().Readonly(&st)
-	info := getMinerInfo(rt, &st)
-	rt.ValidateImmediateCallerIs(info.Worker)
+	if uint64(len(params.Extensions)) > AddressedPartitionsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), AddressedPartitionsMax)
+	}
+	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
 
+	powerDelta := NewPowerPairZero()
+	pledgeDelta := big.Zero()
 	store := adt.AsStore(rt)
-	sectorNo := params.SectorNumber
-	oldSector, found, err := st.GetSector(store, sectorNo)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", sectorNo)
-	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "no such sector %v", sectorNo)
-	}
-	if params.NewExpiration < oldSector.Expiration {
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration to %d from %d",
-			params.NewExpiration, oldSector.Expiration)
-	}
-
-	validateExpiration(rt, &st, oldSector.Activation, params.NewExpiration, oldSector.SealProof)
-
-	newSector := *oldSector
-	newSector.Expiration = params.NewExpiration
-	qaPowerDelta := big.Sub(QAPowerForSector(info.SectorSize, &newSector), QAPowerForSector(info.SectorSize, oldSector))
-
-	_, code := rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.UpdateClaimedPower,
-		&power.UpdateClaimedPowerParams{
-			RawByteDelta:         big.Zero(), // Sector size has not changed
-			QualityAdjustedDelta: qaPowerDelta,
-		},
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to modify sector weight")
-
-	// Store new sector expiry.
+	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.PutSectors(store, &newSector)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sector %v", sectorNo)
+		info := getMinerInfo(rt, &st)
+		rt.ValidateImmediateCallerIs(info.Worker)
 
-		// move expiration from old epoch to new
-		err = st.RemoveSectorExpirations(store, oldSector)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove sector expiration %v at %d", sectorNo, oldSector.Expiration)
-		err = st.AddSectorExpirations(store, &newSector)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add sector expiration %v at %d", sectorNo, newSector.Expiration)
+		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+		// Group declarations by deadline, and remember iteration order.
+		declsByDeadline := map[uint64][]*ExpirationExtension{}
+		var deadlinesToLoad []uint64
+		for _, decl := range params.Extensions {
+			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
+		}
+
+		for _, dlIdx := range deadlinesToLoad {
+			deadline, err := deadlines.LoadDeadline(store, dlIdx)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+
+			partitions, err := deadline.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
+
+			for _, decl := range declsByDeadline[dlIdx] {
+				key := PartitionKey{dlIdx, decl.Partition}
+				var partition Partition
+				found, err := partitions.Get(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %v", key)
+				if !found {
+					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
+				}
+
+				oldSectors, err := st.LoadSectorInfos(store, decl.Sectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
+				for i, sector := range oldSectors {
+					if decl.NewExpiration < sector.Expiration {
+						rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration to %d from %d",
+							decl.NewExpiration, sector.Expiration)
+					}
+					validateExpiration(rt, sector.Activation, decl.NewExpiration, sector.SealProof)
+
+					newSector := *sector
+					newSector.Expiration = decl.NewExpiration
+					//qaPowerDelta := big.Sub(QAPowerForSector(info.SectorSize, &newSector), QAPowerForSector(info.SectorSize, sector))
+
+					newSectors[i] = &newSector
+				}
+
+				// Overwrite sector infos.
+				err = st.PutSectors(store, newSectors...)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sectors %v", decl.Sectors)
+
+				// Remove old sectors from partition and assign new sectors.
+				powerDelta, pledgeDelta, err = partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
+			}
+
+		}
 		return nil
 	})
+
+	requestUpdatePower(rt, powerDelta)
+	// Note: the pledge delta is expected to be zero, since pledge is not re-calculated for the extension.
+	// But in case that ever changes, we can do the right thing here.
+	notifyPledgeChanged(rt, pledgeDelta)
 	return nil
 }
 
@@ -799,8 +836,8 @@ type FaultDeclaration struct {
 }
 
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
-	if uint64(len(params.Faults)) > FaultMaxPartitions {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Faults), FaultMaxPartitions)
+	if uint64(len(params.Faults)) > AddressedPartitionsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Faults), AddressedPartitionsMax)
 	}
 	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
 
@@ -817,7 +854,6 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*FaultDeclaration{}
 		var deadlinesToLoad []uint64
-
 		for _, decl := range params.Faults {
 			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
@@ -928,8 +964,8 @@ type RecoveryDeclaration struct {
 }
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
-	if uint64(len(params.Recoveries)) > FaultMaxPartitions {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Recoveries), FaultMaxPartitions)
+	if uint64(len(params.Recoveries)) > AddressedPartitionsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Recoveries), AddressedPartitionsMax)
 	}
 
 	store := adt.AsStore(rt)
@@ -944,7 +980,6 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*RecoveryDeclaration{}
 		var deadlinesToLoad []uint64
-
 		for _, decl := range params.Recoveries {
 			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
@@ -1209,7 +1244,7 @@ func handleProvingDeadline(rt Runtime) {
 			// Unlock sector penalty for all undeclared faults.
 			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal)
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
-			penaltyTarget = big.Sub(penaltyTarget,PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal))
+			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal))
 			penalty, err := st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			penaltyTotal = big.Add(penaltyTotal, penalty)
@@ -1331,7 +1366,7 @@ func processRecoveries(rt Runtime, st *State, store adt.Store, ssize abi.SectorS
 }
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
-func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
+func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
 	// expiration cannot exceed MaxSectorExpirationExtension from now
 	if expiration > rt.CurrEpoch()+MaxSectorExpirationExtension {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, cannot be more than %d past current epoch %d",
@@ -1342,14 +1377,6 @@ func validateExpiration(rt Runtime, st *State, activation, expiration abi.ChainE
 	if expiration-activation > sealProof.SectorMaximumLifetime() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",
 			expiration, expiration-activation, sealProof.SectorMaximumLifetime(), activation)
-	}
-
-	// ensure expiration is one epoch before a proving period boundary
-	periodOffset := st.ProvingPeriodStart % WPoStProvingPeriod
-	expiryOffset := (expiration + 1) % WPoStProvingPeriod
-	if expiryOffset != periodOffset {
-		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, must be immediately before proving period boundary %d mod %d",
-			expiration, periodOffset, WPoStProvingPeriod)
 	}
 }
 

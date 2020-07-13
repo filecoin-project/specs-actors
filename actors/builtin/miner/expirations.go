@@ -11,6 +11,7 @@ type sectorEpochSet struct {
 	epoch   abi.ChainEpoch
 	sectors []uint64 // TODO: consider a bitfield if it will be always used that way
 	power   PowerPair
+	pledge  abi.TokenAmount
 }
 
 // Takes a slice of sector infos and returns sector info sets grouped and
@@ -32,16 +33,19 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 	for expiration, sectors := range sectorsByExpiration { //nolint:nomaprange // this is copy and sort
 		sectorNumbers := make([]uint64, len(sectors))
 		totalPower := NewPowerPairZero()
+		totalPledge := big.Zero()
 		for _, sector := range sectors {
 			totalPower = totalPower.Add(PowerPair{
 				Raw: big.NewIntUnsigned(uint64(sectorSize)),
 				QA:  QAPowerForSector(sectorSize, sector),
 			})
+			totalPledge = big.Add(totalPledge, sector.InitialPledge)
 		}
 		sectorEpochSets = append(sectorEpochSets, sectorEpochSet{
 			epoch:   expiration,
 			sectors: sectorNumbers,
 			power:   totalPower,
+			pledge:  totalPledge,
 		})
 	}
 
