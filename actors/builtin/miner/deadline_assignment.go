@@ -48,7 +48,6 @@ func (dah *deadlineAssignmentHeap) Pop() interface{} {
 
 // Assigns partitions to deadlines, first filling partial partitions, then
 // adding new partitions to deadlines with the fewest live sectors.
-// TODO: Skip active deadline, and deadline before active deadline.
 func assignDeadlines(
 	partitionSize uint64,
 	deadlines *[WPoStPeriodDeadlines]*Deadline,
@@ -56,13 +55,15 @@ func assignDeadlines(
 ) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo) {
 	dlHeap := deadlineAssignmentHeap{
 		partitionSize: int(partitionSize),
-		deadlines:     make([]*deadlineAssignmentInfo, len(deadlines)),
+		deadlines:     make([]*deadlineAssignmentInfo, 0, len(deadlines)),
 	}
 
 	for dlIdx, dl := range deadlines {
-		dlHeap.deadlines[dlIdx] = &deadlineAssignmentInfo{
-			index:       dlIdx,
-			liveSectors: dl.LiveSectors,
+		if dl != nil {
+			dlHeap.deadlines = append(dlHeap.deadlines, &deadlineAssignmentInfo{
+				index:       dlIdx,
+				liveSectors: dl.LiveSectors,
+			})
 		}
 	}
 

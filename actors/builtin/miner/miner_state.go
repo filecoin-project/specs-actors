@@ -662,9 +662,6 @@ func (st *State) AssignSectorsToDeadlines(
 	sectors ...*SectorOnChainInfo,
 ) error {
 
-	// TODO/XXX: we need to skip the current deadline and the next deadline,
-	// based on the current epoch.
-
 	// TODO: We shouldn't need to do this. We should store the partition
 	// size somewhere else (maybe)?
 
@@ -703,7 +700,11 @@ func (st *State) AssignSectorsToDeadlines(
 	//   Con: Annoying to update.
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
 	deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
-		deadlineArr[int(idx)] = dl
+		// Skip deadlines that aren't currently mutable.
+		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, idx, currentEpoch)
+		if dlInfo.Mutable() {
+			deadlineArr[int(idx)] = dl
+		}
 		return nil
 	})
 
