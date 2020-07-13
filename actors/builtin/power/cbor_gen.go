@@ -73,17 +73,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.MinerAboveMinPowerCount (int64) (int64)
-	if t.MinerAboveMinPowerCount >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MinerAboveMinPowerCount))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.MinerAboveMinPowerCount)-1)); err != nil {
-			return err
-		}
-	}
-
 	// t.CronEventQueue (cid.Cid) (struct)
 
 	if err := cbg.WriteCidBuf(scratch, w, t.CronEventQueue); err != nil {
