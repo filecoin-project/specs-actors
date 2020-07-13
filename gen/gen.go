@@ -189,6 +189,8 @@ func main() {
 		miner.CronEventPayload{},
 		miner.FaultDeclaration{},
 		miner.RecoveryDeclaration{},
+		miner.ExpirationExtension{},
+		miner.PoStPartition{},
 	); err != nil {
 		panic(err)
 	}

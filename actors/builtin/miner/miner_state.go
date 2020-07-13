@@ -107,8 +107,10 @@ type SectorPreCommitInfo struct {
 	DealIDs         []abi.DealID
 	Expiration      abi.ChainEpoch
 	ReplaceCapacity bool // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
-	// TODO: just store this as 3 separate fields?
-	ReplaceSector SectorLocation // The committed capacity sector to replace
+	// The committed capacity sector to replace, and it's deadline/partition location
+	ReplaceSectorDeadline  uint64
+	ReplaceSectorPartition uint64
+	ReplaceSectorNumber    abi.SectorNumber
 }
 
 // Information stored on-chain for a pre-committed sector.
@@ -728,18 +730,18 @@ func (st *State) AssignSectorsToDeadlines(
 
 // TODO: take multiple sector locations?
 // Returns the sector's status (healthy, faulty, missing, not found, terminated)
-func (st *State) SectorStatus(store adt.Store, sector SectorLocation) (SectorStatus, error) {
+func (st *State) SectorStatus(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (SectorStatus, error) {
 	dls, err := st.LoadDeadlines(store)
 	if err != nil {
 		return SectorNotFound, err
 	}
 
 	// Pre-check this because LoadDeadline will return an actual error.
-	if sector.Deadline >= WPoStPeriodDeadlines {
+	if dlIdx >= WPoStPeriodDeadlines {
 		return SectorNotFound, nil
 	}
 
-	dl, err := dls.LoadDeadline(store, sector.Deadline)
+	dl, err := dls.LoadDeadline(store, dlIdx)
 	if err != nil {
 		return SectorNotFound, err
 	}
@@ -747,24 +749,24 @@ func (st *State) SectorStatus(store adt.Store, sector SectorLocation) (SectorSta
 	// TODO: this will return an error if we can't find the given partition.
 	// That will lead to an illegal _state_ error, not an illegal argument
 	// error. We should fix that.
-	partition, err := dl.LoadPartition(store, sector.Partition)
+	partition, err := dl.LoadPartition(store, pIdx)
 	if err != nil {
-		return SectorNotFound, xerrors.Errorf("in deadline %d: %w", sector.Deadline, err)
+		return SectorNotFound, xerrors.Errorf("in deadline %d: %w", dlIdx, err)
 	}
 
-	if exists, err := partition.Sectors.IsSet(uint64(sector.SectorNumber)); err != nil {
+	if exists, err := partition.Sectors.IsSet(uint64(sector)); err != nil {
 		return SectorNotFound, err
 	} else if !exists {
 		return SectorNotFound, nil
 	}
 
-	if faulty, err := partition.Faults.IsSet(uint64(sector.SectorNumber)); err != nil {
+	if faulty, err := partition.Faults.IsSet(uint64(sector)); err != nil {
 		return SectorNotFound, err
 	} else if faulty {
 		return SectorFaulty, nil
 	}
 
-	if terminated, err := partition.Terminated.IsSet(uint64(sector.SectorNumber)); err != nil {
+	if terminated, err := partition.Terminated.IsSet(uint64(sector)); err != nil {
 		return SectorNotFound, err
 	} else if terminated {
 		return SectorTerminated, nil
