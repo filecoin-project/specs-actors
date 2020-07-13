@@ -23,6 +23,10 @@ type Runtime = vmr.Runtime
 type SectorTermination int64
 
 const (
+	ErrTooManyProveCommits = exitcode.FirstActorSpecificExitCode + iota
+)
+
+const (
 	SectorTerminationExpired SectorTermination = iota // Implicit termination after all deals expire
 	SectorTerminationManual                           // Unscheduled explicit termination by the miner
 	SectorTerminationFaulty                           // Implicit termination due to unrecovered fault
@@ -261,7 +265,6 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 
 	minerAddr := rt.Message().Caller()
 
-	rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
@@ -276,6 +279,12 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 			}
 		}
 
+		arr, found, err := mmap.Get(adt.AddrKey(minerAddr))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get get seal verify infos at addr %s", minerAddr)
+		if found && arr.Length() >= MaxMinerProveCommitsPerEpoch {
+			rt.Abortf(ErrTooManyProveCommits, "miner %s attempting to prove commit over %d sectors in epoch", minerAddr, MaxMinerProveCommitsPerEpoch)
+		}
+
 		if err := mmap.Add(adt.AddrKey(minerAddr), sealInfo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to insert proof into set: %s", err)
 		}
@@ -284,6 +293,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proofs batch map: %s", err)
 		}
+		rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 		st.ProofValidationBatch = &mmrc
 		return nil
 	})
