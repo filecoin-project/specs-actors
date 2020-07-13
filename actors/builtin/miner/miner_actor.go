@@ -1197,6 +1197,15 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Owner)
+		// Ensure we don't have any pending terminations.
+		if st.PendingEarlyTerminations > 0 {
+			rt.Abortf(exitcode.ErrForbidden,
+				"cannot withdraw funds while fees for %d terminated sectors are outstanding",
+				st.PendingEarlyTerminations,
+			)
+		}
+
+		// Unlock vested funds so we can spend them.
 		newlyVestedFund, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
