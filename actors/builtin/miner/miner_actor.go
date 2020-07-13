@@ -1350,6 +1350,12 @@ func handleProvingDeadline(rt Runtime) {
 			powerDelta = powerDelta.Sub(expired.ActivePower)
 			st.FaultyPower = st.FaultyPower.Sub(expired.FaultyPower)
 
+			// Record early terminations. While this count >0, the
+			// miner is locked until they pay the fee.
+			earlyTerminationCount, err := expired.EarlySectors.Count()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
+			st.PendingEarlyTerminations += earlyTerminationCount
+
 			// The pledge requirement for the expired sectors is not yet released.
 			// The termination fee is not yet paid.
 			// Both are deferred for a defrag.
