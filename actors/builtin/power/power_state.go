@@ -168,6 +168,11 @@ func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *C
 		return err
 	}
 
+	// if event is in past, alter FirstCronTask so it will be found.
+	if epoch < st.FirstCronTask {
+		st.FirstCronTask = epoch
+	}
+
 	err = mmap.Add(epochKey(epoch), event)
 	if err != nil {
 		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)

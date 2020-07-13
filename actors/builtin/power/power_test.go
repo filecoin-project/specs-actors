@@ -312,6 +312,44 @@ func TestCron(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("event scheduled in past called next round", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// run cron once to put it in a clean state at epoch 4
+		rt.SetEpoch(4)
+		expectedRawBytePower := big.NewInt(0)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
+
+		// enroll a cron task at epoch 2 (which is in the past)
+		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
+
+		// run cron again in the future
+		rt.SetEpoch(6)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
+
+		// assert used cron events are cleaned up
+		st := getState(rt)
+
+		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue)
+		require.NoError(t, err)
+
+		var ev power.CronEvent
+		err = mmap.ForEach(adt.IntKey(int64(2)), &ev, func(i int64) error {
+			t.Errorf("Unexpected bitfield at epoch %d", i)
+			return nil
+		})
+	})
+
 	t.Run("handles failed call", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
