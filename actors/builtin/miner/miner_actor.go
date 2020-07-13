@@ -267,10 +267,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		// Double check that the current proving period has started. This should only happen if the cron actor wasn't invoked.
-		// TODO deadline-cron: check instead that the prior deadline cron has executed.
-		// Or remove this check now that sector deadline allocation is immediate?
-		if !currDeadline.PeriodStarted() {
+		// Check that the miner state indicates that the current proving deadline has started.
+		// This should only fail if the cron actor wasn't invoked, and matters only in case that it hasn't been
+		// invoked for a whole proving period, and hence the missed PoSt submissions from the prior occurrence
+		// of this deadline haven't been processed yet.
+		if !currDeadline.IsOpen() {
 			rt.Abortf(exitcode.ErrIllegalState, "proving period %d not yet open at %d", currDeadline.PeriodStart, currEpoch)
 		}
 
@@ -290,7 +291,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		partitionIdxs := make([]uint64, 0, len(params.Partitions))
 		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
-		allFaults := make([]*abi.BitField, 0, len(params.Partitions))
+		allIgnored := make([]*abi.BitField, 0, len(params.Partitions))
 
 		// Check and record skipped faults for each partition.
 		// Accumulate sectors info for proof verification.
@@ -330,7 +331,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			// faults and recoveries taken into account.
 			partitionIdxs = append(partitionIdxs, post.Index)
 			allSectors = append(allSectors, partition.Sectors)
-			allFaults = append(allFaults, partition.Faults)
+			allIgnored = append(allIgnored, partition.Faults)
+			allIgnored = append(allIgnored, partition.Terminated)
 		}
 
 		// TODO minerstate: factor out a method for the miner node to calculate and load all sectors for proof,
@@ -339,7 +341,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
 		// Note: this is slightly sub-optimal, loading info for the recovering sectors again after they were already
 		// loaded above.
-		sectorInfos, err := st.LoadSectorInfosForProof(store, allSectors, allFaults)
+		sectorInfos, err := st.LoadSectorInfosForProof(store, allSectors, allIgnored)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		// Skip verification if all sectors are faults.
@@ -805,21 +807,89 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 }
 
 type TerminateSectorsParams struct {
-	Sectors *abi.BitField
+	Terminations []TerminationDeclaration
 }
 
-func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
-	var st State
-	rt.State().Readonly(&st)
-	info := getMinerInfo(rt, &st)
-	rt.ValidateImmediateCallerIs(info.Worker)
+type TerminationDeclaration struct {
+	Deadline  uint64
+	Partition uint64
+	Sectors   *abi.BitField
+}
 
-	//epochReward := requestCurrentEpochBlockReward(rt)
-	//pwrTotal := requestCurrentTotalPower(rt)
+// Marks some sectors as terminated at the present epoch, earlier than their scheduled termination.
+// The sectors are immediately ignored for Window PoSt proofs, and should be masked in the same way as faulty
+// sectors.
+// A miner terminating sectors in the current deadline must be careful to compute an appropriate Window PoSt
+// proof for the sectors that will be active at the time the PoSt is submitted.
+func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
-	// XXX TODO blackout period, then terminate immediately
-	//terminateSectors(rt, params.Sectors, power.SectorTerminationManual, epochReward, pwrTotal.QualityAdjPower)
+	if uint64(len(params.Terminations)) > AddressedPartitionsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Terminations), AddressedPartitionsMax)
+	}
+	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
+
+	var st State
+	store := adt.AsStore(rt)
+	powerDelta := NewPowerPairZero()
+	rt.State().Transaction(&st, func() interface{} {
+		info := getMinerInfo(rt, &st)
+		rt.ValidateImmediateCallerIs(info.Worker)
+
+		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+		// Group declarations by deadline, and remember iteration order.
+		declsByDeadline := map[uint64][]*TerminationDeclaration{}
+		var deadlinesToLoad []uint64
+		for _, decl := range params.Terminations {
+			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
+		}
+
+		for _, dlIdx := range deadlinesToLoad {
+			deadline, err := deadlines.LoadDeadline(store, dlIdx)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+
+			partitions, err := deadline.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
+
+			for _, decl := range declsByDeadline[dlIdx] {
+				key := PartitionKey{dlIdx, decl.Partition}
+				var partition Partition
+				found, err := partitions.Get(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %v", key)
+				if !found {
+					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
+				}
+
+				sectors, err := st.LoadSectorInfos(store, decl.Sectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+
+				// Note: we could inspect each sector's expiration epoch here and kindly ignore any that
+				// have already expired but just not been processed yet.
+
+				// Remove  sectors from partition.
+				// The sectors infos are not mutated; their on-time expiration epoch remains in state until defrag.
+				pwr, err := partition.TerminateSectors(store, sectors, info.SectorSize)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
+
+				powerDelta = powerDelta.Sub(pwr)
+			}
+		}
+
+		// XXX: terminate deals or defer some/all for a defrag
+		return nil
+	})
+
+	requestUpdatePower(rt, powerDelta)
+	// The termination fee is not paid here, but on defrag.
+	// This is for symmetry with implicit termination from an extended fault, which is detected in cron and hence
+	// can't load all the sector infos to compute the termination fee.
+	// TODO minerstate: pay SP(t) here, remember that, and defer the remainder of the termination fee
+
+	// Pledge requirement is not released until termination fee is paid on defrag.
+
 	return nil
 }
 
@@ -899,7 +969,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 
 				newFaults, err := bitfield.SubtractBitField(decl.Sectors, retractedRecoveries)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from sectors")
-				// Ignore any previously declared or detected faults
+				// Ignore any terminated sectors and previously declared or detected faults
+				newFaults, err = bitfield.SubtractBitField(newFaults, partition.Terminated)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract terminations from faults")
 				newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from faults")
 
@@ -1278,6 +1350,11 @@ func handleProvingDeadline(rt Runtime) {
 			powerDelta = powerDelta.Sub(expired.ActivePower)
 			st.FaultyPower = st.FaultyPower.Sub(expired.FaultyPower)
 
+			// The pledge requirement for the expired sectors is not yet released.
+			// The termination fee is not yet paid.
+			// Both are deferred for a defrag.
+			// TODO minerstate: pay SP(t) for early terminations, remember that, and defer remainder of the termination fee
+
 			// XXX: the deals are not terminated yet, that is left for a defrag.
 			// This isn't a big deal for sectors terminating on-time, but matters for sectors terminating early,
 			// which might also be renegging on a deal.
@@ -1310,14 +1387,12 @@ func handleProvingDeadline(rt Runtime) {
 	})
 }
 
-// Discovers how skipped faults declared during post intersect with existing faults and recoveries, then unlocks funds
-// and returns the penalty to be paid and the sector infos needed to deduct power.
-// - Skipped faults that are not in the current deadline will trigger an error.
-// - Skipped faults that have previously been marked recovered, will be penalized as a retracted recovery but will not
-// result in a change in power (the power has already been removed).
-// - Skipped faults that are already declared, but not recovered will be ignored.
-// - The rest will be penalized as undeclared faults and have their power removed.
-// FIXME update comment
+// Discovers how skipped faults declared during post intersect with existing faults and recoveries, records the
+// new faults in state.
+// Returns the amount of power newly faulty, or declared recovered but faulty again.
+
+// - Skipped faults that are not in the provided partition triggers an error.
+// - Skipped faults that are already declared (but not delcared recovered) are ignored.
 func processSkippedFaults(rt Runtime, st *State, store adt.Store, ssize abi.SectorSize, faultExpiration abi.ChainEpoch,
 	partition *Partition, skipped *bitfield.BitField) (newFaultPower, retractedRecoveryPower PowerPair) {
 	empty, err := skipped.IsEmpty()
@@ -1340,8 +1415,10 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, ssize abi.Sect
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 	retractedRecoveryPower = PowerForSectors(ssize, retractedRecoverySectors)
 
-	// Ignore skipped faults that are already faults
-	newFaults, err := bitfield.SubtractBitField(skipped, partition.Faults)
+	// Ignore skipped faults that are already faults or terminated.
+	newFaults, err := bitfield.SubtractBitField(skipped, partition.Terminated)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract terminations from skipped")
+	newFaults, err = bitfield.SubtractBitField(skipped, partition.Faults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
 	newFaultSectors, err := st.LoadSectorInfos(store, newFaults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
@@ -1361,11 +1438,8 @@ func processRecoveries(rt Runtime, st *State, store adt.Store, ssize abi.SectorS
 	recoveredSectors, err := st.LoadSectorInfos(store, partition.Recoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load recovered sectors")
 
-	recoveredPower, err := partition.RemoveFaults(store, partition.Recoveries, recoveredSectors, ssize)
+	recoveredPower, err := partition.RecoverFaults(store, partition.Recoveries, recoveredSectors, ssize)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
-
-	err = partition.RemoveRecoveries(partition.Recoveries, recoveredPower)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
 
 	return recoveredPower
 }
@@ -1467,147 +1541,6 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
 	burnFunds(rt, depositToBurn)
-}
-
-// TODO: red flag that this method is potentially super expensive
-// https://github.com/filecoin-project/specs-actors/issues/483
-//func terminateSectors(rt Runtime, sectorNos *abi.BitField, terminationType power.SectorTermination, epochReward abi.TokenAmount, currentTotalPower abi.StoragePower) {
-//	currentEpoch := rt.CurrEpoch()
-//	empty, err := sectorNos.IsEmpty()
-//	if err != nil {
-//		rt.Abortf(exitcode.ErrIllegalState, "failed to count sectors")
-//	}
-//	if empty {
-//		return
-//	}
-//
-//	store := adt.AsStore(rt)
-//	var st State
-//
-//	var dealIDs []abi.DealID
-//	var terminatedSectors []*SectorOnChainInfo
-//	var faultySectors []*SectorOnChainInfo
-//	penalty := abi.NewTokenAmount(0)
-//	var info *MinerInfo
-//	rt.State().Transaction(&st, func() interface{} {
-//		info = getMinerInfo(rt, &st)
-//		maxAllowedFaults, err := st.GetMaxAllowedFaults(store)
-//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault max")
-//
-//		// Narrow faults to just the set that are expiring, before expanding to a map.
-//		faults, err := bitfield.IntersectBitField(sectorNos, st.Faults)
-//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load faults")
-//
-//		faultsMap, err := faults.AllMap(maxAllowedFaults)
-//		if err != nil {
-//			rt.Abortf(exitcode.ErrIllegalState, "failed to expand faults")
-//		}
-//
-//		// sectors we're not terminating because they either don't exist or have expired.
-//		var notTerminatedSectorNos []uint64
-//		pledgeRequirementToRemove := abi.NewTokenAmount(0)
-//		err = sectorNos.ForEach(func(sectorNo uint64) error {
-//			sector, found, err := st.GetSector(store, abi.SectorNumber(sectorNo))
-//			if err != nil {
-//				return fmt.Errorf("failed to load sector %v: %w", sectorNo, err)
-//			}
-//
-//			// If the sector wasn't found, skip termination. It may
-//			// have already expired, have been terminated due to a
-//			// faults, etc.
-//			if !found {
-//				notTerminatedSectorNos = append(notTerminatedSectorNos, sectorNo)
-//				return nil
-//			}
-//
-//			// If we're terminating the sector because it expired,
-//			// make sure it has actually expired.
-//			//
-//			// We can hit this case if the sector was changed
-//			// somehow but the termination wasn't removed from the
-//			// SectorExpirations queue.
-//			//
-//			// TODO: This should not be possible. We should consider
-//			// failing in this case.
-//			if terminationType == power.SectorTerminationExpired && currentEpoch < sector.Expiration {
-//				notTerminatedSectorNos = append(notTerminatedSectorNos, sectorNo)
-//				return nil
-//			}
-//
-//			dealIDs = append(dealIDs, sector.DealIDs...)
-//			terminatedSectors = append(terminatedSectors, sector)
-//
-//			_, fault := faultsMap[sectorNo]
-//			if fault {
-//				faultySectors = append(faultySectors, sector)
-//			}
-//
-//			pledgeRequirementToRemove = big.Add(pledgeRequirementToRemove, sector.InitialPledge)
-//			return nil
-//		})
-//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector metadata")
-//
-//		terminatedSectorNos, err := bitfield.SubtractBitField(sectorNos, bitfield.NewFromSet(notTerminatedSectorNos))
-//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract skipped sector set")
-//
-//		// lower initial pledge requirement
-//		st.AddInitialPledgeRequirement(pledgeRequirementToRemove.Neg())
-//
-//		deadlines, err := st.LoadDeadlines(store)
-//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-//
-//		err = removeTerminatedSectors(&st, store, deadlines, terminatedSectorNos)
-//		if err != nil {
-//			rt.Abortf(exitcode.ErrIllegalState, "failed to delete sectors: %v", err)
-//		}
-//
-//		err = st.SaveDeadlines(store, deadlines)
-//		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store new deadlines")
-//
-//		if terminationType != power.SectorTerminationExpired {
-//
-//			// Remove scheduled expirations.
-//			err = st.RemoveSectorExpirations(store, terminatedSectors...)
-//			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove expirations for terminated sectors")
-//
-//			// Unlock penalty.
-//			penalty, err = unlockTerminationPenalty(&st, store, info.SectorSize, rt.CurrEpoch(), epochReward, currentTotalPower, terminatedSectors)
-//			if err != nil {
-//				rt.Abortf(exitcode.ErrIllegalState, "failed to unlock penalty %s", err)
-//			}
-//		}
-//		return nil
-//	})
-//
-//	// TODO: could we compress the multiple calls to power actor into one sector termination call?
-//	// https://github.com/filecoin-project/specs-actors/issues/478
-//	// Compute the power delta as if recovering all the currently-faulty sectors before terminating all of them.
-//	requestUpdatePowerForSectors(rt, info.SectorSize, faultySectors, terminatedSectors)
-//	requestTerminateDeals(rt, dealIDs)
-//
-//	burnFundsAndNotifyPledgeChange(rt, penalty)
-//}
-
-// Removes a group sectors from the sector set and its number from all sector collections in state.
-func removeTerminatedSectors(st *State, store adt.Store, deadlines *Deadlines, sectors *abi.BitField) error {
-	err := st.DeleteSectors(store, sectors)
-	//if err != nil {
-	//	return err
-	//}
-	//err = st.RemoveNewSectors(sectors)
-	//if err != nil {
-	//	return err
-	//}
-	//err = deadlines.RemoveFromAllDeadlines(sectors)
-	//if err != nil {
-	//	return err
-	//}
-	//err = st.RemoveFaults(store, sectors)
-	//if err != nil {
-	//	return err
-	//}
-	//err = st.RemoveRecoveries(sectors)
-	return err
 }
 
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {

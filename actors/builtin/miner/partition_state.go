@@ -37,7 +37,7 @@ type Partition struct {
 	FaultyPower PowerPair
 	// Power of expected-to-recover sectors. RecoveringPower <= FaultyPower.
 	RecoveringPower PowerPair
-	// Sum of initial pledge of sectors
+	// Sum of initial pledge of all sectors (including terminated)
 	TotalPledge abi.TokenAmount
 }
 
@@ -116,13 +116,15 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 	}
 	p.LivePower = p.LivePower.Add(power)
 	p.TotalPledge = big.Add(p.TotalPledge, pledge)
-
+	// No change to faults, recoveries, or terminations.
+	// No change to faulty or recovering power.
 	return nil
 }
 
 // Records a set of sectors as faulty.
 // The sectors are added to the Faults bitfield and the FaultyPower is increased.
 // The sectors' expirations are rescheduled to the fault expiration epoch, as "early" (if not expiring earlier).
+// The sectors must not be already faulty.
 // Returns the power of the now-faulty sectors.
 func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, sectors []*SectorOnChainInfo, faultExpiration abi.ChainEpoch, ssize abi.SectorSize) (PowerPair, error) {
 	var err error
@@ -147,65 +149,30 @@ func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, sectors 
 	if p.Faults, err = bitfield.MergeBitFields(p.Faults, sectorNos); err != nil {
 		return NewPowerPairZero(), err
 	}
-	p.FaultyPower = p.FaultyPower.Add(power)
+	// The sectors must not have been previously faulty or recovering.
+	// No change to recoveries or terminations.
 
+	p.FaultyPower = p.FaultyPower.Add(power)
+	// No change to live or recovering power.
 	return power, nil
 }
 
-// Records all not-yet-faulty sectors in the partition as faulty.
-// The sectors are added to the Faults bitfield and the FaultyPower is set equal to total power.
-// All sectors' expirations are rescheduled to the fault expiration, as "early" (if not expiring earlier)
-// Returns the power of the newly-faulty sectors.
-func (p *Partition) AddAllAsFaults(store adt.Store, faultExpiration abi.ChainEpoch) (PowerPair, error) {
-	// Collapse tail of queue into the last entry, and mark all power faulty
-
-	var err error
-	// Load expiration queue
-	queue, err := loadExpirationQueue(store, p.ExpirationsEpochs)
-	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
-	}
-
-	if err = queue.RescheduleAllAsFaults(faultExpiration); err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to reschedule all as faults: %w", err)
-	}
-
-	// Save expiration queue
-	if p.ExpirationsEpochs, err = queue.Root(); err != nil {
-		return NewPowerPairZero(), err
-	}
-
-	// Update partition metadata
-	allFaults, err := bitfield.SubtractBitField(p.Sectors, p.Terminated)
-	if err != nil {
-		return NewPowerPairZero(), err
-	}
-	p.Faults = allFaults
-
-	newFaultPower := p.LivePower.Sub(p.FaultyPower)
-	p.FaultyPower = p.LivePower
-
-	return newFaultPower, nil
-}
-
-// Removes sector numbers from faults.
-// The sectors are removed from the Faults bitfield and FaultyPower reduced.
+// Removes sector numbers from faults and thus from recoveries.
+// The sectors are removed from the Faults and Recovering bitfields, and FaultyPower and RecoveringPower reduced.
 // The sectors are re-scheduled for expiration shortly after their target expiration epoch.
-// Consistency between the partition totals and queue depend on the reported sectors actually being faulty.
+// Consistency between the partition totals and queue depend on the reported sectors actually being faulty and recovering.
 // Returns the power of the now-recovered sectors.
-func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
+func (p *Partition) RecoverFaults(store adt.Store, recovered *abi.BitField, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	// Load expiration queue
 	queue, err := loadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
-
-	// Reschedule recoveries
+	// Reschedule recovered
 	power, err := queue.RescheduleRecovered(sectors, ssize)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to reschedule faults in partition queue: %w", err)
 	}
-
 	// Save expiration queue
 	if p.ExpirationsEpochs, err = queue.Root(); err != nil {
 		return NewPowerPairZero(), err
@@ -213,17 +180,24 @@ func (p *Partition) RemoveFaults(store adt.Store, sectorNos *abi.BitField, secto
 
 	// Update partition metadata
 	// XXX: sanity check containsAll?
-	if newFaults, err := bitfield.SubtractBitField(p.Faults, sectorNos); err != nil {
+	if newFaults, err := bitfield.SubtractBitField(p.Faults, recovered); err != nil {
 		return NewPowerPairZero(), err
 	} else {
 		p.Faults = newFaults
 	}
+	if newRecoveries, err := bitfield.SubtractBitField(p.Recoveries, recovered); err != nil {
+		return NewPowerPairZero(), err
+	} else {
+		p.Recoveries = newRecoveries
+	}
+	// No change to live power.
 	p.FaultyPower = p.FaultyPower.Sub(power)
+	p.RecoveringPower = p.RecoveringPower.Sub(power)
 
 	return power, err
 }
 
-// Adds sectors to recoveries and recovering power. Assumes not already present in recoveries.
+// Adds sectors to recoveries and recovering power. Assumes sectors are faulty but not already present in recoveries.
 func (p *Partition) AddRecoveries(sectorNos *abi.BitField, power PowerPair) (err error) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
@@ -237,10 +211,12 @@ func (p *Partition) AddRecoveries(sectorNos *abi.BitField, power PowerPair) (err
 		return err
 	}
 	p.RecoveringPower = p.RecoveringPower.Add(power)
+	// No change to faults, or terminations.
+	// No change to faulty power.
 	return nil
 }
 
-// Removes sectors from recoveries and recovering power. Assumes sectors are present.
+// Removes sectors from recoveries and recovering power. Assumes sectors are currently faulty and recovering..
 func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField, power PowerPair) (err error) {
 	empty, err := sectorNos.IsEmpty()
 	if err != nil {
@@ -254,6 +230,8 @@ func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField, power PowerPair) (
 		return err
 	}
 	p.RecoveringPower = p.RecoveringPower.Sub(power)
+	// No change to faults, or terminations.
+	// No change to faulty power.
 	return nil
 }
 
@@ -291,16 +269,16 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to save sector expirations: %w", err)
 	}
 
-	// Check the sectors being removed are alive.
-	alive, err := p.LiveSectors()
+	// Check the sectors being removed are active (alive, not faulty).
+	active, err := p.ActiveSectors()
 	if err != nil {
 		return NewPowerPairZero(), big.Zero(), err
 	}
-	allAlive, err := abi.BitFieldContainsAll(alive, oldSnos)
+	allActive, err := abi.BitFieldContainsAll(active, oldSnos)
 	if err != nil {
-		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to check for live sectors: %w", err)
-	} else if !allAlive {
-		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("refusing to replace non-live sectors in %v (alive: %v)", oldSnos, alive)
+		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to check for active sectors: %w", err)
+	} else if !allActive {
+		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("refusing to replace inactive sectors in %v (active: %v)", oldSnos, active)
 	}
 
 	// Update partition metadata.
@@ -312,7 +290,62 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 	}
 	p.LivePower = p.LivePower.Add(powerDelta)
 	p.TotalPledge = big.Add(p.TotalPledge, pledgeDelta)
+	// No change to faults, recoveries, or terminations.
+	// No change to faulty or recovering power.
 	return powerDelta, pledgeDelta, nil
+}
+
+// Marks a collection of sectors as terminated.
+// The sectors are removed from Faults and Recoveries.
+// The epoch of termination is recorded for future termination fee calculation.
+func (p *Partition) TerminateSectors(store adt.Store, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
+	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
+	}
+	removed, removedRecovering, err := expirations.RemoveSectors(sectors, p.Faults, p.Recoveries, ssize)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to remove sector expirations: %w", err)
+	}
+	if p.ExpirationsEpochs, err = expirations.Root(); err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to save sector expirations: %w", err)
+	}
+
+	removedSectors, err := bitfield.MergeBitFields(removed.OnTimeSectors, removed.EarlySectors)
+	if err != nil {
+		return NewPowerPairZero(), err
+	}
+
+	// Check the sectors being removed are alive (not already terminated).
+	alive, err := p.LiveSectors()
+	if err != nil {
+		return NewPowerPairZero(), err
+	}
+	allAlive, err := abi.BitFieldContainsAll(alive, removedSectors)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to check for live sectors: %w", err)
+	} else if !allAlive {
+		return NewPowerPairZero(), xerrors.Errorf("refusing to terminate non-live sectors in %v (alive: %v)", removedSectors, alive)
+	}
+
+	// Update partition metadata.
+	if p.Faults, err = bitfield.SubtractBitField(p.Faults, removedSectors); err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to remove terminated sectors from faults: %w", err)
+	}
+	if p.Recoveries, err = bitfield.SubtractBitField(p.Recoveries, removedSectors); err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to remove terminated sectors from recoveries: %w", err)
+	}
+	if p.Terminated, err = bitfield.MergeBitFields(p.Terminated, removedSectors); err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to add terminated sectors: %w", err)
+	}
+
+	powerDelta := removed.ActivePower.Add(removed.FaultyPower)
+	p.LivePower = p.LivePower.Add(powerDelta)
+	p.FaultyPower = p.FaultyPower.Sub(removed.FaultyPower)
+	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
+
+	// Pledge is not changed until partition de-frag.
+	return powerDelta, nil
 }
 
 // PopExpiredSectors traverses the expiration queue up to and including some epoch, and marks all expiring
@@ -366,6 +399,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 	}
 	p.LivePower = p.LivePower.Sub(popped.ActivePower)
 	p.FaultyPower = p.FaultyPower.Sub(popped.FaultyPower)
+	// Pledge is not reduced until partition de-frag.
 
 	// Record the epoch of any sectors expiring early, for termination fee calculation later.
 	etQueue, err := loadUintQueue(store, p.EarlyTerminated)
@@ -379,31 +413,42 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 		return nil, xerrors.Errorf("failed to save early termination queue: %w", err)
 	}
 
+
 	return popped, nil
 }
 
 // Marks all non-faulty sectors in the partition as faulty and clears recoveries, updating power memos appropriately.
+// All sectors' expirations are rescheduled to the fault expiration, as "early" (if not expiring earlier)
 // Returns the power of the newly faulty and failed recovery sectors.
 func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainEpoch) (newFaultPower, failedRecoveryPower PowerPair, err error) {
-	// By construction, declared recoveries are currently faulty and thus not in newFaults.
-	failedRecoveries, err := bitfield.IntersectBitField(p.Sectors, p.Recoveries)
+	// Collapse tail of queue into the last entry, and mark all power faulty.
+	// Load expiration queue
+	queue, err := loadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
-		return newFaultPower, failedRecoveryPower, xerrors.Errorf("bitfield intersect failed: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
+	}
+	if err = queue.RescheduleAllAsFaults(faultExpiration); err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to reschedule all as faults: %w", err)
+	}
+	// Save expiration queue
+	if p.ExpirationsEpochs, err = queue.Root(); err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), err
 	}
 
 	// Compute faulty power for penalization. New faulty power is the total power minus already faulty.
 	newFaultPower = p.LivePower.Sub(p.FaultyPower)
 	failedRecoveryPower = p.RecoveringPower
 
-	// Mark all sectors faulty and not recovering.
-	if _, err = p.AddAllAsFaults(store, faultExpiration); err != nil {
-		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record new faults: %w", err)
+	// Update partition metadata
+	allFaults, err := p.LiveSectors()
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), err
 	}
-
-	if err = p.RemoveRecoveries(failedRecoveries, failedRecoveryPower); err != nil {
-		return newFaultPower, failedRecoveryPower, xerrors.Errorf("failed to record failed recoveries: %w", err)
-	}
+	p.Faults = allFaults
+	p.Recoveries = abi.NewBitField()
+	p.FaultyPower = p.LivePower
 	p.RecoveringPower = NewPowerPairZero()
+
 	return newFaultPower, failedRecoveryPower, nil
 }
 
