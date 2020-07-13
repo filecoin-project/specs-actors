@@ -420,7 +420,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
 
-		for epoch := st.FirstCronTask; epoch <= rtEpoch; epoch++ {
+		for epoch := st.FirstCronEpoch; epoch <= rtEpoch; epoch++ {
 			epochEvents, err := st.loadCronEvents(store, epoch)
 			if err != nil {
 				return errors.Wrapf(err, "failed to load cron events at %v", epoch)
@@ -436,7 +436,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 			}
 		}
 
-		st.FirstCronTask = rtEpoch + 1
+		st.FirstCronEpoch = rtEpoch + 1
 		return nil
 	})
 	failedMinerCrons := make([]addr.Address, 0)

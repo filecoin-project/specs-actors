@@ -29,7 +29,7 @@ type State struct {
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
 
 	// First epoch in which a cron task may be stored.
-	FirstCronTask abi.ChainEpoch
+	FirstCronEpoch abi.ChainEpoch
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -59,7 +59,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		TotalQualityAdjPower:    abi.NewStoragePower(0),
 		TotalQABytesCommitted:   abi.NewStoragePower(0),
 		TotalPledgeCollateral:   abi.NewTokenAmount(0),
-		FirstCronTask:           0,
+		FirstCronEpoch:          0,
 		CronEventQueue:          emptyMapCid,
 		Claims:                  emptyMapCid,
 		MinerCount:              0,
@@ -168,9 +168,9 @@ func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *C
 		return err
 	}
 
-	// if event is in past, alter FirstCronTask so it will be found.
-	if epoch < st.FirstCronTask {
-		st.FirstCronTask = epoch
+	// if event is in past, alter FirstCronEpoch so it will be found.
+	if epoch < st.FirstCronEpoch {
+		st.FirstCronEpoch = epoch
 	}
 
 	err = mmap.Add(epochKey(epoch), event)

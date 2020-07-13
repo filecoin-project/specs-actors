@@ -499,7 +499,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
-	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronTask)
+	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronEpoch)
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.MinerAboveMinPowerCount)
 
