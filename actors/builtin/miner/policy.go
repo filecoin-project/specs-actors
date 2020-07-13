@@ -83,7 +83,7 @@ const WPoStChallengeLookback = abi.ChainEpoch(20)
 // Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
 // This lookback must not be less than WPoStChallengeLookback lest a malicious miner be able to selectively declare
 // faults after learning the challenge value.
-const FaultDeclarationCutoff = WPoStChallengeLookback + 10
+const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
 // The maximum age of a fault before the sector is terminated.
 const FaultMaxAge = WPoStProvingPeriod*14 - 1
