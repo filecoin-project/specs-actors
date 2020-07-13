@@ -1156,6 +1156,32 @@ func TestCronTick(t *testing.T) {
 		require.NotNil(t, actor.getDealProposal(rt, dealId))
 		require.NotNil(t, actor.getDealState(rt, dealId))
 	})
+
+	t.Run("cannot publish the same deal twice BEFORE a cron tick", func(t *testing.T) {
+		// Publish a deal
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
+		d1 := actor.getDealProposal(rt, dealId1)
+
+		// now try to publish it again and it should fail because it will still be in pending state
+		d2 := actor.generateDealAndAddFunds(rt, client, mAddrs, startEpoch, endEpoch)
+		params := mkPublishStorageParams(d2)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		rt.SetCaller(worker, builtin.AccountActorCodeID)
+		rt.ExpectVerifySignature(crypto.Signature{}, d2.Client, mustCbor(&d2), nil)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.PublishStorageDeals, params)
+		})
+		rt.Verify()
+
+		// now a cron tick happens -> deal1 is no longer pending and then publishing the same deal again should work
+		rt.SetEpoch(d1.StartEpoch - 1)
+		actor.activateDeals(rt, sectorExpiry, provider, d1.StartEpoch-1, dealId1)
+		rt.SetEpoch(d1.StartEpoch)
+		actor.cronTick(rt)
+		actor.publishDeals(rt, mAddrs, d2)
+	})
 }
 
 func TestLockedFundTrackingStates(t *testing.T) {
