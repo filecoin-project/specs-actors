@@ -552,17 +552,17 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 		},
 		// Process partitions in deadline.
 		func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (bool, error) {
-			nonTerminated, err := bitfield.SubtractBitField(sectors, partition.Terminated)
+			live, err := bitfield.SubtractBitField(sectors, partition.Terminated)
 			if err != nil {
 				return false, err
 			}
 
-			nonFaulty, err := bitfield.SubtractBitField(nonTerminated, partition.Faults)
+			active, err := bitfield.SubtractBitField(live, partition.Faults)
 			if err != nil {
 				return false, err
 			}
 
-			sectorInfos, err := st.LoadSectorInfos(store, nonFaulty)
+			sectorInfos, err := st.LoadSectorInfos(store, active)
 			if err != nil {
 				return false, err
 			}
