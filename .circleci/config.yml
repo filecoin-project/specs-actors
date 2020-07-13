@@ -44,10 +44,6 @@ jobs:
       - install-deps
       - prepare
       - go/mod-download
-      - run: sudo apt-get update
-      - restore_cache:
-          name: restore go mod cache
-          key: v1-go-deps-{{ arch }}-{{ checksum "/home/circleci/project/go.mod" }}
       - run:
           command: make build
       - store_artifacts:
@@ -61,10 +57,6 @@ jobs:
       - install-deps
       - prepare
       - go/mod-download
-      - run: sudo apt-get update
-      - restore_cache:
-          name: restore go mod cache
-          key: v1-go-deps-{{ arch }}-{{ checksum "/home/circleci/project/go.mod" }}
       - run:
           command: |
             make test-coverage
@@ -84,7 +76,7 @@ jobs:
         default: golang
       golangci-lint-version:
         type: string
-        default: 1.23.1
+        default: 1.28.2
       concurrency:
         type: string
         default: '2'
@@ -102,9 +94,19 @@ jobs:
       - prepare
       - run:
           command: make build
-      - go/install-golangci-lint:
-          gobin: $HOME/.local/bin
-          version: << parameters.golangci-lint-version >>
+      - run:
+          name: Install golangci-lint
+          command: >
+            (
+              cd $(mktemp -d);
+              go mod init a;
+              go get github.com/golangci/golangci-lint/cmd/golangci-lint@v<< parameters.golangci-lint-version >>
+              go build github.com/golangci/golangci-lint/cmd/golangci-lint
+              mkdir -p $HOME/.local/bin
+              mv -f golangci-lint $HOME/.local/bin/
+            )
+      - run:
+          command: make .nomaprange.so
       - run:
           name: Lint
           command: |
