@@ -58,6 +58,17 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.MinerAboveMinPowerCount (int64) (int64)
+	if t.MinerAboveMinPowerCount >= 0 {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MinerAboveMinPowerCount))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.MinerAboveMinPowerCount)-1)); err != nil {
+			return err
+		}
+	}
+
 	// t.CronEventQueue (cid.Cid) (struct)
 
 	if err := cbg.WriteCid(w, t.CronEventQueue); err != nil {
@@ -79,17 +90,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCid(w, t.Claims); err != nil {
 		return xerrors.Errorf("failed to write cid field t.Claims: %w", err)
-	}
-
-	// t.MinerAboveMinPowerCount (int64) (int64)
-	if t.MinerAboveMinPowerCount >= 0 {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajUnsignedInt, uint64(t.MinerAboveMinPowerCount))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajNegativeInt, uint64(-t.MinerAboveMinPowerCount)-1)); err != nil {
-			return err
-		}
 	}
 
 	// t.ProofValidationBatch (cid.Cid) (struct)
@@ -192,6 +192,31 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		t.MinerCount = int64(extraI)
 	}
+	// t.MinerAboveMinPowerCount (int64) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeader(br)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.MinerAboveMinPowerCount = int64(extraI)
+	}
 	// t.CronEventQueue (cid.Cid) (struct)
 
 	{
@@ -240,31 +265,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		t.Claims = c
 
-	}
-	// t.MinerAboveMinPowerCount (int64) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeader(br)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.MinerAboveMinPowerCount = int64(extraI)
 	}
 	// t.ProofValidationBatch (cid.Cid) (struct)
 

@@ -93,6 +93,8 @@ type UpdateChannelStateParams struct {
 // A voucher is sent by `From` to `To` off-chain in order to enable
 // `To` to redeem payments on-chain in the future
 type SignedVoucher struct {
+	// PaymentChannelAddr is the address of the payment channel this signed voucher is valid for
+	PaymentChannelAddr addr.Address
 	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
 	TimeLockMin abi.ChainEpoch
 	// TimeLockMax sets a max epoch beyond which the voucher cannot be redeemed
@@ -143,6 +145,11 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		signer = st.From
 	}
 	sv := params.Sv
+
+	pchAddr := rt.Message().Receiver()
+	if pchAddr != sv.PaymentChannelAddr {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address does not match receiver")
+	}
 
 	if sv.Signature == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher has no signature")
