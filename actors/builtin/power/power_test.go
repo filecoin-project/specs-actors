@@ -3,6 +3,7 @@ package power_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -359,6 +360,63 @@ func TestCron(t *testing.T) {
 	})
 }
 
+func TestSubmitPoRepForBulkVerify(t *testing.T) {
+	actor := newHarness(t)
+	miner := tutil.NewIDAddr(t, 101)
+	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+
+	t.Run("registers porep and charges gas", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		commR := tutil.MakeCID("commR")
+		commD := tutil.MakeCID("commD")		
+		sealInfo := &abi.SealVerifyInfo{
+			SealedCID: commR,
+			UnsealedCID: commD,
+		}
+		actor.submitPoRepForBulkVerify(rt, miner, sealInfo)
+		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal)
+		st := getState(rt)
+		store := rt.AdtStore()
+		require.NotNil(t, st.ProofValidationBatch)
+		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
+		require.NoError(t, err)
+		arr, found, err := mmap.Get(adt.AddrKey(miner))
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, uint64(1), arr.Length())
+		var storedSealInfo abi.SealVerifyInfo
+		found, err = arr.Get(0, &storedSealInfo)
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, commR, storedSealInfo.SealedCID)
+	})
+
+	t.Run("aborts when too many poreps", func(t *testing.T){
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		sealInfo := func(i int) *abi.SealVerifyInfo {
+			var sealInfo abi.SealVerifyInfo
+			sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i))
+			sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i))
+			return &sealInfo
+		}
+
+		// Adding MaxMinerProveCommitsPerEpoch works without error
+		for i := 0; i < power.MaxMinerProveCommitsPerEpoch; i++ {
+			actor.submitPoRepForBulkVerify(rt, miner, sealInfo(i))
+		}
+
+		rt.ExpectAbort(power.ErrTooManyProveCommits, func() {
+			actor.submitPoRepForBulkVerify(rt, miner, sealInfo(power.MaxMinerProveCommitsPerEpoch))
+		})
+
+		// Gas only charged for successful submissions
+		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal*power.MaxMinerProveCommitsPerEpoch)
+	})
+}
+
 //
 // Misc. Utility Functions
 //
@@ -496,6 +554,12 @@ func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Addre
 	require.False(h.t, found)
 }
 
+func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr addr.Address, sealInfo *abi.SealVerifyInfo) {
+	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+	rt.SetCaller(minerAddr, builtin.StorageMinerActorCodeID)
+	rt.Call(h.Actor.SubmitPoRepForBulkVerify, sealInfo)
+	rt.Verify()
+}
 
 func (h *spActorHarness) expectTotalPower(rt *mock.Runtime, expectedRaw, expectedQA abi.StoragePower) {
 	ret := h.currentPowerTotal(rt)
