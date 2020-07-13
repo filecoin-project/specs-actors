@@ -161,16 +161,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)		
-		actor.createMinerBasic(rt, owner, owner, miner4)				
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
 		actor.createMinerBasic(rt, owner, owner, miner5)
 
 		actor.updateClaimedPower(rt, miner1, div(smallPowerUnit, 2), smallPowerUnit)
-		actor.updateClaimedPower(rt, miner2, div(smallPowerUnit, 2), smallPowerUnit)		
-		actor.updateClaimedPower(rt, miner3, div(smallPowerUnit, 2), smallPowerUnit)				
+		actor.updateClaimedPower(rt, miner2, div(smallPowerUnit, 2), smallPowerUnit)
+		actor.updateClaimedPower(rt, miner3, div(smallPowerUnit, 2), smallPowerUnit)
 
 		actor.updateClaimedPower(rt, miner4, div(powerUnit, 2), powerUnit)
-		actor.updateClaimedPower(rt, miner5, div(powerUnit, 2), powerUnit)		
+		actor.updateClaimedPower(rt, miner5, div(powerUnit, 2), powerUnit)
 
 		// Below threshold small miner power is counted
 		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 3), mul(powerUnit, 2))
@@ -186,7 +186,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
 
 		// Less than 3 miners above threshold again small miner power is counted again
-	
+
 		actor.updateClaimedPower(rt, miner3, div(delta.Neg(), 2), delta.Neg())
 		actor.expectTotalPower(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 	})
@@ -198,8 +198,8 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)		
-		actor.createMinerBasic(rt, owner, owner, miner4)				
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
@@ -222,7 +222,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)		
+		actor.createMinerBasic(rt, owner, owner, miner3)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, big.Zero())
 		actor.updateClaimedPower(rt, miner2, powerUnit, big.Zero())
@@ -243,7 +243,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)	
+		actor.createMinerBasic(rt, owner, owner, miner3)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
@@ -369,9 +369,9 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		commR := tutil.MakeCID("commR")
-		commD := tutil.MakeCID("commD")		
+		commD := tutil.MakeCID("commD")
 		sealInfo := &abi.SealVerifyInfo{
-			SealedCID: commR,
+			SealedCID:   commR,
 			UnsealedCID: commD,
 		}
 		actor.submitPoRepForBulkVerify(rt, miner, sealInfo)
@@ -392,7 +392,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		assert.Equal(t, commR, storedSealInfo.SealedCID)
 	})
 
-	t.Run("aborts when too many poreps", func(t *testing.T){
+	t.Run("aborts when too many poreps", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -413,7 +413,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		})
 
 		// Gas only charged for successful submissions
-		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal*power.MaxMinerProveCommitsPerEpoch)
+		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal * power.MaxMinerProveCommitsPerEpoch)
 	})
 }
 
@@ -461,7 +461,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
-	assert.Equal(h.t, abi.ChainEpoch(-1), st.LastEpochTick)
+	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronTask)
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.MinerAboveMinPowerCount)
 

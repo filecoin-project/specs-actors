@@ -28,8 +28,8 @@ type State struct {
 	// A queue of events to be triggered by cron, indexed by epoch.
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
 
-	// Last chain epoch OnEpochTickEnd was called on
-	LastEpochTick abi.ChainEpoch
+	// First epoch in which a cron task may be stored.
+	FirstCronTask abi.ChainEpoch
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -59,7 +59,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		TotalQualityAdjPower:    abi.NewStoragePower(0),
 		TotalQABytesCommitted:   abi.NewStoragePower(0),
 		TotalPledgeCollateral:   abi.NewTokenAmount(0),
-		LastEpochTick:           -1,
+		FirstCronTask:           0,
 		CronEventQueue:          emptyMapCid,
 		Claims:                  emptyMapCid,
 		MinerCount:              0,
