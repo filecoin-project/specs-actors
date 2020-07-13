@@ -69,6 +69,12 @@ func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
 	return d.PeriodStart + WPoStProvingPeriod
 }
 
+// Returns true if the deadline is currently mutable. The open deadline and the
+// next open deadline are immutable.
+func (d *DeadlineInfo) Mutable() bool {
+	return d.CurrentEpoch < d.Open-WPoStChallengeWindow || d.Open+WPoStChallengeWindow <= d.CurrentEpoch
+}
+
 // Calculates the deadline at some epoch for a proving period and returns the deadline-related calculations.
 func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *DeadlineInfo {
 	periodProgress := currEpoch - periodStart
