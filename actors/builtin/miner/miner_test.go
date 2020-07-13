@@ -588,7 +588,7 @@ func TestCommitments(t *testing.T) {
 		sectorNo := abi.SectorNumber(100)
 
 		dealLimits := map[abi.RegisteredSealProof]int{
-			abi.RegisteredSealProof_StackedDrg2KiBV1:  1,
+			abi.RegisteredSealProof_StackedDrg2KiBV1:  256,
 			abi.RegisteredSealProof_StackedDrg32GiBV1: 256,
 			abi.RegisteredSealProof_StackedDrg64GiBV1: 512,
 		}

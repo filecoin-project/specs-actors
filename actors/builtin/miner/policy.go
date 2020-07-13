@@ -99,7 +99,9 @@ const WorkerKeyChangeDelay = ChainFinality
 // and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
 const MaxSectorExpirationExtension = builtin.EpochsInYear
 
-// Ratio of sector size to maximum deals per sector
+// Ratio of sector size to maximum deals per sector.
+// The maximum number of deals is the sector size divided by this number (2^27)
+// which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
 var QualityBaseMultiplier = big.NewInt(10)         // PARAM_FINISH
@@ -146,11 +148,7 @@ func precommitDeposit(qaSectorPower abi.StoragePower, networkQAPower abi.Storage
 
 // Determine maximum number of deal miner's sector can hold
 func dealPerSectorLimit(size abi.SectorSize) uint64 {
-	maxDeals := uint64(size / DealLimitDenominator)
-	if maxDeals == 0 {
-		maxDeals = 1
-	}
-	return maxDeals
+	return max64(256, uint64(size/DealLimitDenominator))
 }
 
 type BigFrac struct {
