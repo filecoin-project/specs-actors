@@ -348,6 +348,7 @@ func TestCron(t *testing.T) {
 			t.Errorf("Unexpected bitfield at epoch %d", i)
 			return nil
 		})
+		require.NoError(t, err)
 	})
 
 	t.Run("handles failed call", func(t *testing.T) {
