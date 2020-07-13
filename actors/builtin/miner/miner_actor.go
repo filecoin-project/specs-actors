@@ -381,6 +381,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
 		}
 
+		maxDealLimit := dealPerSectorLimit(info.SectorSize)
+		if uint64(len(params.DealIDs)) > maxDealLimit {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
+		}
+
 		_, preCommitFound, err := st.GetPrecommittedSector(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit %v", params.SectorNumber)
 		if preCommitFound {
@@ -2187,6 +2192,13 @@ func getMinerInfo(rt Runtime, st *State) *MinerInfo {
 
 func min64(a, b uint64) uint64 {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func max64(a, b uint64) uint64 {
+	if a > b {
 		return a
 	}
 	return b
