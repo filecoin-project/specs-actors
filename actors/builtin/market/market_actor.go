@@ -487,24 +487,22 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		dbe, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
+		store := adt.AsStore(rt)
+		dbe, err := st.CachedDealOpsByEpoch(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
 
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
-		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		states, err := st.CachedStates(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
 
-		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state proposals")
-
-		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		et, err := st.CachedEscrowTable(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 
-		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+		lt, err := st.CachedLockedTable(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
 
-		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
+		pending, err := st.CachedPendingProposals(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
@@ -532,7 +530,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					}
 
 					// we should not attempt to delete the DealState because it does NOT exist
-					if err := deleteDealProposalAndState(dealID, states, proposals, true, false); err != nil {
+					if err := st.deleteDealProposalAndState(store, dealID, true, false); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 					return nil
@@ -546,7 +544,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
 				if removeDeal {
-					if err := deleteDealProposalAndState(dealID, states, proposals, true, true); err != nil {
+					if err := st.deleteDealProposalAndState(store, dealID, true, true); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 				}
@@ -591,38 +589,9 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			}
 		}
 
-		ndbec, err := dbe.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to get root of deals by epoch set: %s", err)
-		}
-
-		ltc, err := lt.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush locked table: %s", err)
-		}
-		etc, err := et.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %s", err)
-		}
-		st.LockedTable = ltc
-		st.EscrowTable = etc
-
-		st.DealOpsByEpoch = ndbec
-
 		st.LastCron = rt.CurrEpoch()
-
-		st.States, err = states.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal states: %s", err)
-		}
-
-		st.Proposals, err = proposals.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal proposals: %s", err)
-		}
-
-		st.PendingProposals, err = pending.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending proposals")
+		err = st.Flush(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state cache")
 
 		return nil
 	})

@@ -2,6 +2,7 @@ package market
 
 import (
 	"bytes"
+	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -60,6 +61,134 @@ type State struct {
 	TotalProviderLockedCollateral abi.TokenAmount
 	// Total storage fee that is locked in escrow -> unlocked when payments are made
 	TotalClientStorageFee abi.TokenAmount
+
+	cache cache
+}
+
+type cache struct {
+	proposals *DealArray
+	states    *DealMetaArray
+
+	pendingProposals *adt.Map
+
+	escrowTable *adt.BalanceTable
+	lockedTable *adt.BalanceTable
+
+	dealOpsByEpoch *SetMultimap
+}
+
+func (st *State) CachedProposals(store adt.Store) (*DealArray, error) {
+	var err error
+	if st.cache.proposals == nil {
+		st.cache.proposals, err = AsDealProposalArray(store, st.Proposals)
+	}
+	return st.cache.proposals, err
+}
+
+func (st *State) CachedStates(store adt.Store) (*DealMetaArray, error) {
+	var err error
+	if st.cache.states == nil {
+		st.cache.states, err = AsDealStateArray(store, st.States)
+	}
+	return st.cache.states, err
+}
+
+func (st *State) CachedPendingProposals(store adt.Store) (*adt.Map, error) {
+	var err error
+	if st.cache.pendingProposals == nil {
+		st.cache.pendingProposals, err = adt.AsMap(store, st.PendingProposals)
+	}
+	return st.cache.pendingProposals, err
+}
+
+func (st *State) CachedEscrowTable(store adt.Store) (*adt.BalanceTable, error) {
+	var err error
+	if st.cache.escrowTable == nil {
+		st.cache.escrowTable, err = adt.AsBalanceTable(store, st.EscrowTable)
+	}
+	return st.cache.escrowTable, err
+}
+
+func (st *State) CachedLockedTable(store adt.Store) (*adt.BalanceTable, error) {
+	var err error
+	if st.cache.lockedTable == nil {
+		st.cache.lockedTable, err = adt.AsBalanceTable(store, st.LockedTable)
+	}
+	return st.cache.lockedTable, err
+}
+
+func (st *State) CachedDealOpsByEpoch(store adt.Store) (*SetMultimap, error) {
+	var err error
+	if st.cache.dealOpsByEpoch == nil {
+		st.cache.dealOpsByEpoch, err = AsSetMultimap(store, st.DealOpsByEpoch)
+	}
+	return st.cache.dealOpsByEpoch, err
+}
+
+func (st *State) Flush(store adt.Store) error {
+	var err error
+	if st.cache.proposals != nil {
+		st.Proposals, err = st.cache.proposals.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to flush deal proposals %w", err)
+		}
+	}
+	if st.cache.states != nil {
+		st.States, err = st.cache.states.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to flush deal states: %w", err)
+		}
+	}
+	if st.cache.pendingProposals != nil {
+		st.PendingProposals, err = st.cache.pendingProposals.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to flush pending proposals: %w", err)
+		}
+	}
+	if st.cache.escrowTable != nil {
+		st.EscrowTable, err = st.cache.escrowTable.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to flush escrow table: %w", err)
+		}
+	}
+	if st.cache.lockedTable != nil {
+		st.LockedTable, err = st.cache.lockedTable.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to flush locked table: %w", err)
+		}
+	}
+	if st.cache.dealOpsByEpoch != nil {
+		st.DealOpsByEpoch, err = st.cache.dealOpsByEpoch.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to flush deals by epoch set: %w", err)
+		}
+	}
+	return nil
+}
+
+func (st *State) deleteDealProposalAndState(store adt.Store, dealId abi.DealID, removeProposal bool, removeState bool) error {
+	proposals, err := st.CachedProposals(store)
+	if err != nil {
+		return err
+	}
+	states, err := st.CachedStates(store)
+	if err != nil {
+		return err
+	}
+	if removeProposal {
+		if err := proposals.Delete(uint64(dealId)); err != nil {
+			return fmt.Errorf("failed to delete deal proposal: %w", err)
+		}
+
+	}
+
+	if removeState {
+		if err := states.Delete(dealId); err != nil {
+			return fmt.Errorf("failed to delete deal state: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
@@ -346,7 +475,7 @@ func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amoun
 ////////////////////////////////////////////////////////////////////////////////
 
 func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
-	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	proposals, err := st.CachedProposals(adt.AsStore(rt))
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
 	}
