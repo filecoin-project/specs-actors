@@ -190,6 +190,7 @@ func main() {
 		miner.FaultDeclaration{},
 		miner.RecoveryDeclaration{},
 		miner.ExpirationExtension{},
+		miner.TerminationDeclaration{},
 		miner.PoStPartition{},
 	); err != nil {
 		panic(err)
