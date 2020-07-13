@@ -617,7 +617,7 @@ func TestWindowPost(t *testing.T) {
 	precommitEpoch := abi.ChainEpoch(1)
 	builder := builderForHarness(actor).
 		WithEpoch(precommitEpoch).
-		WithBalance(big.Mul(bigBalance, bigBalance), big.Zero())
+		WithBalance(bigBalance, big.Zero())
 
 	t.Run("test proof", func(t *testing.T) {
 		rt := builder.Build(t)
