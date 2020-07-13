@@ -515,8 +515,6 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
 				}
 
-				builtin.RequireNoErr(rt, pending.Delete(adt.CidKey(dcid)), exitcode.ErrIllegalState, "failed to delete pending proposal")
-
 				state, found, err := states.Get(dealID)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
 
@@ -538,6 +536,12 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 					return nil
+				}
+
+				// if this is the first cron tick for the deal, it should be in the pending state.
+				if state.LastUpdatedEpoch == epochUndefined {
+					pdErr := pending.Delete(adt.CidKey(dcid))
+					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 				}
 
 				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
@@ -616,6 +620,9 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal proposals: %s", err)
 		}
+
+		st.PendingProposals, err = pending.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending proposals")
 
 		return nil
 	})
