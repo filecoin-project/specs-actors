@@ -524,7 +524,7 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 
 func (rt *Runtime) BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
 	out := make(map[address.Address][]bool)
-	for k, v := range vis {
+	for k, v := range vis { //nolint:nomaprange
 		validations := make([]bool, len(v))
 		for i := range validations {
 			validations[i] = true

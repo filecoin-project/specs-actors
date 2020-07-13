@@ -27,21 +27,25 @@ func TestConstructor(t *testing.T) {
 			Build(t)
 		startRealizedPower := abi.NewStoragePower(0)
 		actor.constructAndVerify(rt, &startRealizedPower)
+		st := getState(rt)
+		assert.Equal(t, abi.ChainEpoch(0), st.Epoch)
+		assert.Equal(t, abi.NewStoragePower(0), st.CumsumRealized)
+		assert.Equal(t, big.MustFromString("9152074749760199658"), st.ThisEpochReward)
 	})
 	t.Run("construct with some power", func(t *testing.T) {
 		rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
 			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
 			Build(t)
-		startRealizedPower := abi.NewStoragePower(1 << 25)
+		startRealizedPower := big.Lsh(abi.NewStoragePower(1), 39)
 		actor.constructAndVerify(rt, &startRealizedPower)
 		st := getState(rt)
-		assert.Equal(t, abi.ChainEpoch(0), st.RewardEpochsPaid) // constructor shouldn't bump count of rewards
-		assert.Equal(t, startRealizedPower, st.RealizedPower)
+		assert.Equal(t, abi.ChainEpoch(0), st.Epoch)
 		assert.Equal(t, startRealizedPower, st.CumsumRealized)
 
 		// Note this check is sensative to the value of startRealizedPower and the minting function
 		// so it is somewhat brittle. Values of startRealizedPower below 1<<20 mint no coins
 		assert.NotEqual(t, big.Zero(), st.ThisEpochReward)
+		assert.Equal(t, big.MustFromString("50336408296765376121"), st.ThisEpochReward)
 	})
 }
 
