@@ -725,15 +725,21 @@ func (st *State) RemoveRecoveries(sectorNos *abi.BitField) (err error) {
 
 // Loads sector info for a sequence of sectors.
 func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*SectorOnChainInfo, error) {
+	sectorsArr, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return nil, err
+	}
+
 	var sectorInfos []*SectorOnChainInfo
-	err := sectors.ForEach(func(i uint64) error {
-		sectorOnChain, found, err := st.GetSector(store, abi.SectorNumber(i))
+	err = sectors.ForEach(func(i uint64) error {
+		var sectorOnChain SectorOnChainInfo
+		found, err := sectorsArr.Get(i, &sectorOnChain)
 		if err != nil {
-			return xerrors.Errorf("failed to load sector %d: %w", i, err)
+			return xerrors.Errorf("failed to load sector %v: %w", abi.SectorNumber(i), err)
 		} else if !found {
 			return fmt.Errorf("can't find sector %d", i)
 		}
-		sectorInfos = append(sectorInfos, sectorOnChain)
+		sectorInfos = append(sectorInfos, &sectorOnChain)
 		return nil
 	})
 	return sectorInfos, err
