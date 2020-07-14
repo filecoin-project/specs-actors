@@ -180,6 +180,11 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 		CallbackPayload: params.Payload,
 	}
 
+	// Ensure it is not possible to enter a large negative number which would cause problems in cron processing.
+	if params.EventEpoch < 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cron event epoch %d cannot be less than zero", params.EventEpoch)
+	}
+
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.appendCronEvent(adt.AsStore(rt), params.EventEpoch, &minerEvent)
@@ -420,7 +425,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 	rt.State().Transaction(&st, func() interface{} {
 		store := adt.AsStore(rt)
 
-		for epoch := st.LastEpochTick + 1; epoch <= rtEpoch; epoch++ {
+		for epoch := st.FirstCronEpoch; epoch <= rtEpoch; epoch++ {
 			epochEvents, err := st.loadCronEvents(store, epoch)
 			if err != nil {
 				return errors.Wrapf(err, "failed to load cron events at %v", epoch)
@@ -436,7 +441,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 			}
 		}
 
-		st.LastEpochTick = rtEpoch
+		st.FirstCronEpoch = rtEpoch + 1
 		return nil
 	})
 	failedMinerCrons := make([]addr.Address, 0)
