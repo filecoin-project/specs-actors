@@ -529,13 +529,13 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 	// See https://github.com/filecoin-project/specs-actors/issues/535
 
 	var (
-		newEpoch         abi.ChainEpoch
-		movedExpirations map[abi.ChainEpoch][]uint64 // track moved partition expirations.
+		newEpoch              abi.ChainEpoch
+		rescheduledPartitions []uint64 // track partitions with moved expirations.
 	)
 	return st.WalkSectors(store, sectors,
 		// Prepare to process deadline.
 		func(dlIdx uint64, dl *Deadline) (bool, error) {
-			movedExpirations = make(map[abi.ChainEpoch][]uint64)
+			rescheduledPartitions = nil
 
 			//
 			// Figure out the next deadline end.
@@ -580,14 +580,8 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 				return false, err
 			}
 
-			// Record the old epochs so we can fix the deadline's queue.
-			for _, sector := range sectorInfos {
-				partitions := movedExpirations[sector.Expiration]
-				if len(partitions) > 0 && partitions[len(partitions)-1] == partIdx {
-					continue
-				}
-				movedExpirations[sector.Expiration] = append(partitions, partIdx)
-			}
+			// Make sure we update the deadline's queue as well.
+			rescheduledPartitions = append(rescheduledPartitions, partIdx)
 
 			// Update the expirations.
 			for _, sector := range sectorInfos {
@@ -615,7 +609,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 		},
 		// Update deadline.
 		func(dlIdx uint64, dl *Deadline) (bool, error) {
-			if len(movedExpirations) == 0 {
+			if len(rescheduledPartitions) == 0 {
 				return false, nil
 			}
 
@@ -623,25 +617,11 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 			if err != nil {
 				return false, err
 			}
-			epochs := make([]abi.ChainEpoch, 0, len(movedExpirations))
-			for epoch := range movedExpirations {
-				epochs = append(epochs, epoch)
-			}
-			sort.Slice(epochs, func(i, j int) bool {
-				return epochs[i] < epochs[j]
-			})
 
-			var movedPartitions []uint64
-			for _, epoch := range epochs {
-				partitions := movedExpirations[epoch]
-				err := q.RemoveFromQueueValues(epoch, partitions...)
-				if err != nil {
-					return false, err
-				}
-				movedPartitions = append(movedPartitions, partitions...)
-			}
-
-			err = q.AddToQueueValues(newEpoch, movedPartitions...)
+			// Record partitions that now expire at the new epoch.
+			// Don't _remove_ anything from this queue, that's not
+			// safe.
+			err = q.AddToQueueValues(newEpoch, rescheduledPartitions...)
 			if err != nil {
 				return false, err
 			}

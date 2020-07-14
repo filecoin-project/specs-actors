@@ -49,44 +49,6 @@ func (q uintQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) erro
 	return q.AddToQueue(epoch, bitfield.NewFromSet(values))
 }
 
-// Removes values to the queue entry for an epoch.
-func (q uintQueue) RemoveFromQueue(epoch abi.ChainEpoch, values *abi.BitField) error {
-	bf := abi.NewBitField()
-	if found, err := q.Array.Get(uint64(epoch), bf); err != nil {
-		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
-	} else if !found {
-		// nothing to do.
-		// TODO: be paranoid and fail if the values we're trying to remove don't exist?
-		return nil
-	}
-
-	bf, err := bitfield.SubtractBitField(bf, values)
-	if err != nil {
-		return xerrors.Errorf("failed to merge bitfields for queue epoch %v: %w", epoch, err)
-	}
-
-	if empty, err := bf.IsEmpty(); err != nil {
-		return err
-	} else if empty {
-		if err = q.Array.Delete(uint64(epoch)); err != nil {
-			return xerrors.Errorf("failed to delete queue epoch %v: %w", epoch, err)
-		}
-	} else {
-		if err = q.Array.Set(uint64(epoch), bf); err != nil {
-			return xerrors.Errorf("failed to set queue epoch %v: %w", epoch, err)
-		}
-	}
-
-	return nil
-}
-
-func (q uintQueue) RemoveFromQueueValues(epoch abi.ChainEpoch, values ...uint64) error {
-	if len(values) == 0 {
-		return nil
-	}
-	return q.RemoveFromQueue(epoch, bitfield.NewFromSet(values))
-}
-
 // Removes and returns all values with keys less than or equal to until.
 // Returns nil if nothing was popped.
 func (q uintQueue) PopUntil(until abi.ChainEpoch) (*abi.BitField, error) {
