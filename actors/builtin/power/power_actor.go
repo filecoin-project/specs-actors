@@ -180,6 +180,11 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 		CallbackPayload: params.Payload,
 	}
 
+	// Ensure it is not possible to enter a large negative number which would cause problems in cron processing.
+	if params.EventEpoch < 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cron event epoch %d cannot be less than zero", params.EventEpoch)
+	}
+
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		err := st.appendCronEvent(adt.AsStore(rt), params.EventEpoch, &minerEvent)

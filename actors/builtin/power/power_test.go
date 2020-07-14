@@ -351,6 +351,16 @@ func TestCron(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("fails to enroll if epoch is negative", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// enroll a cron task at epoch 2 (which is in the past)
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
+			actor.enrollCronEvent(rt, miner1, -2, []byte{0x1, 0x3})
+		})
+	})
+
 	t.Run("handles failed call", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)

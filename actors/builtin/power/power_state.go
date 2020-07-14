@@ -29,6 +29,7 @@ type State struct {
 	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
 
 	// First epoch in which a cron task may be stored.
+	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
 	FirstCronEpoch abi.ChainEpoch
 
 	// Claimed power for each miner.
