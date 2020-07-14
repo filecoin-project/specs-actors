@@ -345,12 +345,7 @@ func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amoun
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) mustGetDeal(rt Runtime, dealID abi.DealID) *DealProposal {
-	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get proposal: %v", err)
-	}
-
+func (st *State) mustGetDeal(rt Runtime, proposals *DealArray, dealID abi.DealID) *DealProposal {
 	proposal, found, err := proposals.Get(dealID)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proposal for dealId %d", dealID)
 	if !found {
