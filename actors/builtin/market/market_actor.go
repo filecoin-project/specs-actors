@@ -82,26 +82,24 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow balance table")
+
+		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
+
 		// The withdrawable amount might be slightly less than nominal
 		// depending on whether or not all relevant entries have been processed
 		// by cron
+		minBalance, err, code := st.getBalance(lt, nominal)
+		builtin.RequireNoErr(rt, err, code, "failed to get locked balance")
 
-		minBalance := st.GetLockedBalance(rt, nominal)
-
-		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "load escrow table: %v", err)
-		}
 		ex, err := et.SubtractWithMinimum(nominal, params.Amount, minBalance)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "subtract form escrow table: %v", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract form escrow table")
 
-		etc, err := et.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush escrow table: %w", err)
-		}
-		st.EscrowTable = etc
+		st.EscrowTable, err = et.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush escrow balances")
+
 		amountExtracted = ex
 		return nil
 	})
@@ -119,17 +117,20 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
 
-		err := st.AddEscrowBalance(adt.AsStore(rt), nominal, msgValue)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "adding to escrow table: %v", err)
-		}
+		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balances table")
 
-		// ensure there is an entry in the locked table
-		err = st.AddLockedBalance(adt.AsStore(rt), nominal, big.Zero())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalArgument, "adding to locked table: %v", err)
-		}
+		err = et.AddCreate(nominal, msgValue)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add balance to escrow table")
+
+		err = lt.AddCreate(nominal, big.Zero())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add locked balance")
+
+		err = st.flushBalances(et, lt)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush balances")
 
 		return nil
 	})
@@ -185,20 +186,11 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 
 	var newDealIds []abi.DealID
+	proposals := make([]*dealWithId, 0, len(params.Deals))
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load proposals array: %s", err)
-		}
-
 		pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending proposals map: %s", err)
-
-		dealOps, err := AsSetMultimap(adt.AsStore(rt), st.DealOpsByEpoch)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load deal ids set: %s", err)
-		}
 
 		// All storage proposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
@@ -212,62 +204,43 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			if !ok {
 				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
 			}
+
 			// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
 			deal.Proposal.Provider = provider
 			deal.Proposal.Client = client
 
-			st.lockBalanceOrAbort(rt, client, deal.Proposal.ClientCollateral, ClientCollateral)
-			st.lockBalanceOrAbort(rt, client, deal.Proposal.TotalStorageFee(), ClientStorageFee)
-			st.lockBalanceOrAbort(rt, provider, deal.Proposal.ProviderCollateral, ProviderCollateral)
-
-			id := st.generateStorageDealID()
-
 			pcid, err := deal.Proposal.Cid()
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalArgument, "failed to take cid of proposal %d: %s", di, err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
 
 			has, err := pending.Get(adt.CidKey(pcid), nil)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to check for existence of deal proposal: %v", err)
-			}
-
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
 			if has {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
 			}
 
-			if err := pending.Put(adt.CidKey(pcid), &deal.Proposal); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set deal in pending: %v", err)
-			}
+			err = pending.Put(adt.CidKey(pcid), &deal.Proposal)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "set deal in pending")
 
-			if err := proposals.Set(id, &deal.Proposal); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
-			}
-
-			if err := dealOps.Put(deal.Proposal.StartEpoch, id); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set deal in ops set: %v", err)
-			}
-
-			newDealIds = append(newDealIds, id)
+			dp := dealWithId{st.generateStorageDealID(), deal.Proposal}
+			proposals = append(proposals, &dp)
+			newDealIds = append(newDealIds, dp.id)
 		}
+
+		err, code := st.lockBalancesAndFlush(adt.AsStore(rt), proposals...)
+		builtin.RequireNoErr(rt, err, code, "failed to lock and flush balances")
+
+		err = st.putDealProposalsAndFlush(adt.AsStore(rt), proposals...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put proposals and flush")
+
+		err = st.putDealOpsAndFlush(adt.AsStore(rt), proposals...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put deal ops and flush")
+
 		pendc, err := pending.Root()
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to flush pending proposal set: %w", err)
 		}
 		st.PendingProposals = pendc
 
-		propc, err := proposals.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proposal set: %w", err)
-		}
-		st.Proposals = propc
-
-		dipc, err := dealOps.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush deal ids map: %w", err)
-		}
-
-		st.DealOpsByEpoch = dipc
 		return nil
 	})
 

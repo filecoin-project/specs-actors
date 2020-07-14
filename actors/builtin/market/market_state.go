@@ -2,8 +2,8 @@ package market
 
 import (
 	"bytes"
+	"fmt"
 
-	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/ipfs/go-cid"
 	xerrors "golang.org/x/xerrors"
@@ -204,141 +204,43 @@ func (st *State) generateStorageDealID() abi.DealID {
 	return ret
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Balance table operations
-////////////////////////////////////////////////////////////////////////////////
-
-func (st *State) MutateBalanceTable(s adt.Store, c *cid.Cid, f func(t *adt.BalanceTable) error) error {
-	t, err := adt.AsBalanceTable(s, *c)
-	if err != nil {
-		return err
-	}
-
-	if err := f(t); err != nil {
-		return err
-	}
-
-	rc, err := t.Root()
-	if err != nil {
-		return err
-	}
-
-	*c = rc
-	return nil
+type dealWithId struct {
+	id       abi.DealID
+	proposal DealProposal
 }
 
-func (st *State) AddEscrowBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
-	return st.MutateBalanceTable(s, &st.EscrowTable, func(et *adt.BalanceTable) error {
-		err := et.AddCreate(a, amount)
-		if err != nil {
-			return xerrors.Errorf("failed to add %s to balance table: %w", a, err)
+func (st *State) putDealProposalsAndFlush(store adt.Store, deals ...*dealWithId) error {
+	proposals, err := AsDealProposalArray(store, st.Proposals)
+	if err != nil {
+		return fmt.Errorf("failed to load proposals: %w", err)
+	}
+
+	for i := range deals {
+		d := deals[i]
+		if err := proposals.Set(d.id, &d.proposal); err != nil {
+			return fmt.Errorf("failed to set proposal %v, err: %w", *d, err)
 		}
-		return nil
-	})
+	}
+
+	st.Proposals, err = proposals.Root()
+	return err
 }
 
-func (st *State) AddLockedBalance(s adt.Store, a addr.Address, amount abi.TokenAmount) error {
-	return st.MutateBalanceTable(s, &st.LockedTable, func(lt *adt.BalanceTable) error {
-		err := lt.AddCreate(a, amount)
-		if err != nil {
-			return err
+func (st *State) putDealOpsAndFlush(store adt.Store, deals ...*dealWithId) error {
+	dealOps, err := AsSetMultimap(store, st.DealOpsByEpoch)
+	if err != nil {
+		return fmt.Errorf("failed to load deal ops: %w", err)
+	}
+
+	for i := range deals {
+		d := deals[i]
+		if err := dealOps.Put(d.proposal.StartEpoch, d.id); err != nil {
+			return fmt.Errorf("failed to put deal ops %v, err: %w", *d, err)
 		}
-		return nil
-	})
-}
-
-func (st *State) GetEscrowBalance(rt Runtime, a addr.Address) abi.TokenAmount {
-	bt, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
-	}
-	ret, err := bt.Get(a)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get escrow balance: %v", err)
-	}
-	return ret
-}
-
-func (st *State) GetLockedBalance(rt Runtime, a addr.Address) abi.TokenAmount {
-	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
-	}
-	ret, err := lt.Get(a)
-	if _, ok := err.(adt.ErrNotFound); ok {
-		rt.Abortf(exitcode.ErrInsufficientFunds, "failed to get locked balance: %v", err)
-	}
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "get locked balance: %v", err)
-	}
-	return ret
-}
-
-func (st *State) maybeLockBalance(rt Runtime, addr addr.Address, amount abi.TokenAmount) error {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	prevLocked := st.GetLockedBalance(rt, addr)
-	escrowBalance := st.GetEscrowBalance(rt, addr)
-	if big.Add(prevLocked, amount).GreaterThan(st.GetEscrowBalance(rt, addr)) {
-		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount)
 	}
 
-	return st.MutateBalanceTable(adt.AsStore(rt), &st.LockedTable, func(lt *adt.BalanceTable) error {
-		err := lt.Add(addr, amount)
-		if err != nil {
-			return xerrors.Errorf("adding locked balance: %w", err)
-		}
-		return nil
-	})
-}
-
-// TODO: all these balance table mutations need to happen at the top level and be batched (no flushing after each!)
-// https://github.com/filecoin-project/specs-actors/issues/464
-func (st *State) unlockBalance(lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount, lockReason BalanceLockingReason) error {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	err := lt.MustSubtract(addr, amount)
-	if err != nil {
-		return xerrors.Errorf("subtracting from locked balance: %v", err)
-	}
-
-	switch lockReason {
-	case ClientCollateral:
-		st.TotalClientLockedCollateral = big.Sub(st.TotalClientLockedCollateral, amount)
-	case ClientStorageFee:
-		st.TotalClientStorageFee = big.Sub(st.TotalClientStorageFee, amount)
-	case ProviderCollateral:
-		st.TotalProviderLockedCollateral = big.Sub(st.TotalProviderLockedCollateral, amount)
-	}
-
-	return nil
-}
-
-// move funds from locked in client to available in provider
-func (st *State) transferBalance(rt Runtime, fromAddr addr.Address, toAddr addr.Address, amount abi.TokenAmount, et, lt *adt.BalanceTable) {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	if err := et.MustSubtract(fromAddr, amount); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "subtract from escrow: %v", err)
-	}
-
-	if err := st.unlockBalance(lt, fromAddr, amount, ClientStorageFee); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "subtract from locked: %v", err)
-	}
-
-	if err := et.Add(toAddr, amount); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "add to escrow: %v", err)
-	}
-}
-
-func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount, reason BalanceLockingReason) error {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	if err := et.MustSubtract(addr, amount); err != nil {
-		return xerrors.Errorf("subtract from escrow: %v", err)
-	}
-
-	return st.unlockBalance(lt, addr, amount, reason)
+	st.DealOpsByEpoch, err = dealOps.Root()
+	return err
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -353,21 +255,6 @@ func (st *State) mustGetDeal(rt Runtime, proposals *DealArray, dealID abi.DealID
 	}
 
 	return proposal
-}
-
-func (st *State) lockBalanceOrAbort(rt Runtime, addr addr.Address, amount abi.TokenAmount, reason BalanceLockingReason) {
-	if err := st.maybeLockBalance(rt, addr, amount); err != nil {
-		rt.Abortf(exitcode.ErrInsufficientFunds, "Insufficient funds available to lock: %s", err)
-	}
-
-	switch reason {
-	case ClientCollateral:
-		st.TotalClientLockedCollateral = big.Add(st.TotalClientLockedCollateral, amount)
-	case ClientStorageFee:
-		st.TotalClientStorageFee = big.Add(st.TotalClientStorageFee, amount)
-	case ProviderCollateral:
-		st.TotalProviderLockedCollateral = big.Add(st.TotalProviderLockedCollateral, amount)
-	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
