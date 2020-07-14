@@ -1,8 +1,6 @@
 package miner
 
 import (
-	"io"
-
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -495,17 +493,4 @@ func (pp *PowerPair) Neg() PowerPair {
 		Raw: pp.Raw.Neg(),
 		QA:  pp.QA.Neg(),
 	}
-}
-
-func (p *Partition) MarshalCBOR(io.Writer) error {
-	panic("implement me")
-}
-func (p *Partition) UnmarshalCBOR(io.Reader) error {
-	panic("implement me")
-}
-func (p *PowerPair) MarshalCBOR(io.Writer) error {
-	panic("implement me")
-}
-func (p *PowerPair) UnmarshalCBOR(io.Reader) error {
-	panic("implement me")
 }
