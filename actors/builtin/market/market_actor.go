@@ -406,6 +406,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 }
 
 type OnMinerSectorsTerminateParams struct {
+	Epoch   abi.ChainEpoch
 	DealIDs []abi.DealID
 }
 
@@ -415,15 +416,16 @@ type OnMinerSectorsTerminateParams struct {
 func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTerminateParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
+	store := adt.AsStore(rt)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+		proposals, err := AsDealProposalArray(store, st.Proposals)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "load proposals: %v", err)
 		}
 
-		states, err := AsDealStateArray(adt.AsStore(rt), st.States)
+		states, err := AsDealStateArray(store, st.States)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "load states: %v", err)
 		}
@@ -442,7 +444,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			AssertMsg(deal.Provider == minerAddr, "caller is not the provider of the deal")
 
 			// do not slash expired deals
-			if deal.EndEpoch <= rt.CurrEpoch() {
+			if deal.EndEpoch <= params.Epoch {
 				continue
 			}
 
@@ -461,7 +463,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// mark the deal for slashing here.
 			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
-			state.SlashEpoch = rt.CurrEpoch()
+			state.SlashEpoch = params.Epoch
 
 			if err := states.Set(dealID, state); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)

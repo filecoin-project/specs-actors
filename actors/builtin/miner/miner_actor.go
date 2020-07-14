@@ -30,7 +30,7 @@ const (
 	CronEventWorkerKeyChange CronEventType = iota
 	CronEventPreCommitExpiry
 	CronEventProvingDeadline
-	CronEventProcessDealTerminations
+	CronEventProcessEarlyTerminations
 )
 
 type CronEventPayload struct {
@@ -1319,8 +1319,8 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 		}
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
-	case CronEventProcessDealTerminations:
-		processDealTerminations(rt)
+	case CronEventProcessEarlyTerminations:
+		processEarlyTerminations(rt)
 	}
 
 	return nil
@@ -1331,16 +1331,15 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 ////////////////////////////////////////////////////////////////////////////////
 
 //XXX: Work in progress
-func processDealTerminations(rt Runtime) {
-	//currEpoch := rt.CurrEpoch()
+func processEarlyTerminations(rt Runtime) {
 	store := adt.AsStore(rt)
 
 	var (
 		more              bool
 		earlyTerminations []EpochSet
+		dealsToTerminate  []market.OnMinerSectorsTerminateParams
 	)
 
-	// Process early termination queues.
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		// XXX: Constant max sectors
@@ -1349,6 +1348,20 @@ func processDealTerminations(rt Runtime) {
 		var err error
 		earlyTerminations, more, err = st.PopEarlyTerminations(store, maxSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop early terminations")
+
+		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(earlyTerminations))
+		for _, t := range earlyTerminations {
+			sectors, err := st.LoadSectorInfos(store, t.Sectors)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
+			params := market.OnMinerSectorsTerminateParams{
+				Epoch:   t.Epoch,
+				DealIDs: make([]abi.DealID, 0, len(sectors)), // estimate ~one deal per sector.
+			}
+			for _, sector := range sectors {
+				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
+			}
+			dealsToTerminate = append(dealsToTerminate, params)
+		}
 
 		// Load sector state, get deals, etc.
 		// XXX: STEB here.
@@ -1360,9 +1373,22 @@ func processDealTerminations(rt Runtime) {
 	// pay fines.
 	// XXX: STEB here.
 
-	// reschedule cron.
-	// XXX: STEB here.
-	_ = more
+	// Terminate deals.
+	for _, params := range dealsToTerminate {
+		// TODO: shard into multiple sends? There's a max message size...
+		requestTerminateDeals(rt, params)
+	}
+
+	// reschedule cron worker, if necessary.
+	if more {
+		scheduleEarlyTerminationWork(rt)
+	}
+}
+
+func scheduleEarlyTerminationWork(rt Runtime) {
+	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
+		EventType: CronEventProcessEarlyTerminations,
+	})
 }
 
 // Invoked at the end of the last epoch for each proving deadline.
@@ -1717,19 +1743,17 @@ func requestUpdatePower(rt Runtime, delta PowerPair) {
 	builtin.RequireSuccess(rt, code, "failed to update power with %v", delta)
 }
 
-func requestTerminateDeals(rt Runtime, dealIDs []abi.DealID) {
-	if len(dealIDs) == 0 {
+func requestTerminateDeals(rt Runtime, params market.OnMinerSectorsTerminateParams) {
+	if len(params.DealIDs) == 0 {
 		return
 	}
 	_, code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.OnMinerSectorsTerminate,
-		&market.OnMinerSectorsTerminateParams{
-			DealIDs: dealIDs,
-		},
+		&params,
 		abi.NewTokenAmount(0),
 	)
-	builtin.RequireSuccess(rt, code, "failed to terminate deals %v, exit code %v", dealIDs, code)
+	builtin.RequireSuccess(rt, code, "failed to terminate %d deals, exit code %v", len(params.DealIDs), code)
 }
 
 func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
@@ -1743,7 +1767,10 @@ func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
 		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
 	}
 
-	requestTerminateDeals(rt, dealIds)
+	requestTerminateDeals(rt, market.OnMinerSectorsTerminateParams{
+		Epoch:   rt.CurrEpoch(),
+		DealIDs: dealIds,
+	})
 }
 
 func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []abi.PoStProof) {
