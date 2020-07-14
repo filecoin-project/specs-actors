@@ -1414,13 +1414,10 @@ func processDealTerminations(rt Runtime) {
 
 				return nil
 			})
-
-			// Check to see if we have an error other than "stop".
-			switch err {
-			case stopErr, nil:
-			default:
-				rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield for deadlines: %w", err)
+			if err == stopErr {
+				err = nil
 			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to walk early terminations bitfield for deadlines")
 
 			// Save deadline's partitions
 			dl.Partitions, err = partitions.Root()
@@ -1444,12 +1441,10 @@ func processDealTerminations(rt Runtime) {
 			return nil
 		})
 
-		// Check to see if we have an error other than "stop".
-		switch err {
-		case stopErr, nil:
-		default:
-			rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield: %w", err)
+		if err == stopErr {
+			err = nil
 		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to walk early terminations bitfield")
 
 		// Save back the deadlines.
 		err = st.SaveDeadlines(store, deadlines)
