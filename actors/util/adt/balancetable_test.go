@@ -73,7 +73,7 @@ func TestBalanceTable(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, big.Zero(), bal)
 
-		// now create account -> add should work
+		// now create account -> get should work
 		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(10)))
 		bal, err = bt.Get(addr)
 		require.NoError(t, err)
@@ -94,6 +94,7 @@ func TestBalanceTable(t *testing.T) {
 		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
 		// error if insufficient balance -> however, balance is still subtracted
 		// TODO Is that correct ?
+		// https://github.com/filecoin-project/specs-actors/issues/652
 		require.Error(t, bt.MustSubtract(addr, abi.NewTokenAmount(6)))
 		bal, err := bt.Get(addr)
 		require.NoError(t, err)
