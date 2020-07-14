@@ -1,6 +1,8 @@
 package miner
 
 import (
+	"errors"
+
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -48,6 +50,12 @@ type PowerPair struct {
 
 func (pp *PowerPair) IsZero() bool {
 	return pp.Raw.IsZero() && pp.QA.IsZero()
+}
+
+// A set of sectors associated with a given epoch.
+type EpochSet struct {
+	Epoch   abi.ChainEpoch
+	Sectors *bitfield.BitField
 }
 
 func ConstructPartition(emptyArray cid.Cid) *Partition {
@@ -465,6 +473,81 @@ func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainE
 	p.RecoveringPower = NewPowerPairZero()
 
 	return newFaultPower, failedRecoveryPower, nil
+}
+
+func (p *Partition) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerminations []EpochSet, hasMore bool, err error) {
+	stopErr := errors.New("stop iter")
+
+	// Load early terminations.
+	earlyTerminatedQ, err := LoadBitfieldQueue(store, p.EarlyTerminated)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var (
+		processed []uint64
+		remaining *EpochSet
+	)
+
+	iterErr := earlyTerminatedQ.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
+		toProcess := sectors
+		count, err := sectors.Count()
+		if err != nil {
+			return xerrors.Errorf("failed to count early terminations: %w", err)
+		}
+
+		if max < count {
+			toProcess, err = sectors.Slice(0, max)
+			if err != nil {
+				return xerrors.Errorf("failed to slice early terminations: %w", err)
+			}
+
+			rest, err := bitfield.SubtractBitField(sectors, toProcess)
+			if err != nil {
+				return xerrors.Errorf("failed to subtract processed early terminations: %w", err)
+			}
+			remaining = &EpochSet{epoch, rest}
+
+			max = 0
+		} else {
+			processed = append(processed, uint64(epoch))
+			max -= count
+		}
+
+		earlyTerminations = append(earlyTerminations, EpochSet{epoch, toProcess})
+
+		if max > 0 {
+			return nil
+		}
+		return stopErr
+	})
+
+	// Check to see if we have an error other than "stop".
+	switch iterErr {
+	case stopErr, nil:
+	default:
+		return nil, false, xerrors.Errorf("failed to walk early terminations queue: %w", iterErr)
+	}
+
+	// Update early terminations
+	err = earlyTerminatedQ.BatchDelete(processed)
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to remove entries from early terminations queue: %w", err)
+	}
+
+	if remaining != nil {
+		err = earlyTerminatedQ.Set(uint64(remaining.Epoch), remaining.Sectors)
+		if err != nil {
+			return nil, false, xerrors.Errorf("failed to update remaining entry early terminations queue: %w", err)
+		}
+	}
+
+	// Save early terminations.
+	p.EarlyTerminated, err = earlyTerminatedQ.Root()
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to store early terminations queue: %w", err)
+	}
+	return earlyTerminations, earlyTerminatedQ.Length() > 0, nil
 }
 
 //
