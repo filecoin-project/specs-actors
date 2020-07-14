@@ -6,6 +6,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
@@ -64,6 +65,8 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
 	}
 
+	a.updateInCaseOfNull(rt)
+
 	priorBalance := rt.CurrentBalance()
 
 	penalty := abi.NewTokenAmount(0)
@@ -97,6 +100,8 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmount {
 	rt.ValidateImmediateCallerAcceptAny()
 
+	a.updateInCaseOfNull(rt)
+
 	var st State
 	rt.State().Readonly(&st)
 	return &st.ThisEpochReward
@@ -125,4 +130,32 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 		return nil
 	})
 	return nil
+}
+
+func (a Actor) updateInCaseOfNull(rt vmr.Runtime) {
+	nullRealizedPower := requestCurrentTotalRawBytePower(rt)
+
+	if nullRealizedPower == nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "argument should not be nil")
+	}
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		// if there were null runs catch up the computation until
+		// st.Epoch == rt.CurrEpoch() - 1
+		for st.Epoch < rt.CurrEpoch()-1 {
+			st.updateToNextEpoch(*nullRealizedPower)
+		}
+
+		st.updateToNextEpochWithReward(*nullRealizedPower)
+		return nil
+	})
+}
+
+func requestCurrentTotalRawBytePower(rt vmr.Runtime) *abi.StoragePower {
+	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check current power")
+	var pwr power.CurrentTotalPowerReturn
+	err := pwret.Into(&pwr)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
+	return &pwr.RawBytePower
 }

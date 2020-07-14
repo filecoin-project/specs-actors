@@ -13,7 +13,7 @@ type State struct {
 	// CumsumBaseline and CumsumRealized are expressed in byte-epochs.
 	CumsumBaseline Spacetime
 
-	// CumsumRealized is cumulative sum of network power capped by BalinePower(epoch)
+	// CumsumRealized is cumulative sum of network power capped by BaselinePower(epoch)
 	CumsumRealized Spacetime
 
 	// EffectiveNetworkTime is ceiling of real effective network time `theta` based on
