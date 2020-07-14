@@ -135,7 +135,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.Ok},
-		{desc: "succeeds", targetCode: builtin.AccountActorCodeID,
+		{desc: "fails if channel address does not match address on the signed voucher", targetCode: builtin.AccountActorCodeID,
 			amt: 1, paymentChannel: tutil.NewIDAddr(t, 210), epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
@@ -186,14 +186,14 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 			actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 
 			sv := SignedVoucher{
-				PaymentChannelAddr: tc.paymentChannel,
-				TimeLockMin:        abi.ChainEpoch(tc.tlmin),
-				TimeLockMax:        abi.ChainEpoch(tc.tlmax),
-				Lane:               tc.lane,
-				Nonce:              tc.nonce,
-				Amount:             big.NewInt(tc.amt),
-				Signature:          tc.sig,
-				SecretPreimage:     tc.secretPreimage,
+				ChannelAddr:    tc.paymentChannel,
+				TimeLockMin:    abi.ChainEpoch(tc.tlmin),
+				TimeLockMax:    abi.ChainEpoch(tc.tlmax),
+				Lane:           tc.lane,
+				Nonce:          tc.nonce,
+				Amount:         big.NewInt(tc.amt),
+				Signature:      tc.sig,
+				SecretPreimage: tc.secretPreimage,
 			}
 			ucp := &UpdateChannelStateParams{Sv: sv}
 
@@ -772,7 +772,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, params laneParams) *SignedVoucher {
 	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte{0, 1, 2, 3, 4, 5, 6, 7}}
 	tl := abi.ChainEpoch(params.epochNum)
-	sv := SignedVoucher{PaymentChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
+	sv := SignedVoucher{ChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
 	ucp := &UpdateChannelStateParams{Sv: sv}
 
 	rt.SetCaller(params.from, builtin.AccountActorCodeID)

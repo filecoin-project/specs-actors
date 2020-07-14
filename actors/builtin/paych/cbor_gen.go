@@ -560,8 +560,8 @@ func (t *SignedVoucher) MarshalCBOR(w io.Writer) error {
 
 	scratch := make([]byte, 9)
 
-	// t.PaymentChannelAddr (address.Address) (struct)
-	if err := t.PaymentChannelAddr.MarshalCBOR(w); err != nil {
+	// t.ChannelAddr (address.Address) (struct)
+	if err := t.ChannelAddr.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -672,12 +672,12 @@ func (t *SignedVoucher) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.PaymentChannelAddr (address.Address) (struct)
+	// t.ChannelAddr (address.Address) (struct)
 
 	{
 
-		if err := t.PaymentChannelAddr.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PaymentChannelAddr: %w", err)
+		if err := t.ChannelAddr.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ChannelAddr: %w", err)
 		}
 
 	}
