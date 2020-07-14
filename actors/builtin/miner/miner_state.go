@@ -704,6 +704,105 @@ func (st *State) AssignSectorsToDeadlines(
 	return st.SaveDeadlines(store, deadlines)
 }
 
+// Pops up to max early terminated sectors from all deadlines.
+//
+// Returns hasMore if we still have more early terminations to process.
+func (st *State) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerminations []EpochSet, hasMore bool, err error) {
+	stopErr := errors.New("stop error")
+
+	// Anything to do? This lets us avoid loading the deadlines if there's nothing to do.
+	noEarlyTerminations, err := st.EarlyTerminations.IsEmpty()
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to count deadlines with early terminations: %w", err)
+	} else if noEarlyTerminations {
+		return nil, false, nil
+	}
+
+	// Load deadlines
+	deadlines, err := st.LoadDeadlines(store)
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to load deadlines: %w", err)
+	}
+
+	earlyTerminationsMap := make(map[abi.ChainEpoch][]*abi.BitField)
+
+	// Process early terminations.
+	err = st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
+		// Load deadline + partitions.
+		dl, err := deadlines.LoadDeadline(store, dlIdx)
+		if err != nil {
+			return xerrors.Errorf("failed to load deadline %d: %w", err)
+		}
+
+		sectorTerminations, more, err := dl.PopEarlyTerminations(store, max)
+		if err != nil {
+			return xerrors.Errorf("failed to pop early terminations for deadline %d: %w", dlIdx, err)
+		}
+
+		if !more {
+			// safe to do while iterating.
+			st.EarlyTerminations.Unset(dlIdx)
+		}
+
+		// Sort through early terminations.
+		for _, t := range sectorTerminations {
+			earlyTerminationsMap[t.Epoch] = append(earlyTerminationsMap[t.Epoch], t.Sectors)
+			count, err := t.Sectors.Count()
+			if err != nil {
+				return xerrors.Errorf("failed to count early terminations in deadline %d from epoch %v: %w", dlIdx, t.Epoch, err)
+			} else if count > max {
+				return xerrors.Errorf("deadline %d returned too many sectors when popping early terminations", dlIdx)
+			}
+			max -= count
+		}
+
+		// Save the deadline
+		err = deadlines.UpdateDeadline(store, dlIdx, dl)
+		if err != nil {
+			return xerrors.Errorf("failed to store deadline %d: %w", dlIdx, err)
+		}
+
+		if max > 0 {
+			return nil
+		}
+
+		return stopErr
+	})
+
+	// Save back the deadlines.
+	err = st.SaveDeadlines(store, deadlines)
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to save deadlines: %w", err)
+	}
+
+	if err == stopErr {
+		err = nil
+	} else if err != nil {
+		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
+	}
+
+	// Ok, check to see if we've handled all early terminations.
+	noEarlyTerminations, err = st.EarlyTerminations.IsEmpty()
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to count remaining early terminations deadlines")
+	}
+
+	// This is safe because we sort immediately afterwards.
+	for epoch, sectors := range earlyTerminationsMap { //nolint:nomaprange
+		merged, err := bitfield.MultiMerge(sectors...)
+		if err != nil {
+			return nil, false, xerrors.Errorf("failed to merge early termination sector bitfields: %w", err)
+		}
+		earlyTerminations = append(earlyTerminations, EpochSet{epoch, merged})
+	}
+
+	sort.Slice(earlyTerminations, func(i, j int) bool {
+		return earlyTerminations[i].Epoch < earlyTerminations[j].Epoch
+	})
+
+	return earlyTerminations, !noEarlyTerminations, nil
+}
+
 // TODO: take multiple sector locations?
 // Returns the sector's status (healthy, faulty, missing, not found, terminated)
 func (st *State) SectorStatus(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (SectorStatus, error) {

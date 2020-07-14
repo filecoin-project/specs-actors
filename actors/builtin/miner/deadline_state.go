@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -371,6 +372,103 @@ func (dl *Deadline) AddSectors(
 	dl.LiveSectors += uint64(len(sectors))
 
 	return nil
+}
+
+func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerminations []EpochSet, hasMore bool, err error) {
+	stopErr := errors.New("stop error")
+
+	partitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to load partitions: %w", err)
+	}
+
+	earlyTerminationsMap := make(map[abi.ChainEpoch][]*abi.BitField)
+
+	err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
+		// Load partition.
+		var partition Partition
+		found, err := partitions.Get(partIdx, &partition)
+		if err != nil {
+			return xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
+		}
+
+		if !found {
+			// TODO: is this an error? I'm expecting
+			// this bitfield to be best-effort.
+			dl.EarlyTerminations.Unset(partIdx)
+			return nil
+		}
+
+		// Pop early terminations.
+		sectorTerminations, more, err := partition.PopEarlyTerminations(store, max)
+		if err != nil {
+			return xerrors.Errorf("failed to pop terminations from partition: %w", err)
+		}
+
+		// Sort through early terminations.
+		for _, t := range sectorTerminations {
+			earlyTerminationsMap[t.Epoch] = append(earlyTerminationsMap[t.Epoch], t.Sectors)
+			count, err := t.Sectors.Count()
+			if err != nil {
+				return xerrors.Errorf("failed to count early terminations in partition %d from epoch %v: err", partIdx, t.Epoch, err)
+			} else if count > max {
+				return xerrors.Errorf("partition %d returned too many sectors when popping early terminations", partIdx)
+			}
+			max -= count
+		}
+
+		// If we've processed all of them for this partition, unmark it in the deadline.
+		if !more {
+			dl.EarlyTerminations.Unset(partIdx)
+		}
+
+		// Save partition
+		err = partitions.Set(partIdx, &partition)
+		if err != nil {
+			return xerrors.Errorf("failed to store partition %v", partIdx)
+		}
+
+		if max == 0 {
+			return stopErr
+		}
+
+		return nil
+	})
+
+	switch err {
+	case nil:
+	case stopErr:
+		err = nil
+	default:
+		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
+	}
+
+	// Save deadline's partitions
+	dl.Partitions, err = partitions.Root()
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to update partitions")
+	}
+
+	// Update global early terminations bitfield.
+	noEarlyTerminations, err := dl.EarlyTerminations.IsEmpty()
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to count remaining early terminations partitions: %w", err)
+	}
+
+	// This is safe because we sort immediately afterwards.
+	for epoch, sectors := range earlyTerminationsMap { //nolint:nomaprange
+		merged, err := bitfield.MultiMerge(sectors...)
+		if err != nil {
+			return nil, false, xerrors.Errorf("failed to merge early termination sector bitfields: %w", err)
+		}
+		earlyTerminations = append(earlyTerminations, EpochSet{epoch, merged})
+	}
+
+	sort.Slice(earlyTerminations, func(i, j int) bool {
+		return earlyTerminations[i].Epoch < earlyTerminations[j].Epoch
+	})
+
+	return earlyTerminations, !noEarlyTerminations, nil
 }
 
 func (dl *Deadline) AddPoStSubmissions(idxs []uint64) {
