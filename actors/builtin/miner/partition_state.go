@@ -295,7 +295,7 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 
 // Record the epoch of any sectors expiring early, for termination fee calculation later.
 func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
-	etQueue, err := LoadUintQueue(store, p.EarlyTerminated)
+	etQueue, err := LoadBitfieldQueue(store, p.EarlyTerminated)
 	if err != nil {
 		return xerrors.Errorf("failed to load early termination queue: %w", err)
 	}

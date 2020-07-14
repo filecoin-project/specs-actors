@@ -12,20 +12,20 @@ import (
 )
 
 // Wrapper for working with an AMT[ChainEpoch]*Bitfield functioning as a queue, bucketed by epoch.
-type UIntQueue struct {
+type BitfieldQueue struct {
 	*adt.Array
 }
 
-func LoadUintQueue(store adt.Store, root cid.Cid) (UIntQueue, error) {
+func LoadBitfieldQueue(store adt.Store, root cid.Cid) (BitfieldQueue, error) {
 	arr, err := adt.AsArray(store, root)
 	if err != nil {
-		return UIntQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
+		return BitfieldQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}
-	return UIntQueue{arr}, nil
+	return BitfieldQueue{arr}, nil
 }
 
 // Adds values to the queue entry for an epoch.
-func (q UIntQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField) error {
+func (q BitfieldQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField) error {
 	bf := abi.NewBitField()
 	if _, err := q.Array.Get(uint64(epoch), bf); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
@@ -42,7 +42,7 @@ func (q UIntQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField) error 
 	return nil
 }
 
-func (q UIntQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) error {
+func (q BitfieldQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -51,7 +51,7 @@ func (q UIntQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) erro
 
 // Removes and returns all values with keys less than or equal to until.
 // Returns nil if nothing was popped.
-func (q UIntQueue) PopUntil(until abi.ChainEpoch) (*abi.BitField, error) {
+func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (*abi.BitField, error) {
 	poppedValues := abi.NewBitField()
 	var poppedKeys []uint64
 	var err error
