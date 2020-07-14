@@ -4,21 +4,35 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 func TestExpirations(t *testing.T) {
 	sectors := []*SectorOnChainInfo{{
-		Expiration:   0,
-		SectorNumber: 1,
+		Expiration:         10,
+		SectorNumber:       1,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
+		InitialPledge:      big.Zero(),
 	}, {
-		Expiration:   0,
-		SectorNumber: 2,
+		Expiration:         10,
+		SectorNumber:       2,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
+		InitialPledge:      big.Zero(),
 	}, {
-		Expiration:   2,
-		SectorNumber: 3,
+		Expiration:         12,
+		SectorNumber:       3,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
+		InitialPledge:      big.Zero(),
 	}, {
-		Expiration:   0,
-		SectorNumber: 4,
+		Expiration:         10,
+		SectorNumber:       4,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
+		InitialPledge:      big.Zero(),
 	}}
 	result := groupSectorsByExpiration(2048, sectors)
 	expected := []sectorEpochSet{{
