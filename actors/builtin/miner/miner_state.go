@@ -600,6 +600,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 			// happens to not mess with sector powers because these
 			// sectors can't have deals.
 			// TODO: Check to make sure these sectors don't have deals?
+			// anorth: ok, we don't have to do this
 			err = st.PutSectors(store, sectorInfos...)
 			if err != nil {
 				return false, xerrors.Errorf("failed to put back sector infos after updating expirations: %w", err)
@@ -613,22 +614,10 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 				return false, nil
 			}
 
-			q, err := loadUintQueue(store, dl.ExpirationsEpochs)
-			if err != nil {
-				return false, err
-			}
-
 			// Record partitions that now expire at the new epoch.
-			// Don't _remove_ anything from this queue, that's not
-			// safe.
-			err = q.AddToQueueValues(newEpoch, rescheduledPartitions...)
-			if err != nil {
-				return false, err
-			}
-
-			dl.ExpirationsEpochs, err = q.Root()
-			if err != nil {
-				return false, err
+			// Don't _remove_ anything from this queue, that's not safe.
+			if err := dl.AddExpirationPartitions(store, newEpoch, rescheduledPartitions...); err != nil {
+				return false, xerrors.Errorf("failed to add partition expirations: %w", err)
 			}
 			return true, nil
 		},

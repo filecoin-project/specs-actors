@@ -63,9 +63,12 @@ func (es *ExpirationSet) Remove(onTimeSectors, earlySectors *abi.BitField, activ
 	if es.EarlySectors, err = bitfield.SubtractBitField(es.EarlySectors, earlySectors); err != nil {
 		return err
 	}
-	// XXX: check underflow
 	es.ActivePower = es.ActivePower.Sub(activePower)
 	es.FaultyPower = es.FaultyPower.Sub(faultyPower)
+	// Check underflow.
+	if es.ActivePower.QA.LessThan(big.Zero()) || es.FaultyPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("expiration set power underflow: %v", es)
+	}
 	return nil
 }
 
@@ -80,33 +83,26 @@ func (es *ExpirationSet) IsEmpty() (empty bool, err error) {
 	} else {
 		return false, nil
 	}
-	// XXX: check zero power?
 }
 
 // A queue of expiration sets by epoch, representing the on-time or early termination epoch for a collection of sectors.
 // Wraps an AMT[ChainEpoch]*ExpirationSet.
-type expirationQueue struct {
+type ExpirationQueue struct {
 	*adt.Array
 }
 
-func loadExpirationQueue(store adt.Store, root cid.Cid) (expirationQueue, error) {
+func LoadExpirationQueue(store adt.Store, root cid.Cid) (ExpirationQueue, error) {
 	arr, err := adt.AsArray(store, root)
 	if err != nil {
-		return expirationQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
+		return ExpirationQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}
-	return expirationQueue{arr}, nil
-}
-
-// Adds new (non-faulty) sectors to the queue entry for an on-time expiration epoch, with active power.
-// XXX no export
-func (q expirationQueue) AddActiveSectorsAt(sectors *abi.BitField, epoch abi.ChainEpoch, power PowerPair) error {
-	return q.add(epoch, sectors, abi.NewBitField(), power, NewPowerPairZero())
+	return ExpirationQueue{arr}, nil
 }
 
 // Adds a collection of sectors to their on-time target expiration entries.
 // The sectors are assumed to be active (non-faulty).
 // Returns the sector numbers, power, and pledge added.
-func (q expirationQueue) AddActiveSectors(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, PowerPair, abi.TokenAmount, error) {
+func (q ExpirationQueue) AddActiveSectors(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, PowerPair, abi.TokenAmount, error) {
 	totalPower := NewPowerPairZero()
 	totalPledge := big.Zero()
 	var totalSectors []*abi.BitField
@@ -132,13 +128,12 @@ func (q expirationQueue) AddActiveSectors(sectors []*SectorOnChainInfo, ssize ab
 // The sectors being rescheduled are assumed to be not faulty, and hence are removed from and re-scheduled for on-time
 // rather than early expiration.
 // The sectors' power and pledge are assumed not to change, despite the new expiration.
-func (q expirationQueue) RescheduleExpirations(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) error {
+func (q ExpirationQueue) RescheduleExpirations(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) error {
 	snos, power, _, err := q.removeActiveSectors(sectors, ssize)
 	if err != nil {
 		return xerrors.Errorf("failed to remove sector expirations: %w", err)
 	}
-
-	if err = q.AddActiveSectorsAt(snos, newExpiration, power); err != nil {
+	if err = q.add(newExpiration, snos, abi.NewBitField(), power, NewPowerPairZero()); err != nil {
 		return xerrors.Errorf("failed to record new sector expirations: %w", err)
 	}
 	return nil
@@ -147,7 +142,7 @@ func (q expirationQueue) RescheduleExpirations(newExpiration abi.ChainEpoch, sec
 // Re-schedules sectors to expire at an early expiration epoch, if they wouldn't expire before then anyway.
 // The sectors must not be currently faulty, so must be registered as expiring on-time rather than early.
 // Returns the total power represented by the sectors.
-func (q expirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
+func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	var sectorsTotal []uint64
 	expiringPower := NewPowerPairZero()
 	rescheduledPower := NewPowerPairZero()
@@ -191,7 +186,7 @@ func (q expirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 }
 
 // Re-schedules *all* sectors to expire at an early expiration epoch, if they wouldn't expire before then anyway.
-func (q expirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) error {
+func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) error {
 	var rescheduedEpochs []uint64
 	var rescheduledSectors []*abi.BitField
 	rescheduledPower := NewPowerPairZero()
@@ -237,8 +232,8 @@ func (q expirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 // Removes sectors from any queue entries in which they appear that are earlier then their scheduled expiration epoch,
 // and schedules them at their expected termination epoch.
 // Power for the sectors is changes from faulty to active (whether rescheduled or not).
-// Returns the newly-recovered power.
-func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
+// Returns the newly-recovered power. Fails if any sectors are not found in the queue.
+func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	remaining := make(map[abi.SectorNumber]struct{}, len(sectors))
 	for _, s := range sectors {
 		remaining[s.SectorNumber] = struct{}{}
@@ -286,7 +281,9 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 	}); err != nil {
 		return NewPowerPairZero(), err
 	}
-	// XXX: assert that remaining is now empty, i.e. all were found?
+	if len(remaining) > 0 {
+		return NewPowerPairZero(), xerrors.Errorf("sectors not found in expiration queue: %v", remaining)
+	}
 
 	// Re-schedule the removed sectors to their target expiration.
 	if _, _, _, err := q.AddActiveSectors(sectorsRescheduled, ssize); err != nil {
@@ -299,7 +296,7 @@ func (q expirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 // The sectors being replace must not be faulty, so must be scheduled on-time rather than early expiration.
 // The sectors added are assumed to be not faulty.
 // Returns the old a new sector number bitfields, and delta to power and pledge, new minus old.
-func (q expirationQueue) ReplaceSectors(oldSectors, newSectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, *abi.BitField, PowerPair, abi.TokenAmount, error) {
+func (q ExpirationQueue) ReplaceSectors(oldSectors, newSectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, *abi.BitField, PowerPair, abi.TokenAmount, error) {
 	oldSnos, oldPower, oldPledge, err := q.removeActiveSectors(oldSectors, ssize)
 	if err != nil {
 		return nil, nil, NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to remove replaced sectors: %w", err)
@@ -314,7 +311,8 @@ func (q expirationQueue) ReplaceSectors(oldSectors, newSectors []*SectorOnChainI
 // Remove some sectors from the queue.
 // The sectors may be active or faulty, and scheduled either for on-time or early termination.
 // Returns the aggregate of removed sectors and power, and recovering power.
-func (q expirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi.BitField, recovering *abi.BitField,
+// Fails if any sectors are not found in the queue.
+func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi.BitField, recovering *abi.BitField,
 	ssize abi.SectorSize) (*ExpirationSet, PowerPair, error) {
 	remaining := make(map[abi.SectorNumber]struct{}, len(sectors))
 	for _, s := range sectors {
@@ -377,13 +375,15 @@ func (q expirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 	}); err != nil {
 		return nil, recoveringPower, err
 	}
-	// XXX: assert that remaining is now empty, i.e. all were found?
+	if len(remaining) > 0 {
+		return NewExpirationSetEmpty(), NewPowerPairZero(), xerrors.Errorf("sectors not found in expiration queue: %v", remaining)
+	}
 
 	return removed, recoveringPower, nil
 }
 
 // Removes and aggregates entries from the queue up to and including some epoch.
-func (q expirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) {
+func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) {
 	var onTimeSectors []*abi.BitField
 	var earlySectors []*abi.BitField
 	activePower := NewPowerPairZero()
@@ -421,7 +421,7 @@ func (q expirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 	return NewExpirationSet(allOnTime, allEarly, activePower, faultyPower), nil
 }
 
-func (q expirationQueue) add(epoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair) error {
+func (q ExpirationQueue) add(epoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair) error {
 	es, err := q.mayGet(epoch)
 	if err != nil {
 		return err
@@ -435,7 +435,7 @@ func (q expirationQueue) add(epoch abi.ChainEpoch, onTimeSectors, earlySectors *
 }
 
 // XXX: this doesn't check that the sectors were actually there.
-func (q expirationQueue) remove(epoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair) error {
+func (q ExpirationQueue) remove(epoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair) error {
 	var es ExpirationSet
 	if err := q.mustGet(epoch, &es); err != nil {
 		return err
@@ -448,7 +448,7 @@ func (q expirationQueue) remove(epoch abi.ChainEpoch, onTimeSectors, earlySector
 	return q.mustUpdateOrDelete(epoch, &es)
 }
 
-func (q expirationQueue) removeActiveSectors(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, PowerPair, abi.TokenAmount, error) {
+func (q ExpirationQueue) removeActiveSectors(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, PowerPair, abi.TokenAmount, error) {
 	removedSnos := abi.NewBitField()
 	removedPower := NewPowerPairZero()
 	removedPledge := big.Zero()
@@ -473,7 +473,7 @@ func (q expirationQueue) removeActiveSectors(sectors []*SectorOnChainInfo, ssize
 // Traverses the entire queue with a callback function that may mutate entries.
 // Iff the function returns that it changed an entry, the new entry will be re-written in the queue. Any changed
 // entries that become empty are removed after iteration completes.
-func (q expirationQueue) traverseMutate(f func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error)) error {
+func (q ExpirationQueue) traverseMutate(f func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error)) error {
 	var es ExpirationSet
 	var epochsEmptied []uint64
 	errStop := fmt.Errorf("stop")
@@ -504,7 +504,7 @@ func (q expirationQueue) traverseMutate(f func(epoch abi.ChainEpoch, es *Expirat
 	return nil
 }
 
-func (q expirationQueue) mayGet(key abi.ChainEpoch) (*ExpirationSet, error) {
+func (q ExpirationQueue) mayGet(key abi.ChainEpoch) (*ExpirationSet, error) {
 	es := NewExpirationSetEmpty()
 	if _, err := q.Array.Get(uint64(key), es); err != nil {
 		return nil, xerrors.Errorf("failed to lookup queue epoch %v: %w", key, err)
@@ -512,7 +512,7 @@ func (q expirationQueue) mayGet(key abi.ChainEpoch) (*ExpirationSet, error) {
 	return es, nil
 }
 
-func (q expirationQueue) mustGet(key abi.ChainEpoch, es *ExpirationSet) error {
+func (q ExpirationQueue) mustGet(key abi.ChainEpoch, es *ExpirationSet) error {
 	if found, err := q.Array.Get(uint64(key), es); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", key, err)
 	} else if !found {
@@ -521,7 +521,7 @@ func (q expirationQueue) mustGet(key abi.ChainEpoch, es *ExpirationSet) error {
 	return nil
 }
 
-func (q expirationQueue) mustUpdate(epoch abi.ChainEpoch, es *ExpirationSet) error {
+func (q ExpirationQueue) mustUpdate(epoch abi.ChainEpoch, es *ExpirationSet) error {
 	if err := q.Array.Set(uint64(epoch), es); err != nil {
 		return xerrors.Errorf("failed to set queue epoch %v: %w", epoch, err)
 	}
@@ -529,7 +529,7 @@ func (q expirationQueue) mustUpdate(epoch abi.ChainEpoch, es *ExpirationSet) err
 }
 
 // Since this might delete the node, it's not safe for use inside an iteration.
-func (q expirationQueue) mustUpdateOrDelete(epoch abi.ChainEpoch, es *ExpirationSet) error {
+func (q ExpirationQueue) mustUpdateOrDelete(epoch abi.ChainEpoch, es *ExpirationSet) error {
 	if empty, err := es.IsEmpty(); err != nil {
 		return err
 	} else if empty {

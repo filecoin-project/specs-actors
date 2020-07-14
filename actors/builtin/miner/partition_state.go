@@ -98,7 +98,7 @@ func (p *Partition) ActivePower() PowerPair {
 // The sectors are "live", neither faulty, recovering, nor terminated.
 // Each new sector's expiration is scheduled shortly after its target expiration epoch.
 func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ssize abi.SectorSize) error {
-	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
@@ -129,7 +129,7 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, sectors []*SectorOnChainInfo, faultExpiration abi.ChainEpoch, ssize abi.SectorSize) (PowerPair, error) {
 	var err error
 	// Load expiration queue
-	queue, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
@@ -164,7 +164,7 @@ func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, sectors 
 // Returns the power of the now-recovered sectors.
 func (p *Partition) RecoverFaults(store adt.Store, recovered *abi.BitField, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	// Load expiration queue
-	queue, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
@@ -238,15 +238,13 @@ func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField, power PowerPair) (
 // RescheduleExpirations moves expiring sectors to the target expiration.
 // The power of the rescheduled sectors is assumed to have not changed since initial scheduling.
 func (p *Partition) RescheduleExpirations(store adt.Store, newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) error {
-	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
-
 	if err = expirations.RescheduleExpirations(newExpiration, sectors, ssize); err != nil {
 		return err
 	}
-
 	p.ExpirationsEpochs, err = expirations.Root()
 	return err
 }
@@ -257,7 +255,7 @@ func (p *Partition) RescheduleExpirations(store adt.Store, newExpiration abi.Cha
 // unlike RescheduleExpirations.
 // Returns the delta to power and pledge requirement.
 func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, abi.TokenAmount, error) {
-	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
@@ -297,7 +295,7 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 
 // Record the epoch of any sectors expiring early, for termination fee calculation later.
 func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
-	etQueue, err := loadUintQueue(store, p.EarlyTerminated)
+	etQueue, err := LoadUintQueue(store, p.EarlyTerminated)
 	if err != nil {
 		return xerrors.Errorf("failed to load early termination queue: %w", err)
 	}
@@ -314,7 +312,7 @@ func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch
 // The sectors are removed from Faults and Recoveries.
 // The epoch of termination is recorded for future termination fee calculation.
 func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
-	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
@@ -373,7 +371,7 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 // sectors as terminated.
 // Returns the expired sector aggregates.
 func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*ExpirationSet, error) {
-	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load expiration queue: %w", err)
 	}
@@ -437,7 +435,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainEpoch) (newFaultPower, failedRecoveryPower PowerPair, err error) {
 	// Collapse tail of queue into the last entry, and mark all power faulty.
 	// Load expiration queue
-	queue, err := loadExpirationQueue(store, p.ExpirationsEpochs)
+	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
