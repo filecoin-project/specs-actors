@@ -8,6 +8,7 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -162,6 +163,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 	var partitionsWithEarlyTerminations []uint64
 	allActivePower := NewPowerPairZero()
 	allFaultyPower := NewPowerPairZero()
+	allPledge := big.Zero()
 
 	// For each partition with an expiry, remove and collect expirations from the partition queue.
 	if err = expiredPartitions.ForEach(func(partIdx uint64) error {
@@ -180,6 +182,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 		onTimeSectors = append(onTimeSectors, partExpiration.OnTimeSectors)
 		allActivePower = allActivePower.Add(partExpiration.ActivePower)
 		allFaultyPower = allFaultyPower.Add(partExpiration.FaultyPower)
+		allPledge = big.Add(allPledge, partExpiration.Pledge)
 
 		if empty, err := partExpiration.EarlySectors.IsEmpty(); err != nil {
 			return xerrors.Errorf("failed to count early expirations from partition %d: %w", partIdx, err)
@@ -225,7 +228,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 	}
 	dl.LiveSectors -= onTimeCount + earlyCount
 
-	return NewExpirationSet(allOnTimeSectors, allEarlySectors, allActivePower, allFaultyPower), nil
+	return NewExpirationSet(allOnTimeSectors, allEarlySectors, allActivePower, allFaultyPower, allPledge), nil
 }
 
 // Adds sectors to a deadline. It's the caller's responsibility to make sure
