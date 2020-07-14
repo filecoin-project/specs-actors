@@ -1375,6 +1375,7 @@ func processDealTerminations(rt Runtime) {
 				if !found {
 					// TODO: is this an error? I'm expecting
 					// this bitfield to be best-effort.
+					dl.EarlyTerminations.Unset(partIdx)
 					return nil
 				}
 
@@ -1389,6 +1390,12 @@ func processDealTerminations(rt Runtime) {
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
 						"failed to count early terminations in partition %v from epoch %v", key, t.Epoch,
 					)
+					if count > remainingSectors {
+						rt.Abortf(
+							exitcode.ErrIllegalState,
+							"partition returned too many sectors when popping early terminations",
+						)
+					}
 					remainingSectors -= count
 				}
 
