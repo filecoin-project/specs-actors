@@ -24,6 +24,7 @@ type State struct {
 
 	// The reward to be paid in per WinCount to block producers.
 	// The actual reward total paid out depends on the number of winners in any round.
+	// This value is recomputed every non-null epoch and used in the next non-null epoch.
 	ThisEpochReward abi.TokenAmount
 
 	// Epoch tracks for which epoch the Reward was computed
