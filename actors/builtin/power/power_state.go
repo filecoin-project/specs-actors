@@ -88,7 +88,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	// otherwise, if ConsensusMinerMinMiners miners meet min power requirement, return false
-	if st.MinerAboveMinPowerCount > ConsensusMinerMinMiners {
+	if st.MinerAboveMinPowerCount >= ConsensusMinerMinMiners {
 		return false, nil
 	}
 
