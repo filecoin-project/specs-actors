@@ -55,12 +55,11 @@ type State struct {
 	// Faults are not subtracted from this in state, but on the fly.
 	Deadlines cid.Cid
 
+	// Deadlines with outstanding fees for early sector termination.
+	EarlyTerminations *bitfield.BitField
+
 	// Memoized power information
 	FaultyPower PowerPair
-
-	// Number of pending early terminations that the miner needs to deal
-	// with in order to withdraw funds.
-	PendingEarlyTerminations uint64
 }
 
 type MinerInfo struct {
@@ -165,8 +164,8 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, 
 		CurrentDeadline:     0,
 		Deadlines:           emptyDeadlinesCid,
 
-		FaultyPower:              NewPowerPairZero(),
-		PendingEarlyTerminations: 0,
+		FaultyPower:       NewPowerPairZero(),
+		EarlyTerminations: abi.NewBitField(),
 	}, nil
 }
 

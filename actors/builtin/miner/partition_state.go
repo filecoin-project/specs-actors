@@ -25,8 +25,9 @@ type Partition struct {
 	// An expiration may be an "on-time" scheduled expiration, or early "faulty" expiration.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]ExpirationSet
 	// Subset of terminated that were before their committed expiration epoch, by termination epoch.
-	// Termination fees have not yet been calculated or paid but effective
-	// power has already been adjusted.
+	// Termination fees have not yet been calculated or paid and associated
+	// deals have not yet been canceled but effective power has already been
+	// adjusted.
 	EarlyTerminated cid.Cid // AMT[ChainEpoch]BitField
 
 	// Power of not-yet-terminated sectors (incl faulty).
@@ -309,51 +310,64 @@ func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch
 // Marks a collection of sectors as terminated.
 // The sectors are removed from Faults and Recoveries.
 // The epoch of termination is recorded for future termination fee calculation.
-func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
+func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (count uint64, power PowerPair, err error) {
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
 	removed, removedRecovering, err := expirations.RemoveSectors(sectors, p.Faults, p.Recoveries, ssize)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to remove sector expirations: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to remove sector expirations: %w", err)
 	}
 	if p.ExpirationsEpochs, err = expirations.Root(); err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to save sector expirations: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to save sector expirations: %w", err)
 	}
 
 	removedSectors, err := bitfield.MergeBitFields(removed.OnTimeSectors, removed.EarlySectors)
 	if err != nil {
-		return NewPowerPairZero(), err
+		return 0, NewPowerPairZero(), err
+	}
+
+	// Did we do anything?
+	count, err = removedSectors.Count()
+	if err != nil {
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to count early terminations: %w", err)
+	} else if count == 0 {
+		// no.
+		return 0, NewPowerPairZero(), nil
 	}
 
 	// Check the sectors being removed are alive (not already terminated).
+	// XXX(steb): I'm not sure if this check is worth it. It just checks to
+	// make sure the expiration queue doesn't contain sectors it shouldn't
+	// contain. This _does not_ check to make sure all input sectors were
+	// live.
 	alive, err := p.LiveSectors()
 	if err != nil {
-		return NewPowerPairZero(), err
+		return 0, NewPowerPairZero(), err
 	}
 	allAlive, err := abi.BitFieldContainsAll(alive, removedSectors)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to check for live sectors: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to check for live sectors: %w", err)
 	} else if !allAlive {
-		return NewPowerPairZero(), xerrors.Errorf("refusing to terminate non-live sectors in %v (alive: %v)", removedSectors, alive)
+		return 0, NewPowerPairZero(), xerrors.Errorf("refusing to terminate non-live sectors in %v (alive: %v)", removedSectors, alive)
 	}
 
 	// Record early termination.
 	err = p.recordEarlyTermination(store, epoch, removedSectors)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to record early sector termination: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to record early sector termination: %w", err)
 	}
 
 	// Update partition metadata.
 	if p.Faults, err = bitfield.SubtractBitField(p.Faults, removedSectors); err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to remove terminated sectors from faults: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to remove terminated sectors from faults: %w", err)
 	}
 	if p.Recoveries, err = bitfield.SubtractBitField(p.Recoveries, removedSectors); err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to remove terminated sectors from recoveries: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to remove terminated sectors from recoveries: %w", err)
 	}
 	if p.Terminated, err = bitfield.MergeBitFields(p.Terminated, removedSectors); err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to add terminated sectors: %w", err)
+		return 0, NewPowerPairZero(), xerrors.Errorf("failed to add terminated sectors: %w", err)
 	}
 
 	powerDelta := removed.ActivePower.Add(removed.FaultyPower)
@@ -362,7 +376,7 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
 
 	// Pledge is not changed until partition de-frag.
-	return powerDelta, nil
+	return count, powerDelta, nil
 }
 
 // PopExpiredSectors traverses the expiration queue up to and including some epoch, and marks all expiring
