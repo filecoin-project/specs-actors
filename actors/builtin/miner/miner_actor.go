@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -30,6 +31,7 @@ const (
 	CronEventWorkerKeyChange CronEventType = iota
 	CronEventPreCommitExpiry
 	CronEventProvingDeadline
+	CronEventProcessDealTerminations
 )
 
 type CronEventPayload struct {
@@ -1312,6 +1314,8 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 		}
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
+	case CronEventProcessDealTerminations:
+		processDealTerminations(rt)
 	}
 
 	return nil
@@ -1320,6 +1324,85 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 ////////////////////////////////////////////////////////////////////////////////
 // Utility functions & helpers
 ////////////////////////////////////////////////////////////////////////////////
+
+//XXX: Work in progress
+func processDealTerminations(rt Runtime) {
+	currEpoch := rt.CurrEpoch()
+	store := adt.AsStore(rt)
+
+	stopErr := fmt.Errorf("stop error")
+
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		sectorsArr, err := adt.AsArray(store, st.Sectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+
+		deadlines, err := st.LoadDeadlines(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+		err = deadlines.EarlyTerminations.ForEach(func(dlIdx uint64) error {
+			dl, err := deadlines.LoadDeadline(store, dlIdx)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+
+			partitions, err := dl.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
+
+			err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
+				key := PartitionKey{dlIdx, partIdx}
+				var partition Partition
+				found, err := partitions.Get(partIdx, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %d for deadline %d", partIdx, dlIdx)
+
+				if !found {
+					// TODO: is this an error? I'm expecting
+					// this bitfield to be best-effort.
+					return nil
+				}
+
+				earlyTerminated, err := LoadBitfieldQueue(store, partition.EarlyTerminated)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to early terminations for partition %v", key)
+
+				err = earlyTerminated.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
+					// XXX: steb here. Need to actually process sectors.
+
+					return nil
+				})
+
+				switch err {
+				case stopErr, nil:
+					return err
+				default:
+					return xerrors.Errorf("failed to walk early terminations queue for partition %v: %w", key, err)
+				}
+
+				// XXX: Save.
+
+				return nil
+			})
+
+			switch err {
+			case stopErr, nil:
+				return err
+			default:
+				return xerrors.Errorf("failed to walk early terminations bitfield for deadline %d: %w", dlIdx, err)
+			}
+
+			// XXX: Save.
+
+			return nil
+		})
+
+		switch err {
+		case stopErr, nil:
+		default:
+			rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield for deadlines: %w", err)
+		}
+
+		// XXX: Save.
+
+		return nil
+	})
+}
 
 // Invoked at the end of the last epoch for each proving deadline.
 func handleProvingDeadline(rt Runtime) {
