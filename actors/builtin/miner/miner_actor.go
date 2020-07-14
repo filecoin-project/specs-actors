@@ -39,7 +39,7 @@ type CronEventPayload struct {
 
 // Identifier for a single partition within a miner.
 type PartitionKey struct {
-	Deadline uint64
+	Deadline  uint64
 	Partition uint64
 }
 
@@ -901,16 +901,14 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 				// Remove  sectors from partition.
 				// The sectors infos are not mutated; their on-time expiration epoch remains in state until defrag.
-				terminated, pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
+				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
 
 				err = partitions.Set(decl.Partition, &partition)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store updated partition", key)
 
 				// Record that partition now has pending early terminations.
-				if terminated > 0 {
-					deadline.EarlyTerminations.Set(decl.Partition)
-				}
+				deadline.EarlyTerminations.Set(decl.Partition)
 
 				powerDelta = powerDelta.Sub(pwr)
 			}
