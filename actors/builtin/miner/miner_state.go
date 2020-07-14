@@ -466,16 +466,20 @@ func (st *State) WalkSectors(
 			if updated, err := partitionCb(dl, &partition, uint64(dlIdx), partIdx, foundSectors); err != nil {
 				return err
 			} else if updated {
-				if empty, err := partition.Sectors.IsEmpty(); err != nil {
+				empty, err := partition.Sectors.IsEmpty()
+				if err != nil {
 					return err
-				} else if empty {
-					err := partitionsArr.Delete(partIdx)
-					if err != nil {
-						return err
-					}
-				} else {
-					partitionsArr.Set(partIdx, &partition)
 				}
+
+				if empty {
+					err = partitionsArr.Delete(partIdx)
+				} else {
+					err = partitionsArr.Set(partIdx, &partition)
+				}
+				if err != nil {
+					return err
+				}
+
 				deadlineUpdated = true
 			}
 		}
@@ -667,7 +671,7 @@ func (st *State) AssignSectorsToDeadlines(
 	// 3. Keep a separate arrays for total sectors and live sectors.
 	//   Con: Annoying to update.
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
-	deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
+	err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
 		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, idx, currentEpoch)
 		if dlInfo.Mutable() {
@@ -675,6 +679,9 @@ func (st *State) AssignSectorsToDeadlines(
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
 
 	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
 		if len(newPartitions) == 0 {
