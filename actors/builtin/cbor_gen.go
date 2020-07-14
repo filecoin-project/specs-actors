@@ -13,12 +13,14 @@ import (
 
 var _ = xerrors.Errorf
 
+var lengthBufMinerAddrs = []byte{130}
+
 func (t *MinerAddrs) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{130}); err != nil {
+	if _, err := w.Write(lengthBufMinerAddrs); err != nil {
 		return err
 	}
 
@@ -35,9 +37,12 @@ func (t *MinerAddrs) MarshalCBOR(w io.Writer) error {
 }
 
 func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
+	*t = MinerAddrs{}
 
-	maj, extra, err := cbg.CborReadHeader(br)
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
 		return err
 	}
@@ -70,21 +75,25 @@ func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+var lengthBufConfirmSectorProofsParams = []byte{129}
+
 func (t *ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write([]byte{129}); err != nil {
+	if _, err := w.Write(lengthBufConfirmSectorProofsParams); err != nil {
 		return err
 	}
+
+	scratch := make([]byte, 9)
 
 	// t.Sectors ([]abi.SectorNumber) (slice)
 	if len(t.Sectors) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Sectors was too long")
 	}
 
-	if _, err := w.Write(cbg.CborEncodeMajorType(cbg.MajArray, uint64(len(t.Sectors)))); err != nil {
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.Sectors))); err != nil {
 		return err
 	}
 	for _, v := range t.Sectors {
@@ -96,9 +105,12 @@ func (t *ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
 }
 
 func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
-	br := cbg.GetPeeker(r)
+	*t = ConfirmSectorProofsParams{}
 
-	maj, extra, err := cbg.CborReadHeader(br)
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
 		return err
 	}
@@ -112,7 +124,7 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 
 	// t.Sectors ([]abi.SectorNumber) (slice)
 
-	maj, extra, err = cbg.CborReadHeader(br)
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
 		return err
 	}
@@ -131,7 +143,7 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 
 	for i := 0; i < int(extra); i++ {
 
-		maj, val, err := cbg.CborReadHeader(br)
+		maj, val, err := cbg.CborReadHeaderBuf(br, scratch)
 		if err != nil {
 			return xerrors.Errorf("failed to read uint64 for t.Sectors slice: %w", err)
 		}

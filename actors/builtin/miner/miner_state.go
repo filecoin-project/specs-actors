@@ -725,15 +725,21 @@ func (st *State) RemoveRecoveries(sectorNos *abi.BitField) (err error) {
 
 // Loads sector info for a sequence of sectors.
 func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*SectorOnChainInfo, error) {
+	sectorsArr, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return nil, err
+	}
+
 	var sectorInfos []*SectorOnChainInfo
-	err := sectors.ForEach(func(i uint64) error {
-		sectorOnChain, found, err := st.GetSector(store, abi.SectorNumber(i))
+	err = sectors.ForEach(func(i uint64) error {
+		var sectorOnChain SectorOnChainInfo
+		found, err := sectorsArr.Get(i, &sectorOnChain)
 		if err != nil {
-			return xerrors.Errorf("failed to load sector %d: %w", i, err)
+			return xerrors.Errorf("failed to load sector %v: %w", abi.SectorNumber(i), err)
 		} else if !found {
 			return fmt.Errorf("can't find sector %d", i)
 		}
-		sectorInfos = append(sectorInfos, sectorOnChain)
+		sectorInfos = append(sectorInfos, &sectorOnChain)
 		return nil
 	})
 	return sectorInfos, err
@@ -789,7 +795,12 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors *abi.Bit
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
 func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitField, faults *abi.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
-	standInInfo, found, err := st.GetSector(store, faultStandIn)
+	sectorArr, err := adt.AsArray(store, st.Sectors)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load sectors array: %w", err)
+	}
+	var standInInfo SectorOnChainInfo
+	found, err := sectorArr.Get(uint64(faultStandIn), &standInInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load stand-in sector %d: %v", faultStandIn, err)
 	} else if !found {
@@ -810,16 +821,17 @@ func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitF
 	// Load the sector infos, masking out fault sectors with a good one.
 	sectorInfos := make([]*SectorOnChainInfo, 0, sectorCount)
 	err = sectors.ForEach(func(i uint64) error {
-		sector := standInInfo
+		sector := &standInInfo
 		faulty := faultSet[i]
 		if !faulty {
-			sectorOnChain, found, err := st.GetSector(store, abi.SectorNumber(i))
+			var sectorOnChain SectorOnChainInfo
+			found, err := sectorArr.Get(i, &sectorOnChain)
 			if err != nil {
 				return xerrors.Errorf("failed to load sector %d: %w", i, err)
 			} else if !found {
 				return fmt.Errorf("can't find sector %d", i)
 			}
-			sector = sectorOnChain
+			sector = &sectorOnChain
 		}
 		sectorInfos = append(sectorInfos, sector)
 		return nil
@@ -1002,7 +1014,7 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 		return big.Zero(), err
 	}
 
-	err = deleteMany(vestingFunds, toDelete)
+	err = vestingFunds.BatchDelete(toDelete)
 	if err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during slash: %v", err)
 	}
@@ -1045,7 +1057,7 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 		return big.Zero(), err
 	}
 
-	err = deleteMany(vestingFunds, toDelete)
+	err = vestingFunds.BatchDelete(toDelete)
 	if err != nil {
 		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest: %v", err)
 	}
@@ -1114,17 +1126,6 @@ func (s *SectorOnChainInfo) AsSectorInfo() abi.SectorInfo {
 //
 // Misc helpers
 //
-
-func deleteMany(arr *adt.Array, keys []uint64) error {
-	// If AMT exposed a batch delete we could save some writes here.
-	for _, i := range keys {
-		err := arr.Delete(i)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // Rounds e to the nearest exact multiple of the quantization unit offset by
 // offsetSeed % unit, rounding up.
