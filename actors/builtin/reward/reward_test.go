@@ -2,7 +2,6 @@ package reward_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -80,8 +79,6 @@ func TestAwardBlockReward(t *testing.T) {
 		rt := builder.Build(t)
 		startRealizedPower := abi.NewStoragePower(1)
 		actor.constructAndVerify(rt, &startRealizedPower)
-		st := getState(rt)
-		fmt.Printf("thisepochreward: %v\n", st.ThisEpochReward)
 		miner := tutil.NewIDAddr(t, 1000)
 
 		// Total reward is a huge number, upon writing ~1e18, so 300 should be way less

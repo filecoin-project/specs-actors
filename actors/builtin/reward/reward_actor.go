@@ -1,8 +1,6 @@
 package reward
 
 import (
-	"fmt"
-
 	"github.com/filecoin-project/go-address"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -76,7 +74,6 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 
 	totalReward := big.Add(blockReward, params.GasReward)
-	fmt.Printf("totalReward: %v\n", totalReward)
 
 	if totalReward.GreaterThan(rt.CurrentBalance()) {
 		rt.Log(vmr.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", rt.CurrentBalance(), totalReward)
