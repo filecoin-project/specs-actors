@@ -2,7 +2,6 @@ package miner
 
 import (
 	"fmt"
-	"io"
 	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -543,13 +542,6 @@ func (q ExpirationQueue) mustUpdateOrDelete(epoch abi.ChainEpoch, es *Expiration
 	return nil
 }
 
-func (e *ExpirationSet) MarshalCBOR(io.Writer) error {
-	panic("implement me")
-}
-func (e *ExpirationSet) UnmarshalCBOR(io.Reader) error {
-	panic("implement me")
-}
-
 type sectorEpochSet struct {
 	epoch   abi.ChainEpoch
 	sectors []uint64 // TODO: consider a bitfield if it will be always used that way
@@ -573,7 +565,7 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 	sectorEpochSets := make([]sectorEpochSet, 0, len(sectorsByExpiration))
 
 	// This map iteration is non-deterministic but safe because we sort by epoch below.
-	for expiration, sectors := range sectorsByExpiration {
+	for expiration, sectors := range sectorsByExpiration { //nolint:nomaprange result is subsequently sorted
 		sectorNumbers := make([]uint64, len(sectors))
 		totalPower := NewPowerPairZero()
 		totalPledge := big.Zero()

@@ -1,7 +1,6 @@
 package miner
 
 import (
-	"io"
 	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -379,12 +378,4 @@ func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch) 
 	}
 
 	return popped, nil
-}
-
-func (dl *Deadline) MarshalCBOR(w io.Writer) error {
-	panic("implement me")
-}
-
-func (dl *Deadline) UnmarshalCBOR(r io.Reader) error {
-	panic("implement me")
 }
