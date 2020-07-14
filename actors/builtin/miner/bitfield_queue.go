@@ -56,14 +56,13 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (*abi.BitField, error) {
 	var poppedKeys []uint64
 	var err error
 
-	var bf abi.BitField
 	stopErr := fmt.Errorf("stop")
-	if err = q.ForEach(&bf, func(i int64) error {
-		if abi.ChainEpoch(i) > until {
+	if err = q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+		if epoch > until {
 			return stopErr
 		}
-		poppedKeys = append(poppedKeys, uint64(i))
-		poppedValues, err = bitfield.MergeBitFields(poppedValues, &bf)
+		poppedKeys = append(poppedKeys, uint64(epoch))
+		poppedValues, err = bitfield.MergeBitFields(poppedValues, bf)
 		return err
 	}); err != nil && err != stopErr {
 		return nil, err

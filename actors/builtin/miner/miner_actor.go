@@ -320,12 +320,14 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			}
 
 			// Process new faults and accumulate new faulty power.
+			// This updates the faults in partition state ahead of calculating the sectors to include for proof.
 			newFaultPower, retractedRecoveryPower := processSkippedFaults(rt, &st, store, info.SectorSize, faultExpiration, &partition, post.Skipped)
 
 			// Process recoveries, assuming the proof will be successful.
-			// This will be rolled back if the method aborts with a failed proof.
+			// This similarly updates state.
 			recoveredPower := processRecoveries(rt, &st, store, info.SectorSize, &partition)
 
+			// This will be rolled back if the method aborts with a failed proof.
 			err = partitions.Set(post.Index, &partition)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
 
@@ -343,9 +345,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			allIgnored = append(allIgnored, partition.Terminated)
 		}
 
-		// TODO minerstate: factor out a method for the miner node to calculate and load all sectors for proof,
-		// with reference to faults, skipped etc
-
 		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
 		// Note: this is slightly sub-optimal, loading info for the recovering sectors again after they were already
 		// loaded above.
@@ -360,17 +359,24 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 		}
 
-		// Penalize new skipped faults and retracted recoveries.
-		// Faults declared here pay a higher fee than those declared earlier.
-		penalizedPower := newFaultPowerTotal.Add(retractedRecoveryPowerTotal)
-		penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizedPower.QA)
+		// Penalize new skipped faults and retracted recoveries as undeclared faults.
+		// These pay a higher fee than faults declared before the deadline challenge window opened.
+		undeclaredPenaltyPower := newFaultPowerTotal.Add(retractedRecoveryPowerTotal)
+		undeclaredPenaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, undeclaredPenaltyPower.QA)
 		// Subtract the "ongoing" fault fee from the amount charged now, since it will be charged at
 		// the end-of-deadline cron.
-		// (It would be permissible to delay the charge we make here until end of deadline, but that would require
-		// extra accounting state to keep track).
-		penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizedPower.QA))
-		penalty, err = st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", penalizedPower)
+		undeclaredPenaltyTarget = big.Sub(undeclaredPenaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, undeclaredPenaltyPower.QA))
+
+		// Penalize recoveries as declared faults (a lower fee than the undeclared, above).
+		// It sounds odd, but because faults are penalized in arrears, at the _end_ of the faulty period, we must
+		// penalize recovered sectors here because they won't be penalized by the end-of-deadline cron for the
+		// immediately-prior faulty period.
+		declaredPenaltyTarget := PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, recoveredPowerTotal.QA)
+
+		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
+		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
+		penalty, err = st.UnlockUnvestedFunds(store, currEpoch, totalPenaltyTarget)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
 
 		// Record the successful submission
 		deadline.AddPoStSubmissions(partitionIdxs)
@@ -1327,43 +1333,56 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 
 //XXX: Work in progress
 func processDealTerminations(rt Runtime) {
-	currEpoch := rt.CurrEpoch()
+	//currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 
 	stopErr := fmt.Errorf("stop error")
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		sectorsArr, err := adt.AsArray(store, st.Sectors)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+		//sectorsArr, err := adt.AsArray(store, st.Sectors)
+		//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		err = deadlines.EarlyTerminations.ForEach(func(dlIdx uint64) error {
-			dl, err := deadlines.LoadDeadline(store, dlIdx)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+		err = deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
+			err = dl.EarlyTerminations.ForEach(func(dlIdx uint64) error {
+				dl, err := deadlines.LoadDeadline(store, dlIdx)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			partitions, err := dl.PartitionsArray(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
+				partitions, err := dl.PartitionsArray(store)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
 
-			err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
-				key := PartitionKey{dlIdx, partIdx}
-				var partition Partition
-				found, err := partitions.Get(partIdx, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %d for deadline %d", partIdx, dlIdx)
+				err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
+					key := PartitionKey{dlIdx, partIdx}
+					var partition Partition
+					found, err := partitions.Get(partIdx, &partition)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %d for deadline %d", partIdx, dlIdx)
 
-				if !found {
-					// TODO: is this an error? I'm expecting
-					// this bitfield to be best-effort.
-					return nil
-				}
+					if !found {
+						// TODO: is this an error? I'm expecting
+						// this bitfield to be best-effort.
+						return nil
+					}
 
-				earlyTerminated, err := LoadBitfieldQueue(store, partition.EarlyTerminated)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to early terminations for partition %v", key)
+					earlyTerminated, err := LoadBitfieldQueue(store, partition.EarlyTerminated)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to early terminations for partition %v", key)
 
-				err = earlyTerminated.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
-					// XXX: steb here. Need to actually process sectors.
+					err = earlyTerminated.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
+						// XXX: steb here. Need to actually process sectors.
+
+						return nil
+					})
+
+					switch err {
+					case stopErr, nil:
+						return err
+					default:
+						return xerrors.Errorf("failed to walk early terminations queue for partition %v: %w", key, err)
+					}
+
+					// XXX: Save.
 
 					return nil
 				})
@@ -1372,7 +1391,7 @@ func processDealTerminations(rt Runtime) {
 				case stopErr, nil:
 					return err
 				default:
-					return xerrors.Errorf("failed to walk early terminations queue for partition %v: %w", key, err)
+					return xerrors.Errorf("failed to walk early terminations bitfield for deadline %d: %w", dlIdx, err)
 				}
 
 				// XXX: Save.
@@ -1382,23 +1401,13 @@ func processDealTerminations(rt Runtime) {
 
 			switch err {
 			case stopErr, nil:
-				return err
 			default:
-				return xerrors.Errorf("failed to walk early terminations bitfield for deadline %d: %w", dlIdx, err)
+				rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield for deadlines: %w", err)
 			}
 
 			// XXX: Save.
-
 			return nil
 		})
-
-		switch err {
-		case stopErr, nil:
-		default:
-			rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield for deadlines: %w", err)
-		}
-
-		// XXX: Save.
 
 		return nil
 	})
