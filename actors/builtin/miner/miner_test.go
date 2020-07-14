@@ -1007,13 +1007,16 @@ func TestProvingPeriodCron(t *testing.T) {
 		// advance to end of proving period to add sectors to proving set
 		st := getState(rt)
 		deadline := st.DeadlineInfo(rt.Epoch())
-		nextCron := deadline.NextPeriodStart() - 1
+		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+		rt.SetEpoch(deadline.PeriodEnd())
 		actor.onProvingPeriodCron(rt, &cronConfig{
 			expectedEntrollment: nextCron,
 			newSectors:          true,
 		})
 
 		// advance to next deadline where we expect the first sectors to appear
+		st = getState(rt)
+		deadline = st.DeadlineInfo(rt.Epoch() + 1)
 		rt.SetEpoch(deadline.Close + 1)
 		deadline = st.DeadlineInfo(rt.Epoch())
 
