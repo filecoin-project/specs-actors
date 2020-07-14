@@ -9,7 +9,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
-	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -1338,79 +1337,122 @@ func processDealTerminations(rt Runtime) {
 
 	stopErr := fmt.Errorf("stop error")
 
+	var earlyTerminations map[abi.ChainEpoch][]*abi.BitField
+
+	// Process early termination queues.
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		//sectorsArr, err := adt.AsArray(store, st.Sectors)
-		//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+		// Anything to do?
+		noEarlyTerminations, err := st.EarlyTerminations.IsEmpty()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count deadlines with early terminations")
+		if noEarlyTerminations {
+			return nil
+		}
 
+		// XXX: Constant max sectors
+		remainingSectors := uint64(1 << 10)
+
+		// Load deadlines
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		err = deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
-			err = dl.EarlyTerminations.ForEach(func(dlIdx uint64) error {
-				dl, err := deadlines.LoadDeadline(store, dlIdx)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+		// Process early terminations.
+		err = st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
+			// Load deadline + partitions.
+			dl, err := deadlines.LoadDeadline(store, dlIdx)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-				partitions, err := dl.PartitionsArray(store)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
+			partitions, err := dl.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
 
-				err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
-					key := PartitionKey{dlIdx, partIdx}
-					var partition Partition
-					found, err := partitions.Get(partIdx, &partition)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %d for deadline %d", partIdx, dlIdx)
+			err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
+				// Load partition.
+				key := PartitionKey{dlIdx, partIdx}
+				var partition Partition
+				found, err := partitions.Get(partIdx, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %d for deadline %d", partIdx, dlIdx)
 
-					if !found {
-						// TODO: is this an error? I'm expecting
-						// this bitfield to be best-effort.
-						return nil
-					}
-
-					earlyTerminated, err := LoadBitfieldQueue(store, partition.EarlyTerminated)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to early terminations for partition %v", key)
-
-					err = earlyTerminated.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
-						// XXX: steb here. Need to actually process sectors.
-
-						return nil
-					})
-
-					switch err {
-					case stopErr, nil:
-						return err
-					default:
-						return xerrors.Errorf("failed to walk early terminations queue for partition %v: %w", key, err)
-					}
-
-					// XXX: Save.
-
+				if !found {
+					// TODO: is this an error? I'm expecting
+					// this bitfield to be best-effort.
 					return nil
-				})
-
-				switch err {
-				case stopErr, nil:
-					return err
-				default:
-					return xerrors.Errorf("failed to walk early terminations bitfield for deadline %d: %w", dlIdx, err)
 				}
 
-				// XXX: Save.
+				// Pop early terminations.
+				sectorTerminations, more, err := partition.PopEarlyTerminations(store, remainingSectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop terminations from partition %v", key)
+
+				// Sort through early terminations.
+				for _, t := range sectorTerminations {
+					earlyTerminations[t.Epoch] = append(earlyTerminations[t.Epoch], t.Sectors)
+					count, err := t.Sectors.Count()
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+						"failed to count early terminations in partition %v from epoch %v", key, t.Epoch,
+					)
+					remainingSectors -= count
+				}
+
+				// If we've processed all of them for this partition, unmark it in the deadline.
+				if !more {
+					dl.EarlyTerminations.Unset(partIdx)
+				}
+
+				// Save partition
+				err = partitions.Set(partIdx, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partition %v", key)
+
+				if remainingSectors == 0 {
+					return stopErr
+				}
 
 				return nil
 			})
 
+			// Check to see if we have an error other than "stop".
 			switch err {
 			case stopErr, nil:
 			default:
 				rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield for deadlines: %w", err)
 			}
 
-			// XXX: Save.
+			// Save deadline's partitions
+			dl.Partitions, err = partitions.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partitions for %d", dlIdx)
+
+			// Update global early terminations bitfield.
+			noEarlyTerminations, err := dl.EarlyTerminations.IsEmpty()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count remaining early terminations deadlines %v", dlIdx)
+			if noEarlyTerminations {
+				st.EarlyTerminations.Unset(dlIdx)
+			}
+
+			// Save the deadline
+			err = deadlines.UpdateDeadline(store, dlIdx, dl)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d", dlIdx)
+
+			if remainingSectors == 0 {
+				return stopErr
+			}
+
 			return nil
 		})
 
+		// Check to see if we have an error other than "stop".
+		switch err {
+		case stopErr, nil:
+		default:
+			rt.Abortf(exitcode.ErrIllegalState, "failed to walk early terminations bitfield: %w", err)
+		}
+
+		// Save back the deadlines.
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
+
+		// XXX: STEB here.
+		// Load sector infos, get deals, and pay fines.
 		return nil
 	})
+	// TODO: pay fees, reschedule cron.
 }
 
 // Invoked at the end of the last epoch for each proving deadline.
