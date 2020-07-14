@@ -90,17 +90,15 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.Deadlines: %w", err)
 	}
 
+	// t.EarlyTerminations (bitfield.BitField) (struct)
+	if err := t.EarlyTerminations.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.FaultyPower (miner.PowerPair) (struct)
 	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
 		return err
 	}
-
-	// t.PendingEarlyTerminations (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.PendingEarlyTerminations)); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -248,6 +246,27 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.Deadlines = c
 
 	}
+	// t.EarlyTerminations (bitfield.BitField) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.EarlyTerminations = new(bitfield.BitField)
+			if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.EarlyTerminations pointer: %w", err)
+			}
+		}
+
+	}
 	// t.FaultyPower (miner.PowerPair) (struct)
 
 	{
@@ -255,20 +274,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
 		}
-
-	}
-	// t.PendingEarlyTerminations (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.PendingEarlyTerminations = uint64(extra)
 
 	}
 	return nil
@@ -616,7 +621,7 @@ func (t *Deadlines) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufDeadline = []byte{132}
+var lengthBufDeadline = []byte{133}
 
 func (t *Deadline) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -646,6 +651,11 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.EarlyTerminations (bitfield.BitField) (struct)
+	if err := t.EarlyTerminations.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.LiveSectors (uint64) (uint64)
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.LiveSectors)); err != nil {
@@ -669,7 +679,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -714,6 +724,27 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 			t.PostSubmissions = new(bitfield.BitField)
 			if err := t.PostSubmissions.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.PostSubmissions pointer: %w", err)
+			}
+		}
+
+	}
+	// t.EarlyTerminations (bitfield.BitField) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.EarlyTerminations = new(bitfield.BitField)
+			if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.EarlyTerminations pointer: %w", err)
 			}
 		}
 
