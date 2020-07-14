@@ -547,7 +547,7 @@ func (t *UpdateChannelStateParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSignedVoucher = []byte{138}
+var lengthBufSignedVoucher = []byte{139}
 
 func (t *SignedVoucher) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -559,6 +559,11 @@ func (t *SignedVoucher) MarshalCBOR(w io.Writer) error {
 	}
 
 	scratch := make([]byte, 9)
+
+	// t.ChannelAddr (address.Address) (struct)
+	if err := t.ChannelAddr.MarshalCBOR(w); err != nil {
+		return err
+	}
 
 	// t.TimeLockMin (abi.ChainEpoch) (int64)
 	if t.TimeLockMin >= 0 {
@@ -663,10 +668,19 @@ func (t *SignedVoucher) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.ChannelAddr (address.Address) (struct)
+
+	{
+
+		if err := t.ChannelAddr.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ChannelAddr: %w", err)
+		}
+
+	}
 	// t.TimeLockMin (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)

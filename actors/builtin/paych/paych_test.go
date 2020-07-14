@@ -124,41 +124,47 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		nonce uint64
 		amt   int64
 
+		paymentChannel addr.Address
+
 		secretPreimage []byte
 		sig            *crypto.Signature
 		verifySig      bool
 		expExitCode    exitcode.ExitCode
 	}{
 		{desc: "succeeds", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tlmin: 1, tlmax: 0,
+			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.Ok},
+		{desc: "fails if channel address does not match address on the signed voucher", targetCode: builtin.AccountActorCodeID,
+			amt: 1, paymentChannel: tutil.NewIDAddr(t, 210), epoch: 1, tlmin: 1, tlmax: 0,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
-			amt: 10, epoch: 1, tlmin: 1, tlmax: 0,
+			amt: 10, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalState},
 		{desc: "fails if new send balance is negative", targetCode: builtin.AccountActorCodeID,
-			amt: -1, epoch: 1, tlmin: 1, tlmax: 0,
+			amt: -1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalState},
 		{desc: "fails if signature not valid", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tlmin: 1, tlmax: 0,
+			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: nil, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if too early for voucher", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tlmin: 10, tlmax: 0,
+			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 10, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if beyond TimeLockMax", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 10, tlmin: 1, tlmax: 5,
+			amt: 1, paymentChannel: paychAddr, epoch: 10, tlmin: 1, tlmax: 5,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if signature not verified", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tlmin: 1, tlmax: 0,
+			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: false,
 			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if SigningBytes fails", targetCode: builtin.AccountActorCodeID,
-			amt: 1, epoch: 1, tlmin: 1, tlmax: 0,
+			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			secretPreimage: make([]byte, 2<<21),
 			expExitCode:    exitcode.ErrIllegalArgument},
@@ -180,6 +186,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 			actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 
 			sv := SignedVoucher{
+				ChannelAddr:    tc.paymentChannel,
 				TimeLockMin:    abi.ChainEpoch(tc.tlmin),
 				TimeLockMax:    abi.ChainEpoch(tc.tlmax),
 				Lane:           tc.lane,
@@ -765,7 +772,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, params laneParams) *SignedVoucher {
 	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte{0, 1, 2, 3, 4, 5, 6, 7}}
 	tl := abi.ChainEpoch(params.epochNum)
-	sv := SignedVoucher{TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
+	sv := SignedVoucher{ChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
 	ucp := &UpdateChannelStateParams{Sv: sv}
 
 	rt.SetCaller(params.from, builtin.AccountActorCodeID)
