@@ -295,10 +295,25 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 	return powerDelta, pledgeDelta, nil
 }
 
+// Record the epoch of any sectors expiring early, for termination fee calculation later.
+func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
+	etQueue, err := loadUintQueue(store, p.EarlyTerminated)
+	if err != nil {
+		return xerrors.Errorf("failed to load early termination queue: %w", err)
+	}
+	if err = etQueue.AddToQueue(epoch, sectors); err != nil {
+		return xerrors.Errorf("failed to add to early termination queue: %w", err)
+	}
+	if p.EarlyTerminated, err = etQueue.Root(); err != nil {
+		return xerrors.Errorf("failed to save early termination queue: %w", err)
+	}
+	return nil
+}
+
 // Marks a collection of sectors as terminated.
 // The sectors are removed from Faults and Recoveries.
 // The epoch of termination is recorded for future termination fee calculation.
-func (p *Partition) TerminateSectors(store adt.Store, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
+func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	expirations, err := loadExpirationQueue(store, p.ExpirationsEpochs)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
@@ -326,6 +341,12 @@ func (p *Partition) TerminateSectors(store adt.Store, sectors []*SectorOnChainIn
 		return NewPowerPairZero(), xerrors.Errorf("failed to check for live sectors: %w", err)
 	} else if !allAlive {
 		return NewPowerPairZero(), xerrors.Errorf("refusing to terminate non-live sectors in %v (alive: %v)", removedSectors, alive)
+	}
+
+	// Record early termination.
+	err = p.recordEarlyTermination(store, epoch, removedSectors)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to record early sector termination: %w", err)
 	}
 
 	// Update partition metadata.
@@ -402,17 +423,10 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 	// Pledge is not reduced until partition de-frag.
 
 	// Record the epoch of any sectors expiring early, for termination fee calculation later.
-	etQueue, err := loadUintQueue(store, p.EarlyTerminated)
+	err = p.recordEarlyTermination(store, until, popped.EarlySectors)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to load early termination queue: %w", err)
+		return nil, xerrors.Errorf("failed to record early terminations: %w", err)
 	}
-	if err = etQueue.AddToQueue(until, popped.EarlySectors); err != nil {
-		return nil, xerrors.Errorf("failed to add to early termination queue: %w", err)
-	}
-	if p.EarlyTerminated, err = etQueue.Root(); err != nil {
-		return nil, xerrors.Errorf("failed to save early termination queue: %w", err)
-	}
-
 
 	return popped, nil
 }

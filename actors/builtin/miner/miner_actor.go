@@ -831,6 +831,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 	var st State
 	store := adt.AsStore(rt)
+	currEpoch := rt.CurrEpoch()
 	powerDelta := NewPowerPairZero()
 	rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
@@ -871,7 +872,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 				// Remove  sectors from partition.
 				// The sectors infos are not mutated; their on-time expiration epoch remains in state until defrag.
-				pwr, err := partition.TerminateSectors(store, sectors, info.SectorSize)
+				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
 
 				powerDelta = powerDelta.Sub(pwr)
