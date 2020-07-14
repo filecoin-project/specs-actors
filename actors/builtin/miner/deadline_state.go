@@ -127,7 +127,7 @@ func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, e
 
 // Adds some partition numbers to the set expiring at an epoch.
 func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions ...uint64) error {
-	queue, err := LoadUintQueue(store, d.ExpirationsEpochs)
+	queue, err := LoadBitfieldQueue(store, d.ExpirationsEpochs)
 	if err != nil {
 		return xerrors.Errorf("failed to load expiration queue: %w", err)
 	}
@@ -323,7 +323,7 @@ func (dl *Deadline) AddSectors(
 	// Next, update the per-deadline expiration queues.
 
 	{
-		deadlineExpirations, err := LoadUintQueue(store, dl.ExpirationsEpochs)
+		deadlineExpirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs)
 		if err != nil {
 			return xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
@@ -361,7 +361,7 @@ func (dl *Deadline) AddPoStSubmissions(idxs []uint64) {
 
 // Returns nil if nothing was popped.
 func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch) (*abi.BitField, error) {
-	expirations, err := LoadUintQueue(store, dl.ExpirationsEpochs)
+	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs)
 	if err != nil {
 		return nil, err
 	}

@@ -37,6 +37,12 @@ type CronEventPayload struct {
 	Sectors   *abi.BitField
 }
 
+// Identifier for a single partition within a miner.
+type PartitionKey struct {
+	Deadline uint64
+	Partition uint64
+}
+
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
