@@ -70,10 +70,10 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (*abi.BitField, error) {
 
 	// Nothing expired.
 	if len(poppedKeys) == 0 {
-		return nil, nil
+		return poppedValues, nil
 	}
 
-	if err = q.BatchDelete(poppedKeys); err == nil {
+	if err = q.BatchDelete(poppedKeys); err != nil {
 		return nil, err
 	}
 	return poppedValues, nil
