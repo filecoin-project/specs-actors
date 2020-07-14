@@ -13,38 +13,21 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (st *State) lockBalancesAndFlush(store adt.Store, deals ...*dealWithId) (error, exitcode.ExitCode) {
-	et, err := adt.AsBalanceTable(store, st.EscrowTable)
+func (st *State) lockBalanceOrAbort(et, lt *adt.BalanceTable, proposal *DealProposal) (error, exitcode.ExitCode) {
+	err, code := st.maybeLockBalance(et, lt, proposal.Client, proposal.ClientBalanceRequirement())
 	if err != nil {
-		return fmt.Errorf("failed to load escrow balances: %w", err), exitcode.ErrIllegalState
+		return fmt.Errorf("failed to lock client funds: %w", err), code
 	}
 
-	lt, err := adt.AsBalanceTable(store, st.LockedTable)
+	err, code = st.maybeLockBalance(et, lt, proposal.Provider, proposal.ProviderCollateral)
 	if err != nil {
-		return fmt.Errorf("failed to load locked balances: %w", err), exitcode.ErrIllegalState
+		return fmt.Errorf("failed to lock provider funds: %w", err), code
 	}
 
-	for i := range deals {
-		d := deals[i]
+	st.TotalClientLockedCollateral = big.Add(st.TotalClientLockedCollateral, proposal.ClientCollateral)
+	st.TotalClientStorageFee = big.Add(st.TotalClientStorageFee, proposal.TotalStorageFee())
+	st.TotalProviderLockedCollateral = big.Add(st.TotalProviderLockedCollateral, proposal.ProviderCollateral)
 
-		err, code := st.maybeLockBalance(et, lt, d.proposal.Client, d.proposal.ClientBalanceRequirement())
-		if err != nil {
-			return fmt.Errorf("failed to lock client funds: %w", err), code
-		}
-
-		err, code = st.maybeLockBalance(et, lt, d.proposal.Provider, d.proposal.ProviderCollateral)
-		if err != nil {
-			return fmt.Errorf("failed to lock provider funds: %w", err), code
-		}
-
-		st.TotalClientLockedCollateral = big.Add(st.TotalClientLockedCollateral, d.proposal.ClientCollateral)
-		st.TotalClientStorageFee = big.Add(st.TotalClientStorageFee, d.proposal.TotalStorageFee())
-		st.TotalProviderLockedCollateral = big.Add(st.TotalProviderLockedCollateral, d.proposal.ProviderCollateral)
-	}
-
-	if err := st.flushBalances(et, lt); err != nil {
-		return err, exitcode.ErrIllegalState
-	}
 	return nil, exitcode.Ok
 }
 
@@ -58,17 +41,6 @@ func (st *State) getBalance(bt *adt.BalanceTable, a addr.Address) (abi.TokenAmou
 	}
 
 	return ret, nil, exitcode.Ok
-}
-
-func (st *State) flushBalances(et, lt *adt.BalanceTable) error {
-	var err error
-	if st.EscrowTable, err = et.Root(); err != nil {
-		return fmt.Errorf("failed to flush escrow balances: %w", err)
-	}
-	if st.LockedTable, err = lt.Root(); err != nil {
-		return fmt.Errorf("failed to flush locked balances: %w", err)
-	}
-	return nil
 }
 
 func (st *State) maybeLockBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) (error, exitcode.ExitCode) {

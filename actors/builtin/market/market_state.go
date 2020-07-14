@@ -36,7 +36,7 @@ type State struct {
 	Proposals cid.Cid // AMT[DealID]DealProposal
 	States    cid.Cid // AMT[DealID]DealState
 
-	// PendingProposals tracks proposals that have not yet reached their deal start date.
+	// PendingProposals tracks dealProposals that have not yet reached their deal start date.
 	// We track them here to ensure that miners can't publish the same deal proposal twice
 	PendingProposals cid.Cid // HAMT[DealCid]DealProposal
 
@@ -204,45 +204,6 @@ func (st *State) generateStorageDealID() abi.DealID {
 	return ret
 }
 
-type dealWithId struct {
-	id       abi.DealID
-	proposal DealProposal
-}
-
-func (st *State) putDealProposalsAndFlush(store adt.Store, deals ...*dealWithId) error {
-	proposals, err := AsDealProposalArray(store, st.Proposals)
-	if err != nil {
-		return fmt.Errorf("failed to load proposals: %w", err)
-	}
-
-	for i := range deals {
-		d := deals[i]
-		if err := proposals.Set(d.id, &d.proposal); err != nil {
-			return fmt.Errorf("failed to set proposal %v, err: %w", *d, err)
-		}
-	}
-
-	st.Proposals, err = proposals.Root()
-	return err
-}
-
-func (st *State) putDealOpsAndFlush(store adt.Store, deals ...*dealWithId) error {
-	dealOps, err := AsSetMultimap(store, st.DealOpsByEpoch)
-	if err != nil {
-		return fmt.Errorf("failed to load deal ops: %w", err)
-	}
-
-	for i := range deals {
-		d := deals[i]
-		if err := dealOps.Put(d.proposal.StartEpoch, d.id); err != nil {
-			return fmt.Errorf("failed to put deal ops %v, err: %w", *d, err)
-		}
-	}
-
-	st.DealOpsByEpoch, err = dealOps.Root()
-	return err
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -288,4 +249,122 @@ func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.
 	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
+}
+
+type marketStateMutation struct {
+	st    *State
+	store adt.Store
+
+	dealProposals *DealArray
+	dealStates    *DealMetaArray
+	lockedTable   *adt.BalanceTable
+	escrowTable   *adt.BalanceTable
+
+	pendingDeals *adt.Map
+	dealsByEpoch *SetMultimap
+}
+
+func newMarketStateMutation(st *State, store adt.Store) *marketStateMutation {
+	return &marketStateMutation{st: st, store: store}
+}
+
+func (m *marketStateMutation) withDealProposals() (*DealArray, error) {
+	proposals, err := AsDealProposalArray(m.store, m.st.Proposals)
+	if err != nil {
+		return nil, err
+	}
+	m.dealProposals = proposals
+	return proposals, nil
+}
+
+func (m *marketStateMutation) withDealStates() (*DealMetaArray, error) {
+	states, err := AsDealStateArray(m.store, m.st.States)
+	if err != nil {
+		return nil, err
+	}
+	m.dealStates = states
+	return states, nil
+}
+
+func (m *marketStateMutation) withEscrowTable() (*adt.BalanceTable, error) {
+	et, err := adt.AsBalanceTable(m.store, m.st.EscrowTable)
+	if err != nil {
+		return nil, err
+	}
+	m.escrowTable = et
+	return et, nil
+}
+
+func (m *marketStateMutation) withLockedTable() (*adt.BalanceTable, error) {
+	lt, err := adt.AsBalanceTable(m.store, m.st.LockedTable)
+	if err != nil {
+		return nil, err
+	}
+	m.lockedTable = lt
+	return lt, nil
+}
+
+func (m *marketStateMutation) withPendingProposals() (*adt.Map, error) {
+	pending, err := adt.AsMap(m.store, m.st.PendingProposals)
+	if err != nil {
+		return nil, err
+	}
+	m.pendingDeals = pending
+	return pending, nil
+}
+
+func (m *marketStateMutation) withDealsByEpoch() (*SetMultimap, error) {
+	dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
+	if err != nil {
+		return nil, err
+	}
+	m.dealsByEpoch = dbe
+	return dbe, nil
+}
+
+func (m *marketStateMutation) commitState() error {
+	var err error
+	if m.dealProposals != nil {
+		m.st.Proposals, err = m.dealProposals.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush deal dealProposals: %w", err)
+		}
+	}
+
+	if m.dealStates != nil {
+		m.st.States, err = m.dealStates.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush deal states: %w", err)
+		}
+	}
+
+	if m.lockedTable != nil {
+		m.st.LockedTable, err = m.lockedTable.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush locked table: %w", err)
+		}
+	}
+
+	if m.escrowTable != nil {
+		m.st.EscrowTable, err = m.escrowTable.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush escrow table: %w", err)
+		}
+	}
+
+	if m.pendingDeals != nil {
+		m.st.PendingProposals, err = m.pendingDeals.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush pending deals: %w", err)
+		}
+	}
+
+	if m.dealsByEpoch != nil {
+		m.st.DealOpsByEpoch, err = m.dealsByEpoch.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush deals by epoch: %w", err)
+		}
+	}
+
+	return nil
 }

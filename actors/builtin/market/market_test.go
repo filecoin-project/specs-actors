@@ -377,7 +377,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, deal3.ClientBalanceRequirement(), client3Locked)
 		require.EqualValues(t, providerLocked, actor.getLockedBalance(rt, provider))
 
-		// assert locked funds states
+		// assert locked funds dealStates
 		rt.GetState(&st)
 		totalClientCollateralLocked := big.Sum(deal3.ClientCollateral, deal1.ClientCollateral, deal2.ClientCollateral)
 		require.EqualValues(t, totalClientCollateralLocked, st.TotalClientLockedCollateral)
@@ -403,7 +403,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, deal1.ClientBalanceRequirement(), client1Locked)
 		require.EqualValues(t, deal2.ClientBalanceRequirement(), client2Locked)
 
-		// assert locked funds states
+		// assert locked funds dealStates
 		totalClientCollateralLocked = big.Sum(totalClientCollateralLocked, deal4.ClientCollateral, deal5.ClientCollateral)
 		require.EqualValues(t, totalClientCollateralLocked, st.TotalClientLockedCollateral)
 		require.EqualValues(t, providerLocked, st.TotalProviderLockedCollateral)
