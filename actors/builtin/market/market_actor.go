@@ -85,9 +85,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
 
-		msm := newMarketStateMutation(&st, adt.AsStore(rt))
-		et, err := msm.withEscrowTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow balance table")
+		msm, err := newMarketStateMutation(&st, adt.AsStore(rt)).withEscrowTable().build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		// The withdrawable amount might be slightly less than nominal
 		// depending on whether or not all relevant entries have been processed
@@ -95,7 +94,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		minBalance, err, code := st.getBalance(lt, nominal)
 		builtin.RequireNoErr(rt, err, code, "failed to get locked balance")
 
-		ex, err := et.SubtractWithMinimum(nominal, params.Amount, minBalance)
+		ex, err := msm.escrowTable.SubtractWithMinimum(nominal, params.Amount, minBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract form escrow table")
 
 		err = msm.commitState()
@@ -118,18 +117,13 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msm := newMarketStateMutation(&st, adt.AsStore(rt))
+		msm, err := newMarketStateMutation(&st, adt.AsStore(rt)).withEscrowTable().withLockedTable().build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
-		et, err := msm.withEscrowTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
-
-		lt, err := msm.withLockedTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balances table")
-
-		err = et.AddCreate(nominal, msgValue)
+		err = msm.escrowTable.AddCreate(nominal, msgValue)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add balance to escrow table")
 
-		err = lt.AddCreate(nominal, big.Zero())
+		err = msm.lockedTable.AddCreate(nominal, big.Zero())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add locked balance")
 
 		err = msm.commitState()
@@ -191,22 +185,9 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msm := newMarketStateMutation(&st, adt.AsStore(rt))
-
-		pending, err := msm.withPendingProposals()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending dealProposals map: %s", err)
-
-		proposals, err := msm.withDealProposals()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal proposals")
-
-		dealOps, err := msm.withDealsByEpoch()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal ops by epoch")
-
-		et, err := msm.withEscrowTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
-
-		lt, err := msm.withLockedTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked table")
+		msm, err := newMarketStateMutation(&st, adt.AsStore(rt)).withPendingProposals().
+			withDealProposals().withDealsByEpoch().withEscrowTable().withLockedTable().build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
@@ -224,7 +205,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			deal.Proposal.Provider = provider
 			deal.Proposal.Client = client
 
-			err, code := st.lockBalanceOrAbort(et, lt, &deal.Proposal)
+			err, code := st.lockBalanceOrAbort(msm.escrowTable, msm.lockedTable, &deal.Proposal)
 			builtin.RequireNoErr(rt, err, code, "failed to lock balance")
 
 			id := st.generateStorageDealID()
@@ -232,19 +213,19 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			pcid, err := deal.Proposal.Cid()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
 
-			has, err := pending.Get(adt.CidKey(pcid), nil)
+			has, err := msm.pendingDeals.Get(adt.CidKey(pcid), nil)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
 			if has {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
 			}
 
-			err = pending.Put(adt.CidKey(pcid), &deal.Proposal)
+			err = msm.pendingDeals.Put(adt.CidKey(pcid), &deal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
 
-			err = proposals.Set(id, &deal.Proposal)
+			err = msm.dealProposals.Set(id, &deal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal")
 
-			err = dealOps.Put(deal.Proposal.StartEpoch, id)
+			err = msm.dealsByEpoch.Put(deal.Proposal.StartEpoch, id)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal ops by epoch")
 
 			newDealIds = append(newDealIds, id)
@@ -316,14 +297,13 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "load dealProposals %v", err)
 
-		msm := newMarketStateMutation(&st, adt.AsStore(rt))
-		states, err := msm.withDealStates()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal dealStates")
+		msm, err := newMarketStateMutation(&st, adt.AsStore(rt)).withDealStates().build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for _, dealID := range params.DealIDs {
 			// This construction could be replaced with a single "update deal state" state method, possibly batched
 			// over all deal ids at once.
-			_, found, err := states.Get(dealID)
+			_, found, err := msm.dealStates.Get(dealID)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state for dealId %d", dealID)
 			if found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "deal %d already included in another sector", dealID)
@@ -345,7 +325,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 				rt.Abortf(exitcode.ErrIllegalState, "tried to active deal that was not in the pending set (%s)", propc)
 			}
 
-			err = states.Set(dealID, &DealState{
+			err = msm.dealStates.Set(dealID, &DealState{
 				SectorStartEpoch: currEpoch,
 				LastUpdatedEpoch: epochUndefined,
 				SlashEpoch:       epochUndefined,
@@ -408,9 +388,8 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 		proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal proposals")
 
-		msm := newMarketStateMutation(&st, adt.AsStore(rt))
-		states, err := msm.withDealStates()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state states")
+		msm, err := newMarketStateMutation(&st, adt.AsStore(rt)).withDealStates().build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state")
 
 		for _, dealID := range params.DealIDs {
 			deal, found, err := proposals.Get(dealID)
@@ -430,7 +409,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 				continue
 			}
 
-			state, found, err := states.Get(dealID)
+			state, found, err := msm.dealStates.Get(dealID)
 			if err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
 			}
@@ -447,7 +426,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
 			state.SlashEpoch = rt.CurrEpoch()
 
-			if err := states.Set(dealID, state); err != nil {
+			if err := msm.dealStates.Set(dealID, state); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
 			}
 		}
@@ -470,35 +449,19 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	rt.State().Transaction(&st, func() interface{} {
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
-		msm := newMarketStateMutation(&st, adt.AsStore(rt))
-
-		dbe, err := msm.withDealsByEpoch()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal opts set")
-
-		states, err := msm.withDealStates()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state state")
-
-		proposals, err := msm.withDealProposals()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get state dealProposals")
-
-		et, err := msm.withEscrowTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load escrow table")
-
-		lt, err := msm.withLockedTable()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load locked balance table")
-
-		pending, err := msm.withPendingProposals()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending dealProposals map")
+		msm, err := newMarketStateMutation(&st, adt.AsStore(rt)).withDealStates().
+			withLockedTable().withEscrowTable().withDealsByEpoch().withDealProposals().withPendingProposals().build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
-			if err := dbe.ForEach(i, func(dealID abi.DealID) error {
-				deal := st.mustGetDeal(rt, proposals, dealID)
+			if err := msm.dealsByEpoch.ForEach(i, func(dealID abi.DealID) error {
+				deal := st.mustGetDeal(rt, msm.dealProposals, dealID)
 				dcid, err := deal.Cid()
 				if err != nil {
 					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
 				}
 
-				state, found, err := states.Get(dealID)
+				state, found, err := msm.dealStates.Get(dealID)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
 
 				// deal has been published but not activated yet -> terminate it as it has timed out
@@ -506,7 +469,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					// Not yet appeared in proven sector; check for timeout.
 					AssertMsg(rt.CurrEpoch() >= deal.StartEpoch, "if sector start is not set, we must be in a timed out state")
 
-					slashed := st.processDealInitTimedOut(rt, et, lt, deal)
+					slashed := st.processDealInitTimedOut(rt, msm.escrowTable, msm.lockedTable, deal)
 					if !slashed.IsZero() {
 						amountSlashed = big.Add(amountSlashed, slashed)
 					}
@@ -515,7 +478,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					}
 
 					// we should not attempt to delete the DealState because it does NOT exist
-					if err := deleteDealProposalAndState(dealID, states, proposals, true, false); err != nil {
+					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, false); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 					return nil
@@ -523,13 +486,13 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 				// if this is the first cron tick for the deal, it should be in the pending state.
 				if state.LastUpdatedEpoch == epochUndefined {
-					pdErr := pending.Delete(adt.CidKey(dcid))
+					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 				}
 
-				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, et, lt, rt.CurrEpoch())
+				slashAmount, nextEpoch, removeDeal := st.updatePendingDealState(rt, state, deal, dealID, msm.escrowTable, msm.lockedTable, rt.CurrEpoch())
 				if removeDeal {
-					if err := deleteDealProposalAndState(dealID, states, proposals, true, true); err != nil {
+					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, true); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 				}
@@ -544,7 +507,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					// https://github.com/filecoin-project/specs-actors/issues/463
 					state.LastUpdatedEpoch = rt.CurrEpoch()
 
-					if err := states.Set(dealID, state); err != nil {
+					if err := msm.dealStates.Set(dealID, state); err != nil {
 						rt.Abortf(exitcode.ErrPlaceholder, "failed to set deal state state: %v", err)
 					}
 
@@ -555,7 +518,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 			}); err != nil {
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deals for epoch")
 			}
-			builtin.RequireNoErr(rt, dbe.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
+			builtin.RequireNoErr(rt, msm.dealsByEpoch.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
 		}
 
 		// Iterate changes in sorted order to ensure that loads/stores
@@ -569,7 +532,7 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		sort.Slice(changedEpochs, func(i, j int) bool { return changedEpochs[i] < changedEpochs[j] })
 
 		for _, epoch := range changedEpochs {
-			if err := dbe.PutMany(epoch, updatesNeeded[epoch]); err != nil {
+			if err := msm.dealsByEpoch.PutMany(epoch, updatesNeeded[epoch]); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to reinsert deal IDs into epoch set: %s", err)
 			}
 		}

@@ -255,71 +255,109 @@ type marketStateMutation struct {
 	st    *State
 	store adt.Store
 
-	dealProposals *DealArray
-	dealStates    *DealMetaArray
-	lockedTable   *adt.BalanceTable
-	escrowTable   *adt.BalanceTable
+	useDealProposals bool
+	dealProposals    *DealArray
 
-	pendingDeals *adt.Map
-	dealsByEpoch *SetMultimap
+	useDealStates bool
+	dealStates    *DealMetaArray
+
+	useLockedTable bool
+	lockedTable    *adt.BalanceTable
+
+	useEscrowTable bool
+	escrowTable    *adt.BalanceTable
+
+	usePendingDeals bool
+	pendingDeals    *adt.Map
+
+	useDealsByEpoch bool
+	dealsByEpoch    *SetMultimap
 }
 
 func newMarketStateMutation(st *State, store adt.Store) *marketStateMutation {
 	return &marketStateMutation{st: st, store: store}
 }
 
-func (m *marketStateMutation) withDealProposals() (*DealArray, error) {
-	proposals, err := AsDealProposalArray(m.store, m.st.Proposals)
-	if err != nil {
-		return nil, err
+func (m *marketStateMutation) build() (*marketStateMutation, error) {
+	if m.useDealProposals {
+		proposals, err := AsDealProposalArray(m.store, m.st.Proposals)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load deal proposals: %w", err)
+		}
+		m.dealProposals = proposals
 	}
-	m.dealProposals = proposals
-	return proposals, nil
+
+	if m.useDealStates {
+		states, err := AsDealStateArray(m.store, m.st.States)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load deal state: %w", err)
+		}
+		m.dealStates = states
+	}
+
+	if m.useLockedTable {
+		lt, err := adt.AsBalanceTable(m.store, m.st.LockedTable)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load locked table: %w", err)
+		}
+		m.lockedTable = lt
+	}
+
+	if m.useEscrowTable {
+		et, err := adt.AsBalanceTable(m.store, m.st.EscrowTable)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load escrow table: %w", err)
+		}
+		m.escrowTable = et
+	}
+
+	if m.usePendingDeals {
+		pending, err := adt.AsMap(m.store, m.st.PendingProposals)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load pending proposals: %w", err)
+		}
+		m.pendingDeals = pending
+	}
+
+	if m.useDealsByEpoch {
+		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load deals by epoch: %w", err)
+		}
+		m.dealsByEpoch = dbe
+	}
+
+	return m, nil
 }
 
-func (m *marketStateMutation) withDealStates() (*DealMetaArray, error) {
-	states, err := AsDealStateArray(m.store, m.st.States)
-	if err != nil {
-		return nil, err
-	}
-	m.dealStates = states
-	return states, nil
+func (m *marketStateMutation) withDealProposals() *marketStateMutation {
+	m.useDealProposals = true
+	return m
 }
 
-func (m *marketStateMutation) withEscrowTable() (*adt.BalanceTable, error) {
-	et, err := adt.AsBalanceTable(m.store, m.st.EscrowTable)
-	if err != nil {
-		return nil, err
-	}
-	m.escrowTable = et
-	return et, nil
+func (m *marketStateMutation) withDealStates() *marketStateMutation {
+	m.useDealStates = true
+	return m
 }
 
-func (m *marketStateMutation) withLockedTable() (*adt.BalanceTable, error) {
-	lt, err := adt.AsBalanceTable(m.store, m.st.LockedTable)
-	if err != nil {
-		return nil, err
-	}
-	m.lockedTable = lt
-	return lt, nil
+func (m *marketStateMutation) withEscrowTable() *marketStateMutation {
+	m.useEscrowTable = true
+	return m
 }
 
-func (m *marketStateMutation) withPendingProposals() (*adt.Map, error) {
-	pending, err := adt.AsMap(m.store, m.st.PendingProposals)
-	if err != nil {
-		return nil, err
-	}
-	m.pendingDeals = pending
-	return pending, nil
+func (m *marketStateMutation) withLockedTable() *marketStateMutation {
+	m.useLockedTable = true
+	return m
 }
 
-func (m *marketStateMutation) withDealsByEpoch() (*SetMultimap, error) {
-	dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
-	if err != nil {
-		return nil, err
-	}
-	m.dealsByEpoch = dbe
-	return dbe, nil
+func (m *marketStateMutation) withPendingProposals() *marketStateMutation {
+	m.usePendingDeals = true
+	return m
+}
+
+func (m *marketStateMutation) withDealsByEpoch() *marketStateMutation {
+	m.useDealsByEpoch = true
+	return m
 }
 
 func (m *marketStateMutation) commitState() error {
