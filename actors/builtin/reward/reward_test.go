@@ -2,6 +2,7 @@ package reward_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,7 +70,30 @@ func TestAwardBlockReward(t *testing.T) {
 				Miner:     miner,
 				Penalty:   big.Zero(),
 				GasReward: gasreward,
+				WinCount:  1,
 			})
+		})
+		rt.Verify()
+	})
+
+	t.Run("pays out current balance when reward exceeds total balance", func(t *testing.T) {
+		rt := builder.Build(t)
+		startRealizedPower := abi.NewStoragePower(1)
+		actor.constructAndVerify(rt, &startRealizedPower)
+		st := getState(rt)
+		fmt.Printf("thisepochreward: %v\n", st.ThisEpochReward)
+		miner := tutil.NewIDAddr(t, 1000)
+
+		// Total reward is a huge number, upon writing ~1e18, so 300 should be way less
+		smallReward := abi.NewTokenAmount(300)
+		rt.SetBalance(smallReward)
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+		rt.ExpectSend(miner, builtin.MethodsMiner.AddLockedFund, &smallReward, smallReward, nil, 0)
+		rt.Call(actor.AwardBlockReward, &reward.AwardBlockRewardParams{
+			Miner:     miner,
+			Penalty:   big.Zero(),
+			GasReward: big.Zero(),
+			WinCount:  1,
 		})
 		rt.Verify()
 	})
