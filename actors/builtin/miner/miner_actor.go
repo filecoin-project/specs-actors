@@ -366,6 +366,17 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Record the successful submission
 		deadline.AddPoStSubmissions(partitionIdxs)
+
+		// Save everything back.
+		deadline.Partitions, err = partitions.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
+
+		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
+
 		return nil
 	})
 
@@ -793,9 +804,21 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				// Remove old sectors from partition and assign new sectors.
 				powerDelta, pledgeDelta, err = partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
+
+				err = partitions.Set(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partition", key)
 			}
 
+			deadline.Partitions, err = partitions.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions for deadline %d", dlIdx)
+
+			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", dlIdx)
 		}
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
+
 		return nil
 	})
 
@@ -875,9 +898,21 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
 
+				err = partitions.Set(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store updated partition", key)
+
 				powerDelta = powerDelta.Sub(pwr)
 			}
+
+			deadline.Partitions, err = partitions.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
+
+			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", dlIdx)
 		}
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 
 		// XXX: terminate deals or defer some/all for a defrag
 		return nil
@@ -924,7 +959,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
-		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
+		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Group declarations by deadline, and remember iteration order.
@@ -1015,6 +1050,10 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions", dlIdx)
 		}
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
+
 		return nil
 	})
 
@@ -1100,8 +1139,21 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 				err = partition.AddRecoveries(recoveries, recoveryPower)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add recoveries")
+
+				err = partitions.Set(decl.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
 			}
+
+			deadline.Partitions, err = partitions.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions array")
+
+			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d", dlIdx)
 		}
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
+
 		return nil
 	})
 
@@ -1378,8 +1430,14 @@ func handleProvingDeadline(rt Runtime) {
 		}
 
 		// Save new deadline state.
+		deadline.Partitions, err = partitions.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
+
 		err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %v", dlInfo.Index)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", dlInfo.Index)
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 
 		// Increment current deadline, and proving period if necessary.
 		if dlInfo.PeriodStarted() {

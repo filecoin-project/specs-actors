@@ -27,12 +27,13 @@ type Deadline struct {
 	// The keys of this AMT are always sequential integers beginning with zero.
 	Partitions cid.Cid // AMT[PartitionNumber]Partition
 
-	// Maps epochs to partitions with sectors that expire in or before that
-	// epoch, either on-time or early as faults.
+	// Maps epochs to partitions that _may_ have sectors that expire in or
+	// before that epoch, either on-time or early as faults.
 	//
-	// NOTE: Bitfields in this queue may contain partitions with no sectors
-	// expiring at the given epoch. When a sector faults/terminates early,
-	// entries are not removed from this queue to ease accounting.
+	// NOTE: Partitions MUST NOT be removed from this queue (until the
+	// associated epoch has passed) even if they no longer have sectors
+	// expiring at that epoch. Sectors expiring at this epoch may later be
+	// recovered, and this queue will not be updated at that time.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
 	// Partitions numbers with PoSt submissions since the proving period started.
