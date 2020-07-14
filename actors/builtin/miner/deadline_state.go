@@ -38,6 +38,9 @@ type Deadline struct {
 	// Partitions numbers with PoSt submissions since the proving period started.
 	PostSubmissions *abi.BitField
 
+	// Partitions with sectors that terminated early.
+	EarlyTerminations *abi.BitField
+
 	// The number of non-terminated sectors in this deadline (incl faulty).
 	LiveSectors uint64
 }
@@ -156,6 +159,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 
 	var onTimeSectors []*abi.BitField
 	var earlySectors []*abi.BitField
+	var partitionsWithEarlyTerminations []uint64
 	allActivePower := NewPowerPairZero()
 	allFaultyPower := NewPowerPairZero()
 
@@ -174,9 +178,15 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 		}
 
 		onTimeSectors = append(onTimeSectors, partExpiration.OnTimeSectors)
-		earlySectors = append(earlySectors, partExpiration.EarlySectors)
 		allActivePower = allActivePower.Add(partExpiration.ActivePower)
 		allFaultyPower = allFaultyPower.Add(partExpiration.FaultyPower)
+
+		if empty, err := partExpiration.EarlySectors.IsEmpty(); err != nil {
+			return xerrors.Errorf("failed to count early expirations from partition %d: %w", partIdx, err)
+		} else if !empty {
+			partitionsWithEarlyTerminations = append(partitionsWithEarlyTerminations, partIdx)
+			earlySectors = append(earlySectors, partExpiration.EarlySectors)
+		}
 
 		return partitions.Set(partIdx, &partition)
 	}); err != nil {
@@ -185,6 +195,14 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 
 	if dl.Partitions, err = partitions.Root(); err != nil {
 		return nil, err
+	}
+
+	// Update early expiration bitmap, if relevant.
+	if len(partitionsWithEarlyTerminations) > 0 {
+		dl.EarlyTerminations, err = bitfield.MergeBitFields(dl.EarlyTerminations, bitfield.NewFromSet(partitionsWithEarlyTerminations))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	allOnTimeSectors, err := bitfield.MultiMerge(onTimeSectors...)

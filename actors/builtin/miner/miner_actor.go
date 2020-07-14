@@ -901,11 +901,16 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 				// Remove  sectors from partition.
 				// The sectors infos are not mutated; their on-time expiration epoch remains in state until defrag.
-				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
+				terminated, pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
 
 				err = partitions.Set(decl.Partition, &partition)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store updated partition", key)
+
+				// Record that partition now has pending early terminations.
+				if terminated > 0 {
+					deadline.EarlyTerminations.Set(decl.Partition)
+				}
 
 				powerDelta = powerDelta.Sub(pwr)
 			}
@@ -1257,10 +1262,12 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Owner)
 		// Ensure we don't have any pending terminations.
-		if st.PendingEarlyTerminations > 0 {
+		if count, err := st.EarlyTerminations.Count(); err != nil {
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
+		} else if count > 0 {
 			rt.Abortf(exitcode.ErrForbidden,
-				"cannot withdraw funds while fees for %d terminated sectors are outstanding",
-				st.PendingEarlyTerminations,
+				"cannot withdraw funds while %d deadlines have terminated sectors with outstanding fees",
+				count,
 			)
 		}
 
@@ -1418,11 +1425,14 @@ func handleProvingDeadline(rt Runtime) {
 			powerDelta = powerDelta.Sub(expired.ActivePower)
 			st.FaultyPower = st.FaultyPower.Sub(expired.FaultyPower)
 
-			// Record early terminations. While this count >0, the
-			// miner is locked until they pay the fee.
-			earlyTerminationCount, err := expired.EarlySectors.Count()
+			// Record deadlines with early terminations. While this
+			// bitfield is non-empty, the miner is locked until they
+			// pay the fee.
+			noEarlyTerminations, err := expired.EarlySectors.IsEmpty()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
-			st.PendingEarlyTerminations += earlyTerminationCount
+			if !noEarlyTerminations {
+				st.EarlyTerminations.Set(dlInfo.Index)
+			}
 
 			// The pledge requirement for the expired sectors is not yet released.
 			// The termination fee is not yet paid.
