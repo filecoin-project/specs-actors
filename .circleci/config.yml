@@ -93,24 +93,11 @@ jobs:
       - install-deps
       - prepare
       - run:
-          command: make build
-      - run:
-          name: Install golangci-lint
-          command: >
-            (
-              cd $(mktemp -d);
-              go mod init a;
-              go get github.com/golangci/golangci-lint/cmd/golangci-lint@v<< parameters.golangci-lint-version >>
-              go build github.com/golangci/golangci-lint/cmd/golangci-lint
-              mkdir -p $HOME/.local/bin
-              mv -f golangci-lint $HOME/.local/bin/
-            )
-      - run:
-          command: make .nomaprange.so
+          command: make -j3 support/tools/bin/golangci-lint support/tools/bin/no-map-range.so
       - run:
           name: Lint
           command: |
-            $HOME/.local/bin/golangci-lint run -v --skip-dirs-use-default=false\
+            support/tools/bin/golangci-lint run -v \
               --concurrency << parameters.concurrency >> << parameters.args >>
 
   lint-all:

@@ -15,3 +15,5 @@
 # vendor/
 
 .idea
+
+support/tools/bin

@@ -1,14 +1,13 @@
 linters-settings:
   custom:
-    # 2020-07-13 @anorth disabled, local build failing with "Unable to load custom analyzer nomaprange:.nomaprange.so, plugin: not implemented"
-    #nomaprange:
-    #  path: .nomaprange.so
-    #  description: Checks for range over maps
-    #  original-url: github.com/Kubuxu/go-no-map-range
+    nomaprange:
+      path: support/tools/bin/no-map-range.so
+      description: Checks for range over maps
+      original-url: github.com/Kubuxu/go-no-map-range
 
 linters:
   enable:
-    #- nomaprange
+    - nomaprange
 
 run:
   skip-dirs-use-default: false
