@@ -160,7 +160,7 @@ func emptyBitfieldQueue(t *testing.T) BitfieldQueue {
 	root, err := adt.MakeEmptyArray(store).Root()
 	require.NoError(t, err)
 
-	queue, err := LoadBitfieldQueue(store, root)
+	queue, err := LoadBitfieldQueue(store, root, NoQuantization)
 	require.NoError(t, err)
 	return queue
 }

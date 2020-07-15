@@ -294,7 +294,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		partitions, err := deadline.PartitionsArray(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d partitions", params.Deadline)
 
-		faultExpiration := currDeadline.NextOpen() + FaultMaxAge
+		faultExpiration := currDeadline.Close + FaultMaxAge
 
 		partitionIdxs := make([]uint64, 0, len(params.Partitions))
 		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
@@ -320,11 +320,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 			// Process new faults and accumulate new faulty power.
 			// This updates the faults in partition state ahead of calculating the sectors to include for proof.
-			newFaultPower, retractedRecoveryPower := processSkippedFaults(rt, &st, store, info.SectorSize, faultExpiration, &partition, post.Skipped)
+			newFaultPower, retractedRecoveryPower := processSkippedFaults(rt, &st, store, faultExpiration, &partition, post.Skipped, info.SectorSize)
 
 			// Process recoveries, assuming the proof will be successful.
 			// This similarly updates state.
-			recoveredPower := processRecoveries(rt, &st, store, info.SectorSize, &partition)
+			recoveredPower := processRecoveries(rt, &st, store, &partition, info.SectorSize)
 
 			// This will be rolled back if the method aborts with a failed proof.
 			err = partitions.Set(post.Index, &partition)
@@ -651,8 +651,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	totalPledge := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		quant := st.QuantEndOfDeadline()
 		// Schedule expiration for replaced sectors.
-		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectorLocations)
+		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), replaceSectorLocations, info.SectorSize, quant)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
@@ -681,7 +682,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
 
-		err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors...)
+		err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, quant)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
@@ -768,6 +769,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+		quant := st.QuantEndOfDeadline()
 
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*ExpirationExtension{}
@@ -815,7 +817,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sectors %v", decl.Sectors)
 
 				// Remove old sectors from partition and assign new sectors.
-				powerDelta, pledgeDelta, err = partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize)
+				powerDelta, pledgeDelta, err = partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize, quant)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
 
 				err = partitions.Set(decl.Partition, &partition)
@@ -875,6 +877,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+		quant := st.QuantEndOfDeadline()
 
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*TerminationDeclaration{}
@@ -908,7 +911,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 
 				// Remove  sectors from partition.
 				// The sectors infos are not mutated; their on-time expiration epoch remains in state until defrag.
-				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize)
+				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize, quant)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
 
 				err = partitions.Set(decl.Partition, &partition)
@@ -981,6 +984,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+		quant := st.QuantEndOfDeadline()
 
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*FaultDeclaration{}
@@ -1005,7 +1009,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			// Record partitions with some fault, for subsequently indexing in the deadline.
 			// Duplicate entries don't matter, they'll be stored in a bitfield (a set).
 			partitionsWithFault := make([]uint64, 0, len(declsByDeadline))
-			faultExpirationEpoch := targetDeadline.NextOpen() + FaultMaxAge
+			faultExpirationEpoch := targetDeadline.Close + FaultMaxAge
 
 			for _, decl := range declsByDeadline[dlIdx] {
 				key := PartitionKey{dlIdx, decl.Partition}
@@ -1038,7 +1042,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 					newFaultSectors, err := st.LoadSectorInfos(store, newFaults)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
-					newFaultPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, info.SectorSize)
+					newFaultPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, info.SectorSize, quant)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
 
 					st.FaultyPower = st.FaultyPower.Add(newFaultPower)
@@ -1064,7 +1068,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			deadline.Partitions, err = partitions.Root()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions root", dlIdx)
 
-			err = deadline.AddExpirationPartitions(store, faultExpirationEpoch, partitionsWithFault...)
+			err = deadline.AddExpirationPartitions(store, faultExpirationEpoch, partitionsWithFault, quant)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update fault epochs for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
@@ -1513,10 +1517,11 @@ func handleProvingDeadline(rt Runtime) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
 		partitions, err := deadline.PartitionsArray(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlInfo.Index)
+		quant := st.QuantEndOfDeadline()
 
 		{
 			// Detect and penalize missing proofs.
-			faultExpiration := dlInfo.NextOpen() + FaultMaxAge
+			faultExpiration := dlInfo.Close + FaultMaxAge
 			penalizePowerTotal := big.Zero()
 
 			for i := uint64(0); i < partitions.Length(); i++ {
@@ -1534,7 +1539,7 @@ func handleProvingDeadline(rt Runtime) {
 					rt.Abortf(exitcode.ErrIllegalState, "no partition %v", key)
 				}
 
-				newFaultPower, failedRecoveryPower, err := partition.RecordMissedPost(store, faultExpiration)
+				newFaultPower, failedRecoveryPower, err := partition.RecordMissedPost(store, faultExpiration, quant)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record missed PoSt for %v", key)
 
 				// Save new partition state.
@@ -1569,7 +1574,7 @@ func handleProvingDeadline(rt Runtime) {
 		}
 		{
 			// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
-			expired, err := deadline.PopExpiredSectors(store, dlInfo.Last())
+			expired, err := deadline.PopExpiredSectors(store, dlInfo.Last(), quant)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
 
 			// Release pledge requirements for the sectors expiring on-time.
@@ -1657,13 +1662,14 @@ func handleProvingDeadline(rt Runtime) {
 
 // - Skipped faults that are not in the provided partition triggers an error.
 // - Skipped faults that are already declared (but not delcared recovered) are ignored.
-func processSkippedFaults(rt Runtime, st *State, store adt.Store, ssize abi.SectorSize, faultExpiration abi.ChainEpoch,
-	partition *Partition, skipped *bitfield.BitField) (newFaultPower, retractedRecoveryPower PowerPair) {
+func processSkippedFaults(rt Runtime, st *State, store adt.Store, faultExpiration abi.ChainEpoch, partition *Partition,
+	skipped *bitfield.BitField, ssize abi.SectorSize) (newFaultPower, retractedRecoveryPower PowerPair) {
 	empty, err := skipped.IsEmpty()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to check if skipped sectors is empty")
 	if empty {
 		return NewPowerPairZero(), NewPowerPairZero()
 	}
+	quant := st.QuantEndOfDeadline()
 
 	// Check that the declared sectors are actually in the partition.
 	contains, err := abi.BitFieldContainsAll(partition.Sectors, skipped)
@@ -1688,7 +1694,7 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, ssize abi.Sect
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 
 	// Record new faults
-	newFaultPower, err = partition.AddFaults(store, newFaults, newFaultSectors, faultExpiration, ssize)
+	newFaultPower, err = partition.AddFaults(store, newFaults, newFaultSectors, faultExpiration, ssize, quant)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add skipped faults")
 
 	// Remove faulty recoveries
@@ -1698,11 +1704,12 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, ssize abi.Sect
 	return newFaultPower, retractedRecoveryPower
 }
 
-func processRecoveries(rt Runtime, st *State, store adt.Store, ssize abi.SectorSize, partition *Partition) PowerPair {
+func processRecoveries(rt Runtime, st *State, store adt.Store, partition *Partition, ssize abi.SectorSize) PowerPair {
+	quant := st.QuantEndOfDeadline()
 	recoveredSectors, err := st.LoadSectorInfos(store, partition.Recoveries)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load recovered sectors")
 
-	recoveredPower, err := partition.RecoverFaults(store, partition.Recoveries, recoveredSectors, ssize)
+	recoveredPower, err := partition.RecoverFaults(store, partition.Recoveries, recoveredSectors, ssize, quant)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
 
 	return recoveredPower
