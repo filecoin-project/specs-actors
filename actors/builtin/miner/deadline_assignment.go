@@ -48,6 +48,7 @@ func (dah *deadlineAssignmentHeap) Less(i, j int) bool {
 	}
 
 	// TODO: Randomize by index instead of simply sorting.
+	// https://github.com/filecoin-project/specs-actors/issues/432
 	return a.index < b.index
 }
 
