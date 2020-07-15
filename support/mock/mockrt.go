@@ -54,7 +54,8 @@ type Runtime struct {
 	expectValidateCallerAny        bool
 	expectValidateCallerAddr       []addr.Address
 	expectValidateCallerType       []cid.Cid
-	expectRandomness               []*expectRandomness
+	expectRandomnessBeacon         []*expectRandomness
+	expectRandomnessTickets        []*expectRandomness
 	expectSends                    []*expectedMessage
 	expectVerifySigs               []*expectVerifySig
 	expectCreateActor              *expectCreateActor
@@ -242,9 +243,9 @@ func (rt *Runtime) GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool) {
 	return
 }
 
-func (rt *Runtime) GetRandomness(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte) abi.Randomness {
+func (rt *Runtime) GetRandomnessFromBeacon(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte) abi.Randomness {
 	rt.requireInCall()
-	if len(rt.expectRandomness) == 0 {
+	if len(rt.expectRandomnessBeacon) == 0 {
 		rt.failTestNow("unexpected call to get randomness for tag %v, epoch %v", tag, epoch)
 	}
 
@@ -253,14 +254,37 @@ func (rt *Runtime) GetRandomness(tag crypto.DomainSeparationTag, epoch abi.Chain
 			"         requested epoch: %d greater than current epoch %d\n", epoch, rt.epoch)
 	}
 
-	exp := rt.expectRandomness[0]
+	exp := rt.expectRandomnessBeacon[0]
 	if tag != exp.tag || epoch != exp.epoch || !bytes.Equal(entropy, exp.entropy) {
 		rt.failTest("unexpected get randomness\n"+
 			"         tag: %d, epoch: %d, entropy: %v\n"+
 			"expected tag: %d, epoch: %d, entropy: %v", tag, epoch, entropy, exp.tag, exp.epoch, exp.entropy)
 	}
 	defer func() {
-		rt.expectRandomness = rt.expectRandomness[1:]
+		rt.expectRandomnessBeacon = rt.expectRandomnessBeacon[1:]
+	}()
+	return exp.out
+}
+
+func (rt *Runtime) GetRandomnessFromTickets(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte) abi.Randomness {
+	rt.requireInCall()
+	if len(rt.expectRandomnessTickets) == 0 {
+		rt.failTestNow("unexpected call to get randomness for tag %v, epoch %v", tag, epoch)
+	}
+
+	if epoch > rt.epoch {
+		rt.failTestNow("attempt to get randomness from future\n"+
+			"         requested epoch: %d greater than current epoch %d\n", epoch, rt.epoch)
+	}
+
+	exp := rt.expectRandomnessTickets[0]
+	if tag != exp.tag || epoch != exp.epoch || !bytes.Equal(entropy, exp.entropy) {
+		rt.failTest("unexpected get randomness\n"+
+			"         tag: %d, epoch: %d, entropy: %v\n"+
+			"expected tag: %d, epoch: %d, entropy: %v", tag, epoch, entropy, exp.tag, exp.epoch, exp.entropy)
+	}
+	defer func() {
+		rt.expectRandomnessTickets = rt.expectRandomnessTickets[1:]
 	}()
 	return exp.out
 }
@@ -750,8 +774,17 @@ func (rt *Runtime) ExpectValidateCallerType(types ...cid.Cid) {
 	rt.expectValidateCallerType = types[:]
 }
 
-func (rt *Runtime) ExpectGetRandomness(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte, out abi.Randomness) {
-	rt.expectRandomness = append(rt.expectRandomness, &expectRandomness{
+func (rt *Runtime) ExpectGetRandomnessBeacon(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte, out abi.Randomness) {
+	rt.expectRandomnessBeacon = append(rt.expectRandomnessBeacon, &expectRandomness{
+		tag:     tag,
+		epoch:   epoch,
+		entropy: entropy,
+		out:     out,
+	})
+}
+
+func (rt *Runtime) ExpectGetRandomnessTickets(tag crypto.DomainSeparationTag, epoch abi.ChainEpoch, entropy []byte, out abi.Randomness) {
+	rt.expectRandomnessTickets = append(rt.expectRandomnessTickets, &expectRandomness{
 		tag:     tag,
 		epoch:   epoch,
 		entropy: entropy,
@@ -841,8 +874,11 @@ func (rt *Runtime) Verify() {
 	if len(rt.expectValidateCallerType) > 0 {
 		rt.failTest("missing expected ValidateCallerType %v", rt.expectValidateCallerType)
 	}
-	if len(rt.expectRandomness) > 0 {
-		rt.failTest("missing expected randomness %v", rt.expectRandomness)
+	if len(rt.expectRandomnessBeacon) > 0 {
+		rt.failTest("missing expected beacon randomness %v", rt.expectRandomnessBeacon)
+	}
+	if len(rt.expectRandomnessTickets) > 0 {
+		rt.failTest("missing expected ticket randomness %v", rt.expectRandomnessTickets)
 	}
 	if len(rt.expectSends) > 0 {
 		rt.failTest("missing expected send %v", rt.expectSends)
@@ -882,7 +918,8 @@ func (rt *Runtime) Reset() {
 	rt.expectValidateCallerAny = false
 	rt.expectValidateCallerAddr = nil
 	rt.expectValidateCallerType = nil
-	rt.expectRandomness = nil
+	rt.expectRandomnessBeacon = nil
+	rt.expectRandomnessTickets = nil
 	rt.expectSends = nil
 	rt.expectCreateActor = nil
 	rt.expectVerifySigs = nil
