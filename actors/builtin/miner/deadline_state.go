@@ -239,22 +239,21 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 // that this deadline isn't currently "open" (i.e., being proved at this point
 // in time).
 func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []*SectorOnChainInfo,
-	ssize abi.SectorSize, quant QuantSpec) error {
-	// TODO: This function is ridiculous. We should try to break it into
-	// smaller pieces.
-
+	ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
 	if len(sectors) == 0 {
-		return nil
+		return NewPowerPairZero(), nil
 	}
 
 	partitionDeadlineUpdates := make(map[abi.ChainEpoch][]uint64)
 
 	// First update partitions
 
+	newPower := NewPowerPairZero()
+
 	{
 		partitions, err := dl.PartitionsArray(store)
 		if err != nil {
-			return err
+			return NewPowerPairZero(), err
 		}
 
 		partIdx := partitions.Length()
@@ -266,13 +265,13 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 			// Get/create partition to update.
 			partition := new(Partition)
 			if found, err := partitions.Get(partIdx, partition); err != nil {
-				return err
+				return NewPowerPairZero(), err
 			} else if !found {
 				// Calling this once per loop is fine. We're almost
 				// never going to add more than one partition per call.
 				emptyArray, err := adt.MakeEmptyArray(store).Root()
 				if err != nil {
-					return err
+					return NewPowerPairZero(), err
 				}
 
 				partition = ConstructPartition(emptyArray)
@@ -290,15 +289,16 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 			sectors = sectors[size:]
 
 			// Add sectors to partition.
-			err = partition.AddSectors(store, partitionNewSectors, ssize, quant)
+			partitionNewPower, err := partition.AddSectors(store, partitionNewSectors, ssize, quant)
 			if err != nil {
-				return err
+				return NewPowerPairZero(), err
 			}
+			newPower = newPower.Add(partitionNewPower)
 
 			// Save partition back.
 			err = partitions.Set(partIdx, partition)
 			if err != nil {
-				return err
+				return NewPowerPairZero(), err
 			}
 
 			// Record deadline -> partition mapping so we can later update the deadlines.
@@ -315,7 +315,7 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 		// Save partitions back.
 		dl.Partitions, err = partitions.Root()
 		if err != nil {
-			return err
+			return NewPowerPairZero(), err
 		}
 	}
 
@@ -324,21 +324,21 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 	{
 		deadlineExpirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
 		if err != nil {
-			return xerrors.Errorf("failed to load expiration epochs: %w", err)
+			return NewPowerPairZero(), xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
 
 		if err = deadlineExpirations.AddManyToQueueValues(partitionDeadlineUpdates); err != nil {
-			return xerrors.Errorf("failed to add expirations for new deadlines: %w", err)
+			return NewPowerPairZero(), xerrors.Errorf("failed to add expirations for new deadlines: %w", err)
 		}
 
 		if dl.ExpirationsEpochs, err = deadlineExpirations.Root(); err != nil {
-			return err
+			return NewPowerPairZero(), err
 		}
 	}
 
 	dl.LiveSectors += uint64(len(sectors))
 
-	return nil
+	return newPower, nil
 }
 
 func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerminations []EpochSet, hasMore bool, err error) {

@@ -647,6 +647,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		rt.Abortf(exitcode.ErrIllegalArgument, "all prove commits failed to validate")
 	}
 
+	var newPower PowerPair
 	totalPledge := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
@@ -681,7 +682,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
 
-		err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize, quant)
+		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize, quant)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
@@ -708,7 +709,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	}).(abi.TokenAmount)
 
 	// Request power and pledge update for activated sector.
-	requestUpdatePowerForSectors(rt, info.SectorSize, newSectors, nil)
+	requestUpdatePower(rt, newPower)
 	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVestedAmount))
 
 	return nil
@@ -1808,17 +1809,6 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
-}
-
-func requestUpdatePowerForSectors(rt Runtime, sectorSize abi.SectorSize, sectorsAdded, sectorsRemoved []*SectorOnChainInfo) (delta PowerPair) {
-	if len(sectorsAdded)+len(sectorsRemoved) == 0 {
-		return
-	}
-	addPower := PowerForSectors(sectorSize, sectorsAdded)
-	remPower := PowerForSectors(sectorSize, sectorsRemoved)
-	delta = addPower.Sub(remPower)
-	requestUpdatePower(rt, delta)
-	return delta
 }
 
 func requestUpdatePower(rt Runtime, delta PowerPair) {

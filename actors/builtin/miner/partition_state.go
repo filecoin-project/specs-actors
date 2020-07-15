@@ -98,27 +98,27 @@ func (p *Partition) ActivePower() PowerPair {
 // AddSectors adds new sectors to the partition.
 // The sectors are "live", neither faulty, recovering, nor terminated.
 // Each new sector's expiration is scheduled shortly after its target expiration epoch.
-func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant QuantSpec) error {
+func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
-		return xerrors.Errorf("failed to load sector expirations: %w", err)
+		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
 	snos, power, _, err := expirations.AddActiveSectors(sectors, ssize)
 	if err != nil {
-		return xerrors.Errorf("failed to record new sector expirations: %w", err)
+		return NewPowerPairZero(), xerrors.Errorf("failed to record new sector expirations: %w", err)
 	}
 	if p.ExpirationsEpochs, err = expirations.Root(); err != nil {
-		return xerrors.Errorf("failed to store sector expirations: %w", err)
+		return NewPowerPairZero(), xerrors.Errorf("failed to store sector expirations: %w", err)
 	}
 
 	// Update other metadata using the calculated totals.
 	if p.Sectors, err = bitfield.MergeBitFields(p.Sectors, snos); err != nil {
-		return xerrors.Errorf("failed to record new sector numbers: %w", err)
+		return NewPowerPairZero(), xerrors.Errorf("failed to record new sector numbers: %w", err)
 	}
 	p.LivePower = p.LivePower.Add(power)
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
-	return nil
+	return power, nil
 }
 
 // Records a set of sectors as faulty.

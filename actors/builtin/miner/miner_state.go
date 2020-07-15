@@ -598,12 +598,12 @@ func (st *State) AssignSectorsToDeadlines(
 	partitionSize uint64,
 	sectorSize abi.SectorSize,
 	quant QuantSpec,
-) error {
+) (PowerPair, error) {
 	// We should definitely sort by sector number.
 	// Should we try to find a deadline with nearby sectors? That's probably really expensive.
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return err
+		return NewPowerPairZero(), err
 	}
 
 	// Sort sectors by number to get better runs in partition bitfields.
@@ -630,9 +630,10 @@ func (st *State) AssignSectorsToDeadlines(
 		return nil
 	})
 	if err != nil {
-		return err
+		return NewPowerPairZero(), err
 	}
 
+	newPower := NewPowerPairZero()
 	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
 		if len(newPartitions) == 0 {
 			continue
@@ -640,18 +641,24 @@ func (st *State) AssignSectorsToDeadlines(
 
 		dl := deadlineArr[dlIdx]
 
-		err = dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
+		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
 		if err != nil {
-			return err
+			return NewPowerPairZero(), err
 		}
+
+		newPower = newPower.Add(deadlineNewPower)
 
 		err = deadlines.UpdateDeadline(store, uint64(dlIdx), dl)
 		if err != nil {
-			return err
+			return NewPowerPairZero(), err
 		}
 	}
 
-	return st.SaveDeadlines(store, deadlines)
+	err = st.SaveDeadlines(store, deadlines)
+	if err != nil {
+		return NewPowerPairZero(), err
+	}
+	return newPower, nil
 }
 
 // Pops up to max early terminated sectors from all deadlines.
