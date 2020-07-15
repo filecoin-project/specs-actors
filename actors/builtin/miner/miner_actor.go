@@ -243,6 +243,10 @@ type SubmitWindowedPoStParams struct {
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
+	// The epoch at which these proofs is being committed to a particular chain.
+	ChainCommitEpoch abi.ChainEpoch
+	// A signature from the miner worker over the randomness at the chain commit epoch.
+	ChainCommitSig crypto.Signature
 }
 
 // Invoked by miner's worker address to submit their fallback post
@@ -255,6 +259,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
 	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
+
+	if params.ChainCommitEpoch >= currEpoch {
+		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d must be in the past", params.ChainCommitEpoch)
+	}
+	if params.ChainCommitEpoch < currEpoch - MaxPoStChainCommitAge {
+		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must exceed %d", params.ChainCommitEpoch, currEpoch - MaxPoStChainCommitAge)
+	}
+	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
+	err := rt.Syscalls().VerifySignature(params.ChainCommitSig, rt.Message().Caller(), commRand)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "chain commit signature invalid")
 
 	// Get the total power/reward. We need these to compute penalties.
 	rewardStats := requestCurrentEpochBlockReward(rt)

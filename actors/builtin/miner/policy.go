@@ -117,6 +117,10 @@ const MinSectorExpiration = 180 * builtin.EpochsInDay
 // and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
 const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 
+// MaxPoStChainCommitAge is the maximum distance back that a PoSt can commit to
+// a chain before being invalid
+const MaxPoStChainCommitAge = 5
+
 // Ratio of sector size to maximum deals per sector.
 // The maximum number of deals is the sector size divided by this number (2^27)
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
