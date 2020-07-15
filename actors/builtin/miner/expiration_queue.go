@@ -441,7 +441,7 @@ func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 		onTimeSectors = append(onTimeSectors, thisValue.OnTimeSectors)
 		earlySectors = append(earlySectors, thisValue.EarlySectors)
 		activePower = activePower.Add(thisValue.ActivePower)
-		faultyPower = faultyPower.Add(thisValue.ActivePower)
+		faultyPower = faultyPower.Add(thisValue.FaultyPower)
 		onTimePledge = big.Add(onTimePledge, thisValue.OnTimePledge)
 		return nil
 	}); err != nil && err != stopErr {
