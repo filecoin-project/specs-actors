@@ -204,12 +204,9 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 		return nil, err
 	}
 
-	// Update early expiration bitmap, if relevant.
-	if len(partitionsWithEarlyTerminations) > 0 {
-		dl.EarlyTerminations, err = bitfield.MergeBitFields(dl.EarlyTerminations, bitfield.NewFromSet(partitionsWithEarlyTerminations))
-		if err != nil {
-			return nil, err
-		}
+	// Update early expiration bitmap.
+	for _, partIdx := range partitionsWithEarlyTerminations {
+		dl.EarlyTerminations.Set(partIdx)
 	}
 
 	allOnTimeSectors, err := bitfield.MultiMerge(onTimeSectors...)
