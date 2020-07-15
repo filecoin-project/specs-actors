@@ -53,6 +53,21 @@ func TestBitfieldQueue(t *testing.T) {
 			Equals(t, queue)
 	})
 
+	t.Run("quantizes added epochs according to quantization spec", func(t *testing.T) {
+		queue := emptyBitfieldQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
+
+		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
+			queue.AddToQueueValues(abi.ChainEpoch(val), val)
+		}
+
+		// expect values to only be set on quantization boundaries
+		ExpectBQ().
+			Add(abi.ChainEpoch(3), 0, 2, 3).
+			Add(abi.ChainEpoch(8), 4, 7, 8).
+			Add(abi.ChainEpoch(13), 9).
+			Equals(t, queue)
+	})
+
 	t.Run("merges values withing same epoch", func(t *testing.T) {
 		queue := emptyBitfieldQueue(t)
 
