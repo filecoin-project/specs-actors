@@ -259,3 +259,9 @@ func assertBitfieldEquals(t *testing.T, bf *bitfield.BitField, values ...uint64)
 	})
 	require.NoError(t, err)
 }
+
+func assertBitfieldEmpty(t *testing.T, bf *bitfield.BitField) {
+	empty, err := bf.IsEmpty()
+	require.NoError(t, err)
+	assert.True(t, empty)
+}
