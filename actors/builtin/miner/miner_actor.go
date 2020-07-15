@@ -256,7 +256,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	newFaultPowerTotal := NewPowerPairZero()
 	retractedRecoveryPowerTotal := NewPowerPairZero()
 	recoveredPowerTotal := NewPowerPairZero()
-	penalty := abi.NewTokenAmount(0)
+	penaltyTotal := abi.NewTokenAmount(0)
 
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
@@ -300,7 +300,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
 		allIgnored := make([]*abi.BitField, 0, len(params.Partitions))
 
-		// Check and record skipped faults for each partition.
 		// Accumulate sectors info for proof verification.
 		for _, post := range params.Partitions {
 			key := PartitionKey{params.Deadline, post.Index}
@@ -374,7 +373,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
-		penalty, err = st.UnlockUnvestedFunds(store, currEpoch, totalPenaltyTarget)
+		penaltyTotal, err = st.UnlockUnvestedFunds(store, currEpoch, totalPenaltyTarget)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
 
 		// Record the successful submission
@@ -399,7 +398,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	// https://github.com/filecoin-project/specs-actors/issues/414
 	requestUpdatePower(rt, recoveredPowerTotal.Sub(newFaultPowerTotal))
 	// Burn penalties.
-	burnFundsAndNotifyPledgeChange(rt, penalty)
+	burnFundsAndNotifyPledgeChange(rt, penaltyTotal)
 	return nil
 }
 
