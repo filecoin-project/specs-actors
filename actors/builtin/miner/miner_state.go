@@ -623,8 +623,7 @@ func (st *State) AssignSectorsToDeadlines(
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
 	err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
-		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, idx, currentEpoch)
-		if dlInfo.Mutable() {
+		if deadlineIsMutable(st.ProvingPeriodStart, idx, currentEpoch) {
 			deadlineArr[int(idx)] = dl
 		}
 		return nil

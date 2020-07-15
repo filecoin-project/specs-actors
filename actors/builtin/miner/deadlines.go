@@ -78,12 +78,6 @@ func (d *DeadlineInfo) NextNotElapsed() *DeadlineInfo {
 	return next
 }
 
-// Returns true if the deadline is currently mutable. The open deadline and the
-// next open deadline are immutable.
-func (d *DeadlineInfo) Mutable() bool {
-	return d.CurrentEpoch < d.Open-WPoStChallengeWindow || d.Open+WPoStChallengeWindow <= d.CurrentEpoch
-}
-
 // Returns deadline-related calculations for a deadline in some proving period and the current epoch.
 func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) *DeadlineInfo {
 	if deadlineIdx < WPoStPeriodDeadlines {
@@ -149,4 +143,14 @@ func FindDeadline(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNum
 
 	}
 	return 0, xerrors.New("sectorNum not due at any deadline")
+}
+
+// Returns true if the deadline at the given index is currently mutable.
+func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
+	// Get the next non-elapsed deadline (i.e., the next time we care about
+	// mutations to the deadline).
+	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
+	// Ensure that the current epoch is at least one challenge window before
+	// that deadline opens.
+	return currentEpoch < dlInfo.Open-WPoStChallengeWindow
 }
