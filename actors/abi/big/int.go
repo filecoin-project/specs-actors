@@ -56,6 +56,7 @@ func FromString(s string) (Int, error) {
 
 func (bi Int) Copy() Int {
 	cpy := Int{}
+	cpy.Int = &big.Int{}
 	cpy.Int.Set(bi.Int)
 	return cpy
 }

@@ -82,7 +82,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, et, lt *adt.BalanceTable, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount,
+func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount,
 	nextEpoch abi.ChainEpoch, removeDeal bool) {
 	amountSlashed = abi.NewTokenAmount(0)
 
@@ -119,7 +119,7 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 
 		// the transfer amount can be less than or equal to zero if a deal is slashed before or at the deal's start epoch.
 		if totalPayment.GreaterThan(big.Zero()) {
-			st.transferBalance(rt, deal.Client, deal.Provider, totalPayment, et, lt)
+			m.transferBalance(rt, deal.Client, deal.Provider, totalPayment)
 		}
 	}
 
@@ -128,17 +128,17 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
 
 		// unlock remaining storage fee
-		if err := st.unlockBalance(lt, deal.Client, paymentRemaining, ClientStorageFee); err != nil {
+		if err := m.unlockBalance(deal.Client, paymentRemaining, ClientStorageFee); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock remaining client storage fee: %s", err)
 		}
 		// unlock client collateral
-		if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
+		if err := m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock client collateral: %s", err)
 		}
 
 		// slash provider collateral
 		amountSlashed = deal.ProviderCollateral
-		if err := st.slashBalance(et, lt, deal.Provider, amountSlashed, ProviderCollateral); err != nil {
+		if err := m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "slashing balance: %s", err)
 		}
 
@@ -146,7 +146,7 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 	}
 
 	if epoch >= deal.EndEpoch {
-		st.processDealExpired(rt, deal, state, lt, dealID)
+		m.processDealExpired(rt, deal, state)
 		return amountSlashed, epochUndefined, true
 	}
 
@@ -161,22 +161,22 @@ func (st *State) updatePendingDealState(rt Runtime, state *DealState, deal *Deal
 // Deal start deadline elapsed without appearing in a proven sector.
 // Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
-func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, deal *DealProposal) abi.TokenAmount {
-	if err := st.unlockBalance(lt, deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
+func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProposal) abi.TokenAmount {
+	if err := m.unlockBalance(deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client storage fee: %s", err)
 	}
-	if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
+	if err := m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client collateral: %s", err)
 	}
 
 	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
 
-	if err := st.slashBalance(et, lt, deal.Provider, amountSlashed, ProviderCollateral); err != nil {
+	if err := m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to slash balance: %s", err)
 	}
 
-	if err := st.unlockBalance(lt, deal.Provider, amountRemaining, ProviderCollateral); err != nil {
+	if err := m.unlockBalance(deal.Provider, amountRemaining, ProviderCollateral); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to unlock deal provider balance: %s", err)
 	}
 
@@ -184,22 +184,22 @@ func (st *State) processDealInitTimedOut(rt Runtime, et, lt *adt.BalanceTable, d
 }
 
 // Normal expiration. Delete deal and unlock collaterals for both miner and client.
-func (st *State) processDealExpired(rt Runtime, deal *DealProposal, state *DealState, lt *adt.BalanceTable, dealID abi.DealID) {
+func (m *marketStateMutation) processDealExpired(rt Runtime, deal *DealProposal, state *DealState) {
 	Assert(state.SectorStartEpoch != epochUndefined)
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
-	if err := st.unlockBalance(lt, deal.Provider, deal.ProviderCollateral, ProviderCollateral); err != nil {
+	if err := m.unlockBalance(deal.Provider, deal.ProviderCollateral, ProviderCollateral); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal provider balance: %s", err)
 	}
 
-	if err := st.unlockBalance(lt, deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
+	if err := m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal client balance: %s", err)
 	}
 }
 
-func (st *State) generateStorageDealID() abi.DealID {
-	ret := st.NextID
-	st.NextID = st.NextID + abi.DealID(1)
+func (m *marketStateMutation) generateStorageDealID() abi.DealID {
+	ret := m.nextDealId
+	m.nextDealId = m.nextDealId + abi.DealID(1)
 	return ret
 }
 
@@ -258,9 +258,6 @@ type marketStateMutation struct {
 	statePermit MarketStateMutationPermission
 	dealStates  *DealMetaArray
 
-	lockedPermit MarketStateMutationPermission
-	lockedTable  *adt.BalanceTable
-
 	escrowPermit MarketStateMutationPermission
 	escrowTable  *adt.BalanceTable
 
@@ -269,10 +266,18 @@ type marketStateMutation struct {
 
 	dpePermit    MarketStateMutationPermission
 	dealsByEpoch *SetMultimap
+
+	lockedPermit                  MarketStateMutationPermission
+	lockedTable                   *adt.BalanceTable
+	totalClientLockedCollateral   abi.TokenAmount
+	totalProviderLockedCollateral abi.TokenAmount
+	totalClientStorageFee         abi.TokenAmount
+
+	nextDealId abi.DealID
 }
 
-func newMarketStateMutation(st *State, store adt.Store) *marketStateMutation {
-	return &marketStateMutation{st: st, store: store}
+func (s *State) mutator(store adt.Store) *marketStateMutation {
+	return &marketStateMutation{st: s, store: store}
 }
 
 func (m *marketStateMutation) build() (*marketStateMutation, error) {
@@ -298,6 +303,9 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 			return nil, fmt.Errorf("failed to load locked table: %w", err)
 		}
 		m.lockedTable = lt
+		m.totalClientLockedCollateral = m.st.TotalClientLockedCollateral.Copy()
+		m.totalClientStorageFee = m.st.TotalClientStorageFee.Copy()
+		m.totalProviderLockedCollateral = m.st.TotalProviderLockedCollateral.Copy()
 	}
 
 	if m.escrowPermit != Invalid {
@@ -323,6 +331,8 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		}
 		m.dealsByEpoch = dbe
 	}
+
+	m.nextDealId = m.st.NextID
 
 	return m, nil
 }
@@ -375,6 +385,9 @@ func (m *marketStateMutation) commitState() error {
 		if m.st.LockedTable, err = m.lockedTable.Root(); err != nil {
 			return fmt.Errorf("failed to flush locked table: %w", err)
 		}
+		m.st.TotalClientLockedCollateral = m.totalClientLockedCollateral.Copy()
+		m.st.TotalProviderLockedCollateral = m.totalProviderLockedCollateral.Copy()
+		m.st.TotalClientStorageFee = m.totalClientStorageFee.Copy()
 	}
 
 	if m.escrowPermit == WritePermission {
@@ -394,6 +407,8 @@ func (m *marketStateMutation) commitState() error {
 			return fmt.Errorf("failed to flush deals by epoch: %w", err)
 		}
 	}
+
+	m.st.NextID = m.nextDealId
 
 	return nil
 }

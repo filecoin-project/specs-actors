@@ -109,6 +109,14 @@ func TestOperations(t *testing.T) {
 	assert.True(t, ta.Nil())
 }
 
+func TestCopy(t *testing.T) {
+	b1 := NewInt(1)
+	b2 := b1.Copy()
+	require.EqualValues(t, b1, b2)
+
+	require.EqualValues(t, Zero(), Zero().Copy())
+}
+
 func TestSum(t *testing.T) {
 	b1 := NewInt(1)
 	b2 := NewInt(2)
