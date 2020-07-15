@@ -1447,8 +1447,7 @@ func processEarlyTerminations(rt Runtime, maxSectors uint64) (more bool) {
 
 	// Terminate deals.
 	for _, params := range dealsToTerminate {
-		// TODO: shard into multiple sends? There's a max message size...
-		requestTerminateDeals(rt, params)
+		requestTerminateDeals(rt, params.Epoch, params.DealIDs)
 	}
 
 	// reschedule cron worker, if necessary.
@@ -1835,17 +1834,21 @@ func requestUpdatePower(rt Runtime, delta PowerPair) {
 	builtin.RequireSuccess(rt, code, "failed to update power with %v", delta)
 }
 
-func requestTerminateDeals(rt Runtime, params market.OnMinerSectorsTerminateParams) {
-	if len(params.DealIDs) == 0 {
-		return
+func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealID) {
+	for len(dealIDs) > 0 {
+		size := min64(cbg.MaxLength, uint64(len(dealIDs)))
+		_, code := rt.Send(
+			builtin.StorageMarketActorAddr,
+			builtin.MethodsMarket.OnMinerSectorsTerminate,
+			&market.OnMinerSectorsTerminateParams{
+				Epoch:   epoch,
+				DealIDs: dealIDs[:size],
+			},
+			abi.NewTokenAmount(0),
+		)
+		builtin.RequireSuccess(rt, code, "failed to terminate deals, exit code %v", code)
+		dealIDs = dealIDs[:size]
 	}
-	_, code := rt.Send(
-		builtin.StorageMarketActorAddr,
-		builtin.MethodsMarket.OnMinerSectorsTerminate,
-		&params,
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to terminate %d deals, exit code %v", len(params.DealIDs), code)
 }
 
 func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
@@ -1859,10 +1862,7 @@ func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
 		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
 	}
 
-	requestTerminateDeals(rt, market.OnMinerSectorsTerminateParams{
-		Epoch:   rt.CurrEpoch(),
-		DealIDs: dealIds,
-	})
+	requestTerminateDeals(rt, rt.CurrEpoch(), dealIds)
 }
 
 func scheduleEarlyTerminationWork(rt Runtime) {
