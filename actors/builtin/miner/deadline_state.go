@@ -107,6 +107,8 @@ func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 		Partitions:        emptyArrayCid,
 		ExpirationsEpochs: emptyArrayCid,
 		PostSubmissions:   abi.NewBitField(),
+		EarlyTerminations: abi.NewBitField(),
+		LiveSectors:       0,
 	}
 }
 
