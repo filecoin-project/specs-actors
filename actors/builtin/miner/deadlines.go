@@ -69,24 +69,19 @@ func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
 	return d.PeriodStart + WPoStProvingPeriod
 }
 
+// Returns the next instance of this deadline that has not yet elapsed.
+func (d *DeadlineInfo) NextNotElapsed() *DeadlineInfo {
+	next := d
+	for next.HasElapsed() {
+		next = NewDeadlineInfo(next.NextPeriodStart(), d.Index, d.CurrentEpoch)
+	}
+	return next
+}
+
 // Returns true if the deadline is currently mutable. The open deadline and the
 // next open deadline are immutable.
 func (d *DeadlineInfo) Mutable() bool {
 	return d.CurrentEpoch < d.Open-WPoStChallengeWindow || d.Open+WPoStChallengeWindow <= d.CurrentEpoch
-}
-
-// Calculates the deadline at some epoch for a proving period and returns the deadline-related calculations.
-func ComputeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *DeadlineInfo {
-	periodProgress := currEpoch - periodStart
-	if periodProgress >= WPoStProvingPeriod {
-		// Proving period has completely elapsed.
-		return NewDeadlineInfo(periodStart, WPoStPeriodDeadlines, currEpoch)
-	}
-	deadlineIdx := uint64(periodProgress / WPoStChallengeWindow)
-	if periodProgress < 0 { // Period not yet started.
-		deadlineIdx = 0
-	}
-	return NewDeadlineInfo(periodStart, deadlineIdx, currEpoch)
 }
 
 // Returns deadline-related calculations for a deadline in some proving period and the current epoch.

@@ -16,10 +16,9 @@ import (
 // A bitfield of sector numbers due at each deadline.
 // The sectors for each deadline are logically grouped into sequential partitions for proving.
 type Deadlines struct {
-	// TODO: Consider inlining part of the deadline struct (e.g.,
-	// active/assigned sectors) to make sector assignment cheaper. At the
-	// moment, assigning a sector requires loading all deadlines to figure
-	// out where best to assign new sectors.
+	// Note: we could inline part of the deadline struct (e.g., active/assigned sectors)
+	// to make new sector assignment cheaper. At the moment, assigning a sector requires
+	// loading all deadlines to figure out where best to assign new sectors.
 	Due [WPoStPeriodDeadlines]cid.Cid // []Deadline
 }
 
@@ -381,6 +380,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 
 	earlyTerminationsMap := make(map[abi.ChainEpoch][]*abi.BitField)
 
+	var partitionsFinished []uint64
 	err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
 		// Load partition.
 		var partition Partition
@@ -390,9 +390,11 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 		}
 
 		if !found {
-			// TODO: is this an error? I'm expecting
-			// this bitfield to be best-effort.
-			dl.EarlyTerminations.Unset(partIdx)
+			// If the partition doesn't exist any more, no problem.
+			// We don't remove partition indexes from this queue when sectors are re-scheduled,
+			// terminated early, etc.
+			// We do expect partition compaction to re-index the altered partitions, though.
+			partitionsFinished = append(partitionsFinished, partIdx)
 			return nil
 		}
 
@@ -416,7 +418,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 
 		// If we've processed all of them for this partition, unmark it in the deadline.
 		if !more {
-			dl.EarlyTerminations.Unset(partIdx)
+			partitionsFinished = append(partitionsFinished, partIdx)
 		}
 
 		// Save partition
@@ -431,13 +433,17 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 
 		return nil
 	})
-
 	switch err {
 	case nil:
 	case stopErr:
 		err = nil
 	default:
 		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
+	}
+
+	// Removed finished partitions from the index.
+	for _, finished := range partitionsFinished {
+		dl.EarlyTerminations.Unset(finished)
 	}
 
 	// Save deadline's partitions
