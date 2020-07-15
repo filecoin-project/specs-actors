@@ -48,11 +48,6 @@ type PowerPair struct {
 }
 
 // A set of sectors associated with a given epoch.
-type EpochSet struct {
-	Epoch   abi.ChainEpoch
-	Sectors *bitfield.BitField
-}
-
 func ConstructPartition(emptyArray cid.Cid) *Partition {
 	return &Partition{
 		Sectors:           abi.NewBitField(),
@@ -453,19 +448,23 @@ func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainE
 	return newFaultPower, failedRecoveryPower, nil
 }
 
-func (p *Partition) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerminations []EpochSet, hasMore bool, err error) {
+func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {
 	stopErr := errors.New("stop iter")
 
 	// Load early terminations.
 	earlyTerminatedQ, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization)
 	if err != nil {
-		return nil, false, err
+		return TerminationResult{}, false, err
 	}
 
 	var (
-		processed []uint64
-		remaining *EpochSet
+		processed        []uint64
+		remainingSectors *abi.BitField
+		remainingEpoch   abi.ChainEpoch
 	)
+
+	result.PartitionsProcessed = 1
+	result.Sectors = make(map[abi.ChainEpoch]*abi.BitField)
 
 	if err = earlyTerminatedQ.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
 		toProcess := sectors
@@ -474,8 +473,10 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 			return xerrors.Errorf("failed to count early terminations: %w", err)
 		}
 
-		if max < count {
-			toProcess, err = sectors.Slice(0, max)
+		limit := maxSectors - result.SectorsProcessed
+
+		if limit < count {
+			toProcess, err = sectors.Slice(0, limit)
 			if err != nil {
 				return xerrors.Errorf("failed to slice early terminations: %w", err)
 			}
@@ -484,43 +485,44 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 			if err != nil {
 				return xerrors.Errorf("failed to subtract processed early terminations: %w", err)
 			}
-			remaining = &EpochSet{epoch, rest}
+			remainingSectors = rest
+			remainingEpoch = epoch
 
-			max = 0
+			result.SectorsProcessed += limit
 		} else {
 			processed = append(processed, uint64(epoch))
-			max -= count
+			result.SectorsProcessed += count
 		}
 
-		earlyTerminations = append(earlyTerminations, EpochSet{epoch, toProcess})
+		result.Sectors[epoch] = toProcess
 
-		if max > 0 {
+		if result.SectorsProcessed < maxSectors {
 			return nil
 		}
 		return stopErr
 	}); err != nil && err != stopErr {
-		return nil, false, xerrors.Errorf("failed to walk early terminations queue: %w", err)
+		return TerminationResult{}, false, xerrors.Errorf("failed to walk early terminations queue: %w", err)
 	}
 
 	// Update early terminations
 	err = earlyTerminatedQ.BatchDelete(processed)
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to remove entries from early terminations queue: %w", err)
+		return TerminationResult{}, false, xerrors.Errorf("failed to remove entries from early terminations queue: %w", err)
 	}
 
-	if remaining != nil {
-		err = earlyTerminatedQ.Set(uint64(remaining.Epoch), remaining.Sectors)
+	if remainingSectors != nil {
+		err = earlyTerminatedQ.Set(uint64(remainingEpoch), remainingSectors)
 		if err != nil {
-			return nil, false, xerrors.Errorf("failed to update remaining entry early terminations queue: %w", err)
+			return TerminationResult{}, false, xerrors.Errorf("failed to update remaining entry early terminations queue: %w", err)
 		}
 	}
 
 	// Save early terminations.
 	p.EarlyTerminated, err = earlyTerminatedQ.Root()
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to store early terminations queue: %w", err)
+		return TerminationResult{}, false, xerrors.Errorf("failed to store early terminations queue: %w", err)
 	}
-	return earlyTerminations, earlyTerminatedQ.Length() > 0, nil
+	return result, earlyTerminatedQ.Length() > 0, nil
 }
 
 //

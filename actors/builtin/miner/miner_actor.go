@@ -864,6 +864,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	// They must be allowed to expire (and deposit burnt).
 
 	// Enforce partition/sector maximums.
+	// https://github.com/filecoin-project/specs-actors/issues/416
 	if uint64(len(params.Terminations)) > AddressedPartitionsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument,
 			"too many partitions for declarations %d, max %d",
@@ -955,10 +956,9 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 		return nil
 	})
 
-	if processEarlyTerminations(rt, SectorsMax) {
-		// Ok, we have more than max sectors to process? That should be
-		// impossible.
-		rt.Abortf(exitcode.ErrIllegalState, "failed to process more than SectorsMax sector terminations")
+	// Now, try to process these sectors.
+	if processEarlyTerminations(rt) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "")
 	}
 
 	requestUpdatePower(rt, powerDelta)
@@ -1378,7 +1378,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
 	case CronEventProcessEarlyTerminations:
-		if processEarlyTerminations(rt, AddressedSectorsMax) {
+		if processEarlyTerminations(rt) {
 			scheduleEarlyTerminationWork(rt)
 		}
 	}
@@ -1390,7 +1390,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 // Utility functions & helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-func processEarlyTerminations(rt Runtime, maxSectors uint64) (more bool) {
+func processEarlyTerminations(rt Runtime) (more bool) {
 	store := adt.AsStore(rt)
 
 	// TODO: We're using the current power+epoch reward. Technically, we
@@ -1400,47 +1400,46 @@ func processEarlyTerminations(rt Runtime, maxSectors uint64) (more bool) {
 	pwrTotal := requestCurrentTotalPower(rt).QualityAdjPower
 
 	var (
-		earlyTerminations []EpochSet
-		dealsToTerminate  []market.OnMinerSectorsTerminateParams
-		penalty           = big.Zero()
-		pledge            = big.Zero()
+		result           TerminationResult
+		dealsToTerminate []market.OnMinerSectorsTerminateParams
+		penalty          = big.Zero()
+		pledge           = big.Zero()
 	)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		// TODO: This doesn't take AddressedPartitionsMax into account.
-		// Do we need to do that?
-
 		var err error
-		earlyTerminations, more, err = st.PopEarlyTerminations(store, maxSectors)
+		result, more, err = st.PopEarlyTerminations(store, AddressedPartitionsMax, AddressedSectorsMax)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop early terminations")
 
 		// Nothing to do, don't waste any time.
 		// This can happen if we end up processing early terminations
 		// before the cron callback fires.
-		if len(earlyTerminations) == 0 {
+		if result.IsEmpty() {
 			return nil
 		}
 
 		info := getMinerInfo(rt, &st)
 
-		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(earlyTerminations))
-		for _, t := range earlyTerminations {
+		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(result.Sectors))
+		result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
 			// Note: this loads the sectors array root multiple times, redundantly.
 			// In the grand scheme of data being loaded here, it's not a big deal.
-			sectors, err := st.LoadSectorInfos(store, t.Sectors)
+			sectors, err := st.LoadSectorInfos(store, sectorNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
 			params := market.OnMinerSectorsTerminateParams{
-				Epoch:   t.Epoch,
+				Epoch:   epoch,
 				DealIDs: make([]abi.DealID, 0, len(sectors)), // estimate ~one deal per sector.
 			}
 			for _, sector := range sectors {
 				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
 				pledge = big.Add(pledge, sector.InitialPledge)
 			}
-			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, t.Epoch, epochReward, pwrTotal, sectors))
+			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch, epochReward, pwrTotal, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
-		}
+
+			return nil
+		})
 
 		// Unlock funds for penalties.
 		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
@@ -1455,7 +1454,7 @@ func processEarlyTerminations(rt Runtime, maxSectors uint64) (more bool) {
 	})
 
 	// We didn't do anything, abort.
-	if len(earlyTerminations) == 0 {
+	if result.IsEmpty() {
 		return more
 	}
 
@@ -1644,7 +1643,7 @@ func handleProvingDeadline(rt Runtime) {
 	// handle them at the next epoch.
 	if !hadEarlyTerminations && hasEarlyTerminations {
 		// First, try to process some of these terminations.
-		if processEarlyTerminations(rt, AddressedSectorsMax) {
+		if processEarlyTerminations(rt) {
 			// If that doesn't work, just defer till the next epoch.
 			scheduleEarlyTerminationWork(rt)
 		}

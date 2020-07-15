@@ -2,7 +2,6 @@ package miner
 
 import (
 	"errors"
-	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
@@ -338,15 +337,13 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 	return newPower, nil
 }
 
-func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerminations []EpochSet, hasMore bool, err error) {
+func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {
 	stopErr := errors.New("stop error")
 
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to load partitions: %w", err)
+		return TerminationResult{}, false, xerrors.Errorf("failed to load partitions: %w", err)
 	}
-
-	earlyTerminationsMap := make(map[abi.ChainEpoch][]*abi.BitField)
 
 	var partitionsFinished []uint64
 	if err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
@@ -367,21 +364,16 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 		}
 
 		// Pop early terminations.
-		sectorTerminations, more, err := partition.PopEarlyTerminations(store, max)
+		partitionResult, more, err := partition.PopEarlyTerminations(
+			store, maxSectors-result.SectorsProcessed,
+		)
 		if err != nil {
 			return xerrors.Errorf("failed to pop terminations from partition: %w", err)
 		}
 
-		// Sort through early terminations.
-		for _, t := range sectorTerminations {
-			earlyTerminationsMap[t.Epoch] = append(earlyTerminationsMap[t.Epoch], t.Sectors)
-			count, err := t.Sectors.Count()
-			if err != nil {
-				return xerrors.Errorf("failed to count early terminations in partition %d from epoch %v: err", partIdx, t.Epoch, err)
-			} else if count > max {
-				return xerrors.Errorf("partition %d returned too many sectors when popping early terminations", partIdx)
-			}
-			max -= count
+		err = result.Add(partitionResult)
+		if err != nil {
+			return xerrors.Errorf("failed to merge termination result: %w", err)
 		}
 
 		// If we've processed all of them for this partition, unmark it in the deadline.
@@ -395,13 +387,13 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 			return xerrors.Errorf("failed to store partition %v", partIdx)
 		}
 
-		if max == 0 {
-			return stopErr
+		if result.BelowLimit(maxPartitions, maxSectors) {
+			return nil
 		}
 
-		return nil
+		return stopErr
 	}); err != nil && err != stopErr {
-		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
+		return TerminationResult{}, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
 	}
 
 	// Removed finished partitions from the index.
@@ -412,29 +404,16 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 	// Save deadline's partitions
 	dl.Partitions, err = partitions.Root()
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to update partitions")
+		return TerminationResult{}, false, xerrors.Errorf("failed to update partitions")
 	}
 
 	// Update global early terminations bitfield.
 	noEarlyTerminations, err := dl.EarlyTerminations.IsEmpty()
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to count remaining early terminations partitions: %w", err)
+		return TerminationResult{}, false, xerrors.Errorf("failed to count remaining early terminations partitions: %w", err)
 	}
 
-	// This is safe because we sort immediately afterwards.
-	for epoch, sectors := range earlyTerminationsMap { //nolint:nomaprange
-		merged, err := bitfield.MultiMerge(sectors...)
-		if err != nil {
-			return nil, false, xerrors.Errorf("failed to merge early termination sector bitfields: %w", err)
-		}
-		earlyTerminations = append(earlyTerminations, EpochSet{epoch, merged})
-	}
-
-	sort.Slice(earlyTerminations, func(i, j int) bool {
-		return earlyTerminations[i].Epoch < earlyTerminations[j].Epoch
-	})
-
-	return earlyTerminations, !noEarlyTerminations, nil
+	return result, !noEarlyTerminations, nil
 }
 
 func (dl *Deadline) AddPoStSubmissions(idxs []uint64) {
