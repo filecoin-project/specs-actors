@@ -467,7 +467,7 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 		remaining *EpochSet
 	)
 
-	iterErr := earlyTerminatedQ.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
+	if err = earlyTerminatedQ.ForEach(func(epoch abi.ChainEpoch, sectors *bitfield.BitField) error {
 		toProcess := sectors
 		count, err := sectors.Count()
 		if err != nil {
@@ -498,13 +498,8 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 			return nil
 		}
 		return stopErr
-	})
-
-	// Check to see if we have an error other than "stop".
-	switch iterErr {
-	case stopErr, nil:
-	default:
-		return nil, false, xerrors.Errorf("failed to walk early terminations queue: %w", iterErr)
+	}); err != nil && err != stopErr {
+		return nil, false, xerrors.Errorf("failed to walk early terminations queue: %w", err)
 	}
 
 	// Update early terminations

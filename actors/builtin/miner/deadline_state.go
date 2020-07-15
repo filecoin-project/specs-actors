@@ -352,7 +352,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 	earlyTerminationsMap := make(map[abi.ChainEpoch][]*abi.BitField)
 
 	var partitionsFinished []uint64
-	err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
+	if err = dl.EarlyTerminations.ForEach(func(partIdx uint64) error {
 		// Load partition.
 		var partition Partition
 		found, err := partitions.Get(partIdx, &partition)
@@ -403,12 +403,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, max uint64) (earlyTerm
 		}
 
 		return nil
-	})
-	switch err {
-	case nil:
-	case stopErr:
-		err = nil
-	default:
+	}); err != nil && err != stopErr {
 		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
 	}
 
