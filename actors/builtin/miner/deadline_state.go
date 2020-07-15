@@ -13,8 +13,8 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
-// A bitfield of sector numbers due at each deadline.
-// The sectors for each deadline are logically grouped into sequential partitions for proving.
+// Deadlines contains Deadline objects, describing the sectors due at the given
+// deadline and their state (faulty, terminated, recovering, etc.).
 type Deadlines struct {
 	// Note: we could inline part of the deadline struct (e.g., active/assigned sectors)
 	// to make new sector assignment cheaper. At the moment, assigning a sector requires
@@ -22,6 +22,7 @@ type Deadlines struct {
 	Due [WPoStPeriodDeadlines]cid.Cid // []Deadline
 }
 
+// Deadline holds the state for all sectors due at a specific deadline.
 type Deadline struct {
 	// Partitions in this deadline, in order.
 	// The keys of this AMT are always sequential integers beginning with zero.
