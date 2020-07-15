@@ -16,34 +16,33 @@ import (
 // ExpirationSet is a collection of sector numbers that are expiring, either due to
 // expected "on-time" expiration at the end of their life, or unexpected "early" termination
 // due to being faulty for too long consecutively.
-// The power for the expiring sectors is divided into active and currently-faulty.
 // Note that there is not a direct correspondence between on-time sectors and active power;
 // a sector may be faulty but expiring on-time if it faults just prior to expected termination.
 // Early sectors are always faulty, and active power always represents on-time sectors.
 type ExpirationSet struct {
-	OnTimeSectors *abi.BitField
-	EarlySectors  *abi.BitField
-	ActivePower   PowerPair
-	FaultyPower   PowerPair
-	Pledge        abi.TokenAmount
+	OnTimeSectors *abi.BitField   // Sectors expiring "on time" at the end of their committed life
+	EarlySectors  *abi.BitField   // Sectors expiring "early" due to being faulty for too long
+	OnTimePledge  abi.TokenAmount // Pledge total for the on-time sectors
+	ActivePower   PowerPair       // Power that is currently active (not faulty)
+	FaultyPower   PowerPair       // Power that is currently faulty
 }
 
 func NewExpirationSetEmpty() *ExpirationSet {
-	return NewExpirationSet(abi.NewBitField(), abi.NewBitField(), NewPowerPairZero(), NewPowerPairZero(), big.Zero())
+	return NewExpirationSet(abi.NewBitField(), abi.NewBitField(), big.Zero(), NewPowerPairZero(), NewPowerPairZero())
 }
 
-func NewExpirationSet(onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair, pledge abi.TokenAmount) *ExpirationSet {
+func NewExpirationSet(onTimeSectors, earlySectors *abi.BitField, onTimePledge abi.TokenAmount, activePower, faultyPower PowerPair) *ExpirationSet {
 	return &ExpirationSet{
 		OnTimeSectors: onTimeSectors,
 		EarlySectors:  earlySectors,
+		OnTimePledge:  onTimePledge,
 		ActivePower:   activePower,
 		FaultyPower:   faultyPower,
-		Pledge:        pledge,
 	}
 }
 
 // Adds sectors and power to the expiration set in place.
-func (es *ExpirationSet) Add(onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair, initialPledge abi.TokenAmount) error {
+func (es *ExpirationSet) Add(onTimeSectors, earlySectors *abi.BitField, onTimePledge abi.TokenAmount, activePower, faultyPower PowerPair) error {
 	var err error
 	if es.OnTimeSectors, err = bitfield.MergeBitFields(es.OnTimeSectors, onTimeSectors); err != nil {
 		return err
@@ -51,14 +50,14 @@ func (es *ExpirationSet) Add(onTimeSectors, earlySectors *abi.BitField, activePo
 	if es.EarlySectors, err = bitfield.MergeBitFields(es.EarlySectors, earlySectors); err != nil {
 		return err
 	}
+	es.OnTimePledge = big.Add(es.OnTimePledge, onTimePledge)
 	es.ActivePower = es.ActivePower.Add(activePower)
 	es.FaultyPower = es.FaultyPower.Add(faultyPower)
-	es.Pledge = big.Add(es.Pledge, initialPledge)
 	return nil
 }
 
 // Removes sectors and power from the expiration set in place.
-func (es *ExpirationSet) Remove(onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair, initialPledge abi.TokenAmount) error {
+func (es *ExpirationSet) Remove(onTimeSectors, earlySectors *abi.BitField, onTimePledge abi.TokenAmount, activePower, faultyPower PowerPair) error {
 	var err error
 	if es.OnTimeSectors, err = bitfield.SubtractBitField(es.OnTimeSectors, onTimeSectors); err != nil {
 		return err
@@ -66,15 +65,15 @@ func (es *ExpirationSet) Remove(onTimeSectors, earlySectors *abi.BitField, activ
 	if es.EarlySectors, err = bitfield.SubtractBitField(es.EarlySectors, earlySectors); err != nil {
 		return err
 	}
+	es.OnTimePledge = big.Sub(es.OnTimePledge, onTimePledge)
 	es.ActivePower = es.ActivePower.Sub(activePower)
 	es.FaultyPower = es.FaultyPower.Sub(faultyPower)
-	es.Pledge = big.Sub(es.Pledge, initialPledge)
 	// Check underflow.
+	if es.OnTimePledge.LessThan(big.Zero()) {
+		return xerrors.Errorf("expiration set pledge underflow: %v", es)
+	}
 	if es.ActivePower.QA.LessThan(big.Zero()) || es.FaultyPower.QA.LessThan(big.Zero()) {
 		return xerrors.Errorf("expiration set power underflow: %v", es)
-	}
-	if es.Pledge.LessThan(big.Zero()) {
-		return xerrors.Errorf("expiration set pledge underflow: %v", es)
 	}
 	return nil
 }
@@ -150,12 +149,12 @@ func (q ExpirationQueue) RescheduleExpirations(newExpiration abi.ChainEpoch, sec
 
 // Re-schedules sectors to expire at an early expiration epoch, if they wouldn't expire before then anyway.
 // The sectors must not be currently faulty, so must be registered as expiring on-time rather than early.
+// The pledge for the now-early sectors is removed from the queue.
 // Returns the total power represented by the sectors.
 func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	var sectorsTotal []uint64
 	expiringPower := NewPowerPairZero()
 	rescheduledPower := NewPowerPairZero()
-	rescheduledPledge := big.Zero()
 
 	// Group sectors by their target expiration, then remove from existing queue entries according to those groups.
 	for _, group := range groupSectorsByExpiration(ssize, sectors) {
@@ -167,6 +166,7 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 		if group.epoch <= newExpiration {
 			// Don't reschedule sectors that are already due to expire on-time before the fault-driven expiration,
 			// but do represent their power as now faulty.
+			// Their pledge remains as "on-time".
 			es.ActivePower = es.ActivePower.Sub(group.power)
 			es.FaultyPower = es.FaultyPower.Add(group.power)
 			expiringPower = expiringPower.Add(group.power)
@@ -176,12 +176,12 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 			if es.OnTimeSectors, err = bitfield.SubtractBitField(es.OnTimeSectors, sectorsBf); err != nil {
 				return NewPowerPairZero(), err
 			}
+			es.OnTimePledge = big.Sub(es.OnTimePledge, group.pledge)
 			es.ActivePower = es.ActivePower.Sub(group.power)
 
 			// Accumulate the sectors and power removed.
 			sectorsTotal = append(sectorsTotal, group.sectors...)
 			rescheduledPower = rescheduledPower.Add(group.power)
-			rescheduledPledge = big.Add(rescheduledPledge, group.pledge)
 		}
 		if err = q.mustUpdateOrDelete(group.epoch, &es); err != nil {
 			return NewPowerPairZero(), err
@@ -191,8 +191,9 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 	// Add sectors to new expiration as early-terminating and faulty.
 	earlySectors := bitfield.NewFromSet(sectorsTotal)
 	noOnTimeSectors := abi.NewBitField()
+	noOnTimePledge := abi.NewTokenAmount(0)
 	noActivePower := NewPowerPairZero()
-	if err := q.add(newExpiration, noOnTimeSectors, earlySectors, noActivePower, rescheduledPower, rescheduledPledge); err != nil {
+	if err := q.add(newExpiration, noOnTimeSectors, earlySectors, noActivePower, rescheduledPower, noOnTimePledge); err != nil {
 		return NewPowerPairZero(), err
 	}
 
@@ -204,13 +205,13 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 	var rescheduedEpochs []uint64
 	var rescheduledSectors []*abi.BitField
 	rescheduledPower := NewPowerPairZero()
-	rescheduledPledge := big.Zero()
 
 	var es ExpirationSet
 	if err := q.Array.ForEach(&es, func(e int64) error {
 		epoch := abi.ChainEpoch(e)
 		if epoch <= faultExpiration {
 			// Regardless of whether the sectors were expiring on-time or early, all the power is now faulty.
+			// Pledge is still on-time.
 			es.FaultyPower = es.FaultyPower.Add(es.ActivePower)
 			es.ActivePower = NewPowerPairZero()
 			if err := q.mustUpdate(epoch, &es); err != nil {
@@ -221,7 +222,6 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 			rescheduledSectors = append(rescheduledSectors, es.OnTimeSectors, es.EarlySectors)
 			rescheduledPower = rescheduledPower.Add(es.ActivePower)
 			rescheduledPower = rescheduledPower.Add(es.FaultyPower)
-			rescheduledPledge = big.Add(rescheduledPledge, es.Pledge)
 		}
 		return nil
 	}); err != nil {
@@ -233,7 +233,10 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 	if err != nil {
 		return xerrors.Errorf("failed to merge rescheduled sectors: %w", err)
 	}
-	if err = q.add(faultExpiration, abi.NewBitField(), allRescheduled, NewPowerPairZero(), rescheduledPower, rescheduledPledge); err != nil {
+	noOnTimeSectors := abi.NewBitField()
+	noActivePower := NewPowerPairZero()
+	noOnTimePledge := abi.NewTokenAmount(0)
+	if err = q.add(faultExpiration, noOnTimeSectors, allRescheduled, noActivePower, rescheduledPower, noOnTimePledge); err != nil {
 		return err
 	}
 
@@ -247,6 +250,7 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 
 // Removes sectors from any queue entries in which they appear that are earlier then their scheduled expiration epoch,
 // and schedules them at their expected termination epoch.
+// Pledge for the sectors is re-added as on-time.
 // Power for the sectors is changes from faulty to active (whether rescheduled or not).
 // Returns the newly-recovered power. Fails if any sectors are not found in the queue.
 func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
@@ -278,13 +282,14 @@ func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 			var found bool
 			if _, found = onTimeSectors[sno]; found {
 				// If the sector expires on-time at this epoch, leave it here but change faulty power to active.
+				// The pledge is already part of the on-time pledge at this entry.
 				es.FaultyPower = es.FaultyPower.Sub(power)
 				es.ActivePower = es.ActivePower.Add(power)
 			} else if _, found = earlySectors[sno]; found {
 				// If the sector expires early at this epoch, remove it for re-scheduling.
+				// It's not part of the on-time pledge number here.
 				es.EarlySectors.Unset(sno)
 				es.FaultyPower = es.FaultyPower.Sub(power)
-				es.Pledge = big.Sub(es.Pledge, sector.InitialPledge)
 				sectorsRescheduled = append(sectorsRescheduled, sector)
 			}
 			if found {
@@ -310,7 +315,7 @@ func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 }
 
 // Removes some sectors and adds some others.
-// The sectors being replace must not be faulty, so must be scheduled on-time rather than early expiration.
+// The sectors being replaced must not be faulty, so must be scheduled for on-time rather than early expiration.
 // The sectors added are assumed to be not faulty.
 // Returns the old a new sector number bitfields, and delta to power and pledge, new minus old.
 func (q ExpirationQueue) ReplaceSectors(oldSectors, newSectors []*SectorOnChainInfo, ssize abi.SectorSize) (*abi.BitField, *abi.BitField, PowerPair, abi.TokenAmount, error) {
@@ -365,6 +370,8 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 			if _, found = onTimeSectors[sno]; found {
 				es.OnTimeSectors.Unset(sno)
 				removed.OnTimeSectors.Set(sno)
+				es.OnTimePledge = big.Sub(es.OnTimePledge, sector.InitialPledge)
+				removed.OnTimePledge = big.Add(removed.OnTimePledge, sector.InitialPledge)
 			} else if _, found = earlySectors[sno]; found {
 				es.EarlySectors.Unset(sno)
 				removed.EarlySectors.Set(sno)
@@ -378,7 +385,7 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 					es.ActivePower = es.ActivePower.Sub(power)
 					removed.ActivePower = removed.ActivePower.Add(power)
 				}
-				es.Pledge = big.Sub(es.Pledge, sector.InitialPledge)
+				es.OnTimePledge = big.Sub(es.OnTimePledge, sector.InitialPledge)
 				if _, r := recoveringMap[sno]; r {
 					recoveringPower = recoveringPower.Add(power)
 				}
@@ -404,7 +411,7 @@ func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 	var earlySectors []*abi.BitField
 	activePower := NewPowerPairZero()
 	faultyPower := NewPowerPairZero()
-	pledge := big.Zero()
+	onTimePledge := big.Zero()
 
 	var poppedKeys []uint64
 	var thisValue ExpirationSet
@@ -418,7 +425,7 @@ func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 		earlySectors = append(earlySectors, thisValue.EarlySectors)
 		activePower = activePower.Add(thisValue.ActivePower)
 		faultyPower = faultyPower.Add(thisValue.ActivePower)
-		pledge = big.Add(pledge, thisValue.Pledge)
+		onTimePledge = big.Add(onTimePledge, thisValue.OnTimePledge)
 		return nil
 	}); err != nil && err != stopErr {
 		return nil, err
@@ -436,7 +443,7 @@ func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 	if err != nil {
 		return nil, err
 	}
-	return NewExpirationSet(allOnTime, allEarly, activePower, faultyPower, pledge), nil
+	return NewExpirationSet(allOnTime, allEarly, onTimePledge, activePower, faultyPower), nil
 }
 
 func (q ExpirationQueue) add(epoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair,
@@ -446,7 +453,7 @@ func (q ExpirationQueue) add(epoch abi.ChainEpoch, onTimeSectors, earlySectors *
 		return err
 	}
 
-	if err = es.Add(onTimeSectors, earlySectors, activePower, faultyPower, pledge); err != nil {
+	if err = es.Add(onTimeSectors, earlySectors, pledge, activePower, faultyPower); err != nil {
 		return xerrors.Errorf("failed to add expiration values for epoch %v: %w", epoch, err)
 	}
 
@@ -461,7 +468,7 @@ func (q ExpirationQueue) remove(epoch abi.ChainEpoch, onTimeSectors, earlySector
 		return err
 	}
 
-	if err := es.Remove(onTimeSectors, earlySectors, activePower, faultyPower, pledge); err != nil {
+	if err := es.Remove(onTimeSectors, earlySectors, pledge, activePower, faultyPower); err != nil {
 		return xerrors.Errorf("failed to remove expiration values for queue epoch %v: %w", epoch, err)
 	}
 
