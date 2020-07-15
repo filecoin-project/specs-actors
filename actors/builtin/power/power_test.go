@@ -161,16 +161,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)		
-		actor.createMinerBasic(rt, owner, owner, miner4)				
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
 		actor.createMinerBasic(rt, owner, owner, miner5)
 
 		actor.updateClaimedPower(rt, miner1, div(smallPowerUnit, 2), smallPowerUnit)
-		actor.updateClaimedPower(rt, miner2, div(smallPowerUnit, 2), smallPowerUnit)		
-		actor.updateClaimedPower(rt, miner3, div(smallPowerUnit, 2), smallPowerUnit)				
+		actor.updateClaimedPower(rt, miner2, div(smallPowerUnit, 2), smallPowerUnit)
+		actor.updateClaimedPower(rt, miner3, div(smallPowerUnit, 2), smallPowerUnit)
 
 		actor.updateClaimedPower(rt, miner4, div(powerUnit, 2), powerUnit)
-		actor.updateClaimedPower(rt, miner5, div(powerUnit, 2), powerUnit)		
+		actor.updateClaimedPower(rt, miner5, div(powerUnit, 2), powerUnit)
 
 		// Below threshold small miner power is counted
 		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 3), mul(powerUnit, 2))
@@ -186,7 +186,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
 
 		// Less than 3 miners above threshold again small miner power is counted again
-	
+
 		actor.updateClaimedPower(rt, miner3, div(delta.Neg(), 2), delta.Neg())
 		actor.expectTotalPower(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 	})
@@ -198,8 +198,8 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)		
-		actor.createMinerBasic(rt, owner, owner, miner4)				
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
@@ -222,7 +222,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)		
+		actor.createMinerBasic(rt, owner, owner, miner3)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, big.Zero())
 		actor.updateClaimedPower(rt, miner2, powerUnit, big.Zero())
@@ -243,7 +243,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		actor.createMinerBasic(rt, owner, owner, miner3)	
+		actor.createMinerBasic(rt, owner, owner, miner3)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
@@ -312,6 +312,55 @@ func TestCron(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("event scheduled in past called next round", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// run cron once to put it in a clean state at epoch 4
+		rt.SetEpoch(4)
+		expectedRawBytePower := big.NewInt(0)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
+
+		// enroll a cron task at epoch 2 (which is in the past)
+		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
+
+		// run cron again in the future
+		rt.SetEpoch(6)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
+
+		// assert used cron events are cleaned up
+		st := getState(rt)
+
+		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue)
+		require.NoError(t, err)
+
+		var ev power.CronEvent
+		err = mmap.ForEach(adt.IntKey(int64(2)), &ev, func(i int64) error {
+			t.Errorf("Unexpected bitfield at epoch %d", i)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("fails to enroll if epoch is negative", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// enroll a cron task at epoch 2 (which is in the past)
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
+			actor.enrollCronEvent(rt, miner1, -2, []byte{0x1, 0x3})
+		})
+	})
+
 	t.Run("handles failed call", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -369,9 +418,9 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		commR := tutil.MakeCID("commR")
-		commD := tutil.MakeCID("commD")		
+		commD := tutil.MakeCID("commD")
 		sealInfo := &abi.SealVerifyInfo{
-			SealedCID: commR,
+			SealedCID:   commR,
 			UnsealedCID: commD,
 		}
 		actor.submitPoRepForBulkVerify(rt, miner, sealInfo)
@@ -392,7 +441,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		assert.Equal(t, commR, storedSealInfo.SealedCID)
 	})
 
-	t.Run("aborts when too many poreps", func(t *testing.T){
+	t.Run("aborts when too many poreps", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -413,7 +462,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		})
 
 		// Gas only charged for successful submissions
-		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal*power.MaxMinerProveCommitsPerEpoch)
+		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal * power.MaxMinerProveCommitsPerEpoch)
 	})
 }
 
@@ -461,7 +510,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
-	assert.Equal(h.t, abi.ChainEpoch(-1), st.LastEpochTick)
+	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronEpoch)
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.MinerAboveMinPowerCount)
 

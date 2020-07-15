@@ -79,13 +79,13 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.CronEventQueue: %w", err)
 	}
 
-	// t.LastEpochTick (abi.ChainEpoch) (int64)
-	if t.LastEpochTick >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.LastEpochTick)); err != nil {
+	// t.FirstCronEpoch (abi.ChainEpoch) (int64)
+	if t.FirstCronEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.FirstCronEpoch)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.LastEpochTick-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.FirstCronEpoch-1)); err != nil {
 			return err
 		}
 	}
@@ -236,7 +236,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.CronEventQueue = c
 
 	}
-	// t.LastEpochTick (abi.ChainEpoch) (int64)
+	// t.FirstCronEpoch (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -259,7 +259,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.LastEpochTick = abi.ChainEpoch(extraI)
+		t.FirstCronEpoch = abi.ChainEpoch(extraI)
 	}
 	// t.Claims (cid.Cid) (struct)
 
