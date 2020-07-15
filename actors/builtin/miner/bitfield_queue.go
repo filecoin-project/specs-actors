@@ -12,20 +12,23 @@ import (
 )
 
 // Wrapper for working with an AMT[ChainEpoch]*Bitfield functioning as a queue, bucketed by epoch.
+// Keys in the queue are quantized (upwards), modulo some offset, to reduce the cardinality of keys.
 type BitfieldQueue struct {
 	*adt.Array
+	quant QuantSpec
 }
 
-func LoadBitfieldQueue(store adt.Store, root cid.Cid) (BitfieldQueue, error) {
+func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec) (BitfieldQueue, error) {
 	arr, err := adt.AsArray(store, root)
 	if err != nil {
 		return BitfieldQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}
-	return BitfieldQueue{arr}, nil
+	return BitfieldQueue{arr, quant}, nil
 }
 
 // Adds values to the queue entry for an epoch.
-func (q BitfieldQueue) AddToQueue(epoch abi.ChainEpoch, values *abi.BitField) error {
+func (q BitfieldQueue) AddToQueue(rawEpoch abi.ChainEpoch, values *abi.BitField) error {
+	epoch := q.quant.QuantizeUp(rawEpoch)
 	bf := abi.NewBitField()
 	if _, err := q.Array.Get(uint64(epoch), bf); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
@@ -83,8 +86,6 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (*abi.BitField, error) {
 func (q BitfieldQueue) ForEach(cb func(epoch abi.ChainEpoch, bf *bitfield.BitField) error) error {
 	var bf bitfield.BitField
 	return q.Array.ForEach(&bf, func(i int64) error {
-		// TODO: Do we really need to do this, or can we just tell the
-		// caller not to mess with the bitfield?
 		cpy, err := bf.Copy()
 		if err != nil {
 			return xerrors.Errorf("failed to copy bitfield in queue: %w", err)

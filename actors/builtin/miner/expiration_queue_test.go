@@ -3,51 +3,67 @@ package miner
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 func TestExpirations(t *testing.T) {
+	quant := QuantSpec{unit: 10, offset: 3}
 	sectors := []*SectorOnChainInfo{{
-		Expiration:         10,
+		Expiration:         7, // 7 -> 13
 		SectorNumber:       1,
 		DealWeight:         big.Zero(),
 		VerifiedDealWeight: big.Zero(),
 		InitialPledge:      big.Zero(),
 	}, {
-		Expiration:         10,
+		Expiration:         8, // 8 -> 13
 		SectorNumber:       2,
 		DealWeight:         big.Zero(),
 		VerifiedDealWeight: big.Zero(),
 		InitialPledge:      big.Zero(),
 	}, {
-		Expiration:         12,
+		Expiration:         14, // 14 -> 23
 		SectorNumber:       3,
 		DealWeight:         big.Zero(),
 		VerifiedDealWeight: big.Zero(),
 		InitialPledge:      big.Zero(),
 	}, {
-		Expiration:         10,
+		Expiration:         13, // 13 -> 13
 		SectorNumber:       4,
 		DealWeight:         big.Zero(),
 		VerifiedDealWeight: big.Zero(),
 		InitialPledge:      big.Zero(),
 	}}
-	result := groupSectorsByExpiration(2048, sectors)
-	expected := []sectorEpochSet{{
-		epoch:   0,
+	result := groupSectorsByExpiration(2048, sectors, quant)
+	expected := []*sectorEpochSet{{
+		epoch:   13,
 		sectors: []uint64{1, 2, 4},
+		power:   NewPowerPair(big.NewIntUnsigned(2048*3), big.NewIntUnsigned(2048*3)),
+		pledge:  big.Zero(),
 	}, {
-		epoch:   2,
+		epoch:   23,
 		sectors: []uint64{3},
+		power:   NewPowerPair(big.NewIntUnsigned(2048), big.NewIntUnsigned(2048)),
+		pledge:  big.Zero(),
 	}}
-	require.Equal(t, expected, result)
+	require.Equal(t, len(expected), len(result))
+	for i, ex := range expected {
+		assertSectorSet(t, ex, &result[i])
+	}
 }
 
 func TestExpirationsEmpty(t *testing.T) {
 	sectors := []*SectorOnChainInfo{}
-	result := groupSectorsByExpiration(2048, sectors)
+	result := groupSectorsByExpiration(2048, sectors, NoQuantization)
 	expected := []sectorEpochSet{}
 	require.Equal(t, expected, result)
+}
+
+func assertSectorSet(t *testing.T, expected, actual *sectorEpochSet) {
+	assert.Equal(t, expected.epoch, actual.epoch)
+	assert.Equal(t, expected.sectors, actual.sectors)
+	assert.True(t, expected.power.Equals(actual.power), "expected %v, actual %v", expected.power, actual.power)
+	assert.True(t, expected.pledge.Equals(actual.pledge), "expected %v, actual %v", expected.pledge, actual.pledge)
 }

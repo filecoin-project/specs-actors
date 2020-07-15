@@ -519,7 +519,8 @@ func (st *State) WalkSectors(
 // TODO: This function can return errors for both illegal arguments, and invalid
 // state. However, we have no way to distinguish between them. We should fix
 // this.
-func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectorSize abi.SectorSize, sectors []SectorLocation) error {
+func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectors []SectorLocation,
+	ssize abi.SectorSize, quant QuantSpec) error {
 	// Mark replaced sectors for on-time expiration at the end of the current proving period.
 	// They can't be removed right now because they may yet be challenged for Window PoSt in this period,
 	// and the deadline assignments can't be changed mid-period.
@@ -552,7 +553,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 				// pick the next one.
 				dlInfo = NewDeadlineInfo(dlInfo.NextPeriodStart(), dlIdx, currEpoch)
 			}
-			newEpoch = dlInfo.Last() // TODO: make sure this isn't off by one, or anyting.
+			newEpoch = dlInfo.Last()
 			return false, nil
 		},
 		// Process partitions in deadline.
@@ -578,7 +579,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 			}
 
 			// TODO: What if I replace the same sector multiple times? I guess that's OK...
-			err = partition.RescheduleExpirations(store, newEpoch, sectorInfos, sectorSize)
+			err = partition.RescheduleExpirations(store, newEpoch, sectorInfos, ssize, quant)
 			if err != nil {
 				return false, err
 			}
@@ -588,9 +589,9 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 
 			// Update the expirations.
 			for _, sector := range sectorInfos {
-				powerBefore := QAPowerForSector(sectorSize, sector)
+				powerBefore := QAPowerForSector(ssize, sector)
 				sector.Expiration = newEpoch
-				powerAfter := QAPowerForSector(sectorSize, sector)
+				powerAfter := QAPowerForSector(ssize, sector)
 				if !powerBefore.Equals(powerAfter) {
 					return false, xerrors.Errorf(
 						"failed to schedule early expiration for replaced sector: power changes from %s to %s",
@@ -619,7 +620,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 
 			// Record partitions that now expire at the new epoch.
 			// Don't _remove_ anything from this queue, that's not safe.
-			if err := dl.AddExpirationPartitions(store, newEpoch, rescheduledPartitions...); err != nil {
+			if err := dl.AddExpirationPartitions(store, newEpoch, rescheduledPartitions, quant); err != nil {
 				return false, xerrors.Errorf("failed to add partition expirations: %w", err)
 			}
 			return true, nil
@@ -631,7 +632,8 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 func (st *State) AssignSectorsToDeadlines(
 	store adt.Store,
 	currentEpoch abi.ChainEpoch,
-	sectors ...*SectorOnChainInfo,
+	sectors []*SectorOnChainInfo,
+	quant QuantSpec,
 ) error {
 
 	// TODO: We shouldn't need to do this. We should store the partition
@@ -690,7 +692,7 @@ func (st *State) AssignSectorsToDeadlines(
 
 		dl := deadlineArr[dlIdx]
 
-		err = dl.AddSectors(store, partitionSize, sectorSize, newPartitions)
+		err = dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
 		if err != nil {
 			return err
 		}
@@ -1002,12 +1004,13 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		return err
 	}
 
-	// Nothing unlocks here, this is just the start of the clock.
-	vestBegin := currEpoch + spec.InitialDelay
+	// Quantization is aligned with when regular cron will be invoked, in the last epoch of deadlines.
+	quant := st.Quant(spec.Quantization)
+	vestBegin := currEpoch + spec.InitialDelay // Nothing unlocks here, this is just the start of the clock.
 	vestPeriod := big.NewInt(int64(spec.VestPeriod))
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quantizeUp(e, spec.Quantization, st.ProvingPeriodStart)
+		vestEpoch:= quant.QuantizeUp(e)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign
@@ -1176,6 +1179,17 @@ func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmou
 	return availableBal
 }
 
+// Returns a quantization spec that quantizes values to the last epoch in each deadline.
+func (st *State) QuantEndOfDeadline() QuantSpec {
+	return st.Quant(WPoStChallengeWindow)
+}
+
+// Returns a quantization spec aligned to the last epoch of each proving period.
+func (st *State) Quant(unit abi.ChainEpoch) QuantSpec {
+	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
+	return QuantSpec{unit:unit, offset: st.ProvingPeriodStart-1}
+}
+
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
@@ -1185,28 +1199,6 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 //
 // Misc helpers
 //
-
-// Rounds e to the nearest exact multiple of the quantization unit offset by
-// offsetSeed % unit, rounding up.
-// This function is equivalent to `unit * ceil(e - (offsetSeed % unit) / unit) + (offsetSeed % unit)`
-// with the variables/operations are over real numbers instead of ints.
-// Precondition: unit >= 0 else behaviour is undefined
-func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch, offsetSeed abi.ChainEpoch) abi.ChainEpoch {
-	offset := offsetSeed % unit
-
-	remainder := (e - offset) % unit
-	quotient := (e - offset) / unit
-	// Don't round if epoch falls on a quantization epoch
-	if remainder == 0 {
-		return unit*quotient + offset
-	}
-	// Negative truncating division rounds up
-	if e-offset < 0 {
-		return unit*quotient + offset
-	}
-	return unit*(quotient+1) + offset
-
-}
 
 func SectorKey(e abi.SectorNumber) adt.Keyer {
 	return adt.UIntKey(uint64(e))
