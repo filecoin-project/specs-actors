@@ -930,9 +930,14 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 
-		// XXX: terminate deals or defer some/all for a defrag
 		return nil
 	})
+
+	if processEarlyTerminations(rt, SectorsMax) {
+		// Ok, we have more than max sectors to process? That should be
+		// impossible.
+		rt.Abortf(exitcode.ErrIllegalState, "failed to process more than SectorsMax sector terminations")
+	}
 
 	requestUpdatePower(rt, powerDelta)
 
@@ -1201,7 +1206,6 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
 		}
 
-
 		// TODO: implement compaction https://github.com/filecoin-project/specs-actors/issues/673
 		return nil
 	})
@@ -1351,7 +1355,9 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
 	case CronEventProcessEarlyTerminations:
-		processEarlyTerminations(rt)
+		if processEarlyTerminations(rt, uint64(AddressedSectorsMax)) {
+			scheduleEarlyTerminationWork(rt)
+		}
 	}
 
 	return nil
@@ -1361,32 +1367,39 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 // Utility functions & helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-//XXX: Work in progress
-func processEarlyTerminations(rt Runtime) {
+func processEarlyTerminations(rt Runtime, maxSectors uint64) (more bool) {
 	store := adt.AsStore(rt)
 
 	// TODO: We're using the current power+epoch reward. Technically, we
 	// should use the power/reward at the time of termination.
+	// https://github.com/filecoin-project/specs-actors/pull/648
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt).QualityAdjPower
 
 	var (
-		more              bool
 		earlyTerminations []EpochSet
 		dealsToTerminate  []market.OnMinerSectorsTerminateParams
-		penalty           abi.TokenAmount
+		penalty           abi.TokenAmount = big.Zero()
+		pledge            abi.TokenAmount = big.Zero()
 	)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		// XXX: Constant max sectors
-
-		info := getMinerInfo(rt, &st)
-		maxSectors := uint64(1 << 10)
+		// TODO: This doesn't take AddressedPartitionsMax into account.
+		// Do we need to do that?
 
 		var err error
 		earlyTerminations, more, err = st.PopEarlyTerminations(store, maxSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop early terminations")
+
+		// Nothing to do, don't waste any time.
+		// This can happen if we end up processing early terminations
+		// before the cron callback fires.
+		if len(earlyTerminations) == 0 {
+			return nil
+		}
+
+		info := getMinerInfo(rt, &st)
 
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(earlyTerminations))
 		for _, t := range earlyTerminations {
@@ -1399,31 +1412,34 @@ func processEarlyTerminations(rt Runtime) {
 			}
 			for _, sector := range sectors {
 				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
+				pledge = big.Add(pledge, sector.InitialPledge)
 			}
 			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, t.Epoch, epochReward, pwrTotal, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
 		}
 
-		// XXX: Process pledge?
-
-		unlockedPenalty, err := st.UnlockUnvestedFunds(store, rt.CurrEpoch(), penalty)
+		// Unlock funds for penalties.
+		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
+		// We're intentionally reducing the penalty paid to what we have.
+		penalty, err = st.UnlockUnvestedFunds(store, rt.CurrEpoch(), penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
-		if unlockedPenalty.LessThan(penalty) {
-			// XXX(steb): What now? We don't have the funds...
-			// We could put some of the sectors back?
-			// I think we need debt. The "value" of a miner isn't
-			// just the amount of funds they have locked up, but
-			// expected reward from sealed sectors.
-		}
-		penalty = unlockedPenalty // well, we can't pay any more than this.
 
-		_ = earlyTerminations
+		// Remove pledge requirement.
+		st.AddInitialPledgeRequirement(pledge.Neg())
 
 		return nil
 	})
 
+	// We didn't do anything, abort.
+	if len(earlyTerminations) == 0 {
+		return more
+	}
+
 	// Burn penalty.
 	burnFundsAndNotifyPledgeChange(rt, penalty)
+
+	// Return pledge.
+	notifyPledgeChanged(rt, pledge.Neg())
 
 	// Terminate deals.
 	for _, params := range dealsToTerminate {
@@ -1432,15 +1448,20 @@ func processEarlyTerminations(rt Runtime) {
 	}
 
 	// reschedule cron worker, if necessary.
-	if more {
-		scheduleEarlyTerminationWork(rt)
-	}
+	return more
 }
 
 func scheduleEarlyTerminationWork(rt Runtime) {
 	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
 		EventType: CronEventProcessEarlyTerminations,
 	})
+}
+
+func pendingEarlyTerminations(rt Runtime, st *State) bool {
+	// Record this up-front
+	noEarlyTerminations, err := st.EarlyTerminations.IsEmpty()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
+	return !noEarlyTerminations
 }
 
 // Invoked at the end of the last epoch for each proving deadline.
@@ -1451,10 +1472,14 @@ func handleProvingDeadline(rt Runtime) {
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
+	hadEarlyTerminations := false
+	hasEarlyTerminations := false
+
 	powerDelta := PowerPair{big.Zero(), big.Zero()}
 	newlyVested := big.Zero()
 	penaltyTotal := abi.NewTokenAmount(0)
 	pledgeDelta := abi.NewTokenAmount(0)
+
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		var err error
@@ -1464,6 +1489,14 @@ func handleProvingDeadline(rt Runtime) {
 			newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		}
+
+		// Record whether or not we _had_ early terminations before we
+		// started. That way, don't re-schedule a cron callback if
+		// already have one scheduled.
+		// TODO: I'm not happy with this approach. We could store
+		// another "early termination cleanup active" bit, but that
+		// would be redundant.
+		hadEarlyTerminations = pendingEarlyTerminations(rt, &st)
 
 		// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
 		// exactly the final epoch of the deadline; it may be slightly later (i.e. in the subsequent deadline/period).
@@ -1586,6 +1619,10 @@ func handleProvingDeadline(rt Runtime) {
 				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
 			}
 		}
+
+		// Record whether or not we _have_ early terminations now.
+		hasEarlyTerminations = pendingEarlyTerminations(rt, &st)
+
 		return nil
 	})
 
@@ -1599,6 +1636,19 @@ func handleProvingDeadline(rt Runtime) {
 	enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
 		EventType: CronEventProvingDeadline,
 	})
+
+	// If we didn't have pending early terminations before, but we do now,
+	// handle them at the next epoch.
+	if !hadEarlyTerminations && hasEarlyTerminations {
+		// First, try to process some of these terminations.
+		if processEarlyTerminations(rt, AddressedSectorsMax) {
+			// If that doesn't work, just defer till the next epoch.
+			scheduleEarlyTerminationWork(rt)
+		}
+		// Note: _don't_ process early terminations if we had a cron
+		// callback scheduled. In that case, we'll already have
+		// processed AddressedSectorsMax terminations this round.
+	}
 }
 
 // Discovers how skipped faults declared during post intersect with existing faults and recoveries, records the
