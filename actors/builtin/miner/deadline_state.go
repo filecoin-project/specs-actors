@@ -250,8 +250,8 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 	partitionDeadlineUpdates := make(map[abi.ChainEpoch][]uint64)
 
 	// First update partitions
-	{
 
+	{
 		partitions, err := dl.PartitionsArray(store)
 		if err != nil {
 			return err
@@ -263,11 +263,7 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 		}
 
 		for ; len(sectors) > 0; partIdx++ {
-
-			//
 			// Get/create partition to update.
-			//
-
 			partition := new(Partition)
 			if found, err := partitions.Get(partIdx, partition); err != nil {
 				return err
@@ -282,44 +278,31 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 				partition = ConstructPartition(emptyArray)
 			}
 
-			//
 			// Figure out which (if any) sectors we want to add to
 			// this partition.
-			//
-
-			// See if there's room in this partition for more sectors.
 			sectorCount, err := partition.Sectors.Count()
 			if sectorCount >= partitionSize {
 				continue
 			}
 
 			size := min64(partitionSize-sectorCount, uint64(len(sectors)))
-			partitionSectors := sectors[:size]
+			partitionNewSectors := sectors[:size]
 			sectors = sectors[size:]
 
-			//
 			// Add sectors to partition.
-			//
-
-			err = partition.AddSectors(store, partitionSectors, ssize, quant)
+			err = partition.AddSectors(store, partitionNewSectors, ssize, quant)
 			if err != nil {
 				return err
 			}
 
-			//
 			// Save partition back.
-			//
-
 			err = partitions.Set(partIdx, partition)
 			if err != nil {
 				return err
 			}
 
-			//
 			// Record deadline -> partition mapping so we can later update the deadlines.
-			//
-
-			for _, sector := range partitionSectors {
+			for _, sector := range partitionNewSectors {
 				partitionUpdate := partitionDeadlineUpdates[sector.Expiration]
 				// Record each new partition once.
 				if len(partitionUpdate) > 0 && partitionUpdate[len(partitionUpdate)-1] == partIdx {
@@ -344,19 +327,8 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 			return xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
 
-		// Update each epoch in-order to be deterministic.
-		updatedEpochs := make([]abi.ChainEpoch, 0, len(partitionDeadlineUpdates))
-		for epoch := range partitionDeadlineUpdates {
-			updatedEpochs = append(updatedEpochs, epoch)
-		}
-		sort.Slice(updatedEpochs, func(i, j int) bool {
-			return updatedEpochs[i] < updatedEpochs[j]
-		})
-
-		for _, epoch := range updatedEpochs {
-			if err = deadlineExpirations.AddToQueueValues(epoch, partitionDeadlineUpdates[epoch]...); err != nil {
-				return err
-			}
+		if err = deadlineExpirations.AddManyToQueueValues(partitionDeadlineUpdates); err != nil {
+			return xerrors.Errorf("failed to add expirations for new deadlines: %w", err)
 		}
 
 		if dl.ExpirationsEpochs, err = deadlineExpirations.Root(); err != nil {

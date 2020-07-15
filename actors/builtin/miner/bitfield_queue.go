@@ -2,6 +2,7 @@ package miner
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
@@ -50,6 +51,24 @@ func (q BitfieldQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) 
 		return nil
 	}
 	return q.AddToQueue(epoch, bitfield.NewFromSet(values))
+}
+
+func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) error {
+	// Update each epoch in-order to be deterministic.
+	updatedEpochs := make([]abi.ChainEpoch, 0, len(values))
+	for epoch := range values {
+		updatedEpochs = append(updatedEpochs, epoch)
+	}
+	sort.Slice(updatedEpochs, func(i, j int) bool {
+		return updatedEpochs[i] < updatedEpochs[j]
+	})
+
+	for _, epoch := range updatedEpochs {
+		if err := q.AddToQueueValues(epoch, values[epoch]...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Removes and returns all values with keys less than or equal to until.
