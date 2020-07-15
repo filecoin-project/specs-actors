@@ -13,13 +13,15 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (st *State) lockBalanceOrAbort(et, lt *adt.BalanceTable, proposal *DealProposal) (error, exitcode.ExitCode) {
-	err, code := st.maybeLockBalance(et, lt, proposal.Client, proposal.ClientBalanceRequirement())
+// if the returned error is not nil, the Runtime will exit with the returned exit code.
+// if the error is nil, we don't care about the exitcode.
+func (st *State) lockClientAndProviderBalances(et, lt *adt.BalanceTable, proposal *DealProposal) (error, exitcode.ExitCode) {
+	err, code := maybeLockBalance(et, lt, proposal.Client, proposal.ClientBalanceRequirement())
 	if err != nil {
 		return fmt.Errorf("failed to lock client funds: %w", err), code
 	}
 
-	err, code = st.maybeLockBalance(et, lt, proposal.Provider, proposal.ProviderCollateral)
+	err, code = maybeLockBalance(et, lt, proposal.Provider, proposal.ProviderCollateral)
 	if err != nil {
 		return fmt.Errorf("failed to lock provider funds: %w", err), code
 	}
@@ -28,42 +30,6 @@ func (st *State) lockBalanceOrAbort(et, lt *adt.BalanceTable, proposal *DealProp
 	st.TotalClientStorageFee = big.Add(st.TotalClientStorageFee, proposal.TotalStorageFee())
 	st.TotalProviderLockedCollateral = big.Add(st.TotalProviderLockedCollateral, proposal.ProviderCollateral)
 
-	return nil, exitcode.Ok
-}
-
-func (st *State) getBalance(bt *adt.BalanceTable, a addr.Address) (abi.TokenAmount, error, exitcode.ExitCode) {
-	ret, found, err := bt.Get(a)
-	if err != nil {
-		return big.Zero(), fmt.Errorf("failed to load balance table :%w", err), exitcode.ErrIllegalArgument
-	}
-	if !found {
-		return big.Zero(), errors.New("account does not exist"), exitcode.ErrInsufficientFunds
-	}
-
-	return ret, nil, exitcode.Ok
-}
-
-func (st *State) maybeLockBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) (error, exitcode.ExitCode) {
-	Assert(amount.GreaterThanEqual(big.Zero()))
-
-	prevLocked, err, code := st.getBalance(lt, addr)
-	if err != nil {
-		return fmt.Errorf("failed to get locked balance: %w", err), code
-	}
-
-	escrowBalance, err, code := st.getBalance(et, addr)
-	if err != nil {
-		return fmt.Errorf("failed to get escrow balance: %w", err), code
-	}
-
-	if big.Add(prevLocked, amount).GreaterThan(escrowBalance) {
-		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount),
-			exitcode.ErrInsufficientFunds
-	}
-
-	if err := lt.Add(addr, amount); err != nil {
-		return fmt.Errorf("failed to add locked balance: %w", err), exitcode.ErrIllegalState
-	}
 	return nil, exitcode.Ok
 }
 
@@ -112,4 +78,40 @@ func (st *State) slashBalance(et, lt *adt.BalanceTable, addr addr.Address, amoun
 	}
 
 	return st.unlockBalance(lt, addr, amount, reason)
+}
+
+func getBalance(bt *adt.BalanceTable, a addr.Address) (abi.TokenAmount, error, exitcode.ExitCode) {
+	ret, found, err := bt.Get(a)
+	if err != nil {
+		return big.Zero(), fmt.Errorf("failed to load balance table :%w", err), exitcode.ErrIllegalArgument
+	}
+	if !found {
+		return big.Zero(), errors.New("account does not exist"), exitcode.ErrInsufficientFunds
+	}
+
+	return ret, nil, exitcode.Ok
+}
+
+func maybeLockBalance(et, lt *adt.BalanceTable, addr addr.Address, amount abi.TokenAmount) (error, exitcode.ExitCode) {
+	Assert(amount.GreaterThanEqual(big.Zero()))
+
+	prevLocked, err, code := getBalance(lt, addr)
+	if err != nil {
+		return fmt.Errorf("failed to get locked balance: %w", err), code
+	}
+
+	escrowBalance, err, code := getBalance(et, addr)
+	if err != nil {
+		return fmt.Errorf("failed to get escrow balance: %w", err), code
+	}
+
+	if big.Add(prevLocked, amount).GreaterThan(escrowBalance) {
+		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount),
+			exitcode.ErrInsufficientFunds
+	}
+
+	if err := lt.Add(addr, amount); err != nil {
+		return fmt.Errorf("failed to add locked balance: %w", err), exitcode.ErrIllegalState
+	}
+	return nil, exitcode.Ok
 }
