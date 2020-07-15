@@ -118,7 +118,7 @@ func TestBitfieldQueue(t *testing.T) {
 
 		epoch1 := abi.ChainEpoch(42)
 		epoch2 := abi.ChainEpoch(93)
-		epoch3 := abi.ChainEpoch(182)
+		epoch3 := abi.ChainEpoch(94)
 		epoch4 := abi.ChainEpoch(203)
 
 		queue.AddToQueueValues(epoch1, 1, 3)
@@ -126,7 +126,7 @@ func TestBitfieldQueue(t *testing.T) {
 		queue.AddToQueueValues(epoch3, 6, 7, 8)
 		queue.AddToQueueValues(epoch4, 2, 4)
 
-		// required to make for each work
+		// Required to ensure queue is in a sane state for PopUntil
 		_, err := queue.Root()
 		require.NoError(t, err)
 
@@ -157,6 +157,18 @@ func TestBitfieldQueue(t *testing.T) {
 			Add(epoch3, 6, 7, 8).
 			Add(epoch4, 2, 4).
 			Equals(t, queue)
+
+		// popping the rest of the queue gets the rest of the values
+		next, modified, err = queue.PopUntil(epoch4)
+		require.NoError(t, err)
+		assert.True(t, modified)
+
+		// rest of values are returned
+		assertBitfieldEquals(t, next, 2, 4, 6, 7, 8)
+
+		// queue is now empty
+		ExpectBQ().
+			Equals(t, queue)
 	})
 }
 
@@ -185,6 +197,10 @@ func (bqe *bqExpectation) Add(epoch abi.ChainEpoch, values ...uint64) *bqExpecta
 }
 
 func (bqe *bqExpectation) Equals(t *testing.T, q BitfieldQueue) {
+	// ensure cached changes are ready to be iterated
+	_, err := q.Root()
+	require.NoError(t, err)
+
 	require.Equal(t, uint64(len(bqe.expected)), q.Length())
 
 	q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
