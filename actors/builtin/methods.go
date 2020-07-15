@@ -96,7 +96,8 @@ var MethodsMiner = struct {
 	WithdrawBalance          abi.MethodNum
 	ConfirmSectorProofsValid abi.MethodNum
 	ChangeMultiaddrs         abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}
+	CompactPartitions        abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
 
 var MethodsVerifiedRegistry = struct {
 	Constructor       abi.MethodNum

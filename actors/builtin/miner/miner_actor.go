@@ -66,6 +66,7 @@ func (a Actor) Exports() []interface{} {
 		16:                        a.WithdrawBalance,
 		17:                        a.ConfirmSectorProofsValid,
 		18:                        a.ChangeMultiaddrs,
+		19:                        a.CompactPartitions,
 	}
 }
 
@@ -263,8 +264,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		rt.ValidateImmediateCallerIs(info.Worker)
 
 		// Validate that the miner didn't try to prove too many partitions at once.
-		partitionSize := info.WindowPoStPartitionSectors
-		submissionPartitionLimit := windowPoStMessagePartitionsMax(partitionSize)
+		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
 		if uint64(len(params.Partitions)) > submissionPartitionLimit {
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
 		}
@@ -935,12 +935,11 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	})
 
 	requestUpdatePower(rt, powerDelta)
-	// The termination fee is not paid here, but on defrag.
-	// This is for symmetry with implicit termination from an extended fault, which is detected in cron and hence
-	// can't load all the sector infos to compute the termination fee.
-	// TODO minerstate: pay SP(t) here, remember that, and defer the remainder of the termination fee
 
-	// Pledge requirement is not released until termination fee is paid on defrag.
+	// Pledge requirement is not released until termination fee is paid.
+	// The termination fee is paid later, in early-termination queue processing.
+	// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
+	// https://github.com/filecoin-project/specs-actors/issues/674
 
 	return nil
 }
@@ -1174,6 +1173,38 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	})
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
+	return nil
+}
+
+type CompactPartitionsParams struct {
+	Deadline   uint64
+	Partitions []uint64
+}
+
+// Compacts a number of partitions at one deadline by removing terminated sectors, re-ordering the remaining sectors,
+// and assigning them to new partitions so as to completely fill all but one partition with live sectors.
+// The addressed partitions are removed from the deadline, and new ones appended.
+// The final partition in the deadline is always included in the compaction, whether or not explicitly requested.
+// Removed sectors are removed from state entirely.
+// May not be invoked if the deadline has any un-processed early terminations.
+func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *adt.EmptyValue {
+	if params.Deadline >= WPoStPeriodDeadlines {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %v", params.Deadline)
+	}
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		info := getMinerInfo(rt, &st)
+		rt.ValidateImmediateCallerIs(info.Worker)
+
+		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
+		if uint64(len(params.Partitions)) > submissionPartitionLimit {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
+		}
+
+
+		// TODO: implement compaction https://github.com/filecoin-project/specs-actors/issues/673
+		return nil
+	})
 	return nil
 }
 
@@ -1528,8 +1559,9 @@ func handleProvingDeadline(rt Runtime) {
 				st.EarlyTerminations.Set(dlInfo.Index)
 			}
 
-			// The termination fee is not yet paid.
-			// TODO minerstate: pay SP(t) for early terminations, remember that, and defer remainder of the termination fee
+			// The termination fee is paid later, in early-termination queue processing.
+			// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
+			// https://github.com/filecoin-project/specs-actors/issues/674
 
 			// XXX: the deals are not terminated yet, that is left for a defrag.
 			// This isn't a big deal for sectors terminating on-time, but matters for sectors terminating early,
@@ -1783,7 +1815,7 @@ func requestTerminateDeals(rt Runtime, params market.OnMinerSectorsTerminatePara
 func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
 	// TODO: red flag this is an ~unbounded computation.
 	// Transform into an idempotent partial computation that can be progressed on each invocation.
-	// https://github.com/filecoin-project/specs-actors/issues/483
+	// https://github.com/filecoin-project/specs-actors/issues/675
 	dealIds := []abi.DealID{}
 	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
 		dealIds = append(dealIds, sector.DealIDs...)

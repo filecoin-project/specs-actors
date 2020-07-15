@@ -48,9 +48,9 @@ const AddressedPartitionsMax = 200
 // The maximum number of sector infos that may be required to be loaded in a single invocation.
 const AddressedSectorsMax = 10_000
 
-// The maximum number of partitions that may be submitted in a single Window PoSt message, which necessarily loads
-// all the sector infos.
-func windowPoStMessagePartitionsMax(partitionSectorCount uint64) uint64 {
+// The maximum number of partitions that may be required to be loaded in a single invocation,
+// when all the sector infos for the partitions will be loaded.
+func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
 	return min64(AddressedSectorsMax/partitionSectorCount, AddressedPartitionsMax)
 }
 
