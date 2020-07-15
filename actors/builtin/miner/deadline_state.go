@@ -184,6 +184,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 		}
 
 		onTimeSectors = append(onTimeSectors, partExpiration.OnTimeSectors)
+		earlySectors = append(earlySectors, partExpiration.EarlySectors)
 		allActivePower = allActivePower.Add(partExpiration.ActivePower)
 		allFaultyPower = allFaultyPower.Add(partExpiration.FaultyPower)
 		allOnTimePledge = big.Add(allOnTimePledge, partExpiration.OnTimePledge)
@@ -192,7 +193,6 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 			return xerrors.Errorf("failed to count early expirations from partition %d: %w", partIdx, err)
 		} else if !empty {
 			partitionsWithEarlyTerminations = append(partitionsWithEarlyTerminations, partIdx)
-			earlySectors = append(earlySectors, partExpiration.EarlySectors)
 		}
 
 		return partitions.Set(partIdx, &partition)
