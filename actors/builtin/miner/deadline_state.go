@@ -293,11 +293,7 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 				continue
 			}
 
-			size := partitionSize - sectorCount
-			if uint64(len(sectors)) < size {
-				size = uint64(len(sectors))
-			}
-
+			size := min64(partitionSize-sectorCount, uint64(len(sectors)))
 			partitionSectors := sectors[:size]
 			sectors = sectors[size:]
 
