@@ -69,6 +69,7 @@ func assignDeadlines(
 	deadlines *[WPoStPeriodDeadlines]*Deadline,
 	sectors []*SectorOnChainInfo,
 ) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo) {
+	// Build a heap
 	dlHeap := deadlineAssignmentHeap{
 		partitionSize: int(partitionSize),
 		deadlines:     make([]*deadlineAssignmentInfo, 0, len(deadlines)),
@@ -82,6 +83,8 @@ func assignDeadlines(
 			})
 		}
 	}
+
+	heap.Init(&dlHeap)
 
 	// Assign sectors to deadlines.
 	for len(sectors) > 0 {
