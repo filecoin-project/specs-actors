@@ -2044,7 +2044,7 @@ func (t *WorkerKeyChange) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSubmitWindowedPoStParams = []byte{131}
+var lengthBufSubmitWindowedPoStParams = []byte{133}
 
 func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -2090,6 +2090,22 @@ func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
+
+	// t.ChainCommitEpoch (abi.ChainEpoch) (int64)
+	if t.ChainCommitEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ChainCommitEpoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ChainCommitEpoch-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.ChainCommitSig (crypto.Signature) (struct)
+	if err := t.ChainCommitSig.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2107,7 +2123,7 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2183,6 +2199,40 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		t.Proofs[i] = v
 	}
 
+	// t.ChainCommitEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.ChainCommitEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.ChainCommitSig (crypto.Signature) (struct)
+
+	{
+
+		if err := t.ChainCommitSig.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ChainCommitSig: %w", err)
+		}
+
+	}
 	return nil
 }
 
