@@ -181,7 +181,6 @@ func (p *Partition) RecoverFaults(store adt.Store, recovered *abi.BitField, sect
 	}
 
 	// Update partition metadata
-	// XXX: sanity check containsAll?
 	if newFaults, err := bitfield.SubtractBitField(p.Faults, recovered); err != nil {
 		return NewPowerPairZero(), err
 	} else {
@@ -331,22 +330,6 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 	removedSectors, err := bitfield.MergeBitFields(removed.OnTimeSectors, removed.EarlySectors)
 	if err != nil {
 		return NewPowerPairZero(), err
-	}
-
-	// Check the sectors being removed are alive (not already terminated).
-	// XXX(steb): I'm not sure if this check is worth it. It just checks to
-	// make sure the expiration queue doesn't contain sectors it shouldn't
-	// contain. This _does not_ check to make sure all input sectors were
-	// live.
-	alive, err := p.LiveSectors()
-	if err != nil {
-		return NewPowerPairZero(), err
-	}
-	allAlive, err := abi.BitFieldContainsAll(alive, removedSectors)
-	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to check for live sectors: %w", err)
-	} else if !allAlive {
-		return NewPowerPairZero(), xerrors.Errorf("refusing to terminate non-live sectors in %v (alive: %v)", removedSectors, alive)
 	}
 
 	// Record early termination.

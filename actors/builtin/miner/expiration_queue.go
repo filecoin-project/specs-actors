@@ -58,6 +58,18 @@ func (es *ExpirationSet) Add(onTimeSectors, earlySectors *abi.BitField, onTimePl
 
 // Removes sectors and power from the expiration set in place.
 func (es *ExpirationSet) Remove(onTimeSectors, earlySectors *abi.BitField, onTimePledge abi.TokenAmount, activePower, faultyPower PowerPair) error {
+	// Check for sector intersection. This could be cheaper with a combined intersection/difference method used below.
+	if found, err := abi.BitFieldContainsAll(es.OnTimeSectors, onTimeSectors); err != nil {
+		return err
+	} else if !found {
+		return xerrors.Errorf("removing on-time sectors %v not contained in %v", onTimeSectors, es.OnTimeSectors)
+	}
+	if found, err := abi.BitFieldContainsAll(es.EarlySectors, earlySectors); err != nil {
+		return err
+	} else if !found {
+		return xerrors.Errorf("removing early sectors %v not contained in %v", earlySectors, es.EarlySectors)
+	}
+
 	var err error
 	if es.OnTimeSectors, err = bitfield.SubtractBitField(es.OnTimeSectors, onTimeSectors); err != nil {
 		return err
@@ -466,7 +478,6 @@ func (q ExpirationQueue) add(rawEpoch abi.ChainEpoch, onTimeSectors, earlySector
 	return q.mustUpdate(epoch, es)
 }
 
-// XXX: this doesn't check that the sectors were actually there.
 func (q ExpirationQueue) remove(rawEpoch abi.ChainEpoch, onTimeSectors, earlySectors *abi.BitField, activePower, faultyPower PowerPair,
 	pledge abi.TokenAmount) error {
 	epoch := q.quant.QuantizeUp(rawEpoch)

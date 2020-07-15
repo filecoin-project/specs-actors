@@ -506,19 +506,13 @@ func (st *State) WalkSectors(
 	return nil
 }
 
-// Schedule's each sector to expire after it's next deadline ends (based on the
-// given currEpoch).
+// Schedule's each sector to expire at its next deadline end.
 //
 // If it can't find any given sector, it skips it.
 //
-// TODO: this function doesn't actually generalize well (it can only be used for
-// "replaced" sectors, otherwise it'll mess with power. We should either
-// move/rename it, or try to find some way to generalize it (i.e., not mess with
-// power).
+// This method assumes that each sector's power has not changed, despite the rescheduling.
 //
-// TODO: This function can return errors for both illegal arguments, and invalid
-// state. However, we have no way to distinguish between them. We should fix
-// this.
+// TODO: distinguish bad arguments from invalid state https://github.com/filecoin-project/specs-actors/issues/597
 func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectors []SectorLocation,
 	ssize abi.SectorSize, quant QuantSpec) error {
 	// Mark replaced sectors for on-time expiration at the end of the current proving period.
@@ -541,23 +535,15 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 		func(dlIdx uint64, dl *Deadline) (bool, error) {
 			rescheduledPartitions = nil
 
-			//
-			// Figure out the next deadline end.
-			//
-
-			// TODO: is the proving period start always going to be
-			// correct here? Can we assume that cron has already
-			// updated it?
-			dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch)
-			if dlInfo.HasElapsed() {
-				// pick the next one.
-				dlInfo = NewDeadlineInfo(dlInfo.NextPeriodStart(), dlIdx, currEpoch)
-			}
+			// Figure out the sector's next deadline end.
+			dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch).NextNotElapsed()
 			newEpoch = dlInfo.Last()
 			return false, nil
 		},
 		// Process partitions in deadline.
 		func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (bool, error) {
+			// Sectors are uniquified by being represented in a bitfield.
+			// This is an important property for the reschedule logic to be correct.
 			live, err := bitfield.SubtractBitField(sectors, partition.Terminated)
 			if err != nil {
 				return false, err
@@ -578,7 +564,7 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 				return false, nil
 			}
 
-			// TODO: What if I replace the same sector multiple times? I guess that's OK...
+			// Note: The expiration stored in the sector info is not altered, but remains the initially-scheduled epoch.
 			err = partition.RescheduleExpirations(store, newEpoch, sectorInfos, ssize, quant)
 			if err != nil {
 				return false, err
@@ -586,30 +572,6 @@ func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.Chai
 
 			// Make sure we update the deadline's queue as well.
 			rescheduledPartitions = append(rescheduledPartitions, partIdx)
-
-			// Update the expirations.
-			for _, sector := range sectorInfos {
-				powerBefore := QAPowerForSector(ssize, sector)
-				sector.Expiration = newEpoch
-				powerAfter := QAPowerForSector(ssize, sector)
-				if !powerBefore.Equals(powerAfter) {
-					return false, xerrors.Errorf(
-						"failed to schedule early expiration for replaced sector: power changes from %s to %s",
-						powerBefore, powerAfter,
-					)
-				}
-			}
-
-			// TODO: Do we _really_ need to do this? This only
-			// happens to not mess with sector powers because these
-			// sectors can't have deals.
-			// TODO: Check to make sure these sectors don't have deals?
-			// anorth: ok, we don't have to do this
-			err = st.PutSectors(store, sectorInfos...)
-			if err != nil {
-				return false, xerrors.Errorf("failed to put back sector infos after updating expirations: %w", err)
-			}
-
 			return true, nil
 		},
 		// Update deadline.
@@ -633,23 +595,10 @@ func (st *State) AssignSectorsToDeadlines(
 	store adt.Store,
 	currentEpoch abi.ChainEpoch,
 	sectors []*SectorOnChainInfo,
+	partitionSize uint64,
+	sectorSize abi.SectorSize,
 	quant QuantSpec,
 ) error {
-
-	// TODO: We shouldn't need to do this. We should store the partition
-	// size somewhere else (maybe)?
-
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return err
-	}
-
-	partitionSize := info.WindowPoStPartitionSectors
-	sectorSize, err := info.SealProofType.SectorSize()
-	if err != nil {
-		return err
-	}
-
 	// We should definitely sort by sector number.
 	// Should we try to find a deadline with nearby sectors? That's probably really expensive.
 	deadlines, err := st.LoadDeadlines(store)
@@ -657,8 +606,7 @@ func (st *State) AssignSectorsToDeadlines(
 		return err
 	}
 
-	// Sort sectors by number to get better runs in partitions.
-	// TODO: Assert and require these to be pre-sorted by the miner?
+	// Sort sectors by number to get better runs in partition bitfields.
 	sort.Slice(sectors, func(i, j int) bool {
 		return sectors[i].SectorNumber < sectors[j].SectorNumber
 	})
@@ -729,7 +677,7 @@ func (st *State) PopEarlyTerminations(store adt.Store, max uint64) (earlyTermina
 	earlyTerminationsMap := make(map[abi.ChainEpoch][]*abi.BitField)
 
 	// Process early terminations.
-	err = st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
+	if err := st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
 		// Load deadline + partitions.
 		dl, err := deadlines.LoadDeadline(store, dlIdx)
 		if err != nil {
@@ -769,18 +717,16 @@ func (st *State) PopEarlyTerminations(store adt.Store, max uint64) (earlyTermina
 		}
 
 		return stopErr
-	})
+	}); err == stopErr {
+		err = nil
+	} else if err != nil {
+		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
+	}
 
 	// Save back the deadlines.
 	err = st.SaveDeadlines(store, deadlines)
 	if err != nil {
 		return nil, false, xerrors.Errorf("failed to save deadlines: %w", err)
-	}
-
-	if err == stopErr {
-		err = nil
-	} else if err != nil {
-		return nil, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
 	}
 
 	// Ok, check to see if we've handled all early terminations.
@@ -805,8 +751,7 @@ func (st *State) PopEarlyTerminations(store adt.Store, max uint64) (earlyTermina
 	return earlyTerminations, !noEarlyTerminations, nil
 }
 
-// TODO: take multiple sector locations?
-// Returns the sector's status (healthy, faulty, missing, not found, terminated)
+// Returns a sector's status (healthy, faulty, missing, not found, terminated)
 func (st *State) SectorStatus(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (SectorStatus, error) {
 	dls, err := st.LoadDeadlines(store)
 	if err != nil {
@@ -823,9 +768,8 @@ func (st *State) SectorStatus(store adt.Store, dlIdx, pIdx uint64, sector abi.Se
 		return SectorNotFound, err
 	}
 
-	// TODO: this will return an error if we can't find the given partition.
-	// That will lead to an illegal _state_ error, not an illegal argument
-	// error. We should fix that.
+	// TODO: distinguish partition not found from state errors in exit code
+	// https://github.com/filecoin-project/specs-actors/issues/597
 	partition, err := dl.LoadPartition(store, pIdx)
 	if err != nil {
 		return SectorNotFound, xerrors.Errorf("in deadline %d: %w", dlIdx, err)
@@ -1010,7 +954,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	vestPeriod := big.NewInt(int64(spec.VestPeriod))
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch:= quant.QuantizeUp(e)
+		vestEpoch := quant.QuantizeUp(e)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign
@@ -1187,7 +1131,7 @@ func (st *State) QuantEndOfDeadline() QuantSpec {
 // Returns a quantization spec aligned to the last epoch of each proving period.
 func (st *State) Quant(unit abi.ChainEpoch) QuantSpec {
 	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return QuantSpec{unit:unit, offset: st.ProvingPeriodStart-1}
+	return QuantSpec{unit: unit, offset: st.ProvingPeriodStart - 1}
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {

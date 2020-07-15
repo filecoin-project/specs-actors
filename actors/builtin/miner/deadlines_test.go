@@ -19,7 +19,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		curr := abi.ChainEpoch(0) // Current is before the period opens.
 		{
 			periodStart := miner.FaultDeclarationCutoff + 1
-			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+			di := computeProvingPeriodDeadline(periodStart, curr)
 			assert.Equal(t, uint64(0), di.Index)
 			assert.Equal(t, periodStart, di.Open)
 
@@ -32,7 +32,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		}
 		{
 			periodStart := miner.FaultDeclarationCutoff - 1
-			di := miner.ComputeProvingPeriodDeadline(periodStart, curr)
+			di := computeProvingPeriodDeadline(periodStart, curr)
 			assert.True(t, di.FaultCutoffPassed())
 		}
 	})
@@ -116,7 +116,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 
 	t.Run("period expired", func(t *testing.T) {
 		offset := abi.ChainEpoch(1)
-		d := miner.ComputeProvingPeriodDeadline(offset, offset+miner.WPoStProvingPeriod)
+		d := computeProvingPeriodDeadline(offset, offset+miner.WPoStProvingPeriod)
 		assert.True(t, d.PeriodStarted())
 		assert.True(t, d.PeriodElapsed())
 		assert.Equal(t, miner.WPoStPeriodDeadlines, d.Index)
@@ -130,7 +130,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 
 func assertDeadlineInfo(t *testing.T, current, periodStart abi.ChainEpoch, expectedIndex uint64, expectedDeadlineOpen abi.ChainEpoch) *miner.DeadlineInfo {
 	expected := makeDeadline(current, periodStart, expectedIndex, expectedDeadlineOpen)
-	actual := miner.ComputeProvingPeriodDeadline(periodStart, current)
+	actual := computeProvingPeriodDeadline(periodStart, current)
 	assert.True(t, actual.PeriodStarted())
 	assert.True(t, actual.IsOpen())
 	assert.False(t, actual.HasElapsed())
@@ -148,6 +148,20 @@ func makeDeadline(currEpoch, periodStart abi.ChainEpoch, index uint64, deadlineO
 		Challenge:    deadlineOpen - miner.WPoStChallengeLookback,
 		FaultCutoff:  deadlineOpen - miner.FaultDeclarationCutoff,
 	}
+}
+
+// Calculates the deadline at some epoch for a proving period and returns the deadline-related calculations.
+func computeProvingPeriodDeadline(periodStart, currEpoch abi.ChainEpoch) *miner.DeadlineInfo {
+	periodProgress := currEpoch - periodStart
+	if periodProgress >= miner.WPoStProvingPeriod {
+		// Proving period has completely elapsed.
+		return miner.NewDeadlineInfo(periodStart, miner.WPoStPeriodDeadlines, currEpoch)
+	}
+	deadlineIdx := uint64(periodProgress / miner.WPoStChallengeWindow)
+	if periodProgress < 0 { // Period not yet started.
+		deadlineIdx = 0
+	}
+	return miner.NewDeadlineInfo(periodStart, deadlineIdx, currEpoch)
 }
 
 // TODO minerstate update for new deadlines
@@ -284,13 +298,13 @@ func makeDeadline(currEpoch, periodStart abi.ChainEpoch, index uint64, deadlineO
 //}
 
 // Creates a slice of integers with a sequence of `count` values from `first.
-func seq(first uint64, count uint64) []uint64 {
-	values := make([]uint64, count)
-	for i := range values {
-		values[i] = first + uint64(i)
-	}
-	return values
-}
+//func seq(first uint64, count uint64) []uint64 {
+//	values := make([]uint64, count)
+//	for i := range values {
+//		values[i] = first + uint64(i)
+//	}
+//	return values
+//}
 
 // accepts an array were the value at each index indicates how many sectors are in the partition of the returned Deadlines
 // Example:
