@@ -862,10 +862,29 @@ type TerminationDeclaration struct {
 func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
+
+	// Enforce partition/sector maximums.
 	if uint64(len(params.Terminations)) > AddressedPartitionsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Terminations), AddressedPartitionsMax)
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many partitions for declarations %d, max %d",
+			len(params.Terminations), AddressedPartitionsMax,
+		)
 	}
-	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
+	var sectorCount uint64
+	for _, term := range params.Terminations {
+		count, err := term.Sectors.Count()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+			"failed to count sectors for deadline %d, partition %d",
+			term.Deadline, term.Partition,
+		)
+		sectorCount += count
+	}
+	if sectorCount > AddressedSectorsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many sectors for declaration %d, max %d",
+			sectorCount, AddressedSectorsMax,
+		)
+	}
 
 	var st State
 	store := adt.AsStore(rt)
