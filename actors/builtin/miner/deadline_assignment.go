@@ -29,10 +29,26 @@ func (dah *deadlineAssignmentHeap) Swap(i, j int) {
 
 func (dah *deadlineAssignmentHeap) Less(i, j int) bool {
 	a, b := dah.deadlines[i], dah.deadlines[j]
+
+	aIsFull := a.isFull(dah.partitionSize)
+	bIsFull := b.isFull(dah.partitionSize)
+
+	// Sort by fullness first.
+	if !aIsFull && bIsFull {
+		return true
+	} else if aIsFull && !bIsFull {
+		return false
+	}
+
+	// Then by total live sectors.
+	if a.liveSectors < b.liveSectors {
+		return true
+	} else if a.liveSectors > b.liveSectors {
+		return false
+	}
+
 	// TODO: Randomize by index instead of simply sorting.
-	return !a.isFull(dah.partitionSize) && b.isFull(dah.partitionSize) ||
-		a.liveSectors < b.liveSectors ||
-		a.index < b.index
+	return a.index < b.index
 }
 
 func (dah *deadlineAssignmentHeap) Push(x interface{}) {
