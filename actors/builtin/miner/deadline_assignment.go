@@ -92,6 +92,9 @@ func assignDeadlines(
 
 		// Fill up any partial sectors first.
 		size := int((partitionSize - info.liveSectors%partitionSize))
+		if size == 0 {
+			size = int(partitionSize)
+		}
 		if size > len(sectors) {
 			size = len(sectors)
 		}
