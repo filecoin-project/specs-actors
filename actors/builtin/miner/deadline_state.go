@@ -161,10 +161,10 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 
 	var onTimeSectors []*abi.BitField
 	var earlySectors []*abi.BitField
-	var partitionsWithEarlyTerminations []uint64
+	allOnTimePledge := big.Zero()
 	allActivePower := NewPowerPairZero()
 	allFaultyPower := NewPowerPairZero()
-	allPledge := big.Zero()
+	var partitionsWithEarlyTerminations []uint64
 
 	// For each partition with an expiry, remove and collect expirations from the partition queue.
 	if err = expiredPartitions.ForEach(func(partIdx uint64) error {
@@ -183,7 +183,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 		onTimeSectors = append(onTimeSectors, partExpiration.OnTimeSectors)
 		allActivePower = allActivePower.Add(partExpiration.ActivePower)
 		allFaultyPower = allFaultyPower.Add(partExpiration.FaultyPower)
-		allPledge = big.Add(allPledge, partExpiration.Pledge)
+		allOnTimePledge = big.Add(allOnTimePledge, partExpiration.OnTimePledge)
 
 		if empty, err := partExpiration.EarlySectors.IsEmpty(); err != nil {
 			return xerrors.Errorf("failed to count early expirations from partition %d: %w", partIdx, err)
@@ -229,7 +229,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 	}
 	dl.LiveSectors -= onTimeCount + earlyCount
 
-	return NewExpirationSet(allOnTimeSectors, allEarlySectors, allActivePower, allFaultyPower, allPledge), nil
+	return NewExpirationSet(allOnTimeSectors, allEarlySectors, allOnTimePledge, allActivePower, allFaultyPower), nil
 }
 
 // Adds sectors to a deadline. It's the caller's responsibility to make sure

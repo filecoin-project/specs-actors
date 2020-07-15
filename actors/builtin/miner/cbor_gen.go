@@ -766,7 +766,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufPartition = []byte{138}
+var lengthBufPartition = []byte{137}
 
 func (t *Partition) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -825,11 +825,6 @@ func (t *Partition) MarshalCBOR(w io.Writer) error {
 	if err := t.RecoveringPower.MarshalCBOR(w); err != nil {
 		return err
 	}
-
-	// t.TotalPledge (big.Int) (struct)
-	if err := t.TotalPledge.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -847,7 +842,7 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -986,19 +981,10 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.TotalPledge (big.Int) (struct)
-
-	{
-
-		if err := t.TotalPledge.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalPledge: %w", err)
-		}
-
-	}
 	return nil
 }
 
-var lengthBufExpirationSet = []byte{132}
+var lengthBufExpirationSet = []byte{133}
 
 func (t *ExpirationSet) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1016,6 +1002,11 @@ func (t *ExpirationSet) MarshalCBOR(w io.Writer) error {
 
 	// t.EarlySectors (bitfield.BitField) (struct)
 	if err := t.EarlySectors.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.OnTimePledge (big.Int) (struct)
+	if err := t.OnTimePledge.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -1045,7 +1036,7 @@ func (t *ExpirationSet) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1088,6 +1079,15 @@ func (t *ExpirationSet) UnmarshalCBOR(r io.Reader) error {
 			if err := t.EarlySectors.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.EarlySectors pointer: %w", err)
 			}
+		}
+
+	}
+	// t.OnTimePledge (big.Int) (struct)
+
+	{
+
+		if err := t.OnTimePledge.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.OnTimePledge: %w", err)
 		}
 
 	}

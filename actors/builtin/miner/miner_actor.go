@@ -1402,6 +1402,7 @@ func handleProvingDeadline(rt Runtime) {
 	powerDelta := PowerPair{big.Zero(), big.Zero()}
 	newlyVested := big.Zero()
 	penaltyTotal := abi.NewTokenAmount(0)
+	pledgeDelta := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		var err error
@@ -1473,23 +1474,27 @@ func handleProvingDeadline(rt Runtime) {
 			deadline.PostSubmissions = abi.NewBitField()
 		}
 		{
-			// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
-
-			// Record faulty power for penalisation of ongoing faults before popping expirations.
+			// Record faulty power for penalisation of ongoing faults, before popping expirations.
 			// This includes any power that was just faulted from missing a PoSt.
 			faultyPower := st.FaultyPower.QA
 			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, faultyPower)
 			penalty, err := st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			penaltyTotal = big.Add(penaltyTotal, penalty)
-
-			// Process expirations.
+		}
+		{
+			// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
 			expired, err := deadline.PopExpiredSectors(store, dlInfo.Last())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
 
+			// Release pledge requirements for the sectors expiring on-time.
+			// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
+			// when the early termination is processed.
+			pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
+			st.AddInitialPledgeRequirement(pledgeDelta)
+
 			// Record reduction in power of the amount of expiring active power.
 			// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
-			// The expired sectors' pledge is not released until defrag.
 			powerDelta = powerDelta.Sub(expired.ActivePower)
 			st.FaultyPower = st.FaultyPower.Sub(expired.FaultyPower)
 
@@ -1502,9 +1507,7 @@ func handleProvingDeadline(rt Runtime) {
 				st.EarlyTerminations.Set(dlInfo.Index)
 			}
 
-			// The pledge requirement for the expired sectors is not yet released.
 			// The termination fee is not yet paid.
-			// Both are deferred for a defrag.
 			// TODO minerstate: pay SP(t) for early terminations, remember that, and defer remainder of the termination fee
 
 			// XXX: the deals are not terminated yet, that is left for a defrag.
@@ -1536,7 +1539,7 @@ func handleProvingDeadline(rt Runtime) {
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDelta)
 	burnFunds(rt, penaltyTotal)
-	notifyPledgeChanged(rt, big.Add(newlyVested, penaltyTotal).Neg())
+	notifyPledgeChanged(rt, big.Sum(newlyVested, penaltyTotal, pledgeDelta).Neg())
 
 	// Schedule cron callback for next deadline's last epoch.
 	newDlInfo := st.DeadlineInfo(currEpoch)

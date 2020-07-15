@@ -38,8 +38,6 @@ type Partition struct {
 	FaultyPower PowerPair
 	// Power of expected-to-recover sectors. RecoveringPower <= FaultyPower.
 	RecoveringPower PowerPair
-	// Sum of initial pledge of all sectors (including terminated)
-	TotalPledge abi.TokenAmount
 }
 
 // Value type for a pair of raw and QA power.
@@ -69,7 +67,6 @@ func ConstructPartition(emptyArray cid.Cid) *Partition {
 		LivePower:         NewPowerPairZero(),
 		FaultyPower:       NewPowerPairZero(),
 		RecoveringPower:   NewPowerPairZero(),
-		TotalPledge:       big.Zero(),
 	}
 }
 
@@ -109,7 +106,7 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 	if err != nil {
 		return xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
-	snos, power, pledge, err := expirations.AddActiveSectors(sectors, ssize)
+	snos, power, _, err := expirations.AddActiveSectors(sectors, ssize)
 	if err != nil {
 		return xerrors.Errorf("failed to record new sector expirations: %w", err)
 	}
@@ -122,7 +119,6 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 		return xerrors.Errorf("failed to record new sector numbers: %w", err)
 	}
 	p.LivePower = p.LivePower.Add(power)
-	p.TotalPledge = big.Add(p.TotalPledge, pledge)
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
 	return nil
@@ -294,7 +290,6 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to add replaced sectors: %w", err)
 	}
 	p.LivePower = p.LivePower.Add(powerDelta)
-	p.TotalPledge = big.Add(p.TotalPledge, pledgeDelta)
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
 	return powerDelta, pledgeDelta, nil
@@ -374,7 +369,6 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 	p.FaultyPower = p.FaultyPower.Sub(removed.FaultyPower)
 	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
 
-	// Pledge is not changed until partition de-frag.
 	return powerDelta, nil
 }
 
@@ -429,7 +423,6 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch) (*E
 	}
 	p.LivePower = p.LivePower.Sub(popped.ActivePower)
 	p.FaultyPower = p.FaultyPower.Sub(popped.FaultyPower)
-	// Pledge is not reduced until partition de-frag.
 
 	// Record the epoch of any sectors expiring early, for termination fee calculation later.
 	err = p.recordEarlyTermination(store, until, popped.EarlySectors)
