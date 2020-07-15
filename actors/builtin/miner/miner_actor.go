@@ -1334,15 +1334,23 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 func processEarlyTerminations(rt Runtime) {
 	store := adt.AsStore(rt)
 
+	// TODO: We're using the current power+epoch reward. Technically, we
+	// should use the power/reward at the time of termination.
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt).QualityAdjPower
+
 	var (
 		more              bool
 		earlyTerminations []EpochSet
 		dealsToTerminate  []market.OnMinerSectorsTerminateParams
+		penalty           abi.TokenAmount
 	)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		// XXX: Constant max sectors
+
+		info := getMinerInfo(rt, &st)
 		maxSectors := uint64(1 << 10)
 
 		var err error
@@ -1351,6 +1359,7 @@ func processEarlyTerminations(rt Runtime) {
 
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(earlyTerminations))
 		for _, t := range earlyTerminations {
+			// TODO: avoid loading sector array multiple times.
 			sectors, err := st.LoadSectorInfos(store, t.Sectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
 			params := market.OnMinerSectorsTerminateParams{
@@ -1360,18 +1369,30 @@ func processEarlyTerminations(rt Runtime) {
 			for _, sector := range sectors {
 				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
 			}
+			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, t.Epoch, epochReward, pwrTotal, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
 		}
 
-		// Load sector state, get deals, etc.
-		// XXX: STEB here.
+		// XXX: Process pledge?
+
+		unlockedPenalty, err := st.UnlockUnvestedFunds(store, rt.CurrEpoch(), penalty)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
+		if unlockedPenalty.LessThan(penalty) {
+			// XXX(steb): What now? We don't have the funds...
+			// We could put some of the sectors back?
+			// I think we need debt. The "value" of a miner isn't
+			// just the amount of funds they have locked up, but
+			// expected reward from sealed sectors.
+		}
+		penalty = unlockedPenalty // well, we can't pay any more than this.
+
 		_ = earlyTerminations
 
 		return nil
 	})
 
-	// pay fines.
-	// XXX: STEB here.
+	// Burn penalty.
+	burnFundsAndNotifyPledgeChange(rt, penalty)
 
 	// Terminate deals.
 	for _, params := range dealsToTerminate {
@@ -2105,14 +2126,14 @@ func validateFRDeclarationPartition(key PartitionKey, partition *Partition, sect
 	return nil
 }
 
-func unlockTerminationPenalty(st *State, store adt.Store, sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) (abi.TokenAmount, error) {
+func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, sectors []*SectorOnChainInfo) abi.TokenAmount {
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
 		fee := PledgePenaltyForTermination(s.InitialPledge, currEpoch-s.Activation, epochTargetReward, networkQAPower, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
-	return st.UnlockUnvestedFunds(store, currEpoch, totalFee)
+	return totalFee
 }
 
 func PowerForSector(sectorSize abi.SectorSize, sector *SectorOnChainInfo) PowerPair {
