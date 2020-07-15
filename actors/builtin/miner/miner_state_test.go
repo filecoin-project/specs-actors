@@ -779,7 +779,11 @@ type stateHarness struct {
 //
 
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
-	err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
+	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
+	require.NoError(h.t, err)
+	err = h.s.AddLockedFunds(vestingFunds, epoch, sum, spec)
+	require.NoError(h.t, err)
+	h.s.VestingFunds, err = vestingFunds.Root()
 	require.NoError(h.t, err)
 }
 
@@ -790,7 +794,11 @@ func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.Toke
 }
 
 func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
-	amount, err := h.s.UnlockVestedFunds(h.store, epoch)
+	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
+	require.NoError(h.t, err)
+	amount, err := h.s.UnlockVestedFunds(vestingFunds, epoch)
+	require.NoError(h.t, err)
+	h.s.VestingFunds, err = vestingFunds.Root()
 	require.NoError(h.t, err)
 	return amount
 }
