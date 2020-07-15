@@ -487,12 +487,12 @@ func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, 
 		return nil, err
 	}
 
-	popped, err := expirations.PopUntil(until)
+	popped, modified, err := expirations.PopUntil(until)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to pop expiring partitions: %w", err)
 	}
 
-	if popped != nil {
+	if modified {
 		dl.ExpirationsEpochs, err = expirations.Root()
 		if err != nil {
 			return nil, err

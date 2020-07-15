@@ -73,8 +73,9 @@ func TestBitfieldQueue(t *testing.T) {
 		//emptyQueue, err := queue.Root()
 		//require.NoError(t, err)
 
-		next, err := queue.PopUntil(42)
+		next, modified, err := queue.PopUntil(42)
 		require.NoError(t, err)
+		assert.False(t, modified)
 
 		// no values are returned
 		count, err := next.Count()
@@ -95,8 +96,10 @@ func TestBitfieldQueue(t *testing.T) {
 		queue.AddToQueueValues(epoch1, 1, 3)
 		queue.AddToQueueValues(epoch2, 2, 4)
 
-		next, err := queue.PopUntil(epoch1 - 1)
+		next, modified, err := queue.PopUntil(epoch1 - 1)
+		assert.False(t, modified)
 		require.NoError(t, err)
+		assert.False(t, modified)
 
 		// no values are returned
 		count, err := next.Count()
@@ -127,8 +130,10 @@ func TestBitfieldQueue(t *testing.T) {
 		_, err := queue.Root()
 		require.NoError(t, err)
 
-		next, err := queue.PopUntil(epoch2)
+		next, modified, err := queue.PopUntil(epoch2)
 		require.NoError(t, err)
+		// modified should be true to indicate queue has changed
+		assert.True(t, modified)
 
 		// values from first two epochs are returned
 		assertBitfieldEquals(t, next, 1, 3, 5)
@@ -140,8 +145,9 @@ func TestBitfieldQueue(t *testing.T) {
 			Equals(t, queue)
 
 		// subsequent call to epoch less than next does nothing.
-		next, err = queue.PopUntil(epoch3 - 1)
+		next, modified, err = queue.PopUntil(epoch3 - 1)
 		require.NoError(t, err)
+		assert.False(t, modified)
 
 		// no values are returned
 		assertBitfieldEquals(t, next, []uint64{}...)
