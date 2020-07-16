@@ -385,6 +385,14 @@ func (st *State) ForEachSector(store adt.Store, f func(*SectorOnChainInfo)) erro
 	})
 }
 
+func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint64, error) {
+	deadlines, err := st.LoadDeadlines(store)
+	if err != nil {
+		return 0, 0, err
+	}
+	return FindSector(store, deadlines, sno)
+}
+
 // Walks the given sectors, deadline by deadline, partition by partition,
 // skipping missing partitions/sectors.
 func (st *State) WalkSectors(
@@ -921,12 +929,11 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	}
 
 	// Quantization is aligned with when regular cron will be invoked, in the last epoch of deadlines.
-	quant := st.Quant(spec.Quantization)
 	vestBegin := currEpoch + spec.InitialDelay // Nothing unlocks here, this is just the start of the clock.
 	vestPeriod := big.NewInt(int64(spec.VestPeriod))
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quant.QuantizeUp(e)
+		vestEpoch := quantizeUp(e, spec.Quantization, st.ProvingPeriodStart)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign
@@ -1097,13 +1104,8 @@ func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmou
 
 // Returns a quantization spec that quantizes values to the last epoch in each deadline.
 func (st *State) QuantEndOfDeadline() QuantSpec {
-	return st.Quant(WPoStChallengeWindow)
-}
-
-// Returns a quantization spec aligned to the last epoch of each proving period.
-func (st *State) Quant(unit abi.ChainEpoch) QuantSpec {
 	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return QuantSpec{unit: unit, offset: st.ProvingPeriodStart - 1}
+	return QuantSpec{unit: WPoStChallengeWindow, offset: st.ProvingPeriodStart - 1}
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {

@@ -153,7 +153,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 	if err != nil {
 		return nil, err
 	} else if !modified {
-		return nil, nil // nothing to do.
+		return NewExpirationSetEmpty(), nil // nothing to do.
 	}
 
 	partitions, err := dl.PartitionsArray(store)

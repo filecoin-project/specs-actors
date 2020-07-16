@@ -1894,6 +1894,9 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 }
 
 func requestUpdatePower(rt Runtime, delta PowerPair) {
+	if delta.IsZero() {
+		return
+	}
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,

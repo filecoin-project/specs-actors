@@ -2294,7 +2294,7 @@ func (h *marketActorTestHarness) terminateDeals(rt *mock.Runtime, minerAddr addr
 	rt.SetCaller(minerAddr, builtin.StorageMinerActorCodeID)
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
-	params := &market.OnMinerSectorsTerminateParams{DealIDs: dealIds}
+	params := mkTerminateDealParams(rt.Epoch(), dealIds...)
 
 	ret := rt.Call(h.OnMinerSectorsTerminate, params)
 	rt.Verify()
@@ -2396,5 +2396,5 @@ func mkActivateDealParams(sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *m
 }
 
 func mkTerminateDealParams(epoch abi.ChainEpoch, dealIds ...abi.DealID) *market.OnMinerSectorsTerminateParams {
-	return &market.OnMinerSectorsTerminateParams{epoch, dealIds}
+	return &market.OnMinerSectorsTerminateParams{Epoch: epoch, DealIDs: dealIds}
 }

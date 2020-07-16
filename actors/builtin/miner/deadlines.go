@@ -106,43 +106,42 @@ func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch a
 	}
 }
 
-// FindDeadline returns the deadline index for a given sector number.
+// FindSector returns the deadline and partition index for a sector number.
 // It returns an error if the sector number is not tracked by deadlines.
-func FindDeadline(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumber) (uint64, error) {
+func FindSector(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumber) (uint64, uint64, error) {
 	for dlIdx := range deadlines.Due {
 		dl, err := deadlines.LoadDeadline(store, uint64(dlIdx))
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 
 		partitions, err := adt.AsArray(store, dl.Partitions)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		var partition Partition
 
+		partIdx := uint64(0)
 		stopErr := errors.New("stop")
-		err = partitions.ForEach(&partition, func(partIdx int64) error {
+		err = partitions.ForEach(&partition, func(i int64) error {
 			found, err := partition.Sectors.IsSet(uint64(sectorNum))
 			if err != nil {
 				return err
 			}
 			if found {
+				partIdx = uint64(i)
 				return stopErr
 			}
 			return nil
 		})
-		switch err {
-		case stopErr:
-			return uint64(dlIdx), nil
-		case nil:
-			// continue.
-		default:
-			return 0, err
+		if err == stopErr {
+			return uint64(dlIdx), partIdx, nil
+		} else if err != nil {
+			return 0, 0, err
 		}
 
 	}
-	return 0, xerrors.New("sectorNum not due at any deadline")
+	return 0, 0, xerrors.Errorf("sector %d not due at any deadline", sectorNum)
 }
 
 // Returns true if the deadline at the given index is currently mutable.
