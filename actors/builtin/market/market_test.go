@@ -1302,7 +1302,34 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 		require.Equal(t, big.Zero(), actor.getEscrowBalance(rt, provider))
 		require.Equal(t, big.Zero(), actor.getLockedBalance(rt, provider))
 
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, d)
+	})
+
+	t.Run("publishing timed out deal again should work after cron tick as it should no longer be pending", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
+		d := actor.getDealProposal(rt, dealId)
+
+		// publishing will fail as it will be in pending
+		d2 := actor.generateDealAndAddFunds(rt, client, mAddrs, startEpoch, endEpoch)
+		params := mkPublishStorageParams(d2)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		rt.SetCaller(worker, builtin.AccountActorCodeID)
+		rt.ExpectVerifySignature(crypto.Signature{}, d2.Client, mustCbor(&d2), nil)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.PublishStorageDeals, params)
+		})
+		rt.Verify()
+
+		// do a cron tick for it -> should time out and get slashed
+		rt.SetEpoch(startEpoch)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d.ProviderCollateral, nil, exitcode.Ok)
+		actor.cronTick(rt)
+		actor.assertDealDeleted(rt, dealId, d)
+
+		// now publishing should work
+		actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
 	})
 
 	t.Run("timed out and verified deals are slashed, deleted AND sent to the Registry actor", func(t *testing.T) {
@@ -1345,9 +1372,9 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 		// a second cron tick for the same epoch should not change anything
 		actor.cronTickNoChangeBalances(rt, client, provider)
 
-		actor.assertDealDeleted(rt, dealIds[0])
-		actor.assertDealDeleted(rt, dealIds[1])
-		actor.assertDealDeleted(rt, dealIds[2])
+		actor.assertDealDeleted(rt, dealIds[0], &deal1)
+		actor.assertDealDeleted(rt, dealIds[1], &deal2)
+		actor.assertDealDeleted(rt, dealIds[2], &deal3)
 	})
 }
 
@@ -1412,7 +1439,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// deal should be deleted as it should have expired
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, d)
 	})
 
 	t.Run("deal expiry -> payment for a deal if deal is already expired before a cron tick", func(t *testing.T) {
@@ -1430,7 +1457,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		require.EqualValues(t, pay, big.Mul(big.NewInt(15), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, d)
 
 		// running cron tick again dosen't do anything
 		actor.cronTickNoChangeBalances(rt, client, provider)
@@ -1458,7 +1485,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		require.EqualValues(t, big.Zero(), actor.getLockedBalance(rt, provider))
 
 		// deal should be deleted
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, deal)
 	})
 }
 
@@ -1561,7 +1588,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 					pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, tc.cronTickEpoch, dealId)
 					require.EqualValues(t, tc.payment, pay)
 					require.EqualValues(t, d.ProviderCollateral, slashed)
-					actor.assertDealDeleted(rt, dealId)
+					actor.assertDealDeleted(rt, dealId, d)
 
 					// running cron tick again dosen't do anything
 					actor.cronTickNoChangeBalances(rt, client, provider)
@@ -1601,7 +1628,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// deal should be deleted as it should have expired
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, d)
 	})
 
 	// end-end test for slashing
@@ -1658,7 +1685,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		require.EqualValues(t, d.ProviderCollateral, slashed)
 
 		// deal should be deleted as it should have expired
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, d)
 	})
 
 	// expired deals should NOT be slashed
@@ -1698,7 +1725,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// deal should be deleted as it should have expired
-		actor.assertDealDeleted(rt, dealId)
+		actor.assertDealDeleted(rt, dealId, d)
 	})
 }
 
@@ -2271,7 +2298,7 @@ func (h *marketActorTestHarness) assertLockedFundStates(rt *mock.Runtime, storag
 	require.Equal(h.t, storageFee, st.TotalClientStorageFee)
 }
 
-func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.DealID) {
+func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.DealID, p *market.DealProposal) {
 	var st market.State
 	rt.GetState(&st)
 
@@ -2284,6 +2311,14 @@ func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.
 	states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
 	require.NoError(h.t, err)
 	_, found, err = states.Get(dealId)
+	require.NoError(h.t, err)
+	require.False(h.t, found)
+
+	pcid, err := p.Cid()
+	require.NoError(h.t, err)
+	pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
+	require.NoError(h.t, err)
+	found, err = pending.Get(adt.CidKey(pcid), nil)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 }
