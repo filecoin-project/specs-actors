@@ -166,6 +166,10 @@ func main() {
 		miner.State{},
 		miner.MinerInfo{},
 		miner.Deadlines{},
+		miner.Deadline{},
+		miner.Partition{},
+		miner.ExpirationSet{},
+		miner.PowerPair{},
 		miner.SectorPreCommitOnChainInfo{},
 		miner.SectorPreCommitInfo{},
 		miner.SectorOnChainInfo{},
@@ -174,6 +178,7 @@ func main() {
 		// miner.ConstructorParams{},
 		miner.SubmitWindowedPoStParams{},
 		miner.TerminateSectorsParams{},
+		miner.TerminateSectorsReturn{},
 		miner.ChangePeerIDParams{},
 		miner.ChangeMultiaddrsParams{},
 		miner.ProveCommitSectorParams{},
@@ -185,10 +190,14 @@ func main() {
 		miner.GetControlAddressesReturn{},
 		miner.CheckSectorProvenParams{},
 		miner.WithdrawBalanceParams{},
+		miner.CompactPartitionsParams{},
 		// other types
 		miner.CronEventPayload{},
 		miner.FaultDeclaration{},
 		miner.RecoveryDeclaration{},
+		miner.ExpirationExtension{},
+		miner.TerminationDeclaration{},
+		miner.PoStPartition{},
 	); err != nil {
 		panic(err)
 	}

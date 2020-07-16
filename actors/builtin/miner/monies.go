@@ -28,36 +28,29 @@ func ExpectedDayRewardForPower(epochTargetReward abi.TokenAmount, networkQAPower
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
 // it has been previously detected by the network.
 // FF(t) = DeclaredFaultFactor * BR(t)
-func PledgePenaltyForDeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForDeclaredFault(epochReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower)),
+		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForPower(epochReward, networkQAPower, qaSectorPower)),
 		DeclaredFaultFactorDenom)
 }
 
 // This is the SP(t) penalty for a newly faulty sector that has not been declared.
 // SP(t) = UndeclaredFaultFactor * BR(t)
-func PledgePenaltyForUndeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForUndeclaredFault(epochReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(UndeclaredFaultFactorNum, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower)),
+		big.Mul(UndeclaredFaultFactorNum, ExpectedDayRewardForPower(epochReward, networkQAPower, qaSectorPower)),
 		UndeclaredFaultFactorDenom)
 }
 
-// This is the SP(t) penalty for a newly faulty sector that has not been declared later than one deadline.
-// SP_late(t) = 2*SP(t)
-func PledgePenaltyForLateUndeclaredFault(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return big.Mul(big.NewInt(2),
-		PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower))
-}
-
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
-// SectorAge is the time between now and the sector's activation.
+// SectorAge is the time between the sector's activation and termination.
 func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	// max(SP(t), IP + BR(StartEpoch)*min(SectorAgeInDays, 180))
 	// where BR(StartEpoch)=IP/InitialPledgeFactor
 	// and sectorAgeInDays = sectorAge / EpochsInDay
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
 	return big.Max(
-		PledgePenaltyForLateUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
+		PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
 		big.Add(
 			initialPledge,
 			big.Div(

@@ -25,6 +25,5 @@ require (
 	github.com/warpfork/go-wish v0.0.0-20190328234359-8b3e70f8e830 // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20200710004633-5379fc63235d
 	github.com/xorcare/golden v0.6.0
-	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 )

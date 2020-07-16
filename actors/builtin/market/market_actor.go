@@ -370,6 +370,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 }
 
 type OnMinerSectorsTerminateParams struct {
+	Epoch   abi.ChainEpoch
 	DealIDs []abi.DealID
 }
 
@@ -400,7 +401,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			AssertMsg(deal.Provider == minerAddr, "caller is not the provider of the deal")
 
 			// do not slash expired deals
-			if deal.EndEpoch <= rt.CurrEpoch() {
+			if deal.EndEpoch <= params.Epoch {
 				continue
 			}
 
@@ -419,7 +420,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// mark the deal for slashing here.
 			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
-			state.SlashEpoch = rt.CurrEpoch()
+			state.SlashEpoch = params.Epoch
 
 			if err := msm.dealStates.Set(dealID, state); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)

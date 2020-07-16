@@ -851,7 +851,7 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufOnMinerSectorsTerminateParams = []byte{129}
+var lengthBufOnMinerSectorsTerminateParams = []byte{130}
 
 func (t *OnMinerSectorsTerminateParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -863,6 +863,17 @@ func (t *OnMinerSectorsTerminateParams) MarshalCBOR(w io.Writer) error {
 	}
 
 	scratch := make([]byte, 9)
+
+	// t.Epoch (abi.ChainEpoch) (int64)
+	if t.Epoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.Epoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.Epoch-1)); err != nil {
+			return err
+		}
+	}
 
 	// t.DealIDs ([]abi.DealID) (slice)
 	if len(t.DealIDs) > cbg.MaxLength {
@@ -894,10 +905,35 @@ func (t *OnMinerSectorsTerminateParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.Epoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.Epoch = abi.ChainEpoch(extraI)
+	}
 	// t.DealIDs ([]abi.DealID) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
