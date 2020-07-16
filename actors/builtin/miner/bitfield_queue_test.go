@@ -53,6 +53,22 @@ func TestBitfieldQueue(t *testing.T) {
 			Equals(t, queue)
 	})
 
+	t.Run("quantizes added epochs according to quantization spec", func(t *testing.T) {
+		queue := emptyBitfieldQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
+
+		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
+			err := queue.AddToQueueValues(abi.ChainEpoch(val), val)
+			require.NoError(t, err)
+		}
+
+		// expect values to only be set on quantization boundaries
+		ExpectBQ().
+			Add(abi.ChainEpoch(3), 0, 2, 3).
+			Add(abi.ChainEpoch(8), 4, 7, 8).
+			Add(abi.ChainEpoch(13), 9).
+			Equals(t, queue)
+	})
+
 	t.Run("merges values withing same epoch", func(t *testing.T) {
 		queue := emptyBitfieldQueue(t)
 
@@ -243,4 +259,10 @@ func assertBitfieldEquals(t *testing.T, bf *bitfield.BitField, values ...uint64)
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func assertBitfieldEmpty(t *testing.T, bf *bitfield.BitField) {
+	empty, err := bf.IsEmpty()
+	require.NoError(t, err)
+	assert.True(t, empty)
 }

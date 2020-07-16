@@ -268,7 +268,7 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 // Removes sectors from any queue entries in which they appear that are earlier then their scheduled expiration epoch,
 // and schedules them at their expected termination epoch.
 // Pledge for the sectors is re-added as on-time.
-// Power for the sectors is changes from faulty to active (whether rescheduled or not).
+// Power for the sectors is changed from faulty to active (whether rescheduled or not).
 // Returns the newly-recovered power. Fails if any sectors are not found in the queue.
 func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	remaining := make(map[abi.SectorNumber]struct{}, len(sectors))
@@ -404,7 +404,6 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 					es.ActivePower = es.ActivePower.Sub(power)
 					removed.ActivePower = removed.ActivePower.Add(power)
 				}
-				es.OnTimePledge = big.Sub(es.OnTimePledge, sector.InitialPledge)
 				if _, r := recoveringMap[sno]; r {
 					recoveringPower = recoveringPower.Add(power)
 				}
@@ -443,7 +442,7 @@ func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 		onTimeSectors = append(onTimeSectors, thisValue.OnTimeSectors)
 		earlySectors = append(earlySectors, thisValue.EarlySectors)
 		activePower = activePower.Add(thisValue.ActivePower)
-		faultyPower = faultyPower.Add(thisValue.ActivePower)
+		faultyPower = faultyPower.Add(thisValue.FaultyPower)
 		onTimePledge = big.Add(onTimePledge, thisValue.OnTimePledge)
 		return nil
 	}); err != nil && err != stopErr {
