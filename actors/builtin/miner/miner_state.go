@@ -515,17 +515,6 @@ func (st *State) WalkSectors(
 // TODO: distinguish bad arguments from invalid state https://github.com/filecoin-project/specs-actors/issues/597
 func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectors []SectorLocation,
 	ssize abi.SectorSize, quant QuantSpec) error {
-	// Mark replaced sectors for on-time expiration at the end of the current proving period.
-	// They can't be removed right now because they may yet be challenged for Window PoSt in this period,
-	// and the deadline assignments can't be changed mid-period.
-	// If their initial pledge hasn't finished vesting yet, it just continues vesting (like other termination paths).
-	// Note that a sector's weight and power were calculated from its lifetime when the sector was first
-	// committed, but are not recalculated here. We only get away with this because we know the replaced sector
-	// has no deals and so its power does not vary with lifetime.
-	// That's a very brittle constraint, and would be much better with two-phase termination (where we could
-	// deduct power immediately).
-	// See https://github.com/filecoin-project/specs-actors/issues/535
-
 	var (
 		newEpoch              abi.ChainEpoch
 		rescheduledPartitions []uint64 // track partitions with moved expirations.

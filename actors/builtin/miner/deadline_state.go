@@ -149,10 +149,10 @@ func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.
 // PopExpiredSectors terminates expired sectors from all partitions.
 // Returns the expired sector aggregates.
 func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*ExpirationSet, error) {
-	expiredPartitions, err := dl.popExpiredPartitions(store, until, quant)
+	expiredPartitions, modified, err := dl.popExpiredPartitions(store, until, quant)
 	if err != nil {
 		return nil, err
-	} else if expiredPartitions == nil {
+	} else if !modified {
 		return nil, nil // nothing to do.
 	}
 
@@ -356,9 +356,8 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSect
 
 		if !found {
 			// If the partition doesn't exist any more, no problem.
-			// We don't remove partition indexes from this queue when sectors are re-scheduled,
-			// terminated early, etc.
-			// We do expect partition compaction to re-index the altered partitions, though.
+			// We don't expect this to happen (compaction should re-index altered partitions),
+			// but it's not worth failing if it does.
 			partitionsFinished = append(partitionsFinished, partIdx)
 			return nil
 		}
@@ -423,23 +422,23 @@ func (dl *Deadline) AddPoStSubmissions(idxs []uint64) {
 }
 
 // Returns nil if nothing was popped.
-func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*abi.BitField, error) {
+func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*abi.BitField, bool, error) {
 	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	popped, modified, err := expirations.PopUntil(until)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to pop expiring partitions: %w", err)
+		return nil, false, xerrors.Errorf("failed to pop expiring partitions: %w", err)
 	}
 
 	if modified {
 		dl.ExpirationsEpochs, err = expirations.Root()
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
-	return popped, nil
+	return popped, modified, nil
 }

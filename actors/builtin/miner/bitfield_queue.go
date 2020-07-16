@@ -74,7 +74,7 @@ func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) 
 // Removes and returns all values with keys less than or equal to until.
 // Modified return value indicates whether this structure has been changed by the call.
 func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values *abi.BitField, modified bool, err error) {
-	poppedValues := abi.NewBitField()
+	var poppedValues  []*bitfield.BitField
 	var poppedKeys []uint64
 
 	stopErr := fmt.Errorf("stop")
@@ -83,7 +83,7 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values *abi.BitField, mod
 			return stopErr
 		}
 		poppedKeys = append(poppedKeys, uint64(epoch))
-		poppedValues, err = bitfield.MergeBitFields(poppedValues, bf)
+		poppedValues = append(poppedValues, bf)
 		return err
 	}); err != nil && err != stopErr {
 		return nil, false, err
@@ -91,13 +91,18 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values *abi.BitField, mod
 
 	// Nothing expired.
 	if len(poppedKeys) == 0 {
-		return poppedValues, false, nil
+		return nil, false, nil
 	}
 
 	if err = q.BatchDelete(poppedKeys); err != nil {
 		return nil, false, err
 	}
-	return poppedValues, true, nil
+	merged, err := bitfield.MultiMerge(poppedValues...)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return merged, true, nil
 }
 
 // Iterates the queue.

@@ -277,6 +277,8 @@ func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 	}
 
 	// Traverse the expiration queue once to find each recovering sector and remove it from early/faulty there.
+	// We expect this to find all recovering sectors within the first FaultMaxAge/WPoStProvingPeriod entries
+	// (i.e. 14 for 14-day faults), but if something has gone wrong it's safer not to fail if that's not met.
 	var sectorsRescheduled []*SectorOnChainInfo
 	recoveredPower := NewPowerPairZero()
 	if err := q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {

@@ -652,7 +652,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		quant := st.QuantEndOfDeadline()
-		// Schedule expiration for replaced sectors.
+		// Schedule expiration for replaced sectors to the end of their next deadline window.
+		// They can't be removed right now because we want to challenge them immediately before termination.
+		// If their initial pledge hasn't finished vesting yet, it just continues vesting (like other termination paths).
 		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), replaceSectorLocations, info.SectorSize, quant)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 
