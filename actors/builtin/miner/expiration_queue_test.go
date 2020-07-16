@@ -320,6 +320,45 @@ func TestExpirationQueue(t *testing.T) {
 		assert.True(t, activePower.Equals(set.ActivePower))
 		assert.True(t, faultyPower.Equals(set.FaultyPower))
 	})
+
+	t.Run("reschedules sectors as faults", func(t *testing.T) {
+		queue := emptyExprirationQueue(t)
+		queue.AddActiveSectors(sectors, sectorSize)
+
+		_, err := queue.Root()
+		require.NoError(t, err)
+
+		queue.RescheduleAsFaults(abi.ChainEpoch(20), sectors[:3], sectorSize)
+
+		_, err = queue.Root()
+		require.NoError(t, err)
+
+		// expect 3 rescheduled sectors to be bundled into 1 group
+		assert.Equal(t, 4, int(queue.Length()))
+
+		// pop off sectors before new expiration and expect only the rescheduled group to remain
+		_, err = queue.PopUntil(19)
+		require.NoError(t, err)
+		assert.Equal(t, 1, int(queue.Length()))
+
+		// pop off rescheduled sectors
+		set, err := queue.PopUntil(20)
+		require.NoError(t, err)
+		assert.Equal(t, 0, int(queue.Length()))
+
+		// expect all sector stats from first 3 sectors to belong to new expiration group
+		assertBitfieldEquals(t, set.OnTimeSectors, 1, 2, 3)
+		assertBitfieldEmpty(t, set.EarlySectors)
+
+		// expect power to be converted to faulty power
+		activePower := NewPowerPairZero()
+		faultyPower := PowerForSectors(sectorSize, sectors[:3])
+
+		assert.Equal(t, big.NewInt(3003), set.OnTimePledge)
+		assert.True(t, activePower.Equals(set.ActivePower))
+		assert.True(t, faultyPower.Equals(set.FaultyPower))
+	})
+
 }
 
 func TestExpirations(t *testing.T) {
