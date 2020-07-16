@@ -6,8 +6,14 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
-// IP = InitialPledgeFactor * BR(precommit time)
+// IP = IPBase(precommit time) + AdditionalIP(precommit time)
+// IPBase(t) = InitialPledgeFactor * BR(t)
+// AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
+// LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
+// PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
 var InitialPledgeFactor = big.NewInt(20)
+var LockTargetFactorNum = big.NewInt(3)
+var LockTargetFactorDenom = big.NewInt(10)
 
 // FF = (DeclaredFaultFactorNum / DeclaredFaultFactorDenom) * BR(t)
 var DeclaredFaultFactorNum = big.NewInt(214)
@@ -68,11 +74,16 @@ func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower, targetPower
 	// Details here are still subject to change.
 	// PARAM_FINISH
 	// https://github.com/filecoin-project/specs-actors/issues/468
-	_ = networkCirculatingSupply // TODO: ce use this
-	_ = networkTotalPledge       // TODO: ce use this
+	_ = networkTotalPledge // TODO: ce use this
 
 	if networkQAPower.IsZero() {
 		return epochTargetReward
 	}
-	return big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaPower))
+	ipBase := big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaPower))
+	additionalIPNum := big.Mul(big.Mul(LockTargetFactorNum, networkCirculatingSupply), qaPower)
+	storageToCover := big.Max(networkQAPower, targetPower)
+	additionalIPDenom := big.Mul(storageToCover, LockTargetFactorDenom)
+	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
+
+	return big.Add(ipBase, additionalIP)
 }
