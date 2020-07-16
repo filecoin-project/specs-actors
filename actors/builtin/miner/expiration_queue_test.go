@@ -182,6 +182,7 @@ func TestExpirationQueue(t *testing.T) {
 	t.Run("added sectors can be popped off queue", func(t *testing.T) {
 		queue := emptyExpirationQueue(t)
 		secNums, power, pledge, err := queue.AddActiveSectors(sectors, sectorSize)
+		require.NoError(t, err)
 		assertBitfieldEquals(t, secNums, 1, 2, 3, 4, 5, 6)
 		assert.True(t, power.Equals(PowerForSectors(sectorSize, sectors)))
 		assert.Equal(t, abi.NewTokenAmount(6015), pledge)
@@ -227,6 +228,7 @@ func TestExpirationQueue(t *testing.T) {
 	t.Run("quantizes added sectors by expiration", func(t *testing.T) {
 		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
 		secNums, power, pledge, err := queue.AddActiveSectors(sectors, sectorSize)
+		require.NoError(t, err)
 		assertBitfieldEquals(t, secNums, 1, 2, 3, 4, 5, 6)
 		assert.True(t, power.Equals(PowerForSectors(sectorSize, sectors)))
 		assert.Equal(t, abi.NewTokenAmount(6015), pledge)
@@ -528,6 +530,7 @@ func TestExpirationQueue(t *testing.T) {
 			toRemove,
 			toAdd,
 			sectorSize)
+		require.NoError(t, err)
 		assertBitfieldEquals(t, removed, 1, 2, 4)
 		assertBitfieldEquals(t, added, 3, 5)
 		addedPower := PowerForSectors(sectorSize, toAdd)

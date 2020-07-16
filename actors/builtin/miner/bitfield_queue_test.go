@@ -57,7 +57,8 @@ func TestBitfieldQueue(t *testing.T) {
 		queue := emptyBitfieldQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
 
 		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
-			queue.AddToQueueValues(abi.ChainEpoch(val), val)
+			err := queue.AddToQueueValues(abi.ChainEpoch(val), val)
+			require.NoError(t, err)
 		}
 
 		// expect values to only be set on quantization boundaries
