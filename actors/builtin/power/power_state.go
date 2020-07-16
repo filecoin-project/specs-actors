@@ -1,6 +1,7 @@
 package power
 
 import (
+	"fmt"
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
@@ -66,35 +67,6 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		MinerCount:              0,
 		MinerAboveMinPowerCount: 0,
 	}
-}
-
-// MinerNominalPowerMeetsConsensusMinimum is used to validate Election PoSt
-// winners outside the chain state. If the miner has over a threshold of power
-// the miner meets the minimum.  If the network is a below a threshold of
-// miners and has power > zero the miner meets the minimum.
-func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) { //nolint:deadcode,unused
-	claim, ok, err := st.GetClaim(s, miner)
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, errors.Errorf("no claim for actor %v", miner)
-	}
-
-	minerNominalPower := claim.QualityAdjPower
-
-	// if miner is larger than min power requirement, we're set
-	if minerNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
-		return true, nil
-	}
-
-	// otherwise, if ConsensusMinerMinMiners miners meet min power requirement, return false
-	if st.MinerAboveMinPowerCount >= ConsensusMinerMinMiners {
-		return false, nil
-	}
-
-	// If fewer than ConsensusMinerMinMiners over threshold miner can win a block with non-zero power
-	return minerNominalPower.GreaterThanEqual(abi.NewStoragePower(0)), nil
 }
 
 // Parameters may be negative to subtract.
@@ -163,93 +135,46 @@ func (st *State) addPledgeTotal(amount abi.TokenAmount) {
 	Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
 }
 
-func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
-	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
-	if err != nil {
-		return err
-	}
-
+func (m *stateMutator) appendCronEvent(epoch abi.ChainEpoch, event *CronEvent) error {
 	// if event is in past, alter FirstCronEpoch so it will be found.
-	if epoch < st.FirstCronEpoch {
-		st.FirstCronEpoch = epoch
+	if epoch < m.st.FirstCronEpoch {
+		m.st.FirstCronEpoch = epoch
 	}
 
-	err = mmap.Add(epochKey(epoch), event)
-	if err != nil {
+	if err := m.cronEventQueue.Add(epochKey(epoch), event); err != nil {
 		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
 	}
-	st.CronEventQueue, err = mmap.Root()
-	if err != nil {
-		return err
-	}
+
 	return nil
 }
 
-func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEvent, error) {
-	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
-	if err != nil {
-		return nil, err
-	}
-
+func (m *stateMutator) loadCronEvents(epoch abi.ChainEpoch) ([]CronEvent, error) {
 	var events []CronEvent
 	var ev CronEvent
-	err = mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
+	err := m.cronEventQueue.ForEach(epochKey(epoch), &ev, func(i int64) error {
 		events = append(events, ev)
 		return nil
 	})
 	return events, err
 }
 
-func (st *State) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
-	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
-	if err != nil {
-		return err
-	}
-
-	err = mmap.RemoveAll(epochKey(epoch))
+func (m *stateMutator) clearCronEvents(epoch abi.ChainEpoch) error {
+	err := m.cronEventQueue.RemoveAll(epochKey(epoch))
 	if err != nil {
 		return errors.Wrapf(err, "failed to clear cron events")
 	}
-	st.CronEventQueue, err = mmap.Root()
-	if err != nil {
-		return err
-	}
+
 	return nil
 }
 
-func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
+func (m *stateMutator) setClaim(a addr.Address, claim *Claim) error {
 	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return err
+	if err := m.claims.Put(AddrKey(a), claim); err != nil {
+		return errors.Wrapf(err, "failed to put claim with address %s power %v", a, claim)
 	}
 
-	if err = hm.Put(AddrKey(a), claim); err != nil {
-		return errors.Wrapf(err, "failed to put claim with address %s power %v in store %s", a, claim, st.Claims)
-	}
-
-	st.Claims, err = hm.Root()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return err
-	}
-
-	if err = hm.Delete(AddrKey(a)); err != nil {
-		return errors.Wrapf(err, "failed to delete claim at address %s from store %s", a, st.Claims)
-	}
-	st.Claims, err = hm.Root()
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -272,4 +197,94 @@ func init() {
 	if reflect.TypeOf(e).Kind() != reflect.Int64 {
 		panic("incorrect chain epoch encoding")
 	}
+}
+
+func (st *State) mutator(store adt.Store) *stateMutator {
+	return &stateMutator{st: st, store: store}
+}
+
+type stateMutator struct {
+	st    *State
+	store adt.Store
+
+	proofValidPermit     adt.MutationPermission
+	proofValidationBatch *adt.Multimap
+
+	claimsPermit adt.MutationPermission
+	claims       *adt.Map
+
+	cronEventPermit adt.MutationPermission
+	cronEventQueue  *adt.Multimap
+}
+
+func (m *stateMutator) withProofValidationBatch(permit adt.MutationPermission) *stateMutator {
+	m.proofValidPermit = permit
+	return m
+}
+
+func (m *stateMutator) withClaims(permit adt.MutationPermission) *stateMutator {
+	m.claimsPermit = permit
+	return m
+}
+
+func (m *stateMutator) withCronEventQueue(permit adt.MutationPermission) *stateMutator {
+	m.cronEventPermit = permit
+	return m
+}
+
+func (m *stateMutator) build() (*stateMutator, error) {
+	if m.proofValidPermit != adt.InvalidPermission {
+		if m.st.ProofValidationBatch == nil {
+			m.proofValidationBatch = adt.MakeEmptyMultimap(m.store)
+		} else {
+			proofValidationBatch, err := adt.AsMultimap(m.store, *m.st.ProofValidationBatch)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load ProofValidationBatch: %w", err)
+			}
+			m.proofValidationBatch = proofValidationBatch
+		}
+	}
+
+	if m.claimsPermit != adt.InvalidPermission {
+		claims, err := adt.AsMap(m.store, m.st.Claims)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load claims: %w", err)
+		}
+		m.claims = claims
+	}
+
+	if m.cronEventPermit != adt.InvalidPermission {
+		cron, err := adt.AsMultimap(m.store, m.st.CronEventQueue)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load CronEventQueue: %w", err)
+		}
+		m.cronEventQueue = cron
+	}
+
+	return m, nil
+}
+
+func (m *stateMutator) commitState() error {
+	var err error
+	if m.proofValidPermit == adt.WritePermission {
+		cid, err := m.proofValidationBatch.Root()
+		if err != nil {
+			return fmt.Errorf("failed to flush proofValidationBatch: %w", err)
+		}
+		m.st.ProofValidationBatch = &cid
+	}
+
+	if m.claimsPermit == adt.WritePermission {
+		if m.st.Claims, err = m.claims.Root(); err != nil {
+			return fmt.Errorf("failed to flush claims: %w", err)
+		}
+	}
+
+	if m.cronEventPermit == adt.WritePermission {
+		if m.st.CronEventQueue, err = m.cronEventQueue.Root(); err != nil {
+			return fmt.Errorf("failed to flush CronEventQueue: %w", err)
+		}
+	}
+
+	return nil
 }

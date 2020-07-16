@@ -134,12 +134,18 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
-		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0)})
+		m, err := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		err = m.setClaim(addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0)})
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
 		}
 		st.MinerCount += 1
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		return nil
 	})
 	return &CreateMinerReturn{
@@ -187,10 +193,15 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.appendCronEvent(adt.AsStore(rt), params.EventEpoch, &minerEvent)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to enroll cron event: %v", err)
-		}
+		m, err := st.mutator(adt.AsStore(rt)).withCronEventQueue(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		err = m.appendCronEvent(params.EventEpoch, &minerEvent)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to enroll cron event: %v", err)
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		return nil
 	})
 	return nil
@@ -272,34 +283,24 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
-		var mmap *adt.Multimap
-		if st.ProofValidationBatch == nil {
-			mmap = adt.MakeEmptyMultimap(store)
-		} else {
-			var err error
-			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to load proof batching set: %s", err)
-			}
-		}
 
-		arr, found, err := mmap.Get(adt.AddrKey(minerAddr))
+		mutator, err := st.mutator(adt.AsStore(rt)).withProofValidationBatch(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush mutator")
+
+		arr, found, err := mutator.proofValidationBatch.Get(adt.AddrKey(minerAddr))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get get seal verify infos at addr %s", minerAddr)
 		if found && arr.Length() >= MaxMinerProveCommitsPerEpoch {
 			rt.Abortf(ErrTooManyProveCommits, "miner %s attempting to prove commit over %d sectors in epoch", minerAddr, MaxMinerProveCommitsPerEpoch)
 		}
 
-		if err := mmap.Add(adt.AddrKey(minerAddr), sealInfo); err != nil {
+		if err := mutator.proofValidationBatch.Add(adt.AddrKey(minerAddr), sealInfo); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to insert proof into set: %s", err)
 		}
 
-		mmrc, err := mmap.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proofs batch map: %s", err)
-		}
+		err = mutator.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
-		st.ProofValidationBatch = &mmrc
 		return nil
 	})
 
@@ -338,16 +339,14 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 	verifies := make(map[address.Address][]abi.SealVerifyInfo)
 
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
 		if st.ProofValidationBatch == nil {
 			return nil
 		}
-		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load proofs validation batch: %s", err)
-		}
 
-		err = mmap.ForAll(func(k string, arr *adt.Array) error {
+		m, err := st.mutator(adt.AsStore(rt)).withProofValidationBatch(adt.ReadOnlyPermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		err = m.proofValidationBatch.ForAll(func(k string, arr *adt.Array) error {
 			a, err := address.NewFromBytes([]byte(k))
 			if err != nil {
 				return xerrors.Errorf("failed to parse address key: %w", err)
@@ -423,10 +422,12 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 	var cronEvents []CronEvent
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
+		m, err := st.mutator(adt.AsStore(rt)).withCronEventQueue(adt.WritePermission).build()
 
 		for epoch := st.FirstCronEpoch; epoch <= rtEpoch; epoch++ {
-			epochEvents, err := st.loadCronEvents(store, epoch)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+			epochEvents, err := m.loadCronEvents(epoch)
 			if err != nil {
 				return errors.Wrapf(err, "failed to load cron events at %v", epoch)
 			}
@@ -434,7 +435,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 			cronEvents = append(cronEvents, epochEvents...)
 
 			if len(epochEvents) > 0 {
-				err = st.clearCronEvents(store, epoch)
+				err = m.clearCronEvents(epoch)
 				if err != nil {
 					return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
 				}
@@ -442,6 +443,10 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		}
 
 		st.FirstCronEpoch = rtEpoch + 1
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		return nil
 	})
 	failedMinerCrons := make([]addr.Address, 0)
@@ -491,13 +496,19 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
 	var err error
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.deleteClaim(adt.AsStore(rt), miner)
+		m, err := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		err = m.claims.Delete(AddrKey(miner))
 		if err != nil {
 			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
 			return nil
 		}
 
 		st.MinerCount -= 1
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 		return nil
 	})
 	return err

@@ -523,7 +523,7 @@ func TestCommitments(t *testing.T) {
 		// Set the right epoch for all following tests
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
 
-		// Invalid deals (market ActivateDeals aborts)
+		// invalid deals (market ActivateDeals aborts)
 		verifyDealsExit := make(map[abi.SectorNumber]exitcode.ExitCode)
 		verifyDealsExit[precommit.SectorNumber] = exitcode.ErrIllegalArgument
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -533,7 +533,7 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// Invalid seal proof
+		// invalid seal proof
 		/* TODO: how should this test work?
 		// https://github.com/filecoin-project/specs-actors/issues/479
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {

@@ -236,38 +236,38 @@ func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
 }
 
-// MarketStateMutationPermission is the mutation permission on a state field
-type MarketStateMutationPermission int
+// marketStateMutationPermission is the mutation permission on a state field
+type marketStateMutationPermission int
 
 const (
-	// Invalid means NO permission
-	Invalid MarketStateMutationPermission = iota
-	// ReadOnlyPermission allows reading but not mutating the field
-	ReadOnlyPermission
-	// WritePermission allows mutating the field
-	WritePermission
+	// invalid means NO permission
+	invalid marketStateMutationPermission = iota
+	// readOnlyPermission allows reading but not mutating the field
+	readOnlyPermission
+	// writePermission allows mutating the field
+	writePermission
 )
 
 type marketStateMutation struct {
 	st    *State
 	store adt.Store
 
-	proposalPermit MarketStateMutationPermission
+	proposalPermit marketStateMutationPermission
 	dealProposals  *DealArray
 
-	statePermit MarketStateMutationPermission
+	statePermit marketStateMutationPermission
 	dealStates  *DealMetaArray
 
-	escrowPermit MarketStateMutationPermission
+	escrowPermit marketStateMutationPermission
 	escrowTable  *adt.BalanceTable
 
-	pendingPermit MarketStateMutationPermission
+	pendingPermit marketStateMutationPermission
 	pendingDeals  *adt.Map
 
-	dpePermit    MarketStateMutationPermission
+	dpePermit    marketStateMutationPermission
 	dealsByEpoch *SetMultimap
 
-	lockedPermit                  MarketStateMutationPermission
+	lockedPermit                  marketStateMutationPermission
 	lockedTable                   *adt.BalanceTable
 	totalClientLockedCollateral   abi.TokenAmount
 	totalProviderLockedCollateral abi.TokenAmount
@@ -281,7 +281,7 @@ func (s *State) mutator(store adt.Store) *marketStateMutation {
 }
 
 func (m *marketStateMutation) build() (*marketStateMutation, error) {
-	if m.proposalPermit != Invalid {
+	if m.proposalPermit != invalid {
 		proposals, err := AsDealProposalArray(m.store, m.st.Proposals)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load deal proposals: %w", err)
@@ -289,7 +289,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		m.dealProposals = proposals
 	}
 
-	if m.statePermit != Invalid {
+	if m.statePermit != invalid {
 		states, err := AsDealStateArray(m.store, m.st.States)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load deal state: %w", err)
@@ -297,7 +297,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		m.dealStates = states
 	}
 
-	if m.lockedPermit != Invalid {
+	if m.lockedPermit != invalid {
 		lt, err := adt.AsBalanceTable(m.store, m.st.LockedTable)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load locked table: %w", err)
@@ -308,7 +308,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		m.totalProviderLockedCollateral = m.st.TotalProviderLockedCollateral.Copy()
 	}
 
-	if m.escrowPermit != Invalid {
+	if m.escrowPermit != invalid {
 		et, err := adt.AsBalanceTable(m.store, m.st.EscrowTable)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load escrow table: %w", err)
@@ -316,7 +316,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		m.escrowTable = et
 	}
 
-	if m.pendingPermit != Invalid {
+	if m.pendingPermit != invalid {
 		pending, err := adt.AsMap(m.store, m.st.PendingProposals)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load pending proposals: %w", err)
@@ -324,7 +324,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		m.pendingDeals = pending
 	}
 
-	if m.dpePermit != Invalid {
+	if m.dpePermit != invalid {
 		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load deals by epoch: %w", err)
@@ -337,51 +337,51 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	return m, nil
 }
 
-func (m *marketStateMutation) withDealProposals(permit MarketStateMutationPermission) *marketStateMutation {
+func (m *marketStateMutation) withDealProposals(permit marketStateMutationPermission) *marketStateMutation {
 	m.proposalPermit = permit
 	return m
 }
 
-func (m *marketStateMutation) withDealStates(permit MarketStateMutationPermission) *marketStateMutation {
+func (m *marketStateMutation) withDealStates(permit marketStateMutationPermission) *marketStateMutation {
 	m.statePermit = permit
 	return m
 }
 
-func (m *marketStateMutation) withEscrowTable(permit MarketStateMutationPermission) *marketStateMutation {
+func (m *marketStateMutation) withEscrowTable(permit marketStateMutationPermission) *marketStateMutation {
 	m.escrowPermit = permit
 	return m
 }
 
-func (m *marketStateMutation) withLockedTable(permit MarketStateMutationPermission) *marketStateMutation {
+func (m *marketStateMutation) withLockedTable(permit marketStateMutationPermission) *marketStateMutation {
 	m.lockedPermit = permit
 	return m
 }
 
-func (m *marketStateMutation) withPendingProposals(permit MarketStateMutationPermission) *marketStateMutation {
+func (m *marketStateMutation) withPendingProposals(permit marketStateMutationPermission) *marketStateMutation {
 	m.pendingPermit = permit
 	return m
 }
 
-func (m *marketStateMutation) withDealsByEpoch(permit MarketStateMutationPermission) *marketStateMutation {
+func (m *marketStateMutation) withDealsByEpoch(permit marketStateMutationPermission) *marketStateMutation {
 	m.dpePermit = permit
 	return m
 }
 
 func (m *marketStateMutation) commitState() error {
 	var err error
-	if m.proposalPermit == WritePermission {
+	if m.proposalPermit == writePermission {
 		if m.st.Proposals, err = m.dealProposals.Root(); err != nil {
 			return fmt.Errorf("failed to flush deal dealProposals: %w", err)
 		}
 	}
 
-	if m.statePermit == WritePermission {
+	if m.statePermit == writePermission {
 		if m.st.States, err = m.dealStates.Root(); err != nil {
 			return fmt.Errorf("failed to flush deal states: %w", err)
 		}
 	}
 
-	if m.lockedPermit == WritePermission {
+	if m.lockedPermit == writePermission {
 		if m.st.LockedTable, err = m.lockedTable.Root(); err != nil {
 			return fmt.Errorf("failed to flush locked table: %w", err)
 		}
@@ -390,19 +390,19 @@ func (m *marketStateMutation) commitState() error {
 		m.st.TotalClientStorageFee = m.totalClientStorageFee.Copy()
 	}
 
-	if m.escrowPermit == WritePermission {
+	if m.escrowPermit == writePermission {
 		if m.st.EscrowTable, err = m.escrowTable.Root(); err != nil {
 			return fmt.Errorf("failed to flush escrow table: %w", err)
 		}
 	}
 
-	if m.pendingPermit == WritePermission {
+	if m.pendingPermit == writePermission {
 		if m.st.PendingProposals, err = m.pendingDeals.Root(); err != nil {
 			return fmt.Errorf("failed to flush pending deals: %w", err)
 		}
 	}
 
-	if m.dpePermit == WritePermission {
+	if m.dpePermit == writePermission {
 		if m.st.DealOpsByEpoch, err = m.dealsByEpoch.Root(); err != nil {
 			return fmt.Errorf("failed to flush deals by epoch: %w", err)
 		}
