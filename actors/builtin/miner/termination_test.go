@@ -12,10 +12,11 @@ import (
 func TestTerminationResult(t *testing.T) {
 	var result miner.TerminationResult
 	require.True(t, result.IsEmpty())
-	result.ForEach(func(epoch abi.ChainEpoch, sectors *abi.BitField) error {
+	err := result.ForEach(func(epoch abi.ChainEpoch, sectors *abi.BitField) error {
 		require.FailNow(t, "unreachable")
 		return nil
 	})
+	require.NoError(t, err)
 
 	resultA := miner.TerminationResult{
 		Sectors: map[abi.ChainEpoch]*abi.BitField{
@@ -54,7 +55,7 @@ func TestTerminationResult(t *testing.T) {
 	require.Equal(t, len(expected.Sectors), len(result.Sectors))
 
 	expectedEpoch := abi.ChainEpoch(0)
-	result.ForEach(func(epoch abi.ChainEpoch, actualBf *abi.BitField) error {
+	err = result.ForEach(func(epoch abi.ChainEpoch, actualBf *abi.BitField) error {
 		require.Equal(t, expectedEpoch, epoch)
 		expectedEpoch++
 		expectedBf, ok := expected.Sectors[epoch]
@@ -62,9 +63,11 @@ func TestTerminationResult(t *testing.T) {
 		expectedNos, err := expectedBf.All(1000)
 		require.NoError(t, err)
 		actualNos, err := actualBf.All(1000)
+		require.NoError(t, err)
 		require.Equal(t, expectedNos, actualNos)
 		return nil
 	})
+	require.NoError(t, err)
 
 	// partitions = 2, sectors = 9
 	require.False(t, result.BelowLimit(2, 9))
