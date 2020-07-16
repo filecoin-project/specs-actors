@@ -35,6 +35,8 @@ func (t *TerminationResult) Add(newResult TerminationResult) error {
 	return nil
 }
 
+// Returns true if we're below the partition/sector limit. Returns false if
+// we're at (or above) the limit.
 func (t *TerminationResult) BelowLimit(maxPartitions, maxSectors uint64) bool {
 	return t.PartitionsProcessed < maxPartitions && t.SectorsProcessed < maxSectors
 }

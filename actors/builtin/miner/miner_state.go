@@ -658,7 +658,6 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 	}
 
 	// Process early terminations.
-	var partitionsProcessed, sectorsProcessed uint64
 	if err = st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
 		// Load deadline + partitions.
 		dl, err := deadlines.LoadDeadline(store, dlIdx)
@@ -666,7 +665,7 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 			return xerrors.Errorf("failed to load deadline %d: %w", dlIdx, err)
 		}
 
-		deadlineResult, more, err := dl.PopEarlyTerminations(store, maxPartitions-partitionsProcessed, maxSectors-sectorsProcessed)
+		deadlineResult, more, err := dl.PopEarlyTerminations(store, maxPartitions-result.PartitionsProcessed, maxSectors-result.SectorsProcessed)
 		if err != nil {
 			return xerrors.Errorf("failed to pop early terminations for deadline %d: %w", dlIdx, err)
 		}
@@ -687,7 +686,7 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 			return xerrors.Errorf("failed to store deadline %d: %w", dlIdx, err)
 		}
 
-		if partitionsProcessed < maxPartitions && sectorsProcessed < maxSectors {
+		if result.BelowLimit(maxPartitions, maxSectors) {
 			return nil
 		}
 
