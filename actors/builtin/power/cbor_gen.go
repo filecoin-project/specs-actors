@@ -13,7 +13,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{139}
+var lengthBufState = []byte{142}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -48,6 +48,21 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	// t.TotalPledgeCollateral (big.Int) (struct)
 	if err := t.TotalPledgeCollateral.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochRawBytePower (big.Int) (struct)
+	if err := t.ThisEpochRawBytePower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochQualityAdjPower (big.Int) (struct)
+	if err := t.ThisEpochQualityAdjPower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochPledgeCollateral (big.Int) (struct)
+	if err := t.ThisEpochPledgeCollateral.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -125,7 +140,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 11 {
+	if extra != 14 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -171,6 +186,33 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.TotalPledgeCollateral.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.TotalPledgeCollateral: %w", err)
+		}
+
+	}
+	// t.ThisEpochRawBytePower (big.Int) (struct)
+
+	{
+
+		if err := t.ThisEpochRawBytePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochRawBytePower: %w", err)
+		}
+
+	}
+	// t.ThisEpochQualityAdjPower (big.Int) (struct)
+
+	{
+
+		if err := t.ThisEpochQualityAdjPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochQualityAdjPower: %w", err)
+		}
+
+	}
+	// t.ThisEpochPledgeCollateral (big.Int) (struct)
+
+	{
+
+		if err := t.ThisEpochPledgeCollateral.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochPledgeCollateral: %w", err)
 		}
 
 	}
