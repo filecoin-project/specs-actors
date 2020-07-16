@@ -148,6 +148,8 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 		if !isSigner(rt.ResolveAddress, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 		txnID = st.NextTxnID
 		st.NextTxnID += 1
@@ -159,9 +161,13 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 			Approved: []addr.Address{},
 		}
 
-		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
+		if err := ptx.Put(txnID, txn); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for propose: %v", err)
 		}
+
+		st.PendingTxns, err = ptx.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
+
 		return nil
 	})
 
@@ -197,10 +203,16 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	var st State
 	var txn *Transaction
 	rt.State().Transaction(&st, func() interface{} {
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
+
 		if !isSigner(rt.ResolveAddress, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
-		txn = a.getTransaction(rt, st, params.ID, params.ProposalHash, true)
+		txn = a.getTransaction(rt, st, ptx, params.ID, params.ProposalHash, true)
+
+		st.PendingTxns, err = ptx.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
 		return nil
 	})
 
@@ -229,7 +241,10 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
 
-		txn, err := st.getPendingTransaction(adt.AsStore(rt), params.ID)
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending txns")
+
+		txn, err := getPendingTransaction(ptx, params.ID, st.PendingTxns)
 		if err != nil {
 			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
 		}
@@ -247,9 +262,12 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
 		}
 
-		if err = st.deletePendingTransaction(adt.AsStore(rt), params.ID); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cancel: %v", err)
-		}
+		err = ptx.Delete(params.ID)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pending transaction")
+
+		st.PendingTxns, err = ptx.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
+
 		return nil
 	})
 	return nil
@@ -385,23 +403,27 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 
 	// add the caller to the list of approvers
 	rt.State().Transaction(&st, func() interface{} {
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
-		if err := st.putPendingTransaction(adt.AsStore(rt), txnID, txn); err != nil {
+		if err := ptx.Put(txnID, txn); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
 		}
+		st.PendingTxns, err = ptx.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
 		return nil
 	})
 
 	return executeTransactionIfApproved(rt, st, txnID, txn)
 }
 
-func (a Actor) getTransaction(rt vmr.Runtime, st State, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
+func (a Actor) getTransaction(rt vmr.Runtime, st State, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
 	var txn Transaction
 
 	// get transaction from the state trie
 	var err error
-	txn, err = st.getPendingTransaction(adt.AsStore(rt), txnID)
+	txn, err = getPendingTransaction(ptx, txnID, st.PendingTxns)
 	if err != nil {
 		rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
 	}
@@ -449,9 +471,15 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {
-			if err := st.deletePendingTransaction(adt.AsStore(rt), txnID); err != nil {
+			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
+
+			if err := ptx.Delete(txnID); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
+
+			st.PendingTxns, err = ptx.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
 			return nil
 		})
 	}

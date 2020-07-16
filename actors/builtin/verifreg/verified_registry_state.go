@@ -1,13 +1,13 @@
 package verifreg
 
 import (
-	addr "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
+	"fmt"
 
+	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	cid "github.com/ipfs/go-cid"
 )
 
 // DataCap is an integer number of bytes.
@@ -39,94 +39,64 @@ func ConstructState(emptyMapCid cid.Cid, rootKeyAddress addr.Address) *State {
 	}
 }
 
-func (st *State) PutVerifier(store adt.Store, verifierAddr addr.Address, verifierCap DataCap) error {
-	verifiers, err := adt.AsMap(store, st.Verifiers)
-	if err != nil {
-		return err
-	}
-
-	if err := verifiers.Put(AddrKey(verifierAddr), &verifierCap); err != nil {
-		return errors.Wrapf(err, "failed to put verifier %v with a cap of %v", verifierAddr, verifierCap)
-	}
-	st.Verifiers, err = verifiers.Root()
-	if err != nil {
-		return errors.Wrapf(err, "failed to flush Verifiers in PutVerifier")
-	}
-	return nil
+func (st *State) mutator(store adt.Store) *stateMutator {
+	return &stateMutator{st: st, store: store}
 }
 
-func (st *State) GetVerifier(store adt.Store, address addr.Address) (*DataCap, bool, error) {
-	verifiers, err := adt.AsMap(store, st.Verifiers)
-	if err != nil {
-		return nil, false, err
-	}
+type stateMutator struct {
+	st    *State
+	store adt.Store
 
-	var allowance DataCap
-	found, err := verifiers.Get(AddrKey(address), &allowance)
-	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to load verifier for address %v", address)
-	}
-	return &allowance, found, nil
+	verifiersPermit adt.MutationPermission
+	verifiers       *adt.Map
+
+	clientsPermit   adt.MutationPermission
+	verifiedClients *adt.Map
 }
 
-func (st *State) DeleteVerifier(store adt.Store, address addr.Address) error {
-	verifiers, err := adt.AsMap(store, st.Verifiers)
-	if err != nil {
-		return err
+func (m *stateMutator) build() (*stateMutator, error) {
+	if m.verifiersPermit != adt.InvalidPermission {
+		verifiers, err := adt.AsMap(m.store, m.st.Verifiers)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load verifiers: %w", err)
+		}
+		m.verifiers = verifiers
 	}
 
-	if err := verifiers.Delete(AddrKey(address)); err != nil {
-		return errors.Wrapf(err, "failed to delete verifier for address %v", address)
+	if m.clientsPermit != adt.InvalidPermission {
+		clients, err := adt.AsMap(m.store, m.st.VerifiedClients)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load verified clients: %w", err)
+		}
+		m.verifiedClients = clients
 	}
-	st.Verifiers, err = verifiers.Root()
-	if err != nil {
-		return errors.Wrapf(err, "failed to flush Verifiers in DeleteVerifier")
-	}
-	return nil
+
+	return m, nil
 }
 
-func (st *State) PutVerifiedClient(store adt.Store, vcAddress addr.Address, vcCap DataCap) error {
-	vc, err := adt.AsMap(store, st.VerifiedClients)
-	if err != nil {
-		return err
-	}
-
-	if err := vc.Put(AddrKey(vcAddress), &vcCap); err != nil {
-		return err
-	}
-	st.VerifiedClients, err = vc.Root()
-	if err != nil {
-		return errors.Wrapf(err, "failed to flush VerifiedClients in PutVerifiedClient")
-	}
-	return nil
+func (m *stateMutator) withVerifiers(permit adt.MutationPermission) *stateMutator {
+	m.verifiersPermit = permit
+	return m
 }
 
-func (st *State) GetVerifiedClient(store adt.Store, vcAddress addr.Address) (DataCap, bool, error) {
-	vc, err := adt.AsMap(store, st.VerifiedClients)
-	if err != nil {
-		return big.Zero(), false, err
-	}
-
-	var allowance DataCap
-	found, err := vc.Get(AddrKey(vcAddress), &allowance)
-	if err != nil {
-		return big.Zero(), false, errors.Wrapf(err, "failed to load verified client for address %v", vcAddress)
-	}
-	return allowance, found, nil
+func (m *stateMutator) withVerifiedClients(permit adt.MutationPermission) *stateMutator {
+	m.clientsPermit = permit
+	return m
 }
 
-func (st *State) DeleteVerifiedClient(store adt.Store, vcAddress addr.Address) error {
-	vc, err := adt.AsMap(store, st.VerifiedClients)
-	if err != nil {
-		return err
+func (m *stateMutator) commitState() error {
+	var err error
+	if m.verifiersPermit == adt.WritePermission {
+		if m.st.Verifiers, err = m.verifiers.Root(); err != nil {
+			return fmt.Errorf("failed to flush Verifiers: %w", err)
+		}
 	}
 
-	if err := vc.Delete(AddrKey(vcAddress)); err != nil {
-		return errors.Wrapf(err, "failed to delete verified client for address %v", vcAddress)
+	if m.clientsPermit == adt.WritePermission {
+		if m.st.VerifiedClients, err = m.verifiedClients.Root(); err != nil {
+			return fmt.Errorf("failed to flush Verified Clients: %w", err)
+		}
 	}
-	st.VerifiedClients, err = vc.Root()
-	if err != nil {
-		return errors.Wrapf(err, "failed to flush VerifiedClients in DeleteVerifiedClient")
-	}
+
 	return nil
 }

@@ -82,8 +82,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(WritePermission).
-			withLockedTable(WritePermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(adt.WritePermission).
+			withLockedTable(adt.WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		// The withdrawable amount might be slightly less than nominal
@@ -115,8 +115,8 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(WritePermission).
-			withLockedTable(WritePermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(adt.WritePermission).
+			withLockedTable(adt.WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		err = msm.escrowTable.AddCreate(nominal, msgValue)
@@ -184,9 +184,9 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	var newDealIds []abi.DealID
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(WritePermission).
-			withDealProposals(WritePermission).withDealsByEpoch(WritePermission).withEscrowTable(WritePermission).
-			withLockedTable(WritePermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(adt.WritePermission).
+			withDealProposals(adt.WritePermission).withDealsByEpoch(adt.WritePermission).withEscrowTable(adt.WritePermission).
+			withLockedTable(adt.WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
@@ -291,8 +291,8 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 		_, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
-		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
-			withPendingProposals(ReadOnlyPermission).withDealProposals(ReadOnlyPermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(adt.WritePermission).
+			withPendingProposals(adt.ReadOnlyPermission).withDealProposals(adt.ReadOnlyPermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for _, dealID := range params.DealIDs {
@@ -382,8 +382,8 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
-			withDealProposals(ReadOnlyPermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(adt.WritePermission).
+			withDealProposals(adt.ReadOnlyPermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state")
 
 		for _, dealID := range params.DealIDs {
@@ -444,9 +444,9 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 	rt.State().Transaction(&st, func() interface{} {
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
-		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
-			withLockedTable(WritePermission).withEscrowTable(WritePermission).withDealsByEpoch(WritePermission).
-			withDealProposals(WritePermission).withPendingProposals(WritePermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(adt.WritePermission).
+			withLockedTable(adt.WritePermission).withEscrowTable(adt.WritePermission).withDealsByEpoch(adt.WritePermission).
+			withDealProposals(adt.WritePermission).withPendingProposals(adt.WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
