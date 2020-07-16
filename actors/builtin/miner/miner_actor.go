@@ -1809,8 +1809,7 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 	case SectorHealthy:
 		// pass
 	default:
-		// TODO: Just panic?
-		rt.Abortf(exitcode.ErrIllegalState, "unexpected sector status %d", status)
+		panic(fmt.Sprintf("unexpected sector status %d", status))
 	}
 
 	return replaceSector
