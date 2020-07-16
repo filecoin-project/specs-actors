@@ -451,7 +451,7 @@ func TestExpirationQueue(t *testing.T) {
 		assert.True(t, faultyPower.Equals(set.FaultyPower))
 	})
 
-	t.Run("recover faults restores all sector stats", func(t *testing.T) {
+	t.Run("reschedule recover restores all sector stats", func(t *testing.T) {
 		// Create expiration 3 groups with 2 sectors apiece
 		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
 		queue.AddActiveSectors(sectors, sectorSize)
@@ -516,6 +516,56 @@ func TestExpirationQueue(t *testing.T) {
 		faultyPower = NewPowerPairZero()
 		assert.True(t, activePower.Equals(set.ActivePower))
 		assert.True(t, faultyPower.Equals(set.FaultyPower))
+	})
+
+	t.Run("replaces sectors with new sectors", func(t *testing.T) {
+		// Create expiration 3 groups
+		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+
+		// add sectors to each group
+		queue.AddActiveSectors([]*SectorOnChainInfo{sectors[0], sectors[1], sectors[3], sectors[5]}, sectorSize)
+
+		_, err := queue.Root()
+		require.NoError(t, err)
+
+		// remove all from first group, replace second group, and append to third
+		queue.ReplaceSectors(
+			[]*SectorOnChainInfo{sectors[0], sectors[1], sectors[3]},
+			[]*SectorOnChainInfo{sectors[2], sectors[4]},
+			sectorSize)
+
+		// first group is gone
+		requireNoExpirationGroupsBefore(t, 9, queue)
+
+		// second group is replaced
+		set, err := queue.PopUntil(9)
+		require.NoError(t, err)
+
+		assertBitfieldEquals(t, set.OnTimeSectors, 3)
+		assertBitfieldEmpty(t, set.EarlySectors)
+
+		// pledge and power is only from sector 3
+		assert.Equal(t, big.NewInt(1002), set.OnTimePledge)
+		activePower := PowerForSectors(sectorSize, sectors[2:3])
+		faultyPower := NewPowerPairZero()
+		assert.True(t, activePower.Equals(set.ActivePower))
+		assert.True(t, faultyPower.Equals(set.FaultyPower))
+
+		// last group appends sector 6
+		requireNoExpirationGroupsBefore(t, 13, queue)
+		set, err = queue.PopUntil(13)
+		require.NoError(t, err)
+
+		assertBitfieldEquals(t, set.OnTimeSectors, 5, 6)
+		assertBitfieldEmpty(t, set.EarlySectors)
+
+		// pledge and power are some of old and new sectors
+		assert.Equal(t, big.NewInt(2009), set.OnTimePledge)
+		activePower = PowerForSectors(sectorSize, sectors[4:])
+		faultyPower = NewPowerPairZero()
+		assert.True(t, activePower.Equals(set.ActivePower))
+		assert.True(t, faultyPower.Equals(set.FaultyPower))
+
 	})
 }
 
