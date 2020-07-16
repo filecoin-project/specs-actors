@@ -765,7 +765,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	var sectorCount uint64
 	for _, decl := range params.Extensions {
 		count, err := decl.Sectors.Count()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
 			"failed to count sectors for deadline %d, partition %d",
 			decl.Deadline, decl.Partition,
 		)
@@ -915,7 +915,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	var sectorCount uint64
 	for _, term := range params.Terminations {
 		count, err := term.Sectors.Count()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
 			"failed to count sectors for deadline %d, partition %d",
 			term.Deadline, term.Partition,
 		)
@@ -1045,7 +1045,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	var sectorCount uint64
 	for _, decl := range params.Faults {
 		count, err := decl.Sectors.Count()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
 			"failed to count sectors for deadline %d, partition %d",
 			decl.Deadline, decl.Partition,
 		)
