@@ -123,7 +123,7 @@ func TestMarketActor(t *testing.T) {
 					rt.Verify()
 
 					rt.GetState(&st)
-					assert.Equal(t, abi.NewTokenAmount(tc.total), st.GetEscrowBalance(rt, provider))
+					assert.Equal(t, abi.NewTokenAmount(tc.total), actor.getEscrowBalance(rt, provider))
 				}
 			}
 		})
@@ -166,7 +166,7 @@ func TestMarketActor(t *testing.T) {
 					rt.Verify()
 
 					rt.GetState(&st)
-					assert.Equal(t, abi.NewTokenAmount(tc.total), st.GetEscrowBalance(rt, callerAddr))
+					assert.Equal(t, abi.NewTokenAmount(tc.total), actor.getEscrowBalance(rt, callerAddr))
 				}
 			}
 		})
@@ -198,14 +198,14 @@ func TestMarketActor(t *testing.T) {
 			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
 
 			// worker calls WithdrawBalance, balance is transferred to owner
 			withdrawAmount := abi.NewTokenAmount(1)
 			actor.withdrawProviderBalance(rt, withdrawAmount, withdrawAmount, minerAddrs)
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(19), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(19), actor.getEscrowBalance(rt, provider))
 		})
 
 		t.Run("withdraws from non-provider escrow funds", func(t *testing.T) {
@@ -213,13 +213,13 @@ func TestMarketActor(t *testing.T) {
 			actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20))
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, client))
 
 			withdrawAmount := abi.NewTokenAmount(1)
 			actor.withdrawClientBalance(rt, client, withdrawAmount, withdrawAmount)
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(19), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(19), actor.getEscrowBalance(rt, client))
 		})
 
 		t.Run("client withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
@@ -232,7 +232,7 @@ func TestMarketActor(t *testing.T) {
 			actor.withdrawClientBalance(rt, client, withdrawAmount, expectedAmount)
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, client))
+			assert.Equal(t, abi.NewTokenAmount(0), actor.getEscrowBalance(rt, client))
 		})
 
 		t.Run("worker withdrawing more than escrow balance limits to available funds", func(t *testing.T) {
@@ -240,7 +240,7 @@ func TestMarketActor(t *testing.T) {
 			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(20), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
 
 			// withdraw amount greater than escrow balance
 			withdrawAmount := abi.NewTokenAmount(25)
@@ -248,7 +248,7 @@ func TestMarketActor(t *testing.T) {
 			actor.withdrawProviderBalance(rt, withdrawAmount, actualWithdrawn, minerAddrs)
 
 			rt.GetState(&st)
-			assert.Equal(t, abi.NewTokenAmount(0), st.GetEscrowBalance(rt, provider))
+			assert.Equal(t, abi.NewTokenAmount(0), actor.getEscrowBalance(rt, provider))
 		})
 
 		t.Run("balance after withdrawal must ALWAYS be greater than or equal to locked amount", func(t *testing.T) {
@@ -261,8 +261,8 @@ func TestMarketActor(t *testing.T) {
 			rt.SetEpoch(publishEpoch)
 			actor.publishDeals(rt, minerAddrs, deal)
 			rt.GetState(&st)
-			require.Equal(t, deal.ProviderCollateral, st.GetLockedBalance(rt, provider))
-			require.Equal(t, deal.ClientBalanceRequirement(), st.GetLockedBalance(rt, client))
+			require.Equal(t, deal.ProviderCollateral, actor.getEscrowBalance(rt, provider))
+			require.Equal(t, deal.ClientBalanceRequirement(), actor.getEscrowBalance(rt, client))
 
 			withDrawAmt := abi.NewTokenAmount(1)
 			withDrawableAmt := abi.NewTokenAmount(0)
@@ -377,7 +377,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, deal3.ClientBalanceRequirement(), client3Locked)
 		require.EqualValues(t, providerLocked, actor.getLockedBalance(rt, provider))
 
-		// assert locked funds states
+		// assert locked funds dealStates
 		rt.GetState(&st)
 		totalClientCollateralLocked := big.Sum(deal3.ClientCollateral, deal1.ClientCollateral, deal2.ClientCollateral)
 		require.EqualValues(t, totalClientCollateralLocked, st.TotalClientLockedCollateral)
@@ -403,7 +403,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, deal1.ClientBalanceRequirement(), client1Locked)
 		require.EqualValues(t, deal2.ClientBalanceRequirement(), client2Locked)
 
-		// assert locked funds states
+		// assert locked funds dealStates
 		totalClientCollateralLocked = big.Sum(totalClientCollateralLocked, deal4.ClientCollateral, deal5.ClientCollateral)
 		require.EqualValues(t, totalClientCollateralLocked, st.TotalClientLockedCollateral)
 		require.EqualValues(t, providerLocked, st.TotalProviderLockedCollateral)
@@ -1703,7 +1703,7 @@ func TestMarketActorDeals(t *testing.T) {
 	rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 	actor.addProviderFunds(rt, abi.NewTokenAmount(10000), minerAddrs)
 	rt.GetState(&st)
-	assert.Equal(t, abi.NewTokenAmount(10000), st.GetEscrowBalance(rt, provider))
+	assert.Equal(t, abi.NewTokenAmount(10000), actor.getEscrowBalance(rt, provider))
 
 	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(10000))
 
@@ -2211,14 +2211,28 @@ func (h *marketActorTestHarness) getEscrowBalance(rt *mock.Runtime, addr address
 	var st market.State
 	rt.GetState(&st)
 
-	return st.GetEscrowBalance(rt, addr)
+	et, err := adt.AsBalanceTable(adt.AsStore(rt), st.EscrowTable)
+	require.NoError(h.t, err)
+
+	bal, f, err := et.Get(addr)
+	require.NoError(h.t, err)
+	require.True(h.t, f)
+
+	return bal
 }
 
 func (h *marketActorTestHarness) getLockedBalance(rt *mock.Runtime, addr address.Address) abi.TokenAmount {
 	var st market.State
 	rt.GetState(&st)
 
-	return st.GetLockedBalance(rt, addr)
+	lt, err := adt.AsBalanceTable(adt.AsStore(rt), st.LockedTable)
+	require.NoError(h.t, err)
+
+	bal, f, err := lt.Get(addr)
+	require.NoError(h.t, err)
+	require.True(h.t, f)
+
+	return bal
 }
 
 func (h *marketActorTestHarness) getDealState(rt *mock.Runtime, dealID abi.DealID) *market.DealState {

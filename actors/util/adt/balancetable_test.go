@@ -37,14 +37,16 @@ func TestBalanceTable(t *testing.T) {
 		err = bt.AddCreate(addr, abi.NewTokenAmount(10))
 		assert.NoError(t, err)
 
-		amount, err := bt.Get(addr)
+		amount, found, err := bt.Get(addr)
+		require.True(t, found)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(10), amount)
 
 		err = bt.AddCreate(addr, abi.NewTokenAmount(20))
 		assert.NoError(t, err)
 
-		amount, err = bt.Get(addr)
+		amount, found, err = bt.Get(addr)
+		require.True(t, found)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(30), amount)
 	})
@@ -59,7 +61,8 @@ func TestBalanceTable(t *testing.T) {
 		// now create account -> add should work
 		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(10)))
 		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
-		bal, err := bt.Get(addr)
+		bal, found, err := bt.Get(addr)
+		require.True(t, found)
 		require.NoError(t, err)
 		require.Equal(t, abi.NewTokenAmount(15), bal)
 	})
@@ -68,14 +71,16 @@ func TestBalanceTable(t *testing.T) {
 		addr := tutil.NewIDAddr(t, 100)
 		bt := buildBalanceTable()
 
-		// fail if account hasnt been created
-		bal, err := bt.Get(addr)
-		require.Error(t, err)
+		// found is false if account hasnt been created
+		bal, found, err := bt.Get(addr)
+		require.False(t, found)
+		require.NoError(t, err)
 		require.Equal(t, big.Zero(), bal)
 
 		// now create account -> get should work
 		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(10)))
-		bal, err = bt.Get(addr)
+		bal, found, err = bt.Get(addr)
+		require.True(t, found)
 		require.NoError(t, err)
 		require.Equal(t, abi.NewTokenAmount(10), bal)
 	})
@@ -96,14 +101,16 @@ func TestBalanceTable(t *testing.T) {
 		// TODO Is that correct ?
 		// https://github.com/filecoin-project/specs-actors/issues/652
 		require.Error(t, bt.MustSubtract(addr, abi.NewTokenAmount(6)))
-		bal, err := bt.Get(addr)
+		bal, found, err := bt.Get(addr)
+		require.True(t, found)
 		require.NoError(t, err)
 		require.Equal(t, abi.NewTokenAmount(0), bal)
 
 		// balance is sufficient -> should work
 		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
 		require.NoError(t, bt.MustSubtract(addr, abi.NewTokenAmount(4)))
-		bal, err = bt.Get(addr)
+		bal, found, err = bt.Get(addr)
+		require.True(t, found)
 		require.NoError(t, err)
 		require.Equal(t, abi.NewTokenAmount(1), bal)
 	})
