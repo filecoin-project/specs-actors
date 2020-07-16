@@ -343,10 +343,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			allIgnored = append(allIgnored, partition.Terminated)
 		}
 
+		// Collect all sectors, faults, and recoveries for proof verification.
+		allSectorNos, err := bitfield.MultiMerge(allSectors...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge all sectors bitfields")
+		allIgnoredNos, err := bitfield.MultiMerge(allIgnored...)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge ignored sectors bitfields")
+
 		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
 		// Note: this is slightly sub-optimal, loading info for the recovering sectors again after they were already
 		// loaded above.
-		sectorInfos, err := st.LoadSectorInfosForProof(store, allSectors, allIgnored)
+		sectorInfos, err := st.LoadSectorInfosForProof(store, allSectorNos, allIgnoredNos)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		// Skip verification if all sectors are faults.

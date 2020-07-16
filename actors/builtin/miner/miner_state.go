@@ -781,19 +781,8 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 // Loads info for a set of sectors to be proven.
 // If any of the sectors are declared faulty and not to be recovered, info for the first non-faulty sector is substituted instead.
 // If any of the sectors are declared recovered, they are returned from this method.
-func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults []*abi.BitField) ([]*SectorOnChainInfo, error) {
-	// Collect all sectors, faults, and recoveries for proof verification.
-	allProvenSectors, err := bitfield.MultiMerge(provenSectors...)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to union sectors: %w", err)
-	}
-
-	allFaults, err := bitfield.MultiMerge(expectedFaults...)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to union faults: %w", err)
-	}
-
-	nonFaults, err := bitfield.SubtractBitField(allProvenSectors, allFaults)
+func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults *abi.BitField) ([]*SectorOnChainInfo, error) {
+	nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to diff bitfields: %w", err)
 	}
@@ -812,7 +801,7 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expecte
 	}
 
 	// Load sector infos
-	sectorInfos, err := st.LoadSectorInfosWithFaultMask(store, allProvenSectors, allFaults, abi.SectorNumber(goodSectorNo))
+	sectorInfos, err := st.LoadSectorInfosWithFaultMask(store, provenSectors, expectedFaults, abi.SectorNumber(goodSectorNo))
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load sector infos: %w", err)
 	}
