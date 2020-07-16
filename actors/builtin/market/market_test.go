@@ -1389,6 +1389,31 @@ func TestCronTickDealExpiry(t *testing.T) {
 	endEpoch := abi.ChainEpoch(300)
 	sectorExpiry := abi.ChainEpoch(400)
 
+	t.Run("deal expiry -> deal is correctly processed twice in the same crontick", func(t *testing.T) {
+		end := abi.ChainEpoch(151) // 50 + 101
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, end, 0, sectorExpiry)
+		d := actor.getDealProposal(rt, dealId)
+
+		// move the current epoch to startEpoch so next cron epoch will be start + 100 = 150
+		current := startEpoch
+		rt.SetEpoch(current)
+		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
+		require.EqualValues(t, big.Zero(), pay)
+		require.EqualValues(t, big.Zero(), slashed)
+
+		// move the epoch to 155(anything greater than 150), so deal is first processed at 150 & then at 151 which is it's end epoch
+		// total payment = (end - start) = 151 - 50 = 101
+		current = 155
+		rt.SetEpoch(current)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
+		require.EqualValues(t, big.Mul(big.NewInt(101), d.StoragePricePerEpoch), pay)
+		require.EqualValues(t, big.Zero(), slashed)
+
+		// deal should be deleted as it should have expired
+		actor.assertDealDeleted(rt, dealId, d)
+	})
+
 	t.Run("deal expiry -> regular payments till deal expires and then locked funds are unlocked", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
@@ -1413,7 +1438,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		current = 155
 		rt.SetEpoch(current)
 		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, pay, big.Mul(big.NewInt(100), d.StoragePricePerEpoch))
+		require.EqualValues(t, big.Mul(big.NewInt(100), d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// a second cron tick for the same epoch should not change anything
@@ -1626,6 +1651,35 @@ func TestCronTickDealSlashing(t *testing.T) {
 		duration := big.NewInt(250) // end - start
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
+
+		// deal should be deleted as it should have expired
+		actor.assertDealDeleted(rt, dealId, d)
+	})
+
+	t.Run("deal is correctly processed twice in the same crontick and slashed", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
+		d := actor.getDealProposal(rt, dealId)
+
+		// move the current epoch to startEpoch so next cron epoch will be start + 100 = 150
+		current := startEpoch
+		rt.SetEpoch(current)
+		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
+		require.EqualValues(t, big.Zero(), pay)
+		require.EqualValues(t, big.Zero(), slashed)
+
+		// set slash epoch of deal at 151
+		current = 151
+		rt.SetEpoch(current)
+		actor.terminateDeals(rt, provider, dealId)
+
+		// move the epoch to 155(anything greater than 150), so deal is first processed at 150 & then slashed at 151
+		// total payment = (end - start) = 151 - 50 = 101
+		current = 155
+		rt.SetEpoch(current)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
+		require.EqualValues(t, big.Mul(big.NewInt(101), d.StoragePricePerEpoch), pay)
+		require.EqualValues(t, d.ProviderCollateral, slashed)
 
 		// deal should be deleted as it should have expired
 		actor.assertDealDeleted(rt, dealId, d)
