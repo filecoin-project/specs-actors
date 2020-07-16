@@ -402,7 +402,6 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 					es.ActivePower = es.ActivePower.Sub(power)
 					removed.ActivePower = removed.ActivePower.Add(power)
 				}
-				es.OnTimePledge = big.Sub(es.OnTimePledge, sector.InitialPledge)
 				if _, r := recoveringMap[sno]; r {
 					recoveringPower = recoveringPower.Add(power)
 				}
