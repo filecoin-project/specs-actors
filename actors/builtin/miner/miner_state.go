@@ -596,8 +596,6 @@ func (st *State) AssignSectorsToDeadlines(
 	sectorSize abi.SectorSize,
 	quant QuantSpec,
 ) (PowerPair, error) {
-	// We should definitely sort by sector number.
-	// Should we try to find a deadline with nearby sectors? That's probably really expensive.
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return NewPowerPairZero(), err
@@ -608,15 +606,6 @@ func (st *State) AssignSectorsToDeadlines(
 		return sectors[i].SectorNumber < sectors[j].SectorNumber
 	})
 
-	// TODO: We should either:
-	// 1. Inline entire deadlines into the Deadlines struct, putting PostSubmissions bitfield behind a CID.
-	//   Pro: Clean.
-	//   Con: Large Deadlines object.
-	// 2. Split deadlines into a header/details section, inlining the headers.
-	//   Pro: Small Deadlines object.
-	//   Con: Walking deadlines is now kind of funky, but not terrible.
-	// 3. Keep a separate arrays for total sectors and live sectors.
-	//   Con: Annoying to update.
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
 	err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
