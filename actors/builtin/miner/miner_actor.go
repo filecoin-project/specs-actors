@@ -434,8 +434,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// gather information from other actors
 	epochReward := requestCurrentEpochBlockReward(rt)
-	targetPower := requestCurrentEpochTargetPower(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
+	targetPower := requestCurrentEpochTargetPower(rt)
 	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
 	circulatingSupply := rt.TotalFilCircSupply()
 

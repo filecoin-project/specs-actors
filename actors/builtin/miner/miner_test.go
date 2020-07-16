@@ -174,7 +174,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
 
 		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
-		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
+		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.networkQAPower, actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -1624,6 +1624,11 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 			PledgeCollateral: h.networkPledge,
 		}
 		expectQueryNetworkInfo(rt, pwrTotal, h.epochReward)
+	}
+	{
+
+		// expect that the network is at baseline, so target is == networkQAPower
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochBaselinePower, nil, big.Zero(), &h.networkQAPower, exitcode.Ok)
 	}
 	{
 		sectorSize, err := params.SealProof.SectorSize()
