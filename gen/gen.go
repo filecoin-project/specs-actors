@@ -178,6 +178,7 @@ func main() {
 		// miner.ConstructorParams{},
 		miner.SubmitWindowedPoStParams{},
 		miner.TerminateSectorsParams{},
+		miner.TerminateSectorsReturn{},
 		miner.ChangePeerIDParams{},
 		miner.ChangeMultiaddrsParams{},
 		miner.ProveCommitSectorParams{},

@@ -854,12 +854,34 @@ type TerminationDeclaration struct {
 	Sectors   *abi.BitField
 }
 
-// Marks some sectors as terminated at the present epoch, earlier than their scheduled termination.
-// The sectors are immediately ignored for Window PoSt proofs, and should be masked in the same way as faulty
-// sectors.
-// A miner terminating sectors in the current deadline must be careful to compute an appropriate Window PoSt
-// proof for the sectors that will be active at the time the PoSt is submitted.
-func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt.EmptyValue {
+type TerminateSectorsReturn struct {
+	// Set to true if all early termination work has been completed. When
+	// false, the miner may choose to repeatedly invoke TerminateSectors
+	// with no new sectors to process the remainder of the pending
+	// terminations. While pending terminations are outstanding, the miner
+	// will not be able to withdraw funds.
+	Done bool
+}
+
+// Marks some sectors as terminated at the present epoch, earlier than their
+// scheduled termination, and adds these sectors to the early termination queue.
+// This method then processes up to AddressedSectorsMax sectors and
+// AddressedPartitionsMax partitions from the early termination queue,
+// terminating deals, paying fines, and returning pledge collateral. While
+// sectors remain in this queue:
+//
+//  1. The miner will be unable to withdraw funds.
+//  2. The chain will process up to AddressedSectorsMax sectors and
+//     AddressedPartitionsMax per epoch until the queue is empty.
+//
+// The sectors are immediately ignored for Window PoSt proofs, and should be
+// masked in the same way as faulty sectors. A miner terminating sectors in the
+// current deadline must be careful to compute an appropriate Window PoSt proof
+// for the sectors that will be active at the time the PoSt is submitted.
+//
+// This function may be invoked with no new sectors to explicitly process the
+// next batch of sectors.
+func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *TerminateSectorsReturn {
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
 
@@ -887,11 +909,14 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 		)
 	}
 
+	var hadEarlyTerminations bool
 	var st State
 	store := adt.AsStore(rt)
 	currEpoch := rt.CurrEpoch()
 	powerDelta := NewPowerPairZero()
 	rt.State().Transaction(&st, func() interface{} {
+		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
+
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
@@ -957,8 +982,14 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	})
 
 	// Now, try to process these sectors.
-	if processEarlyTerminations(rt) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "")
+	more := processEarlyTerminations(rt)
+	if more && !hadEarlyTerminations {
+		// We have remaining terminations, and we didn't _previously_
+		// have early terminations to process, schedule a cron job.
+		// NOTE: This isn't quite correct. If we repeatedly fill, empty,
+		// fill, and empty, the queue, we'll keep scheduling new cron
+		// jobs. However, in practice, that shouldn't be all that bad.
+		scheduleEarlyTerminationWork(rt)
 	}
 
 	requestUpdatePower(rt, powerDelta)
@@ -968,7 +999,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *adt
 	// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
 	// https://github.com/filecoin-project/specs-actors/issues/674
 
-	return nil
+	return &TerminateSectorsReturn{Done: !more}
 }
 
 ////////////

@@ -2192,6 +2192,62 @@ func (t *TerminateSectorsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+var lengthBufTerminateSectorsReturn = []byte{129}
+
+func (t *TerminateSectorsReturn) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufTerminateSectorsReturn); err != nil {
+		return err
+	}
+
+	// t.Done (bool) (bool)
+	if err := cbg.WriteBool(w, t.Done); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *TerminateSectorsReturn) UnmarshalCBOR(r io.Reader) error {
+	*t = TerminateSectorsReturn{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Done (bool) (bool)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.Done = false
+	case 21:
+		t.Done = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	return nil
+}
+
 var lengthBufChangePeerIDParams = []byte{129}
 
 func (t *ChangePeerIDParams) MarshalCBOR(w io.Writer) error {
