@@ -1179,17 +1179,33 @@ type DeclareFaultsRecoveredParams struct {
 }
 
 type RecoveryDeclaration struct {
-	// The deadline to which the faulty sectors are assigned, in range [0..WPoStPeriodDeadlines)
+	// The deadline to which the recovered sectors are assigned, in range [0..WPoStPeriodDeadlines)
 	Deadline uint64
-	// Partition index within the deadline containing the faulty sectors.
+	// Partition index within the deadline containing the recovered sectors.
 	Partition uint64
-	// Sectors in the partition being declared faulty.
+	// Sectors in the partition being declared recovered.
 	Sectors *abi.BitField
 }
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
 	if uint64(len(params.Recoveries)) > AddressedPartitionsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Recoveries), AddressedPartitionsMax)
+	}
+
+	var sectorCount uint64
+	for _, decl := range params.Recoveries {
+		count, err := decl.Sectors.Count()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
+			"failed to count sectors for deadline %d, partition %d",
+			decl.Deadline, decl.Partition,
+		)
+		sectorCount += count
+	}
+	if sectorCount > AddressedSectorsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many sectors for declaration %d, max %d",
+			sectorCount, AddressedSectorsMax,
+		)
 	}
 
 	store := adt.AsStore(rt)
