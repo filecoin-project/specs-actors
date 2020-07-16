@@ -474,16 +474,7 @@ func (st *State) WalkSectors(
 			if updated, err := partitionCb(dl, &partition, uint64(dlIdx), partIdx, foundSectors); err != nil {
 				return err
 			} else if updated {
-				empty, err := partition.Sectors.IsEmpty()
-				if err != nil {
-					return err
-				}
-
-				if empty {
-					err = partitionsArr.Delete(partIdx)
-				} else {
-					err = partitionsArr.Set(partIdx, &partition)
-				}
+				err = partitionsArr.Set(partIdx, &partition)
 				if err != nil {
 					return err
 				}
