@@ -1040,7 +1040,21 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	if uint64(len(params.Faults)) > AddressedPartitionsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Faults), AddressedPartitionsMax)
 	}
-	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
+	var sectorCount uint64
+	for _, decl := range params.Faults {
+		count, err := decl.Sectors.Count()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+			"failed to count sectors for deadline %d, partition %d",
+			decl.Deadline, decl.Partition,
+		)
+		sectorCount += count
+	}
+	if sectorCount > AddressedSectorsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many sectors for declaration %d, max %d",
+			sectorCount, AddressedSectorsMax,
+		)
+	}
 
 	store := adt.AsStore(rt)
 	var st State
