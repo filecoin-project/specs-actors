@@ -55,16 +55,21 @@ func (q BitfieldQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) 
 
 func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) error {
 	// Update each epoch in-order to be deterministic.
+	// Pre-quantize to reduce the number of updates.
+	quantizedValues := make(map[abi.ChainEpoch][]uint64, len(values))
 	updatedEpochs := make([]abi.ChainEpoch, 0, len(values))
-	for epoch := range values { // nolint:nomaprange // subsequently sorted
+	for rawEpoch, entries := range values { // nolint:nomaprange // subsequently sorted
+		epoch := q.quant.QuantizeUp(rawEpoch)
 		updatedEpochs = append(updatedEpochs, epoch)
+		quantizedValues[epoch] = append(quantizedValues[epoch], entries...)
 	}
+
 	sort.Slice(updatedEpochs, func(i, j int) bool {
 		return updatedEpochs[i] < updatedEpochs[j]
 	})
 
 	for _, epoch := range updatedEpochs {
-		if err := q.AddToQueueValues(epoch, values[epoch]...); err != nil {
+		if err := q.AddToQueueValues(epoch, quantizedValues[epoch]...); err != nil {
 			return err
 		}
 	}
@@ -74,7 +79,7 @@ func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) 
 // Removes and returns all values with keys less than or equal to until.
 // Modified return value indicates whether this structure has been changed by the call.
 func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values *abi.BitField, modified bool, err error) {
-	var poppedValues  []*bitfield.BitField
+	var poppedValues []*bitfield.BitField
 	var poppedKeys []uint64
 
 	stopErr := fmt.Errorf("stop")
