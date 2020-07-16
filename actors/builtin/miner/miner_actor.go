@@ -1486,7 +1486,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		info := getMinerInfo(rt, &st)
 
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(result.Sectors))
-		result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
+		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
 			// Note: this loads the sectors array root multiple times, redundantly.
 			// In the grand scheme of data being loaded here, it's not a big deal.
 			sectors, err := st.LoadSectorInfos(store, sectorNos)
@@ -1504,6 +1504,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 			return nil
 		})
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process terminations")
 
 		// Unlock funds for penalties.
 		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
@@ -1749,7 +1750,7 @@ func processSkippedFaults(rt Runtime, st *State, store adt.Store, faultExpiratio
 	// Ignore skipped faults that are already faults or terminated.
 	newFaults, err := bitfield.SubtractBitField(skipped, partition.Terminated)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract terminations from skipped")
-	newFaults, err = bitfield.SubtractBitField(skipped, partition.Faults)
+	newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from skipped")
 	newFaultSectors, err := st.LoadSectorInfos(store, newFaults)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")

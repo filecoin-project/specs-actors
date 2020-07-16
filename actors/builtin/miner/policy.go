@@ -34,11 +34,6 @@ func init() {
 // https://github.com/filecoin-project/specs-actors/issues/470
 const SectorsMax = 32 << 20 // PARAM_FINISH
 
-// The maximum number of proving partitions a miner can have simultaneously active.
-func activePartitionsMax(partitionSectorCount uint64) uint64 {
-	return (SectorsMax / partitionSectorCount) + WPoStPeriodDeadlines
-}
-
 // The maximum number of partitions that may be required to be loaded in a single invocation.
 // This limits the number of simultaneous fault, recovery, or sector-extension declarations.
 // With 48 deadlines (half-hour), 200 partitions per declaration permits loading a full EiB of 32GiB

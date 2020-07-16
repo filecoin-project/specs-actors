@@ -21,7 +21,7 @@ func (t *TerminationResult) Add(newResult TerminationResult) error {
 	}
 	t.PartitionsProcessed += newResult.PartitionsProcessed
 	t.SectorsProcessed += newResult.SectorsProcessed
-	for epoch, newSectors := range newResult.Sectors {
+	for epoch, newSectors := range newResult.Sectors { //nolint:nomaprange
 		if oldSectors, ok := t.Sectors[epoch]; !ok {
 			t.Sectors[epoch] = newSectors
 		} else {

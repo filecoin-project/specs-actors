@@ -432,7 +432,7 @@ func (st *State) WalkSectors(
 		}
 
 		partitionNumbers := make([]uint64, 0, len(partitions))
-		for partIdx := range partitions {
+		for partIdx := range partitions { // nolint:nomaprange // subsequently sorted
 			partitionNumbers = append(partitionNumbers, partIdx)
 		}
 		sort.Slice(partitionNumbers, func(i, j int) bool {
@@ -671,11 +671,11 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 
 	// Process early terminations.
 	var partitionsProcessed, sectorsProcessed uint64
-	if err := st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
+	if err = st.EarlyTerminations.ForEach(func(dlIdx uint64) error {
 		// Load deadline + partitions.
 		dl, err := deadlines.LoadDeadline(store, dlIdx)
 		if err != nil {
-			return xerrors.Errorf("failed to load deadline %d: %w", err)
+			return xerrors.Errorf("failed to load deadline %d: %w", dlIdx, err)
 		}
 
 		deadlineResult, more, err := dl.PopEarlyTerminations(store, maxPartitions-partitionsProcessed, maxSectors-sectorsProcessed)
@@ -704,9 +704,7 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 		}
 
 		return stopErr
-	}); err == stopErr {
-		err = nil
-	} else if err != nil {
+	}); err != nil && err != stopErr {
 		return TerminationResult{}, false, xerrors.Errorf("failed to walk early terminations bitfield for deadlines: %w", err)
 	}
 

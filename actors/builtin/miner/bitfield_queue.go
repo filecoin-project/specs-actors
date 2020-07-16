@@ -56,7 +56,7 @@ func (q BitfieldQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) 
 func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) error {
 	// Update each epoch in-order to be deterministic.
 	updatedEpochs := make([]abi.ChainEpoch, 0, len(values))
-	for epoch := range values {
+	for epoch := range values { // nolint:nomaprange // subsequently sorted
 		updatedEpochs = append(updatedEpochs, epoch)
 	}
 	sort.Slice(updatedEpochs, func(i, j int) bool {

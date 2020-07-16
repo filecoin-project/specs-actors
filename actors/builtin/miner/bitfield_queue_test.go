@@ -18,7 +18,7 @@ func TestBitfieldQueue(t *testing.T) {
 
 		values := []uint64{1, 2, 3, 4}
 		epoch := abi.ChainEpoch(42)
-		queue.AddToQueueValues(epoch, values...)
+		require.NoError(t, queue.AddToQueueValues(epoch, values...))
 
 		ExpectBQ().
 			Add(epoch, values...).
@@ -31,7 +31,7 @@ func TestBitfieldQueue(t *testing.T) {
 		values := []uint64{1, 2, 3, 4}
 		epoch := abi.ChainEpoch(42)
 
-		queue.AddToQueue(epoch, bitfield.NewFromSet(values))
+		require.NoError(t, queue.AddToQueue(epoch, bitfield.NewFromSet(values)))
 
 		ExpectBQ().
 			Add(epoch, values...).
@@ -42,7 +42,7 @@ func TestBitfieldQueue(t *testing.T) {
 		queue := emptyBitfieldQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
 
 		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
-			queue.AddToQueueValues(abi.ChainEpoch(val), val)
+			require.NoError(t, queue.AddToQueueValues(abi.ChainEpoch(val), val))
 		}
 
 		// expect values to only be set on quantization boundaries
@@ -58,8 +58,8 @@ func TestBitfieldQueue(t *testing.T) {
 
 		epoch := abi.ChainEpoch(42)
 
-		queue.AddToQueueValues(epoch, 1, 3)
-		queue.AddToQueueValues(epoch, 2, 4)
+		require.NoError(t, queue.AddToQueueValues(epoch, 1, 3))
+		require.NoError(t, queue.AddToQueueValues(epoch, 2, 4))
 
 		ExpectBQ().
 			Add(epoch, 1, 2, 3, 4).
@@ -72,8 +72,8 @@ func TestBitfieldQueue(t *testing.T) {
 		epoch1 := abi.ChainEpoch(42)
 		epoch2 := abi.ChainEpoch(93)
 
-		queue.AddToQueueValues(epoch1, 1, 3)
-		queue.AddToQueueValues(epoch2, 2, 4)
+		require.NoError(t, queue.AddToQueueValues(epoch1, 1, 3))
+		require.NoError(t, queue.AddToQueueValues(epoch2, 2, 4))
 
 		ExpectBQ().
 			Add(epoch1, 1, 3).
@@ -108,8 +108,8 @@ func TestBitfieldQueue(t *testing.T) {
 		epoch1 := abi.ChainEpoch(42)
 		epoch2 := abi.ChainEpoch(93)
 
-		queue.AddToQueueValues(epoch1, 1, 3)
-		queue.AddToQueueValues(epoch2, 2, 4)
+		require.NoError(t, queue.AddToQueueValues(epoch1, 1, 3))
+		require.NoError(t, queue.AddToQueueValues(epoch2, 2, 4))
 
 		next, modified, err := queue.PopUntil(epoch1 - 1)
 		assert.False(t, modified)
@@ -136,10 +136,10 @@ func TestBitfieldQueue(t *testing.T) {
 		epoch3 := abi.ChainEpoch(94)
 		epoch4 := abi.ChainEpoch(203)
 
-		queue.AddToQueueValues(epoch1, 1, 3)
-		queue.AddToQueueValues(epoch2, 5)
-		queue.AddToQueueValues(epoch3, 6, 7, 8)
-		queue.AddToQueueValues(epoch4, 2, 4)
+		require.NoError(t, queue.AddToQueueValues(epoch1, 1, 3))
+		require.NoError(t, queue.AddToQueueValues(epoch2, 5))
+		require.NoError(t, queue.AddToQueueValues(epoch3, 6, 7, 8))
+		require.NoError(t, queue.AddToQueueValues(epoch4, 2, 4))
 
 		// Required to ensure queue is in a sane state for PopUntil
 		_, err := queue.Root()
@@ -222,13 +222,14 @@ func (bqe *bqExpectation) Equals(t *testing.T, q BitfieldQueue) {
 
 	require.Equal(t, uint64(len(bqe.expected)), q.Length())
 
-	q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+	err = q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
 		values, ok := bqe.expected[epoch]
 		require.True(t, ok)
 
 		assertBitfieldEquals(t, bf, values...)
 		return nil
 	})
+	require.NoError(t, err)
 }
 
 func assertBitfieldEquals(t *testing.T, bf *bitfield.BitField, values ...uint64) {
@@ -236,9 +237,10 @@ func assertBitfieldEquals(t *testing.T, bf *bitfield.BitField, values ...uint64)
 	require.NoError(t, err)
 	require.Equal(t, len(values), int(count))
 
-	bf.ForEach(func(v uint64) error {
+	err = bf.ForEach(func(v uint64) error {
 		assert.Equal(t, values[0], v)
 		values = values[1:]
 		return nil
 	})
+	require.NoError(t, err)
 }

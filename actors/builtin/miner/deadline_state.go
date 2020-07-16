@@ -276,6 +276,9 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 			// Figure out which (if any) sectors we want to add to
 			// this partition.
 			sectorCount, err := partition.Sectors.Count()
+			if err != nil {
+				return NewPowerPairZero(), err
+			}
 			if sectorCount >= partitionSize {
 				continue
 			}
