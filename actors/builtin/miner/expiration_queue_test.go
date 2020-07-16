@@ -450,6 +450,73 @@ func TestExpirationQueue(t *testing.T) {
 		assert.True(t, activePower.Equals(set.ActivePower))
 		assert.True(t, faultyPower.Equals(set.FaultyPower))
 	})
+
+	t.Run("recover faults restores all sector stats", func(t *testing.T) {
+		// Create expiration 3 groups with 2 sectors apiece
+		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+		queue.AddActiveSectors(sectors, sectorSize)
+
+		_, err := queue.Root()
+		require.NoError(t, err)
+
+		// Fault middle sectors to expire at epoch 6 to put sectors in a state
+		// described in "reschedules sectors as faults"
+		queue.RescheduleAsFaults(abi.ChainEpoch(6), sectors[1:5], sectorSize)
+
+		_, err = queue.Root()
+		require.NoError(t, err)
+
+		// mark faulted sectors as recovered
+		queue.RescheduleRecovered(sectors[1:5], sectorSize)
+
+		// expect first group to contain first two sectors with active power
+		requireNoExpirationGroupsBefore(t, 5, queue)
+		set, err := queue.PopUntil(5)
+		require.NoError(t, err)
+
+		assertBitfieldEquals(t, set.OnTimeSectors, 1, 2)
+		assertBitfieldEmpty(t, set.EarlySectors)
+
+		// pledge from both sectors
+		assert.Equal(t, big.NewInt(2001), set.OnTimePledge)
+
+		activePower := PowerForSectors(sectorSize, sectors[:2])
+		faultyPower := NewPowerPairZero()
+		assert.True(t, activePower.Equals(set.ActivePower))
+		assert.True(t, faultyPower.Equals(set.FaultyPower))
+
+		// expect second group to have lost early sector 5 and have active power just from 3 and 4
+		requireNoExpirationGroupsBefore(t, 9, queue)
+		set, err = queue.PopUntil(9)
+		require.NoError(t, err)
+
+		assertBitfieldEquals(t, set.OnTimeSectors, 3, 4)
+		assertBitfieldEmpty(t, set.EarlySectors)
+
+		// pledge is kept from original 2 sectors
+		assert.Equal(t, big.NewInt(2005), set.OnTimePledge)
+
+		activePower = PowerForSectors(sectorSize, sectors[2:4])
+		faultyPower = NewPowerPairZero()
+		assert.True(t, activePower.Equals(set.ActivePower))
+		assert.True(t, faultyPower.Equals(set.FaultyPower))
+
+		// expect sector 5 to be returned to last groupu
+		requireNoExpirationGroupsBefore(t, 13, queue)
+		set, err = queue.PopUntil(13)
+		require.NoError(t, err)
+
+		assertBitfieldEquals(t, set.OnTimeSectors, 5, 6)
+		assertBitfieldEmpty(t, set.EarlySectors)
+
+		// Pledge from sector 5 is restored
+		assert.Equal(t, big.NewInt(2009), set.OnTimePledge)
+
+		activePower = PowerForSectors(sectorSize, sectors[4:])
+		faultyPower = NewPowerPairZero()
+		assert.True(t, activePower.Equals(set.ActivePower))
+		assert.True(t, faultyPower.Equals(set.FaultyPower))
+	})
 }
 
 func TestExpirations(t *testing.T) {

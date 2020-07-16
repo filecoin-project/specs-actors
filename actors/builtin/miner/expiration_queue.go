@@ -268,7 +268,7 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 // Removes sectors from any queue entries in which they appear that are earlier then their scheduled expiration epoch,
 // and schedules them at their expected termination epoch.
 // Pledge for the sectors is re-added as on-time.
-// Power for the sectors is changes from faulty to active (whether rescheduled or not).
+// Power for the sectors is changed from faulty to active (whether rescheduled or not).
 // Returns the newly-recovered power. Fails if any sectors are not found in the queue.
 func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize abi.SectorSize) (PowerPair, error) {
 	remaining := make(map[abi.SectorNumber]struct{}, len(sectors))
