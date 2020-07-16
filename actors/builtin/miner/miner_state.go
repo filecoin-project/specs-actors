@@ -261,7 +261,7 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 
 // This method gets and returns the requested pre-committed sectors, skipping
 // missing sectors.
-func (st *State) GetExistingPrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) ([]*SectorPreCommitOnChainInfo, error) {
+func (st *State) FindPrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) ([]*SectorPreCommitOnChainInfo, error) {
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
 	if err != nil {
 		return nil, err

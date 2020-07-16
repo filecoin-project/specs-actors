@@ -605,7 +605,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	//
 
 	// This skips missing pre-commits.
-	precommittedSectors, err := st.GetExistingPrecommittedSectors(store, params.Sectors...)
+	precommittedSectors, err := st.FindPrecommittedSectors(store, params.Sectors...)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
