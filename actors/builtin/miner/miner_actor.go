@@ -757,7 +757,24 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	if uint64(len(params.Extensions)) > AddressedPartitionsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), AddressedPartitionsMax)
 	}
-	// TODO: limit the number of sectors declared at once https://github.com/filecoin-project/specs-actors/issues/416
+
+	// limit the number of sectors declared at once
+	// https://github.com/filecoin-project/specs-actors/issues/416
+	var sectorCount uint64
+	for _, decl := range params.Extensions {
+		count, err := decl.Sectors.Count()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState,
+			"failed to count sectors for deadline %d, partition %d",
+			decl.Deadline, decl.Partition,
+		)
+		sectorCount += count
+	}
+	if sectorCount > AddressedSectorsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many sectors for declaration %d, max %d",
+			sectorCount, AddressedSectorsMax,
+		)
+	}
 
 	powerDelta := NewPowerPairZero()
 	pledgeDelta := big.Zero()
