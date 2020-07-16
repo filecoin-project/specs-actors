@@ -215,10 +215,19 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	_, code := rt.Send(
 		builtin.RewardActorAddr,
 		builtin.MethodsReward.UpdateNetworkKPI,
-		&st.TotalRawBytePower,
+		&st.ThisEpochRawBytePower,
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to update network KPI with Reward Actor")
+
+	// update next epoch's power and pledge values
+	rt.State().Transaction(&st, func() interface{} {
+		rawBytePower, qaPower := CurrentTotalPower(&st)
+		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
+		st.ThisEpochQualityAdjPower = qaPower
+		st.ThisEpochRawBytePower = rawBytePower
+		return nil
+	})
 
 	return nil
 }
@@ -319,11 +328,10 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	var st State
 	rt.State().Readonly(&st)
 
-	rawBytePower, qaPower := CurrentTotalPower(&st)
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     rawBytePower,
-		QualityAdjPower:  qaPower,
-		PledgeCollateral: st.TotalPledgeCollateral,
+		RawBytePower:     st.ThisEpochRawBytePower,
+		QualityAdjPower:  st.ThisEpochQualityAdjPower,
+		PledgeCollateral: st.ThisEpochPledgeCollateral,
 	}
 }
 
