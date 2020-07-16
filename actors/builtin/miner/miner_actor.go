@@ -434,6 +434,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// gather information from other actors
 	epochReward := requestCurrentEpochBlockReward(rt)
+	targetPower := requestCurrentEpochTargetPower(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
 	circulatingSupply := rt.TotalFilCircSupply()
@@ -480,7 +481,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
 		depositReq := big.Max(
-			precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply),
+			precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, targetPower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply),
 			depositMinimum,
 		)
 		if availableBalance.LessThan(depositReq) {
@@ -2136,6 +2137,15 @@ func requestCurrentEpochBlockReward(rt Runtime) abi.TokenAmount {
 	err := rwret.Into(&epochReward)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal epoch reward value")
 	return epochReward
+}
+
+func requestCurrentEpochTargetPower(rt Runtime) abi.StoragePower {
+	tpret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochBaselinePower, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
+	targetPower := abi.NewStoragePower(0)
+	err := tpret.Into(&targetPower)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
+	return targetPower
 }
 
 // Requests the current network total power and pledge from the power actor.

@@ -64,7 +64,7 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 // newly-committed power, holding the per-epoch block reward constant (though in reality it will change over time).
 // The network total pledge and circulating supply parameters are currently unused, but may be included in a
 // future calculation.
-func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
+func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower, targetPower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
 	// https://github.com/filecoin-project/specs-actors/issues/468

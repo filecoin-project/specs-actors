@@ -29,11 +29,12 @@ var MethodsCron = struct {
 }{MethodConstructor, 2}
 
 var MethodsReward = struct {
-	Constructor      abi.MethodNum
-	AwardBlockReward abi.MethodNum
-	ThisEpochReward  abi.MethodNum
-	UpdateNetworkKPI abi.MethodNum
-}{MethodConstructor, 2, 3, 4}
+	Constructor            abi.MethodNum
+	AwardBlockReward       abi.MethodNum
+	ThisEpochReward        abi.MethodNum
+	UpdateNetworkKPI       abi.MethodNum
+	ThisEpochBaselinePower abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5}
 
 var MethodsMultisig = struct {
 	Constructor                 abi.MethodNum

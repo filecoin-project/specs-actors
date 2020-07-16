@@ -20,6 +20,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.AwardBlockReward,
 		3:                         a.ThisEpochReward,
 		4:                         a.UpdateNetworkKPI,
+		5:                         a.ThisEpochBaselinePower,
 	}
 }
 
@@ -110,6 +111,17 @@ func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *abi.TokenAmou
 	var st State
 	rt.State().Readonly(&st)
 	return &st.ThisEpochReward
+}
+
+// The baseline power the network is targeting this epoch, updated at the end of an
+// epoch through cron tick.  In the case previous epochs were null blocks this is
+// the value as calculated at the last non-null epoch
+func (a Actor) ThisEpochBaselinePower(rt vmr.Runtime, _ *adt.EmptyValue) *abi.StoragePower {
+	rt.ValidateImmediateCallerAcceptAny()
+
+	var st State
+	rt.State().Readonly(&st)
+	return &st.ThisEpochBaselinePower
 }
 
 // Called at the end of each epoch by the power actor (in turn by its cron hook).
