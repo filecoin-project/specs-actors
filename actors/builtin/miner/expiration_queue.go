@@ -368,8 +368,35 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 		return nil, NewPowerPairZero(), xerrors.Errorf("failed to expand recoveries: %w", err)
 	}
 
+	// results
 	removed := NewExpirationSetEmpty()
 	recoveringPower := NewPowerPairZero()
+
+	// Process non-faulty sectors. These sectors can appear anywhere in the
+	// queue, but we know where to find them.
+	var (
+		activeSectors []*SectorOnChainInfo
+		faultySectors []*SectorOnChainInfo
+	)
+	for _, sector := range sectors {
+		if _, found := faultsMap[uint64(sector.SectorNumber)]; found {
+			faultySectors = append(faultySectors, sector)
+			continue
+		}
+		activeSectors = append(activeSectors, sector)
+		delete(remaining, sector.SectorNumber)
+	}
+
+	// Remove non-faulty sectors.
+	removed.OnTimeSectors, removed.ActivePower, removed.OnTimePledge, err = q.removeActiveSectors(activeSectors, ssize)
+	if err != nil {
+		return nil, NewPowerPairZero(), xerrors.Errorf("failed to remove on-time recoveries: %w", err)
+	}
+
+	// Process faulty sectors (on time and not). These sectors can only
+	// appear within the first 14 days (fault max age). Given that this
+	// queue is quantized, we should be able to stop traversing the queue
+	// after 14 entries.
 	if err = q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {
 		onTimeSectors, err := es.OnTimeSectors.AllMap(SectorsMax)
 		if err != nil {
@@ -383,7 +410,7 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 		// This loop could alternatively be done by constructing bitfields and intersecting them, but it's not
 		// clear that would be much faster (O(max(N, M)) vs O(N+M)).
 		// The length of sectors has a maximum of one partition size.
-		for _, sector := range sectors {
+		for _, sector := range faultySectors {
 			sno := uint64(sector.SectorNumber)
 			var found bool
 			if _, found = onTimeSectors[sno]; found {
