@@ -1342,6 +1342,9 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedBurn, nil, exitcode.Ok)
 		actor.cronTick(rt)
 
+		// a second cron tick for the same epoch should not change anything
+		actor.cronTickNoChangeBalances(rt, client, provider)
+
 		actor.assertDealDeleted(rt, dealIds[0])
 		actor.assertDealDeleted(rt, dealIds[1])
 		actor.assertDealDeleted(rt, dealIds[2])
@@ -1385,6 +1388,9 @@ func TestCronTickDealExpiry(t *testing.T) {
 		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(100), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
+
+		// a second cron tick for the same epoch should not change anything
+		actor.cronTickNoChangeBalances(rt, client, provider)
 
 		// next epoch for cron schedule is 155 + 100 = 255
 		current = 255
@@ -1619,12 +1625,18 @@ func TestCronTickDealSlashing(t *testing.T) {
 		rt.SetEpoch(current)
 		actor.cronTickNoChangeBalances(rt, client, provider)
 
+		// a second cron tick for the same epoch should not change anything
+		actor.cronTickNoChangeBalances(rt, client, provider)
+
 		//  Setting the current epoch to 155 will make another payment (5 + 100 epochs)
 		current = 155
 		rt.SetEpoch(current)
 		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(100), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
+
+		// a second cron tick for the same epoch should not change anything
+		actor.cronTickNoChangeBalances(rt, client, provider)
 
 		// now terminate the deal
 		current = 200
