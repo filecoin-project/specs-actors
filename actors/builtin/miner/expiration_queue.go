@@ -372,29 +372,30 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults *abi
 	removed := NewExpirationSetEmpty()
 	recoveringPower := NewPowerPairZero()
 
-	// Process non-faulty sectors. These sectors can appear anywhere in the
-	// queue, but we know where to find them.
+	// Split into faulty and non-faulty. We process non-faulty sectors first
+	// because they always expire on-time so we know where to find them.
 	var (
-		activeSectors []*SectorOnChainInfo
-		faultySectors []*SectorOnChainInfo
+		nonFaultySectors []*SectorOnChainInfo
+		faultySectors    []*SectorOnChainInfo
 	)
 	for _, sector := range sectors {
 		if _, found := faultsMap[uint64(sector.SectorNumber)]; found {
 			faultySectors = append(faultySectors, sector)
 			continue
 		}
-		activeSectors = append(activeSectors, sector)
+		nonFaultySectors = append(nonFaultySectors, sector)
+		// remove them from "remaining", we're going to process them below.
 		delete(remaining, sector.SectorNumber)
 	}
 
 	// Remove non-faulty sectors.
-	removed.OnTimeSectors, removed.ActivePower, removed.OnTimePledge, err = q.removeActiveSectors(activeSectors, ssize)
+	removed.OnTimeSectors, removed.ActivePower, removed.OnTimePledge, err = q.removeActiveSectors(nonFaultySectors, ssize)
 	if err != nil {
 		return nil, NewPowerPairZero(), xerrors.Errorf("failed to remove on-time recoveries: %w", err)
 	}
 
-	// Process faulty sectors (on time and not). These sectors can only
-	// appear within the first 14 days (fault max age). Given that this
+	// Finally, remove faulty sectors (on time and not). These sectors can
+	// only appear within the first 14 days (fault max age). Given that this
 	// queue is quantized, we should be able to stop traversing the queue
 	// after 14 entries.
 	if err = q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {
