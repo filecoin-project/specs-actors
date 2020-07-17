@@ -174,7 +174,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
 
 		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
-		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.networkQAPower, actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
+		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.baselinePower, actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -1460,6 +1460,7 @@ type actorHarness struct {
 	networkPledge   abi.TokenAmount
 	networkRawPower abi.StoragePower
 	networkQAPower  abi.StoragePower
+	baselinePower   abi.StoragePower
 }
 
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
@@ -1490,6 +1491,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		networkPledge:   big.Mul(reward, big.NewIntUnsigned(1000)),
 		networkRawPower: abi.NewStoragePower(1 << 50),
 		networkQAPower:  abi.NewStoragePower(1 << 50),
+		baselinePower:   abi.NewStoragePower(1 << 50),
 	}
 }
 

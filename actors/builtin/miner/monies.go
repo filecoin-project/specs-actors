@@ -27,6 +27,9 @@ var UndeclaredFaultFactorDenom = big.NewInt(1)
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
 func ExpectedDayRewardForPower(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	if networkQAPower.IsZero() {
+		return epochTargetReward
+	}
 	expectedRewardForProvingPeriod := big.Mul(big.NewInt(builtin.EpochsInDay), epochTargetReward)
 	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), networkQAPower)
 }
@@ -70,18 +73,16 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 // newly-committed power, holding the per-epoch block reward constant (though in reality it will change over time).
 // The network total pledge and circulating supply parameters are currently unused, but may be included in a
 // future calculation.
-func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower, targetPower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
+func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower, baselinePower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
 	// Details here are still subject to change.
 	// PARAM_FINISH
 	// https://github.com/filecoin-project/specs-actors/issues/468
 	_ = networkTotalPledge // TODO: ce use this
 
-	if networkQAPower.IsZero() {
-		return epochTargetReward
-	}
 	ipBase := big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaPower))
 	additionalIPNum := big.Mul(big.Mul(LockTargetFactorNum, networkCirculatingSupply), qaPower)
-	storageToCover := big.Max(networkQAPower, targetPower)
+	storageToCover := big.Max(networkQAPower, baselinePower)
+	storageToCover = big.Max(qaPower, storageToCover) // handle case where total and baseline are 0
 	additionalIPDenom := big.Mul(storageToCover, LockTargetFactorDenom)
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
