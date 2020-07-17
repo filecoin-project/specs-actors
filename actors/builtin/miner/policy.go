@@ -34,15 +34,19 @@ func init() {
 // https://github.com/filecoin-project/specs-actors/issues/470
 const SectorsMax = 32 << 20 // PARAM_FINISH
 
-// The maximum number of proving partitions a miner can have simultaneously active.
-func activePartitionsMax(partitionSectorCount uint64) uint64 {
-	return (SectorsMax / partitionSectorCount) + WPoStPeriodDeadlines
-}
+// The maximum number of partitions that may be required to be loaded in a single invocation.
+// This limits the number of simultaneous fault, recovery, or sector-extension declarations.
+// With 48 deadlines (half-hour), 200 partitions per declaration permits loading a full EiB of 32GiB
+// sectors with 1 message per epoch within a single half-hour deadline. A miner can of course submit more messages.
+const AddressedPartitionsMax = 200
 
-// The maximum number of partitions that may be submitted in a single message.
-// This bounds the size of a list/set of sector numbers that might be instantiated to process a submission.
-func windowPoStMessagePartitionsMax(partitionSectorCount uint64) uint64 {
-	return 100_000 / partitionSectorCount
+// The maximum number of sector infos that may be required to be loaded in a single invocation.
+const AddressedSectorsMax = 10_000
+
+// The maximum number of partitions that may be required to be loaded in a single invocation,
+// when all the sector infos for the partitions will be loaded.
+func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
+	return min64(AddressedSectorsMax/partitionSectorCount, AddressedPartitionsMax)
 }
 
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
@@ -86,7 +90,7 @@ const WPoStChallengeLookback = abi.ChainEpoch(20)
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
 // The maximum age of a fault before the sector is terminated.
-const FaultMaxAge = WPoStProvingPeriod*14 - 1
+const FaultMaxAge = WPoStProvingPeriod*14
 
 // Staging period for a miner worker key change.
 // Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
