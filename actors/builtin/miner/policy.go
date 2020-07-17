@@ -35,8 +35,8 @@ func init() {
 	}
 }
 
-// The maximum number of sectors that a miner can have simultaneously active.
-// This also bounds the number of faults that can be declared, etc.
+// Filecoin Parameter: The maximum number of sectors that a miner can have (and implicitly the maximum number of faults, recoveries, etc.) 
+// Motivation: This guarantees that actors operations per miner are bounded. Also, this reflects the limit of sectors that can be proven in a day via WindowPoSt.
 // TODO raise this number, carefully
 // https://github.com/filecoin-project/specs-actors/issues/470
 const SectorsMax = 32 << 20 // PARAM_FINISH
