@@ -58,6 +58,8 @@ func init() {
 		"340282366920938463463374607431768211456",
 	}
 	expDenoCoef = parse(deno)
+	temp := parse([]string{BaselineExponentString})
+	BaselineExponent = temp[0]
 }
 
 // expneg accepts x in Q.128 format and computes e^-x.

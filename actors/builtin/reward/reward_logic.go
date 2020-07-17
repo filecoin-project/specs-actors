@@ -5,7 +5,13 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
-var BaselinePowerAt = func(epoch abi.ChainEpoch) abi.StoragePower {
+const BaselineExponentString = "340282476225511360239040558581491902991"
+
+// Set from BaselineExponentString in expneg init
+var BaselineExponent *big.Int
+
+var BaselinePowerAt = func(prevValue abi.StoragePower) abi.StoragePower {
+	return big.Mul()
 	return big.NewInt(1 << 40) // PARAM_FINISH
 }
 
