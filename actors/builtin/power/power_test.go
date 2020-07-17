@@ -127,15 +127,11 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// Verify claims in state.
 		var st power.State
 		rt.GetState(&st)
-		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim1 := actor.getClaim(rt, miner1)
 		require.Equal(t, smallPowerUnit, claim1.RawBytePower)
 		require.Equal(t, mul(smallPowerUnit, 2), claim1.QualityAdjPower)
 
-		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim2 := actor.getClaim(rt, miner2)
 		require.Equal(t, smallPowerUnit, claim2.RawBytePower)
 		require.Equal(t, smallPowerUnit, claim2.QualityAdjPower)
 
@@ -148,9 +144,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		assert.Equal(t, abi.NewTokenAmount(9e5), ret.PledgeCollateral)
 
 		rt.GetState(&st)
-		claim2, found, err = st.GetClaim(rt.AdtStore(), miner2)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim2 = actor.getClaim(rt, miner2)
 		require.Equal(t, big.Zero(), claim2.RawBytePower)
 		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
 	})
@@ -555,6 +549,19 @@ func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner
 	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero())
 }
 
+func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim {
+	var st power.State
+	rt.Readonly(&st)
+
+	s, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	require.NoError(h.t, err)
+	var out power.Claim
+	f, err := s.Get(power.AddrKey(a), &out)
+	require.NoError(h.t, err)
+	require.True(h.t, f)
+	return &out
+}
+
 func (h *spActorHarness) updateClaimedPower(rt *mock.Runtime, miner addr.Address, rawDelta, qaDelta abi.StoragePower) {
 	params := power.UpdateClaimedPowerParams{
 		RawByteDelta:         rawDelta,
@@ -598,9 +605,13 @@ func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Addre
 
 	// verify that miner claim is erased from state
 	st := getState(rt)
-	_, found, err := st.GetClaim(rt.AdtStore(), minerAddr)
+
+	s, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 	require.NoError(h.t, err)
-	require.False(h.t, found)
+	var out power.Claim
+	f, err := s.Get(power.AddrKey(minerAddr), &out)
+	require.NoError(h.t, err)
+	require.False(h.t, f)
 }
 
 func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr addr.Address, sealInfo *abi.SealVerifyInfo) {

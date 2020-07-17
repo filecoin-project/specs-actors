@@ -71,17 +71,33 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 
 // Parameters may be negative to subtract.
 func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
-	oldClaim, ok, err := st.GetClaim(s, miner)
+	m, err := st.mutator(s).withClaims(adt.WritePermission).build()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load state: %w", err)
+	}
+
+	if err := m.addToClaim(miner, power, qapower); err != nil {
+		return fmt.Errorf("faield to add to claim: %w", err)
+	}
+
+	if err := m.commitState(); err != nil {
+		return fmt.Errorf("failed to flush state: %w", err)
+	}
+	return nil
+}
+
+func (m *stateMutator) addToClaim(miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
+	oldClaim, ok, err := m.getClaim(miner)
+	if err != nil {
+		return fmt.Errorf("failed to get claim: %w", err)
 	}
 	if !ok {
 		return errors.Errorf("no claim for actor %v", miner)
 	}
 
 	// TotalBytes always update directly
-	st.TotalQABytesCommitted = big.Add(st.TotalQABytesCommitted, qapower)
-	st.TotalBytesCommitted = big.Add(st.TotalBytesCommitted, power)
+	m.st.TotalQABytesCommitted = big.Add(m.st.TotalQABytesCommitted, qapower)
+	m.st.TotalBytesCommitted = big.Add(m.st.TotalBytesCommitted, power)
 
 	newClaim := Claim{
 		RawBytePower:    big.Add(oldClaim.RawBytePower, power),
@@ -93,36 +109,31 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 
 	if prevBelow && !stillBelow {
 		// just passed min miner size
-		st.MinerAboveMinPowerCount++
-		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, newClaim.QualityAdjPower)
-		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, newClaim.RawBytePower)
+		m.st.MinerAboveMinPowerCount++
+		m.st.TotalQualityAdjPower = big.Add(m.st.TotalQualityAdjPower, newClaim.QualityAdjPower)
+		m.st.TotalRawBytePower = big.Add(m.st.TotalRawBytePower, newClaim.RawBytePower)
 	} else if !prevBelow && stillBelow {
 		// just went below min miner size
-		st.MinerAboveMinPowerCount--
-		st.TotalQualityAdjPower = big.Sub(st.TotalQualityAdjPower, oldClaim.QualityAdjPower)
-		st.TotalRawBytePower = big.Sub(st.TotalRawBytePower, oldClaim.RawBytePower)
+		m.st.MinerAboveMinPowerCount--
+		m.st.TotalQualityAdjPower = big.Sub(m.st.TotalQualityAdjPower, oldClaim.QualityAdjPower)
+		m.st.TotalRawBytePower = big.Sub(m.st.TotalRawBytePower, oldClaim.RawBytePower)
 	} else if !prevBelow && !stillBelow {
 		// Was above the threshold, still above
-		st.TotalQualityAdjPower = big.Add(st.TotalQualityAdjPower, qapower)
-		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
+		m.st.TotalQualityAdjPower = big.Add(m.st.TotalQualityAdjPower, qapower)
+		m.st.TotalRawBytePower = big.Add(m.st.TotalRawBytePower, power)
 	}
 
 	AssertMsg(newClaim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", newClaim.RawBytePower)
 	AssertMsg(newClaim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)
-	AssertMsg(st.MinerAboveMinPowerCount >= 0, "negative number of miners larger than min: %v", st.MinerAboveMinPowerCount)
-	return st.setClaim(s, miner, &newClaim)
+	AssertMsg(m.st.MinerAboveMinPowerCount >= 0, "negative number of miners larger than min: %v", m.st.MinerAboveMinPowerCount)
+	return m.setClaim(miner, &newClaim)
 }
 
-func (st *State) GetClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return nil, false, err
-	}
-
+func (m *stateMutator) getClaim(a addr.Address) (*Claim, bool, error) {
 	var out Claim
-	found, err := hm.Get(AddrKey(a), &out)
+	found, err := m.claims.Get(AddrKey(a), &out)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to get claim for address %v from store %s", a, st.Claims)
+		return nil, false, errors.Wrapf(err, "failed to get claim for address %v", a)
 	}
 	if !found {
 		return nil, false, nil

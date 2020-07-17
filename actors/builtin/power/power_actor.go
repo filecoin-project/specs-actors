@@ -166,8 +166,15 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 	minerAddr := rt.Message().Caller()
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
+		m, err := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		err = m.addToClaim(minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		return nil
 	})
 	return nil
@@ -250,7 +257,10 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		claim, powerOk, err := st.GetClaim(adt.AsStore(rt), minerAddr)
+		m, err := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		claim, powerOk, err := m.getClaim(minerAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
@@ -263,12 +273,15 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not add to claim for %s after loading existing claim for this address", minerAddr)
 
 		st.addPledgeTotal(pledgeAmount.Neg())
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		return nil
 	})
 
 	err := a.deleteMinerActor(rt, minerAddr)
 	AssertNoError(err)
-
 	return nil
 }
 
@@ -467,10 +480,12 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		}
 	}
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
+		m, err := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
 		// Remove power and leave miner frozen
 		for _, minerAddr := range failedMinerCrons {
-			claim, found, err := st.GetClaim(store, minerAddr)
+			claim, found, err := m.getClaim(minerAddr)
 			if err != nil {
 				rt.Log(vmr.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 				continue
@@ -481,12 +496,16 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 			}
 
 			// zero out miner power
-			err = st.AddToClaim(store, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
+			err = m.addToClaim(minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
 			if err != nil {
 				rt.Log(vmr.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
 				continue
 			}
 		}
+
+		err = m.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+
 		return nil
 	})
 	return nil
@@ -496,8 +515,8 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
 	var err error
 	rt.State().Transaction(&st, func() interface{} {
-		m, err := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+		m, err2 := st.mutator(adt.AsStore(rt)).withClaims(adt.WritePermission).build()
+		builtin.RequireNoErr(rt, err2, exitcode.ErrIllegalState, "failed to load state")
 
 		err = m.claims.Delete(AddrKey(miner))
 		if err != nil {
