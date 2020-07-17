@@ -39,12 +39,13 @@ type State struct {
 
 func ConstructState(currRealizedPower abi.StoragePower) *State {
 	st := &State{
-		CumsumBaseline:       big.Zero(),
-		CumsumRealized:       big.Zero(),
-		EffectiveNetworkTime: 0,
+		CumsumBaseline:         big.Zero(),
+		CumsumRealized:         big.Zero(),
+		EffectiveNetworkTime:   0,
+		EffectiveBaselinePower: BaselineInitialValue,
 
 		ThisEpochReward:        big.Zero(),
-		ThisEpochBaselinePower: big.Zero(),
+		ThisEpochBaselinePower: BaselineInitialValue,
 		Epoch:                  -1,
 	}
 

@@ -7,15 +7,18 @@ import (
 
 const BaselineExponentString = "340282476225511360239040558581491902991"
 
-// Set from BaselineExponentString in expneg init
-var BaselineExponent big.Int
+// Baseline function = BaselineInitialValue * (BaselineExponent) ^(t), t in epochs
+var BaselineExponent big.Int // Q.128
+var BaselineInitialValue big.Int
 
 func init() {
 	BaselineExponent = big.MustFromString(BaselineExponentString)
+	BaselineInitialValue = big.Lsh(big.NewInt(1), 60)
 }
 
 func BaselinePowerNextEpoch(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
-	return big.Mul(prevEpochBaselinePower, BaselineExponent)
+	nextEpochBaselinePower := big.Mul(prevEpochBaselinePower, BaselineExponent) // Q.0 => Q.128
+	return big.Rsh(nextEpochBaselinePower, precision)                           // Q.128 => Q.0
 }
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
