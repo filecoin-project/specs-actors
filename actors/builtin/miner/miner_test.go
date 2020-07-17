@@ -2,6 +2,7 @@
 package miner_test
 
 import (
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -1628,11 +1629,6 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		expectQueryNetworkInfo(rt, pwrTotal, h.epochReward)
 	}
 	{
-
-		// expect that the network is at baseline, so target is == networkQAPower
-		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochBaselinePower, nil, big.Zero(), &h.networkQAPower, exitcode.Ok)
-	}
-	{
 		sectorSize, err := params.SealProof.SectorSize()
 		require.NoError(h.t, err)
 
@@ -2403,12 +2399,16 @@ func fixedHasher(target uint64) func([]byte) [32]byte {
 }
 
 func expectQueryNetworkInfo(rt *mock.Runtime, expectedTotalPower *power.CurrentTotalPowerReturn, expectedReward big.Int) {
+	rwdRet := reward.ThisEpochRewardReturn{
+		ThisEpochReward: expectedReward,
+		ThisEpochBaselinePower: big.Zero(),
+	}
 	rt.ExpectSend(
 		builtin.RewardActorAddr,
 		builtin.MethodsReward.ThisEpochReward,
 		nil,
 		big.Zero(),
-		&expectedReward,
+		&rwdRet,
 		exitcode.Ok,
 	)
 
