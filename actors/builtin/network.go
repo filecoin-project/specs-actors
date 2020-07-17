@@ -10,7 +10,7 @@ import "fmt"
 // late-binding function calls, or they'll see the "wrong" value.
 // https://github.com/filecoin-project/specs-actors/issues/353
 // If EpochDurationSeconds is changed, update `lambda` and `expLamSubOne` in ./reward/reward_logic.go
-const EpochDurationSeconds = 45
+const EpochDurationSeconds = 25
 const SecondsInHour = 3600
 const SecondsInDay = 86400
 const SecondsInYear = 31556925
