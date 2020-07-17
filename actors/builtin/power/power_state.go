@@ -21,7 +21,14 @@ type State struct {
 	// TotalQABytesCommitted includes claims from miners below min power threshold
 	TotalQABytesCommitted abi.StoragePower
 	TotalPledgeCollateral abi.TokenAmount
-	MinerCount            int64
+
+	// These fields are set once per epoch in the previous cron tick and used
+	// for consistent values across a single epoch's state transition.
+	ThisEpochRawBytePower     abi.StoragePower
+	ThisEpochQualityAdjPower  abi.StoragePower
+	ThisEpochPledgeCollateral abi.TokenAmount
+
+	MinerCount int64
 	// Number of miners having proven the minimum consensus power.
 	MinerAboveMinPowerCount int64
 
@@ -55,16 +62,19 @@ type AddrKey = adt.AddrKey
 
 func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 	return &State{
-		TotalRawBytePower:       abi.NewStoragePower(0),
-		TotalBytesCommitted:     abi.NewStoragePower(0),
-		TotalQualityAdjPower:    abi.NewStoragePower(0),
-		TotalQABytesCommitted:   abi.NewStoragePower(0),
-		TotalPledgeCollateral:   abi.NewTokenAmount(0),
-		FirstCronEpoch:          0,
-		CronEventQueue:          emptyMapCid,
-		Claims:                  emptyMapCid,
-		MinerCount:              0,
-		MinerAboveMinPowerCount: 0,
+		TotalRawBytePower:         abi.NewStoragePower(0),
+		TotalBytesCommitted:       abi.NewStoragePower(0),
+		TotalQualityAdjPower:      abi.NewStoragePower(0),
+		TotalQABytesCommitted:     abi.NewStoragePower(0),
+		TotalPledgeCollateral:     abi.NewTokenAmount(0),
+		ThisEpochRawBytePower:     abi.NewStoragePower(0),
+		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
+		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
+		FirstCronEpoch:            0,
+		CronEventQueue:            emptyMapCid,
+		Claims:                    emptyMapCid,
+		MinerCount:                0,
+		MinerAboveMinPowerCount:   0,
 	}
 }
 

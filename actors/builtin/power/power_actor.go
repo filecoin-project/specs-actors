@@ -211,11 +211,22 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
+	// update next epoch's power and pledge values
+	// this must come before the next epoch's rewards are calculated
+	// so that next epoch reward reflects power added this epoch
+	rt.State().Transaction(&st, func() interface{} {
+		rawBytePower, qaPower := CurrentTotalPower(&st)
+		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
+		st.ThisEpochQualityAdjPower = qaPower
+		st.ThisEpochRawBytePower = rawBytePower
+		return nil
+	})
+
 	// update network KPI in RewardActor
 	_, code := rt.Send(
 		builtin.RewardActorAddr,
 		builtin.MethodsReward.UpdateNetworkKPI,
-		&st.TotalRawBytePower,
+		&st.ThisEpochRawBytePower,
 		abi.NewTokenAmount(0),
 	)
 	builtin.RequireSuccess(rt, code, "failed to update network KPI with Reward Actor")
@@ -313,17 +324,18 @@ type CurrentTotalPowerReturn struct {
 }
 
 // Returns the total power and pledge recorded by the power actor.
-// TODO hold these values constant during an epoch for stable calculations, https://github.com/filecoin-project/specs-actors/issues/495
+// The returned values are frozen during the cron tick before this epoch
+// so that this method returns consistent values while processing all messages
+// of an epoch.
 func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPowerReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
 
-	rawBytePower, qaPower := CurrentTotalPower(&st)
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     rawBytePower,
-		QualityAdjPower:  qaPower,
-		PledgeCollateral: st.TotalPledgeCollateral,
+		RawBytePower:     st.ThisEpochRawBytePower,
+		QualityAdjPower:  st.ThisEpochQualityAdjPower,
+		PledgeCollateral: st.ThisEpochPledgeCollateral,
 	}
 }
 

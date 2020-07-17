@@ -38,6 +38,7 @@ func TestConstruction(t *testing.T) {
 
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
+
 		actor.constructAndVerify(rt)
 	})
 
@@ -109,18 +110,14 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		// Add power for miner1
 		actor.updateClaimedPower(rt, miner1, smallPowerUnit, mul(smallPowerUnit, 2))
-		ret = actor.currentPowerTotal(rt)
-		assert.Equal(t, smallPowerUnit, ret.RawBytePower)
-		assert.Equal(t, mul(smallPowerUnit, 2), ret.QualityAdjPower)
+		actor.expectTotalPowerEager(rt, smallPowerUnit, mul(smallPowerUnit, 2))
 		assert.Equal(t, big.Zero(), ret.PledgeCollateral)
 
 		// Add power and pledge for miner2
 		actor.updateClaimedPower(rt, miner2, smallPowerUnit, smallPowerUnit)
 		actor.updatePledgeTotal(rt, miner1, abi.NewTokenAmount(1e6))
-		ret = actor.currentPowerTotal(rt)
-		assert.Equal(t, mul(smallPowerUnit, 2), ret.RawBytePower)
-		assert.Equal(t, mul(smallPowerUnit, 3), ret.QualityAdjPower)
-		assert.Equal(t, abi.NewTokenAmount(1e6), ret.PledgeCollateral)
+		actor.expectTotalPowerEager(rt, mul(smallPowerUnit, 2), mul(smallPowerUnit, 3))
+		actor.expectTotalPledgeEager(rt, abi.NewTokenAmount(1e6))
 
 		rt.Verify()
 
@@ -142,10 +139,8 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// Subtract power and some pledge for miner2
 		actor.updateClaimedPower(rt, miner2, smallPowerUnit.Neg(), smallPowerUnit.Neg())
 		actor.updatePledgeTotal(rt, miner2, abi.NewTokenAmount(1e5).Neg())
-		ret = actor.currentPowerTotal(rt)
-		assert.Equal(t, mul(smallPowerUnit, 1), ret.RawBytePower)
-		assert.Equal(t, mul(smallPowerUnit, 2), ret.QualityAdjPower)
-		assert.Equal(t, abi.NewTokenAmount(9e5), ret.PledgeCollateral)
+		actor.expectTotalPowerEager(rt, mul(smallPowerUnit, 1), mul(smallPowerUnit, 2))
+		actor.expectTotalPledgeEager(rt, abi.NewTokenAmount(9e5))
 
 		rt.GetState(&st)
 		claim2, found, err = st.GetClaim(rt.AdtStore(), miner2)
@@ -174,13 +169,13 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		// Below threshold small miner power is counted
 		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 3), mul(powerUnit, 2))
-		actor.expectTotalPower(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
+		actor.expectTotalPowerEager(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 
 		// Above threshold (power.ConsensusMinerMinMiners = 3) small miner power is ignored
 		delta := big.Sub(powerUnit, smallPowerUnit)
 		actor.updateClaimedPower(rt, miner3, div(delta, 2), delta)
 		expectedTotalAbove := mul(powerUnit, 3)
-		actor.expectTotalPower(rt, div(expectedTotalAbove, 2), expectedTotalAbove)
+		actor.expectTotalPowerEager(rt, div(expectedTotalAbove, 2), expectedTotalAbove)
 
 		st := getState(rt)
 		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
@@ -188,7 +183,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// Less than 3 miners above threshold again small miner power is counted again
 
 		actor.updateClaimedPower(rt, miner3, div(delta.Neg(), 2), delta.Neg())
-		actor.expectTotalPower(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
+		actor.expectTotalPowerEager(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 	})
 
 	t.Run("all of one miner's power dissapears when that miner dips below min power threshold", func(t *testing.T) {
@@ -207,13 +202,13 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
 
 		expectedTotal := mul(powerUnit, 4)
-		actor.expectTotalPower(rt, expectedTotal, expectedTotal)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
 		// miner4 dips just below threshold
 		actor.updateClaimedPower(rt, miner4, smallPowerUnit.Neg(), smallPowerUnit.Neg())
 
 		expectedTotal = mul(powerUnit, 3)
-		actor.expectTotalPower(rt, expectedTotal, expectedTotal)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 	})
 
 	t.Run("threshold only depends on qa power, not raw byte", func(t *testing.T) {
@@ -254,14 +249,14 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.updateClaimedPower(rt, miner4, smallPowerUnit, smallPowerUnit)
 
-		actor.expectTotalPower(rt, mul(powerUnit, 3), mul(powerUnit, 3))
+		actor.expectTotalPowerEager(rt, mul(powerUnit, 3), mul(powerUnit, 3))
 
 		// fault small miner
 		zeroPledge := abi.NewTokenAmount(0)
 		actor.onConsensusFault(rt, miner4, &zeroPledge)
 
 		// power unchanged
-		actor.expectTotalPower(rt, mul(powerUnit, 3), mul(powerUnit, 3))
+		actor.expectTotalPowerEager(rt, mul(powerUnit, 3), mul(powerUnit, 3))
 
 	})
 }
@@ -375,9 +370,7 @@ func TestCron(t *testing.T) {
 		rawPow := power.ConsensusMinerMinPower
 		qaPow := rawPow
 		actor.updateClaimedPower(rt, miner1, rawPow, qaPow)
-		startPow := actor.currentPowerTotal(rt)
-		assert.Equal(t, rawPow, startPow.RawBytePower)
-		assert.Equal(t, qaPow, startPow.QualityAdjPower)
+		actor.expectTotalPowerEager(rt, rawPow, qaPow)
 
 		expectedPower := big.NewInt(0)
 		rt.SetEpoch(2)
@@ -504,12 +497,16 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.Verify()
 
 	var st power.State
+
 	rt.GetState(&st)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalRawBytePower)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalBytesCommitted)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQualityAdjPower)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochRawBytePower)
+	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochQualityAdjPower)	
+	assert.Equal(h.t, abi.NewTokenAmount(0), st.ThisEpochPledgeCollateral)
 	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronEpoch)
 	assert.Equal(h.t, int64(0), st.MinerCount)
 	assert.Equal(h.t, int64(0), st.MinerAboveMinPowerCount)
@@ -610,10 +607,17 @@ func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr ad
 	rt.Verify()
 }
 
-func (h *spActorHarness) expectTotalPower(rt *mock.Runtime, expectedRaw, expectedQA abi.StoragePower) {
-	ret := h.currentPowerTotal(rt)
-	assert.Equal(h.t, expectedRaw, ret.RawBytePower)
-	assert.Equal(h.t, expectedQA, ret.QualityAdjPower)
+func (h *spActorHarness) expectTotalPowerEager(rt *mock.Runtime, expectedRaw, expectedQA abi.StoragePower) {
+	st := getState(rt)
+
+	rawBytePower, qualityAdjPower := power.CurrentTotalPower(st)
+	assert.Equal(h.t, expectedRaw, rawBytePower)
+	assert.Equal(h.t, expectedQA, qualityAdjPower)
+}
+
+func (h *spActorHarness) expectTotalPledgeEager(rt *mock.Runtime, expectedPledge abi.TokenAmount) {
+	st := getState(rt)
+	assert.Equal(h.t, expectedPledge, st.TotalPledgeCollateral)
 }
 
 func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof) []byte {

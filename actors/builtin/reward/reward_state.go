@@ -27,6 +27,9 @@ type State struct {
 	// This value is recomputed every non-null epoch and used in the next non-null epoch.
 	ThisEpochReward abi.TokenAmount
 
+	// The baseline power the network is targeting at st.Epoch
+	ThisEpochBaselinePower abi.StoragePower
+
 	// Epoch tracks for which epoch the Reward was computed
 	Epoch abi.ChainEpoch
 }
@@ -37,8 +40,9 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		CumsumRealized:       big.Zero(),
 		EffectiveNetworkTime: 0,
 
-		ThisEpochReward: big.Zero(),
-		Epoch:           -1,
+		ThisEpochReward:        big.Zero(),
+		ThisEpochBaselinePower: big.Zero(),
+		Epoch:                  -1,
 	}
 
 	st.updateToNextEpochWithReward(currRealizedPower)
@@ -68,4 +72,5 @@ func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower)
 	currRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.CumsumRealized, st.CumsumBaseline)
 
 	st.ThisEpochReward = computeReward(st.Epoch, prevRewardTheta, currRewardTheta)
+	st.ThisEpochBaselinePower = BaselinePowerAt(st.Epoch)
 }
