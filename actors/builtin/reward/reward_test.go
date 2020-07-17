@@ -31,8 +31,11 @@ func TestConstructor(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(0), st.Epoch)
 		assert.Equal(t, abi.NewStoragePower(0), st.CumsumRealized)
 		assert.Equal(t, big.MustFromString("9152074749760199658"), st.ThisEpochReward)
+		epochZeroBaseline := big.Sub(reward.BaselineInitialValue, big.NewInt(1)) // account for rounding error of one byte during construction
+		assert.Equal(t, epochZeroBaseline, st.ThisEpochBaselinePower)
+		assert.Equal(t, reward.BaselineInitialValue, st.EffectiveBaselinePower)
 	})
-	t.Run("construct with some power", func(t *testing.T) {
+	t.Run("construct with less power than baseline", func(t *testing.T) {
 		rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
 			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
 			Build(t)
@@ -42,11 +45,28 @@ func TestConstructor(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(0), st.Epoch)
 		assert.Equal(t, startRealizedPower, st.CumsumRealized)
 
-		// Note this check is sensative to the value of startRealizedPower and the minting function
-		// so it is somewhat brittle. Values of startRealizedPower below 1<<20 mint no coins
 		assert.NotEqual(t, big.Zero(), st.ThisEpochReward)
-		assert.Equal(t, big.MustFromString("50336408296765376121"), st.ThisEpochReward)
 	})
+	t.Run("construct with more power than baseline", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
+			Build(t)
+		startRealizedPower := big.Lsh(abi.NewStoragePower(1), 60)
+		actor.constructAndVerify(rt, &startRealizedPower)
+		st := getState(rt)
+		rwrd := st.ThisEpochReward
+
+		// start with 2x power
+		rt = mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
+			Build(t)
+		startRealizedPower = big.Lsh(abi.NewStoragePower(2), 60)
+		actor.constructAndVerify(rt, &startRealizedPower)
+		newSt := getState(rt)
+		// Reward value is the same; realized power impact on reward is capped at baseline
+		assert.Equal(t, rwrd, newSt.ThisEpochReward)
+	})
+
 }
 
 func TestAwardBlockReward(t *testing.T) {

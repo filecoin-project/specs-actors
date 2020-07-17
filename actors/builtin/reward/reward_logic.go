@@ -5,8 +5,30 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
-var BaselinePowerAt = func(epoch abi.ChainEpoch) abi.StoragePower {
-	return big.NewInt(1 << 40) // PARAM_FINISH
+const BaselineExponentString = "340282663082994238536867392845056089438"
+
+// Baseline function = BaselineInitialValue * (BaselineExponent) ^(t), t in epochs
+var BaselineExponent big.Int     // Q.128
+var BaselineInitialValue big.Int // Q.0
+
+func init() {
+	BaselineExponent = big.MustFromString(BaselineExponentString)
+	BaselineInitialValue = big.Lsh(big.NewInt(1), 60) // 1 EiB
+}
+
+// Initialize baseline power for epoch -1 so that baseline power at epoch 0 is
+// BaselineInitialValue.
+func InitBaselinePower() abi.StoragePower {
+	baselineInitialValue256 := big.Lsh(big.Lsh(BaselineInitialValue, precision), precision) // Q.0 => Q.256
+	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent)                // Q.256 / Q.128 => Q.128
+	return big.Rsh(baselineAtMinusOne, precision)                                           // Q.128 => Q.0
+}
+
+// Compute BaselinePower(t) from BaselinePower(t-1) with an additional multiplication
+// of the base exponent.
+func BaselinePowerFromPrev(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
+	thisEpochBaselinePower := big.Mul(prevEpochBaselinePower, BaselineExponent) // Q.0 * Q.128 => Q.128
+	return big.Rsh(thisEpochBaselinePower, precision)                           // Q.128 => Q.0
 }
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
@@ -19,15 +41,15 @@ var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for tes
 // we perform linear interpolation between CumsumBaseline(⌊theta⌋) and CumsumBaseline(⌈theta⌉).
 // The effectiveNetworkTime argument is ceiling of theta.
 // The result is a fractional effectiveNetworkTime (theta) in Q.128 format.
-func computeRTheta(effectiveNetworkTime abi.ChainEpoch, cumsumRealized, cumsumBaseline big.Int) big.Int {
+func computeRTheta(effectiveNetworkTime abi.ChainEpoch, baselinePowerAtEffectiveNetworkTime, cumsumRealized, cumsumBaseline big.Int) big.Int {
 	var rewardTheta big.Int
 	if effectiveNetworkTime != 0 {
 		rewardTheta = big.NewInt(int64(effectiveNetworkTime)) // Q.0
 		rewardTheta = big.Lsh(rewardTheta, precision)         // Q.0 => Q.128
 		diff := big.Sub(cumsumBaseline, cumsumRealized)
-		diff = big.Lsh(diff, precision)                             // Q.0 => Q.128
-		diff = big.Div(diff, BaselinePowerAt(effectiveNetworkTime)) // Q.128 / Q.0 => Q.128
-		rewardTheta = big.Sub(rewardTheta, diff)                    // Q.128
+		diff = big.Lsh(diff, precision)                           // Q.0 => Q.128
+		diff = big.Div(diff, baselinePowerAtEffectiveNetworkTime) // Q.128 / Q.0 => Q.128
+		rewardTheta = big.Sub(rewardTheta, diff)                  // Q.128
 	} else {
 		// special case for initialization
 		rewardTheta = big.Zero()
