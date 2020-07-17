@@ -86,9 +86,9 @@ var MaxSealDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  abi.ChainEpoch(10000),
 }
 
-// Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
-// used to ensure it is not predictable by miner.
-var PreCommitChallengeDelay = abi.ChainEpoch(150)
+// Filecoin Parameter: Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn.
+// Motivation: This guarantees that (1) a miner cannot predict a future challenge (2) a miner cannot do a long fork in the past to insert a precommit after seeing a challenge.
+const PreCommitChallengeDelay = abi.ChainEpoch(150)
 
 // Lookback from the current epoch for state view for leader elections.
 const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
