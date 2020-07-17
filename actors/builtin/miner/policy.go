@@ -93,10 +93,9 @@ const PreCommitChallengeDelay = abi.ChainEpoch(150)
 // Lookback from the current epoch for state view for leader elections.
 const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
-// Lookback from the deadline's challenge window opening from which to sample chain randomness for the challenge seed.
+// Filecoin Parameter: Lookback from the deadline's challenge window opening from which to sample chain randomness for the WindowPoSt challenge seed.
 // This lookback exists so that deadline windows can be non-overlapping (which make the programming simpler)
-// but without making the miner wait for chain stability before being able to start on PoSt computation.
-// The challenge is available this many epochs before the window is actually open to receiving a PoSt.
+// Motivation: A miner can start the WindowPoSt computation without waiting for chain stability. This value cannot be too large since it could compromise the rationality of honest storage (due to WindowPoSt cost assumptions)
 const WPoStChallengeLookback = abi.ChainEpoch(20)
 
 // Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
