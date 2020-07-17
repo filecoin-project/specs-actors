@@ -2137,7 +2137,6 @@ func requestCurrentEpochBlockReward(rt Runtime) abi.TokenAmount {
 	err := rwret.Into(&ret)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal epoch reward value")
 	return ret.ThisEpochReward
-	return abi.NewTokenAmount(0)
 }
 
 func requestCurrentEpochBaselinePowerAndReward(rt Runtime) (abi.StoragePower, abi.TokenAmount) {
@@ -2147,7 +2146,6 @@ func requestCurrentEpochBaselinePowerAndReward(rt Runtime) (abi.StoragePower, ab
 	err := rwret.Into(&ret)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
 	return ret.ThisEpochBaselinePower, ret.ThisEpochReward
-	return abi.NewStoragePower(0), abi.NewTokenAmount(0)
 }
 
 // Requests the current network total power and pledge from the power actor.
