@@ -45,6 +45,9 @@ type Deadline struct {
 
 	// The number of non-terminated sectors in this deadline (incl faulty).
 	LiveSectors uint64
+
+	// The total number of sectors in this deadline (incl dead).
+	TotalSectors uint64
 }
 
 //
@@ -336,6 +339,7 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 	}
 
 	dl.LiveSectors += uint64(len(sectors))
+	dl.TotalSectors += uint64(len(sectors))
 
 	return newPower, nil
 }
