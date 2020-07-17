@@ -104,8 +104,9 @@ const WPoStChallengeLookback = abi.ChainEpoch(20)
 // Motivation: This guarantees that a miner is not likely to successfully fork the chain and declare a fault after seeing the challenges.
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
-// The maximum age of a fault before the sector is terminated.
-var FaultMaxAge = WPoStProvingPeriod * 14
+// Filecoin Parameter: The maximum age of a fault before the sector is terminated.
+// Motivation: This guarantees to clients that a Filecoin miner cannot lose the file for longer than 14 days.
+const FaultMaxAge = WPoStProvingPeriod * 14
 
 // Staging period for a miner worker key change.
 // Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
