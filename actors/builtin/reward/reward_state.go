@@ -22,6 +22,9 @@ type State struct {
 	// and in advancing network time.
 	EffectiveNetworkTime abi.ChainEpoch
 
+	// EffectiveBaselinePower is the baseline power at the EffectiveNetworkTime epoch
+	EffectiveBaselinePower abi.StoragePower
+
 	// The reward to be paid in per WinCount to block producers.
 	// The actual reward total paid out depends on the number of winners in any round.
 	// This value is recomputed every non-null epoch and used in the next non-null epoch.
