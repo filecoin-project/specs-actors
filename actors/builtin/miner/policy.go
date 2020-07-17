@@ -53,7 +53,7 @@ func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
 const NewSectorsPerPeriodMax = 128 << 10
 
 // Epochs after which chain state is final.
-const ChainFinality = abi.ChainEpoch(900)
+const ChainFinality = abi.ChainEpoch(1400)
 
 // List of proof types which can be used when creating new miner actors
 var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
