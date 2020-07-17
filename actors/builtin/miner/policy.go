@@ -11,14 +11,20 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 )
-
-// The period over which all a miner's active sectors will be challenged.
+// PARAM_SPEC
+// The period over which a miner's active sectors are expected to be proven via WindowPoSt.
+// Motivation: This guarantees that (1) user data is proven once a day, (2) user data is stored for 24h by a rational miner (due to WindowPoSt cost assumption).
 var WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
-// The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
+// PARAM_SPEC
+// The period between the opening and the closing of a WindowPoSt deadline in which the miner is expected to provide a WindowPoSt proof.
+// Motivation: This guarantees that a miner has enough time to propagate a WindowPoSt for the current deadline.
+// Usage: This is used to calculate the opening and close of a deadline window and to calculate the number of deadlines in a proving period.
 var WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds) // 30 minutes (48 per day)
 
-// The number of non-overlapping PoSt deadlines in each proving period.
+// PARAM_SPEC
+// The number of non-overlapping PoSt deadlines in a proving period.
+// Motivation: This guarantees that a miner can spread their WindowPoSt duties across a proving period, instead of submitting a single large WindowPoSt submission.
 const WPoStPeriodDeadlines = uint64(48)
 
 // MaxPartitionsPerDeadline is the maximum number of partitions that will be assigned to a deadline.
@@ -37,18 +43,22 @@ func init() {
 	}
 }
 
-// The maximum number of sectors that a miner can have simultaneously active.
-// This also bounds the number of faults that can be declared, etc.
+// PARAM_SPEC
+// The maximum number of sectors that a miner can have (and implicitly the maximum number of faults, recoveries, etc.)
+// Note that when sectors are terminated they count towards SectorsMax until cleanup.
+// Motivation: This guarantees that actors operations per miner are bounded.
 // TODO raise this number, carefully
 // https://github.com/filecoin-project/specs-actors/issues/470
 const SectorsMax = 32 << 20 // PARAM_FINISH
 
-// The maximum number of partitions that may be required to be loaded in a single invocation.
+// PARAM_SPEC
+// The maximum number of partitions that can be loaded in a single invocation.
 // This limits the number of simultaneous fault, recovery, or sector-extension declarations.
 // We set this to same as MaxPartitionsPerDeadline so we can process that many partitions every deadline.
 const AddressedPartitionsMax = MaxPartitionsPerDeadline
 
-// The maximum number of sector infos that may be required to be loaded in a single invocation.
+// PARAM_SPEC
+// The maximum number of sector infos that can be loaded in a single invocation.
 const AddressedSectorsMax = 10_000
 
 // Libp2p peer info limits.
@@ -77,8 +87,10 @@ func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
 const NewSectorsPerPeriodMax = 128 << 10
 
-// Epochs after which chain state is final.
-const ChainFinality = abi.ChainEpoch(900)
+// PARAM_SPEC
+// Epochs after which chain state is final with overwhelming probability (hence the likelihood of two fork of this size is negligible)
+// Motivation: This is a conservative value that is chosen via simulations of all known attacks.
+const ChainFinality = abi.ChainEpoch(1400)
 
 var SealedCIDPrefix = cid.Prefix{
 	Version:  1,
@@ -106,41 +118,51 @@ var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 // Maximum delay between challenge and precommit
 var MaxPreCommitRandomnessLookback = abi.ChainEpoch(10000)
 
-// Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
-// used to ensure it is not predictable by miner.
+// PARAM_SPEC
+// Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn.
+// Motivation: This guarantees that (1) a miner cannot predict a future challenge (2) a miner cannot do a long fork in the past to insert a precommit after seeing a challenge.
 var PreCommitChallengeDelay = abi.ChainEpoch(150)
 
 // Lookback from the current epoch for state view for leader elections.
 const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
-// Lookback from the deadline's challenge window opening from which to sample chain randomness for the challenge seed.
+// PARAM_SPEC
+// Lookback from the deadline's challenge window opening from which to sample chain randomness for the WindowPoSt challenge seed.
 // This lookback exists so that deadline windows can be non-overlapping (which make the programming simpler)
-// but without making the miner wait for chain stability before being able to start on PoSt computation.
-// The challenge is available this many epochs before the window is actually open to receiving a PoSt.
+// Motivation: A miner can start the WindowPoSt computation without waiting for chain stability. This value cannot be too large since it could compromise the rationality of honest storage (due to WindowPoSt cost assumptions)
 const WPoStChallengeLookback = abi.ChainEpoch(20)
 
-// Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
-// This lookback must not be less than WPoStChallengeLookback lest a malicious miner be able to selectively declare
-// faults after learning the challenge value.
+// PARAM_SPEC
+// Minimum period between fault declaration and the next deadline opening.
+// If the number of epochs between fault declaration and deadline's challenge window opening is lower than FaultDeclarationCutoff,
+// the fault declaration is considered invalid for that deadline.
+// Motivation: This guarantees that a miner is not likely to successfully fork the chain and declare a fault after seeing the challenges.
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
+// PARAM_SPEC
 // The maximum age of a fault before the sector is terminated.
+// Motivation: This guarantees to clients that a Filecoin miner cannot lose the file for longer than 14 days.
 var FaultMaxAge = WPoStProvingPeriod * 14
 
+// PARAM_SPEC
 // Staging period for a miner worker key change.
-// Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
+// Future improvement: Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
 // it can be changed. It's the only safe value, though. We may implement a mitigation mechanism such as a second
 // key or allowing the owner account to submit PoSts while a key change is pending.
+// Motivation: This guarantees that a miner cannot choose a more favorable worker key that wins leader elections.
 const WorkerKeyChangeDelay = ChainFinality
 
+// PARAM_SPEC
 // Minimum number of epochs past the current epoch a sector may be set to expire.
 const MinSectorExpiration = 180 * builtin.EpochsInDay
 
-// Maximum number of epochs past the current epoch a sector may be set to expire.
-// The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
-// and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
+// PARAM_SPEC
+// A sector extension can be a maximum number of epochs past the current epoch.
+// A sector may be extended multiple times, however, the maximum extension will be the minimum of
+// CurrEpoch + MaximumSectorExpirationExtension and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
 const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 
+// PARAM_SPEC
 // Ratio of sector size to maximum deals per sector.
 // The maximum number of deals is the sector size divided by this number (2^27)
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
@@ -157,16 +179,28 @@ const ConsensusFaultIneligibilityDuration = ChainFinality
 // Sectors with neither will have a SectorQuality of QualityBaseMultiplier/QualityBaseMultiplier.
 // SectorQuality of a sector is a weighted average of multipliers based on their proportions.
 func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.SectorQuality {
+	// sectorSpaceTime = size * duration
 	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
+	// totalDealSpaceTime = dealWeight + verifiedWeight
 	totalDealSpaceTime := big.Add(dealWeight, verifiedWeight)
 	Assert(sectorSpaceTime.GreaterThanEqual(totalDealSpaceTime))
 
+	// Base - all size * duration of non-deals
+	// weightedBaseSpaceTime = (sectorSpaceTime - totalDealSpaceTime) * QualityBaseMultiplier
 	weightedBaseSpaceTime := big.Mul(big.Sub(sectorSpaceTime, totalDealSpaceTime), builtin.QualityBaseMultiplier)
+	// Deal - all deal size * deal duration * 10
+	// weightedDealSpaceTime = dealWeight * DealWeightMultiplier
 	weightedDealSpaceTime := big.Mul(dealWeight, builtin.DealWeightMultiplier)
+	// Verified - all verified deal size * verified deal duration * 100
+	// weightedVerifiedSpaceTime = verifiedWeight * VerifiedDealWeightMultiplier
 	weightedVerifiedSpaceTime := big.Mul(verifiedWeight, builtin.VerifiedDealWeightMultiplier)
+	// Sum - sum of all spacetime
+	// weightedSumSpaceTime = weightedBaseSpaceTime + weightedDealSpaceTime + weightedVerifiedSpaceTime
 	weightedSumSpaceTime := big.Sum(weightedBaseSpaceTime, weightedDealSpaceTime, weightedVerifiedSpaceTime)
+	// scaledUpWeightedSumSpaceTime = weightedSumSpaceTime * 2^20
 	scaledUpWeightedSumSpaceTime := big.Lsh(weightedSumSpaceTime, builtin.SectorQualityPrecision)
 
+	// Average of weighted space time: (scaledUpWeightedSumSpaceTime / sectorSpaceTime * 10)
 	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), builtin.QualityBaseMultiplier)
 }
 
@@ -192,15 +226,28 @@ type BigFrac struct {
 	denominator big.Int
 }
 
+// PARAM_SPEC
+// Initial share of a slasher's reward
 var consensusFaultReporterInitialShare = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(1),
 	denominator: big.NewInt(1000),
 }
+
+// PARAM_SPEC
+// Growth rate of a slasher's reward
 var consensusFaultReporterShareGrowthRate = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(101251),
 	denominator: big.NewInt(100000),
+}
+
+// PARAM_SPEC
+// Maximum share of slasher's reward
+var consensusFaultMaxReporterShare = BigFrac{
+	// PARAM_FINISH
+	numerator:   big.NewInt(1),
+	denominator: big.NewInt(4),
 }
 
 // Specification for a linear vesting schedule.
@@ -211,6 +258,7 @@ type VestSpec struct {
 	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
 }
 
+// PARAM_SPEC
 var RewardVestingSpec = VestSpec{
 	InitialDelay: abi.ChainEpoch(20 * builtin.EpochsInDay),  // PARAM_FINISH
 	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
@@ -218,7 +266,12 @@ var RewardVestingSpec = VestSpec{
 	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
 }
 
+// When a user (called slasher) reports a consensus fault, they earn a share of the miner's current balance
+// This amount is:  Min(initialShare * growthRate^elapsed, maxReporterShare) * collateral
+// Given current parameter choice, the longer a slasher waits, the higher their reward.
+// There it a maximum of reward to be earned.
 func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
+	// High level description
 	// PARAM_FINISH
 	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
 	// var multiplier = growthRate^elapsedEpoch
@@ -229,20 +282,22 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	// NUM = SLASHER_SHARE_GROWTH_RATE_NUM^elapsedEpoch * INITIAL_SLASHER_SHARE_NUM * collateral
 	// DENOM = SLASHER_SHARE_GROWTH_RATE_DENOM^elapsedEpoch * INITIAL_SLASHER_SHARE_DENOM
 	// slasher_amount = min(NUM/DENOM, collateral)
-	maxReporterShareNum := big.NewInt(1)
-	maxReporterShareDen := big.NewInt(2)
 
 	elapsed := big.NewInt(int64(elapsedEpoch))
+
+	// The following is equivalent to: slasherShare = growthRate^elapsed
+	// slasherShareNumerator = growthRateNumerator^elapsed
 	slasherShareNumerator := big.Exp(consensusFaultReporterShareGrowthRate.numerator, elapsed)
+	// slasherShareDenominator = growthRateDenominator^elapsed
 	slasherShareDenominator := big.Exp(consensusFaultReporterShareGrowthRate.denominator, elapsed)
 
+	// The following is equivalent to: reward = slasherShare * initialShare * collateral
+	// num = slasherShareNumerator * initialShareNumerator * collateral
 	num := big.Mul(big.Mul(slasherShareNumerator, consensusFaultReporterInitialShare.numerator), collateral)
+	// denom = slasherShareDenominator * initialShareDenominator
 	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.denominator)
-	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, maxReporterShareNum), maxReporterShareDen))
-}
 
-func ConsensusFaultActive(info *MinerInfo, currEpoch abi.ChainEpoch) bool {
-	// For penalization period to last for exactly finality epochs
-	// consensus faults are active until currEpoch exceeds ConsensusFaultElapsed
-	return currEpoch <= info.ConsensusFaultElapsed
+	// The following is equivalent to: Min(reward, collateral * maxReporterShare)
+	// Min(rewardNum/rewardDenom, maxReporterShareNum/maxReporterShareDen*collateral)
+	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, consensusFaultMaxReporterShare.numerator), consensusFaultMaxReporterShare.denominator))
 }

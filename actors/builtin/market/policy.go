@@ -6,20 +6,27 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
-// DealUpdatesInterval is the number of blocks between payouts for deals
+// PARAM_SPEC
+// The number of blocks between payouts for deals
 const DealUpdatesInterval = builtin.EpochsInDay
 
-// ProvCollateralPercentSupplyNum is the numerator of the percentage of normalized cirulating
-// supply that must be covered by provider collateral
+// PARAM_SPEC
+// The percentage of normalized cirulating
+// supply that must be covered by provider collateral in a deal
 var ProvCollateralPercentSupplyNum = big.NewInt(5)
-
-// ProvCollateralPercentSupplyDenom is the denominator of the percentage of normalized cirulating
-// supply that must be covered by provider collateral
 var ProvCollateralPercentSupplyDenom = big.NewInt(100)
+
+// PARAM_SPEC
+// Minimum Deal Duration
+var DealMinDuration = abi.ChainEpoch(180 * builtin.EpochsInDay)
+
+// PARAM_SPEC
+// Maximum Deal Duration
+var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay)
 
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
-	return abi.ChainEpoch(180 * builtin.EpochsInDay), abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_FINISH
+	return DealMinDuration, DealMaxDuration // PARAM_FINISH
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
