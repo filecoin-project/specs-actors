@@ -21,8 +21,9 @@ const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 // Usage: This is used to calculate the opening and close of a deadline window and to calculate the number of deadlines in a proving period.
 const WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds) // 30 minutes (48 per day)
 
-// The number of non-overlapping PoSt deadlines in each proving period.
-const WPoStPeriodDeadlines = uint64(48)
+// Filecoin Parameter: The number of non-overlapping PoSt deadlines in a proving period.
+// Motivation: This guarantees that a miner can spread their WindowPoSt duties across a proving period, instead of submitting a single large WindowPoSt submission.
+const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
 
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
