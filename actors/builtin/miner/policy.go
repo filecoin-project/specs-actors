@@ -16,8 +16,10 @@ import (
 // Motivation: This guarantees that (1) user data is proven once a day, (2) user data is stored for 24h by a rational miner (due to WindowPoSt cost assumption).
 const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
-// The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
-var WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds) // 30 minutes (48 per day)
+// Filecoin Parameter: The period between the opening and the closing of a WindowPoSt deadline in which the miner is expected to provide a WindowPoSt proof.
+// Motivation: This guarantees that a miner has enough time to propagate a WindowPoSt for the current deadline.
+// Usage: This is used to calculate the opening and close of a deadline window and to calculate the number of deadlines in a proving period.
+const WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds) // 30 minutes (48 per day)
 
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(48)
