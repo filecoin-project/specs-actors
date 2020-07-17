@@ -81,6 +81,8 @@ func main() {
 		reward.State{},
 		// method params
 		reward.AwardBlockRewardParams{},
+		// method returns
+		reward.ThisEpochRewardReturn{},
 	); err != nil {
 		panic(err)
 	}

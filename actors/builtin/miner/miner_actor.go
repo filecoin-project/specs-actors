@@ -15,6 +15,7 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -433,9 +434,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	}
 
 	// gather information from other actors
-	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
-	baselinePower := requestCurrentEpochTargetPower(rt)
+	baselinePower, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
 	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
 	circulatingSupply := rt.TotalFilCircSupply()
 
@@ -2133,19 +2133,21 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 func requestCurrentEpochBlockReward(rt Runtime) abi.TokenAmount {
 	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch reward")
-	epochReward := abi.NewTokenAmount(0)
-	err := rwret.Into(&epochReward)
+	var ret reward.ThisEpochRewardReturn
+	err := rwret.Into(&ret)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal epoch reward value")
-	return epochReward
+	return ret.ThisEpochReward
+	return abi.NewTokenAmount(0)
 }
 
-func requestCurrentEpochTargetPower(rt Runtime) abi.StoragePower {
-	tpret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochBaselinePower, nil, big.Zero())
+func requestCurrentEpochBaselinePowerAndReward(rt Runtime) (abi.StoragePower, abi.TokenAmount) {
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
-	targetPower := abi.NewStoragePower(0)
-	err := tpret.Into(&targetPower)
+	var ret reward.ThisEpochRewardReturn
+	err := rwret.Into(&ret)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
-	return targetPower
+	return ret.ThisEpochBaselinePower, ret.ThisEpochReward
+	return abi.NewStoragePower(0), abi.NewTokenAmount(0)
 }
 
 // Requests the current network total power and pledge from the power actor.
