@@ -98,9 +98,10 @@ const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
 // Motivation: A miner can start the WindowPoSt computation without waiting for chain stability. This value cannot be too large since it could compromise the rationality of honest storage (due to WindowPoSt cost assumptions)
 const WPoStChallengeLookback = abi.ChainEpoch(20)
 
-// Minimum period before a deadline's challenge window opens that a fault must be declared for that deadline.
-// This lookback must not be less than WPoStChallengeLookback lest a malicious miner be able to selectively declare
-// faults after learning the challenge value.
+// Filecoin Parameter: Minimum period between fault declaration and the next deadline opening.
+// If the number of epochs between fault declaration and deadline's challenge window opening is lower than FaultDeclarationCutoff,
+// the fault declaration is considered invalid for that deadline.
+// Motivation: This guarantees that a miner is not likely to successfully fork the chain and declare a fault after seeing the challenges.
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
 // The maximum age of a fault before the sector is terminated.
