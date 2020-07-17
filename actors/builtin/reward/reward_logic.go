@@ -8,11 +8,14 @@ import (
 const BaselineExponentString = "340282476225511360239040558581491902991"
 
 // Set from BaselineExponentString in expneg init
-var BaselineExponent *big.Int
+var BaselineExponent big.Int
 
-var BaselinePowerAt = func(prevValue abi.StoragePower) abi.StoragePower {
-	return big.Mul()
-	return big.NewInt(1 << 40) // PARAM_FINISH
+func init() {
+	BaselineExponent = big.MustFromString(BaselineExponentString)
+}
+
+func BaselinePowerNextEpoch(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
+	return big.Mul(prevEpochBaselinePower, BaselineExponent)
 }
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
@@ -25,15 +28,15 @@ var BaselineTotal = big.Mul(big.NewInt(900e6), big.NewInt(1e18)) // 900M for tes
 // we perform linear interpolation between CumsumBaseline(⌊theta⌋) and CumsumBaseline(⌈theta⌉).
 // The effectiveNetworkTime argument is ceiling of theta.
 // The result is a fractional effectiveNetworkTime (theta) in Q.128 format.
-func computeRTheta(effectiveNetworkTime abi.ChainEpoch, cumsumRealized, cumsumBaseline big.Int) big.Int {
+func computeRTheta(effectiveNetworkTime abi.ChainEpoch, baselinePowerAtEffectiveNetworkTime, cumsumRealized, cumsumBaseline big.Int) big.Int {
 	var rewardTheta big.Int
 	if effectiveNetworkTime != 0 {
 		rewardTheta = big.NewInt(int64(effectiveNetworkTime)) // Q.0
 		rewardTheta = big.Lsh(rewardTheta, precision)         // Q.0 => Q.128
 		diff := big.Sub(cumsumBaseline, cumsumRealized)
-		diff = big.Lsh(diff, precision)                             // Q.0 => Q.128
-		diff = big.Div(diff, BaselinePowerAt(effectiveNetworkTime)) // Q.128 / Q.0 => Q.128
-		rewardTheta = big.Sub(rewardTheta, diff)                    // Q.128
+		diff = big.Lsh(diff, precision)                           // Q.0 => Q.128
+		diff = big.Div(diff, baselinePowerAtEffectiveNetworkTime) // Q.128 / Q.0 => Q.128
+		rewardTheta = big.Sub(rewardTheta, diff)                  // Q.128
 	} else {
 		// special case for initialization
 		rewardTheta = big.Zero()

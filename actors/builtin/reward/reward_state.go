@@ -57,23 +57,24 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 // Used for update of internal state during null rounds
 func (st *State) updateToNextEpoch(currRealizedPower abi.StoragePower) {
 	st.Epoch++
-
-	cappedRealizedPower := big.Min(BaselinePowerAt(st.Epoch), currRealizedPower)
+	st.ThisEpochBaselinePower = BaselinePowerNextEpoch(st.ThisEpochBaselinePower)
+	cappedRealizedPower := big.Min(st.ThisEpochBaselinePower, currRealizedPower)
 	st.CumsumRealized = big.Add(st.CumsumRealized, cappedRealizedPower)
 
 	for st.CumsumRealized.GreaterThan(st.CumsumBaseline) {
 		st.EffectiveNetworkTime++
-		st.CumsumBaseline = big.Add(st.CumsumBaseline, BaselinePowerAt(st.EffectiveNetworkTime))
+		st.EffectiveBaselinePower = BaselinePowerNextEpoch(st.EffectiveBaselinePower)
+		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.EffectiveBaselinePower)
 	}
 }
 
 // Takes in a current realized power for a reward epoch and computes
 // and updates reward state to track reward for the next epoch
 func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower) {
-	prevRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.CumsumRealized, st.CumsumBaseline)
+	prevRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.EffectiveBaselinePower, st.CumsumRealized, st.CumsumBaseline)
 	st.updateToNextEpoch(currRealizedPower)
-	currRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.CumsumRealized, st.CumsumBaseline)
+	currRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.EffectiveBaselinePower, st.CumsumRealized, st.CumsumBaseline)
 
 	st.ThisEpochReward = computeReward(st.Epoch, prevRewardTheta, currRewardTheta)
-	st.ThisEpochBaselinePower = BaselinePowerAt(st.Epoch)
+
 }
