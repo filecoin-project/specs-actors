@@ -12,8 +12,9 @@ import (
 	. "github.com/filecoin-project/specs-actors/actors/util"
 )
 
-// The period over which all a miner's active sectors will be challenged.
-var WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
+// Filecoin Parameter: The period over which a miner's active sectors are expected to be proven via WindowPoSt.
+// Motivation: This guarantees that (1) user data is proven once a day, (2) user data is stored for 24h by a rational miner (due to WindowPoSt cost assumption).
+const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
 // The duration of a deadline's challenge window, the period before a deadline when the challenge is available.
 var WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds) // 30 minutes (48 per day)
