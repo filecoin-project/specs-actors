@@ -115,7 +115,7 @@ const FaultMaxAge = WPoStProvingPeriod * 14
 // Motivation: This guarantees that a miner cannot choose a more favorable worker key that wins leader elections.
 const WorkerKeyChangeDelay = ChainFinality
 
-// Maximum number of epochs past the current epoch a sector may be set to expire.
+// Filecoin Parameter: Maximum number of epochs past the current epoch a sector may be set to expire.
 // The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
 // and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
 const MaxSectorExpirationExtension = builtin.EpochsInYear
