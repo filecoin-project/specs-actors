@@ -2,7 +2,6 @@
 package miner_test
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -23,6 +22,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"

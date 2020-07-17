@@ -11,6 +11,7 @@ import (
 // AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
 // LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
 // PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
+// PARAM_FINISH
 var InitialPledgeFactor = big.NewInt(20)
 var LockTargetFactorNum = big.NewInt(3)
 var LockTargetFactorDenom = big.NewInt(10)
@@ -71,19 +72,16 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 // total power, total pledge commitment, epoch block reward, and circulating token supply.
 // In plain language, the pledge requirement is a multiple of the block reward expected to be earned by the
 // newly-committed power, holding the per-epoch block reward constant (though in reality it will change over time).
-// The network total pledge and circulating supply parameters are currently unused, but may be included in a
-// future calculation.
 func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower, baselinePower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
-	// Details here are still subject to change.
-	// PARAM_FINISH
-	// https://github.com/filecoin-project/specs-actors/issues/468
-	_ = networkTotalPledge // TODO: ce use this
 
 	ipBase := big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaPower))
-	additionalIPNum := big.Mul(big.Mul(LockTargetFactorNum, networkCirculatingSupply), qaPower)
-	storageToCover := big.Max(networkQAPower, baselinePower)
-	storageToCover = big.Max(qaPower, storageToCover) // handle case where total and baseline are 0
-	additionalIPDenom := big.Mul(storageToCover, LockTargetFactorDenom)
+
+	lockTargetNum := big.Mul(LockTargetFactorNum, networkCirculatingSupply)
+	lockTargetDenom := LockTargetFactorDenom
+	pledgeShareNum := qaPower
+	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
+	additionalIPNum := big.Mul(lockTargetNum, pledgeShareNum)
+	additionalIPDenom := big.Mul(lockTargetDenom, pledgeShareDenom)
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
 	return big.Add(ipBase, additionalIP)
