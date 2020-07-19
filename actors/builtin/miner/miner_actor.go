@@ -801,7 +801,9 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		declsByDeadline := map[uint64][]*ExpirationExtension{}
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Extensions {
-			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			if _, ok := declsByDeadline[decl.Deadline]; !ok {
+				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			}
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
@@ -954,7 +956,9 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		declsByDeadline := map[uint64][]*TerminationDeclaration{}
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Terminations {
-			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			if _, ok := declsByDeadline[decl.Deadline]; !ok {
+				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			}
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
@@ -1080,7 +1084,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		declsByDeadline := map[uint64][]*FaultDeclaration{}
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Faults {
-			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			if _, ok := declsByDeadline[decl.Deadline]; !ok {
+				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			}
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
@@ -1228,7 +1234,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		declsByDeadline := map[uint64][]*RecoveryDeclaration{}
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Recoveries {
-			deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			if _, ok := declsByDeadline[decl.Deadline]; !ok {
+				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
+			}
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
