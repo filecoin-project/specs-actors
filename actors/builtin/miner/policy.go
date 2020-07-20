@@ -90,7 +90,7 @@ const WPoStChallengeLookback = abi.ChainEpoch(20)
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
 // The maximum age of a fault before the sector is terminated.
-const FaultMaxAge = WPoStProvingPeriod*14
+const FaultMaxAge = WPoStProvingPeriod * 14
 
 // Staging period for a miner worker key change.
 // Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
@@ -108,9 +108,10 @@ const MaxSectorExpirationExtension = builtin.EpochsInYear
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
-var QualityBaseMultiplier = big.NewInt(10)         // PARAM_FINISH
-var DealWeightMultiplier = big.NewInt(10)          // PARAM_FINISH
-var VerifiedDealWeightMultiplier = big.NewInt(100) // PARAM_FINISH
+var QualityBaseMultiplier = big.NewInt(10)
+var DealWeightMultiplier = big.NewInt(10)
+var VerifiedDealWeightMultiplier = big.NewInt(100)
+
 const SectorQualityPrecision = 20
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
@@ -180,17 +181,17 @@ type VestSpec struct {
 }
 
 var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
-	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay), // 1 day for testnet, PARAM_FINISH
-	Quantization: 12 * builtin.EpochsInHour,               // 12 hours for testnet, PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
+	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),   // PARAM_FINISH
+	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
 }
 
 var RewardVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(20), // no initial delay, PARAM_FINISH
-	VestPeriod: abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay), // PARAM_FINISH
-	Quantization: 12 * builtin.EpochsInHour, // PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(20 * builtin.EpochsInDay),  // PARAM_FINISH
+	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
+	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),   // PARAM_FINISH
+	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
 }
 
 func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
