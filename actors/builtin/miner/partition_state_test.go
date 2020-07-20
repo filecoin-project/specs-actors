@@ -81,6 +81,40 @@ func TestPartitions(t *testing.T) {
 		assertPartitionState(t, partition, sectors, sectorSize, bf(4, 5, 6), bf(4, 5), bf())
 	})
 
+	t.Run("remove recoveries", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// make 4, 5 and 6 faulty
+		faultSet := bitfield.NewFromSet([]uint64{4, 5, 6})
+		faultSectors := selectSectors(t, sectors, faultSet)
+		_, err = partition.AddFaults(adt.AsStore(rt), faultSet, faultSectors, abi.ChainEpoch(1000), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// add 4 and 5 as recoveries
+		recoverSet := bitfield.NewFromSet([]uint64{4, 5})
+		recoverSectors := selectSectors(t, sectors, recoverSet)
+		recoveredPower := miner.PowerForSectors(sectorSize, recoverSectors)
+		err = partition.AddRecoveries(recoverSet, recoveredPower)
+		require.NoError(t, err)
+
+		// remove zero recoveries does nothing
+		err = partition.RemoveRecoveries(bf(), miner.NewPowerPairZero())
+		require.NoError(t, err)
+
+		assertPartitionState(t, partition, sectors, sectorSize, bf(4, 5, 6), bf(4, 5), bf())
+
+		// removing sector 5 alters recovery set and recovery power
+		removedPower := miner.PowerForSectors(sectorSize, sectors[4:5])
+		err = partition.RemoveRecoveries(bf(5), removedPower)
+
+		assertPartitionState(t, partition, sectors, sectorSize, bf(4, 5, 6), bf(4), bf())
+	})
+
 	t.Run("recovers faults", func(t *testing.T) {
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		partition := emptyPartition(t, rt)
