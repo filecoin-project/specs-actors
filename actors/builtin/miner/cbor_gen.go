@@ -2102,8 +2102,16 @@ func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.ChainCommitSig (crypto.Signature) (struct)
-	if err := t.ChainCommitSig.MarshalCBOR(w); err != nil {
+	// t.ChainCommitRand (abi.Randomness) (slice)
+	if len(t.ChainCommitRand) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.ChainCommitRand was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.ChainCommitRand))); err != nil {
+		return err
+	}
+
+	if _, err := w.Write(t.ChainCommitRand[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2224,14 +2232,26 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.ChainCommitEpoch = abi.ChainEpoch(extraI)
 	}
-	// t.ChainCommitSig (crypto.Signature) (struct)
+	// t.ChainCommitRand (abi.Randomness) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
 
-		if err := t.ChainCommitSig.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.ChainCommitSig: %w", err)
-		}
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.ChainCommitRand: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
 
+	if extra > 0 {
+		t.ChainCommitRand = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.ChainCommitRand[:]); err != nil {
+		return err
 	}
 	return nil
 }

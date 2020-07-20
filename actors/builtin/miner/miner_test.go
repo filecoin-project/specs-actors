@@ -750,10 +750,6 @@ func TestWindowPost(t *testing.T) {
 		// The skipped fault declared here has no effect.
 		commitEpoch := rt.Epoch() - 100
 		commitRand := abi.Randomness("chaincommitment")
-		commitSig := crypto.Signature{
-			Type: crypto.SigTypeBLS,
-			Data: []byte("sig"),
-		}
 		params := miner.SubmitWindowedPoStParams{
 			Deadline: dlIdx,
 			Partitions: []miner.PoStPartition{{
@@ -762,13 +758,12 @@ func TestWindowPost(t *testing.T) {
 			}},
 			Proofs:           makePoStProofs(actor.postProofType),
 			ChainCommitEpoch: commitEpoch,
-			ChainCommitSig:   commitSig,
+			ChainCommitRand:   commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(actor.worker)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
-		rt.ExpectVerifySignature(commitSig, actor.worker, commitRand, nil)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
 
@@ -2207,12 +2202,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
 	commitEpoch := rt.Epoch() - 100
-	commitSig := crypto.Signature{
-		Type: crypto.SigTypeBLS,
-		Data: []byte("sig"),
-	}
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
-	rt.ExpectVerifySignature(commitSig, h.worker, commitRand, nil)
 
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2303,7 +2293,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 		Partitions:       partitions,
 		Proofs:           proofs,
 		ChainCommitEpoch: commitEpoch,
-		ChainCommitSig:   commitSig,
+		ChainCommitRand:  commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)
