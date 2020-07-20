@@ -125,10 +125,13 @@ const MaxSectorExpirationExtension = builtin.EpochsInYear
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
+// Filecoin Parameter: Quality multiplier for CC sectors
 var QualityBaseMultiplier = big.NewInt(10)
+// Filecoin Parameter: Quality multiplier for a standard deal in a sector
 var DealWeightMultiplier = big.NewInt(10)
+// Filecoin Parameter: Quality multiplier for verified deals
 var VerifiedDealWeightMultiplier = big.NewInt(100)
-
+// Filecoin Parameter: Precision for Quality Adjusted power
 const SectorQualityPrecision = 20
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
@@ -138,16 +141,28 @@ const SectorQualityPrecision = 20
 // Sectors with neither will have a SectorQuality of QualityBaseMultiplier/QualityBaseMultiplier.
 // SectorQuality of a sector is a weighted average of multipliers based on their propotions.
 func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.SectorQuality {
+	// sectorSpaceTime = size * duration
 	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
+	// totalDealSpaceTime = dealWeight + verifiedWeight
 	totalDealSpaceTime := big.Add(dealWeight, verifiedWeight)
 	Assert(sectorSpaceTime.GreaterThanEqual(totalDealSpaceTime))
 
+	// Base - all size * duration of non-deals
+	// weightedBaseSpaceTime = (sectorSpaceTime - totalDealSpaceTime) * QualityBaseMultiplier
 	weightedBaseSpaceTime := big.Mul(big.Sub(sectorSpaceTime, totalDealSpaceTime), QualityBaseMultiplier)
+	// Deal - all deal size * deal duration * 10
+	// weightedDealSpaceTime = dealWeight * DealWeightMultiplier
 	weightedDealSpaceTime := big.Mul(dealWeight, DealWeightMultiplier)
+	// Verified - all verified deal size * verified deal duration * 100
+	// weightedVerifiedSpaceTime = verifiedWeight * VerifiedDealWeightMultiplier
 	weightedVerifiedSpaceTime := big.Mul(verifiedWeight, VerifiedDealWeightMultiplier)
+	// Sum - sum of all spacetime
+	// weightedSumSpaceTime = weightedBaseSpaceTime + weightedDealSpaceTime + weightedVerifiedSpaceTime
 	weightedSumSpaceTime := big.Add(weightedBaseSpaceTime, big.Add(weightedDealSpaceTime, weightedVerifiedSpaceTime))
+	// scaledUpWeightedSumSpaceTime = weightedSumSpaceTime * 2^20
 	scaledUpWeightedSumSpaceTime := big.Lsh(weightedSumSpaceTime, SectorQualityPrecision)
 
+	// Average of weighted space time: (scaledUpWeightedSumSpaceTime / sectorSpaceTime * 10)
 	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), QualityBaseMultiplier)
 }
 
