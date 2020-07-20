@@ -258,18 +258,17 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
-	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
-
 	if params.ChainCommitEpoch >= currEpoch {
 		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d must be in the past", params.ChainCommitEpoch)
 	}
-	if params.ChainCommitEpoch < currEpoch - MaxPoStChainCommitAge {
-		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must exceed %d", params.ChainCommitEpoch, currEpoch - MaxPoStChainCommitAge)
+	if params.ChainCommitEpoch < currEpoch-MaxPoStChainCommitAge {
+		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must exceed %d", params.ChainCommitEpoch, currEpoch-MaxPoStChainCommitAge)
 	}
 	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
 	if !bytes.Equal(commRand, params.ChainCommitRand) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 	}
+	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
 
 	// Get the total power/reward. We need these to compute penalties.
 	rewardStats := requestCurrentEpochBlockReward(rt)
