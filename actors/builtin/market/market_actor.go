@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
@@ -77,7 +78,11 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
 
-	nominal, recipient := escrowAddress(rt, params.ProviderOrClientAddress)
+	nominal, recipient, codeId := escrowAddress(rt, params.ProviderOrClientAddress)
+	// if caller is not a miner, caller should be the recipient of the funds
+	if !codeId.Equals(builtin.StorageMinerActorCodeID) {
+		rt.ValidateImmediateCallerIs(recipient)
+	}
 
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
@@ -111,7 +116,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
 	msgValue := rt.Message().ValueReceived()
 
-	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
+	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -678,7 +683,7 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 
 // Resolves a provider or client address to the canonical form against which a balance should be held, and
 // the designated recipient address of withdrawals (which is the same, for simple account parties).
-func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipient addr.Address) {
+func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipient addr.Address, codeId cid.Cid) {
 	// Resolve the provided address to the canonical form against which the balance is held.
 	nominal, ok := rt.ResolveAddress(addr)
 	if !ok {
@@ -694,12 +699,13 @@ func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipie
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
 		ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
 		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
-		return nominal, ownerAddr
+		return nominal, ownerAddr, codeID
 	}
 
 	// Ordinary account-style actor entry; funds recipient is just the entry address itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	return nominal, nominal
+
+	return nominal, nominal, codeID
 }
 
 func getDealProposal(proposals *DealArray, dealID abi.DealID) (*DealProposal, error) {
