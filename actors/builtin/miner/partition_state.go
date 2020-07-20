@@ -345,7 +345,7 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 	}
 
 	powerDelta := removed.ActivePower.Add(removed.FaultyPower)
-	p.LivePower = p.LivePower.Add(powerDelta)
+	p.LivePower = p.LivePower.Sub(powerDelta)
 	p.FaultyPower = p.FaultyPower.Sub(removed.FaultyPower)
 	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
 
