@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
+// Filecoin Parameter: Amount of Pledge to be deposited per sector (in expected block rewards per day)
 // IP = IPBase(precommit time) + AdditionalIP(precommit time)
 // IPBase(t) = InitialPledgeFactor * BR(t)
 // AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
@@ -17,10 +18,18 @@ var LockTargetFactorNum = big.NewInt(3)
 var LockTargetFactorDenom = big.NewInt(10)
 
 // FF = (DeclaredFaultFactorNum / DeclaredFaultFactorDenom) * BR(t)
+// Filecoin Parameter: Amount of fee for faults that have been declared on time.
+// Motivation: This guarantees that a miner pays back the possible block reward earned since last deadline.
+// In current Filecoin, the network must be conservative and assume that the sector was faulty since the last time it was proven.
+// This penalty is currently overly punitive for continued faults.
 var DeclaredFaultFactorNum = big.NewInt(214)
 var DeclaredFaultFactorDenom = big.NewInt(100)
 
 // SP = (UndeclaredFaultFactor / DeclaredFaultFactorDenom) * BR(t)
+// Filecoin parameter: Amount of fee for faults that have not been declared on time.
+// Motivation: This fee is higher than FF for two reasons:
+// (1) it guarantees that a miner is incentivized to declare a fault early
+// (2) A miner stores less than (1-spacegap) of a sector, does not not declare it as faulty and hopes to get challenged on the stored parts. SP guarantees that on expectation this strategy would not earn positive rewards.
 var UndeclaredFaultFactorNum = big.NewInt(5)
 var UndeclaredFaultFactorDenom = big.NewInt(1)
 
