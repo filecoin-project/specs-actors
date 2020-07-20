@@ -1426,7 +1426,7 @@ func TestAddLockedFund(t *testing.T) {
 		st = getState(rt)
 		newVestingFunds, err := adt.AsArray(store, st.VestingFunds)
 		require.NoError(t, err)
-		require.Equal(t, uint64(7), newVestingFunds.Length()) // 1 day steps over 1 week
+		require.Equal(t, uint64(180), newVestingFunds.Length())
 
 		// Vested FIL pays out on epochs with expected offset
 		lockedEntry := abi.NewTokenAmount(0)
