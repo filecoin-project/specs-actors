@@ -1045,7 +1045,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
 		actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId)
 
-		params := mkTerminateDealParams(dealId)
+		params := mkTerminateDealParams(currentEpoch, dealId)
 
 		provider2 := tutil.NewIDAddr(t, 501)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
@@ -1063,7 +1063,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch)
 
-		params := mkTerminateDealParams(dealId)
+		params := mkTerminateDealParams(currentEpoch, dealId)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -1082,7 +1082,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId1)
 		dealId2 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch+1)
 
-		params := mkTerminateDealParams(dealId1, dealId2)
+		params := mkTerminateDealParams(currentEpoch, dealId1, dealId2)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -2404,7 +2404,7 @@ func (h *marketActorTestHarness) terminateDeals(rt *mock.Runtime, minerAddr addr
 	rt.SetCaller(minerAddr, builtin.StorageMinerActorCodeID)
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
-	params := &market.OnMinerSectorsTerminateParams{DealIDs: dealIds}
+	params := mkTerminateDealParams(rt.Epoch(), dealIds...)
 
 	ret := rt.Call(h.OnMinerSectorsTerminate, params)
 	rt.Verify()
@@ -2505,6 +2505,6 @@ func mkActivateDealParams(sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *m
 	return &market.ActivateDealsParams{SectorExpiry: sectorExpiry, DealIDs: dealIds}
 }
 
-func mkTerminateDealParams(dealIds ...abi.DealID) *market.OnMinerSectorsTerminateParams {
-	return &market.OnMinerSectorsTerminateParams{dealIds}
+func mkTerminateDealParams(epoch abi.ChainEpoch, dealIds ...abi.DealID) *market.OnMinerSectorsTerminateParams {
+	return &market.OnMinerSectorsTerminateParams{Epoch: epoch, DealIDs: dealIds}
 }
