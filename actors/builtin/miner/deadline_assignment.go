@@ -6,16 +6,35 @@ import (
 
 // Helper types for deadline assignment.
 type deadlineAssignmentInfo struct {
-	index       int
-	liveSectors uint64
+	index        int
+	liveSectors  uint64
+	totalSectors uint64
 }
 
-func (dai *deadlineAssignmentInfo) isFull(partitionSize int) bool {
-	return (dai.liveSectors % uint64(partitionSize)) == 0
+func (dai *deadlineAssignmentInfo) partitionsAfterAssignment(partitionSize uint64) uint64 {
+	sectorCount := dai.totalSectors + 1 // after assignment
+	fullPartitions := sectorCount / partitionSize
+	if (sectorCount % partitionSize) == 0 {
+		return fullPartitions
+	}
+	return fullPartitions + 1 // +1 for partial partition.
+}
+
+func (dai *deadlineAssignmentInfo) compactPartitionsAfterAssignment(partitionSize uint64) uint64 {
+	sectorCount := dai.liveSectors + 1 // after assignment
+	fullPartitions := sectorCount / partitionSize
+	if (sectorCount % partitionSize) == 0 {
+		return fullPartitions
+	}
+	return fullPartitions + 1 // +1 for partial partition.
+}
+
+func (dai *deadlineAssignmentInfo) isFullNow(partitionSize uint64) bool {
+	return (dai.totalSectors % partitionSize) == 0
 }
 
 type deadlineAssignmentHeap struct {
-	partitionSize int
+	partitionSize uint64
 	deadlines     []*deadlineAssignmentInfo
 }
 
@@ -30,23 +49,97 @@ func (dah *deadlineAssignmentHeap) Swap(i, j int) {
 func (dah *deadlineAssignmentHeap) Less(i, j int) bool {
 	a, b := dah.deadlines[i], dah.deadlines[j]
 
-	aIsFull := a.isFull(dah.partitionSize)
-	bIsFull := b.isFull(dah.partitionSize)
+	// When assigning partitions to deadlines, we're trying to optimize the
+	// following:
+	//
+	// First, avoid increasing the maximum number of partitions in any
+	// deadline, across all deadlines, after compaction. This would
+	// necessitate buying a new GPU.
+	//
+	// Second, avoid forcing the miner to repeatedly compact partitions. A
+	// miner would be "forced" to compact a partition when a the number of
+	// partitions in any given deadline goes above the current maximum
+	// number of partitions across all deadlines, and compacting that
+	// deadline would then reduce the number of partitions, reducing the
+	// maximum.
+	//
+	// At the moment, the only "forced" compaction happens when either:
+	//
+	// 1. Assignment of the sector into any deadline would force a
+	//    compaction.
+	// 2. The chosen deadline has at least one full partition's worth of
+	//    terminated sectors and at least one fewer partition (after
+	//    compaction) than any other deadline.
+	//
+	// Third, we attempt to assign "runs" of sectors to the same partition
+	// to reduce the size of the bitfields.
+	//
+	// Finally, we try to balance the number of sectors (thus partitions)
+	// assigned to any given deadline over time.
 
-	// Sort by fullness first.
-	if !aIsFull && bIsFull {
-		return true
-	} else if aIsFull && !bIsFull {
-		return false
+	// Summary:
+	//
+	// 1. Assign to the deadline that will have the _least_ number of
+	//    post-compaction partitions (after sector assignment).
+	// 2. Assign to the deadline that will have the _least_ number of
+	//    pre-compaction partitions (after sector assignment).
+	// 3. Assign to a deadline with a non-full partition.
+	//    - If both have non-full partitions, assign to the most full one (stable assortment).
+	// 4. Assign to the deadline with the least number of live sectors.
+	// 5. Assign sectors to the deadline with the lowest index first.
+
+	// If one deadline would end up with fewer partitions (after
+	// compacting), assign to that one. This ensures we keep the maximum
+	// number of partitions in any given deadline to a minimum.
+	//
+	// Technically, this could increase the maximum number of partitions
+	// before compaction. However, that can only happen if the deadline in
+	// question could save an entire partition by compacting. At that point,
+	// the miner should compact the deadline.
+	aCompactPartitionsAfterAssignment := a.compactPartitionsAfterAssignment(dah.partitionSize)
+	bCompactPartitionsAfterAssignment := b.compactPartitionsAfterAssignment(dah.partitionSize)
+	if aCompactPartitionsAfterAssignment != bCompactPartitionsAfterAssignment {
+		return aCompactPartitionsAfterAssignment < bCompactPartitionsAfterAssignment
 	}
 
-	// Then by total live sectors.
-	if a.liveSectors < b.liveSectors {
-		return true
-	} else if a.liveSectors > b.liveSectors {
-		return false
+	// If, after assignment, neither deadline would have fewer
+	// post-compaction partitions, assign to the deadline with the fewest
+	// pre-compaction partitions (after assignment). This will put off
+	// compaction as long as possible.
+	aPartitionsAfterAssignment := a.partitionsAfterAssignment(dah.partitionSize)
+	bPartitionsAfterAssignment := b.partitionsAfterAssignment(dah.partitionSize)
+	if aPartitionsAfterAssignment != bPartitionsAfterAssignment {
+		return aPartitionsAfterAssignment < bPartitionsAfterAssignment
 	}
 
+	// Ok, we'll end up with the same number of partitions any which way we
+	// go. Try to fill up a partition instead of opening a new one.
+	aIsFullNow := a.isFullNow(dah.partitionSize)
+	bIsFullNow := b.isFullNow(dah.partitionSize)
+	if aIsFullNow != bIsFullNow {
+		return !aIsFullNow
+	}
+
+	// Either we have two open partitions, or neither deadline has an open
+	// partition.
+
+	// If we have two open partitions, fill the deadline with the most-full
+	// open partition. This helps us assign runs of sequential sectors into
+	// the same partition.
+	if !aIsFullNow && !bIsFullNow {
+		if a.totalSectors != b.totalSectors {
+			return a.totalSectors > b.totalSectors
+		}
+	}
+
+	// Otherwise, assign to the deadline with the least live sectors. This
+	// will break the tie in one of the two immediately preceding
+	// conditions.
+	if a.liveSectors != b.liveSectors {
+		return a.liveSectors < b.liveSectors
+	}
+
+	// Finally, fallback on the deadline index.
 	// TODO: Randomize by index instead of simply sorting.
 	// https://github.com/filecoin-project/specs-actors/issues/432
 	return a.index < b.index
@@ -72,15 +165,16 @@ func assignDeadlines(
 ) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo) {
 	// Build a heap
 	dlHeap := deadlineAssignmentHeap{
-		partitionSize: int(partitionSize),
+		partitionSize: partitionSize,
 		deadlines:     make([]*deadlineAssignmentInfo, 0, len(deadlines)),
 	}
 
 	for dlIdx, dl := range deadlines {
 		if dl != nil {
 			dlHeap.deadlines = append(dlHeap.deadlines, &deadlineAssignmentInfo{
-				index:       dlIdx,
-				liveSectors: dl.LiveSectors,
+				index:        dlIdx,
+				liveSectors:  dl.LiveSectors,
+				totalSectors: dl.TotalSectors,
 			})
 		}
 	}
@@ -88,22 +182,14 @@ func assignDeadlines(
 	heap.Init(&dlHeap)
 
 	// Assign sectors to deadlines.
-	for len(sectors) > 0 {
+	for _, sector := range sectors {
 		info := dlHeap.deadlines[0]
 
-		// Fill up any partial sectors first.
-		size := int((partitionSize - info.liveSectors%partitionSize))
-		if size == 0 {
-			size = int(partitionSize)
-		}
-		if size > len(sectors) {
-			size = len(sectors)
-		}
-		changes[info.index] = append(changes[info.index], sectors[:size]...)
-		sectors = sectors[size:]
+		changes[info.index] = append(changes[info.index], sector)
+		info.liveSectors++
+		info.totalSectors++
 
-		info.liveSectors += uint64(size)
-		info.liveSectors += uint64(size)
+		// Update heap.
 		heap.Fix(&dlHeap, 0)
 	}
 	return changes
