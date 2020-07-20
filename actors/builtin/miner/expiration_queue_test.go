@@ -2,13 +2,14 @@ package miner_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -587,7 +588,7 @@ func TestExpirationQueue(t *testing.T) {
 		toRemove := []*miner.SectorOnChainInfo{sectors[0], sectors[3], sectors[4], sectors[5]}
 
 		// and only sector from last set
-		faults := bitfield.NewFromSet([]uint64{4, 5})
+		faults := bitfield.NewFromSet([]uint64{4, 5, 6})
 
 		// label the last as recovering
 		recovering := bitfield.NewFromSet([]uint64{6})
@@ -598,8 +599,8 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEquals(t, removed.OnTimeSectors, 1, 4, 6)
 		assertBitfieldEquals(t, removed.EarlySectors, 5)
 		assert.Equal(t, abi.NewTokenAmount(1000+1003+1005), removed.OnTimePledge) // only on-time sectors
-		assert.True(t, removed.ActivePower.Equals(miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sectors[0], sectors[5]})))
-		assert.True(t, removed.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[3:5])))
+		assert.True(t, removed.ActivePower.Equals(miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sectors[0]})))
+		assert.True(t, removed.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[3:6])))
 		assert.True(t, recoveringPower.Equals(miner.PowerForSectors(sectorSize, sectors[5:6])))
 
 		// assert queue state is as expected
