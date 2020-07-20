@@ -462,12 +462,6 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 				state, found, err := msm.dealStates.Get(dealID)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
 
-				// if this is the first cron tick for the deal, it should be in the pending state.
-				if state.LastUpdatedEpoch == epochUndefined {
-					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
-					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
-				}
-
 				// deal has been published but not activated yet -> terminate it as it has timed out
 				if !found {
 					// Not yet appeared in proven sector; check for timeout.
@@ -485,7 +479,17 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, false); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
+
+					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
+					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
+
 					return nil
+				}
+
+				// if this is the first cron tick for the deal, it should be in the pending state.
+				if state.LastUpdatedEpoch == epochUndefined {
+					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
+					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 				}
 
 				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())

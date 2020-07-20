@@ -1370,7 +1370,7 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 		actor.cronTick(rt)
 
 		// a second cron tick for the same epoch should not change anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		actor.assertDealDeleted(rt, dealIds[0], &deal1)
 		actor.assertDealDeleted(rt, dealIds[1], &deal2)
@@ -1390,7 +1390,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 	sectorExpiry := abi.ChainEpoch(400)
 
 	t.Run("deal expiry -> deal is correctly processed twice in the same crontick", func(t *testing.T) {
-		end := abi.ChainEpoch(151) // 50 + 101
+		end := startEpoch + 101
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, end, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
@@ -1401,6 +1401,8 @@ func TestCronTickDealExpiry(t *testing.T) {
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Zero(), pay)
 		require.EqualValues(t, big.Zero(), slashed)
+		// assert deal exists
+		actor.getDealProposal(rt, dealId)
 
 		// move the epoch to 155(anything greater than 150), so deal is first processed at 150 & then at 151 which is it's end epoch
 		// total payment = (end - start) = 151 - 50 = 101
@@ -1432,7 +1434,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		// Setting the current epoch to anything less than that wont make any payment
 		current = 154
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		// however setting the current epoch to 155 will make the payment
 		current = 155
@@ -1442,7 +1444,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// a second cron tick for the same epoch should not change anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		// next epoch for cron schedule is 155 + 100 = 255
 		current = 255
@@ -1454,7 +1456,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		// next epoch for cron schedule is deal end i.e. 300. An epoch less than that wont do anything
 		current = 299
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		// however setting epoch to 300 will expire the deal, make the payment and unlock all funds
 		current = 300
@@ -1485,7 +1487,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId, d)
 
 		// running cron tick again dosen't do anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 	})
 
 	t.Run("expired deal should unlock the remaining client and provider locked balance after payment and deal should be deleted", func(t *testing.T) {
@@ -1616,7 +1618,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 					actor.assertDealDeleted(rt, dealId, d)
 
 					// running cron tick again dosen't do anything
-					actor.cronTickNoChangeBalances(rt, client, provider)
+					actor.cronTickNoChange(rt, client, provider)
 				} else {
 					rt.ExpectAssertionFailure(tc.assertionMsg, func() {
 						rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
@@ -1704,10 +1706,10 @@ func TestCronTickDealSlashing(t *testing.T) {
 		// is still not scheduled
 		current = 154
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		// a second cron tick for the same epoch should not change anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		//  Setting the current epoch to 155 will make another payment (5 + 100 epochs)
 		current = 155
@@ -1717,7 +1719,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// a second cron tick for the same epoch should not change anything
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		// now terminate the deal
 		current = 200
@@ -1727,7 +1729,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		// Setting the epoch to anything less than 255 will NOT make any changes even though the deal is slashed (155 + 100)
 		current = 254
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider)
+		actor.cronTickNoChange(rt, client, provider)
 
 		// next epoch for cron schedule is 155 + 100 = 255 -> payment will be made and deal will be slashed
 		current = 255
@@ -2110,7 +2112,11 @@ func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client 
 	rt.Verify()
 }
 
-func (h *marketActorTestHarness) cronTickNoChangeBalances(rt *mock.Runtime, client, provider address.Address) {
+func (h *marketActorTestHarness) cronTickNoChange(rt *mock.Runtime, client, provider address.Address) {
+	var st market.State
+	rt.GetState(&st)
+	epochCid := st.DealOpsByEpoch
+
 	// fetch current client and provider escrow balances
 	cLocked := h.getLockedBalance(rt, client)
 	cEscrow := h.getEscrowBalance(rt, client)
@@ -2118,6 +2124,9 @@ func (h *marketActorTestHarness) cronTickNoChangeBalances(rt *mock.Runtime, clie
 	pEscrow := h.getEscrowBalance(rt, provider)
 
 	h.cronTick(rt)
+
+	rt.GetState(&st)
+	require.True(h.t, epochCid.Equals(st.DealOpsByEpoch))
 
 	require.EqualValues(h.t, cEscrow, h.getEscrowBalance(rt, client))
 	require.EqualValues(h.t, cLocked, h.getLockedBalance(rt, client))
