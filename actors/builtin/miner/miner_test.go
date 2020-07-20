@@ -81,7 +81,7 @@ func TestConstruction(t *testing.T) {
 		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
 		// Register proving period cron.
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
- 			makeDeadlineCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
+			makeDeadlineCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
 		ret := rt.Call(actor.Constructor, &params)
 
 		assert.Nil(t, ret)
@@ -2408,7 +2408,7 @@ func fixedHasher(target uint64) func([]byte) [32]byte {
 
 func expectQueryNetworkInfo(rt *mock.Runtime, expectedTotalPower *power.CurrentTotalPowerReturn, expectedReward big.Int) {
 	rwdRet := reward.ThisEpochRewardReturn{
-		ThisEpochReward: expectedReward,
+		ThisEpochReward:        expectedReward,
 		ThisEpochBaselinePower: big.Zero(),
 	}
 	rt.ExpectSend(

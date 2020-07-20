@@ -232,8 +232,8 @@ type SealVerifyInfo struct {
 	Proof                 []byte
 
 	// Safe because we get those from the miner actor
-	SealedCID             cid.Cid `checked:"true"` // CommR
-	UnsealedCID           cid.Cid `checked:"true"` // CommD
+	SealedCID   cid.Cid `checked:"true"` // CommR
+	UnsealedCID cid.Cid `checked:"true"` // CommD
 }
 
 ///

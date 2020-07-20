@@ -41,7 +41,7 @@ func checkUnsafeInputs(t *testing.T, name string, typ reflect.Type) {
 	case reflect.Map:
 		fallthrough
 	case reflect.Ptr:
-		checkUnsafeInputs(t, name + ".elem", typ.Elem())
+		checkUnsafeInputs(t, name+".elem", typ.Elem())
 
 	case reflect.Struct:
 		if typ == tCID {
@@ -59,7 +59,7 @@ func checkUnsafeInputs(t *testing.T, name string, typ reflect.Type) {
 				continue
 			}
 
-			checkUnsafeInputs(t, name + "." + f.Name, f.Type)
+			checkUnsafeInputs(t, name+"."+f.Name, f.Type)
 		}
 
 	case reflect.Interface:
