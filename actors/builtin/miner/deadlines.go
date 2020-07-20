@@ -34,6 +34,16 @@ func (d *DeadlineInfo) PeriodElapsed() bool {
 	return d.CurrentEpoch >= d.NextPeriodStart()
 }
 
+// The last epoch in the proving period.
+func (d *DeadlineInfo) PeriodEnd() abi.ChainEpoch {
+	return d.PeriodStart + WPoStProvingPeriod - 1
+}
+
+// The first epoch in the next proving period.
+func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
+	return d.PeriodStart + WPoStProvingPeriod
+}
+
 // Whether the current deadline is currently open.
 func (d *DeadlineInfo) IsOpen() bool {
 	return d.CurrentEpoch >= d.Open && d.CurrentEpoch < d.Close
@@ -57,16 +67,6 @@ func (d *DeadlineInfo) NextOpen() abi.ChainEpoch {
 // Whether the deadline's fault cutoff has passed.
 func (d *DeadlineInfo) FaultCutoffPassed() bool {
 	return d.CurrentEpoch >= d.FaultCutoff
-}
-
-// The last epoch in the proving period.
-func (d *DeadlineInfo) PeriodEnd() abi.ChainEpoch {
-	return d.PeriodStart + WPoStProvingPeriod - 1
-}
-
-// The first epoch in the next proving period.
-func (d *DeadlineInfo) NextPeriodStart() abi.ChainEpoch {
-	return d.PeriodStart + WPoStProvingPeriod
 }
 
 // Returns the next instance of this deadline that has not yet elapsed.
