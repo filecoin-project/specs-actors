@@ -23,11 +23,11 @@ func TestPrecommittedSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		sectorNo := abi.SectorNumber(1)
 
-		pc1 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("1"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		pc1 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(pc1)
 		assert.Equal(t, pc1, harness.getPreCommit(sectorNo))
 
-		pc2 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("2"), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		pc2 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(pc2)
 		assert.Equal(t, pc2, harness.getPreCommit(sectorNo))
 
@@ -54,8 +54,8 @@ func TestSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		sectorInfo1 := newSectorOnChainInfo(sectorNo, tutils.MakeCID("1"), big.NewInt(1), abi.ChainEpoch(1))
-		sectorInfo2 := newSectorOnChainInfo(sectorNo, tutils.MakeCID("2"), big.NewInt(2), abi.ChainEpoch(2))
+		sectorInfo1 := newSectorOnChainInfo(sectorNo, tutils.MakeCID("1", &miner.SealedCIDPrefix), big.NewInt(1), abi.ChainEpoch(1))
+		sectorInfo2 := newSectorOnChainInfo(sectorNo, tutils.MakeCID("2", &miner.SealedCIDPrefix), big.NewInt(2), abi.ChainEpoch(2))
 
 		harness.putSector(sectorInfo1)
 		assert.True(t, harness.hasSectorNo(sectorNo))
@@ -96,7 +96,7 @@ func TestSectorsStore(t *testing.T) {
 		// put all the sectors in the store
 		for _, s := range sectorNos {
 			i := int64(0)
-			harness.putSector(newSectorOnChainInfo(abi.SectorNumber(s), tutils.MakeCID(fmt.Sprintf("%d", i)), big.NewInt(i), abi.ChainEpoch(i)))
+			harness.putSector(newSectorOnChainInfo(abi.SectorNumber(s), tutils.MakeCID(fmt.Sprintf("%d", i), &miner.SealedCIDPrefix), big.NewInt(i), abi.ChainEpoch(i)))
 			i++
 		}
 

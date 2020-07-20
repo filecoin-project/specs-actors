@@ -101,20 +101,20 @@ func TestFaultFeeInvariants(t *testing.T) {
 		ff := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorPower)
 		sp := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorPower)
 		assert.True(t, sp.GreaterThan(ff))
-	}) 
+	})
 
-	 t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
+	t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
 		epochReward := abi.NewTokenAmount(1_000)
 		networkPower := abi.NewStoragePower(100 << 50)
 		faultySectorAPower := abi.NewStoragePower(1 << 50)
-		faultySectorBPower := abi.NewStoragePower(19 << 50)		
-		faultySectorCPower := abi.NewStoragePower(63 << 50)				
-		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)		
+		faultySectorBPower := abi.NewStoragePower(19 << 50)
+		faultySectorCPower := abi.NewStoragePower(63 << 50)
+		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)
 
 		// Declared faults
 		ffA := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorAPower)
-		ffB := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorBPower)		
-		ffC := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorCPower)				
+		ffB := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorBPower)
+		ffC := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorCPower)
 
 		ffAll := PledgePenaltyForDeclaredFault(epochReward, networkPower, totalFaultPower)
 
@@ -124,10 +124,10 @@ func TestFaultFeeInvariants(t *testing.T) {
 		assert.True(t, diff.GreaterThanEqual(big.Zero()))
 		assert.True(t, diff.LessThan(big.NewInt(3)))
 
-		// Undeclared faults		
+		// Undeclared faults
 		spA := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorAPower)
-		spB := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorBPower)		
-		spC := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorCPower)				
+		spB := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorBPower)
+		spC := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorCPower)
 
 		spAll := PledgePenaltyForUndeclaredFault(epochReward, networkPower, totalFaultPower)
 
@@ -137,5 +137,5 @@ func TestFaultFeeInvariants(t *testing.T) {
 		assert.True(t, diff.GreaterThanEqual(big.Zero()))
 		assert.True(t, diff.LessThan(big.NewInt(3)))
 
-	 })
+	})
 }

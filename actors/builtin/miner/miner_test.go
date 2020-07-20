@@ -81,7 +81,7 @@ func TestConstruction(t *testing.T) {
 		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
 		// Register proving period cron.
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
- 			makeDeadlineCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
+			makeDeadlineCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
 		ret := rt.Call(actor.Constructor, &params)
 
 		assert.Nil(t, ret)
@@ -240,6 +240,14 @@ func TestCommitments(t *testing.T) {
 		// Sector ID already committed
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.preCommitSector(rt, actor.makePreCommit(oldSector.SectorNumber, challengeEpoch, deadline.PeriodEnd(), nil))
+		})
+		rt.Reset()
+
+		// Bad sealed CID
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "sealed CID had wrong prefix", func() {
+			pc := actor.makePreCommit(101, challengeEpoch, deadline.PeriodEnd(), nil)
+			pc.SealedCID = tutil.MakeCID("Random Data", nil)
+			actor.preCommitSector(rt, pc)
 		})
 		rt.Reset()
 
@@ -1672,7 +1680,7 @@ type proveCommitConf struct {
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, precommitEpoch abi.ChainEpoch,
 	params *miner.ProveCommitSectorParams) {
-	commd := cbg.CborCid(tutil.MakeCID("commd"))
+	commd := cbg.CborCid(tutil.MakeCID("commd", &market.PieceCIDPrefix))
 	sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
 	sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
 	interactiveEpoch := precommitEpoch + miner.PreCommitChallengeDelay
@@ -2281,7 +2289,7 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 	return &miner.SectorPreCommitInfo{
 		SealProof:     h.sealProofType,
 		SectorNumber:  sectorNo,
-		SealedCID:     tutil.MakeCID("commr"),
+		SealedCID:     tutil.MakeCID("commr", &miner.SealedCIDPrefix),
 		SealRandEpoch: challenge,
 		DealIDs:       dealIDs,
 		Expiration:    expiration,
@@ -2400,7 +2408,7 @@ func fixedHasher(target uint64) func([]byte) [32]byte {
 
 func expectQueryNetworkInfo(rt *mock.Runtime, expectedTotalPower *power.CurrentTotalPowerReturn, expectedReward big.Int) {
 	rwdRet := reward.ThisEpochRewardReturn{
-		ThisEpochReward: expectedReward,
+		ThisEpochReward:        expectedReward,
 		ThisEpochBaselinePower: big.Zero(),
 	}
 	rt.ExpectSend(
