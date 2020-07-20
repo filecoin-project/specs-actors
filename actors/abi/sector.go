@@ -2,6 +2,7 @@ package abi
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	cid "github.com/ipfs/go-cid"
@@ -16,6 +17,10 @@ type SectorNumber uint64
 func (s SectorNumber) String() string {
 	return strconv.FormatUint(uint64(s), 10)
 }
+
+// The maximum assignable sector number.
+// Raising this would require modifying our AMT implementation.
+const MaxSectorNumber = math.MaxInt64
 
 // SectorSize indicates one of a set of possible sizes in the network.
 // Ideally, SectorSize would be an enum
