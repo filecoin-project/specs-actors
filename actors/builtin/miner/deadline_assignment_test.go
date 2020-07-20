@@ -78,7 +78,7 @@ func TestDeadlineAssignment(t *testing.T) {
 				deadSectors: 4,
 			},
 			1: {
-				// 2 live partitions. +1 would add another.
+				// 1 live partitions. +1 would add another.
 				liveSectors:   4,
 				expectSectors: []uint64{0},
 			},
