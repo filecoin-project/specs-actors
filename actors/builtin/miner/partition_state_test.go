@@ -126,6 +126,7 @@ func TestPartitions(t *testing.T) {
 		// removing sector 5 alters recovery set and recovery power
 		removedPower := miner.PowerForSectors(sectorSize, sectors[4:5])
 		err = partition.RemoveRecoveries(bf(5), removedPower)
+		require.NoError(t, err)
 
 		assertPartitionState(t, partition, sectors, sectorSize, bf(4, 5, 6), bf(4), bf())
 	})
@@ -166,6 +167,31 @@ func TestPartitions(t *testing.T) {
 			{expiration: 5, sectors: bf(1, 2)},
 			{expiration: 9, sectors: bf(3, 4, 6)},
 			{expiration: 13, sectors: bf(5)},
+		})
+	})
+
+	t.Run("reschedules expirations", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// recovered power should equal power of recovery sectors
+		sectorsToMove := selectSectors(t, sectors, bf(2, 4, 6))
+		err = partition.RescheduleExpirations(adt.AsStore(rt), 18, sectorsToMove, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// partition power and sector categorization should remain the same
+		assertPartitionState(t, partition, sectors, sectorSize, bf(), bf(), bf())
+
+		// sectors should move to new expiration group
+		assertPartitionExpirationQueue(t, rt, partition, quantSpec, []expectExpirationGroup{
+			{expiration: 5, sectors: bf(1)},
+			{expiration: 9, sectors: bf(3)},
+			{expiration: 13, sectors: bf(5)},
+			{expiration: 21, sectors: bf(2, 4, 6)},
 		})
 	})
 }
