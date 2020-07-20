@@ -243,6 +243,14 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
+		// Bad sealed CID
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "sealed CID had wrong prefix", func() {
+			pc := actor.makePreCommit(101, challengeEpoch, deadline.PeriodEnd(), nil)
+			pc.SealedCID = tutil.MakeCID("Random Data", nil)
+			actor.preCommitSector(rt, pc)
+		})
+		rt.Reset()
+
 		// Bad seal proof type
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			pc := actor.makePreCommit(101, challengeEpoch, deadline.PeriodEnd(), nil)
@@ -1672,7 +1680,7 @@ type proveCommitConf struct {
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, precommitEpoch abi.ChainEpoch,
 	params *miner.ProveCommitSectorParams) {
-	commd := cbg.CborCid(tutil.MakeCID("commd"))
+	commd := cbg.CborCid(tutil.MakeCID("commd", &market.PieceCIDPrefix))
 	sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
 	sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
 	interactiveEpoch := precommitEpoch + miner.PreCommitChallengeDelay
@@ -2281,7 +2289,7 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 	return &miner.SectorPreCommitInfo{
 		SealProof:     h.sealProofType,
 		SectorNumber:  sectorNo,
-		SealedCID:     tutil.MakeCID("commr"),
+		SealedCID:     tutil.MakeCID("commr", &miner.SealedCIDPrefix),
 		SealRandEpoch: challenge,
 		DealIDs:       dealIDs,
 		Expiration:    expiration,
