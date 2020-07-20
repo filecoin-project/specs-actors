@@ -1,15 +1,18 @@
-package miner
+package miner_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
+
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/support/mock"
 )
 
 func TestBitfieldQueue(t *testing.T) {
@@ -39,7 +42,7 @@ func TestBitfieldQueue(t *testing.T) {
 	})
 
 	t.Run("quantizes added epochs according to quantization spec", func(t *testing.T) {
-		queue := emptyBitfieldQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
+		queue := emptyBitfieldQueueWithQuantizing(t, miner.NewQuantSpec(5, 3))
 
 		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
 			require.NoError(t, queue.AddToQueueValues(abi.ChainEpoch(val), val))
@@ -54,7 +57,7 @@ func TestBitfieldQueue(t *testing.T) {
 	})
 
 	t.Run("quantizes added epochs according to quantization spec", func(t *testing.T) {
-		queue := emptyBitfieldQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
+		queue := emptyBitfieldQueueWithQuantizing(t, miner.NewQuantSpec(5, 3))
 
 		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
 			err := queue.AddToQueueValues(abi.ChainEpoch(val), val)
@@ -203,19 +206,19 @@ func TestBitfieldQueue(t *testing.T) {
 	})
 }
 
-func emptyBitfieldQueueWithQuantizing(t *testing.T, quant QuantSpec) BitfieldQueue {
+func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec) miner.BitfieldQueue {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
 	root, err := adt.MakeEmptyArray(store).Root()
 	require.NoError(t, err)
 
-	queue, err := LoadBitfieldQueue(store, root, quant)
+	queue, err := miner.LoadBitfieldQueue(store, root, quant)
 	require.NoError(t, err)
 	return queue
 }
 
-func emptyBitfieldQueue(t *testing.T) BitfieldQueue {
-	return emptyBitfieldQueueWithQuantizing(t, NoQuantization)
+func emptyBitfieldQueue(t *testing.T) miner.BitfieldQueue {
+	return emptyBitfieldQueueWithQuantizing(t, miner.NoQuantization)
 }
 
 type bqExpectation struct {
@@ -231,7 +234,7 @@ func (bqe *bqExpectation) Add(epoch abi.ChainEpoch, values ...uint64) *bqExpecta
 	return bqe
 }
 
-func (bqe *bqExpectation) Equals(t *testing.T, q BitfieldQueue) {
+func (bqe *bqExpectation) Equals(t *testing.T, q miner.BitfieldQueue) {
 	// ensure cached changes are ready to be iterated
 	_, err := q.Root()
 	require.NoError(t, err)
