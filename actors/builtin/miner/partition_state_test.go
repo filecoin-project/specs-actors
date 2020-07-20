@@ -54,7 +54,7 @@ func TestPartitions(t *testing.T) {
 		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		faultSet := bitfield.NewFromSet([]uint64{4, 5})
+		faultSet := bf(4, 5)
 		faultSectors := selectSectors(t, sectors, faultSet)
 		power, err := partition.AddFaults(adt.AsStore(rt), faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
@@ -234,6 +234,33 @@ func TestPartitions(t *testing.T) {
 			{expiration: 13, sectors: bf(2, 5, 6, 7)},
 			{expiration: 21, sectors: bf(8)},
 		})
+	})
+
+	t.Run("replace sectors errors when attempting to replace inactive sector", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// fault sector 2
+		faultSet := bf(2)
+		faultSectors := selectSectors(t, sectors, faultSet)
+		_, err = partition.AddFaults(adt.AsStore(rt), faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// remove 3 sectors starting with 2
+		oldSectors := sectors[1:4]
+
+		// replace sector 2
+		newSectors := []*miner.SectorOnChainInfo{
+			testSector(10, 2, 150, 260, 3000),
+		}
+
+		_, _, err = partition.ReplaceSectors(adt.AsStore(rt), oldSectors, newSectors, sectorSize, quantSpec)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "refusing to replace inactive sectors")
 	})
 }
 
