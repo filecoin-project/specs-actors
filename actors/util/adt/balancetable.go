@@ -122,6 +122,23 @@ func (t *BalanceTable) Total() (abi.TokenAmount, error) {
 	return total, err
 }
 
+// Removes an entry from the table, returning the prior value. The entry must have been previously initialized.
+func (t *BalanceTable) Remove(key addr.Address) (abi.TokenAmount, error) {
+	prev, found, err := t.Get(key)
+	if err != nil {
+		return big.Zero(), err
+	}
+	if !found {
+		return big.Zero(), ErrNotFound{t.lastCid, key}
+	}
+
+	err = (*Map)(t).Delete(AddrKey(key))
+	if err != nil {
+		return big.Zero(), err
+	}
+	return prev, nil
+}
+
 // Error type returned when an expected key is absent.
 type ErrNotFound struct {
 	Root cid.Cid

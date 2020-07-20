@@ -85,6 +85,31 @@ func TestBalanceTable(t *testing.T) {
 		require.Equal(t, abi.NewTokenAmount(10), bal)
 	})
 
+	t.Run("Remove account works only if account exists", func(t *testing.T) {
+		addr := tutil.NewIDAddr(t, 100)
+		bt := buildBalanceTable()
+
+		// error if account has not been created
+		bal, err := bt.Remove(addr)
+		require.Error(t, err)
+		require.Equal(t, big.Zero(), bal)
+
+		// now create account -> remove should work
+		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(10)))
+		bal, found, err := bt.Get(addr)
+		require.True(t, found)
+		require.NoError(t, err)
+		require.Equal(t, abi.NewTokenAmount(10), bal)
+
+		amt, err := bt.Remove(addr)
+		require.NoError(t, err)
+		require.EqualValues(t, abi.NewTokenAmount(10), amt)
+
+		_, found, err = bt.Get(addr)
+		require.NoError(t, err)
+		require.False(t, found)
+	})
+
 	t.Run("Must subtract fails if account not created or balance is insufficient", func(t *testing.T) {
 		addr := tutil.NewIDAddr(t, 100)
 		bt := buildBalanceTable()
