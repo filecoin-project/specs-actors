@@ -8,6 +8,10 @@ type QuantSpec struct {
 	offset abi.ChainEpoch // The offset from zero from which to base the modulus
 }
 
+func NewQuantSpec(unit, offset abi.ChainEpoch) QuantSpec {
+	return QuantSpec{unit: unit, offset: offset}
+}
+
 func (q QuantSpec) QuantizeUp(e abi.ChainEpoch) abi.ChainEpoch {
 	return quantizeUp(e, q.unit, q.offset)
 }
