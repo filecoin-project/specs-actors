@@ -194,6 +194,47 @@ func TestPartitions(t *testing.T) {
 			{expiration: 21, sectors: bf(2, 4, 6)},
 		})
 	})
+
+	t.Run("replace sectors", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// remove 3 sectors starting with 2
+		oldSectors := sectors[1:4]
+		oldSectorPower := miner.PowerForSectors(sectorSize, oldSectors)
+		oldSectorPledge := int64(1001 + 1002 + 1003)
+
+		// replace 2 and add 2 new sectors
+		newSectors := []*miner.SectorOnChainInfo{
+			testSector(10, 2, 150, 260, 3000),
+			testSector(10, 7, 151, 261, 3001),
+			testSector(18, 8, 152, 262, 3002),
+		}
+		newSectorPower := miner.PowerForSectors(sectorSize, newSectors)
+		newSectorPledge := int64(3000 + 3001 + 3002)
+
+		powerDelta, pledgeDelta, err := partition.ReplaceSectors(adt.AsStore(rt), oldSectors, newSectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		expectedPowerDelta := newSectorPower.Sub(oldSectorPower)
+		assert.True(t, expectedPowerDelta.Equals(powerDelta))
+		assert.Equal(t, abi.NewTokenAmount(newSectorPledge-oldSectorPledge), pledgeDelta)
+
+		// partition state should contain new sectors and not old sectors
+		sectorsAfterReplace := append(append(sectors[:1], sectors[4:]...), newSectors...)
+		assertPartitionState(t, partition, sectorsAfterReplace, sectorSize, bf(), bf(), bf())
+
+		// sector 2 should be moved, 3 and 4 should be removed, and 7 and 8 added
+		assertPartitionExpirationQueue(t, rt, partition, quantSpec, []expectExpirationGroup{
+			{expiration: 5, sectors: bf(1)},
+			{expiration: 13, sectors: bf(2, 5, 6, 7)},
+			{expiration: 21, sectors: bf(8)},
+		})
+	})
 }
 
 type expectExpirationGroup struct {
