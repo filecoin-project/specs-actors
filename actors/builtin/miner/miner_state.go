@@ -101,7 +101,7 @@ type WorkerKeyChange struct {
 type SectorPreCommitInfo struct {
 	SealProof       abi.RegisteredSealProof
 	SectorNumber    abi.SectorNumber
-	SealedCID       cid.Cid // CommR
+	SealedCID       cid.Cid `checked:"true"` // CommR
 	SealRandEpoch   abi.ChainEpoch
 	DealIDs         []abi.DealID
 	Expiration      abi.ChainEpoch
