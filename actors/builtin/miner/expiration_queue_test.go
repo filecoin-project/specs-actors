@@ -1,13 +1,15 @@
-package miner
+package miner_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,11 +21,11 @@ func TestExpirationSet(t *testing.T) {
 	onTimeSectors := bitfield.NewFromSet([]uint64{5, 8, 9})
 	earlySectors := bitfield.NewFromSet([]uint64{2, 3})
 	onTimePledge := abi.NewTokenAmount(1000)
-	activePower := NewPowerPair(abi.NewStoragePower(1<<13), abi.NewStoragePower(1<<14))
-	faultyPower := NewPowerPair(abi.NewStoragePower(1<<11), abi.NewStoragePower(1<<12))
+	activePower := miner.NewPowerPair(abi.NewStoragePower(1<<13), abi.NewStoragePower(1<<14))
+	faultyPower := miner.NewPowerPair(abi.NewStoragePower(1<<11), abi.NewStoragePower(1<<12))
 
 	t.Run("adds sectors and power to empty set", func(t *testing.T) {
-		set := NewExpirationSetEmpty()
+		set := miner.NewExpirationSetEmpty()
 
 		err := set.Add(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 		require.NoError(t, err)
@@ -36,71 +38,71 @@ func TestExpirationSet(t *testing.T) {
 	})
 
 	t.Run("adds sectors and power to non-empty set", func(t *testing.T) {
-		set := NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
+		set := miner.NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 
 		err := set.Add(
 			bitfield.NewFromSet([]uint64{6, 7, 11}),
 			bitfield.NewFromSet([]uint64{1, 4}),
 			abi.NewTokenAmount(300),
-			NewPowerPair(abi.NewStoragePower(3*(1<<13)), abi.NewStoragePower(3*(1<<14))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<13)), abi.NewStoragePower(3*(1<<14))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
 		)
 		require.NoError(t, err)
 
 		assertBitfieldEquals(t, set.OnTimeSectors, 5, 6, 7, 8, 9, 11)
 		assertBitfieldEquals(t, set.EarlySectors, 1, 2, 3, 4)
 		assert.Equal(t, abi.NewTokenAmount(1300), set.OnTimePledge)
-		active := NewPowerPair(abi.NewStoragePower(1<<15), abi.NewStoragePower(1<<16))
+		active := miner.NewPowerPair(abi.NewStoragePower(1<<15), abi.NewStoragePower(1<<16))
 		assert.True(t, active.Equals(set.ActivePower))
-		faulty := NewPowerPair(abi.NewStoragePower(1<<13), abi.NewStoragePower(1<<14))
+		faulty := miner.NewPowerPair(abi.NewStoragePower(1<<13), abi.NewStoragePower(1<<14))
 		assert.True(t, faulty.Equals(set.FaultyPower))
 	})
 
 	t.Run("removes sectors and power set", func(t *testing.T) {
-		set := NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
+		set := miner.NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 
 		err := set.Remove(
 			bitfield.NewFromSet([]uint64{9}),
 			bitfield.NewFromSet([]uint64{2}),
 			abi.NewTokenAmount(800),
-			NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
 		)
 		require.NoError(t, err)
 
 		assertBitfieldEquals(t, set.OnTimeSectors, 5, 8)
 		assertBitfieldEquals(t, set.EarlySectors, 3)
 		assert.Equal(t, abi.NewTokenAmount(200), set.OnTimePledge)
-		active := NewPowerPair(abi.NewStoragePower(1<<11), abi.NewStoragePower(1<<12))
+		active := miner.NewPowerPair(abi.NewStoragePower(1<<11), abi.NewStoragePower(1<<12))
 		assert.True(t, active.Equals(set.ActivePower))
-		faulty := NewPowerPair(abi.NewStoragePower(1<<9), abi.NewStoragePower(1<<10))
+		faulty := miner.NewPowerPair(abi.NewStoragePower(1<<9), abi.NewStoragePower(1<<10))
 		assert.True(t, faulty.Equals(set.FaultyPower))
 	})
 
 	t.Run("remove fails when pledge underflows", func(t *testing.T) {
-		set := NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
+		set := miner.NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 
 		err := set.Remove(
 			bitfield.NewFromSet([]uint64{9}),
 			bitfield.NewFromSet([]uint64{2}),
 			abi.NewTokenAmount(1200),
-			NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "pledge underflow")
 	})
 
 	t.Run("remove fails to remove sectors it does not contain", func(t *testing.T) {
-		set := NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
+		set := miner.NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 
 		// remove unknown active sector 12
 		err := set.Remove(
 			bitfield.NewFromSet([]uint64{12}),
 			bitfield.NewFromSet([]uint64{}),
 			abi.NewTokenAmount(0),
-			NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not contained")
@@ -110,43 +112,43 @@ func TestExpirationSet(t *testing.T) {
 			bitfield.NewFromSet([]uint64{0}),
 			bitfield.NewFromSet([]uint64{8}),
 			abi.NewTokenAmount(0),
-			NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not contained")
 	})
 
 	t.Run("remove fails when active or fault qa power underflows", func(t *testing.T) {
-		set := NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
+		set := miner.NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 
 		// active removed power > active power
 		err := set.Remove(
 			bitfield.NewFromSet([]uint64{9}),
 			bitfield.NewFromSet([]uint64{2}),
 			abi.NewTokenAmount(200),
-			NewPowerPair(abi.NewStoragePower(3*(1<<12)), abi.NewStoragePower(3*(1<<13))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<12)), abi.NewStoragePower(3*(1<<13))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<9)), abi.NewStoragePower(3*(1<<10))),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "power underflow")
 
-		set = NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
+		set = miner.NewExpirationSet(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 
 		// faulty removed power > faulty power
 		err = set.Remove(
 			bitfield.NewFromSet([]uint64{9}),
 			bitfield.NewFromSet([]uint64{2}),
 			abi.NewTokenAmount(200),
-			NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
-			NewPowerPair(abi.NewStoragePower(3*(1<<10)), abi.NewStoragePower(3*(1<<11))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<11)), abi.NewStoragePower(3*(1<<12))),
+			miner.NewPowerPair(abi.NewStoragePower(3*(1<<10)), abi.NewStoragePower(3*(1<<11))),
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "power underflow")
 	})
 
 	t.Run("set is empty when all sectors removed", func(t *testing.T) {
-		set := NewExpirationSetEmpty()
+		set := miner.NewExpirationSetEmpty()
 
 		empty, err := set.IsEmpty()
 		require.NoError(t, err)
@@ -169,7 +171,7 @@ func TestExpirationSet(t *testing.T) {
 }
 
 func TestExpirationQueue(t *testing.T) {
-	sectors := []*SectorOnChainInfo{
+	sectors := []*miner.SectorOnChainInfo{
 		testSector(2, 1, 50, 60, 1000),
 		testSector(3, 2, 51, 61, 1001),
 		testSector(7, 3, 52, 62, 1002),
@@ -184,7 +186,7 @@ func TestExpirationQueue(t *testing.T) {
 		secNums, power, pledge, err := queue.AddActiveSectors(sectors, sectorSize)
 		require.NoError(t, err)
 		assertBitfieldEquals(t, secNums, 1, 2, 3, 4, 5, 6)
-		assert.True(t, power.Equals(PowerForSectors(sectorSize, sectors)))
+		assert.True(t, power.Equals(miner.PowerForSectors(sectorSize, sectors)))
 		assert.Equal(t, abi.NewTokenAmount(6015), pledge)
 
 		// default test quantizing of 1 means every sector is in its own expriation set
@@ -203,8 +205,8 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEquals(t, set.OnTimeSectors, 1, 2, 3)
 		assertBitfieldEmpty(t, set.EarlySectors)
 
-		activePower := PowerForSectors(sectorSize, sectors[:3])
-		faultyPower := NewPowerPairZero()
+		activePower := miner.PowerForSectors(sectorSize, sectors[:3])
+		faultyPower := miner.NewPowerPairZero()
 
 		assert.Equal(t, big.NewInt(3003), set.OnTimePledge) // sum of first 3 sector pledges
 		assert.True(t, activePower.Equals(set.ActivePower))
@@ -218,19 +220,19 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEmpty(t, set.EarlySectors)
 
 		assert.Equal(t, big.NewInt(3012), set.OnTimePledge) // sum of last 3 sector pledges
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[3:])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[3:])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 
 		// queue is now empty
 		assert.Equal(t, 0, int(queue.Length()))
 	})
 
 	t.Run("quantizes added sectors by expiration", func(t *testing.T) {
-		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 5, offset: 3})
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(5, 3))
 		secNums, power, pledge, err := queue.AddActiveSectors(sectors, sectorSize)
 		require.NoError(t, err)
 		assertBitfieldEquals(t, secNums, 1, 2, 3, 4, 5, 6)
-		assert.True(t, power.Equals(PowerForSectors(sectorSize, sectors)))
+		assert.True(t, power.Equals(miner.PowerForSectors(sectorSize, sectors)))
 		assert.Equal(t, abi.NewTokenAmount(6015), pledge)
 
 		// work around caching issues in amt
@@ -321,13 +323,13 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEmpty(t, set.EarlySectors)
 
 		assert.Equal(t, big.NewInt(3003), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[:3])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[:3])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 	})
 
 	t.Run("reschedules sectors as faults", func(t *testing.T) {
 		// Create 3 expiration sets with 2 sectors apiece
-		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
 		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
 		require.NoError(t, err)
 
@@ -340,7 +342,7 @@ func TestExpirationQueue(t *testing.T) {
 		// moved to the second set
 		powerDelta, err := queue.RescheduleAsFaults(abi.ChainEpoch(6), sectors[1:5], sectorSize)
 		require.NoError(t, err)
-		assert.True(t, powerDelta.Equals(PowerForSectors(sectorSize, sectors[1:5])))
+		assert.True(t, powerDelta.Equals(miner.PowerForSectors(sectorSize, sectors[1:5])))
 
 		_, err = queue.Root()
 		require.NoError(t, err)
@@ -354,8 +356,8 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEmpty(t, set.EarlySectors)
 
 		assert.Equal(t, big.NewInt(2001), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[0:1])))
-		assert.True(t, set.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[1:2])))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[0:1])))
+		assert.True(t, set.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[1:2])))
 
 		// expect the second set to have all faulty power and now contain 5th sector as an early sector
 		requireNoExpirationGroupsBefore(t, 9, queue)
@@ -368,8 +370,8 @@ func TestExpirationQueue(t *testing.T) {
 		// pledge is kept from original 2 sectors. Pledge from new early sector is NOT added.
 		assert.Equal(t, big.NewInt(2005), set.OnTimePledge)
 
-		assert.True(t, set.ActivePower.Equals(NewPowerPairZero()))
-		assert.True(t, set.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[2:5])))
+		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
+		assert.True(t, set.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[2:5])))
 
 		// expect last set to only contain non faulty sector
 		requireNoExpirationGroupsBefore(t, 13, queue)
@@ -382,13 +384,13 @@ func TestExpirationQueue(t *testing.T) {
 		// Pledge from sector moved from this set is dropped
 		assert.Equal(t, big.NewInt(1005), set.OnTimePledge)
 
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[5:])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[5:])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 	})
 
 	t.Run("reschedules all sectors as faults", func(t *testing.T) {
 		// Create expiration 3 sets with 2 sectors apiece
-		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
 		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
 		require.NoError(t, err)
 
@@ -414,8 +416,8 @@ func TestExpirationQueue(t *testing.T) {
 		assert.Equal(t, big.NewInt(2001), set.OnTimePledge) // pledge is same
 
 		// active power is converted to fault power
-		assert.True(t, set.ActivePower.Equals(NewPowerPairZero()))
-		assert.True(t, set.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[:2])))
+		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
+		assert.True(t, set.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[:2])))
 
 		// expect the second set to have all faulty power and now contain 5th and 6th sectors as an early sectors
 		requireNoExpirationGroupsBefore(t, 9, queue)
@@ -429,8 +431,8 @@ func TestExpirationQueue(t *testing.T) {
 		assert.Equal(t, big.NewInt(2005), set.OnTimePledge)
 
 		// fault power is all power for sectors previously in the first and second sets
-		assert.True(t, set.ActivePower.Equals(NewPowerPairZero()))
-		assert.True(t, set.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[2:])))
+		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
+		assert.True(t, set.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[2:])))
 
 		// expect last set to only contain non faulty sector
 		requireNoExpirationGroupsBefore(t, 13, queue)
@@ -443,13 +445,13 @@ func TestExpirationQueue(t *testing.T) {
 		// all pledge is dropped
 		assert.Equal(t, big.Zero(), set.OnTimePledge)
 
-		assert.True(t, set.ActivePower.Equals(NewPowerPairZero()))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 	})
 
 	t.Run("reschedule recover restores all sector stats", func(t *testing.T) {
 		// Create expiration 3 sets with 2 sectors apiece
-		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
 		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
 		require.NoError(t, err)
 
@@ -467,7 +469,7 @@ func TestExpirationQueue(t *testing.T) {
 		// mark faulted sectors as recovered
 		recovered, err := queue.RescheduleRecovered(sectors[1:5], sectorSize)
 		require.NoError(t, err)
-		assert.True(t, recovered.Equals(PowerForSectors(sectorSize, sectors[1:5])))
+		assert.True(t, recovered.Equals(miner.PowerForSectors(sectorSize, sectors[1:5])))
 
 		// expect first set to contain first two sectors with active power
 		requireNoExpirationGroupsBefore(t, 5, queue)
@@ -480,8 +482,8 @@ func TestExpirationQueue(t *testing.T) {
 		// pledge from both sectors
 		assert.Equal(t, big.NewInt(2001), set.OnTimePledge)
 
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[:2])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[:2])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 
 		// expect second set to have lost early sector 5 and have active power just from 3 and 4
 		requireNoExpirationGroupsBefore(t, 9, queue)
@@ -494,8 +496,8 @@ func TestExpirationQueue(t *testing.T) {
 		// pledge is kept from original 2 sectors
 		assert.Equal(t, big.NewInt(2005), set.OnTimePledge)
 
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[2:4])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[2:4])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 
 		// expect sector 5 to be returned to last setu
 		requireNoExpirationGroupsBefore(t, 13, queue)
@@ -508,24 +510,24 @@ func TestExpirationQueue(t *testing.T) {
 		// Pledge from sector 5 is restored
 		assert.Equal(t, big.NewInt(2009), set.OnTimePledge)
 
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[4:])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[4:])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 	})
 
 	t.Run("replaces sectors with new sectors", func(t *testing.T) {
 		// Create expiration 3 sets
-		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
 
 		// add sectors to each set
-		_, _, _, err := queue.AddActiveSectors([]*SectorOnChainInfo{sectors[0], sectors[1], sectors[3], sectors[5]}, sectorSize)
+		_, _, _, err := queue.AddActiveSectors([]*miner.SectorOnChainInfo{sectors[0], sectors[1], sectors[3], sectors[5]}, sectorSize)
 		require.NoError(t, err)
 
 		_, err = queue.Root()
 		require.NoError(t, err)
 
 		// remove all from first set, replace second set, and append to third
-		toRemove := []*SectorOnChainInfo{sectors[0], sectors[1], sectors[3]}
-		toAdd := []*SectorOnChainInfo{sectors[2], sectors[4]}
+		toRemove := []*miner.SectorOnChainInfo{sectors[0], sectors[1], sectors[3]}
+		toAdd := []*miner.SectorOnChainInfo{sectors[2], sectors[4]}
 		removed, added, powerDelta, pledgeDelta, err := queue.ReplaceSectors(
 			toRemove,
 			toAdd,
@@ -533,8 +535,8 @@ func TestExpirationQueue(t *testing.T) {
 		require.NoError(t, err)
 		assertBitfieldEquals(t, removed, 1, 2, 4)
 		assertBitfieldEquals(t, added, 3, 5)
-		addedPower := PowerForSectors(sectorSize, toAdd)
-		assert.True(t, powerDelta.Equals(addedPower.Sub(PowerForSectors(sectorSize, toRemove))))
+		addedPower := miner.PowerForSectors(sectorSize, toAdd)
+		assert.True(t, powerDelta.Equals(addedPower.Sub(miner.PowerForSectors(sectorSize, toRemove))))
 		assert.Equal(t, abi.NewTokenAmount(1002+1004-1000-1001-1003), pledgeDelta)
 
 		// first set is gone
@@ -549,8 +551,8 @@ func TestExpirationQueue(t *testing.T) {
 
 		// pledge and power is only from sector 3
 		assert.Equal(t, big.NewInt(1002), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[2:3])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[2:3])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 
 		// last set appends sector 6
 		requireNoExpirationGroupsBefore(t, 13, queue)
@@ -562,13 +564,13 @@ func TestExpirationQueue(t *testing.T) {
 
 		// pledge and power are some of old and new sectors
 		assert.Equal(t, big.NewInt(2009), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(PowerForSectors(sectorSize, sectors[4:])))
-		assert.True(t, set.FaultyPower.Equals(NewPowerPairZero()))
+		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[4:])))
+		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
 	})
 
 	t.Run("removes sectors", func(t *testing.T) {
 		// add all sectors into 3 sets
-		queue := emptyExpirationQueueWithQuantizing(t, QuantSpec{unit: 4, offset: 1})
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
 		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
 		require.NoError(t, err)
 
@@ -583,10 +585,10 @@ func TestExpirationQueue(t *testing.T) {
 		require.NoError(t, err)
 
 		// remove an active sector from first set, faulty sector and early faulty sector from second set,
-		toRemove := []*SectorOnChainInfo{sectors[0], sectors[3], sectors[4], sectors[5]}
+		toRemove := []*miner.SectorOnChainInfo{sectors[0], sectors[3], sectors[4], sectors[5]}
 
 		// and only sector from last set
-		faults := bitfield.NewFromSet([]uint64{4, 5})
+		faults := bitfield.NewFromSet([]uint64{4, 5, 6})
 
 		// label the last as recovering
 		recovering := bitfield.NewFromSet([]uint64{6})
@@ -597,9 +599,9 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEquals(t, removed.OnTimeSectors, 1, 4, 6)
 		assertBitfieldEquals(t, removed.EarlySectors, 5)
 		assert.Equal(t, abi.NewTokenAmount(1000+1003+1005), removed.OnTimePledge) // only on-time sectors
-		assert.True(t, removed.ActivePower.Equals(PowerForSectors(sectorSize, []*SectorOnChainInfo{sectors[0], sectors[5]})))
-		assert.True(t, removed.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[3:5])))
-		assert.True(t, recoveringPower.Equals(PowerForSectors(sectorSize, sectors[5:6])))
+		assert.True(t, removed.ActivePower.Equals(miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sectors[0]})))
+		assert.True(t, removed.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[3:6])))
+		assert.True(t, recoveringPower.Equals(miner.PowerForSectors(sectorSize, sectors[5:6])))
 
 		// assert queue state is as expected
 
@@ -611,8 +613,8 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEquals(t, set.OnTimeSectors, 2)
 		assertBitfieldEmpty(t, set.EarlySectors)
 		assert.Equal(t, abi.NewTokenAmount(1001), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(NewPowerPairZero()))
-		assert.True(t, set.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[1:2])))
+		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
+		assert.True(t, set.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[1:2])))
 
 		// only faulty on-time sector 3 is found in second set
 		requireNoExpirationGroupsBefore(t, 9, queue)
@@ -622,49 +624,16 @@ func TestExpirationQueue(t *testing.T) {
 		assertBitfieldEquals(t, set.OnTimeSectors, 3)
 		assertBitfieldEmpty(t, set.EarlySectors)
 		assert.Equal(t, abi.NewTokenAmount(1002), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(NewPowerPairZero()))
-		assert.True(t, set.FaultyPower.Equals(PowerForSectors(sectorSize, sectors[2:3])))
+		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
+		assert.True(t, set.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[2:3])))
 
 		// no further sets remain
 		requireNoExpirationGroupsBefore(t, 20, queue)
 	})
 }
 
-func TestExpirations(t *testing.T) {
-	quant := QuantSpec{unit: 10, offset: 3}
-	sectors := []*SectorOnChainInfo{
-		testSector(7, 1, 0, 0, 0),
-		testSector(8, 2, 0, 0, 0),
-		testSector(14, 3, 0, 0, 0),
-		testSector(13, 4, 0, 0, 0),
-	}
-	result := groupSectorsByExpiration(2048, sectors, quant)
-	expected := []*sectorEpochSet{{
-		epoch:   13,
-		sectors: []uint64{1, 2, 4},
-		power:   NewPowerPair(big.NewIntUnsigned(2048*3), big.NewIntUnsigned(2048*3)),
-		pledge:  big.Zero(),
-	}, {
-		epoch:   23,
-		sectors: []uint64{3},
-		power:   NewPowerPair(big.NewIntUnsigned(2048), big.NewIntUnsigned(2048)),
-		pledge:  big.Zero(),
-	}}
-	require.Equal(t, len(expected), len(result))
-	for i, ex := range expected {
-		assertSectorSet(t, ex, &result[i])
-	}
-}
-
-func TestExpirationsEmpty(t *testing.T) {
-	sectors := []*SectorOnChainInfo{}
-	result := groupSectorsByExpiration(2048, sectors, NoQuantization)
-	expected := []sectorEpochSet{}
-	require.Equal(t, expected, result)
-}
-
-func testSector(expiration, number, weight, vweight, pledge int64) *SectorOnChainInfo {
-	return &SectorOnChainInfo{
+func testSector(expiration, number, weight, vweight, pledge int64) *miner.SectorOnChainInfo {
+	return &miner.SectorOnChainInfo{
 		Expiration:         abi.ChainEpoch(expiration),
 		SectorNumber:       abi.SectorNumber(number),
 		DealWeight:         big.NewInt(weight),
@@ -673,7 +642,7 @@ func testSector(expiration, number, weight, vweight, pledge int64) *SectorOnChai
 	}
 }
 
-func requireNoExpirationGroupsBefore(t *testing.T, epoch abi.ChainEpoch, queue ExpirationQueue) {
+func requireNoExpirationGroupsBefore(t *testing.T, epoch abi.ChainEpoch, queue miner.ExpirationQueue) {
 	_, err := queue.Root()
 	require.NoError(t, err)
 
@@ -684,24 +653,17 @@ func requireNoExpirationGroupsBefore(t *testing.T, epoch abi.ChainEpoch, queue E
 	require.True(t, empty)
 }
 
-func assertSectorSet(t *testing.T, expected, actual *sectorEpochSet) {
-	assert.Equal(t, expected.epoch, actual.epoch)
-	assert.Equal(t, expected.sectors, actual.sectors)
-	assert.True(t, expected.power.Equals(actual.power), "expected %v, actual %v", expected.power, actual.power)
-	assert.True(t, expected.pledge.Equals(actual.pledge), "expected %v, actual %v", expected.pledge, actual.pledge)
-}
-
-func emptyExpirationQueueWithQuantizing(t *testing.T, quant QuantSpec) ExpirationQueue {
+func emptyExpirationQueueWithQuantizing(t *testing.T, quant miner.QuantSpec) miner.ExpirationQueue {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
 	root, err := adt.MakeEmptyArray(store).Root()
 	require.NoError(t, err)
 
-	queue, err := LoadExpirationQueue(store, root, quant)
+	queue, err := miner.LoadExpirationQueue(store, root, quant)
 	require.NoError(t, err)
 	return queue
 }
 
-func emptyExpirationQueue(t *testing.T) ExpirationQueue {
-	return emptyExpirationQueueWithQuantizing(t, NoQuantization)
+func emptyExpirationQueue(t *testing.T) miner.ExpirationQueue {
+	return emptyExpirationQueueWithQuantizing(t, miner.NoQuantization)
 }
