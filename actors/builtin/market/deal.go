@@ -14,7 +14,7 @@ import (
 
 var PieceCIDPrefix = cid.Prefix{
 	Version:  1,
-	Codec:    cid.Raw,
+	Codec:    cid.FilCommitmentUnsealed,
 	MhType:   mh.SHA2_256_TRUNC254_PADDED,
 	MhLength: 32,
 }

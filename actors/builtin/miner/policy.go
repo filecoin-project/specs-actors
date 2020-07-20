@@ -60,7 +60,7 @@ const ChainFinality = abi.ChainEpoch(900)
 
 var SealedCIDPrefix = cid.Prefix{
 	Version:  1,
-	Codec:    cid.Raw,
+	Codec:    cid.FilCommitmentSealed,
 	MhType:   mh.POSEIDON_BLS12_381_A1_FC1,
 	MhLength: 32,
 }
