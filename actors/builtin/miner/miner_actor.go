@@ -1350,7 +1350,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
 		}
 
-		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &PledgeVestingSpec); err != nil {
+		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to lock pledge: %v", err)
 		}
 		return newlyVestedFund

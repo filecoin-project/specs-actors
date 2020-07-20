@@ -109,7 +109,7 @@ const MaxSectorExpirationExtension = builtin.EpochsInYear
 const DealLimitDenominator = 134217728
 
 var QualityBaseMultiplier = big.NewInt(10)         // PARAM_FINISH
-var DealWeightMultiplier = big.NewInt(11)          // PARAM_FINISH
+var DealWeightMultiplier = big.NewInt(10)          // PARAM_FINISH
 var VerifiedDealWeightMultiplier = big.NewInt(100) // PARAM_FINISH
 const SectorQualityPrecision = 20
 
@@ -184,6 +184,13 @@ var PledgeVestingSpec = VestSpec{
 	VestPeriod:   abi.ChainEpoch(7 * builtin.EpochsInDay), // 1 week for testnet, PARAM_FINISH
 	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay), // 1 day for testnet, PARAM_FINISH
 	Quantization: 12 * builtin.EpochsInHour,               // 12 hours for testnet, PARAM_FINISH
+}
+
+var RewardVestingSpec = VestSpec{
+	InitialDelay: abi.ChainEpoch(20), // no initial delay, PARAM_FINISH
+	VestPeriod: abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
+	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay), // PARAM_FINISH
+	Quantization: 12 * builtin.EpochsInHour, // PARAM_FINISH
 }
 
 func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
