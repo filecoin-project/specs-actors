@@ -244,8 +244,8 @@ type SubmitWindowedPoStParams struct {
 	Proofs []abi.PoStProof
 	// The epoch at which these proofs is being committed to a particular chain.
 	ChainCommitEpoch abi.ChainEpoch
-	// A signature from the miner worker over the randomness at the chain commit epoch.
-	ChainCommitSig crypto.Signature
+	// The ticket randomness on the chain at the ChainCommitEpoch on the chain this post is committed to
+	ChainCommitRand abi.Randomness
 }
 
 // Invoked by miner's worker address to submit their fallback post
@@ -266,8 +266,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must exceed %d", params.ChainCommitEpoch, currEpoch - MaxPoStChainCommitAge)
 	}
 	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
-	err := rt.Syscalls().VerifySignature(params.ChainCommitSig, rt.Message().Caller(), commRand)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "chain commit signature invalid")
+	if !bytes.Equal(commRand, params.ChainCommitRand) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
+	}
 
 	// Get the total power/reward. We need these to compute penalties.
 	rewardStats := requestCurrentEpochBlockReward(rt)
