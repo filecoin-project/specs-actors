@@ -2,7 +2,8 @@ package builtin
 
 import "fmt"
 
-// Filecoin Parameter: The duration of a chain epoch.
+// PARAM_SPEC
+// The duration of a chain epoch.
 // Motivation: It guarantees that a block is propagated and WinningPoSt can be successfully done in time all supported miners.
 // Usage: It is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
 // TODO: In lieu of a real configuration mechanism for this value, we'd like to make it a var so that implementations
@@ -18,7 +19,8 @@ const EpochsInHour = SecondsInHour / EpochDurationSeconds
 const EpochsInDay = SecondsInDay / EpochDurationSeconds
 const EpochsInYear = SecondsInYear / EpochDurationSeconds
 
-// Filecoin Parameter: Expected number of block quality in an epoch (e.g. 1 block with block quality 5, or 5 blocks with quality 1)
+// PARAM_SPEC
+// Expected number of block quality in an epoch (e.g. 1 block with block quality 5, or 5 blocks with quality 1)
 // Motivation: It ensures that there is enough on-chain throughput
 // Usage: It is used to calculate the block reward.
 var ExpectedLeadersPerEpoch = int64(5)
