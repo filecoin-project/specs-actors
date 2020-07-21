@@ -420,6 +420,68 @@ func TestPartitions(t *testing.T) {
 		})
 	})
 
+	t.Run("pops early terminations", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// fault sector 3, 4, 5 and 6
+		faultSet := bf(3, 4, 5, 6)
+		faultSectors := selectSectors(t, sectors, faultSet)
+		_, err = partition.AddFaults(adt.AsStore(rt), faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// mark 4and 5 as a recoveries
+		recoverSet := bf(4, 5)
+		recoverSectors := selectSectors(t, sectors, recoverSet)
+		recoveredPower := miner.PowerForSectors(sectorSize, recoverSectors)
+		err = partition.AddRecoveries(recoverSet, recoveredPower)
+		require.NoError(t, err)
+
+		// now terminate 1, 3 and 5
+		terminations := bf(1, 3, 5)
+		terminatedSectors := selectSectors(t, sectors, terminations)
+		terminationEpoch := abi.ChainEpoch(3)
+		_, err = partition.TerminateSectors(adt.AsStore(rt), terminationEpoch, terminatedSectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// pop first termination
+		result, hasMore, err := partition.PopEarlyTerminations(adt.AsStore(rt), 1)
+		require.NoError(t, err)
+
+		// expect first sector to be in early terminations
+		assertBitfieldsEqual(t, bf(1), result.Sectors[terminationEpoch])
+
+		// expect more results
+		assert.True(t, hasMore)
+
+		// expect terminations to still contain 3 and 5
+		queue, err := miner.LoadBitfieldQueue(adt.AsStore(rt), partition.EarlyTerminated, quantSpec)
+		require.NoError(t, err)
+
+		// only early termination appears in bitfield queue
+		ExpectBQ().
+			Add(terminationEpoch, 3, 5).
+			Equals(t, queue)
+
+		// pop the rest
+		result, hasMore, err = partition.PopEarlyTerminations(adt.AsStore(rt), 5)
+		require.NoError(t, err)
+
+		// expect 3 and 5
+		assertBitfieldsEqual(t, bf(3, 5), result.Sectors[terminationEpoch])
+
+		// expect no more results
+		assert.False(t, hasMore)
+
+		// expect early terminations to be empty
+		queue, err = miner.LoadBitfieldQueue(adt.AsStore(rt), partition.EarlyTerminated, quantSpec)
+		require.NoError(t, err)
+		ExpectBQ().Equals(t, queue)
+	})
 }
 
 type expectExpirationGroup struct {
