@@ -11,17 +11,19 @@ import (
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 )
-
-// Filecoin Parameter: The period over which a miner's active sectors are expected to be proven via WindowPoSt.
+// PARAM_SPEC
+// The period over which a miner's active sectors are expected to be proven via WindowPoSt.
 // Motivation: This guarantees that (1) user data is proven once a day, (2) user data is stored for 24h by a rational miner (due to WindowPoSt cost assumption).
 const WPoStProvingPeriod = abi.ChainEpoch(builtin.EpochsInDay) // 24 hours
 
-// Filecoin Parameter: The period between the opening and the closing of a WindowPoSt deadline in which the miner is expected to provide a WindowPoSt proof.
+// PARAM_SPEC
+// The period between the opening and the closing of a WindowPoSt deadline in which the miner is expected to provide a WindowPoSt proof.
 // Motivation: This guarantees that a miner has enough time to propagate a WindowPoSt for the current deadline.
 // Usage: This is used to calculate the opening and close of a deadline window and to calculate the number of deadlines in a proving period.
 const WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds) // 30 minutes (48 per day)
 
-// Filecoin Parameter: The number of non-overlapping PoSt deadlines in a proving period.
+// PARAM_SPEC
+// The number of non-overlapping PoSt deadlines in a proving period.
 // Motivation: This guarantees that a miner can spread their WindowPoSt duties across a proving period, instead of submitting a single large WindowPoSt submission.
 const WPoStPeriodDeadlines = uint64(WPoStProvingPeriod / WPoStChallengeWindow)
 
@@ -35,7 +37,8 @@ func init() {
 	}
 }
 
-// Filecoin Parameter: The maximum number of sectors that a miner can have (and implicitly the maximum number of faults, recoveries, etc.) 
+// PARAM_SPEC
+// The maximum number of sectors that a miner can have (and implicitly the maximum number of faults, recoveries, etc.) 
 // Motivation: This guarantees that actors operations per miner are bounded.
 // TODO raise this number, carefully
 // https://github.com/filecoin-project/specs-actors/issues/470
@@ -59,7 +62,8 @@ func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
 // The maximum number of new sectors that may be staged by a miner during a single proving period.
 const NewSectorsPerPeriodMax = 128 << 10
 
-// Filecoin Parameter: Epochs after which chain state is final with overwhelming probability (hence the likelihood of two fork of this size is negligible)
+// PARAM_SPEC
+// Epochs after which chain state is final with overwhelming probability (hence the likelihood of two fork of this size is negligible)
 // Motivation: This is a conservative value that is chosen via simulations of all known attacks.
 const ChainFinality = abi.ChainEpoch(1400)
 
@@ -86,52 +90,67 @@ var MaxSealDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  abi.ChainEpoch(10000),
 }
 
-// Filecoin Parameter: Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn.
+// PARAM_SPEC
+// Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn.
 // Motivation: This guarantees that (1) a miner cannot predict a future challenge (2) a miner cannot do a long fork in the past to insert a precommit after seeing a challenge.
 const PreCommitChallengeDelay = abi.ChainEpoch(150)
 
 // Lookback from the current epoch for state view for leader elections.
 const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
 
-// Filecoin Parameter: Lookback from the deadline's challenge window opening from which to sample chain randomness for the WindowPoSt challenge seed.
+// PARAM_SPEC
+// Lookback from the deadline's challenge window opening from which to sample chain randomness for the WindowPoSt challenge seed.
 // This lookback exists so that deadline windows can be non-overlapping (which make the programming simpler)
 // Motivation: A miner can start the WindowPoSt computation without waiting for chain stability. This value cannot be too large since it could compromise the rationality of honest storage (due to WindowPoSt cost assumptions)
 const WPoStChallengeLookback = abi.ChainEpoch(20)
 
-// Filecoin Parameter: Minimum period between fault declaration and the next deadline opening.
+// PARAM_SPEC
+// Minimum period between fault declaration and the next deadline opening.
 // If the number of epochs between fault declaration and deadline's challenge window opening is lower than FaultDeclarationCutoff,
 // the fault declaration is considered invalid for that deadline.
 // Motivation: This guarantees that a miner is not likely to successfully fork the chain and declare a fault after seeing the challenges.
 const FaultDeclarationCutoff = WPoStChallengeLookback + 50
 
-// Filecoin Parameter: The maximum age of a fault before the sector is terminated.
+// PARAM_SPEC
+// The maximum age of a fault before the sector is terminated.
 // Motivation: This guarantees to clients that a Filecoin miner cannot lose the file for longer than 14 days.
 const FaultMaxAge = WPoStProvingPeriod * 14
 
-// Filecoin Parameter: Staging period for a miner worker key change.
+// PARAM_SPEC
+// Staging period for a miner worker key change.
 // Future improvement: Finality is a harsh delay for a miner who has lost their worker key, as the miner will miss Window PoSts until
 // it can be changed. It's the only safe value, though. We may implement a mitigation mechanism such as a second
 // key or allowing the owner account to submit PoSts while a key change is pending.
 // Motivation: This guarantees that a miner cannot choose a more favorable worker key that wins leader elections.
 const WorkerKeyChangeDelay = ChainFinality
 
-// Filecoin Parameter: Maximum number of epochs past the current epoch a sector may be set to expire.
+// PARAM_SPEC
+// Maximum number of epochs past the current epoch a sector may be set to expire.
 // The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
 // and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
 const MaxSectorExpirationExtension = builtin.EpochsInYear
 
-// Filecoin Parameter: Ratio of sector size to maximum deals per sector.
+// PARAM_SPEC
+// Ratio of sector size to maximum deals per sector.
 // The maximum number of deals is the sector size divided by this number (2^27)
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
-// Filecoin Parameter: Quality multiplier for CC sectors
+
+// PARAM_SPEC
+// Quality multiplier for CC sectors
 var QualityBaseMultiplier = big.NewInt(10)
-// Filecoin Parameter: Quality multiplier for a standard deal in a sector
+
+// PARAM_SPEC
+// Quality multiplier for a standard deal in a sector
 var DealWeightMultiplier = big.NewInt(10)
-// Filecoin Parameter: Quality multiplier for verified deals
+
+// PARAM_SPEC
+// Quality multiplier for verified deals
 var VerifiedDealWeightMultiplier = big.NewInt(100)
-// Filecoin Parameter: Precision for Quality Adjusted power
+
+// PARAM_SPEC
+// Precision for Quality Adjusted power
 const SectorQualityPrecision = 20
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
