@@ -150,13 +150,13 @@ func TestAddVerifiedClient(t *testing.T) {
 		ac.addVerifiedClient(rt, verifier2.Address, c4.Address, c4.Allowance)
 
 		// all clients should exist and verifiers should have no more allowance left
-		require.EqualValues(t, c1.Allowance, ac.getVerifiedClient(rt, c1.Address))
-		require.EqualValues(t, c2.Allowance, ac.getVerifiedClient(rt, c2.Address))
-		require.EqualValues(t, c3.Allowance, ac.getVerifiedClient(rt, c3.Address))
-		require.EqualValues(t, c4.Allowance, ac.getVerifiedClient(rt, c4.Address))
+		require.EqualValues(t, c1.Allowance, ac.getVerifiedClientCap(rt, c1.Address))
+		require.EqualValues(t, c2.Allowance, ac.getVerifiedClientCap(rt, c2.Address))
+		require.EqualValues(t, c3.Allowance, ac.getVerifiedClientCap(rt, c3.Address))
+		require.EqualValues(t, c4.Allowance, ac.getVerifiedClientCap(rt, c4.Address))
 
-		require.EqualValues(t, big.Zero(), ac.getVerifier(rt, verifierAddr))
-		require.EqualValues(t, big.Zero(), ac.getVerifier(rt, verifierAddr2))
+		require.EqualValues(t, big.Zero(), ac.getVerifierCap(rt, verifierAddr))
+		require.EqualValues(t, big.Zero(), ac.getVerifierCap(rt, verifierAddr2))
 	})
 
 	t.Run("verifier successfully adds a verified client and then fails on adding another verified client because of low allowance", func(t *testing.T) {
@@ -182,8 +182,8 @@ func TestAddVerifiedClient(t *testing.T) {
 		rt.Verify()
 
 		// one client should exist and verifier should have no more allowance left
-		require.EqualValues(t, c1.Allowance, ac.getVerifiedClient(rt, c1.Address))
-		require.EqualValues(t, big.Zero(), ac.getVerifier(rt, verifierAddr))
+		require.EqualValues(t, c1.Allowance, ac.getVerifiedClientCap(rt, c1.Address))
+		require.EqualValues(t, big.Zero(), ac.getVerifierCap(rt, verifierAddr))
 	})
 
 	t.Run("fails when allowance is less than MinVerifiedDealSize", func(t *testing.T) {
@@ -246,6 +246,270 @@ func TestAddVerifiedClient(t *testing.T) {
 	})
 }
 
+func TestUseBytes(t *testing.T) {
+	root := tutil.NewIDAddr(t, 101)
+	verifiedClientAddr := tutil.NewIDAddr(t, 201)
+	verifiedClientAddr2 := tutil.NewIDAddr(t, 202)
+	verifiedClientAddr3 := tutil.NewIDAddr(t, 203)
+
+	verifierAddr := tutil.NewIDAddr(t, 301)
+
+	t.Run("successfully consume deal bytes for deals from different verified clients", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		ca1 := big.Mul(verifreg.MinVerifiedDealSize, big.NewInt(3))
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, ca1)
+
+		ca2 := big.Mul(verifreg.MinVerifiedDealSize, big.NewInt(2))
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr2, ca2)
+
+		ca3 := big.Add(verifreg.MinVerifiedDealSize, big.NewInt(1))
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr3, ca3)
+
+		// client 1 uses bytes
+		dSize := verifreg.MinVerifiedDealSize
+		ac.useBytes(rt, verifiedClientAddr, dSize)
+		// client 2 uses bytes
+		ac.useBytes(rt, verifiedClientAddr2, dSize)
+		// client 3 uses bytes
+		ac.useBytes(rt, verifiedClientAddr3, dSize)
+
+		// verify cap for all three clients
+		require.EqualValues(t, big.Sub(ca1, dSize), ac.getVerifiedClientCap(rt, verifiedClientAddr))
+		require.EqualValues(t, big.Sub(ca2, dSize), ac.getVerifiedClientCap(rt, verifiedClientAddr2))
+		ac.assertVerifiedClientRemoved(rt, verifiedClientAddr3)
+
+		// client 1 adds a deal and it works
+		ac.useBytes(rt, verifiedClientAddr, dSize)
+		// client 2 adds a deal and it works
+		ac.useBytes(rt, verifiedClientAddr2, dSize)
+		require.EqualValues(t, big.Subtract(ca1, dSize, dSize), ac.getVerifiedClientCap(rt, verifiedClientAddr))
+		ac.assertVerifiedClientRemoved(rt, verifiedClientAddr2)
+	})
+
+	t.Run("successfully consume deal bytes for verified client and then fail on next attempt because it does NOT have enough allowance", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, verifreg.MinVerifiedDealSize, big.NewInt(1))
+
+		// add verified client
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, clientAllowance)
+
+		// use bytes
+		dSize1 := verifreg.MinVerifiedDealSize
+		ac.useBytes(rt, verifiedClientAddr, dSize1)
+
+		// fails now because client does NOT have enough capacity for second deal
+		dSize2 := big.Add(verifreg.MinVerifiedDealSize, big.NewInt(2))
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.UseBytesParams{verifiedClientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.UseBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("successfully consume deal for verified client and then fail on next attempt because it has been removed", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, big.NewInt(1))
+
+		// add verified client
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, clientAllowance)
+
+		// use bytes
+		dSize1 := verifreg.MinVerifiedDealSize
+		ac.useBytes(rt, verifiedClientAddr, dSize1)
+
+		// fails now because client has been removed
+		dSize2 := verifreg.MinVerifiedDealSize
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.UseBytesParams{verifiedClientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.UseBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fail if caller is not storage market actor", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+		param := &verifreg.UseBytesParams{verifiedClientAddr, verifreg.MinVerifiedDealSize}
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(ac.UseBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fail if deal size is less than min verified deal size", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		dSize2 := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.UseBytesParams{verifiedClientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.UseBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fail if verified client does not exist", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		dSize2 := verifreg.MinVerifiedDealSize
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.UseBytesParams{verifiedClientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.UseBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fail if deal size is greater than verified client cap", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, big.NewInt(1))
+
+		// add verified client
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, clientAllowance)
+
+		// use bytes
+		dSize := big.Add(clientAllowance, big.NewInt(1))
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.UseBytesParams{verifiedClientAddr, dSize}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.UseBytes, param)
+		})
+
+		rt.Verify()
+	})
+}
+
+func TestRestoreBytes(t *testing.T) {
+	root := tutil.NewIDAddr(t, 101)
+	verifiedClientAddr := tutil.NewIDAddr(t, 201)
+	verifiedClientAddr2 := tutil.NewIDAddr(t, 202)
+	verifiedClientAddr3 := tutil.NewIDAddr(t, 203)
+	verifierAddr := tutil.NewIDAddr(t, 301)
+
+	t.Run("successfully restore deal bytes for different verified clients", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		ca1 := big.Mul(verifreg.MinVerifiedDealSize, big.NewInt(3))
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, ca1)
+
+		ca2 := big.Mul(verifreg.MinVerifiedDealSize, big.NewInt(2))
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr2, ca2)
+
+		ca3 := big.Add(verifreg.MinVerifiedDealSize, big.NewInt(1))
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr3, ca3)
+
+		// client 1 restores bytes
+		dSize := verifreg.MinVerifiedDealSize
+		ac.restoreBytes(rt, verifiedClientAddr, dSize)
+		// client 2 uses bytes
+		ac.restoreBytes(rt, verifiedClientAddr2, dSize)
+		// client 3 uses bytes
+		ac.restoreBytes(rt, verifiedClientAddr3, dSize)
+
+		// verify cap for all three clients
+		bal1 := big.Add(ca1, dSize)
+		bal2 := big.Add(ca2, dSize)
+		bal3 := big.Add(ca3, dSize)
+		require.EqualValues(t, bal1, ac.getVerifiedClientCap(rt, verifiedClientAddr))
+		require.EqualValues(t, bal2, ac.getVerifiedClientCap(rt, verifiedClientAddr2))
+		require.EqualValues(t, bal3, ac.getVerifiedClientCap(rt, verifiedClientAddr3))
+
+		// client1 and client2 use bytes
+		ac.useBytes(rt, verifiedClientAddr, dSize)
+		ac.useBytes(rt, verifiedClientAddr2, dSize)
+
+		bal1 = big.Sub(bal1, dSize)
+		bal2 = big.Sub(bal2, dSize)
+		require.EqualValues(t, bal1, ac.getVerifiedClientCap(rt, verifiedClientAddr))
+		require.EqualValues(t, bal2, ac.getVerifiedClientCap(rt, verifiedClientAddr2))
+		require.EqualValues(t, bal3, ac.getVerifiedClientCap(rt, verifiedClientAddr3))
+
+		// restore bytes for client1, 2 and 3
+		ac.restoreBytes(rt, verifiedClientAddr, dSize)
+		ac.restoreBytes(rt, verifiedClientAddr2, dSize)
+		ac.restoreBytes(rt, verifiedClientAddr3, dSize)
+
+		bal1 = big.Add(bal1, dSize)
+		bal2 = big.Add(bal2, dSize)
+		bal3 = big.Add(bal3, dSize)
+		require.EqualValues(t, bal1, ac.getVerifiedClientCap(rt, verifiedClientAddr))
+		require.EqualValues(t, bal2, ac.getVerifiedClientCap(rt, verifiedClientAddr2))
+		require.EqualValues(t, bal3, ac.getVerifiedClientCap(rt, verifiedClientAddr3))
+	})
+
+	t.Run("successfully restore bytes after using bytes reduces a client's cap", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, verifreg.MinVerifiedDealSize)
+
+		// add verified client -> use bytes
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, clientAllowance)
+		dSize1 := verifreg.MinVerifiedDealSize
+		ac.useBytes(rt, verifiedClientAddr, dSize1)
+
+		sz := verifreg.MinVerifiedDealSize
+		ac.restoreBytes(rt, verifiedClientAddr, sz)
+	})
+
+	t.Run("successfully restore bytes after using bytes removes a client", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, big.NewInt(1))
+
+		// add verified client -> use bytes -> client is removed
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, verifiedClientAddr, clientAllowance)
+		dSize1 := verifreg.MinVerifiedDealSize
+		ac.useBytes(rt, verifiedClientAddr, dSize1)
+		ac.assertVerifiedClientRemoved(rt, verifiedClientAddr)
+
+		sz := verifreg.MinVerifiedDealSize
+		ac.restoreBytes(rt, verifiedClientAddr, sz)
+	})
+
+	t.Run("fail if caller is not storage market actor", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+		param := &verifreg.RestoreBytesParams{verifiedClientAddr, verifreg.MinVerifiedDealSize}
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(ac.RestoreBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fail if deal size is less than min verified deal size", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		dSize2 := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.RestoreBytesParams{verifiedClientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.RestoreBytes, param)
+		})
+
+		rt.Verify()
+	})
+}
+
 type verifRegActorTestHarness struct {
 	rootkey address.Address
 	verifreg.Actor
@@ -272,10 +536,36 @@ func (h *verifRegActorTestHarness) constructAndVerify(rt *mock.Runtime) {
 	rt.Verify()
 }
 
+func (h *verifRegActorTestHarness) generateVerifier(a address.Address) *verifreg.AddVerifierParams {
+	d := big.Add(abi.NewStoragePower(100), verifreg.MinVerifiedDealSize)
+
+	return &verifreg.AddVerifierParams{Address: a, Allowance: d}
+}
+
+func (h *verifRegActorTestHarness) generateVerifiedClient(a address.Address) *verifreg.AddVerifiedClientParams {
+	allowance := big.Add(verifreg.MinVerifiedDealSize, big.NewInt(99))
+
+	return &verifreg.AddVerifiedClientParams{a, allowance}
+}
+
 func (h *verifRegActorTestHarness) generateAndAddVerifier(rt *mock.Runtime, a address.Address) *verifreg.AddVerifierParams {
 	v := h.generateVerifier(a)
 	h.addVerifier(rt, v.Address, v.Allowance)
 	return v
+}
+
+func (h *verifRegActorTestHarness) generateAndAddVerifierAndVerifiedClient(rt *mock.Runtime, verifierAddr address.Address, clientAddr address.Address,
+	clientAllowance verifreg.DataCap) {
+
+	// add verifier with greater allowance than client
+	verifier := h.generateVerifier(verifierAddr)
+	verifier.Allowance = big.Add(verifier.Allowance, clientAllowance)
+	h.addVerifier(rt, verifier.Address, verifier.Allowance)
+
+	// add client
+	client := h.generateVerifiedClient(clientAddr)
+	client.Allowance = clientAllowance
+	h.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance)
 }
 
 func (h *verifRegActorTestHarness) addVerifiedClient(rt *mock.Runtime, verifier, client address.Address, allowance verifreg.DataCap) {
@@ -286,19 +576,7 @@ func (h *verifRegActorTestHarness) addVerifiedClient(rt *mock.Runtime, verifier,
 	rt.Call(h.AddVerifiedClient, params)
 	rt.Verify()
 
-	require.EqualValues(h.t, allowance, h.getVerifiedClient(rt, client))
-}
-
-func (h *verifRegActorTestHarness) generateVerifiedClient(a address.Address) *verifreg.AddVerifiedClientParams {
-	allowance := big.Add(verifreg.MinVerifiedDealSize, big.NewInt(99))
-
-	return &verifreg.AddVerifiedClientParams{a, allowance}
-}
-
-func (h *verifRegActorTestHarness) generateVerifier(a address.Address) *verifreg.AddVerifierParams {
-	d := big.Add(abi.NewStoragePower(100), verifreg.MinVerifiedDealSize)
-
-	return &verifreg.AddVerifierParams{Address: a, Allowance: d}
+	require.EqualValues(h.t, allowance, h.getVerifiedClientCap(rt, client))
 }
 
 func (h *verifRegActorTestHarness) addVerifier(rt *mock.Runtime, verifier address.Address, datacap verifreg.DataCap) {
@@ -311,7 +589,7 @@ func (h *verifRegActorTestHarness) addVerifier(rt *mock.Runtime, verifier addres
 	rt.Verify()
 
 	require.Nil(h.t, ret)
-	require.EqualValues(h.t, datacap, h.getVerifier(rt, verifier))
+	require.EqualValues(h.t, datacap, h.getVerifierCap(rt, verifier))
 }
 
 func (h *verifRegActorTestHarness) removeVerifier(rt *mock.Runtime, verifier address.Address) {
@@ -325,7 +603,62 @@ func (h *verifRegActorTestHarness) removeVerifier(rt *mock.Runtime, verifier add
 	h.assertVerifierRemoved(rt, verifier)
 }
 
-func (h *verifRegActorTestHarness) getVerifier(rt *mock.Runtime, a address.Address) verifreg.DataCap {
+func (h *verifRegActorTestHarness) useBytes(rt *mock.Runtime, a address.Address, dealSize verifreg.DataCap) {
+	rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+	rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+
+	// client will be removed if it's cap after the usebytes call is less than MinVerifiedDealSize
+	var removed bool
+	prev := h.getVerifiedClientCap(rt, a)
+	newCap := big.Sub(prev, dealSize)
+	if newCap.LessThan(verifreg.MinVerifiedDealSize) {
+		removed = true
+	}
+
+	param := &verifreg.UseBytesParams{a, dealSize}
+
+	ret := rt.Call(h.UseBytes, param)
+	rt.Verify()
+	require.Nil(h.t, ret)
+
+	// assert client cap now
+	if removed {
+		h.assertVerifiedClientRemoved(rt, a)
+	} else {
+		require.EqualValues(h.t, newCap, h.getVerifiedClientCap(rt, a))
+	}
+}
+
+func (h *verifRegActorTestHarness) restoreBytes(rt *mock.Runtime, a address.Address, dealSize verifreg.DataCap) {
+	rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+	rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+
+	// get current cap -> zero if client does NOT exist
+	var prev verifreg.DataCap
+	var st verifreg.State
+	rt.GetState(&st)
+	v, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
+	require.NoError(h.t, err)
+	var dc verifreg.DataCap
+	found, err := v.Get(verifreg.AddrKey(a), &dc)
+	require.NoError(h.t, err)
+	if found {
+		prev = dc
+	} else {
+		prev = big.Zero()
+	}
+
+	// call RestoreBytes
+	param := &verifreg.RestoreBytesParams{a, dealSize}
+	ret := rt.Call(h.RestoreBytes, param)
+	rt.Verify()
+	require.Nil(h.t, ret)
+
+	// assert client cap now
+	require.EqualValues(h.t, big.Add(prev, dealSize), h.getVerifiedClientCap(rt, a))
+}
+
+func (h *verifRegActorTestHarness) getVerifierCap(rt *mock.Runtime, a address.Address) verifreg.DataCap {
 	var st verifreg.State
 	rt.GetState(&st)
 
@@ -339,7 +672,7 @@ func (h *verifRegActorTestHarness) getVerifier(rt *mock.Runtime, a address.Addre
 	return dc
 }
 
-func (h *verifRegActorTestHarness) getVerifiedClient(rt *mock.Runtime, a address.Address) verifreg.DataCap {
+func (h *verifRegActorTestHarness) getVerifiedClientCap(rt *mock.Runtime, a address.Address) verifreg.DataCap {
 	var st verifreg.State
 	rt.GetState(&st)
 
@@ -358,6 +691,19 @@ func (h *verifRegActorTestHarness) assertVerifierRemoved(rt *mock.Runtime, a add
 	rt.GetState(&st)
 
 	v, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
+	require.NoError(h.t, err)
+
+	var dc verifreg.DataCap
+	found, err := v.Get(verifreg.AddrKey(a), &dc)
+	require.NoError(h.t, err)
+	require.False(h.t, found)
+}
+
+func (h *verifRegActorTestHarness) assertVerifiedClientRemoved(rt *mock.Runtime, a address.Address) {
+	var st verifreg.State
+	rt.GetState(&st)
+
+	v, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
