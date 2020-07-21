@@ -42,7 +42,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.E
 }
 
 type ExecParams struct {
-	CodeCID           cid.Cid
+	CodeCID           cid.Cid `checked:"true"` // invalid CIDs won't get committed to the state tree
 	ConstructorParams []byte
 }
 

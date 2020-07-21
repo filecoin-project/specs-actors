@@ -647,6 +647,14 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 
 	proposal := deal.Proposal
 
+	if !proposal.PieceCID.Defined() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID undefined")
+	}
+
+	if proposal.PieceCID.Prefix() != PieceCIDPrefix {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID had wrong prefix")
+	}
+
 	if proposal.EndEpoch <= proposal.StartEpoch {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proposal end before proposal start")
 	}
