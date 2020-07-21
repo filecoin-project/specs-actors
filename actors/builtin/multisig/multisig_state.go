@@ -7,6 +7,7 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
+	"golang.org/x/xerrors"
 )
 
 type State struct {
@@ -60,7 +61,7 @@ func getPendingTransaction(ptx *adt.Map, txnID TxnID) (Transaction, error) {
 		return Transaction{}, errors.Wrapf(err, "failed to read transaction")
 	}
 	if !found {
-		return Transaction{}, errors.Errorf("failed to find transaction %v", txnID)
+		return Transaction{}, xerrors.Errorf("failed to find transaction %v", txnID)
 	}
 
 	return out, nil

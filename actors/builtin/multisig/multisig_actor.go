@@ -211,7 +211,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
-		txn = a.getTransaction(rt, ptx, params.ID, params.ProposalHash, true)
+		txn = getTransaction(rt, ptx, params.ID, params.ProposalHash, true)
 		return nil
 	})
 
@@ -420,7 +420,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 	return executeTransactionIfApproved(rt, st, txnID, txn)
 }
 
-func (a Actor) getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
+func getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
 	var txn Transaction
 
 	// get transaction from the state trie
