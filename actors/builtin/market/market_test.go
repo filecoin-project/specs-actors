@@ -555,6 +555,12 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 				},
 				exitCode: exitcode.ErrInsufficientFunds,
 			},
+			"bad piece CID": {
+				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.PieceCID = tutil.MakeCID("random cid", nil)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
 		}
 
 		for name, tc := range tcs {
@@ -1854,7 +1860,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		p1 := abi.PieceInfo{Size: d1.PieceSize, PieceCID: d1.PieceCID}
 		p2 := abi.PieceInfo{Size: d2.PieceSize, PieceCID: d2.PieceCID}
 
-		c := tutil.MakeCID("100")
+		c := tutil.MakeCID("100", &market.PieceCIDPrefix)
 
 		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{p1, p2}, c, nil)
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
@@ -2467,7 +2473,7 @@ func (h *marketActorTestHarness) generateDealAndAddFunds(rt *mock.Runtime, clien
 }
 
 func generateDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
-	pieceCid := tutil.MakeCID("1")
+	pieceCid := tutil.MakeCID("1", &market.PieceCIDPrefix)
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
 	clientCollateral := big.NewInt(10)

@@ -16,6 +16,8 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
+	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	mineract "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -410,8 +412,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 	t.Run("registers porep and charges gas", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		commR := tutil.MakeCID("commR")
-		commD := tutil.MakeCID("commD")
+		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
+		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
 		sealInfo := &abi.SealVerifyInfo{
 			SealedCID:   commR,
 			UnsealedCID: commD,
@@ -440,8 +442,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 
 		sealInfo := func(i int) *abi.SealVerifyInfo {
 			var sealInfo abi.SealVerifyInfo
-			sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i))
-			sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i))
+			sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i), &mineract.SealedCIDPrefix)
+			sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i), &market.PieceCIDPrefix)
 			return &sealInfo
 		}
 
@@ -505,7 +507,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochRawBytePower)
-	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochQualityAdjPower)	
+	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochQualityAdjPower)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.ThisEpochPledgeCollateral)
 	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronEpoch)
 	assert.Equal(h.t, int64(0), st.MinerCount)
