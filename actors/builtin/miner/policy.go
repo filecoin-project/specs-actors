@@ -83,7 +83,7 @@ var MaxSealDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 
 // Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
 // used to ensure it is not predictable by miner.
-const PreCommitChallengeDelay = abi.ChainEpoch(150)
+var PreCommitChallengeDelay = abi.ChainEpoch(150)
 
 // Lookback from the current epoch for state view for leader elections.
 const ElectionLookback = abi.ChainEpoch(1) // PARAM_FINISH
