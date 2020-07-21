@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/ipfs/go-cid"
+	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
@@ -78,11 +78,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
 
-	nominal, recipient, codeId := escrowAddress(rt, params.ProviderOrClientAddress)
-	// if caller is not a miner, caller should be the recipient of the funds
-	if !codeId.Equals(builtin.StorageMinerActorCodeID) {
-		rt.ValidateImmediateCallerIs(recipient)
-	}
+	nominal, recipient, _, approvedCallers := escrowAddress(rt, params.ProviderOrClientAddress)
+	rt.ValidateImmediateCallerIs(approvedCallers...)
 
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
@@ -116,7 +113,10 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
 	msgValue := rt.Message().ValueReceived()
 
-	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
+	nominal, _, codeId, approved := escrowAddress(rt, *providerOrClientAddress)
+	if codeId.Equals(builtin.StorageMinerActorCodeID) {
+		rt.ValidateImmediateCallerIs(approved...)
+	}
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -683,11 +683,11 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 
 // Resolves a provider or client address to the canonical form against which a balance should be held, and
 // the designated recipient address of withdrawals (which is the same, for simple account parties).
-func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipient addr.Address, codeId cid.Cid) {
+func escrowAddress(rt Runtime, address addr.Address) (nominal addr.Address, recipient addr.Address, codeId cid.Cid, approved []addr.Address) {
 	// Resolve the provided address to the canonical form against which the balance is held.
-	nominal, ok := rt.ResolveAddress(addr)
+	nominal, ok := rt.ResolveAddress(address)
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", addr)
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", address)
 	}
 
 	codeID, ok := rt.GetActorCodeCID(nominal)
@@ -698,14 +698,13 @@ func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipie
 	if codeID.Equals(builtin.StorageMinerActorCodeID) {
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
 		ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
-		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
-		return nominal, ownerAddr, codeID
+		return nominal, ownerAddr, codeID, []addr.Address{ownerAddr, workerAddr}
 	}
 
 	// Ordinary account-style actor entry; funds recipient is just the entry address itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
-	return nominal, nominal, codeID
+	return nominal, nominal, codeID, []addr.Address{nominal}
 }
 
 func getDealProposal(proposals *DealArray, dealID abi.DealID) (*DealProposal, error) {
