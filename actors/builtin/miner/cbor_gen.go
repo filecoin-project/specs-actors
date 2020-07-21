@@ -3118,18 +3118,9 @@ func (t *CompactPartitionsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Partitions ([]uint64) (slice)
-	if len(t.Partitions) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.Partitions was too long")
-	}
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.Partitions))); err != nil {
+	// t.Partitions (bitfield.BitField) (struct)
+	if err := t.Partitions.MarshalCBOR(w); err != nil {
 		return err
-	}
-	for _, v := range t.Partitions {
-		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -3166,39 +3157,27 @@ func (t *CompactPartitionsParams) UnmarshalCBOR(r io.Reader) error {
 		t.Deadline = uint64(extra)
 
 	}
-	// t.Partitions ([]uint64) (slice)
+	// t.Partitions (bitfield.BitField) (struct)
 
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.Partitions: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.Partitions = make([]uint64, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		maj, val, err := cbg.CborReadHeaderBuf(br, scratch)
+		pb, err := br.PeekByte()
 		if err != nil {
-			return xerrors.Errorf("failed to read uint64 for t.Partitions slice: %w", err)
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.Partitions = new(bitfield.BitField)
+			if err := t.Partitions.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.Partitions pointer: %w", err)
+			}
 		}
 
-		if maj != cbg.MajUnsignedInt {
-			return xerrors.Errorf("value read for array t.Partitions was not a uint, instead got %d", maj)
-		}
-
-		t.Partitions[i] = uint64(val)
 	}
-
 	return nil
 }
 

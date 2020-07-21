@@ -1,11 +1,13 @@
 package miner
 
 import (
+	"bytes"
 	"errors"
 	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
+	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -501,4 +503,162 @@ func (dl *Deadline) TerminateSectors(
 	}
 
 	return removedPower, nil
+}
+
+// RemovePartitions removes the specified partitions, shifting the remaining
+// ones to the left, and returning the live and dead sectors they contained.
+//
+// Returns an error if any of the partitions contained faulty sectors or early
+// terminations.
+func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitField, quant QuantSpec) (
+	live, dead *abi.BitField, removedPower PowerPair, err error,
+) {
+	oldPartitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to load partitions: %w", err)
+	}
+
+	partitionCount := oldPartitions.Length()
+	toRemoveSet, err := toRemove.AllMap(partitionCount)
+	if err != nil {
+		// TODO: This may be an illegal argument error if we have too many partitions.
+		// https://github.com/filecoin-project/specs-actors/issues/597
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to expand partitions into map: %w", err)
+	}
+
+	// Nothing to do.
+	if len(toRemoveSet) == 0 {
+		return bitfield.NewFromSet(nil), bitfield.NewFromSet(nil), NewPowerPairZero(), nil
+	}
+
+	for partIdx := range toRemoveSet { //nolint:nomaprange
+		if partIdx >= partitionCount {
+			// TODO: This is an illegal argument error
+			// https://github.com/filecoin-project/specs-actors/issues/597
+			return nil, nil, NewPowerPairZero(), xerrors.Errorf("partition index %d out of range [0, %d)", partIdx, partitionCount)
+		}
+	}
+
+	// Should already be checked earlier, but we might as well check again.
+	noEarlyTerminations, err := dl.EarlyTerminations.IsEmpty()
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to check for early terminations: %w", err)
+	}
+	if !noEarlyTerminations {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("cannot remove partitions from deadline with early terminations: %w", err)
+	}
+
+	newPartitions := adt.MakeEmptyArray(store)
+	allDeadSectors := make([]*bitfield.BitField, 0, len(toRemoveSet))
+	allLiveSectors := make([]*bitfield.BitField, 0, len(toRemoveSet))
+	removedPower = NewPowerPairZero()
+
+	// Define all of these out here to save allocations.
+	var (
+		lazyPartition cbg.Deferred
+		byteReader    bytes.Reader
+		partition     Partition
+	)
+	if err = oldPartitions.ForEach(&lazyPartition, func(partIdx int64) error {
+		// If we're keeping the partition as-is, append it to the new partitions array.
+		if _, ok := toRemoveSet[uint64(partIdx)]; !ok {
+			return newPartitions.AppendContinuous(&lazyPartition)
+		}
+
+		// Ok, actually unmarshal the partition.
+		byteReader.Reset(lazyPartition.Raw)
+		err := partition.UnmarshalCBOR(&byteReader)
+		byteReader.Reset(nil)
+		if err != nil {
+			return xerrors.Errorf("failed to decode partition %d: %w", partIdx, err)
+		}
+
+		// Don't allow removing partitions with faulty sectors.
+		hasNoFaults, err := partition.Faults.IsEmpty()
+		if err != nil {
+			return xerrors.Errorf("failed to decode faults for partition %d: %w", partIdx, err)
+		}
+		if !hasNoFaults {
+			// TODO: this is an invalid argument error.
+			// https://github.com/filecoin-project/specs-actors/issues/597
+			return xerrors.Errorf("cannot remove partition %d: has faults", partIdx)
+		}
+
+		// Get the live sectors.
+		liveSectors, err := partition.LiveSectors()
+		if err != nil {
+			return xerrors.Errorf("failed to calculate live sectors for partition %d: %w", partIdx, err)
+		}
+
+		allDeadSectors = append(allDeadSectors, partition.Terminated)
+		allLiveSectors = append(allLiveSectors, liveSectors)
+		removedPower = removedPower.Add(partition.LivePower)
+		return nil
+	}); err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("while removing partitions: %w", err)
+	}
+
+	dl.Partitions, err = newPartitions.Root()
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to persist new partition table: %w", err)
+	}
+
+	dead, err = bitfield.MultiMerge(allDeadSectors...)
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to merge dead sector bitfields: %w", err)
+	}
+	live, err = bitfield.MultiMerge(allLiveSectors...)
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to merge live sector bitfields: %w", err)
+	}
+
+	// Update sector counts.
+	removedDeadSectors, err := dead.Count()
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to count dead sectors: %w", err)
+	}
+
+	removedLiveSectors, err := live.Count()
+	if err != nil {
+		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to count live sectors: %w", err)
+	}
+
+	dl.LiveSectors -= removedLiveSectors
+	dl.TotalSectors -= removedLiveSectors + removedDeadSectors
+
+	// Update expiration bitfields.
+	{
+		expirationEpochs, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+		if err != nil {
+			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to load expiration queue: %w", err)
+		}
+
+		var epochsToRemove []uint64
+		err = expirationEpochs.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+			bf, err := bitfield.CutBitField(bf, toRemove)
+			if err != nil {
+				return err
+			}
+			if empty, err := bf.IsEmpty(); err != nil {
+				return err
+			} else if !empty {
+				return expirationEpochs.Set(uint64(epoch), bf)
+			}
+			epochsToRemove = append(epochsToRemove, uint64(epoch))
+			return nil
+		})
+		if err != nil {
+			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to update deadline expiration queue: %w", err)
+		}
+		err = expirationEpochs.BatchDelete(epochsToRemove)
+		if err != nil {
+			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to remove empty epochs from deadline expiration queue: %w", err)
+		}
+		dl.ExpirationsEpochs, err = expirationEpochs.Root()
+		if err != nil {
+			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed persist deadline expiration queue: %w", err)
+		}
+	}
+
+	return live, dead, removedPower, nil
 }
