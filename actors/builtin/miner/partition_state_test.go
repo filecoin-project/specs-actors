@@ -359,6 +359,25 @@ func TestPartitions(t *testing.T) {
 			Add(expireEpoch, 4).
 			Equals(t, queue)
 	})
+
+	t.Run("pop expiring sectors errors if a recovery exists", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// add a recovery
+		err = partition.AddRecoveries(bf(5), miner.PowerForSectors(sectorSize, sectors[4:5]))
+		require.NoError(t, err)
+
+		// pop first expiration set
+		expireEpoch := abi.ChainEpoch(5)
+		_, err = partition.PopExpiredSectors(adt.AsStore(rt), expireEpoch, quantSpec)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected recoveries while processing expirations")
+	})
 }
 
 type expectExpirationGroup struct {
