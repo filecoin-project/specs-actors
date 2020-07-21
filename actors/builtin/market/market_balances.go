@@ -107,21 +107,28 @@ func (m *marketStateMutation) maybeLockBalance(addr addr.Address, amount abi.Tok
 func (m *marketStateMutation) removeAccountIfNoBalance(addr addr.Address) (error, exitcode.ExitCode) {
 	bal, err, code := getBalance(m.escrowTable, addr)
 	if err != nil {
-		return fmt.Errorf("failed to get escrow balance: %w", err), code
+		return xerrors.Errorf("failed to get escrow balance: %w", err), code
 	}
 
 	if bal.Equals(big.Zero()) {
 		prev, err := m.escrowTable.Remove(addr)
 		if err != nil {
-			return fmt.Errorf("failed to remove account: %w", err), exitcode.ErrIllegalState
+			return xerrors.Errorf("failed to remove account: %w", err), exitcode.ErrIllegalState
 		}
 		AssertMsg(prev.Equals(big.Zero()), "previous escrow balance should be zero")
 
-		prev, err = m.lockedTable.Remove(addr)
+		// remove locked balance account
+		bal, err, code = getBalance(m.lockedTable, addr)
 		if err != nil {
-			return fmt.Errorf("failed to remove locked account: %w", err), exitcode.ErrIllegalState
+			return xerrors.Errorf("failed to get locked balance: %w", err), code
 		}
-		AssertMsg(prev.Equals(big.Zero()), "previous locked balance should be zero")
+		if bal.Equals(big.Zero()) {
+			prev, err = m.lockedTable.Remove(addr)
+			if err != nil {
+				return xerrors.Errorf("failed to remove locked account: %w", err), exitcode.ErrIllegalState
+			}
+			AssertMsg(prev.Equals(big.Zero()), "previous locked balance should be zero")
+		}
 	}
 
 	return nil, exitcode.Ok

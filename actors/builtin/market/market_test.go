@@ -1381,7 +1381,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		// Setting the current epoch to anything less than that wont make any payment
 		current = 154
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider, false, false)
+		actor.cronTickNoChangeBalances(rt, client, provider)
 
 		// however setting the current epoch to 155 will make the payment
 		current = 155
@@ -1400,7 +1400,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		// next epoch for cron schedule is deal end i.e. 300. An epoch less than that wont do anything
 		current = 299
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider, false, false)
+		actor.cronTickNoChangeBalances(rt, client, provider)
 
 		// however setting epoch to 300 will expire the deal, make the payment and unlock all funds
 		current = 300
@@ -1431,7 +1431,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId)
 
 		// running cron tick again dosen't do anything
-		actor.cronTickNoChangeBalances(rt, client, provider, false, false)
+		actor.cronTickNoChangeBalances(rt, client, provider)
 	})
 
 	t.Run("expired deal should unlock the remaining client and provider locked balance after payment and deal should be deleted", func(t *testing.T) {
@@ -1578,10 +1578,16 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 					// if there has been no payment, provider will have zero balance and hence should be slashed
 					if tc.payment.Equals(big.Zero()) {
-						actor.cronTickNoChangeBalances(rt, client, provider, false, true)
+						actor.assertAccountRemoved(rt, provider)
+						// client balances should not change
+						cLocked := actor.getLockedBalance(rt, client)
+						cEscrow := actor.getEscrowBalance(rt, client)
+						actor.cronTick(rt)
+						require.EqualValues(t, cEscrow, actor.getEscrowBalance(rt, client))
+						require.EqualValues(t, cLocked, actor.getLockedBalance(rt, client))
 					} else {
 						// running cron tick again dosen't do anything
-						actor.cronTickNoChangeBalances(rt, client, provider, false, false)
+						actor.cronTickNoChangeBalances(rt, client, provider)
 					}
 
 				} else {
@@ -1642,7 +1648,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		// is still not scheduled
 		current = 154
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider, false, false)
+		actor.cronTickNoChangeBalances(rt, client, provider)
 
 		//  Setting the current epoch to 155 will make another payment (5 + 100 epochs)
 		current = 155
@@ -1659,7 +1665,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		// Setting the epoch to anything less than 255 will NOT make any changes even though the deal is slashed (155 + 100)
 		current = 254
 		rt.SetEpoch(current)
-		actor.cronTickNoChangeBalances(rt, client, provider, false, false)
+		actor.cronTickNoChangeBalances(rt, client, provider)
 
 		// next epoch for cron schedule is 155 + 100 = 255 -> payment will be made and deal will be slashed
 		current = 255
@@ -2042,41 +2048,20 @@ func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client 
 	rt.Verify()
 }
 
-func (h *marketActorTestHarness) cronTickNoChangeBalances(rt *mock.Runtime, client, provider address.Address, clientRemoved, providerRemoved bool) {
-	var cEscrow abi.TokenAmount
-	var cLocked abi.TokenAmount
-	var pLocked abi.TokenAmount
-	var pEscrow abi.TokenAmount
-
-	if clientRemoved {
-		h.assertAccountRemoved(rt, client)
-	} else {
-		cLocked = h.getLockedBalance(rt, client)
-		cEscrow = h.getEscrowBalance(rt, client)
-	}
-
-	if providerRemoved {
-		h.assertAccountRemoved(rt, provider)
-	} else {
-		pLocked = h.getLockedBalance(rt, provider)
-		pEscrow = h.getEscrowBalance(rt, provider)
-	}
+func (h *marketActorTestHarness) cronTickNoChangeBalances(rt *mock.Runtime, client, provider address.Address) {
+	cLocked := h.getLockedBalance(rt, client)
+	cEscrow := h.getEscrowBalance(rt, client)
+	pLocked := h.getLockedBalance(rt, provider)
+	pEscrow := h.getEscrowBalance(rt, provider)
 
 	h.cronTick(rt)
 
-	if clientRemoved {
-		h.assertAccountRemoved(rt, client)
-	} else {
-		require.EqualValues(h.t, cEscrow, h.getEscrowBalance(rt, client))
-		require.EqualValues(h.t, cLocked, h.getLockedBalance(rt, client))
-	}
+	require.EqualValues(h.t, cEscrow, h.getEscrowBalance(rt, client))
+	require.EqualValues(h.t, cLocked, h.getLockedBalance(rt, client))
 
-	if providerRemoved {
-		h.assertAccountRemoved(rt, provider)
-	} else {
-		require.EqualValues(h.t, pEscrow, h.getEscrowBalance(rt, provider))
-		require.EqualValues(h.t, pLocked, h.getLockedBalance(rt, provider))
-	}
+	require.EqualValues(h.t, pEscrow, h.getEscrowBalance(rt, provider))
+	require.EqualValues(h.t, pLocked, h.getLockedBalance(rt, provider))
+
 }
 
 func (h *marketActorTestHarness) cronTickAndAssertBalances(rt *mock.Runtime, client, provider address.Address,
