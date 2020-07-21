@@ -480,6 +480,10 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, false); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
+
+					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
+					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
+
 					return nil
 				}
 
@@ -646,6 +650,14 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 	}
 
 	proposal := deal.Proposal
+
+	if !proposal.PieceCID.Defined() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID undefined")
+	}
+
+	if proposal.PieceCID.Prefix() != PieceCIDPrefix {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID had wrong prefix")
+	}
 
 	if proposal.EndEpoch <= proposal.StartEpoch {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proposal end before proposal start")

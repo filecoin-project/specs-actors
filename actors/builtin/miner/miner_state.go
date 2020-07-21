@@ -101,7 +101,7 @@ type WorkerKeyChange struct {
 type SectorPreCommitInfo struct {
 	SealProof       abi.RegisteredSealProof
 	SectorNumber    abi.SectorNumber
-	SealedCID       cid.Cid // CommR
+	SealedCID       cid.Cid `checked:"true"` // CommR
 	SealRandEpoch   abi.ChainEpoch
 	DealIDs         []abi.DealID
 	Expiration      abi.ChainEpoch
@@ -1073,7 +1073,7 @@ func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmou
 // Returns a quantization spec that quantizes values to the last epoch in each deadline.
 func (st *State) QuantEndOfDeadline() QuantSpec {
 	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return QuantSpec{unit: WPoStChallengeWindow, offset: st.ProvingPeriodStart - 1}
+	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart - 1)
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
