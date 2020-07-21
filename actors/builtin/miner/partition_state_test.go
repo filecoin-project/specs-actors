@@ -378,6 +378,48 @@ func TestPartitions(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unexpected recoveries while processing expirations")
 	})
+
+	t.Run("records missing PoSt", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// make 4, 5 and 6 faulty
+		faultSet := bitfield.NewFromSet([]uint64{4, 5, 6})
+		faultSectors := selectSectors(t, sectors, faultSet)
+		_, err = partition.AddFaults(adt.AsStore(rt), faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// add 4 and 5 as recoveries
+		recoverSet := bitfield.NewFromSet([]uint64{4, 5})
+		recoverSectors := selectSectors(t, sectors, recoverSet)
+		recoveredPower := miner.PowerForSectors(sectorSize, recoverSectors)
+		err = partition.AddRecoveries(recoverSet, recoveredPower)
+		require.NoError(t, err)
+
+		// record entire partition as faulted
+		newFaultPower, failedRecoveryPower, err := partition.RecordMissedPost(adt.AsStore(rt), abi.ChainEpoch(6), quantSpec)
+		require.NoError(t, err)
+
+		expectedNewFaultPower := miner.PowerForSectors(sectorSize, sectors[:3])
+		assert.True(t, expectedNewFaultPower.Equals(newFaultPower))
+
+		expectedFailedRecoveryPower := miner.PowerForSectors(sectorSize, sectors[3:5])
+		assert.True(t, expectedFailedRecoveryPower.Equals(failedRecoveryPower))
+
+		// everything is now faulty
+		assertPartitionState(t, partition, sectors, sectorSize, bf(1, 2, 3, 4, 5, 6), bf(1, 2, 3, 4, 5, 6), bf(), bf())
+
+		// everything not in first expiration group is now in second because fault expiration quantized to 9
+		assertPartitionExpirationQueue(t, rt, partition, quantSpec, []expectExpirationGroup{
+			{expiration: 5, sectors: bf(1, 2)},
+			{expiration: 9, sectors: bf(3, 4, 5, 6)},
+		})
+	})
+
 }
 
 type expectExpirationGroup struct {
