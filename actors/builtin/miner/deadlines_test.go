@@ -47,7 +47,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		periodStart := abi.ChainEpoch(50000)
 		{
 			// Period not yet started
-			curr := periodStart-1
+			curr := periodStart - 1
 			di := miner.NewDeadlineInfo(periodStart, 0, curr)
 			assert.False(t, di.PeriodStarted()) // Not yet started
 			assert.False(t, di.PeriodElapsed())
