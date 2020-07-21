@@ -312,6 +312,53 @@ func TestPartitions(t *testing.T) {
 			Add(terminationEpoch, 1, 3, 5).
 			Equals(t, queue)
 	})
+
+	t.Run("pop expiring sectors", func(t *testing.T) {
+		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		partition := emptyPartition(t, rt)
+
+		quantSpec := miner.NewQuantSpec(4, 1)
+		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// add one fault with an early termination
+		_, err = partition.AddFaults(adt.AsStore(rt), bf(4), sectors[3:4], abi.ChainEpoch(2), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// pop first expiration set
+		expireEpoch := abi.ChainEpoch(5)
+		expset, err := partition.PopExpiredSectors(adt.AsStore(rt), expireEpoch, quantSpec)
+		require.NoError(t, err)
+
+		assertBitfieldsEqual(t, expset.OnTimeSectors, bf(1, 2))
+		assertBitfieldsEqual(t, expset.EarlySectors, bf(4))
+		assert.Equal(t, abi.NewTokenAmount(1000+1001), expset.OnTimePledge)
+
+		// active power only contains power from non-faulty sectors
+		assert.True(t, expset.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[:2])))
+
+		// faulty power comes from early termination
+		assert.True(t, expset.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[3:4])))
+
+		// expect sectors to be moved to terminations
+		unterminatedSectors := selectSectors(t, sectors, bf(3, 4, 5, 6))
+		assertPartitionState(t, partition, unterminatedSectors, sectorSize, bf(1, 2, 3, 4, 5, 6), bf(), bf(), bf(1, 2, 4))
+
+		// sectors should move to new expiration group
+		assertPartitionExpirationQueue(t, rt, partition, quantSpec, []expectExpirationGroup{
+			{expiration: 9, sectors: bf(3)},
+			{expiration: 13, sectors: bf(5, 6)},
+		})
+
+		// sectors should be added to early termination bitfield queue
+		queue, err := miner.LoadBitfieldQueue(adt.AsStore(rt), partition.EarlyTerminated, quantSpec)
+		require.NoError(t, err)
+
+		// only early termination appears in bitfield queue
+		ExpectBQ().
+			Add(expireEpoch, 4).
+			Equals(t, queue)
+	})
 }
 
 type expectExpirationGroup struct {
@@ -373,14 +420,6 @@ func assertPartitionState(t *testing.T,
 	active, err := partition.ActiveSectors()
 	require.NoError(t, err)
 	assertBitfieldsEqual(t, expectedActiveIds, active)
-}
-
-func sectorIDs(sectors []*miner.SectorOnChainInfo) []uint64 {
-	allSectorIds := make([]uint64, len(sectors))
-	for i, sector := range sectors {
-		allSectorIds[i] = uint64(sector.SectorNumber)
-	}
-	return allSectorIds
 }
 
 func bf(secNos ...uint64) *bitfield.BitField {
