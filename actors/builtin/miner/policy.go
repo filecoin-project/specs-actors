@@ -213,18 +213,24 @@ type BigFrac struct {
 	denominator big.Int
 }
 
+// PARAM_SPEC
+// Initial share of a slasher's reward
 var consensusFaultReporterInitialShare = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(1),
 	denominator: big.NewInt(1000),
 }
 
+// PARAM_SPEC
+// Growth rate of a slasher's reward
 var consensusFaultReporterShareGrowthRate = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(101251),
 	denominator: big.NewInt(100000),
 }
 
+// PARAM_SPEC
+// Maximum share of slasher's reward
 var consensusFaultMaxReporterShare = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(1),
