@@ -218,10 +218,17 @@ var consensusFaultReporterInitialShare = BigFrac{
 	numerator:   big.NewInt(1),
 	denominator: big.NewInt(1000),
 }
+
 var consensusFaultReporterShareGrowthRate = BigFrac{
 	// PARAM_FINISH
 	numerator:   big.NewInt(101251),
 	denominator: big.NewInt(100000),
+}
+
+var consensusFaultMaxReporterShare = BigFrac{
+	// PARAM_FINISH
+	numerator:   big.NewInt(1),
+	denominator: big.NewInt(2),
 }
 
 // Specification for a linear vesting schedule.
@@ -246,7 +253,12 @@ var RewardVestingSpec = VestSpec{
 	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
 }
 
+// When a user (called slasher) reports a consensus fault, they earn a share of the miner's current balance
+// This amount is:  Min(initialShare * growthRate^elapsed, maxReporterShare) * collateral
+// Given current parameter choice, the longer a slasher waits, the higher their reward.
+// There it a maximum of reward to be earned.
 func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
+	// High level description
 	// PARAM_FINISH
 	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
 	// var multiplier = growthRate^elapsedEpoch
@@ -257,14 +269,22 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	// NUM = SLASHER_SHARE_GROWTH_RATE_NUM^elapsedEpoch * INITIAL_SLASHER_SHARE_NUM * collateral
 	// DENOM = SLASHER_SHARE_GROWTH_RATE_DENOM^elapsedEpoch * INITIAL_SLASHER_SHARE_DENOM
 	// slasher_amount = min(NUM/DENOM, collateral)
-	maxReporterShareNum := big.NewInt(1)
-	maxReporterShareDen := big.NewInt(2)
-
+	
 	elapsed := big.NewInt(int64(elapsedEpoch))
+	
+	// The following is equivalent to: slasherShare = growthRate^elapsed
+	// slasherShareNumerator = growthRateNumerator^elapsed
 	slasherShareNumerator := big.Exp(consensusFaultReporterShareGrowthRate.numerator, elapsed)
+	// slasherShareDenominator = growthRateDenominator^elapsed
 	slasherShareDenominator := big.Exp(consensusFaultReporterShareGrowthRate.denominator, elapsed)
 
+	// The following is equivalent to: reward = slasherShare * initialShare * collateral
+	// num = slasherShareNumerator * initialShareNumerator * collateral
 	num := big.Mul(big.Mul(slasherShareNumerator, consensusFaultReporterInitialShare.numerator), collateral)
+	// denom = slasherShareDenominator * initialShareDenominator
 	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.denominator)
-	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, maxReporterShareNum), maxReporterShareDen))
+
+	// The following is equivalent to: Min(reward, collateral * maxReporterShare)
+	// Min(rewardNum/rewardDenom, maxReporterShareNum/maxReporterShareDen*collateral)
+	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, consensusFaultMaxReporterShare.numerator), consensusFaultMaxReporterShare.denominator))
 }
