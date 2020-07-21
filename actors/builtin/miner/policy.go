@@ -38,7 +38,8 @@ func init() {
 }
 
 // PARAM_SPEC
-// The maximum number of sectors that a miner can have (and implicitly the maximum number of faults, recoveries, etc.) 
+// The maximum number of sectors that a miner can have (and implicitly the maximum number of faults, recoveries, etc.)
+// Note that when sectors are terminated they count towards SectorsMax until cleanup.
 // Motivation: This guarantees that actors operations per miner are bounded.
 // TODO raise this number, carefully
 // https://github.com/filecoin-project/specs-actors/issues/470
