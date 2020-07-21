@@ -480,6 +480,10 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, false); err != nil {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
+
+					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
+					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
+
 					return nil
 				}
 
