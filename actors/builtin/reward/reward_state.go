@@ -1,6 +1,8 @@
 package reward
 
 import (
+	"fmt"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
@@ -45,7 +47,7 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		EffectiveBaselinePower: BaselineInitialValue,
 
 		ThisEpochReward:        big.Zero(),
-		ThisEpochBaselinePower: BaselineInitialValue,
+		ThisEpochBaselinePower: InitBaselinePower(),
 		Epoch:                  -1,
 	}
 
@@ -58,13 +60,17 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 // Used for update of internal state during null rounds
 func (st *State) updateToNextEpoch(currRealizedPower abi.StoragePower) {
 	st.Epoch++
-	st.ThisEpochBaselinePower = BaselinePowerNextEpoch(st.ThisEpochBaselinePower)
+	st.ThisEpochBaselinePower = BaselinePowerFromPrev(st.ThisEpochBaselinePower)
+	fmt.Printf("This epoch baseline power: %v\n", st.ThisEpochBaselinePower)
+	fmt.Printf("currRealizedPower: %v\n", currRealizedPower)
+	fmt.Printf("This epoch baseline power: %v\n", st.ThisEpochBaselinePower)
 	cappedRealizedPower := big.Min(st.ThisEpochBaselinePower, currRealizedPower)
+	fmt.Printf("capped Power: %v\n", cappedRealizedPower)
 	st.CumsumRealized = big.Add(st.CumsumRealized, cappedRealizedPower)
 
 	for st.CumsumRealized.GreaterThan(st.CumsumBaseline) {
 		st.EffectiveNetworkTime++
-		st.EffectiveBaselinePower = BaselinePowerNextEpoch(st.EffectiveBaselinePower)
+		st.EffectiveBaselinePower = BaselinePowerFromPrev(st.EffectiveBaselinePower)
 		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.EffectiveBaselinePower)
 	}
 }

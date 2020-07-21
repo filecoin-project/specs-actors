@@ -5,20 +5,35 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
-const BaselineExponentString = "340282476225511360239040558581491902991"
+const BaselineExponentString = "340282663082994238536867392845056089438"
 
 // Baseline function = BaselineInitialValue * (BaselineExponent) ^(t), t in epochs
-var BaselineExponent big.Int // Q.128
-var BaselineInitialValue big.Int
+var BaselineExponent big.Int     // Q.128
+var BaselineInitialValue big.Int // Q.0
 
 func init() {
 	BaselineExponent = big.MustFromString(BaselineExponentString)
-	BaselineInitialValue = big.Lsh(big.NewInt(1), 60)
+	BaselineInitialValue = big.Lsh(big.NewInt(1), 60) // 1 EiB
 }
 
-func BaselinePowerNextEpoch(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
-	nextEpochBaselinePower := big.Mul(prevEpochBaselinePower, BaselineExponent) // Q.0 => Q.128
-	return big.Rsh(nextEpochBaselinePower, precision)                           // Q.128 => Q.0
+// Initialize baseline power for epoch -1 so that baseline power at epoch 0 is
+// BaselineInitialValue.
+func InitBaselinePower() abi.StoragePower {
+	baselineInitialValue256 := big.Lsh(big.Lsh(BaselineInitialValue, precision), precision) // Q.0 => Q.256
+	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent)                // Q.256 / Q.128 => Q.128
+	return big.Rsh(baselineAtMinusOne, precision)                                           // Q.128 => Q.0
+}
+
+// Compute BaselinePower(t) from BaselinePower(t-1) with an additional multiplication
+// of the base exponent.
+func BaselinePowerFromPrev(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
+	thisEpochBaselinePower := big.Mul(prevEpochBaselinePower, BaselineExponent) // Q.0 * Q.128 => Q.128
+	return big.Rsh(thisEpochBaselinePower, precision)                           // Q.128 => Q.0
+}
+
+func BaselineQ128(prevBaseline abi.StoragePower) abi.StoragePower {
+	thisEpochBaselinePower := big.Mul(prevBaseline, BaselineExponent) // Q.128 * Q.128 => Q.256
+	return big.Rsh(thisEpochBaselinePower, precision)                 // Q.256 => Q.128
 }
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
