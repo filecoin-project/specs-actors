@@ -4,6 +4,7 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 )
 
+// PARAM_SPEC
 // Minimum number of registered miners for the minimum miner size limit to effectively limit consensus power.
 const ConsensusMinerMinMiners = 3
 
