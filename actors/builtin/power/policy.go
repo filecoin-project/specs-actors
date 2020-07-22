@@ -9,7 +9,14 @@ import (
 // When this number of miners of minimum miner size is reached, minimum miner size is enforce.
 const ConsensusMinerMinMiners = 4
 
-// Minimum power of an individual miner to meet the threshold for leader election.
+// PARAM_SPEC
+// Minimum miner size, the minimum power of an individual miner to meet the threshold for leader election (in bytes).
+// Motivation:
+// - Limits sybil generation
+// - Improves consensus fault detection
+// - Guarantees a minimum fee for consensus faults
+// - Ensures that a specific soundness for the power table
+// Future: we can consensus fault fee and sybil generation with crypto econ mechanic and we can mantain the target soundness by increasing the challenges for small miners.
 var ConsensusMinerMinPower = abi.NewStoragePower(1 << 40) // PARAM_FINISH
 
 // Maximum number of prove commits a miner can submit in one epoch
