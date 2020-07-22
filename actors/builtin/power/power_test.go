@@ -126,15 +126,11 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// Verify claims in state.
 		var st power.State
 		rt.GetState(&st)
-		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim1 := actor.getClaim(rt, miner1)
 		require.Equal(t, smallPowerUnit, claim1.RawBytePower)
 		require.Equal(t, mul(smallPowerUnit, 2), claim1.QualityAdjPower)
 
-		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim2 := actor.getClaim(rt, miner2)
 		require.Equal(t, smallPowerUnit, claim2.RawBytePower)
 		require.Equal(t, smallPowerUnit, claim2.QualityAdjPower)
 
@@ -145,9 +141,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectTotalPledgeEager(rt, abi.NewTokenAmount(9e5))
 
 		rt.GetState(&st)
-		claim2, found, err = st.GetClaim(rt.AdtStore(), miner2)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim2 = actor.getClaim(rt, miner2)
 		require.Equal(t, big.Zero(), claim2.RawBytePower)
 		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
 	})
@@ -547,6 +541,21 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	rt.Verify()
 }
 
+func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim {
+	var st power.State
+	rt.GetState(&st)
+
+	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	require.NoError(h.t, err)
+
+	var out power.Claim
+	found, err := claims.Get(power.AddrKey(a), &out)
+	require.NoError(h.t, err)
+	require.True(h.t, found)
+
+	return &out
+}
+
 func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner addr.Address) {
 	label := strconv.Itoa(h.minerSeq)
 	actrAddr := tutil.NewActorAddr(h.t, label)
@@ -597,7 +606,11 @@ func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Addre
 
 	// verify that miner claim is erased from state
 	st := getState(rt)
-	_, found, err := st.GetClaim(rt.AdtStore(), minerAddr)
+	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	require.NoError(h.t, err)
+
+	var out power.Claim
+	found, err := claims.Get(power.AddrKey(minerAddr), &out)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 }
