@@ -14,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{143}
+var lengthBufState = []byte{144}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -111,6 +111,17 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.LastCronEpoch (abi.ChainEpoch) (int64)
+	if t.LastCronEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.LastCronEpoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.LastCronEpoch-1)); err != nil {
+			return err
+		}
+	}
+
 	// t.Claims (cid.Cid) (struct)
 
 	if err := cbg.WriteCidBuf(scratch, w, t.Claims); err != nil {
@@ -146,7 +157,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 15 {
+	if extra != 16 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -329,6 +340,31 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.FirstCronEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.LastCronEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.LastCronEpoch = abi.ChainEpoch(extraI)
 	}
 	// t.Claims (cid.Cid) (struct)
 
@@ -932,7 +968,7 @@ func (t *CreateMinerReturn) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufCurrentTotalPowerReturn = []byte{131}
+var lengthBufCurrentTotalPowerReturn = []byte{132}
 
 func (t *CurrentTotalPowerReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -957,6 +993,11 @@ func (t *CurrentTotalPowerReturn) MarshalCBOR(w io.Writer) error {
 	if err := t.PledgeCollateral.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.SmoothQAPowerEstimate (smoothing.FilterEstimate) (struct)
+	if err := t.SmoothQAPowerEstimate.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -974,7 +1015,7 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1002,6 +1043,27 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.PledgeCollateral.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.PledgeCollateral: %w", err)
+		}
+
+	}
+	// t.SmoothQAPowerEstimate (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.SmoothQAPowerEstimate = new(smoothing.FilterEstimate)
+			if err := t.SmoothQAPowerEstimate.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.SmoothQAPowerEstimate pointer: %w", err)
+			}
 		}
 
 	}

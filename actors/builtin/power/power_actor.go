@@ -16,6 +16,7 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type Runtime = vmr.Runtime
@@ -349,9 +350,10 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 }
 
 type CurrentTotalPowerReturn struct {
-	RawBytePower     abi.StoragePower
-	QualityAdjPower  abi.StoragePower
-	PledgeCollateral abi.TokenAmount
+	RawBytePower          abi.StoragePower
+	QualityAdjPower       abi.StoragePower
+	PledgeCollateral      abi.TokenAmount
+	SmoothQAPowerEstimate *smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.
@@ -364,9 +366,10 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.State().Readonly(&st)
 
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.ThisEpochRawBytePower,
-		QualityAdjPower:  st.ThisEpochQualityAdjPower,
-		PledgeCollateral: st.ThisEpochPledgeCollateral,
+		RawBytePower:          st.ThisEpochRawBytePower,
+		QualityAdjPower:       st.ThisEpochQualityAdjPower,
+		PledgeCollateral:      st.ThisEpochPledgeCollateral,
+		SmoothQAPowerEstimate: st.ThisEpochQAPowerSmooth,
 	}
 }
 

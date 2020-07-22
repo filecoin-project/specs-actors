@@ -2,6 +2,7 @@ package reward
 
 import (
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -102,8 +103,9 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 type ThisEpochRewardReturn struct {
-	ThisEpochReward        abi.TokenAmount
-	ThisEpochBaselinePower abi.StoragePower
+	ThisEpochReward         abi.TokenAmount
+	ThisEpochRewardSmoothed *smoothing.FilterEstimate
+	ThisEpochBaselinePower  abi.StoragePower
 }
 
 // The award value used for the current epoch, updated at the end of an epoch
