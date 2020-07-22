@@ -8,6 +8,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
