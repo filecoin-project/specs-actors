@@ -116,7 +116,8 @@ func TestMarketActor(t *testing.T) {
 				for _, tc := range testCases {
 					rt.SetCaller(callerAddr, builtin.AccountActorCodeID)
 					rt.SetReceived(abi.NewTokenAmount(tc.delta))
-					actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
+					rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+					actor.expectProviderControlAddresses(rt, provider, owner, worker)
 
 					rt.Call(actor.AddBalance, &provider)
 
@@ -132,7 +133,7 @@ func TestMarketActor(t *testing.T) {
 			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 			rt.SetReceived(abi.NewTokenAmount(10))
-			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
+			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
@@ -225,6 +226,8 @@ func TestMarketActor(t *testing.T) {
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
 
+			// only signing parties can add balance for client AND provider.
+			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 			rt.ExpectValidateCallerAddr(owner, worker)
 			params := market.WithdrawBalanceParams{
 				ProviderOrClientAddress: provider,
@@ -233,7 +236,7 @@ func TestMarketActor(t *testing.T) {
 
 			// caller is not owner or worker
 			rt.SetCaller(tutil.NewIDAddr(t, 909), builtin.AccountActorCodeID)
-			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
+			actor.expectProviderControlAddresses(rt, provider, owner, worker)
 
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
 				rt.Call(actor.WithdrawBalance, &params)
@@ -2005,7 +2008,8 @@ func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, amount abi.T
 	rt.SetReceived(amount)
 	rt.SetAddressActorType(minerAddrs.provider, builtin.StorageMinerActorCodeID)
 	rt.SetCaller(minerAddrs.owner, builtin.AccountActorCodeID)
-	h.expectProviderControlAddressesAndValidateCaller(rt, minerAddrs.provider, minerAddrs.owner, minerAddrs.worker)
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+	h.expectProviderControlAddresses(rt, minerAddrs.provider, minerAddrs.owner, minerAddrs.worker)
 
 	rt.Call(h.AddBalance, &minerAddrs.provider)
 
@@ -2027,9 +2031,7 @@ func (h *marketActorTestHarness) addParticipantFunds(rt *mock.Runtime, addr addr
 	rt.SetBalance(big.Add(rt.Balance(), amount))
 }
 
-func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller(rt *mock.Runtime, provider address.Address, owner address.Address, worker address.Address) {
-	rt.ExpectValidateCallerAddr(owner, worker)
-
+func (h *marketActorTestHarness) expectProviderControlAddresses(rt *mock.Runtime, provider address.Address, owner address.Address, worker address.Address) {
 	expectRet := &miner.GetControlAddressesReturn{Owner: owner, Worker: worker}
 
 	rt.ExpectSend(
@@ -2044,7 +2046,9 @@ func (h *marketActorTestHarness) expectProviderControlAddressesAndValidateCaller
 
 func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withDrawAmt, expectedSend abi.TokenAmount, miner *minerAddrs) {
 	rt.SetCaller(miner.worker, builtin.AccountActorCodeID)
-	h.expectProviderControlAddressesAndValidateCaller(rt, miner.provider, miner.owner, miner.worker)
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+	rt.ExpectValidateCallerAddr(miner.owner, miner.worker)
+	h.expectProviderControlAddresses(rt, miner.provider, miner.owner, miner.worker)
 
 	params := market.WithdrawBalanceParams{
 		ProviderOrClientAddress: miner.provider,
