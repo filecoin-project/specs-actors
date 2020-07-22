@@ -43,6 +43,9 @@ type State struct {
 	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
 	FirstCronEpoch abi.ChainEpoch
 
+	// Last epoch power cron tick has been processed.
+	LastCronEpoch abi.ChainEpoch
+
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
@@ -207,6 +210,12 @@ func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, eve
 	}
 
 	return nil
+}
+
+func (st *State) updateSmoothedEstimate(currEpoch abi.ChainEpoch) {
+	delta := currEpoch - st.LastCronEpoch
+	filterQAPower := smoothing.LoadFilter(st.ThisEpochQAPowerSmooth, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochQAPowerSmooth = filterQAPower.NextEstimate(st.ThisEpochQualityAdjPower, delta)
 }
 
 func loadCronEvents(mmap *adt.Multimap, epoch abi.ChainEpoch) ([]CronEvent, error) {

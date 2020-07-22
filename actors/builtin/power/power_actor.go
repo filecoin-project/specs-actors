@@ -229,14 +229,17 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
-	// update next epoch's power and pledge values
-	// this must come before the next epoch's rewards are calculated
-	// so that next epoch reward reflects power added this epoch
 	rt.State().Transaction(&st, func() interface{} {
+		// update next epoch's power and pledge values
+		// this must come before the next epoch's rewards are calculated
+		// so that next epoch reward reflects power added this epoch
 		rawBytePower, qaPower := CurrentTotalPower(&st)
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
 		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
+		st.updateSmoothedEstimate(rt.CurrEpoch())
+
+		st.LastCronEpoch = rt.CurrEpoch()
 		return nil
 	})
 

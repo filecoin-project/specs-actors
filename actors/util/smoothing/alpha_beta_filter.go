@@ -178,7 +178,7 @@ func ln(z big.Int) big.Int {
 	k := big.NewInt(int64(intK))   // Q.0
 	k = big.Lsh(k, math.Precision) // Q.0 => Q.128
 
-	x := big.Zero()
+	x := big.Zero() // nolint:ineffassign
 	if k.GreaterThan(big.Zero()) {
 		x = big.Rsh(z, intK) // Q.128
 	} else {

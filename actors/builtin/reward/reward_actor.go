@@ -131,6 +131,7 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		prev := st.Epoch
 		// if there were null runs catch up the computation until
 		// st.Epoch == rt.CurrEpoch()
 		for st.Epoch < rt.CurrEpoch() {
@@ -139,6 +140,8 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 		}
 
 		st.updateToNextEpochWithReward(*currRealizedPower)
+		// only update smoothed estimates after updating rewart
+		st.updateSmoothedEstimates(rt.CurrEpoch()-prev, rt.TotalFilCircSupply())
 		return nil
 	})
 	return nil

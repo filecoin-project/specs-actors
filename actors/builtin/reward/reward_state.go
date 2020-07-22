@@ -87,3 +87,11 @@ func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower)
 	st.ThisEpochReward = computeReward(st.Epoch, prevRewardTheta, currRewardTheta)
 
 }
+
+func (st *State) updateSmoothedEstimates(delta abi.ChainEpoch, observedFILCirculatingSupply abi.TokenAmount) {
+	filterReward := smoothing.LoadFilter(st.ThisEpochRewardSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochRewardSmoothed = filterReward.NextEstimate(st.ThisEpochReward, delta)
+
+	filterSupply := smoothing.LoadFilter(st.ThisEpochCirculatingSupplySmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochCirculatingSupplySmoothed = filterSupply.NextEstimate(observedFILCirculatingSupply, delta)
+}
