@@ -1,11 +1,13 @@
 package power
 
 import (
+	"fmt"
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -83,7 +85,12 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 // the miner meets the minimum.  If the network is a below a threshold of
 // miners and has power > zero the miner meets the minimum.
 func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) { //nolint:deadcode,unused
-	claim, ok, err := st.GetClaim(s, miner)
+	claims, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return false, xerrors.Errorf("failed to load claims: %w", err)
+	}
+
+	claim, ok, err := getClaim(claims, miner)
 	if err != nil {
 		return false, err
 	}
@@ -109,9 +116,27 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 
 // Parameters may be negative to subtract.
 func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
-	oldClaim, ok, err := st.GetClaim(s, miner)
+	claims, err := adt.AsMap(s, st.Claims)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to load claims: %w", err)
+	}
+
+	if err := st.addToClaim(claims, miner, power, qapower); err != nil {
+		return xerrors.Errorf("failed to add claim: %w", err)
+	}
+
+	st.Claims, err = claims.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to flush claims: %w", err)
+	}
+
+	return nil
+}
+
+func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
+	oldClaim, ok, err := getClaim(claims, miner)
+	if err != nil {
+		return fmt.Errorf("failed to get claim: %w", err)
 	}
 	if !ok {
 		return errors.Errorf("no claim for actor %v", miner)
@@ -148,19 +173,14 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 	AssertMsg(newClaim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", newClaim.RawBytePower)
 	AssertMsg(newClaim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)
 	AssertMsg(st.MinerAboveMinPowerCount >= 0, "negative number of miners larger than min: %v", st.MinerAboveMinPowerCount)
-	return st.setClaim(s, miner, &newClaim)
+	return setClaim(claims, miner, &newClaim)
 }
 
-func (st *State) GetClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return nil, false, err
-	}
-
+func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 	var out Claim
-	found, err := hm.Get(AddrKey(a), &out)
+	found, err := claims.Get(AddrKey(a), &out)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to get claim for address %v from store %s", a, st.Claims)
+		return nil, false, errors.Wrapf(err, "failed to get claim for address %v", a)
 	}
 	if !found {
 		return nil, false, nil
@@ -173,93 +193,37 @@ func (st *State) addPledgeTotal(amount abi.TokenAmount) {
 	Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
 }
 
-func (st *State) appendCronEvent(store adt.Store, epoch abi.ChainEpoch, event *CronEvent) error {
-	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
-	if err != nil {
-		return err
-	}
-
+func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, event *CronEvent) error {
 	// if event is in past, alter FirstCronEpoch so it will be found.
 	if epoch < st.FirstCronEpoch {
 		st.FirstCronEpoch = epoch
 	}
 
-	err = mmap.Add(epochKey(epoch), event)
-	if err != nil {
+	if err := events.Add(epochKey(epoch), event); err != nil {
 		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
 	}
-	st.CronEventQueue, err = mmap.Root()
-	if err != nil {
-		return err
-	}
+
 	return nil
 }
 
-func (st *State) loadCronEvents(store adt.Store, epoch abi.ChainEpoch) ([]CronEvent, error) {
-	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
-	if err != nil {
-		return nil, err
-	}
-
+func loadCronEvents(mmap *adt.Multimap, epoch abi.ChainEpoch) ([]CronEvent, error) {
 	var events []CronEvent
 	var ev CronEvent
-	err = mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
+	err := mmap.ForEach(epochKey(epoch), &ev, func(i int64) error {
 		events = append(events, ev)
 		return nil
 	})
 	return events, err
 }
 
-func (st *State) clearCronEvents(store adt.Store, epoch abi.ChainEpoch) error {
-	mmap, err := adt.AsMultimap(store, st.CronEventQueue)
-	if err != nil {
-		return err
-	}
-
-	err = mmap.RemoveAll(epochKey(epoch))
-	if err != nil {
-		return errors.Wrapf(err, "failed to clear cron events")
-	}
-	st.CronEventQueue, err = mmap.Root()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (st *State) setClaim(s adt.Store, a addr.Address, claim *Claim) error {
+func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
 	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return err
+	if err := claims.Put(AddrKey(a), claim); err != nil {
+		return errors.Wrapf(err, "failed to put claim with address %s power %v", a, claim)
 	}
 
-	if err = hm.Put(AddrKey(a), claim); err != nil {
-		return errors.Wrapf(err, "failed to put claim with address %s power %v in store %s", a, claim, st.Claims)
-	}
-
-	st.Claims, err = hm.Root()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (st *State) deleteClaim(s adt.Store, a addr.Address) error {
-	hm, err := adt.AsMap(s, st.Claims)
-	if err != nil {
-		return err
-	}
-
-	if err = hm.Delete(AddrKey(a)); err != nil {
-		return errors.Wrapf(err, "failed to delete claim at address %s from store %s", a, st.Claims)
-	}
-	st.Claims, err = hm.Root()
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
