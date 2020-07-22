@@ -141,6 +141,10 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
+	if params.Value.Sign() < 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposed value must be non-negative, was %v", params.Value)
+	}
+
 	var txnID TxnID
 	var st State
 	var txn *Transaction
