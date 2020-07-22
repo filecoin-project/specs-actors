@@ -7,13 +7,14 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{142}
+var lengthBufState = []byte{143}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -63,6 +64,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	// t.ThisEpochPledgeCollateral (big.Int) (struct)
 	if err := t.ThisEpochPledgeCollateral.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochQAPowerSmooth (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochQAPowerSmooth.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -140,7 +146,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 14 {
+	if extra != 15 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -213,6 +219,27 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ThisEpochPledgeCollateral.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ThisEpochPledgeCollateral: %w", err)
+		}
+
+	}
+	// t.ThisEpochQAPowerSmooth (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochQAPowerSmooth = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochQAPowerSmooth.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmooth pointer: %w", err)
+			}
 		}
 
 	}

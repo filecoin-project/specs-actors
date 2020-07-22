@@ -13,6 +13,7 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type State struct {
@@ -29,6 +30,7 @@ type State struct {
 	ThisEpochRawBytePower     abi.StoragePower
 	ThisEpochQualityAdjPower  abi.StoragePower
 	ThisEpochPledgeCollateral abi.TokenAmount
+	ThisEpochQAPowerSmooth    *smoothing.FilterEstimate
 
 	MinerCount int64
 	// Number of miners having proven the minimum consensus power.
@@ -72,6 +74,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochRawBytePower:     abi.NewStoragePower(0),
 		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
+		ThisEpochQAPowerSmooth:    smoothing.InitialEstimate(),
 		FirstCronEpoch:            0,
 		CronEventQueue:            emptyMapCid,
 		Claims:                    emptyMapCid,

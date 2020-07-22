@@ -3,6 +3,7 @@ package reward
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 // A quantity of space * time (in byte-epochs) representing power committed to the network for some duration.
@@ -29,6 +30,10 @@ type State struct {
 	// The actual reward total paid out depends on the number of winners in any round.
 	// This value is recomputed every non-null epoch and used in the next non-null epoch.
 	ThisEpochReward abi.TokenAmount
+	// Smoothed ThisEpochReward
+	ThisEpochRewardSmoothed *smoothing.FilterEstimate
+	// Smoothed circulating supply
+	ThisEpochCirculatingSupplySmoothed *smoothing.FilterEstimate
 
 	// The baseline power the network is targeting at st.Epoch
 	ThisEpochBaselinePower abi.StoragePower
@@ -47,6 +52,9 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		ThisEpochReward:        big.Zero(),
 		ThisEpochBaselinePower: InitBaselinePower(),
 		Epoch:                  -1,
+
+		ThisEpochRewardSmoothed:            smoothing.InitialEstimate(),
+		ThisEpochCirculatingSupplySmoothed: smoothing.InitialEstimate(),
 	}
 
 	st.updateToNextEpochWithReward(currRealizedPower)

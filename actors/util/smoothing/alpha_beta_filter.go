@@ -19,7 +19,7 @@ var (
 
 	DefaultAlpha                   big.Int // Q.128 value of 0.000164
 	DefaultBeta                    big.Int //  Q.128 value of 0.000115
-	ExtrapolatedCumSumRatioEpsilon big.Int
+	ExtrapolatedCumSumRatioEpsilon big.Int // Q.128 value of 2^-50
 )
 
 func init() {
@@ -54,15 +54,17 @@ func init() {
 
 	// Alpha Beta Filter constants
 	constStrs := []string{
-		"55806300000000000000000000000000000",                        // DefaultAlpha
-		"39132500000000000000000000000000000",                        // DefaultBeta
-		"302231454903657293676544",                                   // Epsilon
-		"235865763225513294137944142764154484399.253711888205176846", // ln(2)
+		"55806300000000000000000000000000000",     // DefaultAlpha
+		"39132500000000000000000000000000000",     // DefaultBeta
+		"302231454903657293676544",                // Epsilon
+		"235865763225513294137944142764154484399", // ln(2)
 	}
 	constBigs := math.Parse(constStrs)
+	_ = math.Parse(constStrs)
 	DefaultAlpha = big.Int{Int: constBigs[0]}
 	DefaultBeta = big.Int{Int: constBigs[1]}
 	ExtrapolatedCumSumRatioEpsilon = big.Int{Int: constBigs[2]}
+	ln2 = big.Int{Int: constBigs[3]}
 }
 
 // Alpha Beta Filter "position" (value) and "velocity" (rate of change of value) estimates
@@ -90,7 +92,7 @@ type AlphaBetaFilter struct {
 	beta         big.Int // Q.128
 }
 
-func NewFilter(prevEstimate *FilterEstimate, alpha, beta big.Int) *AlphaBetaFilter {
+func LoadFilter(prevEstimate *FilterEstimate, alpha, beta big.Int) *AlphaBetaFilter {
 	return &AlphaBetaFilter{
 		prevEstimate: prevEstimate,
 		alpha:        alpha,

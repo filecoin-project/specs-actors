@@ -7,6 +7,7 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -54,6 +55,16 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	// t.ThisEpochReward (big.Int) (struct)
 	if err := t.ThisEpochReward.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochRewardSmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochCirculatingSupplySmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochCirculatingSupplySmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -151,6 +162,48 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ThisEpochReward.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ThisEpochReward: %w", err)
+		}
+
+	}
+	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
+			}
+		}
+
+	}
+	// t.ThisEpochCirculatingSupplySmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochCirculatingSupplySmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochCirculatingSupplySmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochCirculatingSupplySmoothed pointer: %w", err)
+			}
 		}
 
 	}
