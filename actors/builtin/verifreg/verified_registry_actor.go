@@ -50,10 +50,17 @@ type AddVerifierParams struct {
 }
 
 func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.EmptyValue {
+	if params.Allowance.LessThan(MinVerifiedDealSize) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verifier %v", params.Allowance, params.Address)
+	}
+
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
+	if params.Address == st.RootKey {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
+	}
 	rt.State().Transaction(&st, func() interface{} {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
@@ -96,12 +103,17 @@ type AddVerifiedClientParams struct {
 }
 
 func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
-	if params.Allowance.LessThanEqual(MinVerifiedDealSize) {
+	if params.Allowance.LessThan(MinVerifiedDealSize) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
 	}
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
+	rt.State().Readonly(&st)
+	if st.RootKey == params.Address {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as a verified client")
+	}
+
 	rt.State().Transaction(&st, func() interface{} {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
@@ -117,6 +129,13 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to get Verifier for %v", err)
 		} else if !found {
 			rt.Abortf(exitcode.ErrNotFound, "Invalid verifier %v", verifierAddr)
+		}
+
+		// Validate client to be added isn't a verifier
+		found, err = verifiers.Get(AddrKey(params.Address), nil)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier")
+		if found {
+			rt.Abortf(exitcode.ErrIllegalArgument, "verifier %v cannot be added as a verified client", params.Address)
 		}
 
 		// Compute new verifier cap and update.
@@ -228,12 +247,27 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 	}
 
 	var st State
+	rt.State().Readonly(&st)
+	if st.RootKey == params.Address {
+		rt.Abortf(exitcode.ErrIllegalArgument, "Cannot restore allowance for Rootkey")
+	}
+
 	rt.State().Transaction(&st, func() interface{} {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
+		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
+
+		// validate we are NOT attempting to do this for a verifier
+		found, err := verifiers.Get(AddrKey(params.Address), nil)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed tp get verifier")
+		if found {
+			rt.Abortf(exitcode.ErrIllegalArgument, "cannot restore allowance for a verifier")
+		}
+
 		var vcCap DataCap
-		found, err := verifiedClients.Get(AddrKey(params.Address), &vcCap)
+		found, err = verifiedClients.Get(AddrKey(params.Address), &vcCap)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to get verified client state for %v", params.Address)
 		}

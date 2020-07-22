@@ -67,6 +67,22 @@ func TestAddVerifier(t *testing.T) {
 
 	})
 
+	t.Run("fails when allowance less than MinVerifiedDealSize", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifier(rt, va, big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1)))
+		})
+	})
+
+	t.Run("fails when root is added as a verifier", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifier(rt, root, allowance)
+		})
+	})
+
 	t.Run("successfully add a verifier", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		ac.addNewVerifier(rt, va, allowance)
@@ -188,6 +204,19 @@ func TestAddVerifiedClient(t *testing.T) {
 		require.EqualValues(t, big.Zero(), ac.getVerifierCap(rt, verifierAddr))
 	})
 
+	t.Run("success when allowance is equal to MinVerifiedDealSize", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		c1 := ac.mkClientParams(clientAddr, verifreg.MinVerifiedDealSize)
+
+		// verifier only has enough balance for one client
+		verifier := ac.mkVerifierParams(verifierAddr, verifreg.MinVerifiedDealSize)
+		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
+
+		// add client works
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+	})
+
 	t.Run("fails when allowance is less than MinVerifiedDealSize", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		allowance := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
@@ -240,6 +269,31 @@ func TestAddVerifiedClient(t *testing.T) {
 		// add verified client with caller 2
 		verifier2 := ac.addNewVerifier(rt, verifierAddr, allowance)
 		rt.SetCaller(verifier2.Address, builtin.VerifiedRegistryActorCodeID)
+		rt.ExpectValidateCallerAny()
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.AddVerifiedClient, client)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails when root is added as a verified client", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		verifier := ac.addNewVerifier(rt, verifierAddr, allowance)
+		client := ac.mkClientParams(root, clientAllowance)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance)
+		})
+	})
+
+	t.Run("fails when verifier is added as a verified client", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		// add verified client with caller 1
+		verifier := ac.addNewVerifier(rt, verifierAddr, allowance)
+		client := ac.mkClientParams(verifierAddr, clientAllowance)
+		rt.SetCaller(verifier.Address, builtin.VerifiedRegistryActorCodeID)
 		rt.ExpectValidateCallerAny()
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.AddVerifiedClient, client)
@@ -502,6 +556,35 @@ func TestRestoreBytes(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
 		param := &verifreg.RestoreBytesParams{clientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.RestoreBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fails if attempt to restore bytes for root", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.RestoreBytesParams{root, verifreg.MinVerifiedDealSize}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.RestoreBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fails if attempt to restore bytes for verifier", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		// add a verifier
+		ac.addNewVerifier(rt, verifierAddr, vallow)
+
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.RestoreBytesParams{verifierAddr, verifreg.MinVerifiedDealSize}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.RestoreBytes, param)
