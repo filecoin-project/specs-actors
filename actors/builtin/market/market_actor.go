@@ -95,6 +95,10 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		ex, err := msm.escrowTable.SubtractWithMinimum(nominal, params.Amount, minBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract form escrow table")
 
+		// remove account if escrow balance is now zero
+		err, code = msm.removeAccountIfNoBalance(nominal)
+		builtin.RequireNoErr(rt, err, code, "failed to remove balance")
+
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 
@@ -481,6 +485,10 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 
+					// remove provider account if escrow balance is now zero.
+					err, code := msm.removeAccountIfNoBalance(deal.Provider)
+					builtin.RequireNoErr(rt, err, code, "failed to remove provider account")
+
 					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 
@@ -516,6 +524,14 @@ func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 
 					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], dealID)
 				}
+
+				// remove provider account if escrow balance is now zero
+				err, code := msm.removeAccountIfNoBalance(deal.Provider)
+				builtin.RequireNoErr(rt, err, code, "failed to remove provider account")
+
+				// remove client account if escrow balance is now zero
+				err, code = msm.removeAccountIfNoBalance(deal.Client)
+				builtin.RequireNoErr(rt, err, code, "failed to remove client account")
 
 				return nil
 			}); err != nil {
