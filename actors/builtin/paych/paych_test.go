@@ -146,7 +146,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		{desc: "fails if new send balance is negative", targetCode: builtin.AccountActorCodeID,
 			amt: -1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
-			expExitCode: exitcode.ErrIllegalState},
+			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if signature not valid", targetCode: builtin.AccountActorCodeID,
 			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: nil, verifySig: true,
