@@ -561,6 +561,24 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
+			"zero piece size": {
+				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.PieceSize = abi.PaddedPieceSize(0)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"piece size less than 128 bytes": {
+				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.PieceSize = abi.PaddedPieceSize(64)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"piece size is not a power of 2": {
+				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
+					d.PieceSize = abi.PaddedPieceSize(254)
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
 		}
 
 		for name, tc := range tcs {
@@ -699,6 +717,24 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			rt.Verify()
 		})
 	}
+
+	t.Run("fails if provider is not a storage miner actor", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+
+		// deal provider will be a Storage Miner Actor.
+		p2 := tutil.NewIDAddr(t, 505)
+		rt.SetAddressActorType(p2, builtin.StoragePowerActorCodeID)
+		deal := generateDealProposal(client, p2, abi.ChainEpoch(1), abi.ChainEpoch(5))
+
+		params := mkPublishStorageParams(deal)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.SetCaller(worker, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.PublishStorageDeals, params)
+		})
+
+		rt.Verify()
+	})
 }
 
 func TestActivateDeals(t *testing.T) {
