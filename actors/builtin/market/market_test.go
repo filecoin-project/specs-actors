@@ -218,6 +218,33 @@ func TestMarketActor(t *testing.T) {
 			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, client))
 		})
 
+		t.Run("fails if withdraw from provider funds is not initiated by the owner or worker", func(t *testing.T) {
+			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+			actor.addProviderFunds(rt, abi.NewTokenAmount(20), minerAddrs)
+
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
+
+			rt.ExpectValidateCallerAddr(owner, worker)
+			params := market.WithdrawBalanceParams{
+				ProviderOrClientAddress: provider,
+				Amount:                  abi.NewTokenAmount(1),
+			}
+
+			// caller is not owner or worker
+			rt.SetCaller(tutil.NewIDAddr(t, 909), builtin.AccountActorCodeID)
+			actor.expectProviderControlAddressesAndValidateCaller(rt, provider, owner, worker)
+
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+				rt.Call(actor.WithdrawBalance, &params)
+			})
+			rt.Verify()
+
+			// verify there was no withdrawal
+			rt.GetState(&st)
+			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
+		})
+
 		t.Run("withdraws from provider escrow funds and sends to owner", func(t *testing.T) {
 			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
