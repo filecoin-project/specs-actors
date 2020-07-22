@@ -134,12 +134,18 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
-		err = st.setClaim(store, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0)})
+		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
+		err = setClaim(claims, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0)})
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
 		}
 		st.MinerCount += 1
+
+		st.Claims, err = claims.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
+
 		return nil
 	})
 	return &CreateMinerReturn{
@@ -160,8 +166,15 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 	minerAddr := rt.Message().Caller()
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.AddToClaim(adt.AsStore(rt), minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
+		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
+		err = st.addToClaim(claims, minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
+
+		st.Claims, err = claims.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
+
 		return nil
 	})
 	return nil
@@ -187,10 +200,15 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		err := st.appendCronEvent(adt.AsStore(rt), params.EventEpoch, &minerEvent)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to enroll cron event: %v", err)
-		}
+		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
+
+		err = st.appendCronEvent(events, params.EventEpoch, &minerEvent)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to enroll cron event")
+
+		st.CronEventQueue, err = events.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush cron events")
+
 		return nil
 	})
 	return nil
@@ -250,7 +268,10 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		claim, powerOk, err := st.GetClaim(adt.AsStore(rt), minerAddr)
+		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
+		claim, powerOk, err := getClaim(claims, minerAddr)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
 		}
@@ -259,10 +280,14 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 		}
 		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-		err = st.AddToClaim(adt.AsStore(rt), minerAddr, claim.QualityAdjPower.Neg(), claim.RawBytePower.Neg())
+		err = st.addToClaim(claims, minerAddr, claim.QualityAdjPower.Neg(), claim.RawBytePower.Neg())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not add to claim for %s after loading existing claim for this address", minerAddr)
 
 		st.addPledgeTotal(pledgeAmount.Neg())
+
+		st.Claims, err = claims.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
+
 		return nil
 	})
 
@@ -435,10 +460,11 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 	var cronEvents []CronEvent
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
+		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
 		for epoch := st.FirstCronEpoch; epoch <= rtEpoch; epoch++ {
-			epochEvents, err := st.loadCronEvents(store, epoch)
+			epochEvents, err := loadCronEvents(events, epoch)
 			if err != nil {
 				return errors.Wrapf(err, "failed to load cron events at %v", epoch)
 			}
@@ -446,7 +472,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 			cronEvents = append(cronEvents, epochEvents...)
 
 			if len(epochEvents) > 0 {
-				err = st.clearCronEvents(store, epoch)
+				err = events.RemoveAll(epochKey(epoch))
 				if err != nil {
 					return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
 				}
@@ -454,6 +480,10 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		}
 
 		st.FirstCronEpoch = rtEpoch + 1
+
+		st.CronEventQueue, err = events.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush events")
+
 		return nil
 	})
 	failedMinerCrons := make([]addr.Address, 0)
@@ -474,10 +504,12 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		}
 	}
 	rt.State().Transaction(&st, func() interface{} {
-		store := adt.AsStore(rt)
+		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
 		// Remove power and leave miner frozen
 		for _, minerAddr := range failedMinerCrons {
-			claim, found, err := st.GetClaim(store, minerAddr)
+			claim, found, err := getClaim(claims, minerAddr)
 			if err != nil {
 				rt.Log(vmr.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 				continue
@@ -488,12 +520,16 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 			}
 
 			// zero out miner power
-			err = st.AddToClaim(store, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
+			err = st.addToClaim(claims, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
 			if err != nil {
 				rt.Log(vmr.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
 				continue
 			}
 		}
+
+		st.Claims, err = claims.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
+
 		return nil
 	})
 	return nil
@@ -503,13 +539,20 @@ func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
 	var st State
 	var err error
 	rt.State().Transaction(&st, func() interface{} {
-		err = st.deleteClaim(adt.AsStore(rt), miner)
+		claims, err2 := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err2, exitcode.ErrIllegalState, "failed to load claims")
+
+		err = claims.Delete(AddrKey(miner))
 		if err != nil {
 			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
 			return nil
 		}
 
 		st.MinerCount -= 1
+
+		st.Claims, err = claims.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
+
 		return nil
 	})
 	return err

@@ -16,6 +16,8 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
+	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	mineract "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -124,15 +126,11 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// Verify claims in state.
 		var st power.State
 		rt.GetState(&st)
-		claim1, found, err := st.GetClaim(rt.AdtStore(), miner1)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim1 := actor.getClaim(rt, miner1)
 		require.Equal(t, smallPowerUnit, claim1.RawBytePower)
 		require.Equal(t, mul(smallPowerUnit, 2), claim1.QualityAdjPower)
 
-		claim2, found, err := st.GetClaim(rt.AdtStore(), miner2)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim2 := actor.getClaim(rt, miner2)
 		require.Equal(t, smallPowerUnit, claim2.RawBytePower)
 		require.Equal(t, smallPowerUnit, claim2.QualityAdjPower)
 
@@ -143,9 +141,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectTotalPledgeEager(rt, abi.NewTokenAmount(9e5))
 
 		rt.GetState(&st)
-		claim2, found, err = st.GetClaim(rt.AdtStore(), miner2)
-		require.NoError(t, err)
-		require.True(t, found)
+		claim2 = actor.getClaim(rt, miner2)
 		require.Equal(t, big.Zero(), claim2.RawBytePower)
 		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
 	})
@@ -410,8 +406,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 	t.Run("registers porep and charges gas", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		commR := tutil.MakeCID("commR")
-		commD := tutil.MakeCID("commD")
+		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
+		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
 		sealInfo := &abi.SealVerifyInfo{
 			SealedCID:   commR,
 			UnsealedCID: commD,
@@ -440,8 +436,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 
 		sealInfo := func(i int) *abi.SealVerifyInfo {
 			var sealInfo abi.SealVerifyInfo
-			sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i))
-			sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i))
+			sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i), &mineract.SealedCIDPrefix)
+			sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i), &market.PieceCIDPrefix)
 			return &sealInfo
 		}
 
@@ -505,7 +501,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 	assert.Equal(h.t, abi.NewStoragePower(0), st.TotalQABytesCommitted)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.TotalPledgeCollateral)
 	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochRawBytePower)
-	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochQualityAdjPower)	
+	assert.Equal(h.t, abi.NewStoragePower(0), st.ThisEpochQualityAdjPower)
 	assert.Equal(h.t, abi.NewTokenAmount(0), st.ThisEpochPledgeCollateral)
 	assert.Equal(h.t, abi.ChainEpoch(0), st.FirstCronEpoch)
 	assert.Equal(h.t, int64(0), st.MinerCount)
@@ -543,6 +539,21 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, value, createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
 	rt.Verify()
+}
+
+func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim {
+	var st power.State
+	rt.GetState(&st)
+
+	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	require.NoError(h.t, err)
+
+	var out power.Claim
+	found, err := claims.Get(power.AddrKey(a), &out)
+	require.NoError(h.t, err)
+	require.True(h.t, found)
+
+	return &out
 }
 
 func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner addr.Address) {
@@ -595,7 +606,11 @@ func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Addre
 
 	// verify that miner claim is erased from state
 	st := getState(rt)
-	_, found, err := st.GetClaim(rt.AdtStore(), minerAddr)
+	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	require.NoError(h.t, err)
+
+	var out power.Claim
+	found, err := claims.Get(power.AddrKey(minerAddr), &out)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 }

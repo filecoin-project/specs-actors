@@ -230,8 +230,10 @@ type SealVerifyInfo struct {
 	Randomness            SealRandomness
 	InteractiveRandomness InteractiveSealRandomness
 	Proof                 []byte
-	SealedCID             cid.Cid // CommR
-	UnsealedCID           cid.Cid // CommD
+
+	// Safe because we get those from the miner actor
+	SealedCID   cid.Cid `checked:"true"` // CommR
+	UnsealedCID cid.Cid `checked:"true"` // CommD
 }
 
 ///
