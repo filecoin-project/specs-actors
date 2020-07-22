@@ -15,6 +15,10 @@ import (
 // PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
 // PARAM_FINISH
 var InitialPledgeFactor = big.NewInt(20)
+
+// PARAM_SPEC
+// Fraction of available supply that the AdditionalIP targets to lock.
+// PARAM_FINISH
 var LockTargetFactorNum = big.NewInt(3)
 var LockTargetFactorDenom = big.NewInt(10)
 
