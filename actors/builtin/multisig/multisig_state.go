@@ -2,13 +2,12 @@ package multisig
 
 import (
 	address "github.com/filecoin-project/go-address"
-	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
-	xerrors "golang.org/x/xerrors"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	cid "github.com/ipfs/go-cid"
+	errors "github.com/pkg/errors"
+	"golang.org/x/xerrors"
 )
 
 type State struct {
@@ -55,57 +54,15 @@ func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.
 	return nil
 }
 
-func (as *State) getPendingTransaction(s adt.Store, txnID TxnID) (Transaction, error) {
-	hm, err := adt.AsMap(s, as.PendingTxns)
-	if err != nil {
-		return Transaction{}, err
-	}
-
+func getPendingTransaction(ptx *adt.Map, txnID TxnID) (Transaction, error) {
 	var out Transaction
-	found, err := hm.Get(txnID, &out)
+	found, err := ptx.Get(txnID, &out)
 	if err != nil {
 		return Transaction{}, errors.Wrapf(err, "failed to read transaction")
 	}
 	if !found {
-		return Transaction{}, errors.Errorf("failed to find transaction %v in HAMT %s", txnID, as.PendingTxns)
+		return Transaction{}, xerrors.Errorf("failed to find transaction %v", txnID)
 	}
 
 	return out, nil
-}
-
-func (st *State) mutatePendingTransactions(s adt.Store, f func(pt *adt.Map) error) error {
-	hm, err := adt.AsMap(s, st.PendingTxns)
-	if err != nil {
-		return xerrors.Errorf("Failed to load pending txns map: %w", err)
-	}
-
-	if err := f(hm); err != nil {
-		return err
-	}
-
-	c, err := hm.Root()
-	if err != nil {
-		return xerrors.Errorf("failed to flush pending txns map: %w", err)
-	}
-
-	st.PendingTxns = c
-	return nil
-}
-
-func (as *State) putPendingTransaction(s adt.Store, txnID TxnID, txn *Transaction) error {
-	return as.mutatePendingTransactions(s, func(hm *adt.Map) error {
-		if err := hm.Put(txnID, txn); err != nil {
-			return errors.Wrapf(err, "failed to write transaction")
-		}
-		return nil
-	})
-}
-
-func (as *State) deletePendingTransaction(s adt.Store, txnID TxnID) error {
-	return as.mutatePendingTransactions(s, func(hm *adt.Map) error {
-		if err := hm.Delete(txnID); err != nil {
-			return errors.Wrapf(err, "failed to delete transaction")
-		}
-		return nil
-	})
 }
