@@ -148,9 +148,9 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to update new verifier cap (%d) for %v", newVerifierCap, verifierAddr)
 		}
 
-		// Write-once entry and does not get changed for simplicity.
-		// If parties neeed more allowance, they can get another VerifiedClient account.
 		// This is a one-time, upfront allocation.
+		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
+		// If parties need more allowance, it be added via a call to RestoreBytes.
 		// Returns error if VerifiedClient already exists.
 		found, err = verifiedClients.Get(AddrKey(params.Address), &verifierCap)
 		if err != nil {
