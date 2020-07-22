@@ -992,44 +992,28 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
+		// We're only reading the sectors, so there's no need to save this back.
+		// However, we still want to avoid re-loading this array per-partition.
+		sectors, err := LoadSectors(store, st.Sectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+
 		for _, dlIdx := range deadlinesToLoad {
+			decls := declsByDeadline[dlIdx]
+
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			partitions, err := deadline.PartitionsArray(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
-
-			for _, decl := range declsByDeadline[dlIdx] {
-				key := PartitionKey{dlIdx, decl.Partition}
-				var partition Partition
-				found, err := partitions.Get(decl.Partition, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %v", key)
-				if !found {
-					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
-				}
-
-				sectors, err := st.LoadSectorInfos(store, decl.Sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
-
-				// Note: we could inspect each sector's expiration epoch here and kindly ignore any that
-				// have already expired but just not been processed yet.
-
-				// Remove  sectors from partition.
-				// The sectors infos are not mutated; their on-time expiration epoch remains in state until defrag.
-				pwr, err := partition.TerminateSectors(store, currEpoch, sectors, info.SectorSize, quant)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
-
-				err = partitions.Set(decl.Partition, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store updated partition", key)
-
-				// Record that partition now has pending early terminations.
-				deadline.EarlyTerminations.Set(decl.Partition)
-
-				powerDelta = powerDelta.Sub(pwr)
+			byPartition := make(map[uint64][]*SectorOnChainInfo, len(decls))
+			for _, decl := range decls {
+				sectors, err := sectors.Load(decl.Sectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
+				byPartition[decl.Partition] = append(byPartition[decl.Partition], sectors...)
 			}
 
-			deadline.Partitions, err = partitions.Root()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
+			removedPower, err := deadline.TerminateSectors(store, currEpoch, byPartition, info.SectorSize, quant)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to terminate sectors in deadline %d", dlIdx)
+
+			powerDelta = powerDelta.Sub(removedPower)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", dlIdx)
