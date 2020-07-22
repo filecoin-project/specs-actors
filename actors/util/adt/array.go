@@ -81,8 +81,10 @@ func (a *Array) BatchDelete(ix []uint64) error {
 func (a *Array) ForEach(out runtime.CBORUnmarshaler, fn func(i int64) error) error {
 	return a.root.ForEach(a.store.Context(), func(k uint64, val *cbg.Deferred) error {
 		if out != nil {
-			// Why doesn't amt.ForEach() just return the value as bytes?
-			if err := out.UnmarshalCBOR(bytes.NewReader(val.Raw)); err != nil {
+			if deferred, ok := out.(*cbg.Deferred); ok {
+				// fast-path deferred -> deferred to avoid re-decoding.
+				*deferred = *val
+			} else if err := out.UnmarshalCBOR(bytes.NewReader(val.Raw)); err != nil {
 				return err
 			}
 		}
