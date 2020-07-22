@@ -172,6 +172,10 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		rt.Abortf(exitcode.ErrIllegalArgument, "this voucher has expired!")
 	}
 
+	if sv.Amount.Sign() < 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher amount must be non-negative, was %v", sv.Amount)
+	}
+
 	if len(sv.SecretPreimage) > 0 {
 		hashedSecret := rt.Syscalls().HashBlake2b(params.Secret)
 		if !bytes.Equal(hashedSecret[:], sv.SecretPreimage) {
