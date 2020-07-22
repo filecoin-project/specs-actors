@@ -126,9 +126,9 @@ const FaultMaxAge = WPoStProvingPeriod * 14
 const WorkerKeyChangeDelay = ChainFinality
 
 // PARAM_SPEC
-// Maximum number of epochs past the current epoch a sector may be set to expire.
-// The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
-// and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
+// A sector extension can be a maximum number of epochs past the current epoch.
+// A sector may be extended multiple times, however, the maximum extension will be the minimum of
+// CurrEpoch + MaximumSectorExpirationExtension and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
 const MaxSectorExpirationExtension = builtin.EpochsInYear
 
 // PARAM_SPEC
@@ -136,7 +136,6 @@ const MaxSectorExpirationExtension = builtin.EpochsInYear
 // The maximum number of deals is the sector size divided by this number (2^27)
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
-
 
 // PARAM_SPEC
 // Quality multiplier for CC sectors
