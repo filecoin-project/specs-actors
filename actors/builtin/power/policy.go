@@ -19,5 +19,7 @@ const ConsensusMinerMinMiners = 4
 // Future: we can consensus fault fee and sybil generation with crypto econ mechanic and we can mantain the target soundness by increasing the challenges for small miners.
 var ConsensusMinerMinPower = abi.NewStoragePower(100 << 40) // PARAM_FINISH
 
+// PARAM_SPEC
 // Maximum number of prove commits a miner can submit in one epoch
+// Motivation: This aims at limiting the number of operations on chain per miner.
 const MaxMinerProveCommitsPerEpoch = 8000
