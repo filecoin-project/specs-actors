@@ -22,15 +22,15 @@ func TestExports(t *testing.T) {
 func TestConstruction(t *testing.T) {
 	receiver := tutil.NewIDAddr(t, 100)
 
-	runtimeSetup := func() *mock.Runtime {
+	runtimeSetup := func() *mock.RuntimeBuilder {
 		builder := mock.NewBuilder(context.Background(), receiver).
 			WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
-		rt := builder.Build(t)
-		return rt
+
+		return builder
 	}
 
 	t.Run("successful construction with root ID address", func(t *testing.T) {
-		rt := runtimeSetup()
+		rt := runtimeSetup().Build(t)
 		actor := verifreg.Actor{}
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
@@ -53,7 +53,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("non-ID address root is resolved to an ID address for construction", func(t *testing.T) {
-		rt := runtimeSetup()
+		rt := runtimeSetup().Build(t)
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		actor := verifreg.Actor{}
 
@@ -77,7 +77,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fails if root cannot be resolved to an ID address", func(t *testing.T) {
-		rt := runtimeSetup()
+		rt := runtimeSetup().Build(t)
 		actor := verifreg.Actor{}
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
