@@ -2,6 +2,7 @@ package miner
 
 import (
 	"errors"
+	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
@@ -443,4 +444,59 @@ func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, 
 	}
 
 	return popped, modified, nil
+}
+
+func (dl *Deadline) TerminateSectors(
+	store adt.Store,
+	epoch abi.ChainEpoch,
+	partitionSectors map[uint64][]*SectorOnChainInfo,
+	ssize abi.SectorSize,
+	quant QuantSpec,
+) (removedPower PowerPair, err error) {
+
+	partitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to load partitions: %w", err)
+	}
+
+	partitionIdxs := make([]uint64, 0, len(partitionSectors))
+	for partIdx := range partitionSectors { //nolint:nomaprange
+		partitionIdxs = append(partitionIdxs, partIdx)
+	}
+	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
+
+	removedPower = NewPowerPairZero()
+
+	var partition Partition
+	for _, partIdx := range partitionIdxs {
+		partSectors := partitionSectors[partIdx]
+		if found, err := partitions.Get(partIdx, &partition); err != nil {
+			return NewPowerPairZero(), xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
+		} else if !found {
+			return NewPowerPairZero(), xerrors.Errorf("failed to find partition %d", partIdx)
+		}
+		pwr, err := partition.TerminateSectors(store, epoch, partSectors, ssize, quant)
+		if err != nil {
+			return NewPowerPairZero(), xerrors.Errorf("failed to terminate sectors in partition %d: %w", partIdx, err)
+		}
+
+		err = partitions.Set(partIdx, &partition)
+		if err != nil {
+			return NewPowerPairZero(), xerrors.Errorf("failed to store updated partition %d: %w", partIdx, err)
+		}
+
+		// Record that partition now has pending early terminations.
+		dl.EarlyTerminations.Set(partIdx)
+
+		// update power
+		removedPower = removedPower.Add(pwr)
+	}
+
+	// save partitions back
+	dl.Partitions, err = partitions.Root()
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to persist partitions: %w", err)
+	}
+
+	return removedPower, nil
 }
