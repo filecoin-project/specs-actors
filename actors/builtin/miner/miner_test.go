@@ -1916,7 +1916,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		err := rt.Receiver().MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
-		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
+		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
 	}
 	{
 		actorId, err := addr.IDFromAddress(h.receiver)
