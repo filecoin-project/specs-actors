@@ -518,6 +518,7 @@ func checkPartitionInvariants(t *testing.T,
 		seenSectors := make(map[abi.SectorNumber]bool)
 
 		expQ, err := miner.LoadExpirationQueue(store, partition.ExpirationsEpochs, quant)
+		require.NoError(t, err)
 
 		var exp miner.ExpirationSet
 		err = expQ.ForEach(&exp, func(epoch int64) error {
@@ -581,14 +582,14 @@ func checkPartitionInvariants(t *testing.T,
 		seenSectors := make(map[uint64]bool)
 
 		earlyQ, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, quant)
+		require.NoError(t, err)
 
 		err = earlyQ.ForEach(func(_ abi.ChainEpoch, bf *bitfield.BitField) error {
-			bf.ForEach(func(i uint64) error {
+			return bf.ForEach(func(i uint64) error {
 				assert.False(t, seenSectors[i], "sector already seen")
 				seenSectors[i] = true
 				return nil
 			})
-			return nil
 		})
 		require.NoError(t, err)
 
