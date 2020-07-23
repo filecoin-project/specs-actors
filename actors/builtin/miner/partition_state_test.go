@@ -23,7 +23,7 @@ func TestPartitions(t *testing.T) {
 		testSector(11, 5, 54, 64, 1004),
 		testSector(13, 6, 55, 65, 1005),
 	}
-	sectorSize := abi.SectorSize(32 * 1 << 30)
+	sectorSize := abi.SectorSize(32 << 30)
 
 	t.Run("adds sectors and reports sector stats", func(t *testing.T) {
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
