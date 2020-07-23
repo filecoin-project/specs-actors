@@ -358,7 +358,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufThisEpochRewardReturn = []byte{131}
+var lengthBufThisEpochRewardReturn = []byte{132}
 
 func (t *ThisEpochRewardReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -383,6 +383,11 @@ func (t *ThisEpochRewardReturn) MarshalCBOR(w io.Writer) error {
 	if err := t.ThisEpochBaselinePower.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.ThisEpochCirculatingSupplySmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochCirculatingSupplySmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -400,7 +405,7 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -440,6 +445,27 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ThisEpochBaselinePower.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ThisEpochBaselinePower: %w", err)
+		}
+
+	}
+	// t.ThisEpochCirculatingSupplySmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochCirculatingSupplySmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochCirculatingSupplySmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochCirculatingSupplySmoothed pointer: %w", err)
+			}
 		}
 
 	}

@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 // IP = IPBase(precommit time) + AdditionalIP(precommit time)
@@ -28,40 +29,42 @@ var UndeclaredFaultFactorDenom = big.NewInt(1)
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
-func ExpectedDayRewardForPower(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	if networkQAPower.IsZero() {
-		return epochTargetReward
+func ExpectedDayRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	networkQAPowerSmoothed := networkQAPowerEstimate.Estimate()
+	if networkQAPowerSmoothed.IsZero() {
+		return rewardEstimate.Estimate()
 	}
-	expectedRewardForProvingPeriod := big.Mul(big.NewInt(builtin.EpochsInDay), epochTargetReward)
-	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), networkQAPower)
+	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(abi.ChainEpoch(builtin.EpochsInDay), 0, rewardEstimate, networkQAPowerEstimate)
+	return big.Mul(qaSectorPower, expectedRewardForProvingPeriod)
+	//	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), networkQAPower)
 }
 
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
 // it has been previously detected by the network.
 // FF(t) = DeclaredFaultFactor * BR(t)
-func PledgePenaltyForDeclaredFault(epochReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForPower(epochReward, networkQAPower, qaSectorPower)),
+		big.Mul(DeclaredFaultFactorNum, ExpectedDayRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower)),
 		DeclaredFaultFactorDenom)
 }
 
 // This is the SP(t) penalty for a newly faulty sector that has not been declared.
 // SP(t) = UndeclaredFaultFactor * BR(t)
-func PledgePenaltyForUndeclaredFault(epochReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Div(
-		big.Mul(UndeclaredFaultFactorNum, ExpectedDayRewardForPower(epochReward, networkQAPower, qaSectorPower)),
+		big.Mul(UndeclaredFaultFactorNum, ExpectedDayRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower)),
 		UndeclaredFaultFactorDenom)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
-func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.ChainEpoch, epochTargetReward abi.TokenAmount, networkQAPower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	// max(SP(t), IP + BR(StartEpoch)*min(SectorAgeInDays, 180))
 	// where BR(StartEpoch)=IP/InitialPledgeFactor
 	// and sectorAgeInDays = sectorAge / EpochsInDay
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
 	return big.Max(
-		PledgePenaltyForUndeclaredFault(epochTargetReward, networkQAPower, qaSectorPower),
+		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
 		big.Add(
 			initialPledge,
 			big.Div(
@@ -71,19 +74,19 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 
 // Computes the PreCommit Deposit given sector qa weight and current network conditions.
 // PreCommit Deposit = 20 * BR(t)
-func PreCommitDepositForPower(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return big.Mul(PreCommitDepositFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower))
+func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return big.Mul(PreCommitDepositFactor, ExpectedDayRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower))
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
 // total power, total pledge commitment, epoch block reward, and circulating token supply.
 // In plain language, the pledge requirement is a multiple of the block reward expected to be earned by the
 // newly-committed power, holding the per-epoch block reward constant (though in reality it will change over time).
-func InitialPledgeForPower(qaPower abi.StoragePower, networkQAPower, baselinePower abi.StoragePower, networkTotalPledge abi.TokenAmount, epochTargetReward abi.TokenAmount, networkCirculatingSupply abi.TokenAmount) abi.TokenAmount {
+func InitialPledgeForPower(qaPower abi.StoragePower, baselinePower abi.StoragePower, networkTotalPledge abi.TokenAmount, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, networkCirculatingSupplySmoothed abi.TokenAmount) abi.TokenAmount {
+	networkQAPower := networkQAPowerEstimate.Estimate()
+	ipBase := big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(rewardEstimate, networkQAPowerEstimate, qaPower))
 
-	ipBase := big.Mul(InitialPledgeFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaPower))
-
-	lockTargetNum := big.Mul(LockTargetFactorNum, networkCirculatingSupply)
+	lockTargetNum := big.Mul(LockTargetFactorNum, networkCirculatingSupplySmoothed)
 	lockTargetDenom := LockTargetFactorDenom
 	pledgeShareNum := qaPower
 	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
