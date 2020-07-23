@@ -25,8 +25,10 @@ func TestPartitions(t *testing.T) {
 	}
 	sectorSize := abi.SectorSize(32 << 30)
 
+	builder := mock.NewBuilder(context.Background(), address.Undef)
+
 	t.Run("adds sectors and reports sector stats", func(t *testing.T) {
-		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		rt := builder.Build(t)
 		partition := emptyPartition(t, rt)
 
 		quantSpec := miner.NewQuantSpec(4, 1)
@@ -178,7 +180,6 @@ func TestPartitions(t *testing.T) {
 		_, err := partition.AddSectors(adt.AsStore(rt), sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		// recovered power should equal power of recovery sectors
 		sectorsToMove := selectSectors(t, sectors, bf(2, 4, 6))
 		err = partition.RescheduleExpirations(adt.AsStore(rt), 18, sectorsToMove, sectorSize, quantSpec)
 		require.NoError(t, err)

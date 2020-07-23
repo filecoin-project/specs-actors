@@ -344,12 +344,12 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 		return NewPowerPairZero(), xerrors.Errorf("failed to add terminated sectors: %w", err)
 	}
 
-	powerDelta := removed.ActivePower.Add(removed.FaultyPower)
-	p.LivePower = p.LivePower.Sub(powerDelta)
+	powerRemoved := removed.ActivePower.Add(removed.FaultyPower)
+	p.LivePower = p.LivePower.Sub(powerRemoved)
 	p.FaultyPower = p.FaultyPower.Sub(removed.FaultyPower)
 	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
 
-	return powerDelta, nil
+	return powerRemoved, nil
 }
 
 // PopExpiredSectors traverses the expiration queue up to and including some epoch, and marks all expiring
