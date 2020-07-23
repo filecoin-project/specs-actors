@@ -401,7 +401,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 	if p.Faults, err = bitfield.SubtractBitField(p.Faults, expiredSectors); err != nil {
 		return nil, err
 	}
-	p.LivePower = p.LivePower.Sub(popped.ActivePower)
+	p.LivePower = p.LivePower.Sub(popped.ActivePower.Add(popped.FaultyPower))
 	p.FaultyPower = p.FaultyPower.Sub(popped.FaultyPower)
 
 	// Record the epoch of any sectors expiring early, for termination fee calculation later.
