@@ -104,3 +104,16 @@ func computeBaselineSupply(theta big.Int) big.Int {
 
 	return big.Mul(BaselineTotal, oneSub) // Q.0 * Q.128 => Q.128
 }
+
+// SlowConvenientBaselineForEpoch computes baseline power for use in epoch t
+// by calculating the value of ThisEpochBaselinePower that shows up in block at t - 1
+// It multiplies ~t times so it should not be used in actor code directly.  It is exported as
+// convenience for consuming node.
+func SlowConvenientBaselineForEpoch(targetEpoch abi.ChainEpoch) abi.StoragePower {
+	baseline := InitBaselinePower()
+	baseline = BaselinePowerFromPrev(baseline) // value in genesis block (for epoch 1)
+	for i := abi.ChainEpoch(1); i < targetEpoch; i++ {
+		baseline = BaselinePowerFromPrev(baseline) // value in block i (for epoch i+1)
+	}
+	return baseline
+}
