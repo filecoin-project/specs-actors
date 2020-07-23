@@ -13,7 +13,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{134}
+var lengthBufState = []byte{135}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -45,6 +45,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.EffectiveNetworkTime-1)); err != nil {
 			return err
 		}
+	}
+
+	// t.EffectiveBaselinePower (big.Int) (struct)
+	if err := t.EffectiveBaselinePower.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.ThisEpochReward (big.Int) (struct)
@@ -84,7 +89,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 6 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -130,6 +135,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.EffectiveNetworkTime = abi.ChainEpoch(extraI)
+	}
+	// t.EffectiveBaselinePower (big.Int) (struct)
+
+	{
+
+		if err := t.EffectiveBaselinePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.EffectiveBaselinePower: %w", err)
+		}
+
 	}
 	// t.ThisEpochReward (big.Int) (struct)
 
