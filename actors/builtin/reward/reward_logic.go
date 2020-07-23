@@ -5,9 +5,15 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
+// Round(e^(ln[1 + 200%] / epochsInYear) * 2^128
+// Q.128 formatted number such that f(epoch) = baseExponent^epoch grows 200% in one year of epochs
+// Calculation here: https://www.wolframalpha.com/input/?i=Round%5BExp%5BLog%5B1%2B200%25%5D%2F%28%281+tropical+year%29%2F%2825+seconds%29%29%5D*2%5E128%5D
 const BaselineExponentString = "340282663082994238536867392845056089438"
 
 // Baseline function = BaselineInitialValue * (BaselineExponent) ^(t), t in epochs
+// Note: we compute exponential iteratively using recurrence e(n) = e * e(n-1).
+// Caller of baseline power function is responsible for keeping track of intermediate,
+// state e(n-1), the baseline power function just does the next multiplication
 var BaselineExponent big.Int     // Q.128
 var BaselineInitialValue big.Int // Q.0
 
@@ -19,9 +25,9 @@ func init() {
 // Initialize baseline power for epoch -1 so that baseline power at epoch 0 is
 // BaselineInitialValue.
 func InitBaselinePower() abi.StoragePower {
-	baselineInitialValue256 := big.Lsh(big.Lsh(BaselineInitialValue, precision), precision) // Q.0 => Q.256
-	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent)                // Q.256 / Q.128 => Q.128
-	return big.Rsh(baselineAtMinusOne, precision)                                           // Q.128 => Q.0
+	baselineInitialValue256 := big.Lsh(BaselineInitialValue, 2*precision)    // Q.0 => Q.256
+	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent) // Q.256 / Q.128 => Q.128
+	return big.Rsh(baselineAtMinusOne, precision)                            // Q.128 => Q.0
 }
 
 // Compute BaselinePower(t) from BaselinePower(t-1) with an additional multiplication
