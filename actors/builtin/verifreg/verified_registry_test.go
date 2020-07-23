@@ -20,32 +20,74 @@ func TestExports(t *testing.T) {
 }
 
 func TestConstruction(t *testing.T) {
-	actor := verifreg.Actor{}
 	receiver := tutil.NewIDAddr(t, 100)
-	builder := mock.NewBuilder(context.Background(), receiver).
-		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
 
-	rt := builder.Build(t)
+	runtimeSetup := func() *mock.RuntimeBuilder {
+		builder := mock.NewBuilder(context.Background(), receiver).
+			WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
 
-	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+		return builder
+	}
 
-	raddr := tutil.NewIDAddr(t, 101)
+	t.Run("successful construction with root ID address", func(t *testing.T) {
+		rt := runtimeSetup().Build(t)
+		actor := verifreg.Actor{}
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
-	ret := rt.Call(actor.Constructor, &raddr).(*adt.EmptyValue)
-	require.Nil(t, ret)
-	rt.Verify()
+		raddr := tutil.NewIDAddr(t, 101)
+		ret := rt.Call(actor.Constructor, &raddr).(*adt.EmptyValue)
+		require.Nil(t, ret)
+		rt.Verify()
 
-	store := adt.AsStore(rt)
+		store := adt.AsStore(rt)
 
-	emptyMap, err := adt.MakeEmptyMap(store).Root()
-	require.NoError(t, err)
+		emptyMap, err := adt.MakeEmptyMap(store).Root()
+		require.NoError(t, err)
 
-	var state verifreg.State
-	rt.GetState(&state)
+		var state verifreg.State
+		rt.GetState(&state)
 
-	require.Equal(t, emptyMap, state.VerifiedClients)
-	require.Equal(t, emptyMap, state.Verifiers)
-	require.Equal(t, raddr, state.RootKey)
+		require.Equal(t, emptyMap, state.VerifiedClients)
+		require.Equal(t, emptyMap, state.Verifiers)
+		require.Equal(t, raddr, state.RootKey)
+	})
+
+	t.Run("non-ID address root is resolved to an ID address for construction", func(t *testing.T) {
+		rt := runtimeSetup().Build(t)
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+		actor := verifreg.Actor{}
+
+		raddr := tutil.NewBLSAddr(t, 101)
+		rootIdAddr := tutil.NewIDAddr(t, 201)
+		rt.AddIDAddress(raddr, rootIdAddr)
+
+		ret := rt.Call(actor.Constructor, &raddr).(*adt.EmptyValue)
+		require.Nil(t, ret)
+		rt.Verify()
+
+		store := adt.AsStore(rt)
+		emptyMap, err := adt.MakeEmptyMap(store).Root()
+		require.NoError(t, err)
+
+		var state verifreg.State
+		rt.GetState(&state)
+		require.Equal(t, emptyMap, state.VerifiedClients)
+		require.Equal(t, emptyMap, state.Verifiers)
+		require.Equal(t, rootIdAddr, state.RootKey)
+	})
+
+	t.Run("fails if root cannot be resolved to an ID address", func(t *testing.T) {
+		rt := runtimeSetup().Build(t)
+		actor := verifreg.Actor{}
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+
+		raddr := tutil.NewBLSAddr(t, 101)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &raddr)
+		})
+		rt.Verify()
+	})
 }
 
 func TestAddVerifier(t *testing.T) {
@@ -65,6 +107,37 @@ func TestAddVerifier(t *testing.T) {
 		})
 		rt.Verify()
 
+	})
+
+	t.Run("fails when allowance less than MinVerifiedDealSize", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifier(rt, va, big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1)))
+		})
+	})
+
+	t.Run("fails when root is added as a verifier", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifier(rt, root, allowance)
+		})
+	})
+
+	t.Run("fails when verified client is added as a verifier", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		// add a verified client
+		verifierAddr := tutil.NewIDAddr(t, 601)
+		clientAddr := tutil.NewIDAddr(t, 602)
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, clientAddr, allowance, allowance)
+
+		// now attempt to add verified client as a verifier -> should fail
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifier(rt, clientAddr, allowance)
+		})
+		rt.Verify()
 	})
 
 	t.Run("successfully add a verifier", func(t *testing.T) {
@@ -188,6 +261,19 @@ func TestAddVerifiedClient(t *testing.T) {
 		require.EqualValues(t, big.Zero(), ac.getVerifierCap(rt, verifierAddr))
 	})
 
+	t.Run("success when allowance is equal to MinVerifiedDealSize", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		c1 := ac.mkClientParams(clientAddr, verifreg.MinVerifiedDealSize)
+
+		// verifier only has enough balance for one client
+		verifier := ac.mkVerifierParams(verifierAddr, verifreg.MinVerifiedDealSize)
+		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
+
+		// add client works
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+	})
+
 	t.Run("fails when allowance is less than MinVerifiedDealSize", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		allowance := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
@@ -240,6 +326,31 @@ func TestAddVerifiedClient(t *testing.T) {
 		// add verified client with caller 2
 		verifier2 := ac.addNewVerifier(rt, verifierAddr, allowance)
 		rt.SetCaller(verifier2.Address, builtin.VerifiedRegistryActorCodeID)
+		rt.ExpectValidateCallerAny()
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.AddVerifiedClient, client)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails when root is added as a verified client", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		verifier := ac.addNewVerifier(rt, verifierAddr, allowance)
+		client := ac.mkClientParams(root, clientAllowance)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance)
+		})
+	})
+
+	t.Run("fails when verifier is added as a verified client", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		// add verified client with caller 1
+		verifier := ac.addNewVerifier(rt, verifierAddr, allowance)
+		client := ac.mkClientParams(verifierAddr, clientAllowance)
+		rt.SetCaller(verifier.Address, builtin.VerifiedRegistryActorCodeID)
 		rt.ExpectValidateCallerAny()
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.AddVerifiedClient, client)
@@ -502,6 +613,35 @@ func TestRestoreBytes(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
 		param := &verifreg.RestoreBytesParams{clientAddr, dSize2}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.RestoreBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fails if attempt to restore bytes for root", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.RestoreBytesParams{root, verifreg.MinVerifiedDealSize}
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(ac.RestoreBytes, param)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fails if attempt to restore bytes for verifier", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		// add a verifier
+		ac.addNewVerifier(rt, verifierAddr, vallow)
+
+		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
+		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
+		param := &verifreg.RestoreBytesParams{verifierAddr, verifreg.MinVerifiedDealSize}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.RestoreBytes, param)

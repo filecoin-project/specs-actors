@@ -76,8 +76,13 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	if params.Amount.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
+	// withdrawal can ONLY be done by a signing party.
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
-	nominal, recipient := escrowAddress(rt, params.ProviderOrClientAddress)
+	nominal, recipient, approvedCallers := escrowAddress(rt, params.ProviderOrClientAddress)
+	// for providers -> only corresponding owner or worker can withdraw
+	// for clients -> only the client i.e the recipient can withdraw
+	rt.ValidateImmediateCallerIs(approvedCallers...)
 
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
@@ -113,9 +118,12 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	// only signing parties can add balance for client AND provider.
+	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+
 	msgValue := rt.Message().ValueReceived()
 
-	nominal, _ := escrowAddress(rt, *providerOrClientAddress)
+	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -160,6 +168,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	provider, ok := rt.ResolveAddress(providerRaw)
 	if !ok {
 		rt.Abortf(exitcode.ErrNotFound, "failed to resolve provider address %v", providerRaw)
+	}
+
+	codeID, ok := rt.GetActorCodeCID(provider)
+	builtin.RequireParam(rt, ok, "no codeId for address %v", provider)
+	if !codeID.Equals(builtin.StorageMinerActorCodeID) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "deal provider is not a StorageMinerActor")
 	}
 
 	_, worker := builtin.RequestMinerControlAddrs(rt, provider)
@@ -667,6 +681,10 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 
 	proposal := deal.Proposal
 
+	if err := proposal.PieceSize.Validate(); err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal piece size is invalid: %v", err)
+	}
+
 	if !proposal.PieceCID.Defined() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID undefined")
 	}
@@ -706,11 +724,11 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 
 // Resolves a provider or client address to the canonical form against which a balance should be held, and
 // the designated recipient address of withdrawals (which is the same, for simple account parties).
-func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipient addr.Address) {
+func escrowAddress(rt Runtime, address addr.Address) (nominal addr.Address, recipient addr.Address, approved []addr.Address) {
 	// Resolve the provided address to the canonical form against which the balance is held.
-	nominal, ok := rt.ResolveAddress(addr)
+	nominal, ok := rt.ResolveAddress(address)
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", addr)
+		rt.Abortf(exitcode.ErrIllegalArgument, "failed to resolve address %v", address)
 	}
 
 	codeID, ok := rt.GetActorCodeCID(nominal)
@@ -721,13 +739,10 @@ func escrowAddress(rt Runtime, addr addr.Address) (nominal addr.Address, recipie
 	if codeID.Equals(builtin.StorageMinerActorCodeID) {
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
 		ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
-		rt.ValidateImmediateCallerIs(ownerAddr, workerAddr)
-		return nominal, ownerAddr
+		return nominal, ownerAddr, []addr.Address{ownerAddr, workerAddr}
 	}
 
-	// Ordinary account-style actor entry; funds recipient is just the entry address itself.
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	return nominal, nominal
+	return nominal, nominal, []addr.Address{nominal}
 }
 
 func getDealProposal(proposals *DealArray, dealID abi.DealID) (*DealProposal, error) {
