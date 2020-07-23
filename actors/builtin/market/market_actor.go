@@ -170,6 +170,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrNotFound, "failed to resolve provider address %v", providerRaw)
 	}
 
+	codeID, ok := rt.GetActorCodeCID(provider)
+	builtin.RequireParam(rt, ok, "no codeId for address %v", provider)
+	if !codeID.Equals(builtin.StorageMinerActorCodeID) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "deal provider is not a StorageMinerActor")
+	}
+
 	_, worker := builtin.RequestMinerControlAddrs(rt, provider)
 	if worker != rt.Message().Caller() {
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
@@ -674,6 +680,10 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 	}
 
 	proposal := deal.Proposal
+
+	if err := proposal.PieceSize.Validate(); err != nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proposal piece size is invalid: %v", err)
+	}
 
 	if !proposal.PieceCID.Defined() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID undefined")
