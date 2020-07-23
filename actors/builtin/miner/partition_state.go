@@ -344,12 +344,12 @@ func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sect
 		return NewPowerPairZero(), xerrors.Errorf("failed to add terminated sectors: %w", err)
 	}
 
-	powerDelta := removed.ActivePower.Add(removed.FaultyPower)
-	p.LivePower = p.LivePower.Add(powerDelta)
+	powerRemoved := removed.ActivePower.Add(removed.FaultyPower)
+	p.LivePower = p.LivePower.Sub(powerRemoved)
 	p.FaultyPower = p.FaultyPower.Sub(removed.FaultyPower)
 	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
 
-	return powerDelta, nil
+	return powerRemoved, nil
 }
 
 // PopExpiredSectors traverses the expiration queue up to and including some epoch, and marks all expiring
@@ -401,7 +401,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 	if p.Faults, err = bitfield.SubtractBitField(p.Faults, expiredSectors); err != nil {
 		return nil, err
 	}
-	p.LivePower = p.LivePower.Sub(popped.ActivePower)
+	p.LivePower = p.LivePower.Sub(popped.ActivePower.Add(popped.FaultyPower))
 	p.FaultyPower = p.FaultyPower.Sub(popped.FaultyPower)
 
 	// Record the epoch of any sectors expiring early, for termination fee calculation later.
