@@ -286,22 +286,31 @@ type expectedDeadlineState struct {
 	partitionSectors []*bitfield.BitField
 }
 
+//nolint:unused
 func (s expectedDeadlineState) withFaults(faults ...uint64) expectedDeadlineState {
 	s.faults = bf(faults...)
 	return s
 }
+
+//nolint:unused
 func (s expectedDeadlineState) withRecovering(recovering ...uint64) expectedDeadlineState {
 	s.recovering = bf(recovering...)
 	return s
 }
+
+//nolint:unused
 func (s expectedDeadlineState) withTerminations(terminations ...uint64) expectedDeadlineState {
 	s.terminations = bf(terminations...)
 	return s
 }
+
+//nolint:unused
 func (s expectedDeadlineState) withPosts(posts ...uint64) expectedDeadlineState {
 	s.posts = bf(posts...)
 	return s
 }
+
+//nolint:unused
 func (s expectedDeadlineState) withPartitions(partitions ...*bitfield.BitField) expectedDeadlineState {
 	s.partitionSectors = partitions
 	return s
