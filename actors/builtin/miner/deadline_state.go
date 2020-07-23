@@ -487,6 +487,8 @@ func (dl *Deadline) TerminateSectors(
 
 		// Record that partition now has pending early terminations.
 		dl.EarlyTerminations.Set(partIdx)
+		// Record live sector change
+		dl.LiveSectors -= uint64(len(partSectors))
 
 		// update power
 		removedPower = removedPower.Add(pwr)
