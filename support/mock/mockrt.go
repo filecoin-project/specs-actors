@@ -12,7 +12,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -146,12 +145,6 @@ var _ runtime.StateHandle = &Runtime{}
 var typeOfRuntimeInterface = reflect.TypeOf((*runtime.Runtime)(nil)).Elem()
 var typeOfCborUnmarshaler = reflect.TypeOf((*runtime.CBORUnmarshaler)(nil)).Elem()
 var typeOfCborMarshaler = reflect.TypeOf((*runtime.CBORMarshaler)(nil)).Elem()
-
-var cidBuilder = cid.V1Builder{
-	Codec:    cid.DagCBOR,
-	MhType:   mh.SHA2_256,
-	MhLength: 0, // default
-}
 
 ///// Implementation of the runtime API /////
 
@@ -405,7 +398,7 @@ func (rt *Runtime) Put(o runtime.CBORMarshaler) cid.Cid {
 		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}
 	data := r.Bytes()
-	key, err := cidBuilder.Sum(data)
+	key, err := abi.CidBuilder.Sum(data)
 	if err != nil {
 		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}

@@ -72,23 +72,11 @@ func (p *DealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 }
 
 func (p *DealProposal) Cid() (cid.Cid, error) {
-	buf := new(bytes.Buffer)
-	if err := p.MarshalCBOR(buf); err != nil {
+	var buf bytes.Buffer
+	if err := p.MarshalCBOR(&buf); err != nil {
 		return cid.Undef, err
 	}
-	b := buf.Bytes()
-
-	mhType := uint64(mh.BLAKE2B_MIN + 31)
-	mhLen := -1
-
-	hash, err := mh.Sum(b, mhType, mhLen)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	c := cid.NewCidV1(cid.DagCBOR, hash)
-
-	return c, nil
+	return abi.CidBuilder.Sum(buf.Bytes())
 }
 
 type DealState struct {
