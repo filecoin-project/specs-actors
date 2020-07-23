@@ -2,6 +2,7 @@
 package miner_test
 
 import (
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -181,7 +182,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
 
 		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
-		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.baselinePower, actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
+		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, actor.epochCirculatingSupplySmooth.Estimate())
 		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -575,7 +576,7 @@ func TestCommitments(t *testing.T) {
 
 		// Declare the old sector faulty
 		_, qaPower := powerForSectors(actor.sectorSize, []*miner.SectorOnChainInfo{oldSector})
-		fee := miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		fee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
 		actor.declareFaults(rt, fee, oldSector)
 
 		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -596,7 +597,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, oldSector.Expiration, oldSectorAgain.Expiration)
 
 		// Roll forward to PP cron. The faulty old sector pays a fee, but is not terminated.
-		penalty := miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower,
+		penalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth,
 			miner.QAPowerForSector(actor.sectorSize, oldSector))
 		completeProvingPeriod(rt, actor, &cronConfig{
 			ongoingFaultsPenalty: penalty,
@@ -1157,13 +1158,13 @@ func TestProvingPeriodCron(t *testing.T) {
 
 		// Undetected faults penalized once as a late undetected fault
 		rawPower, qaPower := powerForSectors(actor.sectorSize, allSectors)
-		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
 
 		// power for sectors is removed
 		powerDeltaClaim := miner.NewPowerPair(rawPower.Neg(), qaPower.Neg())
 
 		// Faults are charged again as ongoing faults
-		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower, qaPower)
+		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
 
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEntrollment:      nextCron,
@@ -1194,11 +1195,11 @@ func TestProvingPeriodCron(t *testing.T) {
 
 		// Retracted recovery is penalized as an undetected fault, but power is unchanged
 		_, retractedQAPower := powerForSectors(actor.sectorSize, allSectors[1:])
-		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, retractedQAPower)
+		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedQAPower)
 
 		// Faults are charged again as ongoing faults
 		_, faultQAPower := powerForSectors(actor.sectorSize, allSectors)
-		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochReward, actor.networkQAPower, faultQAPower)
+		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, faultQAPower)
 
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEntrollment:   nextCron,
@@ -1232,7 +1233,7 @@ func TestDeclareFaults(t *testing.T) {
 		require.NoError(t, err)
 		sectorQAPower := miner.QAPowerForSector(ss, info)
 		totalQAPower := big.NewInt(1 << 52)
-		fee := miner.PledgePenaltyForDeclaredFault(actor.epochReward, totalQAPower, sectorQAPower)
+		fee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorQAPower)
 
 		actor.declareFaults(rt, fee, info)
 	})
@@ -1603,6 +1604,10 @@ type actorHarness struct {
 	networkRawPower abi.StoragePower
 	networkQAPower  abi.StoragePower
 	baselinePower   abi.StoragePower
+
+	epochRewardSmooth *smoothing.FilterEstimate
+	epochCirculatingSupplySmooth *smoothing.FilterEstimate
+	epochQAPowerSmooth *smoothing.FilterEstimate
 }
 
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
@@ -1616,6 +1621,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
 	reward := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
+	power := abi.NewStoragePower(1 << 50)
 	return &actorHarness{
 		t:        t,
 		receiver: receiver,
@@ -1631,9 +1637,13 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 
 		epochReward:     reward,
 		networkPledge:   big.Mul(reward, big.NewIntUnsigned(1000)),
-		networkRawPower: abi.NewStoragePower(1 << 50),
-		networkQAPower:  abi.NewStoragePower(1 << 50),
-		baselinePower:   abi.NewStoragePower(1 << 50),
+		networkRawPower: power,
+		networkQAPower:  power,
+		baselinePower:   power,
+
+		epochRewardSmooth: smoothing.TestingEstimate(reward, 10000),
+		epochCirculatingSupplySmooth: smoothing.TestingEstimate(abi.NewTokenAmount(1e18), 10000),
+		epochQAPowerSmooth: smoothing.TestingEstimate(power, 10000),
 	}
 }
 
@@ -2598,10 +2608,13 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 		RawBytePower:     h.networkRawPower,
 		QualityAdjPower:  h.networkQAPower,
 		PledgeCollateral: h.networkPledge,
+		SmoothQAPowerEstimate: h.epochQAPowerSmooth,
 	}
 	currentReward := reward.ThisEpochRewardReturn{
 		ThisEpochReward:        h.epochReward,
 		ThisEpochBaselinePower: h.baselinePower,
+		ThisEpochRewardSmoothed: h.epochRewardSmooth,
+		ThisEpochCirculatingSupplySmoothed: h.epochCirculatingSupplySmooth,
 	}
 
 	rt.ExpectSend(

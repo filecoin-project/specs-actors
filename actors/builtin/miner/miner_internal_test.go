@@ -1,6 +1,8 @@
 package miner
 
 import (
+	"fmt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"testing"
 
 	"github.com/minio/blake2b-simd"
@@ -93,30 +95,39 @@ func TestNextProvingPeriodStart(t *testing.T) {
 type e = abi.ChainEpoch
 
 func TestFaultFeeInvariants(t *testing.T) {
+
+	// Construct plausible reward and qa power filtered estimates
+	epochReward := abi.NewTokenAmount(1_000)
+	rewardEstimate := smoothing.TestingEstimate(epochReward, 10000) // not too much growth over ~3000 epoch projection in BR
+
+	networkPower := abi.NewStoragePower(100 << 50)
+	powerEstimate := smoothing.TestingEstimate(networkPower, 10000)
+
 	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
-		epochReward := abi.NewTokenAmount(1_000)
-		networkPower := abi.NewStoragePower(100 << 50)
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
-		ff := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorPower)
-		sp := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorPower)
+		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
+		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
 		assert.True(t, sp.GreaterThan(ff))
 	})
 
 	t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
-		epochReward := abi.NewTokenAmount(1_000)
-		networkPower := abi.NewStoragePower(100 << 50)
+		
+
+		fmt.Printf("rwd estimate: %v, power estimate: %v\n", rewardEstimate.Estimate(), powerEstimate.Estimate())
+
+
 		faultySectorAPower := abi.NewStoragePower(1 << 50)
 		faultySectorBPower := abi.NewStoragePower(19 << 50)
 		faultySectorCPower := abi.NewStoragePower(63 << 50)
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)
 
 		// Declared faults
-		ffA := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorAPower)
-		ffB := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorBPower)
-		ffC := PledgePenaltyForDeclaredFault(epochReward, networkPower, faultySectorCPower)
+		ffA := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower)
+		ffB := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower)
+		ffC := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower)
 
-		ffAll := PledgePenaltyForDeclaredFault(epochReward, networkPower, totalFaultPower)
+		ffAll := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
@@ -125,11 +136,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		assert.True(t, diff.LessThan(big.NewInt(3)))
 
 		// Undeclared faults
-		spA := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorAPower)
-		spB := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorBPower)
-		spC := PledgePenaltyForUndeclaredFault(epochReward, networkPower, faultySectorCPower)
+		spA := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower)
+		spB := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower)
+		spC := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower)
 
-		spAll := PledgePenaltyForUndeclaredFault(epochReward, networkPower, totalFaultPower)
+		spAll := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
