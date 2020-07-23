@@ -212,6 +212,18 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 // The maximum duration (activation to expiration) of a sector sealed with SDR.
 // Motivation: This gurantees that SDR is secure in the cost model for WindowPoSt and in the time model for WinningPoSt
 // This is based on estimation of hardware latency improvement and hardware and software cost reduction.
+// Considering:
+// - We are in the pragmatic model
+// - Our Amax is ~5 (5.14 according to RedTeam calculation)
+// - HW cost is halving every 1 year [assumption]
+// We have that
+// A conservative approach would suggest to take
+// SectorMaximumLifetimeSDR = 1y
+// A more aggressive approach could go to
+// SectorMaximumLifetimeSDR = 2 y (edited)
+// Everything which is above 2 years seems insecure, under the assumption in point 3 
+// Note that if halving is every 6 months insted of every 1 year, 2 years is not viable
+
 const SectorMaximumLifetimeSDR = ChainEpoch(1_262_277 * 5)
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
