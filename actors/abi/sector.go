@@ -8,8 +8,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
@@ -214,7 +212,7 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 // The maximum duration (activation to expiration) of a sector sealed with SDR.
 // Motivation: This gurantees that SDR is secure in the cost model for WindowPoSt and in the time model for WinningPoSt
 // This is based on estimation of hardware latency improvement and hardware and software cost reduction.
-const SectorMaximumLifetimeSDR = abi.ChainEpoch(builtin.EpochsInYear * 5)
+const SectorMaximumLifetimeSDR = ChainEpoch(1_262_277 * 5)
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
 func (p RegisteredSealProof) SectorMaximumLifetime() ChainEpoch {
