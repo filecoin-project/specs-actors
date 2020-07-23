@@ -237,6 +237,12 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		var st1 State
 		rt.GetState(&st1)
 
+		expLs := LaneState{
+			ID:       0,
+			Redeemed: newVoucherAmt,
+			Nonce:    2,
+		}
+
 		ucp := &UpdateChannelStateParams{Sv: *sv}
 		ucp.Sv.Amount = newVoucherAmt
 
@@ -248,11 +254,6 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		require.Nil(t, ret)
 		rt.Verify()
 
-		expLs := LaneState{
-			ID:       0,
-			Redeemed: newVoucherAmt,
-			Nonce:    1,
-		}
 		expState := State{
 			From:            st1.From,
 			To:              st1.To,
@@ -293,6 +294,29 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		assert.Equal(t, expToSend, st2.ToSend)
 		assert.Equal(t, ucp.Sv.Amount, lUpdated.Redeemed)
 		assert.Equal(t, ucp.Sv.Nonce, lUpdated.Nonce)
+	})
+
+	t.Run("redeeming voucher fails on nonce reuse", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, ctx, 1)
+		var st1 State
+		rt.GetState(&st1)
+
+		ucp := &UpdateChannelStateParams{Sv: *sv}
+		// requireCreateChannelWithLanes creates a lane with nonce = 1.
+		// reusing that should fail
+		ucp.Sv.Nonce = 1
+		ucp.Sv.Amount = newVoucherAmt
+
+		// Sending to same lane updates the lane with "new" state
+		rt.SetCaller(actor.payee, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st1.From, st1.To)
+		rt.ExpectVerifySignature(*ucp.Sv.Signature, actor.payer, voucherBytes(t, &ucp.Sv), nil)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.UpdateChannelState, ucp)
+		})
+
+		rt.Verify()
 	})
 }
 
@@ -528,6 +552,7 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 			rt.GetState(&newSt)
 			assert.Equal(t, tc.expSettlingAt, newSt.SettlingAt)
 			assert.Equal(t, tc.expMinSettleHeight, newSt.MinSettleHeight)
+			ucp.Sv.Nonce = ucp.Sv.Nonce + 1
 		})
 	}
 }
@@ -786,6 +811,7 @@ func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, pa
 	ret := rt.Call(actor.UpdateChannelState, ucp)
 	require.Nil(t, ret)
 	rt.Verify()
+	sv.Nonce = sv.Nonce + 1
 	return &sv
 }
 
