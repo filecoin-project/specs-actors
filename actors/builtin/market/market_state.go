@@ -231,7 +231,6 @@ func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.
 	}
 
 	durationRemaining := deal.EndEpoch - slashEpoch
-	Assert(durationRemaining > 0)
 
 	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
 }

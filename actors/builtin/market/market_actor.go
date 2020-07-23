@@ -114,10 +114,11 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	msgValue := rt.Message().ValueReceived()
+	builtin.RequireParam(rt, msgValue.GreaterThan(big.Zero()), "balance to add must be greater than zero")
+
 	// only signing parties can add balance for client AND provider.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-
-	msgValue := rt.Message().ValueReceived()
 
 	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
 
@@ -174,23 +175,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
 
-	for _, deal := range params.Deals {
-		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
-		// Either the DealSize is within the available DataCap of the VerifiedClient
-		// or this message will fail. We do not allow a deal that is partially verified.
-		if deal.Proposal.VerifiedDeal {
-			_, code := rt.Send(
-				builtin.VerifiedRegistryActorAddr,
-				builtin.MethodsVerifiedRegistry.UseBytes,
-				&verifreg.UseBytesParams{
-					Address:  deal.Proposal.Client,
-					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
-				},
-				abi.NewTokenAmount(0),
-			)
-			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
-		}
-	}
+	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
 
 	var newDealIds []abi.DealID
 	var st State
@@ -214,6 +199,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			}
 			// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
 			deal.Proposal.Provider = provider
+			resolvedAddrs[deal.Proposal.Client] = client
 			deal.Proposal.Client = client
 
 			err, code := msm.lockClientAndProviderBalances(&deal.Proposal)
@@ -247,6 +233,27 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		return nil
 	})
+
+	for _, deal := range params.Deals {
+		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
+		// Either the DealSize is within the available DataCap of the VerifiedClient
+		// or this message will fail. We do not allow a deal that is partially verified.
+		if deal.Proposal.VerifiedDeal {
+			resolvedClient, ok := resolvedAddrs[deal.Proposal.Client]
+			builtin.RequireParam(rt, ok, "could not get resolvedClient client address")
+
+			_, code := rt.Send(
+				builtin.VerifiedRegistryActorAddr,
+				builtin.MethodsVerifiedRegistry.UseBytes,
+				&verifreg.UseBytesParams{
+					Address:  resolvedClient,
+					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
+				},
+				abi.NewTokenAmount(0),
+			)
+			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
+		}
+	}
 
 	return &PublishStorageDealsReturn{newDealIds}
 }
@@ -514,7 +521,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 				}
 
-				if nextEpoch != epochUndefined {
+				if nextEpoch != epochUndefined && !removeDeal {
 					Assert(nextEpoch > rt.CurrEpoch())
 
 					// TODO: can we avoid having this field?
@@ -570,7 +577,9 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 			abi.NewTokenAmount(0),
 		)
 
-		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
+		if !code.IsSuccess() {
+			rt.Log(vmr.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, got code %v", code)
+		}
 	}
 
 	if !amountSlashed.IsZero() {
