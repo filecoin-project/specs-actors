@@ -82,13 +82,13 @@ func TestPartitions(t *testing.T) {
 		_, store, partition := setup(t)
 
 		// make 4, 5 and 6 faulty
-		faultSet := bitfield.NewFromSet([]uint64{4, 5, 6})
+		faultSet := bf(4, 5, 6)
 		faultSectors := selectSectors(t, sectors, faultSet)
 		_, err := partition.AddFaults(store, faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
-		recoverSet := bitfield.NewFromSet([]uint64{4, 5})
+		recoverSet := bf(4, 5)
 		recoverSectors := selectSectors(t, sectors, recoverSet)
 		recoveredPower := miner.PowerForSectors(sectorSize, recoverSectors)
 		err = partition.AddRecoveries(recoverSet, recoveredPower)
@@ -101,13 +101,13 @@ func TestPartitions(t *testing.T) {
 		_, store, partition := setup(t)
 
 		// make 4, 5 and 6 faulty
-		faultSet := bitfield.NewFromSet([]uint64{4, 5, 6})
+		faultSet := bf(4, 5, 6)
 		faultSectors := selectSectors(t, sectors, faultSet)
 		_, err := partition.AddFaults(store, faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
-		recoverSet := bitfield.NewFromSet([]uint64{4, 5})
+		recoverSet := bf(4, 5)
 		recoverSectors := selectSectors(t, sectors, recoverSet)
 		recoveredPower := miner.PowerForSectors(sectorSize, recoverSectors)
 		err = partition.AddRecoveries(recoverSet, recoveredPower)
@@ -131,13 +131,13 @@ func TestPartitions(t *testing.T) {
 		rt, store, partition := setup(t)
 
 		// make 4, 5 and 6 faulty
-		faultSet := bitfield.NewFromSet([]uint64{4, 5, 6})
+		faultSet := bf(4, 5, 6)
 		faultSectors := selectSectors(t, sectors, faultSet)
 		_, err := partition.AddFaults(store, faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
-		recoverSet := bitfield.NewFromSet([]uint64{4, 5})
+		recoverSet := bf(4, 5)
 		recoverSectors := selectSectors(t, sectors, recoverSet)
 		recoveryPower := miner.PowerForSectors(sectorSize, recoverSectors)
 		err = partition.AddRecoveries(recoverSet, recoveryPower)
@@ -345,13 +345,13 @@ func TestPartitions(t *testing.T) {
 		rt, store, partition := setup(t)
 
 		// make 4, 5 and 6 faulty
-		faultSet := bitfield.NewFromSet([]uint64{4, 5, 6})
+		faultSet := bf(4, 5, 6)
 		faultSectors := selectSectors(t, sectors, faultSet)
 		_, err := partition.AddFaults(store, faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
-		recoverSet := bitfield.NewFromSet([]uint64{4, 5})
+		recoverSet := bf(4, 5)
 		recoverSectors := selectSectors(t, sectors, recoverSet)
 		recoveredPower := miner.PowerForSectors(sectorSize, recoverSectors)
 		err = partition.AddRecoveries(recoverSet, recoveredPower)
@@ -592,7 +592,7 @@ func checkPartitionInvariants(t *testing.T,
 		})
 		require.NoError(t, err)
 
-		earlyTerms := bitfield.NewFromSet(nil)
+		earlyTerms := bf()
 		for bit := range seenSectors {
 			earlyTerms.Set(bit)
 		}
