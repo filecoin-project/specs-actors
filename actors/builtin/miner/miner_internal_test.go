@@ -97,20 +97,18 @@ type e = abi.ChainEpoch
 func TestFaultFeeInvariants(t *testing.T) {
 
 	// Construct plausible reward and qa power filtered estimates
-	epochReward := abi.NewTokenAmount(1_000)
-	rewardEstimate := smoothing.TestingEstimate(epochReward, 10000) // not too much growth over ~3000 epoch projection in BR
+	epochReward := abi.NewTokenAmount(100 << 53)
+	rewardEstimate := smoothing.TestingEstimate(epochReward, 100) // not too much growth over ~3000 epoch projection in BR
 
 	networkPower := abi.NewStoragePower(100 << 50)
-	powerEstimate := smoothing.TestingEstimate(networkPower, 10000)
-
-	fmt.Printf("rwd estimate: %v, power estimate: %v\n", rewardEstimate.Estimate(), powerEstimate.Estimate())
-
+	powerEstimate := smoothing.TestingEstimate(networkPower, 100)
 
 	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
 		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
 		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
+		fmt.Printf("ff: %v, sp: %v\n", ff, sp)
 		assert.True(t, sp.GreaterThan(ff))
 	})
 
