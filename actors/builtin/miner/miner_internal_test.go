@@ -103,6 +103,9 @@ func TestFaultFeeInvariants(t *testing.T) {
 	networkPower := abi.NewStoragePower(100 << 50)
 	powerEstimate := smoothing.TestingEstimate(networkPower, 10000)
 
+	fmt.Printf("rwd estimate: %v, power estimate: %v\n", rewardEstimate.Estimate(), powerEstimate.Estimate())
+
+
 	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
@@ -112,10 +115,6 @@ func TestFaultFeeInvariants(t *testing.T) {
 	})
 
 	t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {
-		
-
-		fmt.Printf("rwd estimate: %v, power estimate: %v\n", rewardEstimate.Estimate(), powerEstimate.Estimate())
-
 
 		faultySectorAPower := abi.NewStoragePower(1 << 50)
 		faultySectorBPower := abi.NewStoragePower(19 << 50)
