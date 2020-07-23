@@ -38,8 +38,8 @@ func BaselinePowerFromPrev(prevEpochBaselinePower abi.StoragePower) abi.StorageP
 }
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
-var SimpleTotal = big.Mul(big.NewInt(300e6), big.NewInt(1e18))   // 100M for testnet, PARAM_FINISH
-var BaselineTotal = big.Mul(big.NewInt(700e6), big.NewInt(1e18)) // 900M for testnet, PARAM_FINISH
+var SimpleTotal = big.Mul(big.NewInt(300e6), big.NewInt(1e18))   // 300M for testnet, PARAM_FINISH
+var BaselineTotal = big.Mul(big.NewInt(700e6), big.NewInt(1e18)) // 700M for testnet, PARAM_FINISH
 
 // Computes RewardTheta which is is precise fractional value of effectiveNetworkTime.
 // The effectiveNetworkTime is defined by CumsumBaselinePower(theta) == CumsumRealizedPower
