@@ -35,7 +35,7 @@ func TestDeadlines(t *testing.T) {
 	partitionSize := uint64(4)
 	builder := mock.NewBuilder(context.Background(), address.Undef)
 
-	expDlSt := expectedDeadlineState{
+	dlState := expectedDeadlineState{
 		quant:         quantSpec,
 		partitionSize: partitionSize,
 		sectorSize:    sectorSize,
@@ -58,7 +58,7 @@ func TestDeadlines(t *testing.T) {
 
 		expectedPower := miner.PowerForSectors(sectorSize, sectors)
 		assert.True(t, expectedPower.Equals(power))
-		expDlSt.withPartitions(
+		dlState.withPartitions(
 			bf(1, 2, 3, 4),
 			bf(5, 6, 7, 8),
 			bf(9),
@@ -80,9 +80,9 @@ func TestDeadlines(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1, 3, 6)))
-		require.True(t, expectedPower.Equals(removedPower), "expDlSt to remove power for terminated sectors")
+		require.True(t, expectedPower.Equals(removedPower), "dlState to remove power for terminated sectors")
 
-		expDlSt.withTerminations(1, 3, 6).
+		dlState.withTerminations(1, 3, 6).
 			withPartitions(
 				bf(1, 2, 3, 4),
 				bf(5, 6, 7, 8),
@@ -105,7 +105,7 @@ func TestDeadlines(t *testing.T) {
 		assertBitfieldEquals(t, earlyTerminations.Sectors[15], 1, 3, 6)
 
 		// Popping early terminations doesn't affect the terminations bitfield.
-		expDlSt.withTerminations(1, 3, 6).
+		dlState.withTerminations(1, 3, 6).
 			withPartitions(
 				bf(1, 2, 3, 4),
 				bf(5, 6, 7, 8),
@@ -125,7 +125,7 @@ func TestDeadlines(t *testing.T) {
 		livePower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, live))
 		require.True(t, livePower.Equals(removedPower))
 
-		expDlSt.withTerminations(6).
+		dlState.withTerminations(6).
 			withPartitions(
 				bf(5, 6, 7, 8),
 				bf(9),
@@ -199,7 +199,7 @@ func TestDeadlines(t *testing.T) {
 		assertBitfieldEquals(t, dead)
 
 		// Popping early terminations doesn't affect the terminations bitfield.
-		expDlSt.withTerminations(1, 3, 6).
+		dlState.withTerminations(1, 3, 6).
 			withPartitions(
 				bf(1, 2, 3, 4),
 				bf(5, 6, 7, 8),
@@ -243,7 +243,7 @@ func TestDeadlines(t *testing.T) {
 			dl.Partitions, err = partitions.Root()
 			require.NoError(t, err)
 
-			expDlSt.withFaults(9).
+			dlState.withFaults(9).
 				withPartitions(
 					bf(1, 2, 3, 4),
 					bf(5, 6, 7, 8),
