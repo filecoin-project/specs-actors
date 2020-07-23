@@ -20,32 +20,74 @@ func TestExports(t *testing.T) {
 }
 
 func TestConstruction(t *testing.T) {
-	actor := verifreg.Actor{}
 	receiver := tutil.NewIDAddr(t, 100)
-	builder := mock.NewBuilder(context.Background(), receiver).
-		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
 
-	rt := builder.Build(t)
+	runtimeSetup := func() *mock.Runtime {
+		builder := mock.NewBuilder(context.Background(), receiver).
+			WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
+		rt := builder.Build(t)
+		return rt
+	}
 
-	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+	t.Run("successful construction with root ID address", func(t *testing.T) {
+		rt := runtimeSetup()
+		actor := verifreg.Actor{}
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
-	raddr := tutil.NewIDAddr(t, 101)
+		raddr := tutil.NewIDAddr(t, 101)
+		ret := rt.Call(actor.Constructor, &raddr).(*adt.EmptyValue)
+		require.Nil(t, ret)
+		rt.Verify()
 
-	ret := rt.Call(actor.Constructor, &raddr).(*adt.EmptyValue)
-	require.Nil(t, ret)
-	rt.Verify()
+		store := adt.AsStore(rt)
 
-	store := adt.AsStore(rt)
+		emptyMap, err := adt.MakeEmptyMap(store).Root()
+		require.NoError(t, err)
 
-	emptyMap, err := adt.MakeEmptyMap(store).Root()
-	require.NoError(t, err)
+		var state verifreg.State
+		rt.GetState(&state)
 
-	var state verifreg.State
-	rt.GetState(&state)
+		require.Equal(t, emptyMap, state.VerifiedClients)
+		require.Equal(t, emptyMap, state.Verifiers)
+		require.Equal(t, raddr, state.RootKey)
+	})
 
-	require.Equal(t, emptyMap, state.VerifiedClients)
-	require.Equal(t, emptyMap, state.Verifiers)
-	require.Equal(t, raddr, state.RootKey)
+	t.Run("non-ID address root is resolved to an ID address for construction", func(t *testing.T) {
+		rt := runtimeSetup()
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+		actor := verifreg.Actor{}
+
+		raddr := tutil.NewBLSAddr(t, 101)
+		rootIdAddr := tutil.NewIDAddr(t, 201)
+		rt.AddIDAddress(raddr, rootIdAddr)
+
+		ret := rt.Call(actor.Constructor, &raddr).(*adt.EmptyValue)
+		require.Nil(t, ret)
+		rt.Verify()
+
+		store := adt.AsStore(rt)
+		emptyMap, err := adt.MakeEmptyMap(store).Root()
+		require.NoError(t, err)
+
+		var state verifreg.State
+		rt.GetState(&state)
+		require.Equal(t, emptyMap, state.VerifiedClients)
+		require.Equal(t, emptyMap, state.Verifiers)
+		require.Equal(t, rootIdAddr, state.RootKey)
+	})
+
+	t.Run("fails if root cannot be resolved to an ID address", func(t *testing.T) {
+		rt := runtimeSetup()
+		actor := verifreg.Actor{}
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+
+		raddr := tutil.NewBLSAddr(t, 101)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &raddr)
+		})
+		rt.Verify()
+	})
 }
 
 func TestAddVerifier(t *testing.T) {
@@ -81,6 +123,21 @@ func TestAddVerifier(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			ac.addVerifier(rt, root, allowance)
 		})
+	})
+
+	t.Run("fails when verified client is added as a verifier", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		// add a verified client
+		verifierAddr := tutil.NewIDAddr(t, 601)
+		clientAddr := tutil.NewIDAddr(t, 602)
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, clientAddr, allowance, allowance)
+
+		// now attempt to add verified client as a verifier -> should fail
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifier(rt, clientAddr, allowance)
+		})
+		rt.Verify()
 	})
 
 	t.Run("successfully add a verifier", func(t *testing.T) {

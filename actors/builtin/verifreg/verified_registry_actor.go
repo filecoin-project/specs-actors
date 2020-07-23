@@ -34,12 +34,16 @@ var _ abi.Invokee = Actor{}
 func (a Actor) Constructor(rt vmr.Runtime, rootKey *addr.Address) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
+	// root should be an ID address
+	idAddr, ok := rt.ResolveAddress(*rootKey)
+	builtin.RequireParam(rt, ok, "root should be an ID address")
+
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create verified registry state: %v", err)
 	}
 
-	st := ConstructState(emptyMap, *rootKey)
+	st := ConstructState(emptyMap, idAddr)
 	rt.State().Create(st)
 	return nil
 }
@@ -58,12 +62,24 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
+	// TODO We need to resolve the verifier address to an ID address before making this comparison.
+	// https://github.com/filecoin-project/specs-actors/issues/556
 	if params.Address == st.RootKey {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
 	}
 	rt.State().Transaction(&st, func() interface{} {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
+
+		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
+
+		// A verified client cannot become a verifier
+		found, err := verifiedClients.Get(AddrKey(params.Address), nil)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed get verified client state for %v", params.Address)
+		if found {
+			rt.Abortf(exitcode.ErrIllegalArgument, "verified client %v cannot become a verifier", params.Address)
+		}
 
 		err = verifiers.Put(AddrKey(params.Address), &params.Allowance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verifier")
@@ -110,6 +126,8 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 
 	var st State
 	rt.State().Readonly(&st)
+	// TODO We need to resolve the client address to an ID address before making this comparison.
+	// https://github.com/filecoin-project/specs-actors/issues/556
 	if st.RootKey == params.Address {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as a verified client")
 	}
@@ -150,8 +168,8 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 
 		// This is a one-time, upfront allocation.
 		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
-		// If parties need more allowance, it be added via a call to RestoreBytes.
-		// Returns error if VerifiedClient already exists.
+		// If parties need more allowance, they need to create a new verified client or use up the the current allowance
+		// and then create a new verified client.
 		found, err = verifiedClients.Get(AddrKey(params.Address), &verifierCap)
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "Failed to load verified client state for %v", params.Address)
@@ -248,6 +266,8 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 
 	var st State
 	rt.State().Readonly(&st)
+	// TODO We need to resolve the client address to an ID address before making this comparison.
+	// https://github.com/filecoin-project/specs-actors/issues/556
 	if st.RootKey == params.Address {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Cannot restore allowance for Rootkey")
 	}
