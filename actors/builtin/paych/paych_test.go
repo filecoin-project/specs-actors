@@ -511,9 +511,12 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 		{name: "Updates MinSettleHeight only",
 			minSettleHeight: abi.ChainEpoch(2), expMinSettleHeight: abi.ChainEpoch(2),
 			expSettlingAt: st.SettlingAt},
-		{name: "Updates both SettlingAt and MinSettleHeight",
+		{name: "SettlingAt unchanged even after MinSettleHeight is changed because it is greater than MinSettleHeight",
 			minSettleHeight: abi.ChainEpoch(12), expMinSettleHeight: abi.ChainEpoch(12),
-			expSettlingAt: abi.ChainEpoch(12)},
+			expSettlingAt: st.SettlingAt},
+		{name: "SettlingAt changes after MinSettleHeight is changed because it is less than MinSettleHeight",
+			minSettleHeight: st.SettlingAt + 1, expMinSettleHeight: st.SettlingAt + 1,
+			expSettlingAt: st.SettlingAt + 1},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -642,7 +645,8 @@ func TestActor_Settle(t *testing.T) {
 func TestActor_Collect(t *testing.T) {
 	t.Run("Happy path", func(t *testing.T) {
 		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-		rt.SetEpoch(10)
+		currEpoch := abi.ChainEpoch(10)
+		rt.SetEpoch(currEpoch)
 		var st State
 		rt.GetState(&st)
 
@@ -652,11 +656,11 @@ func TestActor_Collect(t *testing.T) {
 		rt.Call(actor.Settle, nil)
 
 		rt.GetState(&st)
-		require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
+		require.EqualValues(t, SettleDelay+currEpoch, st.SettlingAt)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 
 		// "wait" for SettlingAt epoch
-		rt.SetEpoch(12)
+		rt.SetEpoch(st.SettlingAt + 1)
 
 		bal := rt.Balance()
 		sentToFrom := big.Sub(bal, st.ToSend)
@@ -686,7 +690,8 @@ func TestActor_Collect(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-			rt.SetEpoch(10)
+			currEpoch := abi.ChainEpoch(10)
+			rt.SetEpoch(currEpoch)
 			var st State
 			rt.GetState(&st)
 
@@ -695,11 +700,11 @@ func TestActor_Collect(t *testing.T) {
 				rt.ExpectValidateCallerAddr(st.From, st.To)
 				rt.Call(actor.Settle, nil)
 				rt.GetState(&st)
-				require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
+				require.Equal(t, SettleDelay+currEpoch, st.SettlingAt)
 			}
 
 			// "wait" for SettlingAt epoch
-			rt.SetEpoch(12)
+			rt.SetEpoch(st.SettlingAt + 1)
 
 			sentToFrom := big.Sub(rt.Balance(), st.ToSend)
 			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, tc.expSendFromCode)

@@ -19,7 +19,7 @@ import (
 // Maximum number of lanes in a channel.
 const LaneLimit = 256
 
-const SettleDelay = abi.ChainEpoch(1) // placeholder PARAM_FINISH
+const SettleDelay = builtin.EpochsInHour * 12
 
 type Actor struct{}
 
