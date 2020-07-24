@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
@@ -63,7 +62,7 @@ type Runtime struct {
 	expectComputeUnsealedSectorCID *expectComputeUnsealedSectorCID
 	expectVerifyPoSt               *expectVerifyPoSt
 	expectVerifyConsensusFault     *expectVerifyConsensusFault
-	expectDeleteActor              *address.Address
+	expectDeleteActor              *addr.Address
 
 	logs []string
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
@@ -146,12 +145,6 @@ var _ runtime.StateHandle = &Runtime{}
 var typeOfRuntimeInterface = reflect.TypeOf((*runtime.Runtime)(nil)).Elem()
 var typeOfCborUnmarshaler = reflect.TypeOf((*runtime.CBORUnmarshaler)(nil)).Elem()
 var typeOfCborMarshaler = reflect.TypeOf((*runtime.CBORMarshaler)(nil)).Elem()
-
-var cidBuilder = cid.V1Builder{
-	Codec:    cid.DagCBOR,
-	MhType:   mh.SHA2_256,
-	MhLength: 0, // default
-}
 
 ///// Implementation of the runtime API /////
 
@@ -385,15 +378,46 @@ func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}
 
 ///// Store implementation /////
 
+// Gets raw data from the state. This function will extract inline data from the
+// CID to better mimic what filecoin implementations should do.
+func (rt *Runtime) get(c cid.Cid) ([]byte, bool) {
+	prefix := c.Prefix()
+	if prefix.Codec != cid.DagCBOR {
+		rt.Abortf(exitcode.SysErrSerialization, "tried to fetch a non-cbor object: %s", c)
+	}
+
+	var data []byte
+	if prefix.MhType == mh.IDENTITY {
+		decoded, err := mh.Decode(c.Hash())
+		if err != nil {
+			rt.Abortf(exitcode.SysErrSerialization, "failed to parse identity cid %s: %s", c, err)
+		}
+		data = decoded.Digest
+	} else if stored, found := rt.store[c]; found {
+		data = stored
+	} else {
+		return nil, false
+	}
+	return data, true
+}
+
+// Puts raw data into the state, but only if it's not "inlined" into the CID.
+func (rt *Runtime) put(c cid.Cid, data []byte) {
+	if c.Prefix().MhType != mh.IDENTITY {
+		rt.store[c] = data
+	}
+}
+
 func (rt *Runtime) Get(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	data, found := rt.store[c]
+	data, found := rt.get(c)
 	if found {
 		err := o.UnmarshalCBOR(bytes.NewReader(data))
 		if err != nil {
 			rt.Abortf(exitcode.SysErrSerialization, err.Error())
 		}
 	}
+
 	return found
 }
 
@@ -405,11 +429,11 @@ func (rt *Runtime) Put(o runtime.CBORMarshaler) cid.Cid {
 		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}
 	data := r.Bytes()
-	key, err := cidBuilder.Sum(data)
+	key, err := abi.CidBuilder.Sum(data)
 	if err != nil {
 		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}
-	rt.store[key] = data
+	rt.put(key, data)
 	return key
 }
 
@@ -524,8 +548,8 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 	return nil
 }
 
-func (rt *Runtime) BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
-	out := make(map[address.Address][]bool)
+func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]abi.SealVerifyInfo) (map[addr.Address][]bool, error) {
+	out := make(map[addr.Address][]bool)
 	for k, v := range vis { //nolint:nomaprange
 		validations := make([]bool, len(v))
 		for i := range validations {
@@ -611,7 +635,7 @@ func (rt *Runtime) StateRoot() cid.Cid {
 }
 
 func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
-	data, found := rt.store[rt.state]
+	data, found := rt.get(rt.state)
 	if !found {
 		rt.failTestNow("can't find state at root %v", rt.state) // something internal is messed up
 	}
@@ -725,7 +749,7 @@ func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
 	}
 }
 
-func (rt *Runtime) ExpectDeleteActor(beneficiary address.Address) {
+func (rt *Runtime) ExpectDeleteActor(beneficiary addr.Address) {
 	rt.expectDeleteActor = &beneficiary
 }
 
