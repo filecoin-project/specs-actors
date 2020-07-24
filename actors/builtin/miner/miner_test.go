@@ -198,8 +198,12 @@ func TestCommitments(t *testing.T) {
 		require.False(t, found)
 
 		// expect deposit to have been transferred to initial pledges
-		expectedInitialPledge := expectedDeposit
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
+
+		qaPower = miner.QAPowerForWeight(sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight,
+			onChainPrecommit.VerifiedDealWeight)
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.baselinePower,
+			actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
 		// expect new onchain sector
@@ -210,8 +214,8 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, onChainPrecommit.DealWeight, sector.DealWeight)
 		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
-		// expect activation epoch to be precommit
-		assert.Equal(t, precommitEpoch, sector.Activation)
+		// expect activation epoch to be current epoch
+		assert.Equal(t, rt.Epoch(), sector.Activation)
 
 		// expect initial plege of sector to be set
 		assert.Equal(t, expectedInitialPledge, sector.InitialPledge)
@@ -431,7 +435,7 @@ func TestCommitments(t *testing.T) {
 
 		dQueue = actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			newSector.Expiration:           {uint64(0)},
+			newSector.Expiration: {uint64(0)},
 		}, dQueue)
 
 		// Old sector's pledge still locked (not penalized), but no longer contributes to minimum requirement.
@@ -1818,6 +1822,9 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 }
 
 func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommitEpoch abi.ChainEpoch, precommits ...*miner.SectorPreCommitInfo) {
+	// expect calls to get network stats
+	expectQueryNetworkInfo(rt, h)
+
 	// Prepare for and receive call to ConfirmSectorProofsValid.
 	var validPrecommits []*miner.SectorPreCommitInfo
 	var allSectorNumbers []abi.SectorNumber
@@ -1836,7 +1843,7 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
 	}
 
-	// expected pledge is the sum of precommit deposits
+	// expected pledge is the sum of initial pledges
 	if len(validPrecommits) > 0 {
 		expectPledge := big.Zero()
 
@@ -1845,11 +1852,12 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 		for _, precommit := range validPrecommits {
 			precommitOnChain := h.getPreCommit(rt, precommit.SectorNumber)
 
-			qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, precommit.Expiration-precommitEpoch, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
+			qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, precommit.Expiration-rt.Epoch(), precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
 			expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 			expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
-
-			expectPledge = big.Add(expectPledge, precommitOnChain.PreCommitDeposit)
+			pledge := miner.InitialPledgeForPower(qaPowerDelta, h.networkQAPower, h.baselinePower,
+				h.networkPledge, h.epochReward, rt.TotalFilCircSupply())
+			expectPledge = big.Add(expectPledge, pledge)
 		}
 
 		pcParams := power.UpdateClaimedPowerParams{

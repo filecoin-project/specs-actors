@@ -614,6 +614,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
+	// get network stats from other actors
+	baselinePower, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+	circulatingSupply := rt.TotalFilCircSupply()
+
 	// 1. Activate deals, skipping pre-commits with invalid deals.
 	//    - calls the market actor.
 	// 2. Reschedule replacement sector expiration.
@@ -680,6 +685,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 	var newPower PowerPair
 	totalPledge := big.Zero()
+	totalPrecommitDeposit := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		quant := st.QuantEndOfDeadline()
@@ -691,8 +697,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
-			// initial pledge is precommit deposit
-			initialPledge := precommit.PreCommitDeposit
+			// compute initial pledge
+			duration := precommit.Info.Expiration - rt.CurrEpoch()
+			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
+			initialPledge := InitialPledgeForPower(power, pwrTotal.QualityAdjPower, baselinePower,
+				pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
+
+			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:       precommit.Info.SectorNumber,
@@ -700,7 +711,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				SealedCID:          precommit.Info.SealedCID,
 				DealIDs:            precommit.Info.DealIDs,
 				Expiration:         precommit.Info.Expiration,
-				Activation:         precommit.PreCommitEpoch,
+				Activation:         rt.CurrEpoch(),
 				DealWeight:         precommit.DealWeight,
 				VerifiedDealWeight: precommit.VerifiedDealWeight,
 				InitialPledge:      initialPledge,
@@ -725,7 +736,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(totalPledge.Neg())
+		st.AddPreCommitDeposit(totalPrecommitDeposit.Neg())
 		st.AddInitialPledgeRequirement(totalPledge)
 
 		// Lock up initial pledge for new sectors.
