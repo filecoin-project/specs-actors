@@ -49,8 +49,11 @@ func (t *BalanceTable) Add(key addr.Address, value abi.TokenAmount) error {
 		return err
 	}
 	sum := big.Add(prev, value)
-	if sum.Sign() < 0 {
+	sign := sum.Sign()
+	if sign < 0 {
 		return xerrors.Errorf("adding %v to balance %v would give negative: %v", value, prev, sum)
+	} else if sign == 0 && !prev.IsZero() {
+		return (*Map)(t).Delete(AddrKey(key))
 	}
 	return (*Map)(t).Put(AddrKey(key), &sum)
 }

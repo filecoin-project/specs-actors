@@ -36,17 +36,26 @@ func TestBalanceTable(t *testing.T) {
 
 		err = bt.Add(addr, abi.NewTokenAmount(10))
 		assert.NoError(t, err)
-
 		amount,  err := bt.Get(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(10), amount)
 
 		err = bt.Add(addr, abi.NewTokenAmount(20))
 		assert.NoError(t, err)
-
 		amount, err = bt.Get(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(30), amount)
+
+
+		// Add negative to subtract.
+		err = bt.Add(addr, abi.NewTokenAmount(-30))
+		assert.NoError(t, err)
+		amount, err = bt.Get(addr)
+		assert.NoError(t, err)
+		assert.Equal(t, abi.NewTokenAmount(0), amount)
+		// The zero entry is not stored.
+		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
+		require.False(t, found)
 	})
 
 	t.Run("Must subtract fails if account balance is insufficient", func(t *testing.T) {
@@ -78,6 +87,9 @@ func TestBalanceTable(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, abi.NewTokenAmount(0), bal)
 
+		// The zero entry is not stored.
+		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
+		require.False(t, found)
 	})
 
 	t.Run("Total returns total amount tracked", func(t *testing.T) {
