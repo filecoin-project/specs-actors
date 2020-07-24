@@ -391,7 +391,7 @@ func (rt *Runtime) get(c cid.Cid) ([]byte, bool) {
 	if prefix.MhType == multihash.IDENTITY {
 		decoded, err := multihash.Decode(c.Hash())
 		if err != nil {
-			rt.Abortf(exitcode.SysErrSerialization, "failed to parse cid %s: %s", c, err)
+			rt.Abortf(exitcode.SysErrSerialization, "failed to parse identity cid %s: %s", c, err)
 		}
 		data = decoded.Digest
 	} else if stored, found := rt.store[c]; found {
