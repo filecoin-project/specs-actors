@@ -50,10 +50,6 @@ func init() {
 	miner.SupportedProofTypes[abi.RegisteredSealProof_StackedDrg2KiBV1] = struct{}{}
 }
 
-// 0 to starting value in 10,000 epochs gives reasonable
-// alpha beta velocity (10000 > EpochsPerDay)
-const testingEstimateDelta = 10000
-
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, miner.Actor{})
 }
@@ -365,7 +361,7 @@ func TestCommitments(t *testing.T) {
 
 		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
 		actor.epochReward = big.Div(actor.epochReward, big.NewInt(2))
-		actor.epochRewardSmooth = smoothing.TestingEstimate(actor.epochReward, testingEstimateDelta)
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(actor.epochReward)
 
 		challengeEpoch := rt.Epoch() - 1
 		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
@@ -1646,9 +1642,9 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		networkQAPower:  power,
 		baselinePower:   power,
 
-		epochRewardSmooth: smoothing.TestingEstimate(reward, testingEstimateDelta),
-		epochCirculatingSupplySmooth: smoothing.TestingEstimate(abi.NewTokenAmount(1e18), testingEstimateDelta),
-		epochQAPowerSmooth: smoothing.TestingEstimate(power, testingEstimateDelta),
+		epochRewardSmooth: smoothing.TestingConstantEstimate(reward),
+		epochCirculatingSupplySmooth: smoothing.TestingConstantEstimate(abi.NewTokenAmount(1e18)),
+		epochQAPowerSmooth: smoothing.TestingConstantEstimate(power),
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
@@ -35,8 +36,8 @@ func ExpectedDayRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing
 		return rewardEstimate.Estimate()
 	}
 	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(abi.ChainEpoch(builtin.EpochsInDay), 0, rewardEstimate, networkQAPowerEstimate)
-	return big.Mul(qaSectorPower, expectedRewardForProvingPeriod)
-	//	return big.Div(big.Mul(qaSectorPower, expectedRewardForProvingPeriod), networkQAPower)
+	br := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
+	return big.Rsh(br, math.Precision)
 }
 
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because

@@ -1,13 +1,13 @@
 package smoothing
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/util/math"
 )
 
-// Returns an estimate between position 0, velocity 0, and val over delta epochs
-func TestingEstimate(val big.Int, delta abi.ChainEpoch) *FilterEstimate {
+// Returns an estimate with position val and velocity 0
+func TestingConstantEstimate(val big.Int) *FilterEstimate {
 	estimate := InitialEstimate()
-	filter := LoadFilter(estimate, DefaultAlpha, DefaultBeta)
-	return filter.NextEstimate(val, delta)
+	estimate.PositionEstimate = big.Lsh(val, math.Precision) // Q.0 => Q.128
+	return estimate
 }

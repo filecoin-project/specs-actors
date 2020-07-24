@@ -148,16 +148,16 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 
 		m1 := big.Sub(x2b, x2a)
 		m1 = big.Mul(velocity2, big.Mul(position1, m1)) // Q.128 * Q.128 * Q.128 => Q.384
-		m1 = big.Rsh(m1, math.Precision*2)              // Q.384 => Q.128
+		m1 = big.Rsh(m1, math.Precision)                //Q.384 => Q.256
 
 		m2L := big.Sub(x2a, x2b)
 		m2L = big.Mul(position2, m2L)     // Q.128 * Q.128 => Q.256
 		m2R := big.Mul(velocity2, deltaT) // Q.128 * Q.128 => Q.256
 		m2 := big.Sum(m2L, m2R)
-		m2 = big.Mul(velocity1, m2)        // Q.256 => Q.384
-		m2 = big.Rsh(m2, math.Precision*2) // Q.384 => Q.128
+		m2 = big.Mul(velocity1, m2)      // Q.256 => Q.384
+		m2 = big.Rsh(m2, math.Precision) //Q.384 => Q.256
 
-		return big.Div(big.Sum(m1, m2), squaredVelocity2) // Q.128 / Q.128 => Q.0
+		return big.Div(big.Sum(m1, m2), squaredVelocity2) // Q.256 / Q.128 => Q.128
 
 	}
 
@@ -168,7 +168,8 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 
 	cumsumRatio := big.Mul(x1m, deltaT)                                // Q.128 * Q.128 => Q.256
 	cumsumRatio = big.Div(cumsumRatio, estimateDenom.PositionEstimate) // Q.256 / Q.128 => Q.128
-	return big.Rsh(cumsumRatio, math.Precision)                        // Q.128 => Q.0
+	return cumsumRatio
+
 }
 
 // The natural log of Q.128 x.

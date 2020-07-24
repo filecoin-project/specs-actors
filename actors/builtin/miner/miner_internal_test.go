@@ -2,7 +2,6 @@ package miner
 
 import (
 	"fmt"
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"testing"
 
 	"github.com/minio/blake2b-simd"
@@ -10,6 +9,8 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin"	
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
 
@@ -98,10 +99,10 @@ func TestFaultFeeInvariants(t *testing.T) {
 
 	// Construct plausible reward and qa power filtered estimates
 	epochReward := abi.NewTokenAmount(100 << 53)
-	rewardEstimate := smoothing.TestingEstimate(epochReward, 100) // not too much growth over ~3000 epoch projection in BR
+	rewardEstimate := smoothing.TestingConstantEstimate(epochReward) // not too much growth over ~3000 epoch projection in BR
 
 	networkPower := abi.NewStoragePower(100 << 50)
-	powerEstimate := smoothing.TestingEstimate(networkPower, 100)
+	powerEstimate := smoothing.TestingConstantEstimate(networkPower)
 
 	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
 		faultySectorPower := abi.NewStoragePower(1 << 50)
@@ -110,6 +111,48 @@ func TestFaultFeeInvariants(t *testing.T) {
 		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
 		fmt.Printf("ff: %v, sp: %v\n", ff, sp)
 		assert.True(t, sp.GreaterThan(ff))
+	})
+
+	// constant filter estimate cumsum ratio is just multiplication and division
+	// test that internal precision of BR calculation does not cost accuracy 
+	// compared to simple multiplication in this case.
+	t.Run("br looks right in plausible (sectorPower, networkPower, reward) range", func(t *testing.T) {
+		// between 10 and 100 FIL is reasonable for near-mid future
+		tensOfFIL := big.Mul(abi.NewTokenAmount(1e18), big.NewInt(50))
+		rewardEstimate := smoothing.TestingConstantEstimate(tensOfFIL)
+		smallPower := big.NewInt(32 << 30) // 32 GiB
+		hugePower := big.NewInt(1 << 60) // 1 EiB
+		epochsPerDay := big.NewInt(builtin.EpochsInDay)
+		smallPowerBRNum := big.Mul(big.Mul(smallPower, epochsPerDay), tensOfFIL)
+		hugePowerBRNum := big.Mul(big.Mul(hugePower, epochsPerDay), tensOfFIL)		
+
+		// QAPower = Space * AverageQuality
+		// 10s of EiBs -- lower range
+		// 1.2e18 * 10 bytes * 1 quality ~ 1e19
+		tensOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(10))
+		lowPowerEstimate := smoothing.TestingConstantEstimate(tensOfEiBs)
+		brSmallLow := ExpectedDayRewardForPower(rewardEstimate, lowPowerEstimate, smallPower)
+		brHugeLow := ExpectedDayRewardForPower(rewardEstimate, lowPowerEstimate, hugePower)
+		assert.Equal(t, big.Div(smallPowerBRNum, tensOfEiBs), brSmallLow)
+		assert.Equal(t, big.Div(hugePowerBRNum, tensOfEiBs), brHugeLow)		
+
+		// 100s of EiBs
+		// 1.2e18 * 100 bytes * 5 quality ~ 6e20
+		hundredsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(6e2))
+		midPowerEstimate := smoothing.TestingConstantEstimate(hundredsOfEiBs)
+		brSmallMid := ExpectedDayRewardForPower(rewardEstimate, midPowerEstimate, smallPower)
+		brHugeMid := ExpectedDayRewardForPower(rewardEstimate, midPowerEstimate, hugePower)
+		assert.Equal(t, big.Div(smallPowerBRNum, hundredsOfEiBs), brSmallMid)
+		assert.Equal(t, big.Div(hugePowerBRNum, hundredsOfEiBs), brHugeMid)		
+		
+		// 1000s of EiBs -- upper range 
+		// 1.2e18 * 1000 bytes * 10 quality = 1.2e22 ~ 2e22
+		thousandsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(2e4))
+		upperPowerEstimate := smoothing.TestingConstantEstimate(thousandsOfEiBs)
+		brSmallUpper := ExpectedDayRewardForPower(rewardEstimate, upperPowerEstimate, smallPower)
+		brHugeUpper := ExpectedDayRewardForPower(rewardEstimate, upperPowerEstimate, hugePower)
+		assert.Equal(t, big.Div(smallPowerBRNum, thousandsOfEiBs), brSmallUpper)
+		assert.Equal(t, big.Div(hugePowerBRNum, thousandsOfEiBs), brHugeUpper)			
 	})
 
 	t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {

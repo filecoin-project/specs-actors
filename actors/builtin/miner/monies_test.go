@@ -19,8 +19,8 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 	qaSectorPower := abi.NewStoragePower(1 << 36)
 	networkQAPower := abi.NewStoragePower(1 << 50)
 
-	rewardEstimate := smoothing.TestingEstimate(epochTargetReward, 10000)
-	powerEstimate := smoothing.TestingEstimate(networkQAPower, 10000)
+	rewardEstimate := smoothing.TestingConstantEstimate(epochTargetReward)
+	powerEstimate := smoothing.TestingConstantEstimate(networkQAPower)
 
 	undeclaredPenalty := miner.PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, qaSectorPower)
 
