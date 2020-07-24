@@ -9,10 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	"github.com/multiformats/go-multihash"
+	mh "github.com/multiformats/go-multihash"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -63,7 +62,7 @@ type Runtime struct {
 	expectComputeUnsealedSectorCID *expectComputeUnsealedSectorCID
 	expectVerifyPoSt               *expectVerifyPoSt
 	expectVerifyConsensusFault     *expectVerifyConsensusFault
-	expectDeleteActor              *address.Address
+	expectDeleteActor              *addr.Address
 
 	logs []string
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
@@ -388,8 +387,8 @@ func (rt *Runtime) get(c cid.Cid) ([]byte, bool) {
 	}
 
 	var data []byte
-	if prefix.MhType == multihash.IDENTITY {
-		decoded, err := multihash.Decode(c.Hash())
+	if prefix.MhType == mh.IDENTITY {
+		decoded, err := mh.Decode(c.Hash())
 		if err != nil {
 			rt.Abortf(exitcode.SysErrSerialization, "failed to parse identity cid %s: %s", c, err)
 		}
@@ -404,8 +403,7 @@ func (rt *Runtime) get(c cid.Cid) ([]byte, bool) {
 
 // Puts raw data into the state, but only if it's not "inlined" into the CID.
 func (rt *Runtime) put(c cid.Cid, data []byte) {
-	// Store it only if we need to. Doing this in tests ensure
-	if c.Prefix().MhType != multihash.IDENTITY {
+	if c.Prefix().MhType != mh.IDENTITY {
 		rt.store[c] = data
 	}
 }
