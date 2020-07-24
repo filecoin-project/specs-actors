@@ -145,8 +145,8 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 		x2b = big.Rsh(x2b, math.Precision) // Q.256 => Q.128
 		x2b = big.Sum(x2a, x2b)
 
-		x2a = ln(x2a) // Q.128
-		x2b = ln(x2b) // Q.128
+		x2a = Ln(x2a) // Q.128
+		x2b = Ln(x2b) // Q.128
 
 		m1 := big.Sub(x2b, x2a)
 		m1 = big.Mul(velocity2, big.Mul(position1, m1)) // Q.128 * Q.128 * Q.128 => Q.384
@@ -175,18 +175,21 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 }
 
 // The natural log of Q.128 x.
-func ln(z big.Int) big.Int {
-	// ln(z) = ln(x * 2^k) = ln(x) + k * ln2
-	intK := uint(z.BitLen() - 1 - math.Precision)
-	k := big.NewInt(int64(intK))   // Q.0
-	k = big.Lsh(k, math.Precision) // Q.0 => Q.128
+func Ln(z big.Int) big.Int {
+	// bitlen - 1 - precision
+	k := big.Sub(big.Sub(big.NewInt(int64(z.BitLen())), big.NewInt(1)), big.NewInt(math.Precision)) // Q.0
+	intK := uint(k.Abs().Int64())
 
-	x := big.Zero() // nolint:ineffassign
+	k = big.Lsh(k, math.Precision) // Q.0 => Q.128
+	x := big.Zero()                // nolint:ineffassign
+
 	if k.GreaterThan(big.Zero()) {
 		x = big.Rsh(z, intK) // Q.128
 	} else {
 		x = big.Lsh(z, intK) // Q.128
 	}
+
+	// ln(z) = ln(x * 2^k) = ln(x) + k * ln2
 	lnz := big.Mul(k, ln2)                     // Q.128 * Q.128 => Q.256
 	lnz = big.Rsh(lnz, math.Precision)         // Q.256 => Q.128
 	return big.Sum(lnz, lnBetweenOneAndTwo(x)) // Q.128

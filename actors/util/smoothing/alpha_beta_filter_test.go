@@ -1,6 +1,7 @@
 package smoothing_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -9,6 +10,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // project of cumsum ratio is equal to cumsum of ratio of projections
@@ -54,23 +56,6 @@ func TestCumSumRatioProjection(t *testing.T) {
 		}
 		ratio = big.Div(ratio, big.NewInt(2)) // Q.128 / Q.0 => Q.128
 		return ratio
-	}
-
-	// Millionths of difference between val1 and val2
-	// (val1 - val2) / val1 * 1e6
-	// all inputs Q.128, output Q.0
-	perMillionError := func(val1, val2 big.Int) big.Int {
-		diff := big.Sub(val1, val2)
-
-		diff = big.Lsh(diff, math.Precision)                // Q.128 => Q.256
-		perMillion := big.Div(diff, val1)                   // Q.256 / Q.128 => Q.128
-		million := big.Lsh(big.NewInt(1e6), math.Precision) // Q.0 => Q.128
-
-		perMillion = big.Mul(perMillion, million) // Q.128 * Q.128 => Q.256
-		if perMillion.LessThan(big.Zero()) {
-			perMillion = perMillion.Neg()
-		}
-		return big.Rsh(perMillion, 2*math.Precision)
 	}
 
 	// millionths of error difference
@@ -164,5 +149,46 @@ func TestCumSumRatioProjection(t *testing.T) {
 }
 
 func TestNaturalLog(t *testing.T) {
-	// TODO compare some standard natural log values to our computed values
+	lnInputs := math.Parse([]string{
+		"340282366920938463463374607431768211456",                       // Q.128 format of 1
+		"924990000000000000000000000000000000000",                       // Q.128 format of e (rounded up in 5th decimal place to handle truncation)
+		"34028236692093846346337460743176821145600000000000000000000",   // Q.128 format of 100e18
+		"6805647338418769269267492148635364229120000000000000000000000", // Q.128 format of 2e22
+		"204169000000000000000000000000000000",                          // Q.128 format of 0.0006
+		"34028236692093846346337460743",                                 // Q.128 format of 1e-10
+	})
+
+	expectedLnOutputs := math.Parse([]string{
+		"0", // Q.128 format of 0 = ln(1)
+		"340282366920938463463374607431768211456",   // Q.128 format of 1 = ln(e)
+		"15670582109617661336106769654068947397831", // Q.128 format of 46.051... = ln(100e18)
+		"17473506083804940763855390762239996622013", // Q.128 format of  51.35... = ln(2e22)
+		"-2524410000000000000000000000000000000000", // Q.128 format of -7.41.. = ln(0.0006)
+		"-7835291054808830668053384827034473698915", // Q.128 format of -23.02.. = ln(1e-10)
+	})
+	fmt.Printf("%v %v\n", lnInputs, expectedLnOutputs)
+	require.Equal(t, len(lnInputs), len(expectedLnOutputs))
+	for i := 0; i < len(lnInputs); i++ {
+		z := big.Int{Int: lnInputs[i]}
+		lnOfZ := smoothing.Ln(z)
+		expectedZ := big.Int{Int: expectedLnOutputs[i]}
+		assert.Equal(t, big.Rsh(expectedZ, math.Precision), big.Rsh(lnOfZ, math.Precision), "failed ln of %v", z)
+	}
+}
+
+// Millionths of difference between val1 and val2
+// (val1 - val2) / val1 * 1e6
+// all inputs Q.128, output Q.0
+func perMillionError(val1, val2 big.Int) big.Int {
+	diff := big.Sub(val1, val2)
+
+	diff = big.Lsh(diff, math.Precision)                // Q.128 => Q.256
+	perMillion := big.Div(diff, val1)                   // Q.256 / Q.128 => Q.128
+	million := big.Lsh(big.NewInt(1e6), math.Precision) // Q.0 => Q.128
+
+	perMillion = big.Mul(perMillion, million) // Q.128 * Q.128 => Q.256
+	if perMillion.LessThan(big.Zero()) {
+		perMillion = perMillion.Neg()
+	}
+	return big.Rsh(perMillion, 2*math.Precision)
 }
