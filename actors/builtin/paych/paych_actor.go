@@ -323,10 +323,14 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	)
 	builtin.RequireSuccess(rt, codeTo, "Failed to send funds to `To`")
 
+	// even though we will delete the actor, it dosen't hurt to set this here for sanity.
 	rt.State().Transaction(&st, func() interface{} {
 		st.ToSend = big.Zero()
 		return nil
 	})
+
+	rt.DeleteActor(builtin.BurntFundsActorAddr)
+
 	return nil
 }
 

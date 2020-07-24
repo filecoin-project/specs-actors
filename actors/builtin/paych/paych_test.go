@@ -694,6 +694,7 @@ func TestActor_Collect(t *testing.T) {
 		// Collect.
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.ExpectDeleteActor(builtin.BurntFundsActorAddr)
 		res := rt.Call(actor.Collect, nil)
 		assert.Nil(t, res)
 
