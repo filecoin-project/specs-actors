@@ -1233,7 +1233,6 @@ func TestDeclareFaults(t *testing.T) {
 		ss, err := info.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorQAPower := miner.QAPowerForSector(ss, info)
-		totalQAPower := big.NewInt(1 << 52)
 		fee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorQAPower)
 
 		actor.declareFaults(rt, fee, info)
@@ -2454,12 +2453,12 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amount abi.TokenAmount) {
 
 func (h *actorHarness) declaredFaultPenalty(sectors []*miner.SectorOnChainInfo) abi.TokenAmount {
 	_, qa := powerForSectors(h.sectorSize, sectors)
-	return miner.PledgePenaltyForDeclaredFault(h.epochReward, h.networkQAPower, qa)
+	return miner.PledgePenaltyForDeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
 }
 
 func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo) abi.TokenAmount {
 	_, qa := powerForSectors(h.sectorSize, sectors)
-	return miner.PledgePenaltyForUndeclaredFault(h.epochReward, h.networkQAPower, qa)
+	return miner.PledgePenaltyForUndeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
 }
 
 func (h *actorHarness) powerPairForSectors(sectors []*miner.SectorOnChainInfo) miner.PowerPair {
