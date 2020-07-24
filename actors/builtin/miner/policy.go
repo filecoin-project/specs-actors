@@ -156,11 +156,6 @@ func QAPowerForSector(size abi.SectorSize, sector *SectorOnChainInfo) abi.Storag
 	return QAPowerForWeight(size, duration, sector.DealWeight, sector.VerifiedDealWeight)
 }
 
-// Deposit per sector required at pre-commitment, refunded after the commitment is proven (else burned).
-func precommitDeposit(qaSectorPower abi.StoragePower, networkQAPower abi.StoragePower, baselinePower abi.StoragePower, networkTotalPledge, epochTargetReward, circulatingSupply abi.TokenAmount) abi.TokenAmount {
-	return InitialPledgeForPower(qaSectorPower, networkQAPower, baselinePower, networkTotalPledge, epochTargetReward, circulatingSupply)
-}
-
 // Determine maximum number of deal miner's sector can hold
 func dealPerSectorLimit(size abi.SectorSize) uint64 {
 	return max64(256, uint64(size/DealLimitDenominator))
