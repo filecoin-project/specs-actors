@@ -53,6 +53,33 @@ func (q BitfieldQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) 
 	return q.AddToQueue(epoch, bitfield.NewFromSet(values))
 }
 
+// Cut cuts the elements from the bits in the given bitfield out of the queue,
+// shifting other bits down and removing any newly empty entries.
+//
+// See the docs on BitField.Cut to better understand what it does.
+func (q BitfieldQueue) Cut(toCut *bitfield.BitField) error {
+	var epochsToRemove []uint64
+	if err := q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+		bf, err := bitfield.CutBitField(bf, toCut)
+		if err != nil {
+			return err
+		}
+		if empty, err := bf.IsEmpty(); err != nil {
+			return err
+		} else if !empty {
+			return q.Set(uint64(epoch), bf)
+		}
+		epochsToRemove = append(epochsToRemove, uint64(epoch))
+		return nil
+	}); err != nil {
+		return xerrors.Errorf("failed to cut from bitfield queue: %w", err)
+	}
+	if err := q.BatchDelete(epochsToRemove); err != nil {
+		return xerrors.Errorf("failed to remove empty epochs from bitfield queue: %w", err)
+	}
+	return nil
+}
+
 func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) error {
 	// Update each epoch in-order to be deterministic.
 	// Pre-quantize to reduce the number of updates.

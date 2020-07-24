@@ -204,6 +204,23 @@ func TestBitfieldQueue(t *testing.T) {
 		ExpectBQ().
 			Equals(t, queue)
 	})
+
+	t.Run("cuts elements", func(t *testing.T) {
+		queue := emptyBitfieldQueue(t)
+
+		epoch1 := abi.ChainEpoch(42)
+		epoch2 := abi.ChainEpoch(93)
+
+		require.NoError(t, queue.AddToQueueValues(epoch1, 1, 2, 3, 4, 99))
+		require.NoError(t, queue.AddToQueueValues(epoch2, 5, 6))
+
+		require.NoError(t, queue.Cut(bitfield.NewFromSet([]uint64{2, 4, 5, 6})))
+
+		ExpectBQ().
+			Add(epoch1, 1, 2, 95). // 3 shifts down to 2, 99 down to 95
+			Equals(t, queue)
+	})
+
 }
 
 func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec) miner.BitfieldQueue {

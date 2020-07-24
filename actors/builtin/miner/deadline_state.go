@@ -633,27 +633,11 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitFiel
 			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to load expiration queue: %w", err)
 		}
 
-		var epochsToRemove []uint64
-		err = expirationEpochs.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
-			bf, err := bitfield.CutBitField(bf, toRemove)
-			if err != nil {
-				return err
-			}
-			if empty, err := bf.IsEmpty(); err != nil {
-				return err
-			} else if !empty {
-				return expirationEpochs.Set(uint64(epoch), bf)
-			}
-			epochsToRemove = append(epochsToRemove, uint64(epoch))
-			return nil
-		})
+		err = expirationEpochs.Cut(toRemove)
 		if err != nil {
-			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to update deadline expiration queue: %w", err)
+			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed cut removed partitions from deadline expiration queue: %w", err)
 		}
-		err = expirationEpochs.BatchDelete(epochsToRemove)
-		if err != nil {
-			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to remove empty epochs from deadline expiration queue: %w", err)
-		}
+
 		dl.ExpirationsEpochs, err = expirationEpochs.Root()
 		if err != nil {
 			return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed persist deadline expiration queue: %w", err)
