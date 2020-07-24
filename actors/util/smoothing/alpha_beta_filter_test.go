@@ -1,11 +1,11 @@
 package smoothing_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"github.com/stretchr/testify/assert"
@@ -40,6 +40,7 @@ func TestCumSumRatioProjection(t *testing.T) {
 	})
 
 	// Q.128 cumsum of ratio
+	// Use the trapezoid rule to get an exact sum
 	iterativeCumSumOfRatio := func(num, denom *smoothing.FilterEstimate, t0, delta abi.ChainEpoch) big.Int {
 		ratio := big.Zero() // Q.128
 		for i := abi.ChainEpoch(0); i < delta; i++ {
@@ -47,8 +48,12 @@ func TestCumSumRatioProjection(t *testing.T) {
 			denomEpsilon := denom.Extrapolate(t0 + i)            // Q.256
 			denomEpsilon = big.Rsh(denomEpsilon, math.Precision) // Q.256 => Q.128
 			epsilon := big.Div(numEpsilon, denomEpsilon)         // Q.256 / Q.128 => Q.128
+			if i != abi.ChainEpoch(0) && i != delta-1 {
+				epsilon = big.Mul(big.NewInt(2), epsilon) // Q.128 * Q.0 => Q.128
+			}
 			ratio = big.Sum(ratio, epsilon)
 		}
+		ratio = big.Div(ratio, big.NewInt(2)) // Q.128 / Q.0 => Q.128
 		return ratio
 	}
 
@@ -57,32 +62,35 @@ func TestCumSumRatioProjection(t *testing.T) {
 	// all inputs Q.128, output Q.0
 	perMillionError := func(val1, val2 big.Int) big.Int {
 		diff := big.Sub(val1, val2)
-		if diff.LessThan(big.Zero()) {
-			diff = diff.Neg()
-		}
+
 		diff = big.Lsh(diff, math.Precision)                // Q.128 => Q.256
 		perMillion := big.Div(diff, val1)                   // Q.256 / Q.128 => Q.128
 		million := big.Lsh(big.NewInt(1e6), math.Precision) // Q.0 => Q.128
 
 		perMillion = big.Mul(perMillion, million) // Q.128 * Q.128 => Q.256
+		if perMillion.LessThan(big.Zero()) {
+			perMillion = perMillion.Neg()
+		}
 		return big.Rsh(perMillion, 2*math.Precision)
 	}
 
 	// millionths of error difference
-	// set this error value after empirically seeing 56 millionths
-	errBound := big.NewInt(100)
+	// set this error value after empirically seeing values in this range
+	// Note that when cumsum taken over small numbers of epochs error is much worse
+	errBound := big.NewInt(300)
+
+	assertErrBound := func(t *testing.T, num, denom *smoothing.FilterEstimate, delta, t0 abi.ChainEpoch, errBound big.Int) {
+		analytic := smoothing.ExtrapolatedCumSumOfRatio(delta, t0, num, denom)
+		iterative := iterativeCumSumOfRatio(num, denom, t0, delta)
+		assert.True(t, perMillionError(analytic, iterative).LessThan(errBound))
+	}
+
 	t.Run("both positive velocity", func(t *testing.T) {
 		numEstimate := smoothing.TestingEstimate(big.NewInt(111), big.NewInt(33))
 		denomEstimate := smoothing.TestingEstimate(big.NewInt(3456), big.NewInt(8))
 		delta := abi.ChainEpoch(10000)
 		t0 := abi.ChainEpoch(0)
-		analytic := smoothing.ExtrapolatedCumSumOfRatio(delta, t0, numEstimate, denomEstimate)
-		iterative := iterativeCumSumOfRatio(numEstimate, denomEstimate, t0, delta)
-
-		pme := perMillionError(analytic, iterative)
-		fmt.Printf("pme: %v\n", pme)
-
-		assert.True(t, pme.LessThan(errBound))
+		assertErrBound(t, numEstimate, denomEstimate, delta, t0, errBound)
 	})
 
 	t.Run("flipped signs", func(t *testing.T) {
@@ -90,12 +98,64 @@ func TestCumSumRatioProjection(t *testing.T) {
 		denomEstimate := smoothing.TestingEstimate(big.NewInt(7e4), big.NewInt(1000))
 		delta := abi.ChainEpoch(100000)
 		t0 := abi.ChainEpoch(0)
-		analytic := smoothing.ExtrapolatedCumSumOfRatio(delta, t0, numEstimate, denomEstimate)
-		iterative := iterativeCumSumOfRatio(numEstimate, denomEstimate, t0, delta)
+		assertErrBound(t, numEstimate, denomEstimate, delta, t0, errBound)
+	})
 
-		pme := perMillionError(analytic, iterative)
-		fmt.Printf("pme: %v\n", pme)
-		assert.True(t, pme.LessThan(errBound))
+	t.Run("values in range we care about for BR", func(t *testing.T) {
+		tensOfFIL := big.Mul(abi.NewTokenAmount(1e18), big.NewInt(50))
+		oneFILPerSecond := big.NewInt(25)
+		fourFILPerSecond := big.NewInt(100)
+		slowMoney := smoothing.TestingEstimate(tensOfFIL, oneFILPerSecond)
+		fastMoney := smoothing.TestingEstimate(tensOfFIL, fourFILPerSecond)
+
+		tensOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(10))
+		thousandsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(2e4))
+
+		oneBytePerEpochVelocity := big.NewInt(1)
+		tenPiBsPerDayVelocity := big.Div(big.NewInt(10<<50), big.NewInt(int64(builtin.EpochsInDay)))
+		oneEiBPerDayVelocity := big.Div(big.NewInt(1<<60), big.NewInt(int64(builtin.EpochsInDay)))
+
+		delta := abi.ChainEpoch(builtin.EpochsInDay)
+		t0 := abi.ChainEpoch(0)
+		{
+			// low power low velocity
+			power := smoothing.TestingEstimate(tensOfEiBs, oneBytePerEpochVelocity)
+			assertErrBound(t, slowMoney, power, delta, t0, errBound)
+			assertErrBound(t, fastMoney, power, delta, t0, errBound)
+		}
+
+		{
+			// low power mid velocity
+			power := smoothing.TestingEstimate(tensOfEiBs, tenPiBsPerDayVelocity)
+			assertErrBound(t, slowMoney, power, delta, t0, errBound)
+			assertErrBound(t, fastMoney, power, delta, t0, errBound)
+		}
+
+		{
+			// low power high velocity
+			power := smoothing.TestingEstimate(tensOfEiBs, oneEiBPerDayVelocity)
+			assertErrBound(t, slowMoney, power, delta, t0, errBound)
+			assertErrBound(t, fastMoney, power, delta, t0, errBound)
+		}
+
+		{
+			// high power low velocity
+			power := smoothing.TestingEstimate(thousandsOfEiBs, oneBytePerEpochVelocity)
+			assertErrBound(t, slowMoney, power, delta, t0, errBound)
+			assertErrBound(t, fastMoney, power, delta, t0, errBound)
+		}
+		{
+			// high power mid velocity
+			power := smoothing.TestingEstimate(thousandsOfEiBs, tenPiBsPerDayVelocity)
+			assertErrBound(t, slowMoney, power, delta, t0, errBound)
+			assertErrBound(t, fastMoney, power, delta, t0, errBound)
+		}
+		{
+			// high power high velocity
+			power := smoothing.TestingEstimate(thousandsOfEiBs, oneEiBPerDayVelocity)
+			assertErrBound(t, slowMoney, power, delta, t0, errBound)
+			assertErrBound(t, fastMoney, power, delta, t0, errBound)
+		}
 	})
 
 }
