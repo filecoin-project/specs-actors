@@ -108,10 +108,13 @@ var FaultMaxAge = WPoStProvingPeriod * 14
 // key or allowing the owner account to submit PoSts while a key change is pending.
 const WorkerKeyChangeDelay = ChainFinality
 
+// Minimum number of epochs past the current epoch a sector may be set to expire.
+const MinSectorExpiration = 180 * builtin.EpochsInDay
+
 // Maximum number of epochs past the current epoch a sector may be set to expire.
 // The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
 // and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
-const MaxSectorExpirationExtension = builtin.EpochsInYear
+const MaxSectorExpirationExtension = 366 * builtin.EpochsInDay
 
 // Ratio of sector size to maximum deals per sector.
 // The maximum number of deals is the sector size divided by this number (2^27)
