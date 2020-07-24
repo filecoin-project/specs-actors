@@ -3,7 +3,6 @@ package market
 import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -12,8 +11,8 @@ import (
 
 var PieceCIDPrefix = cid.Prefix{
 	Version:  1,
-	Codec:    cid.FilCommitmentUnsealed,
-	MhType:   mh.SHA2_256_TRUNC254_PADDED,
+	Codec:    cid.Raw,
+	MhType:   0xfc1,
 	MhLength: 32,
 }
 

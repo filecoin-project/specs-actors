@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -55,8 +54,8 @@ const ChainFinalityish = abi.ChainEpoch(900) // PARAM_FINISH
 
 var SealedCIDPrefix = cid.Prefix{
 	Version:  1,
-	Codec:    cid.FilCommitmentSealed,
-	MhType:   mh.POSEIDON_BLS12_381_A1_FC1,
+	Codec:    cid.Raw,
+	MhType:   0xfc2,
 	MhLength: 32,
 }
 
