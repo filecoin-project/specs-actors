@@ -249,7 +249,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	store := adt.AsStore(rt)
 	var st State
 
-	if params.Deadline > WPoStPeriodDeadlines {
+	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
 	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
