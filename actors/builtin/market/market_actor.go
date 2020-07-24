@@ -94,8 +94,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		// The withdrawable amount might be slightly less than nominal
 		// depending on whether or not all relevant entries have been processed
 		// by cron
-		minBalance, err, code := getBalance(msm.lockedTable, nominal)
-		builtin.RequireNoErr(rt, err, code, "failed to get locked balance")
+		minBalance, err := msm.lockedTable.Get(nominal)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get locked balance")
 
 		ex, err := msm.escrowTable.SubtractWithMinimum(nominal, params.Amount, minBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract form escrow table")
@@ -127,11 +127,8 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 			withLockedTable(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
-		err = msm.escrowTable.AddCreate(nominal, msgValue)
+		err = msm.escrowTable.Add(nominal, msgValue)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add balance to escrow table")
-
-		err = msm.lockedTable.AddCreate(nominal, big.Zero())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add locked balance")
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
@@ -449,7 +446,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 	return nil
 }
 
-func (a Actor) CronTick(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 	amountSlashed := big.Zero()
 
