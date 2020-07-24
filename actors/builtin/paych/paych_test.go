@@ -307,7 +307,6 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		ucp.Sv.Nonce = 1
 		ucp.Sv.Amount = newVoucherAmt
 
-		// Sending to same lane updates the lane with "new" state
 		rt.SetCaller(actor.payee, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st1.From, st1.To)
 		rt.ExpectVerifySignature(*ucp.Sv.Signature, actor.payer, voucherBytes(t, &ucp.Sv), nil)

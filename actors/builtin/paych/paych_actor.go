@@ -198,7 +198,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 	}
 
 	rt.State().Transaction(&st, func() interface{} {
-		lanFound := true
+		laneFound := true
 		// Find the voucher lane, create and insert it in sorted order if necessary.
 		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
 		if ls == nil {
@@ -211,12 +211,13 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 				Nonce:    0,
 			}
 			st.LaneStates = append(st.LaneStates[:laneIdx], append([]*LaneState{ls}, st.LaneStates[laneIdx:]...)...)
-			lanFound = false
+			laneFound = false
 		}
 
-		if lanFound {
+		if laneFound {
 			if ls.Nonce >= sv.Nonce {
-				rt.Abortf(exitcode.ErrIllegalArgument, "voucher has an outdated nonce, cannot redeem")
+				rt.Abortf(exitcode.ErrIllegalArgument, "voucher has an outdated nonce, existing nonce: %d, voucher nonce: %d, cannot redeem",
+					ls.Nonce, sv.Nonce)
 			}
 		}
 
