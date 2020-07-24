@@ -1,32 +1,36 @@
 package testing
 
 import (
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
+	"github.com/minio/sha256-simd"
 	mh "github.com/multiformats/go-multihash"
 )
 
-var DefaultHashFunction = uint64(mh.BLAKE2B_MIN + 31)
-var DefaultCidBuilder = cid.V1Builder{Codec: cid.DagCBOR, MhType: DefaultHashFunction}
-
 func MakeCID(input string, prefix *cid.Prefix) cid.Cid {
-	c, err := DefaultCidBuilder.Sum([]byte(input))
-	if err != nil {
+	data := []byte(input)
+	if prefix == nil {
+		c, err := abi.CidBuilder.Sum(data)
+		if err != nil {
+			panic(err)
+		}
+		return c
+	}
+	c, err := prefix.Sum(data)
+	switch err {
+	case mh.ErrSumNotSupported:
+		// multihash library doesn't support this hash function.
+		// just fake it.
+	case nil:
+		return c
+	default:
 		panic(err)
 	}
 
-	if prefix != nil {
-		h, err := mh.Decode(c.Hash())
-		if err != nil {
-			panic(err)
-		}
-
-		ph, err := mh.Encode(h.Digest, prefix.MhType)
-		if err != nil {
-			panic(err)
-		}
-
-		return cid.NewCidV1(prefix.Codec, ph)
+	sum := sha256.Sum256(data)
+	hash, err := mh.Encode(sum[:], prefix.MhType)
+	if err != nil {
+		panic(err)
 	}
-
-	return c
+	return cid.NewCidV1(prefix.Codec, hash)
 }
