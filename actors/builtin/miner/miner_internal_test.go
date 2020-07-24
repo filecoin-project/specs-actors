@@ -1,7 +1,6 @@
 package miner
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/minio/blake2b-simd"
@@ -109,7 +108,6 @@ func TestFaultFeeInvariants(t *testing.T) {
 
 		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
 		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
-		fmt.Printf("ff: %v, sp: %v\n", ff, sp)
 		assert.True(t, sp.GreaterThan(ff))
 	})
 
