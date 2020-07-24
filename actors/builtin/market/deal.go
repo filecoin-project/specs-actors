@@ -3,11 +3,19 @@ package market
 import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 )
+
+var PieceCIDPrefix = cid.Prefix{
+	Version:  1,
+	Codec:    cid.FilCommitmentUnsealed,
+	MhType:   mh.SHA2_256_TRUNC254_PADDED,
+	MhLength: 32,
+}
 
 // Note: Deal Collateral is only released and returned to clients and miners
 // when the storage deal stops counting towards power. In the current iteration,
@@ -18,7 +26,7 @@ import (
 // Note: ClientCollateralPerEpoch may not be needed and removed pending future confirmation.
 // There will be a Minimum value for both client and provider deal collateral.
 type DealProposal struct {
-	PieceCID     cid.Cid // CommP
+	PieceCID     cid.Cid `checked:"true"` // Checked in validateDeal, CommP
 	PieceSize    abi.PaddedPieceSize
 	VerifiedDeal bool
 	Client       addr.Address

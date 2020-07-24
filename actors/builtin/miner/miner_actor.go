@@ -322,6 +322,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	if params.Expiration <= rt.CurrEpoch() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
 	}
+	if params.SealedCID.Prefix() != SealedCIDPrefix {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sealed CID had wrong prefix")
+	}
 	if params.SealRandEpoch >= rt.CurrEpoch() {
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v must be before now %v", params.SealRandEpoch, rt.CurrEpoch())
 	}
