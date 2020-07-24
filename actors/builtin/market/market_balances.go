@@ -1,16 +1,13 @@
 package market
 
 import (
-	"errors"
-	"fmt"
-
 	addr "github.com/filecoin-project/go-address"
+	"golang.org/x/xerrors"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"golang.org/x/xerrors"
 )
 
 // if the returned error is not nil, the Runtime will exit with the returned exit code.
@@ -18,12 +15,12 @@ import (
 func (m *marketStateMutation) lockClientAndProviderBalances(proposal *DealProposal) (error, exitcode.ExitCode) {
 	err, code := m.maybeLockBalance(proposal.Client, proposal.ClientBalanceRequirement())
 	if err != nil {
-		return fmt.Errorf("failed to lock client funds: %w", err), code
+		return xerrors.Errorf("failed to lock client funds: %w", err), code
 	}
 
 	err, code = m.maybeLockBalance(proposal.Provider, proposal.ProviderCollateral)
 	if err != nil {
-		return fmt.Errorf("failed to lock provider funds: %w", err), code
+		return xerrors.Errorf("failed to lock provider funds: %w", err), code
 	}
 
 	m.totalClientLockedCollateral = big.Add(m.totalClientLockedCollateral, proposal.ClientCollateral)
@@ -83,14 +80,14 @@ func (m *marketStateMutation) slashBalance(addr addr.Address, amount abi.TokenAm
 func (m *marketStateMutation) maybeLockBalance(addr addr.Address, amount abi.TokenAmount) (error, exitcode.ExitCode) {
 	Assert(amount.GreaterThanEqual(big.Zero()))
 
-	prevLocked, err, code := getBalance(m.lockedTable, addr)
+	prevLocked, err := m.lockedTable.Get(addr)
 	if err != nil {
-		return fmt.Errorf("failed to get locked balance: %w", err), code
+		return xerrors.Errorf("failed to get locked balance: %w", err), exitcode.ErrIllegalState
 	}
 
-	escrowBalance, err, code := getBalance(m.escrowTable, addr)
+	escrowBalance, err := m.escrowTable.Get(addr)
 	if err != nil {
-		return fmt.Errorf("failed to get escrow balance: %w", err), code
+		return xerrors.Errorf("failed to get escrow balance: %w", err), exitcode.ErrIllegalState
 	}
 
 	if big.Add(prevLocked, amount).GreaterThan(escrowBalance) {
@@ -99,19 +96,7 @@ func (m *marketStateMutation) maybeLockBalance(addr addr.Address, amount abi.Tok
 	}
 
 	if err := m.lockedTable.Add(addr, amount); err != nil {
-		return fmt.Errorf("failed to add locked balance: %w", err), exitcode.ErrIllegalState
+		return xerrors.Errorf("failed to add locked balance: %w", err), exitcode.ErrIllegalState
 	}
 	return nil, exitcode.Ok
-}
-
-func getBalance(bt *adt.BalanceTable, a addr.Address) (abi.TokenAmount, error, exitcode.ExitCode) {
-	ret, found, err := bt.Get(a)
-	if err != nil {
-		return big.Zero(), fmt.Errorf("failed to load balance table :%w", err), exitcode.ErrIllegalArgument
-	}
-	if !found {
-		return big.Zero(), errors.New("account does not exist"), exitcode.ErrInsufficientFunds
-	}
-
-	return ret, nil, exitcode.Ok
 }

@@ -26,93 +26,71 @@ func TestBalanceTable(t *testing.T) {
 		return bt
 	}
 
-	t.Run("AddCreate adds or creates", func(t *testing.T) {
+	t.Run("Add adds or creates", func(t *testing.T) {
 		addr := tutil.NewIDAddr(t, 100)
 		bt := buildBalanceTable()
 
-		has, err := bt.Has(addr)
+		prev, err := bt.Get(addr)
 		assert.NoError(t, err)
-		assert.False(t, has)
+		assert.Equal(t, big.Zero(), prev)
 
-		err = bt.AddCreate(addr, abi.NewTokenAmount(10))
+		err = bt.Add(addr, abi.NewTokenAmount(10))
 		assert.NoError(t, err)
-
-		amount, found, err := bt.Get(addr)
-		require.True(t, found)
+		amount, err := bt.Get(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(10), amount)
 
-		err = bt.AddCreate(addr, abi.NewTokenAmount(20))
+		err = bt.Add(addr, abi.NewTokenAmount(20))
 		assert.NoError(t, err)
-
-		amount, found, err = bt.Get(addr)
-		require.True(t, found)
+		amount, err = bt.Get(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(30), amount)
-	})
 
-	t.Run("Add works only if account has been created", func(t *testing.T) {
-		addr := tutil.NewIDAddr(t, 100)
-		bt := buildBalanceTable()
-
-		// fail if account hasnt been created
-		require.Error(t, bt.Add(addr, abi.NewTokenAmount(10)))
-
-		// now create account -> add should work
-		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(10)))
-		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
-		bal, found, err := bt.Get(addr)
-		require.True(t, found)
+		// Add negative to subtract.
+		err = bt.Add(addr, abi.NewTokenAmount(-30))
+		assert.NoError(t, err)
+		amount, err = bt.Get(addr)
+		assert.NoError(t, err)
+		assert.Equal(t, abi.NewTokenAmount(0), amount)
+		// The zero entry is not stored.
+		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
 		require.NoError(t, err)
-		require.Equal(t, abi.NewTokenAmount(15), bal)
-	})
-
-	t.Run("Get works only if account has been created", func(t *testing.T) {
-		addr := tutil.NewIDAddr(t, 100)
-		bt := buildBalanceTable()
-
-		// found is false if account hasnt been created
-		bal, found, err := bt.Get(addr)
 		require.False(t, found)
-		require.NoError(t, err)
-		require.Equal(t, big.Zero(), bal)
-
-		// now create account -> get should work
-		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(10)))
-		bal, found, err = bt.Get(addr)
-		require.True(t, found)
-		require.NoError(t, err)
-		require.Equal(t, abi.NewTokenAmount(10), bal)
 	})
 
-	t.Run("Must subtract fails if account not created or balance is insufficient", func(t *testing.T) {
+	t.Run("Must subtract fails if account balance is insufficient", func(t *testing.T) {
 		addr := tutil.NewIDAddr(t, 100)
 		bt := buildBalanceTable()
 
-		// fail if account hasnt been created
-		require.Error(t, bt.MustSubtract(addr, abi.NewTokenAmount(0)))
-
-		// create account -> should work now
-		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(0)))
+		// Ok to subtract zero from nothing
 		require.NoError(t, bt.MustSubtract(addr, abi.NewTokenAmount(0)))
 
+		// Fail to subtract something from nothing
+		require.Error(t, bt.MustSubtract(addr, abi.NewTokenAmount(1)))
+
 		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
-		// error if insufficient balance -> however, balance is still subtracted
-		// TODO Is that correct ?
-		// https://github.com/filecoin-project/specs-actors/issues/652
+
+		// Fail to subtract more than available
 		require.Error(t, bt.MustSubtract(addr, abi.NewTokenAmount(6)))
-		bal, found, err := bt.Get(addr)
-		require.True(t, found)
+		bal, err := bt.Get(addr)
+		require.NoError(t, err)
+		require.Equal(t, abi.NewTokenAmount(5), bal)
+
+		// Ok to subtract less than available
+		require.NoError(t, bt.MustSubtract(addr, abi.NewTokenAmount(4)))
+		bal, err = bt.Get(addr)
+		require.NoError(t, err)
+		require.Equal(t, abi.NewTokenAmount(1), bal)
+		// ...and the rest
+		require.NoError(t, bt.MustSubtract(addr, abi.NewTokenAmount(1)))
+		bal, err = bt.Get(addr)
 		require.NoError(t, err)
 		require.Equal(t, abi.NewTokenAmount(0), bal)
 
-		// balance is sufficient -> should work
-		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
-		require.NoError(t, bt.MustSubtract(addr, abi.NewTokenAmount(4)))
-		bal, found, err = bt.Get(addr)
-		require.True(t, found)
+		// The zero entry is not stored.
+		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
 		require.NoError(t, err)
-		require.Equal(t, abi.NewTokenAmount(1), bal)
+		require.False(t, found)
 	})
 
 	t.Run("Total returns total amount tracked", func(t *testing.T) {
@@ -136,7 +114,7 @@ func TestBalanceTable(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			err = bt.AddCreate(tc.addr, abi.NewTokenAmount(tc.amount))
+			err = bt.Add(tc.addr, abi.NewTokenAmount(tc.amount))
 			assert.NoError(t, err)
 
 			total, err = bt.Total()
@@ -159,28 +137,36 @@ func TestSubtractWithMinimum(t *testing.T) {
 	addr := tutil.NewIDAddr(t, 100)
 	zeroAmt := abi.NewTokenAmount(0)
 
-	t.Run("fails when account does not exist", func(t *testing.T) {
+	t.Run("ok with zero balance", func(t *testing.T) {
 		bt := buildBalanceTable()
 		s, err := bt.SubtractWithMinimum(addr, zeroAmt, zeroAmt)
-		require.Error(t, err)
+		require.NoError(t, err)
 		require.EqualValues(t, zeroAmt, s)
 	})
 
 	t.Run("withdraw available when account does not have sufficient balance", func(t *testing.T) {
 		bt := buildBalanceTable()
-		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(5)))
+		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
 
 		s, err := bt.SubtractWithMinimum(addr, abi.NewTokenAmount(2), abi.NewTokenAmount(4))
 		require.NoError(t, err)
 		require.EqualValues(t, abi.NewTokenAmount(1), s)
+
+		remaining, err := bt.Get(addr)
+		require.NoError(t, err)
+		require.EqualValues(t, abi.NewTokenAmount(4), remaining)
 	})
 
 	t.Run("account has sufficient balance", func(t *testing.T) {
 		bt := buildBalanceTable()
-		require.NoError(t, bt.AddCreate(addr, abi.NewTokenAmount(5)))
+		require.NoError(t, bt.Add(addr, abi.NewTokenAmount(5)))
 
 		s, err := bt.SubtractWithMinimum(addr, abi.NewTokenAmount(3), abi.NewTokenAmount(2))
 		require.NoError(t, err)
 		require.EqualValues(t, abi.NewTokenAmount(3), s)
+
+		remaining, err := bt.Get(addr)
+		require.NoError(t, err)
+		require.EqualValues(t, abi.NewTokenAmount(2), remaining)
 	})
 }
