@@ -122,6 +122,8 @@ func (f *AlphaBetaFilter) NextEstimate(observation big.Int, epochDelta abi.Chain
 	}
 }
 
+// Extrapolate the CumSumRatio given two filters.
+// Output is in Q.128 format
 func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoch, estimateNum, estimateDenom *FilterEstimate) big.Int {
 	deltaT := big.Lsh(big.NewInt(int64(delta)), math.Precision)     // Q.0 => Q.128
 	t0 := big.Lsh(big.NewInt(int64(relativeStart)), math.Precision) // Q.0 => Q.128
@@ -201,4 +203,16 @@ func lnBetweenOneAndTwo(x big.Int) big.Int {
 
 	num = num.Lsh(num, math.Precision)       // Q.128 => Q.256
 	return big.Int{Int: num.Div(num, denom)} // Q.256 / Q.128 => Q.128
+}
+
+// Extrapolate filter "position" delta epochs in the future.
+// Note this is currently only used in testing.
+// Output is Q.256 format for use in numerator of ratio in test caller
+func (fe *FilterEstimate) Extrapolate(delta abi.ChainEpoch) big.Int {
+	deltaT := big.NewInt(int64(delta))                       // Q.0
+	deltaT = big.Lsh(deltaT, math.Precision)                 // Q.0 => Q.128
+	extrapolation := big.Mul(fe.VelocityEstimate, deltaT)    // Q.128 * Q.128 => Q.256
+	position := big.Lsh(fe.PositionEstimate, math.Precision) // Q.128 => Q.256
+	extrapolation = big.Sum(position, extrapolation)
+	return extrapolation // Q.256
 }
