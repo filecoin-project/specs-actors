@@ -548,8 +548,8 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 	return nil
 }
 
-func (rt *Runtime) BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
-	out := make(map[address.Address][]bool)
+func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]abi.SealVerifyInfo) (map[addr.Address][]bool, error) {
+	out := make(map[addr.Address][]bool)
 	for k, v := range vis { //nolint:nomaprange
 		validations := make([]bool, len(v))
 		for i := range validations {
@@ -749,7 +749,7 @@ func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
 	}
 }
 
-func (rt *Runtime) ExpectDeleteActor(beneficiary address.Address) {
+func (rt *Runtime) ExpectDeleteActor(beneficiary addr.Address) {
 	rt.expectDeleteActor = &beneficiary
 }
 
