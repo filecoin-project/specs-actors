@@ -1321,7 +1321,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 type CompactPartitionsParams struct {
 	Deadline   uint64
-	Partitions []uint64
+	Partitions *abi.BitField
 }
 
 // Compacts a number of partitions at one deadline by removing terminated sectors, re-ordering the remaining sectors,
@@ -1335,17 +1335,49 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %v", params.Deadline)
 	}
 
+	partitionCount, err := params.Partitions.Count()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to parse partitions bitfield")
+
+	store := adt.AsStore(rt)
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
-		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
-		if uint64(len(params.Partitions)) > submissionPartitionLimit {
-			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
+		if !deadlineIsMutable(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
+			rt.Abortf(exitcode.ErrForbidden,
+				"cannot compact deadline %d during its challenge window or the prior challenge window", params.Deadline)
 		}
 
-		// TODO: implement compaction https://github.com/filecoin-project/specs-actors/issues/673
+		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
+		if partitionCount > submissionPartitionLimit {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", partitionCount, submissionPartitionLimit)
+		}
+
+		quant := st.QuantEndOfDeadline()
+
+		deadlines, err := st.LoadDeadlines(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+		deadline, err := deadlines.LoadDeadline(store, params.Deadline)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", params.Deadline)
+
+		live, dead, removedPower, err := deadline.RemovePartitions(store, params.Partitions, quant)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove partitions from deadline %d", params.Deadline)
+
+		err = st.DeleteSectors(store, dead)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete dead sectors")
+
+		sectors, err := st.LoadSectorInfos(store, live)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load moved sectors")
+
+		newPower, err := deadline.AddSectors(store, info.WindowPoStPartitionSectors, sectors, info.SectorSize, quant)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add back moved sectors")
+
+		if !removedPower.Equals(newPower) {
+			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, newPower)
+		}
+
 		return nil
 	})
 	return nil
