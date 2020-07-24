@@ -458,10 +458,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	}
 
 	// gather information from other actors
-	baselinePower, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
+	_, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
-	circulatingSupply := rt.TotalFilCircSupply()
 
 	store := adt.AsStore(rt)
 	var st State
@@ -505,7 +504,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
 		depositReq := big.Max(
-			precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, baselinePower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply),
+			PreCommitDepositForPower(epochReward, pwrTotal.QualityAdjPower, sectorWeight),
 			depositMinimum,
 		)
 		if availableBalance.LessThan(depositReq) {
