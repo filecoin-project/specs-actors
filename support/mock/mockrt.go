@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	"github.com/multiformats/go-multihash"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -378,15 +379,47 @@ func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}
 
 ///// Store implementation /////
 
+// Gets raw data from the state. This function will extract inline data from the
+// CID to better mimic what filecoin implementations should do.
+func (rt *Runtime) get(c cid.Cid) ([]byte, bool) {
+	prefix := c.Prefix()
+	if prefix.Codec != cid.DagCBOR {
+		rt.Abortf(exitcode.SysErrSerialization, "tried to fetch a non-cbor object: %s", c)
+	}
+
+	var data []byte
+	if prefix.MhType == multihash.IDENTITY {
+		decoded, err := multihash.Decode(c.Hash())
+		if err != nil {
+			rt.Abortf(exitcode.SysErrSerialization, "failed to parse cid %s: %s", c, err)
+		}
+		data = decoded.Digest
+	} else if stored, found := rt.store[c]; found {
+		data = stored
+	} else {
+		return nil, false
+	}
+	return data, true
+}
+
+// Puts raw data into the state, but only if it's not "inlined" into the CID.
+func (rt *Runtime) put(c cid.Cid, data []byte) {
+	// Store it only if we need to. Doing this in tests ensure
+	if c.Prefix().MhType != multihash.IDENTITY {
+		rt.store[c] = data
+	}
+}
+
 func (rt *Runtime) Get(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	data, found := rt.store[c]
+	data, found := rt.get(c)
 	if found {
 		err := o.UnmarshalCBOR(bytes.NewReader(data))
 		if err != nil {
 			rt.Abortf(exitcode.SysErrSerialization, err.Error())
 		}
 	}
+
 	return found
 }
 
@@ -402,7 +435,7 @@ func (rt *Runtime) Put(o runtime.CBORMarshaler) cid.Cid {
 	if err != nil {
 		rt.Abortf(exitcode.SysErrSerialization, err.Error())
 	}
-	rt.store[key] = data
+	rt.put(key, data)
 	return key
 }
 
@@ -604,7 +637,7 @@ func (rt *Runtime) StateRoot() cid.Cid {
 }
 
 func (rt *Runtime) GetState(o runtime.CBORUnmarshaler) {
-	data, found := rt.store[rt.state]
+	data, found := rt.get(rt.state)
 	if !found {
 		rt.failTestNow("can't find state at root %v", rt.state) // something internal is messed up
 	}
