@@ -1636,8 +1636,6 @@ func handleProvingDeadline(rt Runtime) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 		deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
-		partitions, err := deadline.PartitionsArray(store)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlInfo.Index)
 		quant := st.QuantEndOfDeadline()
 
 		{
@@ -1645,6 +1643,10 @@ func handleProvingDeadline(rt Runtime) {
 			faultExpiration := dlInfo.Close + FaultMaxAge
 			penalizePowerTotal := big.Zero()
 
+			partitions, err := deadline.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlInfo.Index)
+
+			detectedAny := false
 			for i := uint64(0); i < partitions.Length(); i++ {
 				key := PartitionKey{dlInfo.Index, i}
 				proven, err := deadline.PostSubmissions.IsSet(i)
@@ -1652,6 +1654,7 @@ func handleProvingDeadline(rt Runtime) {
 				if proven {
 					continue
 				}
+				detectedAny = true
 
 				var partition Partition
 				found, err := partitions.Get(i, &partition)
@@ -1680,6 +1683,12 @@ func handleProvingDeadline(rt Runtime) {
 			penalty, err := st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			penaltyTotal = big.Add(penaltyTotal, penalty)
+
+			// Save modified deadline state.
+			if detectedAny {
+				deadline.Partitions, err = partitions.Root()
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
+			}
 
 			// Reset PoSt submissions.
 			deadline.PostSubmissions = abi.NewBitField()
@@ -1726,9 +1735,6 @@ func handleProvingDeadline(rt Runtime) {
 		}
 
 		// Save new deadline state.
-		deadline.Partitions, err = partitions.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
-
 		err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", dlInfo.Index)
 
@@ -1749,7 +1755,7 @@ func handleProvingDeadline(rt Runtime) {
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDelta)
 	burnFunds(rt, penaltyTotal)
-	notifyPledgeChanged(rt, big.Sum(newlyVested, penaltyTotal, pledgeDelta).Neg())
+	notifyPledgeChanged(rt, big.Sum(newlyVested.Neg(), penaltyTotal.Neg(), pledgeDelta))
 
 	// Schedule cron callback for next deadline's last epoch.
 	newDlInfo := st.DeadlineInfo(currEpoch)
