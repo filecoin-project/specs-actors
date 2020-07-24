@@ -237,6 +237,12 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		var st1 State
 		rt.GetState(&st1)
 
+		expLs := LaneState{
+			ID:       0,
+			Redeemed: newVoucherAmt,
+			Nonce:    2,
+		}
+
 		ucp := &UpdateChannelStateParams{Sv: *sv}
 		ucp.Sv.Amount = newVoucherAmt
 
@@ -248,11 +254,6 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		require.Nil(t, ret)
 		rt.Verify()
 
-		expLs := LaneState{
-			ID:       0,
-			Redeemed: newVoucherAmt,
-			Nonce:    1,
-		}
 		expState := State{
 			From:            st1.From,
 			To:              st1.To,
@@ -293,6 +294,28 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		assert.Equal(t, expToSend, st2.ToSend)
 		assert.Equal(t, ucp.Sv.Amount, lUpdated.Redeemed)
 		assert.Equal(t, ucp.Sv.Nonce, lUpdated.Nonce)
+	})
+
+	t.Run("redeeming voucher fails on nonce reuse", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, ctx, 1)
+		var st1 State
+		rt.GetState(&st1)
+
+		ucp := &UpdateChannelStateParams{Sv: *sv}
+		// requireCreateChannelWithLanes creates a lane with nonce = 1.
+		// reusing that should fail
+		ucp.Sv.Nonce = 1
+		ucp.Sv.Amount = newVoucherAmt
+
+		rt.SetCaller(actor.payee, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st1.From, st1.To)
+		rt.ExpectVerifySignature(*ucp.Sv.Signature, actor.payer, voucherBytes(t, &ucp.Sv), nil)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.UpdateChannelState, ucp)
+		})
+
+		rt.Verify()
 	})
 }
 
@@ -511,9 +534,12 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 		{name: "Updates MinSettleHeight only",
 			minSettleHeight: abi.ChainEpoch(2), expMinSettleHeight: abi.ChainEpoch(2),
 			expSettlingAt: st.SettlingAt},
-		{name: "Updates both SettlingAt and MinSettleHeight",
+		{name: "SettlingAt unchanged even after MinSettleHeight is changed because it is greater than MinSettleHeight",
 			minSettleHeight: abi.ChainEpoch(12), expMinSettleHeight: abi.ChainEpoch(12),
-			expSettlingAt: abi.ChainEpoch(12)},
+			expSettlingAt: st.SettlingAt},
+		{name: "SettlingAt changes after MinSettleHeight is changed because it is less than MinSettleHeight",
+			minSettleHeight: st.SettlingAt + 1, expMinSettleHeight: st.SettlingAt + 1,
+			expSettlingAt: st.SettlingAt + 1},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -525,6 +551,7 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 			rt.GetState(&newSt)
 			assert.Equal(t, tc.expSettlingAt, newSt.SettlingAt)
 			assert.Equal(t, tc.expMinSettleHeight, newSt.MinSettleHeight)
+			ucp.Sv.Nonce = ucp.Sv.Nonce + 1
 		})
 	}
 }
@@ -642,7 +669,8 @@ func TestActor_Settle(t *testing.T) {
 func TestActor_Collect(t *testing.T) {
 	t.Run("Happy path", func(t *testing.T) {
 		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-		rt.SetEpoch(10)
+		currEpoch := abi.ChainEpoch(10)
+		rt.SetEpoch(currEpoch)
 		var st State
 		rt.GetState(&st)
 
@@ -652,11 +680,11 @@ func TestActor_Collect(t *testing.T) {
 		rt.Call(actor.Settle, nil)
 
 		rt.GetState(&st)
-		require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
+		require.EqualValues(t, SettleDelay+currEpoch, st.SettlingAt)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 
 		// "wait" for SettlingAt epoch
-		rt.SetEpoch(12)
+		rt.SetEpoch(st.SettlingAt + 1)
 
 		bal := rt.Balance()
 		sentToFrom := big.Sub(bal, st.ToSend)
@@ -686,7 +714,8 @@ func TestActor_Collect(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
-			rt.SetEpoch(10)
+			currEpoch := abi.ChainEpoch(10)
+			rt.SetEpoch(currEpoch)
 			var st State
 			rt.GetState(&st)
 
@@ -695,11 +724,11 @@ func TestActor_Collect(t *testing.T) {
 				rt.ExpectValidateCallerAddr(st.From, st.To)
 				rt.Call(actor.Settle, nil)
 				rt.GetState(&st)
-				require.Equal(t, abi.ChainEpoch(11), st.SettlingAt)
+				require.Equal(t, SettleDelay+currEpoch, st.SettlingAt)
 			}
 
 			// "wait" for SettlingAt epoch
-			rt.SetEpoch(12)
+			rt.SetEpoch(st.SettlingAt + 1)
 
 			sentToFrom := big.Sub(rt.Balance(), st.ToSend)
 			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, tc.expSendFromCode)
@@ -781,6 +810,7 @@ func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, pa
 	ret := rt.Call(actor.UpdateChannelState, ucp)
 	require.Nil(t, ret)
 	rt.Verify()
+	sv.Nonce = sv.Nonce + 1
 	return &sv
 }
 
