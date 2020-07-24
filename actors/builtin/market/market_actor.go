@@ -512,25 +512,20 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 				}
 
 				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())
+				Assert(slashAmount.GreaterThanEqual(big.Zero()))
 				if removeDeal {
-					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, true); err != nil {
-						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
-					}
-				}
-				if !slashAmount.IsZero() {
+					Assert(nextEpoch == epochUndefined)
+
 					amountSlashed = big.Add(amountSlashed, slashAmount)
-				}
+					err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, true)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal proposal and states")
+				} else {
+					Assert(nextEpoch > rt.CurrEpoch() && amountSlashed.IsZero())
 
-				if nextEpoch != epochUndefined && !removeDeal {
-					Assert(nextEpoch > rt.CurrEpoch())
-
-					// TODO: can we avoid having this field?
-					// https://github.com/filecoin-project/specs-actors/issues/463
+					// Update deal's LastUpdatedEpoch in DealStates
 					state.LastUpdatedEpoch = rt.CurrEpoch()
-
-					if err := msm.dealStates.Set(dealID, state); err != nil {
-						rt.Abortf(exitcode.ErrPlaceholder, "failed to set deal state state: %v", err)
-					}
+					err = msm.dealStates.Set(dealID, state)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state")
 
 					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], dealID)
 				}
