@@ -697,7 +697,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
 			// compute initial pledge
-			duration := precommit.Info.Expiration - rt.CurrEpoch()
+			activation := rt.CurrEpoch()
+			duration := precommit.Info.Expiration - activation
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			initialPledge := InitialPledgeForPower(power, pwrTotal.QualityAdjPower, baselinePower,
 				pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
@@ -710,7 +711,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				SealedCID:          precommit.Info.SealedCID,
 				DealIDs:            precommit.Info.DealIDs,
 				Expiration:         precommit.Info.Expiration,
-				Activation:         rt.CurrEpoch(),
+				Activation:         activation,
 				DealWeight:         precommit.DealWeight,
 				VerifiedDealWeight: precommit.VerifiedDealWeight,
 				InitialPledge:      initialPledge,
