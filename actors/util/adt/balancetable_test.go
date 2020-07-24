@@ -36,7 +36,7 @@ func TestBalanceTable(t *testing.T) {
 
 		err = bt.Add(addr, abi.NewTokenAmount(10))
 		assert.NoError(t, err)
-		amount,  err := bt.Get(addr)
+		amount, err := bt.Get(addr)
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(10), amount)
 
@@ -46,7 +46,6 @@ func TestBalanceTable(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(30), amount)
 
-
 		// Add negative to subtract.
 		err = bt.Add(addr, abi.NewTokenAmount(-30))
 		assert.NoError(t, err)
@@ -55,6 +54,7 @@ func TestBalanceTable(t *testing.T) {
 		assert.Equal(t, abi.NewTokenAmount(0), amount)
 		// The zero entry is not stored.
 		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
+		require.NoError(t, err)
 		require.False(t, found)
 	})
 
@@ -89,6 +89,7 @@ func TestBalanceTable(t *testing.T) {
 
 		// The zero entry is not stored.
 		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
+		require.NoError(t, err)
 		require.False(t, found)
 	})
 
