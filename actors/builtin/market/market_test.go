@@ -1623,7 +1623,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		deal := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch so that deal is expired
-		rt.SetEpoch(startEpoch + 1000)
+		rt.SetEpoch(endEpoch + 100)
 		actor.cronTick(rt)
 		require.EqualValues(t, deal.ClientCollateral, actor.getEscrowBalance(rt, client))
 
