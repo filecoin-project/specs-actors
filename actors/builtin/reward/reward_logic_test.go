@@ -8,6 +8,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/stretchr/testify/assert"
 	"github.com/xorcare/golden"
 )
@@ -20,25 +21,21 @@ func q128ToF(x big.Int) float64 {
 }
 
 func TestComputeRTeta(t *testing.T) {
-	var oldBaselinePowerAt func(abi.ChainEpoch) abi.StoragePower
-
-	BaselinePowerAt, oldBaselinePowerAt = func(epoch abi.ChainEpoch) abi.StoragePower {
+	baselinePowerAt := func(epoch abi.ChainEpoch) abi.StoragePower {
 		return big.Mul(big.NewInt(int64(epoch+1)), big.NewInt(2048))
-	}, BaselinePowerAt
-	defer func() {
-		BaselinePowerAt = oldBaselinePowerAt
-	}()
+	}
 
-	assert.Equal(t, 0.5, q128ToF(computeRTheta(1, big.NewInt(2048+2*2048*0.5), big.NewInt(2048+2*2048))))
-	assert.Equal(t, 0.25, q128ToF(computeRTheta(1, big.NewInt(2048+2*2048*0.25), big.NewInt(2048+2*2048))))
+	assert.Equal(t, 0.5, q128ToF(computeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.5), big.NewInt(2048+2*2048))))
+	assert.Equal(t, 0.25, q128ToF(computeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.25), big.NewInt(2048+2*2048))))
 
 	cumsum15 := big.NewInt(0)
 	for i := abi.ChainEpoch(0); i < 16; i++ {
-		cumsum15 = big.Add(cumsum15, BaselinePowerAt(i))
+		cumsum15 = big.Add(cumsum15, baselinePowerAt(i))
 	}
 	assert.Equal(t, 15.25, q128ToF(computeRTheta(16,
-		big.Add(cumsum15, big.Div(BaselinePowerAt(16), big.NewInt(4))),
-		big.Add(cumsum15, BaselinePowerAt(16)))))
+		baselinePowerAt(16),
+		big.Add(cumsum15, big.Div(baselinePowerAt(16), big.NewInt(4))),
+		big.Add(cumsum15, baselinePowerAt(16)))))
 }
 
 func TestBaselineReward(t *testing.T) {
@@ -78,4 +75,78 @@ func TestSimpleRewrad(t *testing.T) {
 	}
 
 	golden.Assert(t, b.Bytes())
+}
+
+func TestBaselineRewardGrowth(t *testing.T) {
+
+	baselineInYears := func(start abi.StoragePower, x abi.ChainEpoch) abi.StoragePower {
+		baseline := start
+		for i := abi.ChainEpoch(0); i < x*builtin.EpochsInYear; i++ {
+			baseline = BaselinePowerFromPrev(baseline)
+		}
+		return baseline
+	}
+
+	// Baseline reward should have 200% growth rate
+	// This implies that for every year x, the baseline function should be:
+	// StartVal * 3^x.
+	//
+	// Error values for 1 years of growth were determined empirically with latest
+	// baseline power construction to set bounds in this test in order to
+	// 1. throw a test error if function changes and percent error goes up
+	// 2. serve as documentation of current error bounds
+	type growthTestCase struct {
+		StartVal abi.StoragePower
+		ErrBound float64
+	}
+	cases := []growthTestCase{
+		// 1 byte
+		{
+			abi.NewStoragePower(1),
+			1,
+		},
+		// GiB
+		{
+			abi.NewStoragePower(1 << 30),
+			1e-3,
+		},
+		// TiB
+		{
+			abi.NewStoragePower(1 << 40),
+			1e-6,
+		},
+		// PiB
+		{
+			abi.NewStoragePower(1 << 50),
+			1e-8,
+		},
+		// EiB
+		{
+			BaselineInitialValue,
+			1e-8,
+		},
+		// ZiB
+		{
+			big.Lsh(big.NewInt(1), 70),
+			1e-8,
+		},
+		// non power of 2 ~ 1 EiB
+		{
+			abi.NewStoragePower(513633559722596517),
+			1e-8,
+		},
+	}
+	for _, testCase := range cases {
+		years := int64(1)
+		end := baselineInYears(testCase.StartVal, abi.ChainEpoch(1))
+
+		multiplier := big.Exp(big.NewInt(3), big.NewInt(years)) // keeping this generalized in case we want to test more years
+		expected := big.Mul(testCase.StartVal, multiplier)
+		diff := big.Sub(expected, end)
+
+		perrFrac := gbig.NewRat(1, 1).SetFrac(diff.Int, expected.Int)
+		perr, _ := perrFrac.Float64()
+
+		assert.Less(t, perr, testCase.ErrBound)
+	}
 }

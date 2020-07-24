@@ -5,6 +5,7 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	hamt "github.com/ipfs/go-hamt-ipld"
+	"github.com/minio/sha256-simd"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -17,6 +18,15 @@ import (
 // may differ, in which case we can expose it for configuration.
 const hamtBitwidth = 5
 
+// HamtOptions specifies all the options used to construct filecoin HAMTs.
+var HamtOptions = []hamt.Option{
+	hamt.UseTreeBitWidth(hamtBitwidth),
+	hamt.UseHashFunction(func(input []byte) []byte {
+		res := sha256.Sum256(input)
+		return res[:]
+	}),
+}
+
 // Map stores key-value pairs in a HAMT.
 type Map struct {
 	lastCid cid.Cid
@@ -26,7 +36,7 @@ type Map struct {
 
 // AsMap interprets a store as a HAMT-based map with root `r`.
 func AsMap(s Store, r cid.Cid) (*Map, error) {
-	nd, err := hamt.LoadNode(s.Context(), s, r, hamt.UseTreeBitWidth(hamtBitwidth))
+	nd, err := hamt.LoadNode(s.Context(), s, r, HamtOptions...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load hamt node: %w", err)
 	}
@@ -40,7 +50,7 @@ func AsMap(s Store, r cid.Cid) (*Map, error) {
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
 func MakeEmptyMap(s Store) *Map {
-	nd := hamt.NewNode(s, hamt.UseTreeBitWidth(hamtBitwidth))
+	nd := hamt.NewNode(s, HamtOptions...)
 	return &Map{
 		lastCid: cid.Undef,
 		root:    nd,

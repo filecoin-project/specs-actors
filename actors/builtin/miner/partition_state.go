@@ -537,25 +537,25 @@ func NewPowerPair(raw, qa abi.StoragePower) PowerPair {
 	return PowerPair{Raw: raw, QA: qa}
 }
 
-func (pp *PowerPair) IsZero() bool {
+func (pp PowerPair) IsZero() bool {
 	return pp.Raw.IsZero() && pp.QA.IsZero()
 }
 
-func (pp *PowerPair) Add(other PowerPair) PowerPair {
+func (pp PowerPair) Add(other PowerPair) PowerPair {
 	return PowerPair{
 		Raw: big.Add(pp.Raw, other.Raw),
 		QA:  big.Add(pp.QA, other.QA),
 	}
 }
 
-func (pp *PowerPair) Sub(other PowerPair) PowerPair {
+func (pp PowerPair) Sub(other PowerPair) PowerPair {
 	return PowerPair{
 		Raw: big.Sub(pp.Raw, other.Raw),
 		QA:  big.Sub(pp.QA, other.QA),
 	}
 }
 
-func (pp *PowerPair) Neg() PowerPair {
+func (pp PowerPair) Neg() PowerPair {
 	return PowerPair{
 		Raw: pp.Raw.Neg(),
 		QA:  pp.QA.Neg(),
