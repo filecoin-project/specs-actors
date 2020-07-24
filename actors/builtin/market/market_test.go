@@ -1504,7 +1504,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		// assert deal exists
 		actor.getDealProposal(rt, dealId)
 
-		// move the epoch to endEpoch+5(anything greater than endEpoch), so deal is processed at 150 & then at 151 which is it's end epoch
+		// move the epoch to endEpoch+5(anything greater than endEpoch), so deal is processed at 150 & then at it's end epoch
 		// total payment = (end - start)
 		current = endEpoch + 5
 		rt.SetEpoch(current)
