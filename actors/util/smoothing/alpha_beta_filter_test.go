@@ -39,8 +39,7 @@ func TestCumSumRatioProjection(t *testing.T) {
 		assert.Equal(t, big.NewInt(5000), big.Rsh(product, 2*math.Precision))
 	})
 
-	// Q.128 cumsum of ratio
-	// Use the trapezoid rule to get an exact sum
+	// Q.128 cumsum of ratio using the trapezoid rule
 	iterativeCumSumOfRatio := func(num, denom *smoothing.FilterEstimate, t0, delta abi.ChainEpoch) big.Int {
 		ratio := big.Zero() // Q.128
 		for i := abi.ChainEpoch(0); i < delta; i++ {
@@ -75,8 +74,12 @@ func TestCumSumRatioProjection(t *testing.T) {
 	}
 
 	// millionths of error difference
-	// set this error value after empirically seeing values in this range
-	// Note that when cumsum taken over small numbers of epochs error is much worse
+	// This error value was set after empirically seeing values in this range
+	//
+	// Note 1: when cumsum taken over small numbers of epochs error is much worse
+	// Note 2: since both methods are approximations with error this is not a
+	// measurement of analytic method's error, it is a sanity check that the
+	// two methods give similar results
 	errBound := big.NewInt(300)
 
 	assertErrBound := func(t *testing.T, num, denom *smoothing.FilterEstimate, delta, t0 abi.ChainEpoch, errBound big.Int) {
