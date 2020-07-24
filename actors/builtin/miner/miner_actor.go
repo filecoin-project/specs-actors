@@ -737,16 +737,15 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
 		st.AddPreCommitDeposit(totalPrecommitDeposit.Neg())
-		st.AddInitialPledgeRequirement(totalPledge)
 
-		// Lock up initial pledge for new sectors.
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		if availableBalance.LessThan(totalPledge) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, availableBalance)
 		}
-		if err := st.AddLockedFunds(store, rt.CurrEpoch(), totalPledge, &PledgeVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to add aggregate pledge: %v", err)
-		}
+
+		st.AddInitialPledgeDeposits(totalPledge)
+		st.AddInitialPledgeRequirement(totalPledge)
+
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
 		return newlyVestedFund
@@ -1398,7 +1397,8 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 // Pledge Collateral //
 ///////////////////////
 
-// Locks up some amount of a the miner's unlocked balance (including any received alongside the invoking message).
+// Locks up some amount of a the miner's unlocked balance (including funds received alongside the invoking message).
+// If there is uncovered IP requirement then that is paid before locking funds.
 func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.EmptyValue {
 	if amountToLock.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
@@ -1406,6 +1406,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 
 	store := adt.AsStore(rt)
 	var st State
+
 	newlyVested := rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
@@ -1418,13 +1419,14 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
 		}
 
-		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
+		if err := st.AddLockedFundsInPriorityOrder(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to lock pledge: %v", err)
 		}
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
 	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
+
 	return nil
 }
 
@@ -2244,9 +2246,10 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 
 // Verifies that the total locked balance exceeds the sum of sector initial pledges.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
-	if st.LockedFunds.LessThan(st.InitialPledgeRequirement) {
-		rt.Abortf(exitcode.ErrInsufficientFunds, "locked funds insufficient to cover initial pledges (%v < %v)",
-			st.LockedFunds, st.InitialPledgeRequirement)
+	if !st.MeetsInitialPledgeCondition(rt.CurrentBalance()) {
+		rt.Abortf(exitcode.ErrInsufficientFunds,
+			"pledge deposit does not cover pledge requirements (%v < %v)",
+			st.InitialPledgeDeposits, st.InitialPledgeRequirement)
 	}
 }
 

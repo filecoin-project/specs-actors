@@ -25,9 +25,12 @@ type State struct {
 	// Information not related to sectors.
 	Info cid.Cid
 
-	PreCommitDeposits        abi.TokenAmount // Total funds locked as PreCommitDeposits
-	LockedFunds              abi.TokenAmount // Total unvested funds locked as pledge collateral
-	VestingFunds             cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
+	PreCommitDeposits     abi.TokenAmount // Total funds locked as PreCommitDeposits
+	LockedFunds           abi.TokenAmount // Total rewards and added funds locked in vesting table
+	InitialPledgeDeposits abi.TokenAmount // Total funds locked to satisfy initial pledge requirement
+
+	VestingFunds cid.Cid // Array, AMT[ChainEpoch]TokenAmount
+
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
@@ -155,6 +158,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, 
 
 		PreCommitDeposits:        abi.NewTokenAmount(0),
 		LockedFunds:              abi.NewTokenAmount(0),
+		InitialPledgeDeposits:    abi.NewTokenAmount(0),
 		VestingFunds:             emptyArrayCid,
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
@@ -884,9 +888,15 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 
 func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	newTotal := big.Add(st.InitialPledgeRequirement, amount)
-	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
+	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge requirement %s after adding %s to prior %s",
 		newTotal, amount, st.InitialPledgeRequirement)
 	st.InitialPledgeRequirement = newTotal
+}
+
+func (st *State) AddInitialPledgeDeposits(amount abi.TokenAmount) {
+	newTotal := big.Add(st.InitialPledgeDeposits, amount)
+	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
+		newTotal, amount, st.InitialPledgeDeposits)
 }
 
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
@@ -937,6 +947,22 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
 	return nil
+}
+
+// AddLockedFundsInPriorityOrder first locks funds into InitialPledgeDeposit to cover InitialPledgeRequirements.
+// Whatever remains is added to the vesting table
+func (st *State) AddLockedFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, total abi.TokenAmount, spec *VestSpec) error {
+	ipDebt := big.Sub(st.InitialPledgeRequirement, st.InitialPledgeDeposits)
+	if ipDebt.GreaterThan(big.Zero()) { // lock pledge first
+		pledgeLockup := big.Min(total, ipDebt)
+		st.AddInitialPledgeDeposits(pledgeLockup)
+		total = big.Sub(total, pledgeLockup)
+	}
+	if total.Equals(big.Zero()) {
+		return nil
+	}
+
+	return st.AddLockedFunds(store, currEpoch, total, spec)
 }
 
 // Unlocks an amount of funds that have *not yet vested*, if possible.
@@ -1064,22 +1090,26 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 	return amountUnlocked, nil
 }
 
+// This can be negative if InitialPledgeRequirements are not met
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	availableBal := big.Sub(big.Sub(actorBalance, st.LockedFunds), st.PreCommitDeposits)
-	Assert(availableBal.GreaterThanEqual(big.Zero()))
-	return availableBal
+	return big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledgeRequirement)
 }
 
 // Returns a quantization spec that quantizes values to the last epoch in each deadline.
 func (st *State) QuantEndOfDeadline() QuantSpec {
 	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart - 1)
+	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart-1)
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	Assert(balance.GreaterThanEqual(big.Add(st.PreCommitDeposits, st.LockedFunds)))
+	Assert(st.InitialPledgeDeposits.GreaterThanEqual(big.Zero()))
+	Assert(balance.GreaterThanEqual(big.Sum(st.PreCommitDeposits, st.LockedFunds, st.InitialPledgeDeposits)))
+}
+
+func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
+	return st.InitialPledgeDeposits.GreaterThanEqual(st.InitialPledgeRequirement)
 }
 
 //
