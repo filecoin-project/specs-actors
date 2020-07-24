@@ -72,8 +72,8 @@ func (p *DealProposal) ProviderBalanceRequirement() abi.TokenAmount {
 }
 
 func (p *DealProposal) Cid() (cid.Cid, error) {
-	var buf bytes.Buffer
-	if err := p.MarshalCBOR(&buf); err != nil {
+	buf := new(bytes.Buffer)
+	if err := p.MarshalCBOR(buf); err != nil {
 		return cid.Undef, err
 	}
 	return abi.CidBuilder.Sum(buf.Bytes())
