@@ -1884,6 +1884,12 @@ func processRecoveries(rt Runtime, st *State, store adt.Store, partition *Partit
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
 func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
+	// expiration cannot be less than minimum after activation
+	if expiration-activation < MinSectorExpiration {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) must exceed %d after activation %d",
+			expiration, expiration-activation, MinSectorExpiration, activation)
+	}
+
 	// expiration cannot exceed MaxSectorExpirationExtension from now
 	if expiration > rt.CurrEpoch()+MaxSectorExpirationExtension {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, cannot be more than %d past current epoch %d",
