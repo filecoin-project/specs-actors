@@ -897,6 +897,7 @@ func (st *State) AddInitialPledgeDeposits(amount abi.TokenAmount) {
 	newTotal := big.Add(st.InitialPledgeDeposits, amount)
 	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
 		newTotal, amount, st.InitialPledgeDeposits)
+	st.InitialPledgeDeposits = newTotal
 }
 
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
@@ -963,6 +964,24 @@ func (st *State) AddLockedFundsInPriorityOrder(store adt.Store, currEpoch abi.Ch
 	}
 
 	return st.AddLockedFunds(store, currEpoch, total, spec)
+}
+
+// UnlockFundsInPriorityOrder first unlocks unvested funds from the vesting table.
+// If the target is not yet hit it unlocks funds from pledge deposits.
+// Returns the amount actually unlocked.
+func (st *State) UnlockFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
+	unlocked, err := st.UnlockUnvestedFunds(store, currEpoch, target)
+	if err != nil {
+		return abi.NewTokenAmount(0), err
+	}
+	if unlocked.Equals(target) {
+		return unlocked, nil
+	}
+	// go into IP debt
+	remaining := big.Sub(target, unlocked)
+	pledgeToUnlock := big.Min(remaining, st.InitialPledgeDeposits)
+	st.AddInitialPledgeDeposits(pledgeToUnlock.Neg())
+	return big.Add(unlocked, pledgeToUnlock), nil
 }
 
 // Unlocks an amount of funds that have *not yet vested*, if possible.

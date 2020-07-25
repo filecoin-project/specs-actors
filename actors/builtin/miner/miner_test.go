@@ -222,7 +222,8 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, expectedInitialPledge, sector.InitialPledge)
 
 		// expect locked initial pledge of sector to be the same as precommit deposit
-		assert.Equal(t, expectedInitialPledge, st.LockedFunds)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledgeDeposits)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
 		// expect sector to be assigned a deadline/partition
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sectorNo)
@@ -374,8 +375,8 @@ func TestCommitments(t *testing.T) {
 		// Deposit and pledge as expected
 		st = getState(rt)
 		assert.Equal(t, st.PreCommitDeposits, upgrade.PreCommitDeposit)
+		assert.Equal(t, st.InitialPledgeDeposits, oldSector.InitialPledge)
 		assert.Equal(t, st.InitialPledgeRequirement, oldSector.InitialPledge)
-		assert.Equal(t, st.LockedFunds, oldSector.InitialPledge)
 
 		// Prove new sector
 		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -386,7 +387,7 @@ func TestCommitments(t *testing.T) {
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, st.InitialPledgeRequirement, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
-		assert.Equal(t, st.LockedFunds, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
+		assert.Equal(t, st.InitialPledgeDeposits, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
 
 		// Both sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -421,6 +422,9 @@ func TestCommitments(t *testing.T) {
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
+
+		actor.addLockedFund(rt, big.Mul(big.NewInt(5), faultPenalty))
+
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta:  &lostPower,
 			detectedFaultsPenalty:     faultPenalty,
@@ -446,6 +450,8 @@ func TestCommitments(t *testing.T) {
 
 		// Old sector's pledge still locked (not penalized), but no longer contributes to minimum requirement.
 		assert.Equal(t, st.InitialPledgeRequirement, newSector.InitialPledge)
+//		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty))
+//		assert.Equal(t, st.InitialPledgeDeposits, big.Sum(oldSector.InitialPledge, newSector.InitialPledge))
 		assert.Equal(t, st.LockedFunds, big.Sum(oldSector.InitialPledge, newSector.InitialPledge, faultPenalty.Neg()))
 	})
 
@@ -671,7 +677,7 @@ func TestCommitments(t *testing.T) {
 		//require.NoError(t, err)
 		//assert.Equal(t, []uint64{uint64(sectorNo)}, newSectors)
 		// Verify pledge lock-up
-		assert.True(t, st.LockedFunds.GreaterThan(big.Zero()))
+		assert.True(t, st.InitialPledgeDeposits.GreaterThan(big.Zero()))
 		rt.Reset()
 
 		// Duplicate proof (sector no-longer pre-committed)
@@ -1001,7 +1007,7 @@ func TestProveCommit(t *testing.T) {
 
 		// alter lock funds to simulate vesting since last prove
 		st := getState(rt)
-		st.LockedFunds = big.Div(st.LockedFunds, big.NewInt(2))
+		st.LockedFunds = rt.Balance()
 		rt.ReplaceState(st)
 		info := actor.getInfo(rt)
 
@@ -1453,7 +1459,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		// alter lock funds to simulate vesting since last prove
 		st := getState(rt)
-		st.LockedFunds = big.Div(st.LockedFunds, big.NewInt(2))
+		st.InitialPledgeRequirement = big.Add(big.NewInt(1), st.InitialPledgeRequirement)
 		rt.ReplaceState(st)
 
 		// withdraw 1% of balance

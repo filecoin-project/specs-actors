@@ -384,7 +384,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
-		penaltyTotal, err = st.UnlockUnvestedFunds(store, currEpoch, totalPenaltyTarget)
+		penaltyTotal, err = st.UnlockFundsInPriorityOrder(store, currEpoch, totalPenaltyTarget)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
 
 		// Record the successful submission
@@ -1610,7 +1610,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		// Unlock funds for penalties.
 		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
 		// We're intentionally reducing the penalty paid to what we have.
-		penalty, err = st.UnlockUnvestedFunds(store, rt.CurrEpoch(), penalty)
+		penalty, err = st.UnlockFundsInPriorityOrder(store, rt.CurrEpoch(), penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
 
 		// Remove pledge requirement.
@@ -1725,7 +1725,7 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal)
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
 			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal))
-			penalty, err := st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
+			penalty, err := st.UnlockFundsInPriorityOrder(store, currEpoch, penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			penaltyTotal = big.Add(penaltyTotal, penalty)
 
@@ -1743,7 +1743,7 @@ func handleProvingDeadline(rt Runtime) {
 			// This includes any power that was just faulted from missing a PoSt.
 			faultyPower := st.FaultyPower.QA
 			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, faultyPower)
-			penalty, err := st.UnlockUnvestedFunds(store, currEpoch, penaltyTarget)
+			penalty, err := st.UnlockFundsInPriorityOrder(store, currEpoch, penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			penaltyTotal = big.Add(penaltyTotal, penalty)
 		}
