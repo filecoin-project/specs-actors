@@ -448,11 +448,10 @@ func TestCommitments(t *testing.T) {
 			newSector.Expiration: {uint64(0)},
 		}, dQueue)
 
-		// Old sector's pledge still locked (not penalized), but no longer contributes to minimum requirement.
+		// Old sector gone from pledge requirement and deposit
 		assert.Equal(t, st.InitialPledgeRequirement, newSector.InitialPledge)
-//		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty))
-//		assert.Equal(t, st.InitialPledgeDeposits, big.Sum(oldSector.InitialPledge, newSector.InitialPledge))
-		assert.Equal(t, st.LockedFunds, big.Sum(oldSector.InitialPledge, newSector.InitialPledge, faultPenalty.Neg()))
+		assert.Equal(t, st.InitialPledgeDeposits, newSector.InitialPledge)
+		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})
 
 	t.Run("invalid committed capacity upgrade rejected", func(t *testing.T) {

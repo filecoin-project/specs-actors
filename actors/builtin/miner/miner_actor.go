@@ -690,7 +690,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		quant := st.QuantEndOfDeadline()
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
-		// If their initial pledge hasn't finished vesting yet, it just continues vesting (like other termination paths).
 		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), replaceSectorLocations, info.SectorSize, quant)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 
@@ -1615,6 +1614,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 		// Remove pledge requirement.
 		st.AddInitialPledgeRequirement(pledge.Neg())
+		pledge = st.UnlockInitialPledgeDeposits(pledge)
 
 		return nil
 	})
@@ -1755,8 +1755,10 @@ func handleProvingDeadline(rt Runtime) {
 			// Release pledge requirements for the sectors expiring on-time.
 			// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
 			// when the early termination is processed.
-			pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
-			st.AddInitialPledgeRequirement(pledgeDelta)
+			pledgeDelta = expired.OnTimePledge
+			st.AddInitialPledgeRequirement(pledgeDelta.Neg())
+			// Only record the amount we can actually unlock
+			pledgeDelta = st.UnlockInitialPledgeDeposits(pledgeDelta)
 
 			// Record reduction in power of the amount of expiring active power.
 			// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
@@ -1800,7 +1802,7 @@ func handleProvingDeadline(rt Runtime) {
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDelta)
 	burnFunds(rt, penaltyTotal)
-	notifyPledgeChanged(rt, big.Sum(newlyVested.Neg(), penaltyTotal.Neg(), pledgeDelta))
+	notifyPledgeChanged(rt, big.Sum(newlyVested.Neg(), penaltyTotal.Neg(), pledgeDelta.Neg()))
 
 	// Schedule cron callback for next deadline's last epoch.
 	newDlInfo := st.DeadlineInfo(currEpoch)
