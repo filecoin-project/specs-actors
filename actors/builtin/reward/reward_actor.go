@@ -66,13 +66,16 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	}
 
 	priorBalance := rt.CurrentBalance()
-
 	penalty := abi.NewTokenAmount(0)
+	blockReward := big.Zero()
 	var st State
-	rt.State().Readonly(&st)
+	rt.State().Transaction(&st, func() interface{} {
+		blockReward = big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
+		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 
-	blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
-	blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
+		st.TotalMined = big.Add(st.TotalMined, blockReward)
+		return nil
+	})
 
 	totalReward := big.Add(blockReward, params.GasReward)
 
