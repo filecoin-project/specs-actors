@@ -990,7 +990,7 @@ func TestProveCommit(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("aborts if sum of initial pledges exceeds locked funds", func(t *testing.T) {
+	t.Run("prove commit aborts if pledge requirement not met", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -1004,9 +1004,9 @@ func TestProveCommit(t *testing.T) {
 		precommit := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
 		actor.preCommitSector(rt, precommit)
 
-		// alter lock funds to simulate vesting since last prove
+		// alter pledge deposits to simulate dipping into them for fees
 		st := getState(rt)
-		st.LockedFunds = rt.Balance()
+		st.InitialPledgeDeposits = big.Sub(st.InitialPledgeDeposits, big.NewInt(1))
 		rt.ReplaceState(st)
 		info := actor.getInfo(rt)
 
@@ -1016,8 +1016,8 @@ func TestProveCommit(t *testing.T) {
 		})
 		rt.Reset()
 
-		// succeeds when locked fund satisfy initial pledge requirement
-		st.LockedFunds = st.InitialPledgeRequirement
+		// succeeds when pledge deposits satisfy initial pledge requirement
+		st.InitialPledgeDeposits = big.Add(st.InitialPledgeDeposits, big.NewInt(1))
 		rt.ReplaceState(st)
 		actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 	})
