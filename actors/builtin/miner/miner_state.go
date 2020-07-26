@@ -1114,9 +1114,10 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 	return amountUnlocked, nil
 }
 
-// This can be negative if InitialPledgeRequirements are not met
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	return big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledgeRequirement)
+	availableBal := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledgeDeposits)
+	Assert(availableBal.GreaterThanEqual(big.Zero()))
+	return availableBal
 }
 
 // Returns a quantization spec that quantizes values to the last epoch in each deadline.
