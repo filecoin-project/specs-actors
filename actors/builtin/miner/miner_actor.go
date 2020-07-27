@@ -621,7 +621,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	// get network stats from other actors
-	baselinePower, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
+	rewardStats := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 	circulatingSupply := rt.TotalFilCircSupply()
 
@@ -706,8 +706,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
-			initialPledge := InitialPledgeForPower(power, pwrTotal.QualityAdjPower, baselinePower,
-				pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
+			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
+				rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)

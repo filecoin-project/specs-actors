@@ -182,7 +182,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
 
 		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
-		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, actor.epochCirculatingSupplySmooth.Estimate())
+		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -205,8 +205,8 @@ func TestCommitments(t *testing.T) {
 
 		qaPower = miner.QAPowerForWeight(sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight,
 			onChainPrecommit.VerifiedDealWeight)
-		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.networkQAPower, actor.baselinePower,
-			actor.networkPledge, actor.epochReward, rt.TotalFilCircSupply())
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth, 
+			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
 		// expect new onchain sector
@@ -1606,7 +1606,6 @@ type actorHarness struct {
 	baselinePower   abi.StoragePower
 
 	epochRewardSmooth *smoothing.FilterEstimate
-	epochCirculatingSupplySmooth *smoothing.FilterEstimate
 	epochQAPowerSmooth *smoothing.FilterEstimate
 }
 
@@ -1642,7 +1641,6 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		baselinePower:   power,
 
 		epochRewardSmooth: smoothing.TestingConstantEstimate(reward),
-		epochCirculatingSupplySmooth: smoothing.TestingConstantEstimate(abi.NewTokenAmount(1e18)),
 		epochQAPowerSmooth: smoothing.TestingConstantEstimate(power),
 	}
 }
@@ -1922,8 +1920,8 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 			qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, precommit.Expiration-rt.Epoch(), precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
 			expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 			expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
-			pledge := miner.InitialPledgeForPower(qaPowerDelta, h.networkQAPower, h.baselinePower,
-				h.networkPledge, h.epochReward, rt.TotalFilCircSupply())
+			pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge, 
+				h.epochRewardSmooth, h.epochQAPowerSmooth, rt.TotalFilCircSupply())
 			expectPledge = big.Add(expectPledge, pledge)
 		}
 
@@ -2379,7 +2377,6 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 		ThisEpochReward:        h.epochReward,
 		ThisEpochBaselinePower: h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
-		ThisEpochCirculatingSupplySmoothed: h.epochCirculatingSupplySmooth,
 	}
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
 	networkPower := big.NewIntUnsigned(1 << 50)
@@ -2617,7 +2614,6 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 		ThisEpochReward:        h.epochReward,
 		ThisEpochBaselinePower: h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
-		ThisEpochCirculatingSupplySmoothed: h.epochCirculatingSupplySmooth,
 	}
 
 	rt.ExpectSend(
