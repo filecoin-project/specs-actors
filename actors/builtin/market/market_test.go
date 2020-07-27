@@ -1338,6 +1338,30 @@ func TestCronTick(t *testing.T) {
 		require.NotNil(t, actor.getDealState(rt, dealId))
 	})
 
+	t.Run("slash a deal and make payment for another deal in the same epoch", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+
+		dealId1 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
+		d1 := actor.getDealProposal(rt, dealId1)
+
+		dealId2 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch+1, 0, sectorExpiry)
+
+		// slash deal1
+		slashEpoch := abi.ChainEpoch(150)
+		rt.SetEpoch(slashEpoch)
+		actor.terminateDeals(rt, provider, dealId1)
+
+		// cron tick will slash deal1 and make payment for deal2
+		current := abi.ChainEpoch(151)
+		rt.SetEpoch(current)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d1.ProviderCollateral, nil, exitcode.Ok)
+		actor.cronTick(rt)
+
+		actor.assertDealDeleted(rt, dealId1, d1)
+		s2 := actor.getDealState(rt, dealId2)
+		require.EqualValues(t, current, s2.LastUpdatedEpoch)
+	})
+
 	t.Run("cannot publish the same deal twice BEFORE a cron tick", func(t *testing.T) {
 		// Publish a deal
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
@@ -1895,7 +1919,38 @@ func TestCronTickDealSlashing(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId, d)
 	})
 
-	// end-end test for slashing
+	// end-end tests for slashing
+	t.Run("slash multiple deals in the same epoch", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+
+		// three deals for slashing
+		dealId1 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
+		d1 := actor.getDealProposal(rt, dealId1)
+
+		dealId2 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch+1, 0, sectorExpiry)
+		d2 := actor.getDealProposal(rt, dealId2)
+
+		dealId3 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch+2, 0, sectorExpiry)
+		d3 := actor.getDealProposal(rt, dealId3)
+
+		// set slash epoch of deal at 151
+		current := abi.ChainEpoch(151)
+		rt.SetEpoch(current)
+		actor.terminateDeals(rt, provider, dealId1, dealId2, dealId3)
+
+		// process slashing of deals
+		current = 300
+		rt.SetEpoch(current)
+		totalSlashed := big.Sum(d1.ProviderCollateral, d2.ProviderCollateral, d3.ProviderCollateral)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalSlashed, nil, exitcode.Ok)
+
+		actor.cronTick(rt)
+
+		actor.assertDealDeleted(rt, dealId1, d1)
+		actor.assertDealDeleted(rt, dealId2, d2)
+		actor.assertDealDeleted(rt, dealId3, d3)
+	})
+
 	t.Run("regular payments till deal is slashed and then slashing is processed", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
