@@ -67,8 +67,8 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ThisEpochQAPowerSmooth (smoothing.FilterEstimate) (struct)
-	if err := t.ThisEpochQAPowerSmooth.MarshalCBOR(w); err != nil {
+	// t.ThisEpochQAPowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochQAPowerSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -111,13 +111,13 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.LastCronEpoch (abi.ChainEpoch) (int64)
-	if t.LastCronEpoch >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.LastCronEpoch)); err != nil {
+	// t.LastProcessedCronEpoch (abi.ChainEpoch) (int64)
+	if t.LastProcessedCronEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.LastProcessedCronEpoch)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.LastCronEpoch-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.LastProcessedCronEpoch-1)); err != nil {
 			return err
 		}
 	}
@@ -233,7 +233,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.ThisEpochQAPowerSmooth (smoothing.FilterEstimate) (struct)
+	// t.ThisEpochQAPowerSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
 
@@ -247,9 +247,9 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 				return err
 			}
 		} else {
-			t.ThisEpochQAPowerSmooth = new(smoothing.FilterEstimate)
-			if err := t.ThisEpochQAPowerSmooth.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmooth pointer: %w", err)
+			t.ThisEpochQAPowerSmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochQAPowerSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmoothed pointer: %w", err)
 			}
 		}
 
@@ -341,7 +341,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		t.FirstCronEpoch = abi.ChainEpoch(extraI)
 	}
-	// t.LastCronEpoch (abi.ChainEpoch) (int64)
+	// t.LastProcessedCronEpoch (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -364,7 +364,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.LastCronEpoch = abi.ChainEpoch(extraI)
+		t.LastProcessedCronEpoch = abi.ChainEpoch(extraI)
 	}
 	// t.Claims (cid.Cid) (struct)
 
@@ -994,8 +994,8 @@ func (t *CurrentTotalPowerReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.SmoothQAPowerEstimate (smoothing.FilterEstimate) (struct)
-	if err := t.SmoothQAPowerEstimate.MarshalCBOR(w); err != nil {
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.QualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -1046,7 +1046,7 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.SmoothQAPowerEstimate (smoothing.FilterEstimate) (struct)
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
 
@@ -1060,9 +1060,9 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 				return err
 			}
 		} else {
-			t.SmoothQAPowerEstimate = new(smoothing.FilterEstimate)
-			if err := t.SmoothQAPowerEstimate.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.SmoothQAPowerEstimate pointer: %w", err)
+			t.QualityAdjPowerSmoothed = new(smoothing.FilterEstimate)
+			if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed pointer: %w", err)
 			}
 		}
 

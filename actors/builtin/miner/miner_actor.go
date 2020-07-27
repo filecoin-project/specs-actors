@@ -373,16 +373,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Penalize new skipped faults and retracted recoveries as undeclared faults.
 		// These pay a higher fee than faults declared before the deadline challenge window opened.
 		undeclaredPenaltyPower := newFaultPowerTotal.Add(retractedRecoveryPowerTotal)
-		undeclaredPenaltyTarget := PledgePenaltyForUndeclaredFault(rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, undeclaredPenaltyPower.QA)
+		undeclaredPenaltyTarget := PledgePenaltyForUndeclaredFault(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA)
 		// Subtract the "ongoing" fault fee from the amount charged now, since it will be charged at
 		// the end-of-deadline cron.
-		undeclaredPenaltyTarget = big.Sub(undeclaredPenaltyTarget, PledgePenaltyForDeclaredFault(rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, undeclaredPenaltyPower.QA))
+		undeclaredPenaltyTarget = big.Sub(undeclaredPenaltyTarget, PledgePenaltyForDeclaredFault(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA))
 
 		// Penalize recoveries as declared faults (a lower fee than the undeclared, above).
 		// It sounds odd, but because faults are penalized in arrears, at the _end_ of the faulty period, we must
 		// penalize recovered sectors here because they won't be penalized by the end-of-deadline cron for the
 		// immediately-prior faulty period.
-		declaredPenaltyTarget := PledgePenaltyForDeclaredFault(rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, recoveredPowerTotal.QA)
+		declaredPenaltyTarget := PledgePenaltyForDeclaredFault(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, recoveredPowerTotal.QA)
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
@@ -511,7 +511,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
 		depositReq := big.Max(
-			PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, sectorWeight),
+			PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight),
 			depositMinimum,
 		)
 		if availableBalance.LessThan(depositReq) {
@@ -707,7 +707,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			duration := precommit.Info.Expiration - activation
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
-				rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, circulatingSupply)
+				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
@@ -1607,7 +1607,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
 				totalInitialPledge = big.Add(totalInitialPledge, sector.InitialPledge)
 			}
-			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch, rewardStats.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, sectors))
+			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch, rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
 
 			return nil
@@ -1735,9 +1735,9 @@ func handleProvingDeadline(rt Runtime) {
 			}
 
 			// Unlock sector penalty for all undeclared faults.
-			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, penalizePowerTotal)
+			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal)
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
-			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, penalizePowerTotal))
+			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal))
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance)
@@ -1757,7 +1757,7 @@ func handleProvingDeadline(rt Runtime) {
 			// Record faulty power for penalisation of ongoing faults, before popping expirations.
 			// This includes any power that was just faulted from missing a PoSt.
 			faultyPower := st.FaultyPower.QA
-			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.SmoothQAPowerEstimate, faultyPower)
+			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, faultyPower)
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance) //nolint:ineffassign

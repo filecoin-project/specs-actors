@@ -238,9 +238,10 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
 		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
-		st.updateSmoothedEstimate(rt.CurrEpoch())
+		delta := rt.CurrEpoch() - st.LastProcessedCronEpoch
+		st.updateSmoothedEstimate(delta)
 
-		st.LastCronEpoch = rt.CurrEpoch()
+		st.LastProcessedCronEpoch = rt.CurrEpoch()
 		return nil
 	})
 
@@ -350,10 +351,10 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 }
 
 type CurrentTotalPowerReturn struct {
-	RawBytePower          abi.StoragePower
-	QualityAdjPower       abi.StoragePower
-	PledgeCollateral      abi.TokenAmount
-	SmoothQAPowerEstimate *smoothing.FilterEstimate
+	RawBytePower            abi.StoragePower
+	QualityAdjPower         abi.StoragePower
+	PledgeCollateral        abi.TokenAmount
+	QualityAdjPowerSmoothed *smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.
@@ -366,10 +367,10 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.State().Readonly(&st)
 
 	return &CurrentTotalPowerReturn{
-		RawBytePower:          st.ThisEpochRawBytePower,
-		QualityAdjPower:       st.ThisEpochQualityAdjPower,
-		PledgeCollateral:      st.ThisEpochPledgeCollateral,
-		SmoothQAPowerEstimate: st.ThisEpochQAPowerSmooth,
+		RawBytePower:            st.ThisEpochRawBytePower,
+		QualityAdjPower:         st.ThisEpochQualityAdjPower,
+		PledgeCollateral:        st.ThisEpochPledgeCollateral,
+		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 	}
 }
 

@@ -2385,7 +2385,7 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 			RawBytePower:     networkPower,
 			QualityAdjPower:  networkPower,
 			PledgeCollateral: h.networkPledge,
-			SmoothQAPowerEstimate: h.epochQAPowerSmooth,
+			QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 		},
 		exitcode.Ok)
 
@@ -2608,7 +2608,7 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 		RawBytePower:     h.networkRawPower,
 		QualityAdjPower:  h.networkQAPower,
 		PledgeCollateral: h.networkPledge,
-		SmoothQAPowerEstimate: h.epochQAPowerSmooth,
+		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 	}
 	currentReward := reward.ThisEpochRewardReturn{
 		ThisEpochReward:        h.epochReward,

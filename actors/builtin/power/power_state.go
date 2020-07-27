@@ -30,7 +30,7 @@ type State struct {
 	ThisEpochRawBytePower     abi.StoragePower
 	ThisEpochQualityAdjPower  abi.StoragePower
 	ThisEpochPledgeCollateral abi.TokenAmount
-	ThisEpochQAPowerSmooth    *smoothing.FilterEstimate
+	ThisEpochQAPowerSmoothed  *smoothing.FilterEstimate
 
 	MinerCount int64
 	// Number of miners having proven the minimum consensus power.
@@ -44,7 +44,7 @@ type State struct {
 	FirstCronEpoch abi.ChainEpoch
 
 	// Last epoch power cron tick has been processed.
-	LastCronEpoch abi.ChainEpoch
+	LastProcessedCronEpoch abi.ChainEpoch
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -77,7 +77,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochRawBytePower:     abi.NewStoragePower(0),
 		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
-		ThisEpochQAPowerSmooth:    smoothing.InitialEstimate(),
+		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
 		FirstCronEpoch:            0,
 		CronEventQueue:            emptyMapCid,
 		Claims:                    emptyMapCid,
@@ -212,10 +212,9 @@ func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, eve
 	return nil
 }
 
-func (st *State) updateSmoothedEstimate(currEpoch abi.ChainEpoch) {
-	delta := currEpoch - st.LastCronEpoch
-	filterQAPower := smoothing.LoadFilter(st.ThisEpochQAPowerSmooth, smoothing.DefaultAlpha, smoothing.DefaultBeta)
-	st.ThisEpochQAPowerSmooth = filterQAPower.NextEstimate(st.ThisEpochQualityAdjPower, delta)
+func (st *State) updateSmoothedEstimate(delta abi.ChainEpoch) {
+	filterQAPower := smoothing.LoadFilter(st.ThisEpochQAPowerSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochQAPowerSmoothed = filterQAPower.NextEstimate(st.ThisEpochQualityAdjPower, delta)
 }
 
 func loadCronEvents(mmap *adt.Multimap, epoch abi.ChainEpoch) ([]CronEvent, error) {
