@@ -32,8 +32,6 @@ type State struct {
 	ThisEpochReward abi.TokenAmount
 	// Smoothed ThisEpochReward
 	ThisEpochRewardSmoothed *smoothing.FilterEstimate
-	// Smoothed circulating supply
-	ThisEpochCirculatingSupplySmoothed *smoothing.FilterEstimate
 
 	// The baseline power the network is targeting at st.Epoch
 	ThisEpochBaselinePower abi.StoragePower
@@ -53,8 +51,7 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		ThisEpochBaselinePower: InitBaselinePower(),
 		Epoch:                  -1,
 
-		ThisEpochRewardSmoothed:            smoothing.InitialEstimate(),
-		ThisEpochCirculatingSupplySmoothed: smoothing.InitialEstimate(),
+		ThisEpochRewardSmoothed: smoothing.InitialEstimate(),
 	}
 
 	st.updateToNextEpochWithReward(currRealizedPower)
@@ -91,7 +88,4 @@ func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower)
 func (st *State) updateSmoothedEstimates(delta abi.ChainEpoch, observedFILCirculatingSupply abi.TokenAmount) {
 	filterReward := smoothing.LoadFilter(st.ThisEpochRewardSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
 	st.ThisEpochRewardSmoothed = filterReward.NextEstimate(st.ThisEpochReward, delta)
-
-	filterSupply := smoothing.LoadFilter(st.ThisEpochCirculatingSupplySmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
-	st.ThisEpochCirculatingSupplySmoothed = filterSupply.NextEstimate(observedFILCirculatingSupply, delta)
 }

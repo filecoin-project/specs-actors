@@ -103,10 +103,9 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 type ThisEpochRewardReturn struct {
-	ThisEpochReward                    abi.TokenAmount
-	ThisEpochRewardSmoothed            *smoothing.FilterEstimate
-	ThisEpochBaselinePower             abi.StoragePower
-	ThisEpochCirculatingSupplySmoothed *smoothing.FilterEstimate
+	ThisEpochReward         abi.TokenAmount
+	ThisEpochRewardSmoothed *smoothing.FilterEstimate
+	ThisEpochBaselinePower  abi.StoragePower
 }
 
 // The award value used for the current epoch, updated at the end of an epoch
@@ -118,10 +117,9 @@ func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *ThisEpochRewa
 	var st State
 	rt.State().Readonly(&st)
 	return &ThisEpochRewardReturn{
-		ThisEpochReward:                    st.ThisEpochReward,
-		ThisEpochBaselinePower:             st.ThisEpochBaselinePower,
-		ThisEpochRewardSmoothed:            st.ThisEpochRewardSmoothed,
-		ThisEpochCirculatingSupplySmoothed: st.ThisEpochCirculatingSupplySmoothed,
+		ThisEpochReward:         st.ThisEpochReward,
+		ThisEpochBaselinePower:  st.ThisEpochBaselinePower,
+		ThisEpochRewardSmoothed: st.ThisEpochRewardSmoothed,
 	}
 }
 
