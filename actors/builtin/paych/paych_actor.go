@@ -305,15 +305,6 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrForbidden, "payment channel not settling or settled")
 	}
 
-	// send remaining balance to "From"
-	_, codeFrom := rt.Send(
-		st.From,
-		builtin.MethodSend,
-		nil,
-		big.Sub(rt.CurrentBalance(), st.ToSend),
-	)
-	builtin.RequireSuccess(rt, codeFrom, "Failed to send balance to `From`")
-
 	// send ToSend to "To"
 	_, codeTo := rt.Send(
 		st.To,
@@ -323,13 +314,7 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	)
 	builtin.RequireSuccess(rt, codeTo, "Failed to send funds to `To`")
 
-	// even though we will delete the actor, it dosen't hurt to set this here for sanity.
-	rt.State().Transaction(&st, func() interface{} {
-		st.ToSend = big.Zero()
-		return nil
-	})
-
-	rt.DeleteActor(builtin.BurntFundsActorAddr)
+	rt.DeleteActor(st.From)
 
 	return nil
 }
