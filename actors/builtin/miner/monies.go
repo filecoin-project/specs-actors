@@ -59,9 +59,8 @@ func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smo
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
-func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForTermination(initialPledge abi.TokenAmount, dayReward abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	// max(SP(t), IP + BR(StartEpoch)*min(SectorAgeInDays, 180))
-	// where BR(StartEpoch)=IP/InitialPledgeFactor
 	// and sectorAgeInDays = sectorAge / EpochsInDay
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
 	return big.Max(
@@ -69,8 +68,8 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 		big.Add(
 			initialPledge,
 			big.Div(
-				big.Mul(initialPledge, cappedSectorAge),
-				big.Mul(InitialPledgeFactor, big.NewInt(builtin.EpochsInDay)))))
+				big.Mul(dayReward, cappedSectorAge),
+				big.NewInt(builtin.EpochsInDay))))
 }
 
 // Computes the PreCommit Deposit given sector qa weight and current network conditions.

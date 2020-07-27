@@ -1634,7 +1634,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{137}
+var lengthBufSectorOnChainInfo = []byte{138}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1720,6 +1720,11 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.InitialPledge.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.ExpectedDayReward (big.Int) (struct)
+	if err := t.ExpectedDayReward.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1737,7 +1742,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 10 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1899,6 +1904,15 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.InitialPledge.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.InitialPledge: %w", err)
+		}
+
+	}
+	// t.ExpectedDayReward (big.Int) (struct)
+
+	{
+
+		if err := t.ExpectedDayReward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ExpectedDayReward: %w", err)
 		}
 
 	}
