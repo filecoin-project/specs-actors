@@ -163,7 +163,8 @@ func TestCommitments(t *testing.T) {
 		dlInfo := actor.deadline(rt)
 
 		// Make a good commitment for the proof to target.
-		sectorNo := abi.SectorNumber(100)
+		// Use the max sector number to make sure everything works.
+		sectorNo := abi.SectorNumber(abi.MaxSectorNumber)
 		expiration := dlInfo.PeriodEnd() + 181*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
 		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
 		actor.preCommitSector(rt, precommit)
@@ -332,6 +333,12 @@ func TestCommitments(t *testing.T) {
 		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "invalid expiration", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, deadline.PeriodEnd()-1, nil))
 		})
+
+		// Sector ID out of range
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.preCommitSector(rt, actor.makePreCommit(abi.MaxSectorNumber+1, challengeEpoch, expiration, nil))
+		})
+		rt.Reset()
 	})
 
 	t.Run("valid committed capacity upgrade", func(t *testing.T) {
@@ -345,7 +352,8 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
 
 		// Commit a sector to upgrade
-		oldSector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		// Use the max sector number to make sure everything works.
+		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, 181, nil)
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
@@ -394,7 +402,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, uint64(2), deadline.LiveSectors)
 		assertEmptyBitfield(t, deadline.EarlyTerminations)
 
-		assertBitfieldEquals(t, partition.Sectors, uint64(oldSector.SectorNumber), uint64(newSector.SectorNumber))
+		assertBitfieldEquals(t, partition.Sectors, uint64(newSector.SectorNumber), uint64(oldSector.SectorNumber))
 		assertEmptyBitfield(t, partition.Faults)
 		assertEmptyBitfield(t, partition.Recoveries)
 		assertEmptyBitfield(t, partition.Terminated)
@@ -432,7 +440,7 @@ func TestCommitments(t *testing.T) {
 		deadline, partition = actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
 		assert.Equal(t, uint64(2), deadline.TotalSectors)
 		assert.Equal(t, uint64(1), deadline.LiveSectors)
-		assertBitfieldEquals(t, partition.Sectors, uint64(oldSector.SectorNumber), uint64(newSector.SectorNumber))
+		assertBitfieldEquals(t, partition.Sectors, uint64(newSector.SectorNumber), uint64(oldSector.SectorNumber))
 		assertBitfieldEquals(t, partition.Terminated, uint64(oldSector.SectorNumber))
 		assertBitfieldEquals(t, partition.Faults, uint64(newSector.SectorNumber))
 		newSectorPower := miner.PowerForSector(actor.sectorSize, newSector)
@@ -1921,6 +1929,22 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 	}
 	rt.Reset()
 	return info
+}
+
+func (h *actorHarness) commitAndProveSector(rt *mock.Runtime, sectorNo abi.SectorNumber, lifetimePeriods uint64, dealIDs []abi.DealID) *miner.SectorOnChainInfo {
+	precommitEpoch := rt.Epoch()
+	deadline := h.deadline(rt)
+	expiration := deadline.PeriodEnd() + abi.ChainEpoch(lifetimePeriods)*miner.WPoStProvingPeriod
+
+	// Precommit
+	precommit := h.makePreCommit(sectorNo, precommitEpoch-1, expiration, dealIDs)
+	h.preCommitSector(rt, precommit)
+
+	advanceToEpochWithCron(rt, h, precommitEpoch+miner.PreCommitChallengeDelay+1)
+
+	sectorInfo := h.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(precommit.SectorNumber), proveCommitConf{})
+	rt.Reset()
+	return sectorInfo
 }
 
 // Deprecated
