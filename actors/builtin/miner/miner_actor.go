@@ -1756,7 +1756,7 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, faultyPower)
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, availableBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			availableBalance = big.Sub(availableBalance, penaltyFromBalance)
+			availableBalance = big.Sub(availableBalance, penaltyFromBalance) //nolint:ineffassign
 			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
 			pledgeDelta = big.Sum(pledgeDelta, penaltyFromVesting.Neg())
 		}
@@ -2314,11 +2314,6 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 		}
 	}
 	return resolved
-}
-
-func burnFundsAndNotifyPledgeChange(rt Runtime, amt abi.TokenAmount) {
-	burnFunds(rt, amt)
-	notifyPledgeChanged(rt, amt.Neg())
 }
 
 func burnFunds(rt Runtime, amt abi.TokenAmount) {

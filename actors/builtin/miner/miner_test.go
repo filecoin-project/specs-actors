@@ -1452,7 +1452,7 @@ func TestWithdrawBalance(t *testing.T) {
 		// prove one sector to establish collateral and locked funds
 		actor.commitAndProveSectors(rt, 1, 181, nil)
 
-		// alter lock funds to simulate vesting since last prove
+		// alter initial pledge requirement to simulate undercollateralization
 		st := getState(rt)
 		st.InitialPledgeRequirement = big.Mul(big.NewInt(300000), st.InitialPledgeRequirement)
 		rt.ReplaceState(st)
