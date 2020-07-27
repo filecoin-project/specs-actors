@@ -259,6 +259,21 @@ func TestOnConsensusFault(t *testing.T) {
 		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
 	})
 
+	t.Run("successfully reduces pledged amount", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner)
+		ac.updateClaimedPower(rt, miner, powerUnit, powerUnit)
+
+		delta := abi.NewTokenAmount(100)
+		ac.updatePledgeTotal(rt, miner, delta)
+
+		slash := abi.NewTokenAmount(50)
+		ac.onConsensusFault(rt, miner, &slash)
+
+		st := getState(rt)
+		require.EqualValues(t, big.Sub(delta, slash), st.TotalPledgeCollateral)
+	})
+
 	t.Run("fails if total pledged amount goes below zero after fault", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.createMinerBasic(rt, owner, owner, miner)
