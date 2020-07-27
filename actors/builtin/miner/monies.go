@@ -12,6 +12,7 @@ import (
 // LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
 // PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
 // PARAM_FINISH
+var PreCommitDepositFactor = big.NewInt(20)
 var InitialPledgeFactor = big.NewInt(20)
 var LockTargetFactorNum = big.NewInt(3)
 var LockTargetFactorDenom = big.NewInt(10)
@@ -66,6 +67,12 @@ func PledgePenaltyForTermination(initialPledge abi.TokenAmount, sectorAge abi.Ch
 			big.Div(
 				big.Mul(initialPledge, cappedSectorAge),
 				big.Mul(InitialPledgeFactor, big.NewInt(builtin.EpochsInDay)))))
+}
+
+// Computes the PreCommit Deposit given sector qa weight and current network conditions.
+// PreCommit Deposit = 20 * BR(t)
+func PreCommitDepositForPower(epochTargetReward abi.TokenAmount, networkQAPower abi.StoragePower, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return big.Mul(PreCommitDepositFactor, ExpectedDayRewardForPower(epochTargetReward, networkQAPower, qaSectorPower))
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
