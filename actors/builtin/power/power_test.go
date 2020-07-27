@@ -216,6 +216,84 @@ func TestEnrollCronEpoch(t *testing.T) {
 	})
 }
 
+func TestOnConsensusFault(t *testing.T) {
+	miner := tutil.NewIDAddr(t, 101)
+	owner := tutil.NewIDAddr(t, 102)
+	smallPowerUnit := big.NewInt(1_000_000)
+	powerUnit := power.ConsensusMinerMinPower
+	zeroPledge := abi.NewTokenAmount(0)
+
+	t.Run("qaPower was below threshold before fault", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner)
+		ac.updateClaimedPower(rt, miner, smallPowerUnit, smallPowerUnit)
+
+		st := getState(rt)
+		require.True(t, st.TotalRawBytePower.IsZero())
+		require.True(t, st.TotalQualityAdjPower.IsZero())
+		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
+
+		ac.onConsensusFault(rt, miner, &zeroPledge)
+
+		st = getState(rt)
+		require.True(t, st.TotalRawBytePower.IsZero())
+		require.True(t, st.TotalQualityAdjPower.IsZero())
+		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
+	})
+
+	t.Run("qaPower was above threshold before fault", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner)
+		ac.updateClaimedPower(rt, miner, powerUnit, powerUnit)
+
+		st := getState(rt)
+		require.EqualValues(t, powerUnit, st.TotalRawBytePower)
+		require.EqualValues(t, powerUnit, st.TotalQualityAdjPower)
+		require.EqualValues(t, 1, st.MinerAboveMinPowerCount)
+
+		ac.onConsensusFault(rt, miner, &zeroPledge)
+
+		st = getState(rt)
+		require.True(t, st.TotalRawBytePower.IsZero())
+		require.True(t, st.TotalQualityAdjPower.IsZero())
+		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
+	})
+
+	t.Run("fails if total pledged amount goes below zero after fault", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner)
+		amt := big.NewInt(10)
+
+		rt.ExpectAssertionFailure("pledged amount cannot be negative", func() {
+			ac.onConsensusFault(rt, miner, &amt)
+		})
+	})
+
+	t.Run("fails if caller is not a StorageMinerActor", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		rt.SetCaller(miner, builtin.SystemActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		pledge := abi.NewTokenAmount(10)
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(ac.OnConsensusFault, &pledge)
+		})
+
+		rt.Verify()
+	})
+
+	t.Run("fails if claim does not exist for caller", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		pledge := abi.NewTokenAmount(10)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.onConsensusFault(rt, miner, &pledge)
+		})
+
+		rt.Verify()
+	})
+}
+
 func TestPowerAndPledgeAccounting(t *testing.T) {
 	actor := newHarness(t)
 	owner := tutil.NewIDAddr(t, 101)
@@ -701,7 +779,8 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer abi.PeerID,
 	multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof, value abi.TokenAmount) {
 
-	prevMinerCount := h.getMinerCount(rt)
+	st := getState(rt)
+	prevMinerCount := st.MinerCount
 
 	createMinerParams := &power.CreateMinerParams{
 		Owner:         owner,
@@ -733,14 +812,8 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	cl := h.getClaim(rt, miner)
 	require.True(h.t, cl.RawBytePower.IsZero())
 	require.True(h.t, cl.QualityAdjPower.IsZero())
-	require.EqualValues(h.t, prevMinerCount+1, h.getMinerCount(rt))
+	require.EqualValues(h.t, prevMinerCount+1, getState(rt).MinerCount)
 
-}
-
-func (h *spActorHarness) getMinerCount(rt *mock.Runtime) int64 {
-	var st power.State
-	rt.GetState(&st)
-	return st.MinerCount
 }
 
 func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim {
@@ -848,20 +921,27 @@ func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, e
 }
 
 func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Address, pledgeAmount *abi.TokenAmount) {
+	st := getState(rt)
+	prevMinerCount := st.MinerCount
+	prevPledged := st.TotalPledgeCollateral
+
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 	rt.SetCaller(minerAddr, builtin.StorageMinerActorCodeID)
 	rt.Call(h.Actor.OnConsensusFault, pledgeAmount)
 	rt.Verify()
 
-	// verify that miner claim is erased from state
-	st := getState(rt)
+	// verify that miner claim is erased from state, miner is removed and pledged amount is updated
+	st = getState(rt)
 	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 	require.NoError(h.t, err)
-
 	var out power.Claim
 	found, err := claims.Get(power.AddrKey(minerAddr), &out)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
+
+	require.EqualValues(h.t, prevMinerCount-1, st.MinerCount)
+
+	require.EqualValues(h.t, big.Sub(prevPledged, *pledgeAmount), st.TotalPledgeCollateral)
 }
 
 func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr addr.Address, sealInfo *abi.SealVerifyInfo) {

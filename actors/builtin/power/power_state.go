@@ -190,7 +190,7 @@ func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 
 func (st *State) addPledgeTotal(amount abi.TokenAmount) {
 	st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, amount)
-	Assert(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()))
+	AssertMsg(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()), "pledged amount cannot be negative")
 }
 
 func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, event *CronEvent) error {
