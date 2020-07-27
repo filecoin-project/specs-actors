@@ -1532,6 +1532,47 @@ func TestAddLockedFund(t *testing.T) {
 
 	})
 
+	t.Run("funds vest when under collateralized", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		st := getState(rt)
+
+		assert.Equal(t, big.Zero(), st.LockedFunds)
+
+		balance := rt.Balance()
+		st.InitialPledgeRequirement = big.Mul(big.NewInt(2), balance) // ip req twice total balance
+		availableBefore := st.GetAvailableBalance(balance)
+		assert.True(t, availableBefore.LessThan(big.Zero()))
+		rt.ReplaceState(st)
+
+		amt := abi.NewTokenAmount(600_000)
+		actor.addLockedFund(rt, amt)
+		// manually update actor balance to include the added funds from outside
+		newBalance := big.Add(balance, amt)
+		rt.SetBalance(newBalance)
+
+		st = getState(rt)
+		// no funds used to pay off ip debt
+		assert.Equal(t, availableBefore, st.GetAvailableBalance(newBalance))
+		assert.False(t, st.MeetsInitialPledgeCondition(newBalance))
+		// all funds locked in vesting table
+		assert.Equal(t, amt, st.LockedFunds)
+	})
+
+	t.Run("unvested funds will recollateralize a miner", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		st := getState(rt)
+
+		balance := rt.Balance()
+		st.InitialPledgeRequirement = balance
+		underCollateralizedBalance := big.Div(balance, big.NewInt(2)) // ip req twice total balance
+		assert.False(t, st.MeetsInitialPledgeCondition(underCollateralizedBalance))
+
+		st.InitialPledgeRequirement = balance
+		assert.True(t, st.MeetsInitialPledgeCondition(balance))
+	})
+
 }
 
 type actorHarness struct {
