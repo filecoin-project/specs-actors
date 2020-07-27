@@ -9,6 +9,9 @@ import (
 // DealUpdatesInterval is the number of blocks between payouts for deals
 const DealUpdatesInterval = 100
 
+var ProvCollateralPercentSupplyNum = big.NewInt(5)
+var ProvCollateralPercentSupplyDenom = big.NewInt(100)
+
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
 	// Cryptoeconomic modelling to date has used an assumption of a maximum deal duration of up to one year.
@@ -20,8 +23,19 @@ func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) 
 	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
 }
 
-func dealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
-	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
+func dealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
+	lockTargetNum := big.Mul(ProvCollateralPercentSupplyNum, networkCirculatingSupply)
+	lockTargetDenom := ProvCollateralPercentSupplyDenom
+
+	qaPower := dealQAPower(pieceSize, verified)
+	powerShareNum := qaPower
+	powerShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower)
+
+	num := big.Mul(lockTargetNum, powerShareNum)
+	denom := big.Mul(lockTargetDenom, powerShareDenom)
+	minCollateral := big.Div(num, denom)
+
+	return minCollateral, abi.TotalFilecoin // PARAM_FINISH
 }
 
 func dealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
@@ -39,4 +53,17 @@ func DealWeight(proposal *DealProposal) abi.DealWeight {
 	dealSize := big.NewIntUnsigned(uint64(proposal.PieceSize))
 	dealSpaceTime := big.Mul(dealDuration, dealSize)
 	return dealSpaceTime
+}
+
+func dealQAPower(dealSize abi.PaddedPieceSize, verified bool) abi.StoragePower {
+	scaledUpQuality := big.Zero()
+	if verified {
+		scaledUpQuality = big.Lsh(builtin.VerifiedDealWeightMultiplier, builtin.SectorQualityPrecision)
+		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)
+	} else {
+		scaledUpQuality = big.Lsh(builtin.DealWeightMultiplier, builtin.SectorQualityPrecision)
+		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)
+	}
+	scaledUpQAPower := big.Mul(scaledUpQuality, big.NewIntUnsigned(uint64(dealSize)))
+	return big.Rsh(scaledUpQAPower, builtin.SectorQualityPrecision)
 }

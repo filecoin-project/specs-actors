@@ -1,6 +1,10 @@
 package builtin
 
-import "fmt"
+import (
+	"fmt"
+
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+)
 
 // The duration of a chain epoch.
 // This is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
@@ -29,3 +33,15 @@ func init() {
 		panic(fmt.Sprintf("epoch duration %d does not evenly divide one hour (%d)", EpochDurationSeconds, SecondsInHour))
 	}
 }
+
+// Quality multiplier for committed capacity (no deals) in a sector
+var QualityBaseMultiplier = big.NewInt(10)
+
+// Quality multiplier for unverified deals in a sector
+var DealWeightMultiplier = big.NewInt(10)
+
+// Quality multiplier for verified deals in a sector
+var VerifiedDealWeightMultiplier = big.NewInt(100)
+
+// Precision used for making QA power calculations
+const SectorQualityPrecision = 20

@@ -11,6 +11,8 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -176,6 +178,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 
 	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
+	baselinePower := requestCurrentBaselinePower(rt)
+	networkQAPower := requestCurrentNetworkQAPower(rt)
 
 	var newDealIds []abi.DealID
 	var st State
@@ -187,7 +191,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
-			validateDeal(rt, deal)
+			validateDeal(rt, deal, baselinePower, networkQAPower)
 
 			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
@@ -661,7 +665,7 @@ func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sec
 	return nil
 }
 
-func validateDeal(rt Runtime, deal ClientDealProposal) {
+func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkQAPower abi.StoragePower) {
 	if err := dealProposalIsInternallyValid(rt, deal); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal: %s", err)
 	}
@@ -698,7 +702,8 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(proposal.PieceSize, proposal.Duration())
+	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal,
+		networkQAPower, baselinePower, rt.TotalFilCircSupply())
 	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
@@ -708,6 +713,10 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}
 }
+
+//
+// Helpers
+//
 
 // Resolves a provider or client address to the canonical form against which a balance should be held, and
 // the designated recipient address of withdrawals (which is the same, for simple account parties).
@@ -742,4 +751,24 @@ func getDealProposal(proposals *DealArray, dealID abi.DealID) (*DealProposal, er
 	}
 
 	return proposal, nil
+}
+
+// Requests the current epoch target block reward from the reward actor.
+func requestCurrentBaselinePower(rt Runtime) abi.StoragePower {
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
+	var ret reward.ThisEpochRewardReturn
+	err := rwret.Into(&ret)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
+	return ret.ThisEpochBaselinePower
+}
+
+// Requests the current network total power and pledge from the power actor.
+func requestCurrentNetworkQAPower(rt Runtime) abi.StoragePower {
+	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check current power")
+	var pwr power.CurrentTotalPowerReturn
+	err := pwret.Into(&pwr)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
+	return pwr.QualityAdjPower
 }
