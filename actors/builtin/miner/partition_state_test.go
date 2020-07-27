@@ -1,6 +1,7 @@
 package miner_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -433,6 +434,55 @@ func TestPartitions(t *testing.T) {
 		queue, err = miner.LoadBitfieldQueue(store, partition.EarlyTerminated, quantSpec)
 		require.NoError(t, err)
 		ExpectBQ().Equals(t, queue)
+	})
+
+	t.Run("test max sectors", func(t *testing.T) {
+		rt := builder.Build(t)
+		partition := emptyPartition(t, rt)
+		store := adt.AsStore(rt)
+
+		proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
+		sectorSize, err := proofType.SectorSize()
+		require.NoError(t, err)
+		partitionSectors, err := proofType.WindowPoStPartitionSectors()
+		require.NoError(t, err)
+
+		manySectors := make([]*miner.SectorOnChainInfo, partitionSectors)
+		ids := make([]uint64, partitionSectors)
+		for i := range manySectors {
+			id := uint64((i + 1) << 50)
+			ids[i] = id
+			manySectors[i] = testSector(int64(i+1), int64(id), 50, 60, 1000)
+		}
+		sectorNos := bf(ids...)
+
+		power, err := partition.AddSectors(store, manySectors, sectorSize, miner.NoQuantization)
+		require.NoError(t, err)
+
+		expectedPower := miner.PowerForSectors(sectorSize, manySectors)
+		assert.True(t, expectedPower.Equals(power))
+
+		assertPartitionState(
+			t, store, partition,
+			miner.NoQuantization, sectorSize, manySectors,
+			sectorNos, bf(), bf(), bf(),
+		)
+
+		// Make sure we can still encode and decode.
+		var buf bytes.Buffer
+		err = partition.MarshalCBOR(&buf)
+		require.NoError(t, err)
+
+		var newPartition miner.Partition
+		err = newPartition.UnmarshalCBOR(&buf)
+		require.NoError(t, err)
+
+		assertPartitionState(
+			t, store, &newPartition,
+			miner.NoQuantization, sectorSize, manySectors,
+			sectorNos, bf(), bf(), bf(),
+		)
+
 	})
 }
 
