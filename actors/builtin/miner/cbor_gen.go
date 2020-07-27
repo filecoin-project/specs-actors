@@ -15,7 +15,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{141}
+var lengthBufState = []byte{140}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -41,11 +41,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	// t.LockedFunds (big.Int) (struct)
 	if err := t.LockedFunds.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.InitialPledgeDeposits (big.Int) (struct)
-	if err := t.InitialPledgeDeposits.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -121,7 +116,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 13 {
+	if extra != 12 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -152,15 +147,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.LockedFunds.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.LockedFunds: %w", err)
-		}
-
-	}
-	// t.InitialPledgeDeposits (big.Int) (struct)
-
-	{
-
-		if err := t.InitialPledgeDeposits.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.InitialPledgeDeposits: %w", err)
 		}
 
 	}

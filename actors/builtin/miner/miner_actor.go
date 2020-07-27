@@ -63,12 +63,11 @@ func (a Actor) Exports() []interface{} {
 		12:                        a.OnDeferredCronEvent,
 		13:                        a.CheckSectorProven,
 		14:                        a.AddLockedFund,
-		15:                        a.AddPledgeDeposit,
-		16:                        a.ReportConsensusFault,
-		17:                        a.WithdrawBalance,
-		18:                        a.ConfirmSectorProofsValid,
-		19:                        a.ChangeMultiaddrs,
-		20:                        a.CompactPartitions,
+		15:                        a.ReportConsensusFault,
+		16:                        a.WithdrawBalance,
+		17:                        a.ConfirmSectorProofsValid,
+		18:                        a.ChangeMultiaddrs,
+		19:                        a.CompactPartitions,
 	}
 }
 
@@ -263,6 +262,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	retractedRecoveryPowerTotal := NewPowerPairZero()
 	recoveredPowerTotal := NewPowerPairZero()
 	penaltyTotal := abi.NewTokenAmount(0)
+	pledgeDelta := abi.NewTokenAmount(0)
 
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
@@ -385,8 +385,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
-		penaltyTotal, err = st.UnlockFundsInPriorityOrder(store, currEpoch, totalPenaltyTarget)
+		availableBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		vestingPenaltyTotal, balancePenaltyTotal, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, totalPenaltyTarget, availableBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
+		penaltyTotal = big.Add(vestingPenaltyTotal, balancePenaltyTotal)
+		pledgeDelta = vestingPenaltyTotal.Neg()
 
 		// Record the successful submission
 		deadline.AddPoStSubmissions(partitionIdxs)
@@ -410,7 +413,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	// https://github.com/filecoin-project/specs-actors/issues/414
 	requestUpdatePower(rt, recoveredPowerTotal.Sub(newFaultPowerTotal))
 	// Burn penalties.
-	burnFundsAndNotifyPledgeChange(rt, penaltyTotal)
+	burnFunds(rt, penaltyTotal)
+	notifyPledgeChanged(rt, pledgeDelta)
 	return nil
 }
 
@@ -743,9 +747,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, availableBalance)
 		}
 
-		st.AddInitialPledgeDeposits(totalPledge)
 		st.AddInitialPledgeRequirement(totalPledge)
-
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
 		return newlyVestedFund
@@ -1413,7 +1415,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		availableBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 		if availableBalance.LessThan(*amountToLock) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
 		}
@@ -1426,35 +1428,6 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 
 	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
 
-	return nil
-}
-
-// Adds to initial pledge deposit some amount of the miner's unlocked balance including funds received by this call.
-func (a Actor) AddPledgeDeposit(rt Runtime, pledgeToLock *abi.TokenAmount) *adt.EmptyValue {
-	if pledgeToLock.Sign() < 0 {
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot add a negative amount of funds to pledge deposit")
-	}
-	store := adt.AsStore(rt)
-	var st State
-
-	newlyVested := rt.State().Transaction(&st, func() interface{} {
-		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
-
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
-
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		if availableBalance.LessThan(*pledgeToLock) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *pledgeToLock)
-		}
-
-		st.AddInitialPledgeDeposits(*pledgeToLock)
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
-
-	notifyPledgeChanged(rt, big.Sub(*pledgeToLock, newlyVested))
 	return nil
 }
 
@@ -1542,6 +1515,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	currBalance := rt.CurrentBalance()
 	amountWithdrawn := big.Min(st.GetAvailableBalance(currBalance), params.AmountRequested)
+	Assert(amountWithdrawn.GreaterThanEqual(big.Zero()))
 	Assert(amountWithdrawn.LessThanEqual(currBalance))
 
 	_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn)
@@ -1596,7 +1570,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		result           TerminationResult
 		dealsToTerminate []market.OnMinerSectorsTerminateParams
 		penalty          = big.Zero()
-		pledge           = big.Zero()
+		pledgeDelta      = big.Zero()
 	)
 
 	var st State
@@ -1614,6 +1588,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 		info := getMinerInfo(rt, &st)
 
+		totalInitialPledge := big.Zero()
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(result.Sectors))
 		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
 			// Note: this loads the sectors array root multiple times, redundantly.
@@ -1626,7 +1601,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 			}
 			for _, sector := range sectors {
 				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
-				pledge = big.Add(pledge, sector.InitialPledge)
+				totalInitialPledge = big.Add(totalInitialPledge, sector.InitialPledge)
 			}
 			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch, epochReward, pwrTotal, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
@@ -1638,12 +1613,14 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		// Unlock funds for penalties.
 		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
 		// We're intentionally reducing the penalty paid to what we have.
-		penalty, err = st.UnlockFundsInPriorityOrder(store, rt.CurrEpoch(), penalty)
+		available := st.GetUnlockedBalance(rt.CurrentBalance())
+		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, rt.CurrEpoch(), penalty, available)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
+		penalty = big.Add(penaltyFromVesting, penaltyFromBalance)
 
 		// Remove pledge requirement.
-		st.AddInitialPledgeRequirement(pledge.Neg())
-		pledge = st.UnlockInitialPledgeDeposits(pledge)
+		st.AddInitialPledgeRequirement(totalInitialPledge.Neg())
+		pledgeDelta = big.Add(totalInitialPledge.Neg(), penaltyFromVesting.Neg())
 
 		return nil
 	})
@@ -1654,10 +1631,10 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 	}
 
 	// Burn penalty.
-	burnFundsAndNotifyPledgeChange(rt, penalty)
+	burnFunds(rt, penalty)
 
 	// Return pledge.
-	notifyPledgeChanged(rt, pledge.Neg())
+	notifyPledgeChanged(rt, pledgeDelta)
 
 	// Terminate deals.
 	for _, params := range dealsToTerminate {
@@ -1685,12 +1662,14 @@ func handleProvingDeadline(rt Runtime) {
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+
 		var err error
 		{
 			// Vest locked funds.
 			// This happens first so that any subsequent penalties are taken from locked pledge, rather than free funds.
 			newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+			pledgeDelta = big.Add(pledgeDelta, newlyVested.Neg())
 		}
 
 		// Record whether or not we _had_ early terminations in the queue before this method.
@@ -1711,6 +1690,7 @@ func handleProvingDeadline(rt Runtime) {
 		deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
 		quant := st.QuantEndOfDeadline()
+		availableBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 
 		{
 			// Detect and penalize missing proofs.
@@ -1754,9 +1734,11 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal)
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
 			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal))
-			penalty, err := st.UnlockFundsInPriorityOrder(store, currEpoch, penaltyTarget)
+			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, availableBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			penaltyTotal = big.Add(penaltyTotal, penalty)
+			availableBalance = big.Sub(availableBalance, penaltyFromBalance)
+			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
+			pledgeDelta = big.Sum(pledgeDelta, penaltyFromVesting.Neg())
 
 			// Save modified deadline state.
 			if detectedAny {
@@ -1772,9 +1754,11 @@ func handleProvingDeadline(rt Runtime) {
 			// This includes any power that was just faulted from missing a PoSt.
 			faultyPower := st.FaultyPower.QA
 			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, faultyPower)
-			penalty, err := st.UnlockFundsInPriorityOrder(store, currEpoch, penaltyTarget)
+			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, availableBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			penaltyTotal = big.Add(penaltyTotal, penalty)
+			availableBalance = big.Sub(availableBalance, penaltyFromBalance)
+			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
+			pledgeDelta = big.Sum(pledgeDelta, penaltyFromVesting.Neg())
 		}
 		{
 			// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
@@ -1784,10 +1768,8 @@ func handleProvingDeadline(rt Runtime) {
 			// Release pledge requirements for the sectors expiring on-time.
 			// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
 			// when the early termination is processed.
-			pledgeDelta = expired.OnTimePledge
-			st.AddInitialPledgeRequirement(pledgeDelta.Neg())
-			// Only record the amount we can actually unlock
-			pledgeDelta = st.UnlockInitialPledgeDeposits(pledgeDelta)
+			pledgeDelta = big.Add(pledgeDelta, expired.OnTimePledge.Neg())
+			st.AddInitialPledgeRequirement(expired.OnTimePledge.Neg())
 
 			// Record reduction in power of the amount of expiring active power.
 			// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
@@ -1831,7 +1813,7 @@ func handleProvingDeadline(rt Runtime) {
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDelta)
 	burnFunds(rt, penaltyTotal)
-	notifyPledgeChanged(rt, big.Sum(newlyVested.Neg(), penaltyTotal.Neg(), pledgeDelta.Neg()))
+	notifyPledgeChanged(rt, pledgeDelta)
 
 	// Schedule cron callback for next deadline's last epoch.
 	newDlInfo := st.DeadlineInfo(currEpoch)
@@ -2279,8 +2261,8 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 	if !st.MeetsInitialPledgeCondition(rt.CurrentBalance()) {
 		rt.Abortf(exitcode.ErrInsufficientFunds,
-			"pledge deposit does not cover pledge requirements (%v < %v)",
-			st.InitialPledgeDeposits, st.InitialPledgeRequirement)
+			"unlocked balance does not cover pledge requirements (%v < %v)",
+			st.GetUnlockedBalance(rt.CurrentBalance()), st.InitialPledgeRequirement)
 	}
 }
 

@@ -92,13 +92,12 @@ var MethodsMiner = struct {
 	OnDeferredCronEvent      abi.MethodNum
 	CheckSectorProven        abi.MethodNum
 	AddLockedFund            abi.MethodNum
-	AddPledgeDeposit         abi.MethodNum
 	ReportConsensusFault     abi.MethodNum
 	WithdrawBalance          abi.MethodNum
 	ConfirmSectorProofsValid abi.MethodNum
 	ChangeMultiaddrs         abi.MethodNum
 	CompactPartitions        abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
 
 var MethodsVerifiedRegistry = struct {
 	Constructor       abi.MethodNum

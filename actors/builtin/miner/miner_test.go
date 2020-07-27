@@ -221,8 +221,7 @@ func TestCommitments(t *testing.T) {
 		// expect initial plege of sector to be set
 		assert.Equal(t, expectedInitialPledge, sector.InitialPledge)
 
-		// expect locked initial pledge of sector to be the same as precommit deposit
-		assert.Equal(t, expectedInitialPledge, st.InitialPledgeDeposits)
+		// expect locked initial pledge of sector to be the same as pledge requirement
 		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
 		// expect sector to be assigned a deadline/partition
@@ -375,7 +374,6 @@ func TestCommitments(t *testing.T) {
 		// Deposit and pledge as expected
 		st = getState(rt)
 		assert.Equal(t, st.PreCommitDeposits, upgrade.PreCommitDeposit)
-		assert.Equal(t, st.InitialPledgeDeposits, oldSector.InitialPledge)
 		assert.Equal(t, st.InitialPledgeRequirement, oldSector.InitialPledge)
 
 		// Prove new sector
@@ -387,7 +385,6 @@ func TestCommitments(t *testing.T) {
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, st.InitialPledgeRequirement, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
-		assert.Equal(t, st.InitialPledgeDeposits, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
 
 		// Both sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -450,7 +447,6 @@ func TestCommitments(t *testing.T) {
 
 		// Old sector gone from pledge requirement and deposit
 		assert.Equal(t, st.InitialPledgeRequirement, newSector.InitialPledge)
-		assert.Equal(t, st.InitialPledgeDeposits, newSector.InitialPledge)
 		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})
 
@@ -676,7 +672,7 @@ func TestCommitments(t *testing.T) {
 		//require.NoError(t, err)
 		//assert.Equal(t, []uint64{uint64(sectorNo)}, newSectors)
 		// Verify pledge lock-up
-		assert.True(t, st.InitialPledgeDeposits.GreaterThan(big.Zero()))
+		assert.True(t, st.InitialPledgeRequirement.GreaterThan(big.Zero()))
 		rt.Reset()
 
 		// Duplicate proof (sector no-longer pre-committed)
@@ -1004,10 +1000,11 @@ func TestProveCommit(t *testing.T) {
 		precommit := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
 		actor.preCommitSector(rt, precommit)
 
-		// alter pledge deposits to simulate dipping into them for fees
+		// alter balance to simulate dipping into it for fees
+
 		st := getState(rt)
-		st.InitialPledgeDeposits = big.Sub(st.InitialPledgeDeposits, big.NewInt(1))
-		rt.ReplaceState(st)
+		bal := rt.Balance()
+		rt.SetBalance(big.Add(st.PreCommitDeposits, st.LockedFunds))
 		info := actor.getInfo(rt)
 
 		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
@@ -1017,8 +1014,7 @@ func TestProveCommit(t *testing.T) {
 		rt.Reset()
 
 		// succeeds when pledge deposits satisfy initial pledge requirement
-		st.InitialPledgeDeposits = big.Add(st.InitialPledgeDeposits, big.NewInt(1))
-		rt.ReplaceState(st)
+		rt.SetBalance(bal)
 		actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 	})
 
@@ -1458,7 +1454,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		// alter lock funds to simulate vesting since last prove
 		st := getState(rt)
-		st.InitialPledgeRequirement = big.Add(big.NewInt(1), st.InitialPledgeRequirement)
+		st.InitialPledgeRequirement = big.Mul(big.NewInt(300000), st.InitialPledgeRequirement)
 		rt.ReplaceState(st)
 
 		// withdraw 1% of balance
