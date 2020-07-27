@@ -514,13 +514,14 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())
 				Assert(slashAmount.GreaterThanEqual(big.Zero()))
 				if removeDeal {
-					Assert(nextEpoch == epochUndefined)
+					AssertMsg(nextEpoch == epochUndefined, "next scheduled epoch should be undefined as deal has been removed")
 
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 					err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, true)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal proposal and states")
 				} else {
-					Assert(nextEpoch > rt.CurrEpoch() && amountSlashed.IsZero())
+					AssertMsg(nextEpoch > rt.CurrEpoch() && slashAmount.IsZero(), "deal should not be slashed and should have a schedule for next cron tick"+
+						"as it has not been removed")
 
 					// Update deal's LastUpdatedEpoch in DealStates
 					state.LastUpdatedEpoch = rt.CurrEpoch()
@@ -573,7 +574,8 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		)
 
 		if !code.IsSuccess() {
-			rt.Log(vmr.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, got code %v", code)
+			rt.Log(vmr.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
+				"provider: %v, got code %v", d.Client, d.PieceSize, d.Provider, code)
 		}
 	}
 
