@@ -114,10 +114,11 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *adt.EmptyValue {
+	msgValue := rt.Message().ValueReceived()
+	builtin.RequireParam(rt, msgValue.GreaterThan(big.Zero()), "balance to add must be greater than zero")
+
 	// only signing parties can add balance for client AND provider.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-
-	msgValue := rt.Message().ValueReceived()
 
 	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
 
@@ -174,23 +175,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
 
-	for _, deal := range params.Deals {
-		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
-		// Either the DealSize is within the available DataCap of the VerifiedClient
-		// or this message will fail. We do not allow a deal that is partially verified.
-		if deal.Proposal.VerifiedDeal {
-			_, code := rt.Send(
-				builtin.VerifiedRegistryActorAddr,
-				builtin.MethodsVerifiedRegistry.UseBytes,
-				&verifreg.UseBytesParams{
-					Address:  deal.Proposal.Client,
-					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
-				},
-				abi.NewTokenAmount(0),
-			)
-			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
-		}
-	}
+	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
 
 	var newDealIds []abi.DealID
 	var st State
@@ -214,6 +199,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			}
 			// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
 			deal.Proposal.Provider = provider
+			resolvedAddrs[deal.Proposal.Client] = client
 			deal.Proposal.Client = client
 
 			err, code := msm.lockClientAndProviderBalances(&deal.Proposal)
@@ -247,6 +233,27 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		return nil
 	})
+
+	for _, deal := range params.Deals {
+		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
+		// Either the DealSize is within the available DataCap of the VerifiedClient
+		// or this message will fail. We do not allow a deal that is partially verified.
+		if deal.Proposal.VerifiedDeal {
+			resolvedClient, ok := resolvedAddrs[deal.Proposal.Client]
+			builtin.RequireParam(rt, ok, "could not get resolvedClient client address")
+
+			_, code := rt.Send(
+				builtin.VerifiedRegistryActorAddr,
+				builtin.MethodsVerifiedRegistry.UseBytes,
+				&verifreg.UseBytesParams{
+					Address:  resolvedClient,
+					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
+				},
+				abi.NewTokenAmount(0),
+			)
+			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
+		}
+	}
 
 	return &PublishStorageDealsReturn{newDealIds}
 }
@@ -505,25 +512,21 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 				}
 
 				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())
+				Assert(slashAmount.GreaterThanEqual(big.Zero()))
 				if removeDeal {
-					if err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, true); err != nil {
-						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
-					}
-				}
-				if !slashAmount.IsZero() {
+					AssertMsg(nextEpoch == epochUndefined, "next scheduled epoch should be undefined as deal has been removed")
+
 					amountSlashed = big.Add(amountSlashed, slashAmount)
-				}
+					err := deleteDealProposalAndState(dealID, msm.dealStates, msm.dealProposals, true, true)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal proposal and states")
+				} else {
+					AssertMsg(nextEpoch > rt.CurrEpoch() && slashAmount.IsZero(), "deal should not be slashed and should have a schedule for next cron tick"+
+						" as it has not been removed")
 
-				if nextEpoch != epochUndefined {
-					Assert(nextEpoch > rt.CurrEpoch())
-
-					// TODO: can we avoid having this field?
-					// https://github.com/filecoin-project/specs-actors/issues/463
+					// Update deal's LastUpdatedEpoch in DealStates
 					state.LastUpdatedEpoch = rt.CurrEpoch()
-
-					if err := msm.dealStates.Set(dealID, state); err != nil {
-						rt.Abortf(exitcode.ErrPlaceholder, "failed to set deal state state: %v", err)
-					}
+					err = msm.dealStates.Set(dealID, state)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state")
 
 					updatesNeeded[nextEpoch] = append(updatesNeeded[nextEpoch], dealID)
 				}
@@ -570,7 +573,10 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 			abi.NewTokenAmount(0),
 		)
 
-		builtin.RequireSuccess(rt, code, "failed to restore bytes for verified client: %v", d.Client)
+		if !code.IsSuccess() {
+			rt.Log(vmr.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
+				"provider: %v, got code %v", d.Client, d.PieceSize, d.Provider, code)
+		}
 	}
 
 	if !amountSlashed.IsZero() {
