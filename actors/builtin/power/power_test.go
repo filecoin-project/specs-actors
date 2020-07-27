@@ -182,7 +182,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectTotalPowerEager(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 	})
 
-	t.Run("all of one miner's power dissapears when that miner dips below min power threshold", func(t *testing.T) {
+	t.Run("all of one miner's power disappears when that miner dips below min power threshold", func(t *testing.T) {
 		// Setup four miners above threshold
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -254,6 +254,31 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// power unchanged
 		actor.expectTotalPowerEager(rt, mul(powerUnit, 3), mul(powerUnit, 3))
 
+	})
+
+	t.Run("slashing miner correctly updates power", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// create three miners
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
+
+		// create a fourth miner to go above the consensus limit.
+		actor.createMinerBasic(rt, owner, owner, miner4)
+		actor.updateClaimedPower(rt, miner4, big.Mul(powerUnit, big.NewInt(2)), powerUnit)
+		actor.expectTotalPowerEager(rt, mul(powerUnit, 5), mul(powerUnit, 4))
+
+		// fault the fourth miner
+		zeroPledge := abi.NewTokenAmount(0)
+		actor.onConsensusFault(rt, miner4, &zeroPledge)
+
+		// power of the fourth miner is removed
+		actor.expectTotalPowerEager(rt, mul(powerUnit, 3), mul(powerUnit, 3))
 	})
 }
 
