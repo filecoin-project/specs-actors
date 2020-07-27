@@ -410,7 +410,9 @@ func TestPublishStorageDeals(t *testing.T) {
 		rt.AddIDAddress(clientBls, clientResolved)
 
 		// generate deal and add required funds for deal
-		deal := generateDealProposal(clientBls, mAddr.provider, abi.ChainEpoch(42), abi.ChainEpoch(100))
+		startEpoch := abi.ChainEpoch(42)
+		endEpoch := startEpoch + 200*builtin.EpochsInDay
+		deal := generateDealProposal(clientBls, mAddr.provider, startEpoch, endEpoch)
 		deal.VerifiedDeal = true
 
 		// add funds for cient using it's BLS address -> will be resolved and persisted
@@ -1348,7 +1350,7 @@ func TestCronTick(t *testing.T) {
 		dealId1 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d1 := actor.getDealProposal(rt, dealId1)
 
-		dealId2 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch+1, 0, sectorExpiry)
+		dealId2 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch+1, endEpoch+1, 0, sectorExpiry)
 
 		// slash deal1
 		slashEpoch := abi.ChainEpoch(150)

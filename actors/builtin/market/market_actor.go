@@ -521,7 +521,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal proposal and states")
 				} else {
 					AssertMsg(nextEpoch > rt.CurrEpoch() && slashAmount.IsZero(), "deal should not be slashed and should have a schedule for next cron tick"+
-						"as it has not been removed")
+						" as it has not been removed")
 
 					// Update deal's LastUpdatedEpoch in DealStates
 					state.LastUpdatedEpoch = rt.CurrEpoch()
