@@ -249,7 +249,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	store := adt.AsStore(rt)
 	var st State
 
-	if params.Deadline > WPoStPeriodDeadlines {
+	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
 	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
@@ -458,10 +458,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	}
 
 	// gather information from other actors
-	baselinePower, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
+	_, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
-	circulatingSupply := rt.TotalFilCircSupply()
 
 	store := adt.AsStore(rt)
 	var st State
@@ -505,7 +504,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
 		depositReq := big.Max(
-			precommitDeposit(sectorWeight, pwrTotal.QualityAdjPower, baselinePower, pwrTotal.PledgeCollateral, epochReward, circulatingSupply),
+			PreCommitDepositForPower(epochReward, pwrTotal.QualityAdjPower, sectorWeight),
 			depositMinimum,
 		)
 		if availableBalance.LessThan(depositReq) {
@@ -614,6 +613,11 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
+	// get network stats from other actors
+	baselinePower, epochReward := requestCurrentEpochBaselinePowerAndReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+	circulatingSupply := rt.TotalFilCircSupply()
+
 	// 1. Activate deals, skipping pre-commits with invalid deals.
 	//    - calls the market actor.
 	// 2. Reschedule replacement sector expiration.
@@ -680,6 +684,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 	var newPower PowerPair
 	totalPledge := big.Zero()
+	totalPrecommitDeposit := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
 		quant := st.QuantEndOfDeadline()
@@ -691,8 +696,14 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
-			// initial pledge is precommit deposit
-			initialPledge := precommit.PreCommitDeposit
+			// compute initial pledge
+			activation := rt.CurrEpoch()
+			duration := precommit.Info.Expiration - activation
+			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
+			initialPledge := InitialPledgeForPower(power, pwrTotal.QualityAdjPower, baselinePower,
+				pwrTotal.PledgeCollateral, epochReward, circulatingSupply)
+
+			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:       precommit.Info.SectorNumber,
@@ -700,7 +711,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				SealedCID:          precommit.Info.SealedCID,
 				DealIDs:            precommit.Info.DealIDs,
 				Expiration:         precommit.Info.Expiration,
-				Activation:         precommit.PreCommitEpoch,
+				Activation:         activation,
 				DealWeight:         precommit.DealWeight,
 				VerifiedDealWeight: precommit.VerifiedDealWeight,
 				InitialPledge:      initialPledge,
@@ -725,7 +736,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(totalPledge.Neg())
+		st.AddPreCommitDeposit(totalPrecommitDeposit.Neg())
 		st.AddInitialPledgeRequirement(totalPledge)
 
 		// Lock up initial pledge for new sectors.
@@ -1873,6 +1884,12 @@ func processRecoveries(rt Runtime, st *State, store adt.Store, partition *Partit
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
 func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
+	// expiration cannot be less than minimum after activation
+	if expiration-activation < MinSectorExpiration {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) must exceed %d after activation %d",
+			expiration, expiration-activation, MinSectorExpiration, activation)
+	}
+
 	// expiration cannot exceed MaxSectorExpirationExtension from now
 	if expiration > rt.CurrEpoch()+MaxSectorExpirationExtension {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, cannot be more than %d past current epoch %d",

@@ -108,10 +108,13 @@ var FaultMaxAge = WPoStProvingPeriod * 14
 // key or allowing the owner account to submit PoSts while a key change is pending.
 const WorkerKeyChangeDelay = ChainFinality
 
+// Minimum number of epochs past the current epoch a sector may be set to expire.
+const MinSectorExpiration = 180 * builtin.EpochsInDay
+
 // Maximum number of epochs past the current epoch a sector may be set to expire.
 // The actual maximum extension will be the minimum of CurrEpoch + MaximumSectorExpirationExtension
 // and sector.ActivationEpoch+sealProof.SectorMaximumLifetime()
-const MaxSectorExpirationExtension = builtin.EpochsInYear
+const MaxSectorExpirationExtension = 366 * builtin.EpochsInDay
 
 // Ratio of sector size to maximum deals per sector.
 // The maximum number of deals is the sector size divided by this number (2^27)
@@ -154,11 +157,6 @@ func QAPowerForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, 
 func QAPowerForSector(size abi.SectorSize, sector *SectorOnChainInfo) abi.StoragePower {
 	duration := sector.Expiration - sector.Activation
 	return QAPowerForWeight(size, duration, sector.DealWeight, sector.VerifiedDealWeight)
-}
-
-// Deposit per sector required at pre-commitment, refunded after the commitment is proven (else burned).
-func precommitDeposit(qaSectorPower abi.StoragePower, networkQAPower abi.StoragePower, baselinePower abi.StoragePower, networkTotalPledge, epochTargetReward, circulatingSupply abi.TokenAmount) abi.TokenAmount {
-	return InitialPledgeForPower(qaSectorPower, networkQAPower, baselinePower, networkTotalPledge, epochTargetReward, circulatingSupply)
 }
 
 // Determine maximum number of deal miner's sector can hold
