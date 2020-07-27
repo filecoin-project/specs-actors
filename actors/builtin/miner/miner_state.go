@@ -39,6 +39,9 @@ type State struct {
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
+	// Allocated sector IDs. Sector IDs can never be reused once allocated.
+	AllocatedSectors cid.Cid // BitField
+
 	// Information for all proven and not-yet-expired sectors.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
 
@@ -147,7 +150,7 @@ type SectorLocation struct {
 	SectorNumber        abi.SectorNumber
 }
 
-func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
+func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
 
@@ -157,6 +160,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, 
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors: emptyMapCid,
+		AllocatedSectors:    emptyBitfieldCid,
 		Sectors:             emptyArrayCid,
 		ProvingPeriodStart:  periodStart,
 		CurrentDeadline:     0,
@@ -227,6 +231,60 @@ func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
 		return 0, err
 	}
 	return 2 * sectorCount, nil
+}
+
+func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {
+	// This will likely already have been checked, but this is a good place
+	// to catch any mistakes.
+	if sectorNo > abi.MaxSectorNumber {
+		return xc.ErrIllegalArgument.Wrapf("sector number out of range: %d", sectorNo)
+	}
+
+	allocatedSectors := new(bitfield.BitField)
+	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
+	}
+	if allocated, err := allocatedSectors.IsSet(uint64(sectorNo)); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to lookup sector number in allocated sectors bitfield: %w", err)
+	} else if allocated {
+		return xc.ErrIllegalArgument.Wrapf("sector number %d has already been allocated", sectorNo)
+	}
+	allocatedSectors.Set(uint64(sectorNo))
+
+	if root, err := store.Put(store.Context(), allocatedSectors); err != nil {
+		return xc.ErrIllegalArgument.Wrapf("failed to store allocated sectors bitfield after adding sector %d: %w", sectorNo, err)
+	} else {
+		st.AllocatedSectors = root
+	}
+	return nil
+}
+
+func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField) error {
+	lastSectorNo, err := sectorNos.Last()
+	if err != nil {
+		return xc.ErrIllegalArgument.Wrapf("invalid mask bitfield: %w", err)
+	}
+
+	if lastSectorNo > abi.MaxSectorNumber {
+		return xc.ErrIllegalArgument.Wrapf("masked sector number %d exceeded max sector number", lastSectorNo)
+	}
+
+	allocatedSectors := new(bitfield.BitField)
+	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
+	}
+
+	allocatedSectors, err = bitfield.MergeBitFields(allocatedSectors, sectorNos)
+	if err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to merge allocated bitfield with mask: %w", err)
+	}
+
+	if root, err := store.Put(store.Context(), allocatedSectors); err != nil {
+		return xc.ErrIllegalArgument.Wrapf("failed to mask allocated sectors bitfield: %w", err)
+	} else {
+		st.AllocatedSectors = root
+	}
+	return nil
 }
 
 func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
