@@ -7,7 +7,7 @@ import (
 )
 
 // DealUpdatesInterval is the number of blocks between payouts for deals
-const DealUpdatesInterval = 100
+const DealUpdatesInterval = builtin.EpochsInDay
 
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
