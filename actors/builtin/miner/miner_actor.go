@@ -63,11 +63,12 @@ func (a Actor) Exports() []interface{} {
 		12:                        a.OnDeferredCronEvent,
 		13:                        a.CheckSectorProven,
 		14:                        a.AddLockedFund,
-		15:                        a.ReportConsensusFault,
-		16:                        a.WithdrawBalance,
-		17:                        a.ConfirmSectorProofsValid,
-		18:                        a.ChangeMultiaddrs,
-		19:                        a.CompactPartitions,
+		15:                        a.AddPledgeDeposit,
+		16:                        a.ReportConsensusFault,
+		17:                        a.WithdrawBalance,
+		18:                        a.ConfirmSectorProofsValid,
+		19:                        a.ChangeMultiaddrs,
+		20:                        a.CompactPartitions,
 	}
 }
 
@@ -1396,8 +1397,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 // Pledge Collateral //
 ///////////////////////
 
-// Locks up some amount of a the miner's unlocked balance (including funds received alongside the invoking message).
-// If there is uncovered IP requirement then that is paid before locking funds.
+// Locks up some amount of the miner's unlocked balance (including funds received alongside the invoking message).
 func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.EmptyValue {
 	if amountToLock.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
@@ -1418,14 +1418,43 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
 		}
 
-		if err := st.AddLockedFundsInPriorityOrder(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to lock pledge: %v", err)
+		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
+			rt.Abortf(exitcode.ErrIllegalState, "failed to lock funds in vesting table: %v", err)
 		}
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
 	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
 
+	return nil
+}
+
+// Adds to initial pledge deposit some amount of the miner's unlocked balance including funds received by this call.
+func (a Actor) AddPledgeDeposit(rt Runtime, pledgeToLock *abi.TokenAmount) *adt.EmptyValue {
+	if pledgeToLock.Sign() < 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot add a negative amount of funds to pledge deposit")
+	}
+	store := adt.AsStore(rt)
+	var st State
+
+	newlyVested := rt.State().Transaction(&st, func() interface{} {
+		info := getMinerInfo(rt, &st)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
+
+		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+
+		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		if availableBalance.LessThan(*pledgeToLock) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *pledgeToLock)
+		}
+
+		st.AddInitialPledgeDeposits(*pledgeToLock)
+
+		return newlyVestedFund
+	}).(abi.TokenAmount)
+
+	notifyPledgeChanged(rt, big.Sub(*pledgeToLock, newlyVested))
 	return nil
 }
 
