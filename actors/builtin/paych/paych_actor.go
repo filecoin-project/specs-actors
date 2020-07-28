@@ -314,6 +314,7 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	)
 	builtin.RequireSuccess(rt, codeTo, "Failed to send funds to `To`")
 
+	// the remaining balance will be returned to "From" upon deletion.
 	rt.DeleteActor(st.From)
 
 	return nil
