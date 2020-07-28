@@ -371,6 +371,11 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
+type minerConfirmSector struct {
+	miner         addr.Address
+	confirmations []abi.SectorNumber
+}
+
 func (a Actor) processBatchProofVerifies(rt Runtime) error {
 	var st State
 
@@ -421,6 +426,8 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to batch verify: %s", err)
 	}
 
+	confirms := make([]*minerConfirmSector, 0, len(miners))
+
 	for _, m := range miners {
 		vres, ok := res[m]
 		if !ok {
@@ -445,11 +452,16 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 			}
 		}
 
+		confirms = append(confirms, &minerConfirmSector{m, successful})
+	}
+
+	for i := range confirms {
+		cs := confirms[i]
 		// The exit code is explicitly ignored
 		_, _ = rt.Send(
-			m,
+			cs.miner,
 			builtin.MethodsMiner.ConfirmSectorProofsValid,
-			&builtin.ConfirmSectorProofsParams{Sectors: successful},
+			&builtin.ConfirmSectorProofsParams{Sectors: cs.confirmations},
 			abi.NewTokenAmount(0),
 		)
 	}

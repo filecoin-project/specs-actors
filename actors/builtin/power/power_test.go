@@ -571,6 +571,8 @@ func TestCron(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, abi.NewTokenAmount(0), nil, 0)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 	})
@@ -596,6 +598,8 @@ func TestCron(t *testing.T) {
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x2, 0x3}), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 	})
@@ -610,6 +614,9 @@ func TestCron(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 
@@ -622,6 +629,8 @@ func TestCron(t *testing.T) {
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 
@@ -670,6 +679,8 @@ func TestCron(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		// First send fails
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{}), big.Zero(), nil, exitcode.ErrIllegalState)
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
 		// Subsequent one still invoked
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{}), big.Zero(), nil, exitcode.Ok)
 		// Reward actor still invoked
@@ -690,6 +701,8 @@ func TestCron(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 	})
@@ -752,6 +765,154 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 	})
 }
 
+func TestCronBatchProofVerifies(t *testing.T) {
+	miner1 := tutil.NewIDAddr(t, 101)
+
+	sealInfo := func(i int) *abi.SealVerifyInfo {
+		var sealInfo abi.SealVerifyInfo
+		sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i), &mineract.SealedCIDPrefix)
+		sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i), &market.PieceCIDPrefix)
+		sealInfo.SectorID = abi.SectorID{Number: abi.SectorNumber(i)}
+		return &sealInfo
+	}
+
+	t.Run("success with one miner and one confirmed sector", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		info := sealInfo(1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info)
+
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info}}
+		cs := []confirmedSectorSend{{miner1, []int{1}}}
+
+		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+	})
+
+	t.Run("success with one miner and multiple confirmed sectors", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		info1 := sealInfo(1)
+		info2 := sealInfo(2)
+		info3 := sealInfo(3)
+
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info2)
+		ac.submitPoRepForBulkVerify(rt, miner1, info3)
+
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
+		cs := []confirmedSectorSend{{miner1, []int{1, 2, 3}}}
+
+		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+	})
+
+	t.Run("success with multiple miners and multiple confirmed sectors and assert expected power", func(t *testing.T) {
+		owner := tutil.NewIDAddr(t, 100)
+		miner2 := tutil.NewIDAddr(t, 102)
+		miner3 := tutil.NewIDAddr(t, 103)
+		miner4 := tutil.NewIDAddr(t, 104)
+		powerUnit := power.ConsensusMinerMinPower
+
+		rt, ac := basicPowerSetup(t)
+		info1 := sealInfo(0)
+		info2 := sealInfo(1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info2)
+
+		info3 := sealInfo(100)
+		info4 := sealInfo(101)
+		ac.submitPoRepForBulkVerify(rt, miner2, info3)
+		ac.submitPoRepForBulkVerify(rt, miner2, info4)
+
+		info5 := sealInfo(200)
+		info6 := sealInfo(201)
+		ac.submitPoRepForBulkVerify(rt, miner3, info5)
+		ac.submitPoRepForBulkVerify(rt, miner3, info6)
+
+		info7 := sealInfo(300)
+		info8 := sealInfo(301)
+		ac.submitPoRepForBulkVerify(rt, miner4, info7)
+		ac.submitPoRepForBulkVerify(rt, miner4, info8)
+
+		// TODO Because read order of keys in a multi-map is not as per insertion order,
+		// we have to move around the expected sends
+		cs := []confirmedSectorSend{{miner1, []int{0, 1}},
+			{miner3, []int{200, 201}},
+			{miner4, []int{300, 301}},
+			{miner2, []int{100, 101}}}
+
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2},
+			miner2: []abi.SealVerifyInfo{*info3, *info4},
+			miner3: []abi.SealVerifyInfo{*info5, *info6},
+			miner4: []abi.SealVerifyInfo{*info7, *info8}}
+
+		ac.createMinerBasic(rt, owner, owner, miner1)
+		ac.createMinerBasic(rt, owner, owner, miner2)
+		ac.createMinerBasic(rt, owner, owner, miner3)
+		ac.createMinerBasic(rt, owner, owner, miner4)
+		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+
+		expectedPower := big.Mul(big.NewInt(4), powerUnit)
+
+		ac.onEpochTickEnd(rt, 0, expectedPower, cs, infos)
+	})
+
+	t.Run("success when no confirmed sector", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		ac.onEpochTickEnd(rt, 0, big.Zero(), nil, nil)
+	})
+
+	t.Run("fails if batch verify seals does not return result for a miner", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		miner2 := tutil.NewIDAddr(t, 201)
+		info1 := sealInfo(1)
+		info2 := sealInfo(2)
+
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+		ac.submitPoRepForBulkVerify(rt, miner2, info2)
+
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1},
+			miner2: []abi.SealVerifyInfo{*info2}}
+
+		res := batchVerifyDefaultOutput(infos)
+		delete(res, miner1)
+		rt.ExpectBatchVerifySeals(infos, res, nil)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+		rt.SetEpoch(abi.ChainEpoch(0))
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
+			rt.Call(ac.Actor.OnEpochTickEnd, nil)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if batch verify seals fails", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		info1 := sealInfo(1)
+		info2 := sealInfo(2)
+		info3 := sealInfo(3)
+
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info2)
+		ac.submitPoRepForBulkVerify(rt, miner1, info3)
+
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
+
+		rt.ExpectBatchVerifySeals(infos, batchVerifyDefaultOutput(infos), fmt.Errorf("fail"))
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+		rt.SetEpoch(abi.ChainEpoch(0))
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(ac.Actor.OnEpochTickEnd, nil)
+		})
+		rt.Verify()
+	})
+}
+
 //
 // Misc. Utility Functions
 //
@@ -806,6 +967,39 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 
 	verifyEmptyMap(h.t, rt, st.Claims)
 	verifyEmptyMap(h.t, rt, st.CronEventQueue)
+}
+
+type confirmedSectorSend struct {
+	miner      addr.Address
+	sectorNums []int
+}
+
+func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpoch, expectedRawPower abi.StoragePower,
+	confirmedSectors []confirmedSectorSend, infos map[addr.Address][]abi.SealVerifyInfo) {
+
+	// expect sends for confirmed sectors
+	for _, cs := range confirmedSectors {
+		var sectors []abi.SectorNumber
+		for _, sec := range cs.sectorNums {
+			sectors = append(sectors, abi.SectorNumber(sec))
+		}
+		param := &builtin.ConfirmSectorProofsParams{Sectors: sectors}
+		rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
+	}
+
+	rt.ExpectBatchVerifySeals(infos, batchVerifyDefaultOutput(infos), nil)
+	//expect power sends to reward actor
+	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawPower, abi.NewTokenAmount(0), nil, 0)
+	rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+	rt.SetEpoch(currEpoch)
+	rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+
+	rt.Call(h.Actor.OnEpochTickEnd, nil)
+	rt.Verify()
+
+	st := getState(rt)
+	require.Nil(h.t, st.ProofValidationBatch)
 }
 
 func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer abi.PeerID,
@@ -1027,4 +1221,16 @@ func getState(rt *mock.Runtime) *power.State {
 	var st power.State
 	rt.GetState(&st)
 	return &st
+}
+
+func batchVerifyDefaultOutput(vis map[addr.Address][]abi.SealVerifyInfo) map[addr.Address][]bool {
+	out := make(map[addr.Address][]bool)
+	for k, v := range vis { //nolint:nomaprange
+		validations := make([]bool, len(v))
+		for i := range validations {
+			validations[i] = true
+		}
+		out[k] = validations
+	}
+	return out
 }
