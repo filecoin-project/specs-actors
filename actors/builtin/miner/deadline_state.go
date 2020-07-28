@@ -12,6 +12,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -646,4 +647,117 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitFiel
 	}
 
 	return live, dead, removedPower, nil
+}
+
+func (dl *Deadline) DeclareFaults(
+	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
+	faultExpirationEpoch abi.ChainEpoch, partitionSectors map[uint64]*abi.BitField,
+) (newFaultyPower PowerPair, err error) {
+	partitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return NewPowerPairZero(), err
+	}
+
+	// Record partitions with some fault, for subsequently indexing in the deadline.
+	// Duplicate entries don't matter, they'll be stored in a bitfield (a set).
+	partitionsWithFault := make([]uint64, 0, len(partitionSectors))
+
+	partitionIdxs := make([]uint64, 0, len(partitionSectors))
+	for partIdx := range partitionSectors { //nolint:nomaprange
+		partitionIdxs = append(partitionIdxs, partIdx)
+	}
+	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
+
+	newFaultyPower = NewPowerPairZero()
+
+	for _, partIdx := range partitionIdxs {
+		sectorNos := partitionSectors[partIdx]
+
+		var partition Partition
+		found, err := partitions.Get(partIdx, &partition)
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+		}
+		if !found {
+			return NewPowerPairZero(), xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
+		}
+
+		err = validateFRDeclarationPartition(&partition, sectorNos)
+		if err != nil {
+			return NewPowerPairZero(), exitcode.ErrIllegalArgument.Wrapf("failed fault declaration for %d: %w", partIdx, err)
+		}
+
+		// Split declarations into declarations of new faults, and retraction of declared recoveries.
+		retractedRecoveries, err := bitfield.IntersectBitField(partition.Recoveries, sectorNos)
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
+		}
+
+		newFaults, err := bitfield.SubtractBitField(sectorNos, retractedRecoveries)
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract recoveries from sectors: %w", err)
+		}
+		// Ignore any terminated sectors and previously declared or detected faults
+		newFaults, err = bitfield.SubtractBitField(newFaults, partition.Terminated)
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract terminations from faults: %w", err)
+		}
+		newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract existing faults from faults: %w", err)
+		}
+
+		// Add new faults to state.
+		empty, err := newFaults.IsEmpty()
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
+		}
+		if !empty {
+			newFaultSectors, err := sectors.Load(newFaults)
+			if err != nil {
+				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load fault sectors: %w", err)
+			}
+
+			newPartitionFaultyPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, ssize, quant)
+			if err != nil {
+				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to add faults: %w", err)
+			}
+
+			newFaultyPower = newFaultyPower.Add(newPartitionFaultyPower)
+			partitionsWithFault = append(partitionsWithFault, partIdx)
+		}
+
+		// Remove faulty recoveries from state.
+		empty, err = retractedRecoveries.IsEmpty()
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
+		}
+		if !empty {
+			retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
+			if err != nil {
+				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load recovery sectors: %w", err)
+			}
+			retractedRecoveryPower := PowerForSectors(ssize, retractedRecoverySectors)
+
+			err = partition.RemoveRecoveries(retractedRecoveries, retractedRecoveryPower)
+			if err != nil {
+				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
+			}
+		}
+
+		err = partitions.Set(partIdx, &partition)
+		if err != nil {
+			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to store partition %d: %w", partIdx, err)
+		}
+	}
+	dl.Partitions, err = partitions.Root()
+	if err != nil {
+		return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to store partitions root: %w", err)
+	}
+
+	err = dl.AddExpirationPartitions(store, faultExpirationEpoch, partitionsWithFault, quant)
+	if err != nil {
+		return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to update fault epochs: %w", err)
+	}
+	return newFaultyPower, nil
 }

@@ -1126,13 +1126,20 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		quant := st.QuantEndOfDeadline()
 
 		// Group declarations by deadline, and remember iteration order.
-		declsByDeadline := map[uint64][]*FaultDeclaration{}
+		byDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Faults))
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Faults {
-			if _, ok := declsByDeadline[decl.Deadline]; !ok {
+			forDl, ok := byDeadline[decl.Deadline]
+			if !ok {
+				forDl = make(map[uint64]*bitfield.BitField, 1)
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			}
-			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
+			sectors := decl.Sectors
+			if old, ok := forDl[decl.Partition]; ok {
+				sectors, err = bitfield.MergeBitFields(old, sectors)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to merge sector bitfields")
+			}
+			forDl[decl.Partition] = sectors
 		}
 
 		sectors, err := LoadSectors(store, st.Sectors)
@@ -1141,79 +1148,18 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		for _, dlIdx := range deadlinesToLoad {
 			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
+
 			err = validateFRDeclarationDeadline(targetDeadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed fault declaration at deadline %d", dlIdx)
 
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			partitions, err := deadline.PartitionsArray(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
-
-			// Record partitions with some fault, for subsequently indexing in the deadline.
-			// Duplicate entries don't matter, they'll be stored in a bitfield (a set).
-			partitionsWithFault := make([]uint64, 0, len(declsByDeadline))
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
+			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, quant, faultExpirationEpoch, byDeadline[dlIdx])
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
-			for _, decl := range declsByDeadline[dlIdx] {
-				key := PartitionKey{dlIdx, decl.Partition}
-				var partition Partition
-				found, err := partitions.Get(decl.Partition, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %v", key)
-				if !found {
-					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
-				}
-
-				err = validateFRDeclarationPartition(key, &partition, decl.Sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed fault declaration for partition %v", key)
-
-				// Split declarations into declarations of new faults, and retraction of declared recoveries.
-				retractedRecoveries, err := bitfield.IntersectBitField(partition.Recoveries, decl.Sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to intersect sectors with recoveries")
-
-				newFaults, err := bitfield.SubtractBitField(decl.Sectors, retractedRecoveries)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract recoveries from sectors")
-				// Ignore any terminated sectors and previously declared or detected faults
-				newFaults, err = bitfield.SubtractBitField(newFaults, partition.Terminated)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract terminations from faults")
-				newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing faults from faults")
-
-				// Add new faults to state.
-				empty, err := newFaults.IsEmpty()
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-				if !empty {
-					newFaultSectors, err := sectors.Load(newFaults)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
-
-					newFaultPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, info.SectorSize, quant)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
-
-					st.FaultyPower = st.FaultyPower.Add(newFaultPower)
-					newFaultPowerTotal = newFaultPowerTotal.Add(newFaultPower)
-					partitionsWithFault = append(partitionsWithFault, decl.Partition)
-				}
-
-				// Remove faulty recoveries from state.
-				empty, err = retractedRecoveries.IsEmpty()
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
-				if !empty {
-					retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load recovery sectors")
-					retractedRecoveryPower := PowerForSectors(info.SectorSize, retractedRecoverySectors)
-
-					err = partition.RemoveRecoveries(retractedRecoveries, retractedRecoveryPower)
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries")
-				}
-
-				err = partitions.Set(decl.Partition, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partition %v", key)
-			}
-			deadline.Partitions, err = partitions.Root()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions root", dlIdx)
-
-			err = deadline.AddExpirationPartitions(store, faultExpirationEpoch, partitionsWithFault, quant)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update fault epochs for deadline %d", dlIdx)
+			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultyPower)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions", dlIdx)
@@ -1221,6 +1167,8 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
+
+		st.FaultyPower = st.FaultyPower.Add(newFaultPowerTotal)
 
 		return nil
 	})
@@ -1315,7 +1263,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
 				}
 
-				err = validateFRDeclarationPartition(key, &partition, decl.Sectors)
+				err = validateFRDeclarationPartition(&partition, decl.Sectors)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed recovery declaration for partition %v", key)
 
 				// Ignore sectors not faulty or already declared recovered
@@ -2441,14 +2389,14 @@ func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
 }
 
 // Validates that a fault or recovery declaration for a partition is valid.
-func validateFRDeclarationPartition(key PartitionKey, partition *Partition, sectors *abi.BitField) error {
+func validateFRDeclarationPartition(partition *Partition, sectors *abi.BitField) error {
 	// Check that the declared sectors are actually assigned to the partition.
 	contains, err := abi.BitFieldContainsAll(partition.Sectors, sectors)
 	if err != nil {
-		return fmt.Errorf("failed to check sectors for %v: %w", key, err)
+		return fmt.Errorf("failed to check sectors: %w", err)
 	}
 	if !contains {
-		return fmt.Errorf("sectors not all due at %v", key)
+		return fmt.Errorf("sectors not all due")
 	}
 	return nil
 }
