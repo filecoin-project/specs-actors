@@ -1371,73 +1371,66 @@ func TestExtendSectorExpiration(t *testing.T) {
 }
 
 func TestTerminateSectors(t *testing.T) {
-	//periodOffset := abi.ChainEpoch(100)
-	//actor := newHarness(t, periodOffset)
-	//builder := builderForHarness(actor).
-	//	WithBalance(bigBalance, big.Zero())
-	//
-	//commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
-	//	actor.constructAndVerify(rt)
-	//	precommitEpoch := abi.ChainEpoch(1)
-	//	rt.SetEpoch(precommitEpoch)
-	//	sectorInfo := actor.commitAndProveSectors(rt, 1, 100, nil)
-	//	return sectorInfo[0]
-	//}
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(big.Mul(big.NewInt(1e18), big.NewInt(200000)), big.Zero())
 
-	// TODO minerstate
-	//t.Run("removes sector with correct accounting", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	sector := commitSector(t, rt)
-	//	var initialLockedFunds abi.TokenAmount
-	//
-	//	// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
-	//	// correct fee calculation is used.
-	//	actor.addLockedFund(rt, big.NewInt(1<<61))
-	//
-	//	{
-	//		// Verify that a sector expiration was registered.
-	//		st := getState(rt)
-	//		expiration, err := st.GetSectorExpirations(rt.AdtStore(), sector.Expiration)
-	//		require.NoError(t, err)
-	//		expiringSectorNos, err := expiration.All(1)
-	//		require.NoError(t, err)
-	//		assert.Len(t, expiringSectorNos, 1)
-	//		assert.Equal(t, sector.SectorNumber, abi.SectorNumber(expiringSectorNos[0]))
-	//		initialLockedFunds = st.LockedFunds
-	//	}
-	//
-	//	sectorSize, err := sector.SealProof.SectorSize()
-	//	require.NoError(t, err)
-	//	sectorPower := miner.QAPowerForSector(sectorSize, sector)
-	//	sectorAge := rt.Epoch() - sector.Activation
-	//	expectedFee := miner.PledgePenaltyForTermination(sector.InitialPledge, sectorAge, actor.epochReward, actor.networkQAPower, sectorPower)
-	//
-	//	sectors := bitfield.New()
-	//	sectors.Set(uint64(sector.SectorNumber))
-	//	actor.terminateSectors(rt, &sectors, expectedFee)
-	//
-	//	{
-	//		st := getState(rt)
-	//
-	//		// expect sector expiration to have been removed
-	//		err = st.ForEachSectorExpiration(rt.AdtStore(), func(expiry abi.ChainEpoch, sectors *abi.BitField) error {
-	//			assert.Fail(t, "did not expect to find a sector expiration, found expiration at %s", expiry)
-	//			return nil
-	//		})
-	//		assert.NoError(t, err)
-	//
-	//		// expect sector to have been removed
-	//		_, found, err := st.GetSector(rt.AdtStore(), sector.SectorNumber)
-	//		require.NoError(t, err)
-	//		assert.False(t, found)
-	//
-	//		// expect fee to have been unlocked and burnt
-	//		assert.Equal(t, big.Sub(initialLockedFunds, expectedFee), st.LockedFunds)
-	//
-	//		// expect pledge requirement to have been decremented
-	//		assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
-	//	}
-	//})
+	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
+		actor.constructAndVerify(rt)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, 100, nil)
+		return sectorInfo[0]
+	}
+
+	t.Run("removes sector with correct accounting", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
+		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
+		// correct fee calculation is used.
+		actor.addLockedFund(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+		st := getState(rt)
+		initialLockedFunds := st.LockedFunds
+
+		sectorSize, err := sector.SealProof.SectorSize()
+		require.NoError(t, err)
+		sectorPower := miner.QAPowerForSector(sectorSize, sector)
+		dayReward := miner.ExpectedDayRewardForPower(actor.epochReward, actor.networkQAPower, sectorPower)
+		sectorAge := rt.Epoch() - sector.Activation
+		expectedFee := miner.PledgePenaltyForTermination(sector.InitialPledge, dayReward, sectorAge, actor.epochReward, actor.networkQAPower, sectorPower)
+
+		sectors := bf(uint64(sector.SectorNumber))
+		actor.terminateSectors(rt, sectors, expectedFee)
+
+		{
+			st := getState(rt)
+
+			// expect sector to be marked as terminated but no longer early in partition
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+			dlIdx, pIdx, err := miner.FindSector(rt.AdtStore(), deadlines, sector.SectorNumber)
+			require.NoError(t, err)
+
+			deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
+			require.NoError(t, err)
+			partition, err := deadline.LoadPartition(rt.AdtStore(), pIdx)
+			require.NoError(t, err)
+			terminated, err := partition.Terminated.IsSet(uint64(sector.SectorNumber))
+			require.NoError(t, err)
+			assert.True(t, terminated)
+			result, _, err := partition.PopEarlyTerminations(rt.AdtStore(), 1000)
+			require.NoError(t, err)
+			assert.True(t, result.IsEmpty())
+
+			// expect fee to have been unlocked and burnt
+			assert.Equal(t, big.Sub(initialLockedFunds, expectedFee), st.LockedFunds)
+
+			// expect pledge requirement to have been decremented
+			assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
+		}
+	})
 }
 
 func TestWithdrawBalance(t *testing.T) {
@@ -2150,8 +2143,6 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, fee abi.TokenAmount, faul
 	expectedRawDelta = expectedRawDelta.Neg()
 	expectedQADelta = expectedQADelta.Neg()
 
-	expectQueryNetworkInfo(rt, h)
-
 	// expect power update
 	claim := &power.UpdateClaimedPowerParams{
 		RawByteDelta:         expectedRawDelta,
@@ -2161,27 +2152,6 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, fee abi.TokenAmount, faul
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,
 		claim,
-		abi.NewTokenAmount(0),
-		nil,
-		exitcode.Ok,
-	)
-
-	// expect fee
-	rt.ExpectSend(
-		builtin.BurntFundsActorAddr,
-		builtin.MethodSend,
-		nil,
-		fee,
-		nil,
-		exitcode.Ok,
-	)
-
-	// expect pledge update
-	pledgeDelta := fee.Neg()
-	rt.ExpectSend(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.UpdatePledgeTotal,
-		&pledgeDelta,
 		abi.NewTokenAmount(0),
 		nil,
 		exitcode.Ok,
@@ -2292,24 +2262,59 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField,
 		expectQueryNetworkInfo(rt, h)
 	}
 
-	{
-		// TODO minerstate
-		//rawPower, qaPower := miner.PowerForSectors(h.sectorSize, sectorInfos)
-		//rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &power.UpdateClaimedPowerParams{
-		//	RawByteDelta:         rawPower.Neg(),
-		//	QualityAdjustedDelta: qaPower.Neg(),
-		//}, abi.NewTokenAmount(0), nil, exitcode.Ok)
-	}
 	if big.Zero().LessThan(expectedFee) {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedFee, nil, exitcode.Ok)
 		pledgeDelta := expectedFee.Neg()
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
 	}
+	// notify change to initial pledge
+	if len(sectorInfos) > 0 {
+		pledgeDelta := big.Zero()
+		for _, sector := range sectorInfos {
+			pledgeDelta = big.Add(pledgeDelta, sector.InitialPledge.Neg())
+		}
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+	}
+	{
+		sectorPower := miner.PowerForSectors(h.sectorSize, sectorInfos)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &power.UpdateClaimedPowerParams{
+			RawByteDelta:         sectorPower.Raw.Neg(),
+			QualityAdjustedDelta: sectorPower.QA.Neg(),
+		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+	}
 
-	// TODO minerstate
-	//params := &miner.TerminateSectorsParams{Sectors: sectors}
-	//rt.Call(h.a.TerminateSectors, params)
-	//rt.Verify()
+	// create declarations
+	st := getState(rt)
+	deadlines, err := st.LoadDeadlines(rt.AdtStore())
+	require.NoError(h.t, err)
+
+	declarationMap := map[decKey]*miner.TerminationDeclaration{}
+	err = sectors.ForEach(func(id uint64) error {
+		dlIdx, pIdx, err := miner.FindSector(rt.AdtStore(), deadlines, abi.SectorNumber(id))
+		require.NoError(h.t, err)
+
+		declaration, ok := declarationMap[decKey{dlIdx, pIdx}]
+		if !ok {
+			declaration = &miner.TerminationDeclaration{
+				Deadline:  dlIdx,
+				Partition: pIdx,
+				Sectors:   bf(),
+			}
+			declarationMap[decKey{dlIdx, pIdx}] = declaration
+		}
+		declaration.Sectors.Set(id)
+		return nil
+	})
+	require.NoError(h.t, err)
+
+	declarations := []miner.TerminationDeclaration{}
+	for _, declaration := range declarationMap {
+		declarations = append(declarations, *declaration)
+	}
+
+	params := &miner.TerminateSectorsParams{Terminations: declarations}
+	rt.Call(h.a.TerminateSectors, params)
+	rt.Verify()
 }
 
 func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, params *miner.ReportConsensusFaultParams, dealIDs []abi.DealID) {
@@ -2543,26 +2548,33 @@ func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 }
 
 func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt.Store, faultSectorInfos []*miner.SectorOnChainInfo) *miner.DeclareFaultsParams {
-	//deadlines, err := st.LoadDeadlines(store)
-	//require.NoError(t, err)
-	faultAtDeadline := make(map[uint64][]uint64)
-	// TODO minerstate
-	// Find the deadline for each faulty sector which must be provided with the fault declaration
-	//for _, sectorInfo := range faultSectorInfos {
-	//	dl, p, err := miner.FindSector(deadlines, sectorInfo.SectorNumber)
-	//	require.NoError(t, err)
-	//	faultAtDeadline[dl] = append(faultAtDeadline[dl], uint64(sectorInfo.SectorNumber))
-	//}
-	params := &miner.DeclareFaultsParams{Faults: []miner.FaultDeclaration{}}
-	// Group together faults at the same deadline into a bitfield
-	for dl, sectorNumbers := range faultAtDeadline {
-		fault := miner.FaultDeclaration{
-			Deadline: dl,
-			Sectors:  bitfield.NewFromSet(sectorNumbers),
+	deadlines, err := st.LoadDeadlines(store)
+	require.NoError(t, err)
+
+	declarationMap := map[decKey]*miner.FaultDeclaration{}
+	for _, sector := range faultSectorInfos {
+		dlIdx, pIdx, err := miner.FindSector(store, deadlines, sector.SectorNumber)
+		require.NoError(t, err)
+
+		declaration, ok := declarationMap[decKey{dlIdx, pIdx}]
+		if !ok {
+			declaration = &miner.FaultDeclaration{
+				Deadline:  dlIdx,
+				Partition: pIdx,
+				Sectors:   bf(),
+			}
+			declarationMap[decKey{dlIdx, pIdx}] = declaration
 		}
-		params.Faults = append(params.Faults, fault)
+		declaration.Sectors.Set(uint64(sector.SectorNumber))
 	}
-	return params
+	require.NoError(t, err)
+
+	var declarations []miner.FaultDeclaration
+	for _, declaration := range declarationMap {
+		declarations = append(declarations, *declaration)
+	}
+
+	return &miner.DeclareFaultsParams{Faults: declarations}
 }
 
 func sectorInfoAsBitfield(infos []*miner.SectorOnChainInfo) *bitfield.BitField {
@@ -2633,4 +2645,9 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 		&currentPower,
 		exitcode.Ok,
 	)
+}
+
+type decKey struct {
+	d uint64
+	p uint64
 }

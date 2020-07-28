@@ -1029,6 +1029,8 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 			removedPower, err := deadline.TerminateSectors(store, currEpoch, byPartition, info.SectorSize, quant)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to terminate sectors in deadline %d", dlIdx)
 
+			st.EarlyTerminations.Set(dlIdx)
+
 			powerDelta = powerDelta.Sub(removedPower)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
@@ -1053,11 +1055,6 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	}
 
 	requestUpdatePower(rt, powerDelta)
-
-	// Pledge requirement is not released until termination fee is paid.
-	// The termination fee is paid later, in early-termination queue processing.
-	// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
-	// https://github.com/filecoin-project/specs-actors/issues/674
 
 	return &TerminateSectorsReturn{Done: !more}
 }
