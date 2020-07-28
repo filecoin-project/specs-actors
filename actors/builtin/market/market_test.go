@@ -2806,12 +2806,12 @@ func (h *marketActorTestHarness) generateDealAndAddFunds(rt *mock.Runtime, clien
 
 func (h *marketActorTestHarness) generateDealWithCollateralAndAddFunds(rt *mock.Runtime, client address.Address,
 	minerAddrs *minerAddrs, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
-	deal4 := generateDealProposalWithCollateral(client, minerAddrs.provider, providerCollateral, clientCollateral,
+	deal := generateDealProposalWithCollateral(client, minerAddrs.provider, providerCollateral, clientCollateral,
 		startEpoch, endEpoch)
-	h.addProviderFunds(rt, deal4.ProviderCollateral, minerAddrs)
-	h.addParticipantFunds(rt, client, deal4.ClientBalanceRequirement())
+	h.addProviderFunds(rt, deal.ProviderCollateral, minerAddrs)
+	h.addParticipantFunds(rt, client, deal.ClientBalanceRequirement())
 
-	return deal4
+	return deal
 }
 
 func generateDealProposalWithCollateral(client, provider address.Address, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {

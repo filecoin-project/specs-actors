@@ -9,7 +9,12 @@ import (
 // DealUpdatesInterval is the number of blocks between payouts for deals
 const DealUpdatesInterval = 100
 
+// ProvCollateralPercentSupplyNum is the numerator of the percentage of normalized cirulating
+// supply that must be covered by provider collateral
 var ProvCollateralPercentSupplyNum = big.NewInt(5)
+
+// ProvCollateralPercentSupplyDenom is the denominator of the percentage of normalized cirulating
+// supply that must be covered by provider collateral
 var ProvCollateralPercentSupplyDenom = big.NewInt(100)
 
 // Bounds (inclusive) on deal duration
@@ -24,6 +29,10 @@ func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) 
 }
 
 func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
+	// minimumProviderCollateral = (ProvCollateralPercentSupplyNum / ProvCollateralPercentSupplyDenom) * normalizedCirculatingSupply
+	// normalizedCirculatingSupply = FILCirculatingSupply * dealPowerShare
+	// dealPowerShare = dealQAPower / max(BaselinePower(t), NetworkQAPower(t), dealQAPower)
+
 	lockTargetNum := big.Mul(ProvCollateralPercentSupplyNum, networkCirculatingSupply)
 	lockTargetDenom := ProvCollateralPercentSupplyDenom
 
