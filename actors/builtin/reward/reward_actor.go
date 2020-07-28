@@ -2,6 +2,7 @@ package reward
 
 import (
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -102,8 +103,9 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 type ThisEpochRewardReturn struct {
-	ThisEpochReward        abi.TokenAmount
-	ThisEpochBaselinePower abi.StoragePower
+	ThisEpochReward         abi.TokenAmount
+	ThisEpochRewardSmoothed *smoothing.FilterEstimate
+	ThisEpochBaselinePower  abi.StoragePower
 }
 
 // The award value used for the current epoch, updated at the end of an epoch
@@ -115,8 +117,9 @@ func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *ThisEpochRewa
 	var st State
 	rt.State().Readonly(&st)
 	return &ThisEpochRewardReturn{
-		ThisEpochReward:        st.ThisEpochReward,
-		ThisEpochBaselinePower: st.ThisEpochBaselinePower,
+		ThisEpochReward:         st.ThisEpochReward,
+		ThisEpochBaselinePower:  st.ThisEpochBaselinePower,
+		ThisEpochRewardSmoothed: st.ThisEpochRewardSmoothed,
 	}
 }
 
@@ -131,6 +134,7 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		prev := st.Epoch
 		// if there were null runs catch up the computation until
 		// st.Epoch == rt.CurrEpoch()
 		for st.Epoch < rt.CurrEpoch() {
@@ -139,6 +143,8 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 		}
 
 		st.updateToNextEpochWithReward(*currRealizedPower)
+		// only update smoothed estimates after updating rewart
+		st.updateSmoothedEstimates(rt.CurrEpoch() - prev)
 		return nil
 	})
 	return nil

@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/xorcare/golden"
 )
 
@@ -13,7 +14,7 @@ var Res big.Word
 
 func BenchmarkExpneg(b *testing.B) {
 	x := new(big.Int).SetUint64(14)
-	x = x.Lsh(x, precision-3) // set x to 1.75
+	x = x.Lsh(x, math.Precision-3) // set x to 1.75
 	dec := new(big.Int)
 	dec = dec.Div(x, big.NewInt(int64(b.N)))
 	b.ResetTimer()
@@ -32,7 +33,7 @@ func TestExpFunction(t *testing.T) {
 	const N = 256
 
 	step := big.NewInt(5)
-	step = step.Lsh(step, precision) // Q.128
+	step = step.Lsh(step, math.Precision) // Q.128
 	step = step.Div(step, big.NewInt(N-1))
 
 	x := big.NewInt(0)

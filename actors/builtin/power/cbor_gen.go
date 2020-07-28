@@ -7,13 +7,14 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{142}
+var lengthBufState = []byte{144}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -66,6 +67,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.ThisEpochQAPowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochQAPowerSmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.MinerCount (int64) (int64)
 	if t.MinerCount >= 0 {
 		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.MinerCount)); err != nil {
@@ -105,6 +111,17 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.LastProcessedCronEpoch (abi.ChainEpoch) (int64)
+	if t.LastProcessedCronEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.LastProcessedCronEpoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.LastProcessedCronEpoch-1)); err != nil {
+			return err
+		}
+	}
+
 	// t.Claims (cid.Cid) (struct)
 
 	if err := cbg.WriteCidBuf(scratch, w, t.Claims); err != nil {
@@ -140,7 +157,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 14 {
+	if extra != 16 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -213,6 +230,27 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ThisEpochPledgeCollateral.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ThisEpochPledgeCollateral: %w", err)
+		}
+
+	}
+	// t.ThisEpochQAPowerSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochQAPowerSmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochQAPowerSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmoothed pointer: %w", err)
+			}
 		}
 
 	}
@@ -302,6 +340,31 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.FirstCronEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.LastProcessedCronEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.LastProcessedCronEpoch = abi.ChainEpoch(extraI)
 	}
 	// t.Claims (cid.Cid) (struct)
 
@@ -905,7 +968,7 @@ func (t *CreateMinerReturn) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufCurrentTotalPowerReturn = []byte{131}
+var lengthBufCurrentTotalPowerReturn = []byte{132}
 
 func (t *CurrentTotalPowerReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -930,6 +993,11 @@ func (t *CurrentTotalPowerReturn) MarshalCBOR(w io.Writer) error {
 	if err := t.PledgeCollateral.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.QualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -947,7 +1015,7 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -975,6 +1043,27 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.PledgeCollateral.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.PledgeCollateral: %w", err)
+		}
+
+	}
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.QualityAdjPowerSmoothed = new(smoothing.FilterEstimate)
+			if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed pointer: %w", err)
+			}
 		}
 
 	}

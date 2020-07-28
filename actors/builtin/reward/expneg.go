@@ -2,9 +2,9 @@ package reward
 
 import (
 	"math/big"
-)
 
-const precision = 128
+	"github.com/filecoin-project/specs-actors/actors/util/math"
+)
 
 var (
 	// Coefficents in Q.128 format
@@ -13,18 +13,6 @@ var (
 )
 
 func init() {
-	parse := func(coefs []string) []*big.Int {
-		out := make([]*big.Int, len(coefs))
-		for i, coef := range coefs {
-			c, ok := new(big.Int).SetString(coef, 10)
-			if !ok {
-				panic("could not parse exp paramemter")
-			}
-			// << 128 (Q.0 to Q.128) >> 128 to transform integer params to coefficients
-			out[i] = c
-		}
-		return out
-	}
 
 	// parameters are in integer format,
 	// coefficients are *2^-128 of that
@@ -39,7 +27,7 @@ func init() {
 		"-115682590513835356866803355398940131328",
 		"340282366920938463463374607431768211456",
 	}
-	expNumCoef = parse(num)
+	expNumCoef = math.Parse(num)
 
 	deno := []string{
 		"1225524182432722209606361",
@@ -57,7 +45,7 @@ func init() {
 		"224599776407103106596571252037123047424",
 		"340282366920938463463374607431768211456",
 	}
-	expDenoCoef = parse(deno)
+	expDenoCoef = math.Parse(deno)
 }
 
 // expneg accepts x in Q.128 format and computes e^-x.
@@ -67,25 +55,9 @@ func init() {
 func expneg(x *big.Int) *big.Int {
 	// exp is approximated by rational function
 	// polynomials of the rational function are evaluated using Horner's method
-	num := polyval(expNumCoef, x)   // Q.128
-	deno := polyval(expDenoCoef, x) // Q.128
+	num := math.Polyval(expNumCoef, x)   // Q.128
+	deno := math.Polyval(expDenoCoef, x) // Q.128
 
-	num = num.Lsh(num, precision) // Q.256
-	return num.Div(num, deno)     // Q.256 / Q.128 => Q.128
-}
-
-// polyval evaluates a polynomial given by coefficients `p` in Q.128 format
-// at point `x` in Q.128 format. Output is in Q.128.
-// Coefficients should be ordered from the highest order coefficient to the lowest.
-func polyval(p []*big.Int, x *big.Int) *big.Int {
-	// evaluation using Horner's method
-	res := new(big.Int).Set(p[0]) // Q.128
-	tmp := new(big.Int)           // big.Int.Mul doesn't like when input is reused as output
-	for _, c := range p[1:] {
-		tmp = tmp.Mul(res, x)         // Q.128 * Q.128 => Q.256
-		res = res.Rsh(tmp, precision) // Q.256 >> 128 => Q.128
-		res = res.Add(res, c)
-	}
-
-	return res
+	num = num.Lsh(num, math.Precision) // Q.256
+	return num.Div(num, deno)          // Q.256 / Q.128 => Q.128
 }

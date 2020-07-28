@@ -13,6 +13,7 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type State struct {
@@ -29,6 +30,7 @@ type State struct {
 	ThisEpochRawBytePower     abi.StoragePower
 	ThisEpochQualityAdjPower  abi.StoragePower
 	ThisEpochPledgeCollateral abi.TokenAmount
+	ThisEpochQAPowerSmoothed  *smoothing.FilterEstimate
 
 	MinerCount int64
 	// Number of miners having proven the minimum consensus power.
@@ -40,6 +42,9 @@ type State struct {
 	// First epoch in which a cron task may be stored.
 	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
 	FirstCronEpoch abi.ChainEpoch
+
+	// Last epoch power cron tick has been processed.
+	LastProcessedCronEpoch abi.ChainEpoch
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -72,7 +77,9 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochRawBytePower:     abi.NewStoragePower(0),
 		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
+		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
 		FirstCronEpoch:            0,
+		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
 		CronEventQueue:            emptyMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,
@@ -204,6 +211,11 @@ func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, eve
 	}
 
 	return nil
+}
+
+func (st *State) updateSmoothedEstimate(delta abi.ChainEpoch) {
+	filterQAPower := smoothing.LoadFilter(st.ThisEpochQAPowerSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochQAPowerSmoothed = filterQAPower.NextEstimate(st.ThisEpochQualityAdjPower, delta)
 }
 
 func loadCronEvents(mmap *adt.Multimap, epoch abi.ChainEpoch) ([]CronEvent, error) {
