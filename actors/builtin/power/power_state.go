@@ -79,6 +79,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
 		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
 		FirstCronEpoch:            0,
+		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
 		CronEventQueue:            emptyMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,

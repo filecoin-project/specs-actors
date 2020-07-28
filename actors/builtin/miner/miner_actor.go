@@ -2237,8 +2237,7 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 }
 
 // Requests the current epoch target block reward from the reward actor.
-// return value includes reward, smoothed estimate of reward, baseline power
-// and smoothed estimate of total circulating supply this epoch.
+// return value includes reward, smoothed estimate of reward, and baseline power
 func requestCurrentEpochBlockReward(rt Runtime) reward.ThisEpochRewardReturn {
 	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")

@@ -85,7 +85,7 @@ func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower)
 
 }
 
-func (st *State) updateSmoothedEstimates(delta abi.ChainEpoch, observedFILCirculatingSupply abi.TokenAmount) {
+func (st *State) updateSmoothedEstimates(delta abi.ChainEpoch) {
 	filterReward := smoothing.LoadFilter(st.ThisEpochRewardSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
 	st.ThisEpochRewardSmoothed = filterReward.NextEstimate(st.ThisEpochReward, delta)
 }
