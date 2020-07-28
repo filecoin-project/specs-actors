@@ -702,13 +702,13 @@ func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkQAP
 		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal,
+	minProviderCollateral, maxProviderCollateral := DealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal,
 		networkQAPower, baselinePower, rt.TotalFilCircSupply())
 	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
-	minClientCollateral, maxClientCollateral := dealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
+	minClientCollateral, maxClientCollateral := DealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.ClientCollateral.LessThan(minClientCollateral) || proposal.ClientCollateral.GreaterThan(maxClientCollateral) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}

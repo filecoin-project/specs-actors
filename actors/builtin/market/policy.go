@@ -23,7 +23,7 @@ func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) 
 	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
 }
 
-func dealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
+func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
 	lockTargetNum := big.Mul(ProvCollateralPercentSupplyNum, networkCirculatingSupply)
 	lockTargetDenom := ProvCollateralPercentSupplyDenom
 
@@ -38,7 +38,7 @@ func dealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	return minCollateral, abi.TotalFilecoin // PARAM_FINISH
 }
 
-func dealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
+func DealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
 	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
 }
 
@@ -56,7 +56,7 @@ func DealWeight(proposal *DealProposal) abi.DealWeight {
 }
 
 func dealQAPower(dealSize abi.PaddedPieceSize, verified bool) abi.StoragePower {
-	scaledUpQuality := big.Zero()
+	scaledUpQuality := big.Zero() // nolint:ineffassign
 	if verified {
 		scaledUpQuality = big.Lsh(builtin.VerifiedDealWeightMultiplier, builtin.SectorQualityPrecision)
 		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)

@@ -12,6 +12,8 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
@@ -441,6 +443,7 @@ func TestPublishStorageDeals(t *testing.T) {
 			&miner.GetControlAddressesReturn{Owner: mAddr.owner, Worker: mAddr.worker},
 			exitcode.Ok,
 		)
+		expectQueryNetworkInfo(rt, actor)
 		//  create a client proposal with a valid signature
 		var params market.PublishStorageDealsParams
 		buf := bytes.Buffer{}
@@ -735,6 +738,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 				rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 				rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+				expectQueryNetworkInfo(rt, actor)
 				rt.SetCaller(worker, builtin.AccountActorCodeID)
 				rt.ExpectVerifySignature(crypto.Signature{}, dealProposal.Client, mustCbor(&dealProposal), tc.signatureVerificationError)
 				rt.ExpectAbort(tc.exitCode, func() {
@@ -760,6 +764,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
@@ -780,6 +785,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
@@ -803,6 +809,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal2.Client, mustCbor(&deal2), nil)
@@ -1379,6 +1386,7 @@ func TestCronTick(t *testing.T) {
 		params := mkPublishStorageParams(d2)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectVerifySignature(crypto.Signature{}, d2.Client, mustCbor(&d2), nil)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -1526,6 +1534,7 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 		params := mkPublishStorageParams(d2)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectVerifySignature(crypto.Signature{}, d2.Client, mustCbor(&d2), nil)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -2084,7 +2093,7 @@ func TestMarketActorDeals(t *testing.T) {
 	{
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
-
+		expectQueryNetworkInfo(rt, actor)
 		rt.ExpectVerifySignature(crypto.Signature{}, client, mustCbor(&params.Deals[0].Proposal), nil)
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -2282,6 +2291,9 @@ func TestVerifyDealsForActivation(t *testing.T) {
 type marketActorTestHarness struct {
 	market.Actor
 	t testing.TB
+
+	networkQAPower       abi.StoragePower
+	networkBaselinePower abi.StoragePower
 }
 
 func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
@@ -2484,6 +2496,7 @@ func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, minerAddrs *mine
 		&miner.GetControlAddressesReturn{Owner: minerAddrs.owner, Worker: minerAddrs.worker},
 		exitcode.Ok,
 	)
+	expectQueryNetworkInfo(rt, h)
 
 	var params market.PublishStorageDealsParams
 
@@ -2775,8 +2788,12 @@ func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Addr
 		WithActorType(client, builtin.AccountActorCodeID)
 
 	rt := builder.Build(t)
-
-	actor := marketActorTestHarness{t: t}
+	power := abi.NewStoragePower(1 << 50)
+	actor := marketActorTestHarness{
+		t:                    t,
+		networkQAPower:       power,
+		networkBaselinePower: power,
+	}
 	actor.constructAndVerify(rt)
 
 	return rt, &actor
@@ -2796,4 +2813,30 @@ func mkActivateDealParams(sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *m
 
 func mkTerminateDealParams(epoch abi.ChainEpoch, dealIds ...abi.DealID) *market.OnMinerSectorsTerminateParams {
 	return &market.OnMinerSectorsTerminateParams{Epoch: epoch, DealIDs: dealIds}
+}
+
+func expectQueryNetworkInfo(rt *mock.Runtime, h *marketActorTestHarness) {
+	currentPower := power.CurrentTotalPowerReturn{
+		QualityAdjPower: h.networkQAPower,
+	}
+	currentReward := reward.ThisEpochRewardReturn{
+		ThisEpochBaselinePower: h.networkBaselinePower,
+	}
+	rt.ExpectSend(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.ThisEpochReward,
+		nil,
+		big.Zero(),
+		&currentReward,
+		exitcode.Ok,
+	)
+
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.CurrentTotalPower,
+		nil,
+		big.Zero(),
+		&currentPower,
+		exitcode.Ok,
+	)
 }
