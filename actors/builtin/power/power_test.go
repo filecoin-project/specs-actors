@@ -854,7 +854,14 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 		expectedPower := big.Mul(big.NewInt(4), powerUnit)
 
+		delta := abi.NewTokenAmount(1)
+		ac.updatePledgeTotal(rt, miner1, delta)
 		ac.onEpochTickEnd(rt, 0, expectedPower, cs, infos)
+
+		st := getState(rt)
+		require.EqualValues(t, delta, st.ThisEpochPledgeCollateral)
+		require.EqualValues(t, expectedPower, st.ThisEpochQualityAdjPower)
+		require.EqualValues(t, expectedPower, st.ThisEpochRawBytePower)
 	})
 
 	t.Run("success when no confirmed sector", func(t *testing.T) {
