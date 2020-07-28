@@ -1387,6 +1387,7 @@ func TestTerminateSectors(t *testing.T) {
 	t.Run("removes sector with correct accounting", func(t *testing.T) {
 		rt := builder.Build(t)
 		sector := commitSector(t, rt)
+		rt.SetEpoch(rt.Epoch() + 100)
 
 		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
 		// correct fee calculation is used.
@@ -2289,29 +2290,19 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField,
 	deadlines, err := st.LoadDeadlines(rt.AdtStore())
 	require.NoError(h.t, err)
 
-	declarationMap := map[decKey]*miner.TerminationDeclaration{}
+	declarations := []miner.TerminationDeclaration{}
 	err = sectors.ForEach(func(id uint64) error {
 		dlIdx, pIdx, err := miner.FindSector(rt.AdtStore(), deadlines, abi.SectorNumber(id))
 		require.NoError(h.t, err)
 
-		declaration, ok := declarationMap[decKey{dlIdx, pIdx}]
-		if !ok {
-			declaration = &miner.TerminationDeclaration{
-				Deadline:  dlIdx,
-				Partition: pIdx,
-				Sectors:   bf(),
-			}
-			declarationMap[decKey{dlIdx, pIdx}] = declaration
-		}
-		declaration.Sectors.Set(id)
+		declarations = append(declarations, miner.TerminationDeclaration{
+			Deadline:  dlIdx,
+			Partition: pIdx,
+			Sectors:   bf(id),
+		})
 		return nil
 	})
 	require.NoError(h.t, err)
-
-	declarations := []miner.TerminationDeclaration{}
-	for _, declaration := range declarationMap {
-		declarations = append(declarations, *declaration)
-	}
 
 	params := &miner.TerminateSectorsParams{Terminations: declarations}
 	rt.Call(h.a.TerminateSectors, params)
@@ -2552,19 +2543,19 @@ func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt
 	deadlines, err := st.LoadDeadlines(store)
 	require.NoError(t, err)
 
-	declarationMap := map[decKey]*miner.FaultDeclaration{}
+	declarationMap := map[miner.PartitionKey]*miner.FaultDeclaration{}
 	for _, sector := range faultSectorInfos {
 		dlIdx, pIdx, err := miner.FindSector(store, deadlines, sector.SectorNumber)
 		require.NoError(t, err)
 
-		declaration, ok := declarationMap[decKey{dlIdx, pIdx}]
+		declaration, ok := declarationMap[miner.PartitionKey{dlIdx, pIdx}]
 		if !ok {
 			declaration = &miner.FaultDeclaration{
 				Deadline:  dlIdx,
 				Partition: pIdx,
 				Sectors:   bf(),
 			}
-			declarationMap[decKey{dlIdx, pIdx}] = declaration
+			declarationMap[miner.PartitionKey{dlIdx, pIdx}] = declaration
 		}
 		declaration.Sectors.Set(uint64(sector.SectorNumber))
 	}
@@ -2646,9 +2637,4 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 		&currentPower,
 		exitcode.Ok,
 	)
-}
-
-type decKey struct {
-	d uint64
-	p uint64
 }
