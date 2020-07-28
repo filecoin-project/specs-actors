@@ -137,6 +137,7 @@ type SectorOnChainInfo struct {
 	DealWeight         abi.DealWeight  // Integral of active deals over sector lifetime
 	VerifiedDealWeight abi.DealWeight  // Integral of active verified deals over sector lifetime
 	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
+	ExpectedDayReward  abi.TokenAmount // Expect daily reward for sector computed at activation time
 }
 
 // Location of a specific sector
