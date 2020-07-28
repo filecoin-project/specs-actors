@@ -163,7 +163,7 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 
 	}
 
-	halfDeltaT := big.Div(deltaT, big.NewInt(2))                          // Q.128 / Q.0 => Q.128
+	halfDeltaT := big.Rsh(deltaT, 1)                          // Q.128 / Q.0 => Q.128
 	x1m := big.Mul(estimateNum.VelocityEstimate, big.Sum(t0, halfDeltaT)) // Q.128 * Q.128 => Q.256
 	x1m = big.Rsh(x1m, math.Precision)                                    // Q.256 => Q.128
 	x1m = big.Add(estimateNum.PositionEstimate, x1m)
