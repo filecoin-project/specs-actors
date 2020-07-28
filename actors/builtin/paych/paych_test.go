@@ -686,20 +686,14 @@ func TestActor_Collect(t *testing.T) {
 		// "wait" for SettlingAt epoch
 		rt.SetEpoch(st.SettlingAt + 1)
 
-		bal := rt.Balance()
-		sentToFrom := big.Sub(bal, st.ToSend)
-		rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, exitcode.Ok)
 		rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, exitcode.Ok)
 
 		// Collect.
 		rt.SetCaller(st.From, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.ExpectDeleteActor(st.From)
 		res := rt.Call(actor.Collect, nil)
 		assert.Nil(t, res)
-
-		var newSt State
-		rt.GetState(&newSt)
-		assert.Equal(t, big.Zero(), newSt.ToSend)
 	})
 
 	testCases := []struct {
@@ -708,7 +702,6 @@ func TestActor_Collect(t *testing.T) {
 		dontSettle                                     bool
 	}{
 		{name: "fails if not settling with: payment channel not settling or settled", dontSettle: true, expCollectExit: exitcode.ErrForbidden},
-		{name: "fails if Failed to send balance to `From`", expSendFromCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
 		{name: "fails if Failed to send funds to `To`", expSendToCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
 	}
 	for _, tc := range testCases {
@@ -730,8 +723,6 @@ func TestActor_Collect(t *testing.T) {
 			// "wait" for SettlingAt epoch
 			rt.SetEpoch(st.SettlingAt + 1)
 
-			sentToFrom := big.Sub(rt.Balance(), st.ToSend)
-			rt.ExpectSend(st.From, builtin.MethodSend, nil, sentToFrom, nil, tc.expSendFromCode)
 			rt.ExpectSend(st.To, builtin.MethodSend, nil, st.ToSend, nil, tc.expSendToCode)
 
 			// Collect.
