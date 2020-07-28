@@ -1408,7 +1408,7 @@ func TestTerminateSectors(t *testing.T) {
 		{
 			st := getState(rt)
 
-			// expect sector to be marked as terminated but no longer early in partition
+			// expect sector to be marked as terminated and the early termination queue to be empty (having been fully processed)
 			deadlines, err := st.LoadDeadlines(rt.AdtStore())
 			require.NoError(t, err)
 			dlIdx, pIdx, err := miner.FindSector(rt.AdtStore(), deadlines, sector.SectorNumber)
