@@ -143,8 +143,8 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 		}
 
 		st.updateToNextEpochWithReward(*currRealizedPower)
-		// only update smoothed estimates after updating rewart
-		st.updateSmoothedEstimates(rt.CurrEpoch() - prev)
+		// only update smoothed estimates after updating reward and epoch
+		st.updateSmoothedEstimates(st.Epoch - prev)
 		return nil
 	})
 	return nil

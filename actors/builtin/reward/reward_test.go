@@ -116,6 +116,25 @@ func TestAwardBlockReward(t *testing.T) {
 	})
 }
 
+func TestSuccessiveKPIUpdates(t *testing.T) {
+	actor := rewardHarness{reward.Actor{}, t}
+	builder := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	rt := builder.Build(t)
+	power := abi.NewStoragePower(1 << 50)
+	actor.constructAndVerify(rt, &power)
+
+	rt.SetEpoch(abi.ChainEpoch(1))
+	actor.updateNetworkKPI(rt, &power)
+
+	rt.SetEpoch(abi.ChainEpoch(2))
+	actor.updateNetworkKPI(rt, &power)
+
+	rt.SetEpoch(abi.ChainEpoch(3))
+	actor.updateNetworkKPI(rt, &power)
+
+}
+
 type rewardHarness struct {
 	reward.Actor
 	t testing.TB
@@ -124,6 +143,15 @@ type rewardHarness struct {
 func (h *rewardHarness) constructAndVerify(rt *mock.Runtime, currRawPower *abi.StoragePower) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 	ret := rt.Call(h.Constructor, currRawPower)
+	assert.Nil(h.t, ret)
+	rt.Verify()
+
+}
+
+func (h *rewardHarness) updateNetworkKPI(rt *mock.Runtime, currRawPower *abi.StoragePower) {
+	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+	ret := rt.Call(h.UpdateNetworkKPI, currRawPower)
 	assert.Nil(h.t, ret)
 	rt.Verify()
 
