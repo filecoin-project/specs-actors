@@ -2,6 +2,7 @@ package math
 
 import "math/big"
 
+// note: all coefficients for which Polyval is used would need to be updated if this precision changes
 const Precision = 128
 
 // polyval evaluates a polynomial given by coefficients `p` in Q.128 format
