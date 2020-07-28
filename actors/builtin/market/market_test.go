@@ -496,6 +496,29 @@ func TestPublishStorageDeals(t *testing.T) {
 		actor.activateDeals(rt, endEpoch+1, provider, newEpoch, deal2ID)
 	})
 
+	t.Run("publish a deal with enough collateral when circulating supply > 0", func(t *testing.T) {
+		startEpoch := abi.ChainEpoch(1000)
+		endEpoch := startEpoch + 200*builtin.EpochsInDay
+		publishEpoch := abi.ChainEpoch(1)
+
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+
+		clientCollateral := abi.NewTokenAmount(10) // min is zero so this is placeholder
+
+		// given power and circ supply cancel this should be 5*dealqapower / 100
+		dealSize := abi.PaddedPieceSize(2048) // generateDealProposal's deal size
+		providerCollateral := big.Div(
+			big.Mul(big.NewInt(int64(dealSize)), market.ProvCollateralPercentSupplyNum),
+			market.ProvCollateralPercentSupplyDenom,
+		)
+		deal := actor.generateDealWithCollateralAndAddFunds(rt, client, mAddr, providerCollateral, clientCollateral, startEpoch, endEpoch)
+		rt.SetCirculatingSupply(actor.networkQAPower) // convenient for these two numbers to cancel out
+
+		// publish the deal successfully
+		rt.SetEpoch(publishEpoch)
+		actor.publishDeals(rt, mAddr, deal)
+	})
+
 	t.Run("publish multiple deals for different clients and ensure balances are correct", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		client1 := tutil.NewIDAddr(t, 900)
@@ -647,6 +670,19 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			"provider collateral greater than max collateral": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
 					d.ProviderCollateral = big.Add(abi.TotalFilecoin, big.NewInt(1))
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
+			"provider collateral less than bound": {
+				setup: func(rt *mock.Runtime, h *marketActorTestHarness, d *market.DealProposal) {
+					// with these two equal provider collatreal min is 5/100 * deal size
+					rt.SetCirculatingSupply(h.networkQAPower)
+					dealSize := big.NewInt(2048) // default deal size used
+					providerMin := big.Div(
+						big.Mul(dealSize, market.ProvCollateralPercentSupplyNum),
+						market.ProvCollateralPercentSupplyDenom,
+					)
+					d.ProviderCollateral = big.Sub(providerMin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
@@ -2768,15 +2804,30 @@ func (h *marketActorTestHarness) generateDealAndAddFunds(rt *mock.Runtime, clien
 	return deal4
 }
 
-func generateDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+func (h *marketActorTestHarness) generateDealWithCollateralAndAddFunds(rt *mock.Runtime, client address.Address,
+	minerAddrs *minerAddrs, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+	deal4 := generateDealProposalWithCollateral(client, minerAddrs.provider, providerCollateral, clientCollateral,
+		startEpoch, endEpoch)
+	h.addProviderFunds(rt, deal4.ProviderCollateral, minerAddrs)
+	h.addParticipantFunds(rt, client, deal4.ClientBalanceRequirement())
+
+	return deal4
+}
+
+func generateDealProposalWithCollateral(client, provider address.Address, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
 	pieceCid := tutil.MakeCID("1", &market.PieceCIDPrefix)
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
-	clientCollateral := big.NewInt(10)
-	providerCollateral := big.NewInt(10)
 
 	return market.DealProposal{pieceCid, pieceSize, false, client, provider, "label", startEpoch,
 		endEpoch, storagePerEpoch, providerCollateral, clientCollateral}
+}
+
+func generateDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+	clientCollateral := big.NewInt(10)
+	providerCollateral := big.NewInt(10)
+
+	return generateDealProposalWithCollateral(client, provider, clientCollateral, providerCollateral, startEpoch, endEpoch)
 }
 
 func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Address) (*mock.Runtime, *marketActorTestHarness) {

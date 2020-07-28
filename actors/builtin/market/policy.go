@@ -34,7 +34,6 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	num := big.Mul(lockTargetNum, powerShareNum)
 	denom := big.Mul(lockTargetDenom, powerShareDenom)
 	minCollateral := big.Div(num, denom)
-
 	return minCollateral, abi.TotalFilecoin // PARAM_FINISH
 }
 
