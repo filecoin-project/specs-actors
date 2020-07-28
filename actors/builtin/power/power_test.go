@@ -170,11 +170,7 @@ func TestEnrollCronEpoch(t *testing.T) {
 
 		events := ac.getEnrolledCronTicks(rt, e1)
 
-		var evt power.CronEvent
-
-		found, err := events.Get(0, &evt)
-		require.True(t, found)
-		require.NoError(t, err)
+		evt := events[0]
 		require.EqualValues(t, p1, evt.CallbackPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 
@@ -182,15 +178,11 @@ func TestEnrollCronEpoch(t *testing.T) {
 		p2 := []byte("hello2")
 		ac.enrollCronEvent(rt, miner, e1, p2)
 		events = ac.getEnrolledCronTicks(rt, e1)
-		found, err = events.Get(0, &evt)
-		require.True(t, found)
-		require.NoError(t, err)
+		evt = events[0]
 		require.EqualValues(t, p1, evt.CallbackPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 
-		found, err = events.Get(1, &evt)
-		require.NoError(t, err)
-		require.True(t, found)
+		evt = events[1]
 		require.EqualValues(t, p2, evt.CallbackPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 
@@ -200,11 +192,38 @@ func TestEnrollCronEpoch(t *testing.T) {
 		miner2 := tutil.NewIDAddr(t, 501)
 		ac.enrollCronEvent(rt, miner2, e2, p3)
 		events = ac.getEnrolledCronTicks(rt, e2)
-		found, err = events.Get(0, &evt)
-		require.NoError(t, err)
-		require.True(t, found)
+		evt = events[0]
 		require.EqualValues(t, p3, evt.CallbackPayload)
 		require.EqualValues(t, miner2, evt.MinerAddr)
+	})
+
+	t.Run("enroll for an epoch before the current epoch", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+
+		// current epoch is 5
+		current := abi.ChainEpoch(5)
+		rt.SetEpoch(current)
+
+		// enroll event with miner at epoch=2
+		p1 := []byte("hello")
+		e1 := abi.ChainEpoch(2)
+		ac.enrollCronEvent(rt, miner, e1, p1)
+		events := ac.getEnrolledCronTicks(rt, e1)
+		evt := events[0]
+		require.EqualValues(t, p1, evt.CallbackPayload)
+		require.EqualValues(t, miner, evt.MinerAddr)
+		st := getState(rt)
+		require.EqualValues(t, abi.ChainEpoch(0), st.FirstCronEpoch)
+
+		// enroll event with miner at epoch=1
+		p2 := []byte("hello2")
+		e2 := abi.ChainEpoch(1)
+		ac.enrollCronEvent(rt, miner, e2, p2)
+		events = ac.getEnrolledCronTicks(rt, e2)
+		evt = events[0]
+		require.EqualValues(t, p2, evt.CallbackPayload)
+		require.EqualValues(t, miner, evt.MinerAddr)
+		require.EqualValues(t, abi.ChainEpoch(0), st.FirstCronEpoch)
 	})
 
 	t.Run("fails if epoch is negative", func(t *testing.T) {
@@ -232,6 +251,8 @@ func TestOnConsensusFault(t *testing.T) {
 		require.True(t, st.TotalRawBytePower.IsZero())
 		require.True(t, st.TotalQualityAdjPower.IsZero())
 		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
+		require.EqualValues(t, smallPowerUnit, st.TotalBytesCommitted)
+		require.EqualValues(t, smallPowerUnit, st.TotalQABytesCommitted)
 
 		ac.onConsensusFault(rt, miner, &zeroPledge)
 
@@ -239,9 +260,11 @@ func TestOnConsensusFault(t *testing.T) {
 		require.True(t, st.TotalRawBytePower.IsZero())
 		require.True(t, st.TotalQualityAdjPower.IsZero())
 		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
+		require.True(t, st.TotalQABytesCommitted.IsZero())
+		require.True(t, st.TotalBytesCommitted.IsZero())
 	})
 
-	t.Run("qaPower was above threshold before fault", func(t *testing.T) {
+	t.Run("qaPower was above threshold before fault and successfully reduces pledged amount", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.createMinerBasic(rt, owner, owner, miner)
 		ac.updateClaimedPower(rt, miner, powerUnit, powerUnit)
@@ -250,19 +273,8 @@ func TestOnConsensusFault(t *testing.T) {
 		require.EqualValues(t, powerUnit, st.TotalRawBytePower)
 		require.EqualValues(t, powerUnit, st.TotalQualityAdjPower)
 		require.EqualValues(t, 1, st.MinerAboveMinPowerCount)
-
-		ac.onConsensusFault(rt, miner, &zeroPledge)
-
-		st = getState(rt)
-		require.True(t, st.TotalRawBytePower.IsZero())
-		require.True(t, st.TotalQualityAdjPower.IsZero())
-		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
-	})
-
-	t.Run("successfully reduces pledged amount", func(t *testing.T) {
-		rt, ac := basicPowerSetup(t)
-		ac.createMinerBasic(rt, owner, owner, miner)
-		ac.updateClaimedPower(rt, miner, powerUnit, powerUnit)
+		require.EqualValues(t, powerUnit, st.TotalBytesCommitted)
+		require.EqualValues(t, powerUnit, st.TotalQABytesCommitted)
 
 		delta := abi.NewTokenAmount(100)
 		ac.updatePledgeTotal(rt, miner, delta)
@@ -270,7 +282,12 @@ func TestOnConsensusFault(t *testing.T) {
 		slash := abi.NewTokenAmount(50)
 		ac.onConsensusFault(rt, miner, &slash)
 
-		st := getState(rt)
+		st = getState(rt)
+		require.True(t, st.TotalRawBytePower.IsZero())
+		require.True(t, st.TotalQualityAdjPower.IsZero())
+		require.EqualValues(t, 0, st.MinerAboveMinPowerCount)
+		require.True(t, st.TotalQABytesCommitted.IsZero())
+		require.True(t, st.TotalBytesCommitted.IsZero())
 		require.EqualValues(t, big.Sub(delta, slash), st.TotalPledgeCollateral)
 	})
 
@@ -846,7 +863,7 @@ func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim
 	return &out
 }
 
-func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainEpoch) *adt.Array {
+func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainEpoch) []power.CronEvent {
 	var st power.State
 	rt.GetState(&st)
 
@@ -856,7 +873,16 @@ func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainE
 	evts, found, err := events.Get(adt.IntKey(int64(epoch)))
 	require.NoError(h.t, err)
 	require.True(h.t, found)
-	return evts
+
+	cronEvt := &power.CronEvent{}
+	var cronEvents []power.CronEvent
+	err = evts.ForEach(cronEvt, func(i int64) error {
+		cronEvents = append(cronEvents, *cronEvt)
+		return nil
+	})
+	require.NoError(h.t, err)
+
+	return cronEvents
 }
 
 func basicPowerSetup(t *testing.T) (*mock.Runtime, *spActorHarness) {
