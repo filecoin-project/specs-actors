@@ -385,11 +385,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
-		availableBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		vestingPenaltyTotal, balancePenaltyTotal, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, totalPenaltyTarget, availableBalance)
+		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		vestingPenaltyTotal, balancePenaltyTotal, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, totalPenaltyTarget, unlockedBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
 		penaltyTotal = big.Add(vestingPenaltyTotal, balancePenaltyTotal)
-		pledgeDelta = vestingPenaltyTotal.Neg()
+		pledgeDelta = big.Sub(pledgeDelta, vestingPenaltyTotal)
 
 		// Record the successful submission
 		deadline.AddPoStSubmissions(partitionIdxs)
@@ -1415,9 +1415,12 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 
-		availableBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		if availableBalance.LessThan(*amountToLock) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", availableBalance, *amountToLock)
+		// This may lock up unlocked balance that was covering InitialPledgeRequirements
+		// This ensures that the amountToLock is always locked up if the miner account
+		// can cover it.
+		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		if unlockedBalance.LessThan(*amountToLock) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *amountToLock)
 		}
 
 		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
@@ -1506,8 +1509,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
 
-		// Verify locked funds are are at least the sum of sector initial pledges after vesting.
-		// TODO: simplify this just to refuse to vest if pledge requirement is unmet https://github.com/filecoin-project/specs-actors/issues/537
+		// Verify InitialPledgeRequirement does not exceed unlocked funds
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
 		return newlyVestedFund
@@ -1613,8 +1615,8 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		// Unlock funds for penalties.
 		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
 		// We're intentionally reducing the penalty paid to what we have.
-		available := st.GetUnlockedBalance(rt.CurrentBalance())
-		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, rt.CurrEpoch(), penalty, available)
+		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, rt.CurrEpoch(), penalty, unlockedBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
 		penalty = big.Add(penaltyFromVesting, penaltyFromBalance)
 
@@ -1656,7 +1658,6 @@ func handleProvingDeadline(rt Runtime) {
 	hadEarlyTerminations := false
 
 	powerDelta := PowerPair{big.Zero(), big.Zero()}
-	newlyVested := big.Zero()
 	penaltyTotal := abi.NewTokenAmount(0)
 	pledgeDelta := abi.NewTokenAmount(0)
 
@@ -1666,8 +1667,9 @@ func handleProvingDeadline(rt Runtime) {
 		var err error
 		{
 			// Vest locked funds.
-			// This happens first so that any subsequent penalties are taken from locked pledge, rather than free funds.
-			newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
+			// This happens first so that any subsequent penalties are taken
+			// from locked vesting funds before funds free this epoch.
+			newlyVested, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 			pledgeDelta = big.Add(pledgeDelta, newlyVested.Neg())
 		}
@@ -1690,7 +1692,7 @@ func handleProvingDeadline(rt Runtime) {
 		deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
 		quant := st.QuantEndOfDeadline()
-		availableBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 
 		{
 			// Detect and penalize missing proofs.
@@ -1734,11 +1736,11 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal)
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
 			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, penalizePowerTotal))
-			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, availableBalance)
+			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			availableBalance = big.Sub(availableBalance, penaltyFromBalance)
+			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance)
 			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
-			pledgeDelta = big.Sum(pledgeDelta, penaltyFromVesting.Neg())
+			pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
 
 			// Save modified deadline state.
 			if detectedAny {
@@ -1754,9 +1756,9 @@ func handleProvingDeadline(rt Runtime) {
 			// This includes any power that was just faulted from missing a PoSt.
 			faultyPower := st.FaultyPower.QA
 			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward, pwrTotal.QualityAdjPower, faultyPower)
-			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, availableBalance)
+			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			availableBalance = big.Sub(availableBalance, penaltyFromBalance) //nolint:ineffassign
+			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance) //nolint:ineffassign
 			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
 			pledgeDelta = big.Sum(pledgeDelta, penaltyFromVesting.Neg())
 		}

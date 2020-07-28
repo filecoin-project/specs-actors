@@ -944,7 +944,10 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 // PenalizeFundsInPriorityOrder first unlocks unvested funds from the vesting table.
 // If the target is not yet hit it deducts funds from the (new) available balance.
 // Returns the amount unlocked from the vesting table and the amount taken from current balance.
-func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target, availableBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
+// If the penalty exceeds the total amount available in the vesting table and unlocked funds
+// the penalty is reduced to match.  This must be fixed when handling bankrupcy:
+// https://github.com/filecoin-project/specs-actors/issues/627
+func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target, unlockedBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
 	fromVesting, err = st.UnlockUnvestedFunds(store, currEpoch, target)
 	if err != nil {
 		return abi.NewTokenAmount(0), abi.NewTokenAmount(0), err
@@ -954,10 +957,9 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 	}
 
 	// unlocked funds were just deducted from available, so track that
-	availableBalance = big.Sub(availableBalance, fromVesting)
 	remaining := big.Sub(target, fromVesting)
 
-	fromBalance = big.Min(availableBalance, remaining)
+	fromBalance = big.Min(unlockedBalance, remaining)
 	return fromVesting, fromBalance, nil
 }
 
