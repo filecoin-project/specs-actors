@@ -12,6 +12,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -67,12 +68,12 @@ func ConstructDeadlines(emptyDeadlineCid cid.Cid) *Deadlines {
 
 func (d *Deadlines) LoadDeadline(store adt.Store, dlIdx uint64) (*Deadline, error) {
 	if dlIdx >= uint64(len(d.Due)) {
-		return nil, xerrors.Errorf("invalid deadline %d", dlIdx)
+		return nil, xc.ErrIllegalArgument.Wrapf("invalid deadline %d", dlIdx)
 	}
 	deadline := new(Deadline)
 	err := store.Get(store.Context(), d.Due[dlIdx], deadline)
 	if err != nil {
-		return nil, err
+		return nil, xc.ErrIllegalState.Wrapf("failed to lookup deadline %d: %w", dlIdx, err)
 	}
 	return deadline, nil
 }
@@ -118,7 +119,11 @@ func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 }
 
 func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
-	return adt.AsArray(store, d.Partitions)
+	arr, err := adt.AsArray(store, d.Partitions)
+	if err != nil {
+		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+	}
+	return arr, nil
 }
 
 func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, error) {
@@ -129,10 +134,10 @@ func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, e
 	var partition Partition
 	found, err := partitions.Get(partIdx, &partition)
 	if err != nil {
-		return nil, err
+		return nil, xc.ErrIllegalState.Wrapf("failed to lookup partition %d: %w", partIdx, err)
 	}
 	if !found {
-		return nil, xerrors.Errorf("no partition %d", partIdx)
+		return nil, xc.ErrNotFound.Wrapf("no partition %d", partIdx)
 	}
 	return &partition, nil
 }
@@ -347,7 +352,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSect
 
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
-		return TerminationResult{}, false, xerrors.Errorf("failed to load partitions: %w", err)
+		return TerminationResult{}, false, err
 	}
 
 	var partitionsFinished []uint64
@@ -458,7 +463,7 @@ func (dl *Deadline) TerminateSectors(
 
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to load partitions: %w", err)
+		return NewPowerPairZero(), err
 	}
 
 	partitionIdxs := make([]uint64, 0, len(partitionSectors))
@@ -521,9 +526,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitFiel
 	partitionCount := oldPartitions.Length()
 	toRemoveSet, err := toRemove.AllMap(partitionCount)
 	if err != nil {
-		// TODO: This may be an illegal argument error if we have too many partitions.
-		// https://github.com/filecoin-project/specs-actors/issues/597
-		return nil, nil, NewPowerPairZero(), xerrors.Errorf("failed to expand partitions into map: %w", err)
+		return nil, nil, NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed to expand partitions into map: %w", err)
 	}
 
 	// Nothing to do.
@@ -533,9 +536,9 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitFiel
 
 	for partIdx := range toRemoveSet { //nolint:nomaprange
 		if partIdx >= partitionCount {
-			// TODO: This is an illegal argument error
-			// https://github.com/filecoin-project/specs-actors/issues/597
-			return nil, nil, NewPowerPairZero(), xerrors.Errorf("partition index %d out of range [0, %d)", partIdx, partitionCount)
+			return nil, nil, NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf(
+				"partition index %d out of range [0, %d)", partIdx, partitionCount,
+			)
 		}
 	}
 
@@ -570,24 +573,22 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitFiel
 		err := partition.UnmarshalCBOR(&byteReader)
 		byteReader.Reset(nil)
 		if err != nil {
-			return xerrors.Errorf("failed to decode partition %d: %w", partIdx, err)
+			return xc.ErrIllegalState.Wrapf("failed to decode partition %d: %w", partIdx, err)
 		}
 
 		// Don't allow removing partitions with faulty sectors.
 		hasNoFaults, err := partition.Faults.IsEmpty()
 		if err != nil {
-			return xerrors.Errorf("failed to decode faults for partition %d: %w", partIdx, err)
+			return xc.ErrIllegalState.Wrapf("failed to decode faults for partition %d: %w", partIdx, err)
 		}
 		if !hasNoFaults {
-			// TODO: this is an invalid argument error.
-			// https://github.com/filecoin-project/specs-actors/issues/597
-			return xerrors.Errorf("cannot remove partition %d: has faults", partIdx)
+			return xc.ErrIllegalArgument.Wrapf("cannot remove partition %d: has faults", partIdx)
 		}
 
 		// Get the live sectors.
 		liveSectors, err := partition.LiveSectors()
 		if err != nil {
-			return xerrors.Errorf("failed to calculate live sectors for partition %d: %w", partIdx, err)
+			return xc.ErrIllegalState.Wrapf("failed to calculate live sectors for partition %d: %w", partIdx, err)
 		}
 
 		allDeadSectors = append(allDeadSectors, partition.Terminated)

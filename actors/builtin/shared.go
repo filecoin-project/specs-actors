@@ -27,10 +27,11 @@ func RequireSuccess(rt runtime.Runtime, e exitcode.ExitCode, msg string, args ..
 
 // Aborts with a formatted message if err is not nil.
 // The provided message will be suffixed by ": %s" and the provided args suffixed by the err.
-func RequireNoErr(rt runtime.Runtime, err error, code exitcode.ExitCode, msg string, args ...interface{}) {
+func RequireNoErr(rt runtime.Runtime, err error, defaultExitCode exitcode.ExitCode, msg string, args ...interface{}) {
 	if err != nil {
 		newMsg := msg + ": %s"
 		newArgs := append(args, err)
+		code := exitcode.Unwrap(err, defaultExitCode)
 		rt.Abortf(code, newMsg, newArgs...)
 	}
 }

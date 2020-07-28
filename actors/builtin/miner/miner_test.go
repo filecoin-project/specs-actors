@@ -539,7 +539,7 @@ func TestCommitments(t *testing.T) {
 			// Phew!
 
 			rt.ReplaceState(st)
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
 				actor.preCommitSector(rt, &params)
 			})
 			rt.ReplaceState(&prevState)
