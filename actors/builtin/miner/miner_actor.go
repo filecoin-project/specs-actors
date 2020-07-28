@@ -1170,6 +1170,10 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 					newFaultPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, info.SectorSize, quant)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add faults")
 
+					for _, s := range newFaultSectors {
+						rt.Log(vmr.WARN, "sector has been marked as faulty: sector id: %d", s.SectorNumber)
+					}
+
 					st.FaultyPower = st.FaultyPower.Add(newFaultPower)
 					newFaultPowerTotal = newFaultPowerTotal.Add(newFaultPower)
 					partitionsWithFault = append(partitionsWithFault, decl.Partition)
@@ -1895,6 +1899,10 @@ func processRecoveries(rt Runtime, st *State, store adt.Store, partition *Partit
 
 	recoveredPower, err := partition.RecoverFaults(store, partition.Recoveries, recoveredSectors, ssize, quant)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove recoveries from faults")
+
+	for _, s := range recoveredSectors {
+		rt.Log(vmr.INFO, "sector recovered: sector id: %d", s.SectorNumber)
+	}
 
 	return recoveredPower
 }
