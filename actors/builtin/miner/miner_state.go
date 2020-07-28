@@ -13,6 +13,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -145,15 +146,6 @@ type SectorLocation struct {
 	Deadline, Partition uint64
 	SectorNumber        abi.SectorNumber
 }
-
-type SectorStatus int
-
-const (
-	SectorNotFound SectorStatus = iota
-	SectorFaulty
-	SectorTerminated
-	SectorHealthy
-)
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 	return &State{
@@ -415,6 +407,9 @@ func (st *State) WalkSectors(
 
 	var toVisit [WPoStPeriodDeadlines]map[uint64][]uint64
 	for _, loc := range locations {
+		if loc.Deadline >= WPoStPeriodDeadlines {
+			return xc.ErrIllegalArgument.Wrapf("deadline %d out of range", loc.Deadline)
+		}
 		dl := toVisit[loc.Deadline]
 		if dl == nil {
 			dl = make(map[uint64][]uint64, 1)
@@ -516,8 +511,6 @@ func (st *State) WalkSectors(
 // If it can't find any given sector, it skips it.
 //
 // This method assumes that each sector's power has not changed, despite the rescheduling.
-//
-// TODO: distinguish bad arguments from invalid state https://github.com/filecoin-project/specs-actors/issues/597
 func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectors []SectorLocation,
 	ssize abi.SectorSize, quant QuantSpec) error {
 	var (
@@ -716,49 +709,42 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 	return result, !noEarlyTerminations, nil
 }
 
-// Returns a sector's status (healthy, faulty, missing, not found, terminated)
-func (st *State) SectorStatus(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (SectorStatus, error) {
+// Returns an error if the target sector cannot be found and/or is faulty/terminated.
+func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) error {
 	dls, err := st.LoadDeadlines(store)
 	if err != nil {
-		return SectorNotFound, err
-	}
-
-	// Pre-check this because LoadDeadline will return an actual error.
-	if dlIdx >= WPoStPeriodDeadlines {
-		return SectorNotFound, nil
+		return err
 	}
 
 	dl, err := dls.LoadDeadline(store, dlIdx)
 	if err != nil {
-		return SectorNotFound, err
+		return err
 	}
 
-	// TODO: distinguish partition not found from state errors in exit code
-	// https://github.com/filecoin-project/specs-actors/issues/597
 	partition, err := dl.LoadPartition(store, pIdx)
 	if err != nil {
-		return SectorNotFound, xerrors.Errorf("in deadline %d: %w", dlIdx, err)
+		return err
 	}
 
 	if exists, err := partition.Sectors.IsSet(uint64(sector)); err != nil {
-		return SectorNotFound, err
+		return xc.ErrIllegalState.Wrapf("failed to decode sectors bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if !exists {
-		return SectorNotFound, nil
+		return xc.ErrNotFound.Wrapf("sector %d not a member of partition %d, deadline %d", sector, pIdx, dlIdx)
 	}
 
 	if faulty, err := partition.Faults.IsSet(uint64(sector)); err != nil {
-		return SectorNotFound, err
+		return xc.ErrIllegalState.Wrapf("failed to decode faults bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if faulty {
-		return SectorFaulty, nil
+		return xc.ErrForbidden.Wrapf("sector %d of partition %d, deadline %d is faulty", sector, pIdx, dlIdx)
 	}
 
 	if terminated, err := partition.Terminated.IsSet(uint64(sector)); err != nil {
-		return SectorNotFound, err
+		return xc.ErrIllegalState.Wrapf("failed to decode terminated bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if terminated {
-		return SectorTerminated, nil
+		return xc.ErrNotFound.Wrapf("sector %d of partition %d, deadline %d is terminated", sector, pIdx, dlIdx)
 	}
 
-	return SectorHealthy, nil
+	return nil
 }
 
 // Loads sector info for a sequence of sectors.
@@ -862,7 +848,7 @@ func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitF
 func (st *State) LoadDeadlines(store adt.Store) (*Deadlines, error) {
 	var deadlines Deadlines
 	if err := store.Get(store.Context(), st.Deadlines, &deadlines); err != nil {
-		return nil, fmt.Errorf("failed to load deadlines (%s): %w", st.Deadlines, err)
+		return nil, xc.ErrIllegalState.Wrapf("failed to load deadlines (%s): %w", st.Deadlines, err)
 	}
 
 	return &deadlines, nil
