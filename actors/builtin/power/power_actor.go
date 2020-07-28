@@ -16,6 +16,7 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type Runtime = vmr.Runtime
@@ -229,14 +230,18 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
-	// update next epoch's power and pledge values
-	// this must come before the next epoch's rewards are calculated
-	// so that next epoch reward reflects power added this epoch
 	rt.State().Transaction(&st, func() interface{} {
+		// update next epoch's power and pledge values
+		// this must come before the next epoch's rewards are calculated
+		// so that next epoch reward reflects power added this epoch
 		rawBytePower, qaPower := CurrentTotalPower(&st)
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
 		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
+		delta := rt.CurrEpoch() - st.LastProcessedCronEpoch
+		st.updateSmoothedEstimate(delta)
+
+		st.LastProcessedCronEpoch = rt.CurrEpoch()
 		return nil
 	})
 
@@ -346,9 +351,10 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 }
 
 type CurrentTotalPowerReturn struct {
-	RawBytePower     abi.StoragePower
-	QualityAdjPower  abi.StoragePower
-	PledgeCollateral abi.TokenAmount
+	RawBytePower            abi.StoragePower
+	QualityAdjPower         abi.StoragePower
+	PledgeCollateral        abi.TokenAmount
+	QualityAdjPowerSmoothed *smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.
@@ -361,9 +367,10 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.State().Readonly(&st)
 
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.ThisEpochRawBytePower,
-		QualityAdjPower:  st.ThisEpochQualityAdjPower,
-		PledgeCollateral: st.ThisEpochPledgeCollateral,
+		RawBytePower:            st.ThisEpochRawBytePower,
+		QualityAdjPower:         st.ThisEpochQualityAdjPower,
+		PledgeCollateral:        st.ThisEpochPledgeCollateral,
+		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 	}
 }
 

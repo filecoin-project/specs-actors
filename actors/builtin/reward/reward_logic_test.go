@@ -9,13 +9,14 @@ import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/stretchr/testify/assert"
 	"github.com/xorcare/golden"
 )
 
 func q128ToF(x big.Int) float64 {
 	q128 := new(gbig.Int).SetInt64(1)
-	q128 = q128.Lsh(q128, precision)
+	q128 = q128.Lsh(q128, math.Precision)
 	res, _ := new(gbig.Rat).SetFrac(x.Int, q128).Float64()
 	return res
 }
@@ -40,11 +41,11 @@ func TestComputeRTeta(t *testing.T) {
 
 func TestBaselineReward(t *testing.T) {
 	step := gbig.NewInt(5000)
-	step = step.Lsh(step, precision)
+	step = step.Lsh(step, math.Precision)
 	step = step.Sub(step, gbig.NewInt(77777777777)) // offset from full integers
 
 	delta := gbig.NewInt(1)
-	delta = delta.Lsh(delta, precision)
+	delta = delta.Lsh(delta, math.Precision)
 	delta = delta.Sub(delta, gbig.NewInt(33333333333)) // offset from full integers
 
 	prevTheta := new(gbig.Int)
