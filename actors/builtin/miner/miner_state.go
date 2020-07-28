@@ -19,6 +19,9 @@ import (
 
 // Balance of Miner Actor should be greater than or equal to
 // the sum of PreCommitDeposits and LockedFunds.
+// It is possible for balance to fall below the sum of
+// PCD, LF and InitialPledgeRequirements, and this is a bad
+// state (IP Debt) that limits a miner actor's behavior (i.e. no balance withdrawals)
 // Excess balance as computed by st.GetAvailableBalance will be
 // withdrawable or usable for pre-commit deposit or pledge lock-up.
 type State struct {
@@ -1090,9 +1093,9 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 
 // Unclaimed funds that are not locked -- includes funds used to cover initial pledge requirement
 func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	availableBal := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits)
-	Assert(availableBal.GreaterThanEqual(big.Zero()))
-	return availableBal
+	unlockedBalance := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits)
+	Assert(unlockedBalance.GreaterThanEqual(big.Zero()))
+	return unlockedBalance
 }
 
 // Unclaimed funds.  Actor balance - (locked funds, precommit deposit, ip requirement)
