@@ -2,7 +2,6 @@
 package miner_test
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -28,6 +27,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -205,7 +205,7 @@ func TestCommitments(t *testing.T) {
 
 		qaPower = miner.QAPowerForWeight(sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight,
 			onChainPrecommit.VerifiedDealWeight)
-		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth, 
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth,
 			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
@@ -1380,7 +1380,7 @@ func TestTerminateSectors(t *testing.T) {
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
-		sectorInfo := actor.commitAndProveSectors(rt, 1, 100, nil)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, 181, nil)
 		return sectorInfo[0]
 	}
 
@@ -1397,9 +1397,9 @@ func TestTerminateSectors(t *testing.T) {
 		sectorSize, err := sector.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorPower := miner.QAPowerForSector(sectorSize, sector)
-		dayReward := miner.ExpectedDayRewardForPower(actor.epochReward, actor.networkQAPower, sectorPower)
+		dayReward := miner.ExpectedDayRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
 		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(sector.InitialPledge, dayReward, sectorAge, actor.epochReward, actor.networkQAPower, sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -1598,7 +1598,7 @@ type actorHarness struct {
 	networkQAPower  abi.StoragePower
 	baselinePower   abi.StoragePower
 
-	epochRewardSmooth *smoothing.FilterEstimate
+	epochRewardSmooth  *smoothing.FilterEstimate
 	epochQAPowerSmooth *smoothing.FilterEstimate
 }
 
@@ -1633,7 +1633,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		networkQAPower:  power,
 		baselinePower:   power,
 
-		epochRewardSmooth: smoothing.TestingConstantEstimate(reward),
+		epochRewardSmooth:  smoothing.TestingConstantEstimate(reward),
 		epochQAPowerSmooth: smoothing.TestingConstantEstimate(power),
 	}
 }
@@ -1913,7 +1913,7 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 			qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, precommit.Expiration-rt.Epoch(), precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
 			expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 			expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
-			pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge, 
+			pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge,
 				h.epochRewardSmooth, h.epochQAPowerSmooth, rt.TotalFilCircSupply())
 			expectPledge = big.Add(expectPledge, pledge)
 		}
@@ -2262,17 +2262,18 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField,
 		expectQueryNetworkInfo(rt, h)
 	}
 
+	pledgeDelta := big.Zero()
 	if big.Zero().LessThan(expectedFee) {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedFee, nil, exitcode.Ok)
-		pledgeDelta := expectedFee.Neg()
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+		pledgeDelta = big.Sum(pledgeDelta, expectedFee.Neg())
 	}
 	// notify change to initial pledge
 	if len(sectorInfos) > 0 {
-		pledgeDelta := big.Zero()
 		for _, sector := range sectorInfos {
 			pledgeDelta = big.Add(pledgeDelta, sector.InitialPledge.Neg())
 		}
+	}
+	if !pledgeDelta.Equals(big.Zero()) {
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
 	}
 	{
@@ -2379,17 +2380,17 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 	// Preamble
 	reward := reward.ThisEpochRewardReturn{
-		ThisEpochReward:        h.epochReward,
-		ThisEpochBaselinePower: h.baselinePower,
+		ThisEpochReward:         h.epochReward,
+		ThisEpochBaselinePower:  h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
 	}
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
 	networkPower := big.NewIntUnsigned(1 << 50)
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
 		&power.CurrentTotalPowerReturn{
-			RawBytePower:     networkPower,
-			QualityAdjPower:  networkPower,
-			PledgeCollateral: h.networkPledge,
+			RawBytePower:            networkPower,
+			QualityAdjPower:         networkPower,
+			PledgeCollateral:        h.networkPledge,
 			QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 		},
 		exitcode.Ok)
@@ -2617,14 +2618,14 @@ func fixedHasher(target uint64) func([]byte) [32]byte {
 
 func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 	currentPower := power.CurrentTotalPowerReturn{
-		RawBytePower:     h.networkRawPower,
-		QualityAdjPower:  h.networkQAPower,
-		PledgeCollateral: h.networkPledge,
+		RawBytePower:            h.networkRawPower,
+		QualityAdjPower:         h.networkQAPower,
+		PledgeCollateral:        h.networkPledge,
 		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 	}
 	currentReward := reward.ThisEpochRewardReturn{
-		ThisEpochReward:        h.epochReward,
-		ThisEpochBaselinePower: h.baselinePower,
+		ThisEpochReward:         h.epochReward,
+		ThisEpochBaselinePower:  h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
 	}
 

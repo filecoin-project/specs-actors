@@ -2408,7 +2408,7 @@ func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, rew
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.InitialPledge, s.ExpectedDayReward, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
+		fee := PledgePenaltyForTermination(s.ExpectedDayReward, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee

@@ -27,6 +27,9 @@ var DeclaredFaultFactorDenom = big.NewInt(100)
 var UndeclaredFaultFactorNum = big.NewInt(5)
 var UndeclaredFaultFactorDenom = big.NewInt(1)
 
+// Maximum number of days of BR a terminated sector can be penalized
+const TerminationLifetimeCap = abi.ChainEpoch(70)
+
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
@@ -59,16 +62,16 @@ func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smo
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
-func PledgePenaltyForTermination(initialPledge abi.TokenAmount, dayReward abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	// max(SP(t), IP + BR(StartEpoch)*min(SectorAgeInDays, 180))
+func PledgePenaltyForTermination(dayRewardAtActivation abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	// max(SP(t), 20*BR(StartEpoch) + BR(StartEpoch)*min(SectorAgeInDays, 70))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
-	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, 180*builtin.EpochsInDay)))
+	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, TerminationLifetimeCap*builtin.EpochsInDay)))
 	return big.Max(
 		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
 		big.Add(
-			initialPledge,
+			big.Mul(InitialPledgeFactor, dayRewardAtActivation),
 			big.Div(
-				big.Mul(dayReward, cappedSectorAge),
+				big.Mul(dayRewardAtActivation, cappedSectorAge),
 				big.NewInt(builtin.EpochsInDay))))
 }
 
