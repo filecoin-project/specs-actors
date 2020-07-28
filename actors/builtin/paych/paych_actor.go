@@ -305,15 +305,6 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrForbidden, "payment channel not settling or settled")
 	}
 
-	// send remaining balance to "From"
-	_, codeFrom := rt.Send(
-		st.From,
-		builtin.MethodSend,
-		nil,
-		big.Sub(rt.CurrentBalance(), st.ToSend),
-	)
-	builtin.RequireSuccess(rt, codeFrom, "Failed to send balance to `From`")
-
 	// send ToSend to "To"
 	_, codeTo := rt.Send(
 		st.To,
@@ -323,10 +314,9 @@ func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	)
 	builtin.RequireSuccess(rt, codeTo, "Failed to send funds to `To`")
 
-	rt.State().Transaction(&st, func() interface{} {
-		st.ToSend = big.Zero()
-		return nil
-	})
+	// the remaining balance will be returned to "From" upon deletion.
+	rt.DeleteActor(st.From)
+
 	return nil
 }
 
