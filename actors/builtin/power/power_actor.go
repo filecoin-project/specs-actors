@@ -285,14 +285,17 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 
 		st.addPledgeTotal(pledgeAmount.Neg())
 
+		// delete miner actor claims
+		err = claims.Delete(AddrKey(minerAddr))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove miner %v", minerAddr)
+
+		st.MinerCount -= 1
+
 		st.Claims, err = claims.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
 
 		return nil
 	})
-
-	err := a.deleteMinerActor(rt, minerAddr)
-	AssertNoError(err)
 
 	return nil
 }
@@ -533,27 +536,4 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		return nil
 	})
 	return nil
-}
-
-func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
-	var st State
-	var err error
-	rt.State().Transaction(&st, func() interface{} {
-		claims, err2 := adt.AsMap(adt.AsStore(rt), st.Claims)
-		builtin.RequireNoErr(rt, err2, exitcode.ErrIllegalState, "failed to load claims")
-
-		err = claims.Delete(AddrKey(miner))
-		if err != nil {
-			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
-			return nil
-		}
-
-		st.MinerCount -= 1
-
-		st.Claims, err = claims.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
-
-		return nil
-	})
-	return err
 }
