@@ -300,7 +300,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		partitions, err := deadline.PartitionsArray(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d partitions", params.Deadline)
 
-		faultExpiration := currDeadline.Close + FaultMaxAge
+		faultExpiration := currDeadline.Last() + FaultMaxAge
 
 		partitionIdxs := make([]uint64, 0, len(params.Partitions))
 		allSectors := make([]*abi.BitField, 0, len(params.Partitions))
@@ -458,7 +458,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	if params.ReplaceSectorDeadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d", params.ReplaceSectorDeadline)
 	}
-	if params.ReplaceSectorNumber >= abi.MaxSectorNumber {
+	if params.ReplaceSectorNumber > abi.MaxSectorNumber {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid sector number %d", params.ReplaceSectorNumber)
 	}
 
@@ -1134,7 +1134,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			// Record partitions with some fault, for subsequently indexing in the deadline.
 			// Duplicate entries don't matter, they'll be stored in a bitfield (a set).
 			partitionsWithFault := make([]uint64, 0, len(declsByDeadline))
-			faultExpirationEpoch := targetDeadline.Close + FaultMaxAge
+			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
 
 			for _, decl := range declsByDeadline[dlIdx] {
 				key := PartitionKey{dlIdx, decl.Partition}
@@ -1696,7 +1696,7 @@ func handleProvingDeadline(rt Runtime) {
 
 		{
 			// Detect and penalize missing proofs.
-			faultExpiration := dlInfo.Close + FaultMaxAge
+			faultExpiration := dlInfo.Last() + FaultMaxAge
 			penalizePowerTotal := big.Zero()
 
 			partitions, err := deadline.PartitionsArray(store)
