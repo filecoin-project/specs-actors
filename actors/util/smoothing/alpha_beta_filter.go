@@ -164,12 +164,12 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 	}
 
 	halfDeltaT := big.Rsh(deltaT, 1)                          // Q.128 / Q.0 => Q.128
-	x1m := big.Mul(estimateNum.VelocityEstimate, big.Sum(t0, halfDeltaT)) // Q.128 * Q.128 => Q.256
+	x1m := big.Mul(velocity1, big.Sum(t0, halfDeltaT)) // Q.128 * Q.128 => Q.256
 	x1m = big.Rsh(x1m, math.Precision)                                    // Q.256 => Q.128
-	x1m = big.Add(estimateNum.PositionEstimate, x1m)
+	x1m = big.Add(position1, x1m)
 
 	cumsumRatio := big.Mul(x1m, deltaT)                                // Q.128 * Q.128 => Q.256
-	cumsumRatio = big.Div(cumsumRatio, estimateDenom.PositionEstimate) // Q.256 / Q.128 => Q.128
+	cumsumRatio = big.Div(cumsumRatio, position2) // Q.256 / Q.128 => Q.128
 	return cumsumRatio
 
 }
@@ -177,21 +177,17 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 // The natural log of Q.128 x.
 func Ln(z big.Int) big.Int {
 	// bitlen - 1 - precision
-	k := big.Sub(big.Sub(big.NewInt(int64(z.BitLen())), big.NewInt(1)), big.NewInt(math.Precision)) // Q.0
-	intK := uint(k.Abs().Int64())
-
-	k = big.Lsh(k, math.Precision) // Q.0 => Q.128
+	k := int64(z.BitLen()) - 1 - math.Precision // Q.0
 	x := big.Zero()                // nolint:ineffassign
 
-	if k.GreaterThan(big.Zero()) {
-		x = big.Rsh(z, intK) // Q.128
+	if k > 0 {
+		x = big.Rsh(z, uint(k)) // Q.128
 	} else {
-		x = big.Lsh(z, intK) // Q.128
+		x = big.Lsh(z, uint(-k)) // Q.128
 	}
 
 	// ln(z) = ln(x * 2^k) = ln(x) + k * ln2
-	lnz := big.Mul(k, ln2)                     // Q.128 * Q.128 => Q.256
-	lnz = big.Rsh(lnz, math.Precision)         // Q.256 => Q.128
+	lnz := big.Mul(big.NewInt(k), ln2)         // Q.0 * Q.128 => Q.128
 	return big.Sum(lnz, lnBetweenOneAndTwo(x)) // Q.128
 }
 
