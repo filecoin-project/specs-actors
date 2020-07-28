@@ -65,12 +65,16 @@ func TestCumSumRatioProjection(t *testing.T) {
 	// Note 2: since both methods are approximations with error this is not a
 	// measurement of analytic method's error, it is a sanity check that the
 	// two methods give similar results
-	errBound := big.NewInt(300)
+	errBound := big.NewInt(350)
 
 	assertErrBound := func(t *testing.T, num, denom *smoothing.FilterEstimate, delta, t0 abi.ChainEpoch, errBound big.Int) {
+		t.Helper()
 		analytic := smoothing.ExtrapolatedCumSumOfRatio(delta, t0, num, denom)
 		iterative := iterativeCumSumOfRatio(num, denom, t0, delta)
-		assert.True(t, perMillionError(analytic, iterative).LessThan(errBound))
+		actualErr := perMillionError(analytic, iterative)
+		assert.True(t, actualErr.LessThan(errBound),
+			"expected %d, actual %d (error %d > %d)",
+			iterative, analytic, actualErr, errBound)
 	}
 
 	t.Run("both positive velocity", func(t *testing.T) {

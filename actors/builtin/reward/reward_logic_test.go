@@ -8,7 +8,6 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/stretchr/testify/assert"
 	"github.com/xorcare/golden"
@@ -66,7 +65,7 @@ func TestBaselineReward(t *testing.T) {
 	golden.Assert(t, b.Bytes())
 }
 
-func TestSimpleRewrad(t *testing.T) {
+func TestSimpleReward(t *testing.T) {
 	b := &bytes.Buffer{}
 	b.WriteString("x, y\n")
 	for i := int64(0); i < 512; i++ {
@@ -82,7 +81,7 @@ func TestBaselineRewardGrowth(t *testing.T) {
 
 	baselineInYears := func(start abi.StoragePower, x abi.ChainEpoch) abi.StoragePower {
 		baseline := start
-		for i := abi.ChainEpoch(0); i < x*builtin.EpochsInYear; i++ {
+		for i := abi.ChainEpoch(0); i < x*epochsInYear; i++ {
 			baseline = BaselinePowerFromPrev(baseline)
 		}
 		return baseline

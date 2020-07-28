@@ -8,14 +8,13 @@ import "fmt"
 // can override it at runtime. Doing so requires changing all the static references to it in this repo to go through
 // late-binding function calls, or they'll see the "wrong" value.
 // https://github.com/filecoin-project/specs-actors/issues/353
-// If EpochDurationSeconds is changed, update `lambda` and `expLamSubOne` in ./reward/reward_logic.go
-const EpochDurationSeconds = 25
-const SecondsInHour = 3600
-const SecondsInDay = 86400
-const SecondsInYear = 31556925
+// If EpochDurationSeconds is changed, update `BaselineExponent`, `lambda`, and // `expLamSubOne` in ./reward/reward_logic.go
+// You can re-calculate these constants by changing the epoch duration in ./reward/reward_calc.py and running it.
+const EpochDurationSeconds = 30
+const SecondsInHour = 60 * 60
+const SecondsInDay = 24 * SecondsInHour
 const EpochsInHour = SecondsInHour / EpochDurationSeconds
 const EpochsInDay = SecondsInDay / EpochDurationSeconds
-const EpochsInYear = SecondsInYear / EpochDurationSeconds
 
 // The expected number of block producers in each epoch.
 var ExpectedLeadersPerEpoch = int64(5)
