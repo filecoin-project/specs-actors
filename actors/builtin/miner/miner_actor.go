@@ -859,6 +859,9 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
+		sectors, err := LoadSectors(store, st.Sectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+
 		for _, dlIdx := range deadlinesToLoad {
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
@@ -875,7 +878,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
 				}
 
-				oldSectors, err := st.LoadSectorInfos(store, decl.Sectors)
+				oldSectors, err := sectors.Load(decl.Sectors)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
@@ -893,7 +896,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				}
 
 				// Overwrite sector infos.
-				err = st.PutSectors(store, newSectors...)
+				err = sectors.Store(newSectors...)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sectors %v", decl.Sectors)
 
 				// Remove old sectors from partition and assign new sectors.
@@ -910,6 +913,9 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", dlIdx)
 		}
+
+		st.Sectors, err = sectors.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save sectors")
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
@@ -1129,6 +1135,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
+		sectors, err := LoadSectors(store, st.Sectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+
 		for _, dlIdx := range deadlinesToLoad {
 			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
@@ -1174,7 +1183,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 				empty, err := newFaults.IsEmpty()
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
 				if !empty {
-					newFaultSectors, err := st.LoadSectorInfos(store, newFaults)
+					newFaultSectors, err := sectors.Load(newFaults)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load fault sectors")
 
 					newFaultPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, info.SectorSize, quant)
@@ -1189,7 +1198,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 				empty, err = retractedRecoveries.IsEmpty()
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if bitfield was empty")
 				if !empty {
-					retractedRecoverySectors, err := st.LoadSectorInfos(store, retractedRecoveries)
+					retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load recovery sectors")
 					retractedRecoveryPower := PowerForSectors(info.SectorSize, retractedRecoverySectors)
 
@@ -1282,6 +1291,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
 		}
 
+		sectors, err := LoadSectors(store, st.Sectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+
 		for _, dlIdx := range deadlinesToLoad {
 			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration deadline %d", dlIdx)
@@ -1313,7 +1325,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract existing recoveries")
 
 				// Record the new recoveries for processing at Window PoSt or deadline cron.
-				recoverySectors, err := st.LoadSectorInfos(store, recoveries)
+				recoverySectors, err := sectors.Load(recoveries)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load recovery sectors")
 				recoveryPower := PowerForSectors(info.SectorSize, recoverySectors)
 
@@ -1642,12 +1654,13 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 		info := getMinerInfo(rt, &st)
 
+		sectors, err := LoadSectors(store, st.Sectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+
 		totalInitialPledge := big.Zero()
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(result.Sectors))
 		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
-			// Note: this loads the sectors array root multiple times, redundantly.
-			// In the grand scheme of data being loaded here, it's not a big deal.
-			sectors, err := st.LoadSectorInfos(store, sectorNos)
+			sectors, err := sectors.Load(sectorNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
 			params := market.OnMinerSectorsTerminateParams{
 				Epoch:   epoch,

@@ -64,6 +64,11 @@ func (sa Sectors) Store(infos ...*SectorOnChainInfo) error {
 			return fmt.Errorf("failed to store sector %d: %w", info.SectorNumber, err)
 		}
 	}
+
+	if sa.Length() > SectorsMax {
+		return xerrors.Errorf("too many sectors")
+	}
+
 	return nil
 }
 
