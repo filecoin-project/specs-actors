@@ -2,7 +2,8 @@ package math
 
 import "math/big"
 
-// Parse a slice of strings as Q.128 formatted integers
+// Parse a slice of strings (representing integers in decimal)
+// Convention: this function is to be applied to strings representing Q.128 fixed-point numbers, and thus returns numbers in binary Q.128 representation
 func Parse(coefs []string) []*big.Int {
 	out := make([]*big.Int, len(coefs))
 	for i, coef := range coefs {
