@@ -19,15 +19,20 @@ import (
 
 // Balance of Miner Actor should be greater than or equal to
 // the sum of PreCommitDeposits and LockedFunds.
+// It is possible for balance to fall below the sum of
+// PCD, LF and InitialPledgeRequirements, and this is a bad
+// state (IP Debt) that limits a miner actor's behavior (i.e. no balance withdrawals)
 // Excess balance as computed by st.GetAvailableBalance will be
 // withdrawable or usable for pre-commit deposit or pledge lock-up.
 type State struct {
 	// Information not related to sectors.
 	Info cid.Cid
 
-	PreCommitDeposits        abi.TokenAmount // Total funds locked as PreCommitDeposits
-	LockedFunds              abi.TokenAmount // Total unvested funds locked as pledge collateral
-	VestingFunds             cid.Cid         // Array, AMT[ChainEpoch]TokenAmount
+	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
+	LockedFunds       abi.TokenAmount // Total rewards and added funds locked in vesting table
+
+	VestingFunds cid.Cid // Array, AMT[ChainEpoch]TokenAmount
+
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
@@ -884,7 +889,7 @@ func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
 
 func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	newTotal := big.Add(st.InitialPledgeRequirement, amount)
-	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge %s after adding %s to prior %s",
+	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge requirement %s after adding %s to prior %s",
 		newTotal, amount, st.InitialPledgeRequirement)
 	st.InitialPledgeRequirement = newTotal
 }
@@ -937,6 +942,28 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
 	return nil
+}
+
+// PenalizeFundsInPriorityOrder first unlocks unvested funds from the vesting table.
+// If the target is not yet hit it deducts funds from the (new) available balance.
+// Returns the amount unlocked from the vesting table and the amount taken from current balance.
+// If the penalty exceeds the total amount available in the vesting table and unlocked funds
+// the penalty is reduced to match.  This must be fixed when handling bankrupcy:
+// https://github.com/filecoin-project/specs-actors/issues/627
+func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target, unlockedBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
+	fromVesting, err = st.UnlockUnvestedFunds(store, currEpoch, target)
+	if err != nil {
+		return abi.NewTokenAmount(0), abi.NewTokenAmount(0), err
+	}
+	if fromVesting.Equals(target) {
+		return fromVesting, abi.NewTokenAmount(0), nil
+	}
+
+	// unlocked funds were just deducted from available, so track that
+	remaining := big.Sub(target, fromVesting)
+
+	fromBalance = big.Min(unlockedBalance, remaining)
+	return fromVesting, fromBalance, nil
 }
 
 // Unlocks an amount of funds that have *not yet vested*, if possible.
@@ -1064,22 +1091,35 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 	return amountUnlocked, nil
 }
 
+// Unclaimed funds that are not locked -- includes funds used to cover initial pledge requirement
+func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
+	unlockedBalance := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits)
+	Assert(unlockedBalance.GreaterThanEqual(big.Zero()))
+	return unlockedBalance
+}
+
+// Unclaimed funds.  Actor balance - (locked funds, precommit deposit, ip requirement)
+// Can go negative if the miner is in IP debt
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	availableBal := big.Sub(big.Sub(actorBalance, st.LockedFunds), st.PreCommitDeposits)
-	Assert(availableBal.GreaterThanEqual(big.Zero()))
-	return availableBal
+	availableBalance := st.GetUnlockedBalance(actorBalance)
+	return big.Sub(availableBalance, st.InitialPledgeRequirement)
 }
 
 // Returns a quantization spec that quantizes values to the last epoch in each deadline.
 func (st *State) QuantEndOfDeadline() QuantSpec {
 	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart - 1)
+	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart-1)
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	Assert(balance.GreaterThanEqual(big.Add(st.PreCommitDeposits, st.LockedFunds)))
+	Assert(balance.GreaterThanEqual(big.Sum(st.PreCommitDeposits, st.LockedFunds)))
+}
+
+func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
+	available := st.GetUnlockedBalance(balance)
+	return available.GreaterThanEqual(st.InitialPledgeRequirement)
 }
 
 //

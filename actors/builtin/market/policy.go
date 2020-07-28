@@ -13,7 +13,7 @@ const DealUpdatesInterval = 100
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
 	// Cryptoeconomic modelling to date has used an assumption of a maximum deal duration of up to one year.
 	// It very likely can be much longer, but we're not sure yet.
-	return abi.ChainEpoch(0), abi.ChainEpoch(1 * builtin.EpochsInYear) // PARAM_FINISH
+	return abi.ChainEpoch(180 * builtin.EpochsInDay), abi.ChainEpoch(366 * builtin.EpochsInDay) // PARAM_FINISH
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
