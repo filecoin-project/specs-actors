@@ -7,7 +7,7 @@ import (
 )
 
 // DealUpdatesInterval is the number of blocks between payouts for deals
-const DealUpdatesInterval = 100
+const DealUpdatesInterval = builtin.EpochsInDay
 
 // ProvCollateralPercentSupplyNum is the numerator of the percentage of normalized cirulating
 // supply that must be covered by provider collateral
