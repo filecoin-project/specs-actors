@@ -616,7 +616,7 @@ type stateHarness struct {
 //
 
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
-	err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
+	err := h.s.AddLockedFunds(epoch, sum, spec)
 	require.NoError(h.t, err)
 }
 
@@ -627,7 +627,7 @@ func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.Toke
 }
 
 func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
-	amount, err := h.s.UnlockVestedFunds(h.store, epoch)
+	amount, err := h.s.UnlockVestedFunds(epoch)
 	require.NoError(h.t, err)
 	return amount
 }

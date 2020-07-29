@@ -513,7 +513,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			depositMinimum = replaceSector.InitialPledge
 		}
 
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		duration := params.Expiration - rt.CurrEpoch()
@@ -747,7 +747,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
 		}
@@ -1457,14 +1457,13 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
 
-	store := adt.AsStore(rt)
 	var st State
 
 	newlyVested := rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
 
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
@@ -1475,7 +1474,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *amountToLock)
 		}
 
-		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
+		if err := st.AddLockedFunds(rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to lock funds in vesting table: %v", err)
 		}
 		return newlyVestedFund
@@ -1556,7 +1555,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		}
 
 		// Unlock vested funds so we can spend them.
-		newlyVestedFund, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
@@ -1721,7 +1720,7 @@ func handleProvingDeadline(rt Runtime) {
 			// Vest locked funds.
 			// This happens first so that any subsequent penalties are taken
 			// from locked vesting funds before funds free this epoch.
-			newlyVested, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+			newlyVested, err := st.UnlockVestedFunds(rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 			pledgeDelta = big.Add(pledgeDelta, newlyVested.Neg())
 		}

@@ -32,7 +32,7 @@ type State struct {
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
 	LockedFunds       abi.TokenAmount // Total rewards and added funds locked in vesting table
 
-	VestingFunds cid.Cid // Array, AMT[ChainEpoch]TokenAmount
+	VestingFunds []VestingFund
 
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
@@ -69,6 +69,12 @@ type State struct {
 
 	// Memoized power information
 	FaultyPower PowerPair
+}
+
+// VestingFund represents miner funds that will vest at the given epoch.
+type VestingFund struct {
+	Epoch  abi.ChainEpoch
+	Amount abi.TokenAmount
 }
 
 type MinerInfo struct {
@@ -151,12 +157,13 @@ type SectorLocation struct {
 }
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
+	vestedFundsSize := RewardVestingSpec.InitialDelay + RewardVestingSpec.VestPeriod
 	return &State{
 		Info: infoCid,
 
 		PreCommitDeposits:        abi.NewTokenAmount(0),
 		LockedFunds:              abi.NewTokenAmount(0),
-		VestingFunds:             emptyArrayCid,
+		VestingFunds:             make([]*VestingFund, 0, vestedFundsSize),
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors: emptyMapCid,
@@ -939,11 +946,14 @@ func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	st.InitialPledgeRequirement = newTotal
 }
 
-func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
+func (st *State) AddLockedFunds(currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
 	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return err
+
+	// maps the epochs in VestingFunds to their indices in the slice
+	epochToIndex := make(map[abi.ChainEpoch]int, len(st.VestingFunds))
+	for i := range st.VestingFunds {
+		vf := st.VestingFunds[i]
+		epochToIndex[vf.Epoch] = i
 	}
 
 	// Quantization is aligned with when regular cron will be invoked, in the last epoch of deadlines.
@@ -965,25 +975,24 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 		vestThisTime := big.Sub(targetVest, vestedSoFar)
 		vestedSoFar = targetVest
 
-		// Load existing entry, else set a new one
-		key := EpochKey(vestEpoch)
-		lockedFundEntry := big.Zero()
-		_, err = vestingFunds.Get(key, &lockedFundEntry)
-		if err != nil {
-			return err
-		}
-
-		lockedFundEntry = big.Add(lockedFundEntry, vestThisTime)
-		err = vestingFunds.Set(key, &lockedFundEntry)
-		if err != nil {
-			return err
+		// epoch already exists. Load existing entry
+		// and update amount.
+		if index, ok := epochToIndex[vestEpoch]; ok {
+			currentAmt := st.VestingFunds[index].Amount
+			st.VestingFunds[index].Amount = big.Add(currentAmt, vestThisTime)
+		} else {
+			// create a new entry and insert at the correct position
+			// st.VestingFunds is sorted by epoch
+			entry := &VestingFund{Epoch: vestEpoch, Amount: vestThisTime}
+			st.VestingFunds = append(st.VestingFunds, entry)
 		}
 	}
 
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return err
-	}
+	// sort slice by epoch
+	sort.Slice(st.VestingFunds, func(first, second int) bool {
+		return st.VestingFunds[first].Epoch <= st.VestingFunds[second].Epoch
+	})
+
 	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
 	return nil
@@ -996,7 +1005,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 // the penalty is reduced to match.  This must be fixed when handling bankrupcy:
 // https://github.com/filecoin-project/specs-actors/issues/627
 func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target, unlockedBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
-	fromVesting, err = st.UnlockUnvestedFunds(store, currEpoch, target)
+	fromVesting, err = st.UnlockUnvestedFunds(currEpoch, target)
 	if err != nil {
 		return abi.NewTokenAmount(0), abi.NewTokenAmount(0), err
 	}
@@ -1014,123 +1023,81 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 // Unlocks an amount of funds that have *not yet vested*, if possible.
 // The soonest-vesting entries are unlocked first.
 // Returns the amount actually unlocked.
-func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return big.Zero(), err
-	}
-
+func (st *State) UnlockUnvestedFunds(currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
 	amountUnlocked := abi.NewTokenAmount(0)
-	lockedEntry := abi.NewTokenAmount(0)
-	var toDelete []uint64
-	var finished = fmt.Errorf("finished")
+	lastIndex := -1
 
-	// Iterate vestingFunds are in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		if amountUnlocked.LessThan(target) {
-			if k >= int64(currEpoch) {
-				unlockAmount := big.Min(big.Sub(target, amountUnlocked), lockedEntry)
-				amountUnlocked = big.Add(amountUnlocked, unlockAmount)
-				lockedEntry = big.Sub(lockedEntry, unlockAmount)
+	for i := range st.VestingFunds {
+		vf := st.VestingFunds[i]
+		vestedAmt := vf.Amount
 
-				if lockedEntry.IsZero() {
-					toDelete = append(toDelete, uint64(k))
-				} else {
-					if err = vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		} else {
-			return finished
+		if vf.Epoch >= currEpoch || amountUnlocked.GreaterThanEqual(target) {
+			break
 		}
-	})
 
-	if err != nil && err != finished {
-		return big.Zero(), err
+		unlockAmount := big.Min(big.Sub(target, amountUnlocked), vestedAmt)
+		amountUnlocked = big.Add(amountUnlocked, unlockAmount)
+		newAmount := big.Sub(vestedAmt, unlockAmount)
+
+		if newAmount.IsZero() {
+			lastIndex = i
+		} else {
+			st.VestingFunds[i].Amount = newAmount
+		}
 	}
 
-	err = vestingFunds.BatchDelete(toDelete)
-	if err != nil {
-		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during slash: %v", err)
+	// remove all entries upto and including lastIndex
+	if lastIndex != -1 {
+		st.VestingFunds = st.VestingFunds[lastIndex+1:]
 	}
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return big.Zero(), err
-	}
 
 	return amountUnlocked, nil
 }
 
 // Unlocks all vesting funds that have vested before the provided epoch.
 // Returns the amount unlocked.
-func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return big.Zero(), err
-	}
-
+func (st *State) UnlockVestedFunds(currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	amountUnlocked := abi.NewTokenAmount(0)
-	lockedEntry := abi.NewTokenAmount(0)
-	var toDelete []uint64
-	var finished = fmt.Errorf("finished")
 
-	// Iterate vestingFunds  in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		if k < int64(currEpoch) {
-			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
-			toDelete = append(toDelete, uint64(k))
-		} else {
-			return finished // stop iterating
+	lastIndex := -1
+	for i := range st.VestingFunds {
+		vf := st.VestingFunds[i]
+		if vf.Epoch >= currEpoch {
+			break
 		}
-		return nil
-	})
 
-	if err != nil && err != finished {
-		return big.Zero(), err
+		amountUnlocked = big.Add(amountUnlocked, vf.Amount)
+		lastIndex = i
 	}
 
-	err = vestingFunds.BatchDelete(toDelete)
-	if err != nil {
-		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest: %v", err)
+	// remove all entries upto and including lastIndex
+	if lastIndex != -1 {
+		st.VestingFunds = st.VestingFunds[lastIndex+1:]
 	}
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return big.Zero(), err
-	}
 
 	return amountUnlocked, nil
 }
 
 // CheckVestedFunds returns the amount of vested funds that have vested before the provided epoch.
-func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-	if err != nil {
-		return big.Zero(), err
-	}
-
+func (st *State) CheckVestedFunds(currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
 	amountUnlocked := abi.NewTokenAmount(0)
-	lockedEntry := abi.NewTokenAmount(0)
-	var finished = fmt.Errorf("finished")
 
-	// Iterate vestingFunds  in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		if k < int64(currEpoch) {
-			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
-		} else {
-			return finished // stop iterating
+	for i := range st.VestingFunds {
+		vf := st.VestingFunds[i]
+		epoch := vf.Epoch
+		amount := vf.Amount
+
+		if epoch >= currEpoch {
+			break
 		}
-		return nil
-	})
-	if err != nil && err != finished {
-		return big.Zero(), err
+
+		amountUnlocked = big.Add(amountUnlocked, amount)
 	}
 
 	return amountUnlocked, nil
@@ -1173,10 +1140,6 @@ func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
 
 func SectorKey(e abi.SectorNumber) adt.Keyer {
 	return adt.UIntKey(uint64(e))
-}
-
-func EpochKey(e abi.ChainEpoch) uint64 {
-	return uint64(e)
 }
 
 func init() {

@@ -44,10 +44,18 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.VestingFunds (cid.Cid) (struct)
+	// t.VestingFunds ([]*miner.VestingFund) (slice)
+	if len(t.VestingFunds) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.VestingFunds was too long")
+	}
 
-	if err := cbg.WriteCidBuf(scratch, w, t.VestingFunds); err != nil {
-		return xerrors.Errorf("failed to write cid field t.VestingFunds: %w", err)
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.VestingFunds))); err != nil {
+		return err
+	}
+	for _, v := range t.VestingFunds {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	// t.InitialPledgeRequirement (big.Int) (struct)
@@ -156,18 +164,35 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.VestingFunds (cid.Cid) (struct)
+	// t.VestingFunds ([]*miner.VestingFund) (slice)
 
-	{
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
 
-		c, err := cbg.ReadCid(br)
-		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.VestingFunds: %w", err)
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.VestingFunds: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.VestingFunds = make([]*VestingFund, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v VestingFund
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
 		}
 
-		t.VestingFunds = c
-
+		t.VestingFunds[i] = &v
 	}
+
 	// t.InitialPledgeRequirement (big.Int) (struct)
 
 	{
