@@ -181,6 +181,14 @@ func (bi Int) Neg() Int {
 	return Int{big.NewInt(0).Neg(bi.Int)}
 }
 
+// Abs returns the absolute value of bi.
+func (bi Int) Abs() Int {
+	if bi.GreaterThanEqual(Zero()) {
+		return Int{big.NewInt(0).Set(bi.Int)}
+	}
+	return bi.Neg()
+}
+
 // Equals returns true if bi == o
 func (bi Int) Equals(o Int) bool {
 	return Cmp(bi, o) == 0

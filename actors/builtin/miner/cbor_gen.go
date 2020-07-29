@@ -15,7 +15,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{140}
+var lengthBufState = []byte{141}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -59,6 +59,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectors); err != nil {
 		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
+	}
+
+	// t.AllocatedSectors (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.AllocatedSectors); err != nil {
+		return xerrors.Errorf("failed to write cid field t.AllocatedSectors: %w", err)
 	}
 
 	// t.Sectors (cid.Cid) (struct)
@@ -116,7 +122,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 12 {
+	if extra != 13 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -181,6 +187,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.PreCommittedSectors = c
+
+	}
+	// t.AllocatedSectors (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.AllocatedSectors: %w", err)
+		}
+
+		t.AllocatedSectors = c
 
 	}
 	// t.Sectors (cid.Cid) (struct)
@@ -1634,7 +1652,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{137}
+var lengthBufSectorOnChainInfo = []byte{138}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1720,6 +1738,11 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.InitialPledge.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.ExpectedDayReward (big.Int) (struct)
+	if err := t.ExpectedDayReward.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1737,7 +1760,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 10 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1899,6 +1922,15 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.InitialPledge.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.InitialPledge: %w", err)
+		}
+
+	}
+	// t.ExpectedDayReward (big.Int) (struct)
+
+	{
+
+		if err := t.ExpectedDayReward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ExpectedDayReward: %w", err)
 		}
 
 	}

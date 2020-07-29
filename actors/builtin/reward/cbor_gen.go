@@ -7,13 +7,14 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{135}
+var lengthBufState = []byte{137}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -57,6 +58,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochRewardSmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.ThisEpochBaselinePower (big.Int) (struct)
 	if err := t.ThisEpochBaselinePower.MarshalCBOR(w); err != nil {
 		return err
@@ -71,6 +77,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.Epoch-1)); err != nil {
 			return err
 		}
+	}
+
+	// t.TotalMined (big.Int) (struct)
+	if err := t.TotalMined.MarshalCBOR(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -89,7 +100,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 7 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -154,6 +165,27 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
+			}
+		}
+
+	}
 	// t.ThisEpochBaselinePower (big.Int) (struct)
 
 	{
@@ -187,6 +219,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.Epoch = abi.ChainEpoch(extraI)
+	}
+	// t.TotalMined (big.Int) (struct)
+
+	{
+
+		if err := t.TotalMined.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalMined: %w", err)
+		}
+
 	}
 	return nil
 }
@@ -305,7 +346,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufThisEpochRewardReturn = []byte{130}
+var lengthBufThisEpochRewardReturn = []byte{131}
 
 func (t *ThisEpochRewardReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -318,6 +359,11 @@ func (t *ThisEpochRewardReturn) MarshalCBOR(w io.Writer) error {
 
 	// t.ThisEpochReward (big.Int) (struct)
 	if err := t.ThisEpochReward.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.ThisEpochRewardSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -342,7 +388,7 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -352,6 +398,27 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ThisEpochReward.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ThisEpochReward: %w", err)
+		}
+
+	}
+	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		pb, err := br.PeekByte()
+		if err != nil {
+			return err
+		}
+		if pb == cbg.CborNull[0] {
+			var nbuf [1]byte
+			if _, err := br.Read(nbuf[:]); err != nil {
+				return err
+			}
+		} else {
+			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
+			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
+			}
 		}
 
 	}

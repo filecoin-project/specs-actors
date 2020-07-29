@@ -16,6 +16,7 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type Runtime = vmr.Runtime
@@ -229,14 +230,18 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
-	// update next epoch's power and pledge values
-	// this must come before the next epoch's rewards are calculated
-	// so that next epoch reward reflects power added this epoch
 	rt.State().Transaction(&st, func() interface{} {
+		// update next epoch's power and pledge values
+		// this must come before the next epoch's rewards are calculated
+		// so that next epoch reward reflects power added this epoch
 		rawBytePower, qaPower := CurrentTotalPower(&st)
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
 		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
+		delta := rt.CurrEpoch() - st.LastProcessedCronEpoch
+		st.updateSmoothedEstimate(delta)
+
+		st.LastProcessedCronEpoch = rt.CurrEpoch()
 		return nil
 	})
 
@@ -285,14 +290,17 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 
 		st.addPledgeTotal(pledgeAmount.Neg())
 
+		// delete miner actor claims
+		err = claims.Delete(AddrKey(minerAddr))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove miner %v", minerAddr)
+
+		st.MinerCount -= 1
+
 		st.Claims, err = claims.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
 
 		return nil
 	})
-
-	err := a.deleteMinerActor(rt, minerAddr)
-	AssertNoError(err)
 
 	return nil
 }
@@ -343,9 +351,10 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 }
 
 type CurrentTotalPowerReturn struct {
-	RawBytePower     abi.StoragePower
-	QualityAdjPower  abi.StoragePower
-	PledgeCollateral abi.TokenAmount
+	RawBytePower            abi.StoragePower
+	QualityAdjPower         abi.StoragePower
+	PledgeCollateral        abi.TokenAmount
+	QualityAdjPowerSmoothed *smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.
@@ -358,9 +367,10 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.State().Readonly(&st)
 
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.ThisEpochRawBytePower,
-		QualityAdjPower:  st.ThisEpochQualityAdjPower,
-		PledgeCollateral: st.ThisEpochPledgeCollateral,
+		RawBytePower:            st.ThisEpochRawBytePower,
+		QualityAdjPower:         st.ThisEpochQualityAdjPower,
+		PledgeCollateral:        st.ThisEpochPledgeCollateral,
+		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 	}
 }
 
@@ -533,27 +543,4 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 		return nil
 	})
 	return nil
-}
-
-func (a Actor) deleteMinerActor(rt Runtime, miner addr.Address) error {
-	var st State
-	var err error
-	rt.State().Transaction(&st, func() interface{} {
-		claims, err2 := adt.AsMap(adt.AsStore(rt), st.Claims)
-		builtin.RequireNoErr(rt, err2, exitcode.ErrIllegalState, "failed to load claims")
-
-		err = claims.Delete(AddrKey(miner))
-		if err != nil {
-			err = errors.Wrapf(err, "failed to delete %v from claimed power table", miner)
-			return nil
-		}
-
-		st.MinerCount -= 1
-
-		st.Claims, err = claims.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
-
-		return nil
-	})
-	return err
 }
