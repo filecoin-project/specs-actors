@@ -9,6 +9,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -523,6 +524,71 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 		return TerminationResult{}, false, xerrors.Errorf("failed to store early terminations queue: %w", err)
 	}
 	return result, earlyTerminatedQ.Length() > 0, nil
+}
+
+// Discovers how skipped faults declared during post intersect with existing faults and recoveries, records the
+// new faults in state.
+// Returns the amount of power newly faulty, or declared recovered but faulty again.
+//
+// - Skipped faults that are not in the provided partition triggers an error.
+// - Skipped faults that are already declared (but not delcared recovered) are ignored.
+func (p *Partition) RecordSkippedFaults(
+	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch, skipped *bitfield.BitField,
+) (newFaultPower, retractedRecoveryPower PowerPair, err error) {
+	empty, err := skipped.IsEmpty()
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed to check if skipped sectors is empty: %w", err)
+	}
+	if empty {
+		return NewPowerPairZero(), NewPowerPairZero(), nil
+	}
+
+	// Check that the declared sectors are actually in the partition.
+	contains, err := abi.BitFieldContainsAll(p.Sectors, skipped)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if skipped faults are in partition: %w", err)
+	} else if !contains {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("skipped faults contains sectors outside partition")
+	}
+
+	// Find all skipped faults that have been labeled recovered
+	retractedRecoveries, err := bitfield.IntersectBitField(p.Recoveries, skipped)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
+	}
+	retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
+	}
+	retractedRecoveryPower = PowerForSectors(ssize, retractedRecoverySectors)
+
+	// Ignore skipped faults that are already faults or terminated.
+	newFaults, err := bitfield.SubtractBitField(skipped, p.Terminated)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract terminations from skipped: %w", err)
+	}
+	newFaults, err = bitfield.SubtractBitField(newFaults, p.Faults)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract existing faults from skipped: %w", err)
+	}
+	newFaultSectors, err := sectors.Load(newFaults)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
+	}
+
+	// Record new faults
+	newFaultPower, err = p.AddFaults(store, newFaults, newFaultSectors, faultExpiration, ssize, quant)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to add skipped faults: %w", err)
+	}
+
+	// Remove faulty recoveries
+	err = p.RemoveRecoveries(retractedRecoveries, retractedRecoveryPower)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
+	}
+
+	return newFaultPower, retractedRecoveryPower, nil
 }
 
 //
