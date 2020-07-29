@@ -3,9 +3,11 @@ package miner_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
+	rlepluslazy "github.com/filecoin-project/go-bitfield/rle"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,6 +15,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
@@ -543,6 +546,64 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 
 }
 
+func TestSectorNumberAllocation(t *testing.T) {
+	t.Run("can't allocate the same sector number twice", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		sectorNo := abi.SectorNumber(1)
+
+		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
+		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
+	})
+
+	t.Run("can mask sector numbers", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		sectorNo := abi.SectorNumber(1)
+
+		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
+
+		assert.NoError(t, harness.s.MaskSectorNumbers(harness.store, bf(0, 1, 2, 3)))
+
+		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, 3))
+		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, 4))
+	})
+
+	t.Run("can't allocate or mask out of range", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, abi.MaxSectorNumber+1))
+		assert.Error(t, harness.s.MaskSectorNumbers(harness.store, bf(99, abi.MaxSectorNumber+1)))
+	})
+
+	t.Run("can allocate in range", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, abi.MaxSectorNumber))
+		assert.NoError(t, harness.s.MaskSectorNumbers(harness.store, bf(99, abi.MaxSectorNumber)))
+	})
+
+	t.Run("can compact after growing too large", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+		// keep going till we run out of space
+		for i := uint64(0); i < math.MaxUint64; i++ {
+			no := abi.SectorNumber((i + 1) << 50)
+			err := harness.s.AllocateSectorNumber(harness.store, no)
+			if err != nil {
+				// We failed, yay!
+				code := exitcode.Unwrap(err, exitcode.Ok)
+				assert.Equal(t, code, exitcode.ErrIllegalArgument)
+
+				// mask half the sector ranges.
+				mask, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: []rlepluslazy.Run{{Val: true, Len: uint64(no) / 2}}})
+				require.NoError(t, err)
+				require.NoError(t, harness.s.MaskSectorNumbers(harness.store, mask))
+
+				// try again
+				require.NoError(t, harness.s.AllocateSectorNumber(harness.store, no))
+				return
+			}
+		}
+	})
+}
+
 type stateHarness struct {
 	t testing.TB
 
@@ -647,6 +708,10 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	emptyMap, err := adt.MakeEmptyMap(store).Root()
 	require.NoError(t, err)
 
+	emptyBitfield := bitfield.NewFromSet(nil)
+	emptyBitfieldCid, err := store.Put(store.Context(), emptyBitfield)
+	require.NoError(t, err)
+
 	emptyArray, err := adt.MakeEmptyArray(store).Root()
 	require.NoError(t, err)
 	emptyDeadline := miner.ConstructDeadline(emptyArray)
@@ -682,7 +747,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	infoCid, err := store.Put(context.Background(), &info)
 	require.NoError(t, err)
 
-	state, err := miner.ConstructState(infoCid, periodBoundary, emptyArray, emptyMap, emptyDeadlinesCid)
+	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid)
 	require.NoError(t, err)
 
 	return &stateHarness{
