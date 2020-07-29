@@ -774,9 +774,54 @@ func TestWindowPost(t *testing.T) {
 
 		// Verify proof recorded
 		deadline := actor.getDeadline(rt, dlIdx)
-		empty, err := deadline.PostSubmissions.IsEmpty()
+		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+
+		// Advance to end-of-deadline cron to verify no penalties.
+		advanceDeadline(rt, actor, &cronConfig{})
+	})
+
+	t.Run("test duplicate proof ignored", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
 		require.NoError(t, err)
-		assert.False(t, empty, "no post submission")
+
+		// Skip over deadlines until the beginning of the one with the new sector
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlinfo = actor.deadline(rt)
+		}
+
+		// Submit PoSt
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: abi.NewBitField()},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
+
+		// Submit a duplicate proof for the same partition, which should be ignored.
+		// The skipped fault declared here has no effect.
+		params := miner.SubmitWindowedPoStParams{
+			Deadline: dlIdx,
+			Partitions: []miner.PoStPartition{{
+				Index:   pIdx,
+				Skipped: bf(uint64(sector.SectorNumber)),
+			}},
+			Proofs: makePoStProofs(actor.postProofType),
+		}
+		expectQueryNetworkInfo(rt, actor)
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(actor.worker)
+		rt.Call(actor.a.SubmitWindowedPoSt, &params)
+		rt.Verify()
+
+		// Verify proof recorded
+		deadline := actor.getDeadline(rt, dlIdx)
+		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
@@ -1588,6 +1633,7 @@ type actorHarness struct {
 	key      addr.Address
 
 	sealProofType abi.RegisteredSealProof
+	postProofType abi.RegisteredPoStProof
 	sectorSize    abi.SectorSize
 	partitionSize uint64
 	periodOffset  abi.ChainEpoch
@@ -1604,44 +1650,43 @@ type actorHarness struct {
 }
 
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
-	sealProofType := abi.RegisteredSealProof_StackedDrg32GiBV1
-	sectorSize, err := sealProofType.SectorSize()
-	require.NoError(t, err)
-	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
-	require.NoError(t, err)
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
-	reward := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
-	power := abi.NewStoragePower(1 << 50)
-	return &actorHarness{
+	rwd := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
+	pwr := abi.NewStoragePower(1 << 50)
+	h := &actorHarness{
 		t:        t,
 		receiver: receiver,
 		owner:    owner,
 		worker:   worker,
 		key:      workerKey,
 
-		sealProofType: sealProofType,
-		sectorSize:    sectorSize,
-		partitionSize: partitionSectors,
+		sealProofType: 0, // Initialized in setProofType
+		sectorSize:    0, // Initialized in setProofType
+		partitionSize: 0, // Initialized in setProofType
 		periodOffset:  provingPeriodOffset,
 		nextSectorNo:  100,
 
-		epochReward:     reward,
-		networkPledge:   big.Mul(reward, big.NewIntUnsigned(1000)),
-		networkRawPower: power,
-		networkQAPower:  power,
-		baselinePower:   power,
+		epochReward:     rwd,
+		networkPledge:   big.Mul(rwd, big.NewIntUnsigned(1000)),
+		networkRawPower: pwr,
+		networkQAPower:  pwr,
+		baselinePower:   pwr,
 
-		epochRewardSmooth:  smoothing.TestingConstantEstimate(reward),
-		epochQAPowerSmooth: smoothing.TestingConstantEstimate(power),
+		epochRewardSmooth:  smoothing.TestingConstantEstimate(rwd),
+		epochQAPowerSmooth: smoothing.TestingConstantEstimate(pwr),
 	}
+	h.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	return h
 }
 
 func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 	var err error
 	h.sealProofType = proof
+	h.postProofType, err = proof.RegisteredWindowPoStProof()
+	require.NoError(h.t, err)
 	h.sectorSize, err = proof.SectorSize()
 	require.NoError(h.t, err)
 	h.partitionSize, err = proof.WindowPoStPartitionSectors()
@@ -2015,14 +2060,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 
 	expectQueryNetworkInfo(rt, h)
 
-	var registeredPoStProof, err = h.sealProofType.RegisteredWindowPoStProof()
-	require.NoError(h.t, err)
-
-	proofs := make([]abi.PoStProof, 1) // Number of proofs doesn't depend on partition count
-	for i := range proofs {
-		proofs[i].PoStProof = registeredPoStProof
-		proofs[i].ProofBytes = []byte(fmt.Sprintf("proof%d", i))
-	}
+	proofs := makePoStProofs(h.postProofType)
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
 
 	allSkipped := map[abi.SectorNumber]struct{}{}
@@ -2537,6 +2575,15 @@ func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 		SectorNumber: sectorNo,
 		Proof:        []byte("proof"),
 	}
+}
+
+func makePoStProofs(registeredPoStProof abi.RegisteredPoStProof) []abi.PoStProof {
+	proofs := make([]abi.PoStProof, 1) // Number of proofs doesn't depend on partition count
+	for i := range proofs {
+		proofs[i].PoStProof = registeredPoStProof
+		proofs[i].ProofBytes = []byte(fmt.Sprintf("proof%d", i))
+	}
+	return proofs
 }
 
 func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt.Store, faultSectorInfos []*miner.SectorOnChainInfo) *miner.DeclareFaultsParams {
