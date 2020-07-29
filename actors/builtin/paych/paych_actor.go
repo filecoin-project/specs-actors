@@ -2,7 +2,6 @@ package paych
 
 import (
 	"bytes"
-	"fmt"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
@@ -67,15 +66,16 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error) {
 	resolved, ok := rt.ResolveAddress(raw)
 	if !ok {
-		return addr.Undef, fmt.Errorf("failed to resolve address %v", raw)
+		return addr.Undef, exitcode.ErrNotFound.Wrapf("failed to resolve address %v", raw)
 	}
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef, fmt.Errorf("no code for address %v", resolved)
+		return addr.Undef, exitcode.ErrIllegalState.Wrapf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
-		return addr.Undef, fmt.Errorf("actor %v must be an account (%v), was %v", raw, builtin.AccountActorCodeID, codeCID)
+		return addr.Undef, exitcode.ErrForbidden.Wrapf("actor %v must be an account (%v), was %v", raw,
+			builtin.AccountActorCodeID, codeCID)
 	}
 	return resolved, nil
 }
@@ -253,10 +253,10 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 
 		// 4. check operation validity
 		if newSendBalance.LessThan(big.Zero()) {
-			rt.Abortf(exitcode.ErrIllegalState, "voucher would leave channel balance negative")
+			rt.Abortf(exitcode.ErrIllegalArgument, "voucher would leave channel balance negative")
 		}
 		if newSendBalance.GreaterThan(rt.CurrentBalance()) {
-			rt.Abortf(exitcode.ErrIllegalState, "not enough funds in channel to cover voucher")
+			rt.Abortf(exitcode.ErrIllegalArgument, "not enough funds in channel to cover voucher")
 		}
 
 		// 5. add new redemption ToSend

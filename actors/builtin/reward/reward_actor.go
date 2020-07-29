@@ -62,7 +62,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	minerAddr, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
+		rt.Abortf(exitcode.ErrNotFound, "failed to resolve given owner address")
 	}
 
 	priorBalance := rt.CurrentBalance()

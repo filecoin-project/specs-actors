@@ -990,7 +990,7 @@ func TestActivateDealFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
 				rt.Call(actor.ActivateDeals, params)
 			})
 
@@ -1020,7 +1020,7 @@ func TestActivateDealFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrNotFound, func() {
 				rt.Call(actor.ActivateDeals, params)
 			})
 
@@ -1054,7 +1054,7 @@ func TestActivateDealFailures(t *testing.T) {
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 			rt.SetEpoch(startEpoch + 1)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.ActivateDeals, mkActivateDealParams(sectorExpiry, dealId))
 			})
 
@@ -1067,7 +1067,7 @@ func TestActivateDealFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.ActivateDeals, mkActivateDealParams(endEpoch-1, dealId))
 			})
 
@@ -1346,7 +1346,7 @@ func TestCronTick(t *testing.T) {
 
 		// move the current epoch to the start epoch of the deal
 		rt.SetEpoch(startEpoch)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.cronTick(rt)
 		})
 	})
@@ -2187,7 +2187,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		param := &market.ComputeDataCommitmentParams{DealIDs: []abi.DealID{1}, SectorType: 1}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(actor.ComputeDataCommitment, param)
 		})
 	})
@@ -2280,7 +2280,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{1}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2294,7 +2294,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.SetCaller(provider2, builtin.StorageMinerActorCodeID)
 
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2306,7 +2306,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2318,7 +2318,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})

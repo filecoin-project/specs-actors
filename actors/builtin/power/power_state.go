@@ -11,6 +11,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
@@ -146,7 +147,7 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		return fmt.Errorf("failed to get claim: %w", err)
 	}
 	if !ok {
-		return errors.Errorf("no claim for actor %v", miner)
+		return exitcode.ErrNotFound.Wrapf("no claim for actor %v", miner)
 	}
 
 	// TotalBytes always update directly
@@ -207,7 +208,7 @@ func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, eve
 	}
 
 	if err := events.Add(epochKey(epoch), event); err != nil {
-		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
+		return xerrors.Errorf("failed to store cron event at epoch %v for miner %v: %w", epoch, event, err)
 	}
 
 	return nil
@@ -233,7 +234,7 @@ func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
 	if err := claims.Put(AddrKey(a), claim); err != nil {
-		return errors.Wrapf(err, "failed to put claim with address %s power %v", a, claim)
+		return xerrors.Errorf("failed to put claim with address %s power %v: %w", a, claim, err)
 	}
 
 	return nil
