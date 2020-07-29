@@ -430,7 +430,7 @@ func TestCommitments(t *testing.T) {
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
 
-		actor.addLockedFund(rt, big.Mul(big.NewInt(5), faultPenalty))
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
 
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta:  &lostPower,
@@ -588,7 +588,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Prove the new sector
-		actor.addLockedFund(rt, fee)
+		actor.addLockedFunds(rt, fee)
 		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
 			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
 
@@ -789,20 +789,24 @@ func TestWindowPost(t *testing.T) {
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
 		// add lots of funds so we can pay penalties without going into debt
-		actor.addLockedFund(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
 
-		// fault sector
+		// Submit first PoSt to ensure we are sufficiently early to add a fault
+		// advance to next proving period
+		advanceAndSubmitPoSt(rt, actor, infos[0])
+
+		// advance deadline and declare fault
+		advanceDeadline(rt, actor, &cronConfig{})
 		actor.declareFaults(rt, actor.declaredFaultPenalty(infos), infos...)
 
 		// advance a deadline and declare recovery
 		ongoingFee := actor.declaredFaultPenalty(infos)
 		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: ongoingFee})
 
-		// find sector and declare recovery
+		// declare recovery
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
-
 		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
 
 		// advance to epoch when submitPoSt is due
@@ -1394,7 +1398,7 @@ func TestTerminateSectors(t *testing.T) {
 
 		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
 		// correct fee calculation is used.
-		actor.addLockedFund(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
 		st := getState(rt)
 		initialLockedFunds := st.LockedFunds
 
@@ -1512,7 +1516,7 @@ func TestAddLockedFund(t *testing.T) {
 
 		// Lock some funds with AddLockedFund
 		amt := abi.NewTokenAmount(600_000)
-		actor.addLockedFund(rt, amt)
+		actor.addLockedFunds(rt, amt)
 		st = getState(rt)
 		newVestingFunds, err := adt.AsArray(store, st.VestingFunds)
 		require.NoError(t, err)
@@ -1544,7 +1548,7 @@ func TestAddLockedFund(t *testing.T) {
 		rt.ReplaceState(st)
 
 		amt := abi.NewTokenAmount(600_000)
-		actor.addLockedFund(rt, amt)
+		actor.addLockedFunds(rt, amt)
 		// manually update actor balance to include the added funds from outside
 		newBalance := big.Add(balance, amt)
 		rt.SetBalance(newBalance)
@@ -2333,7 +2337,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	rt.Verify()
 }
 
-func (h *actorHarness) addLockedFund(rt *mock.Runtime, amt abi.TokenAmount) {
+func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker, h.owner, builtin.RewardActorAddr)
 	// expect pledge update
@@ -2496,6 +2500,22 @@ func advanceToEpochWithCron(rt *mock.Runtime, h *actorHarness, e abi.ChainEpoch)
 		deadline = h.deadline(rt)
 	}
 	rt.SetEpoch(e)
+}
+
+func advanceAndSubmitPoSt(rt *mock.Runtime, h *actorHarness, sector *miner.SectorOnChainInfo) {
+	st := getState(rt)
+	dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
+	require.NoError(h.t, err)
+
+	dlinfo := h.deadline(rt)
+	for dlinfo.Index != dlIdx {
+		advanceDeadline(rt, h, &cronConfig{})
+		dlinfo = h.deadline(rt)
+	}
+	partitions := []miner.PoStPartition{
+		{Index: pIdx, Skipped: abi.NewBitField()},
+	}
+	h.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
 }
 
 //
