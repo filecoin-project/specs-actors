@@ -29,6 +29,12 @@ func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec) (Bitfield
 
 // Adds values to the queue entry for an epoch.
 func (q BitfieldQueue) AddToQueue(rawEpoch abi.ChainEpoch, values *abi.BitField) error {
+	if isEmpty, err := values.IsEmpty(); err != nil {
+		return xerrors.Errorf("failed to decode early termination bitfield: %w", err)
+	} else if isEmpty {
+		// nothing to do.
+		return nil
+	}
 	epoch := q.quant.QuantizeUp(rawEpoch)
 	bf := abi.NewBitField()
 	if _, err := q.Array.Get(uint64(epoch), bf); err != nil {
