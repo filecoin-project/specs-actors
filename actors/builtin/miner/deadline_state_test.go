@@ -79,7 +79,7 @@ func TestDeadlines(t *testing.T) {
 		}, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		expectedPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1, 3, 6)))
+		expectedPower := sectorPower(t, 1, 3, 6)
 		require.True(t, expectedPower.Equals(removedPower), "dlState to remove power for terminated sectors")
 
 		dlState.withTerminations(1, 3, 6).
@@ -147,7 +147,7 @@ func TestDeadlines(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		expectedPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(5, 6)))
+		expectedPower := sectorPower(t, 5, 6)
 		assert.True(t, faultyPower.Equals(expectedPower))
 
 		dlState.withFaults(5, 6).
@@ -437,10 +437,10 @@ func (s expectedDeadlineState) assert(t *testing.T, rt *mock.Runtime, dl *miner.
 		t, rt, dl, s.quant, s.sectorSize, s.partitionSize, s.sectors,
 	)
 
-	assertBitfieldsEqual(t, faults, orEmpty(s.faults))
-	assertBitfieldsEqual(t, recoveries, orEmpty(s.recovering))
-	assertBitfieldsEqual(t, terminations, orEmpty(s.terminations))
-	assertBitfieldsEqual(t, dl.PostSubmissions, orEmpty(s.posts))
+	assertBitfieldsEqual(t, orEmpty(s.faults), faults)
+	assertBitfieldsEqual(t, orEmpty(s.recovering), recoveries)
+	assertBitfieldsEqual(t, orEmpty(s.terminations), terminations)
+	assertBitfieldsEqual(t, orEmpty(s.posts), dl.PostSubmissions)
 
 	require.Equal(t, len(s.partitionSectors), len(partitions))
 
@@ -550,11 +550,11 @@ func checkDeadlineInvariants(
 			var bf abi.BitField
 			found, err := expirationEpochs.Get(uint64(epoch), &bf)
 			require.NoError(t, err)
-			require.True(t, found)
+			require.True(t, found, "expected to find partitions with expirations at epoch %d", epoch)
 			for _, p := range partitions {
 				present, err := bf.IsSet(p)
 				require.NoError(t, err)
-				assert.True(t, present)
+				assert.True(t, present, "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
 			}
 		}
 	}
