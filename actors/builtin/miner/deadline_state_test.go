@@ -42,6 +42,10 @@ func TestDeadlines(t *testing.T) {
 		sectors:       sectors,
 	}
 
+	sectorPower := func(t *testing.T, sectorNos ...uint64) miner.PowerPair {
+		return miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(sectorNos...)))
+	}
+
 	//
 	// Define some basic test scenarios that build one each other.
 	//
@@ -358,8 +362,73 @@ func TestDeadlines(t *testing.T) {
 			bf(9),
 		).assert(t, rt, dl)
 	})
-	// TODO: test posts with faults, recoveries, etc.
-	// https://github.com/filecoin-project/specs-actors/issues/829
+
+	t.Run("post with faults & recoveries", func(t *testing.T) {
+		rt := builder.Build(t)
+		dl := emptyDeadline(t, rt)
+
+		// Marks sectors 5 & 6 (partition 1) as faulty.
+		addThenMarkFaulty(t, rt, dl)
+
+		store := adt.AsStore(rt)
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		// Declare sector 6 recovered.
+		require.NoError(t, dl.DeclareFaultsRecovered(store, sectorArr, sectorSize, map[uint64]*abi.BitField{
+			1: bf(6),
+		}))
+
+		// We're now recovering 6.
+		dlState.withRecovering(6).
+			withFaults(5, 6).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+
+		// Prove partitions 0 & 1, skipping sector 7.
+		postResult, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+			{Index: 0, Skipped: bf()},
+			{Index: 1, Skipped: bf(7)},
+		})
+
+		require.NoError(t, err)
+		// 5 was faulty, 7 is now faulty, 6 has been recovered
+		assertBitfieldEquals(t, postResult.Sectors, 1, 2, 3, 4, 5, 6, 7, 8)
+		assertBitfieldEquals(t, postResult.IgnoredSectors, 5, 7)
+		// sector 7 is newly faulty
+		require.True(t, postResult.NewFaultyPower.Equals(sectorPower(t, 7)))
+		// we didn't fail to recover anything.
+		require.True(t, postResult.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
+		// we recovered 6.
+		require.True(t, postResult.RecoveredPower.Equals(sectorPower(t, 6)))
+
+		// First two partitions should be posted.
+		dlState.withPosts(0, 1).
+			withFaults(5, 7).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+
+		newFaultyPower, failedRecoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13)
+		require.NoError(t, err)
+
+		// Sector 9 wasn't proven.
+		require.True(t, newFaultyPower.Equals(sectorPower(t, 9)))
+		// No new changes to recovering power.
+		require.True(t, failedRecoveryPower.Equals(miner.NewPowerPairZero()))
+
+		// Posts taken care of.
+		dlState.withFaults(5, 7, 9).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+	})
 }
 
 func sectorsArr(t *testing.T, rt *mock.Runtime, sectors []*miner.SectorOnChainInfo) miner.Sectors {
