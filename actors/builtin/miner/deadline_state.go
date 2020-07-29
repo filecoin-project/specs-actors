@@ -828,3 +828,64 @@ func (dl *Deadline) DeclareFaultsRecovered(
 	}
 	return nil
 }
+
+// ProcessPoSt processes all PoSt submissions, marking unproven sectors as
+// faulty. It returns any new faulty power and failed recovery power.
+func (dl *Deadline) ProcessPoSt(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
+	newFaultyPower, failedRecoveryPower PowerPair, err error,
+) {
+	newFaultyPower = NewPowerPairZero()
+	failedRecoveryPower = NewPowerPairZero()
+
+	partitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+	}
+
+	detectedAny := false
+	for partIdx := uint64(0); partIdx < partitions.Length(); partIdx++ {
+		proven, err := dl.PostSubmissions.IsSet(partIdx)
+		if err != nil {
+			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to check submission for partition %d: %w", partIdx, err)
+		}
+		if proven {
+			continue
+		}
+		detectedAny = true
+
+		var partition Partition
+		found, err := partitions.Get(partIdx, &partition)
+		if err != nil {
+			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+		}
+		if !found {
+			return newFaultyPower, failedRecoveryPower, exitcode.ErrIllegalState.Wrapf("no partition %d", partIdx)
+		}
+
+		partFaultyPower, partFailedRecoveryPower, err := partition.RecordMissedPost(store, faultExpirationEpoch, quant)
+		if err != nil {
+			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to record missed PoSt for partition %v: %w", partIdx, err)
+		}
+
+		// Save new partition state.
+		err = partitions.Set(partIdx, &partition)
+		if err != nil {
+			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to update partition %v: %w", partIdx, err)
+		}
+
+		newFaultyPower = newFaultyPower.Add(partFaultyPower)
+		failedRecoveryPower = failedRecoveryPower.Add(partFailedRecoveryPower)
+	}
+
+	// Save modified deadline state.
+	if detectedAny {
+		dl.Partitions, err = partitions.Root()
+		if err != nil {
+			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to store partitions: %w", err)
+		}
+	}
+
+	// Reset PoSt submissions.
+	dl.PostSubmissions = abi.NewBitField()
+	return newFaultyPower, failedRecoveryPower, nil
+}

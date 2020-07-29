@@ -1686,38 +1686,12 @@ func handleProvingDeadline(rt Runtime) {
 			faultExpiration := dlInfo.Last() + FaultMaxAge
 			penalizePowerTotal := big.Zero()
 
-			partitions, err := deadline.PartitionsArray(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlInfo.Index)
+			newFaultyPower, failedRecoveryPower, err := deadline.ProcessPoSt(store, quant, faultExpiration)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process end of deadline %d", dlInfo.Index)
 
-			detectedAny := false
-			for i := uint64(0); i < partitions.Length(); i++ {
-				key := PartitionKey{dlInfo.Index, i}
-				proven, err := deadline.PostSubmissions.IsSet(i)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check submission for %v", key)
-				if proven {
-					continue
-				}
-				detectedAny = true
-
-				var partition Partition
-				found, err := partitions.Get(i, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions %v", key)
-				if !found {
-					rt.Abortf(exitcode.ErrIllegalState, "no partition %v", key)
-				}
-
-				newFaultPower, failedRecoveryPower, err := partition.RecordMissedPost(store, faultExpiration, quant)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record missed PoSt for %v", key)
-
-				// Save new partition state.
-				err = partitions.Set(i, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
-
-				// Failed recoveries attract a penalty, but not repeated subtraction of the power.
-				st.FaultyPower = st.FaultyPower.Add(newFaultPower)
-				powerDelta = powerDelta.Sub(newFaultPower)
-				penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultPower.QA, failedRecoveryPower.QA)
-			}
+			st.FaultyPower = st.FaultyPower.Add(newFaultyPower)
+			powerDelta = powerDelta.Sub(newFaultyPower)
+			penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultyPower.QA, failedRecoveryPower.QA)
 
 			// Unlock sector penalty for all undeclared faults.
 			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal)
@@ -1729,14 +1703,6 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
 			pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
 
-			// Save modified deadline state.
-			if detectedAny {
-				deadline.Partitions, err = partitions.Root()
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store partitions")
-			}
-
-			// Reset PoSt submissions.
-			deadline.PostSubmissions = abi.NewBitField()
 		}
 		{
 			// Record faulty power for penalisation of ongoing faults, before popping expirations.
