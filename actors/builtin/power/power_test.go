@@ -149,7 +149,7 @@ func TestUpdateClaimedPowerFailures(t *testing.T) {
 		rt.SetCaller(miner, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(ac.UpdateClaimedPower, &params)
 		})
 
@@ -318,7 +318,7 @@ func TestOnConsensusFault(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		pledge := abi.NewTokenAmount(10)
 
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			ac.onConsensusFault(rt, miner, &pledge)
 		})
 
