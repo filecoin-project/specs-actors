@@ -295,6 +295,71 @@ func TestDeadlines(t *testing.T) {
 				bf(9),
 			).assert(t, rt, dl)
 	})
+
+	t.Run("post all the things", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		dl := emptyDeadline(t, rt)
+		addSectors(t, rt, dl)
+
+		store := adt.AsStore(rt)
+
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		postResult1, err := dl.ProcessWindowedPoSt(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+			{Index: 0, Skipped: bf()},
+			{Index: 1, Skipped: bf()},
+		})
+		require.NoError(t, err)
+		assertBitfieldEquals(t, postResult1.Sectors, 1, 2, 3, 4, 5, 6, 7, 8)
+		assertEmptyBitfield(t, postResult1.IgnoredSectors)
+		require.True(t, postResult1.NewFaultyPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult1.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult1.RecoveredPower.Equals(miner.NewPowerPairZero()))
+
+		// First two partitions posted
+		dlState.withPosts(0, 1).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+
+		postResult2, err := dl.ProcessWindowedPoSt(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+			{Index: 1, Skipped: bf()}, // ignore already posted partitions
+			{Index: 2, Skipped: bf()},
+		})
+		require.NoError(t, err)
+		assertBitfieldEquals(t, postResult2.Sectors, 9)
+		assertEmptyBitfield(t, postResult2.IgnoredSectors)
+		require.True(t, postResult2.NewFaultyPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult2.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult2.RecoveredPower.Equals(miner.NewPowerPairZero()))
+
+		// All 3 partitions posted
+		dlState.withPosts(0, 1, 2).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+
+		newFaultyPower, failedRecoveryPower, err := dl.ProcessPoSt(store, quantSpec, 13)
+		require.NoError(t, err)
+
+		// No power change on successful post.
+		require.True(t, newFaultyPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, failedRecoveryPower.Equals(miner.NewPowerPairZero()))
+
+		// Everything back to normal.
+		dlState.withPartitions(
+			bf(1, 2, 3, 4),
+			bf(5, 6, 7, 8),
+			bf(9),
+		).assert(t, rt, dl)
+	})
+	// TODO: test posts with faults, recoveries, etc.
+	// https://github.com/filecoin-project/specs-actors/issues/829
 }
 
 func sectorsArr(t *testing.T, rt *mock.Runtime, sectors []*miner.SectorOnChainInfo) miner.Sectors {
