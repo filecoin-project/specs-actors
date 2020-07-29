@@ -302,8 +302,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		deadline, err := deadlines.LoadDeadline(store, params.Deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", params.Deadline)
 
+		// Record proven sectors/partitions, returning updates to power and the final set of sectors
+		// proven/skipped.
+		//
+		// NOTE: This function does not actually check the proofs but does assume that they'll be
+		// successfully validated. The actual proof verification is done below in verifyWindowedPost.
+		//
+		// If proof verification fails, the this deadline MUST NOT be saved and this function should
+		// be aborted.
 		faultExpiration := currDeadline.Last() + FaultMaxAge
-		postResult, err = deadline.ProcessWindowedPoSt(store, sectors, info.SectorSize, st.QuantEndOfDeadline(), faultExpiration, params.Partitions)
+		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, st.QuantEndOfDeadline(), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
 		// Validate proofs
@@ -319,6 +327,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		if len(sectorInfos) > 0 {
 			// Verify the proof.
 			// A failed verification doesn't immediately cause a penalty; the miner can try again.
+			//
+			// This function aborts on failure.
 			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 		}
 
@@ -1076,11 +1086,14 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 		quant := st.QuantEndOfDeadline()
 
-		// Group declarations by deadline, and remember iteration order.
-		byDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Faults))
+		// Convert declarations to sectors grouped by deadline, then partition.
+		//
+		// Deadlines are processed in declaration order, partitions are
+		// processed in order of ascending partition index.
+		partitionsByDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Faults))
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Faults {
-			forDl, ok := byDeadline[decl.Deadline]
+			forDl, ok := partitionsByDeadline[decl.Deadline]
 			if !ok {
 				forDl = make(map[uint64]*bitfield.BitField, 1)
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
@@ -1107,7 +1120,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
-			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, quant, faultExpirationEpoch, byDeadline[dlIdx])
+			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, quant, faultExpirationEpoch, partitionsByDeadline[dlIdx])
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
 			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultyPower)
@@ -1180,11 +1193,14 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		// Group declarations by deadline, and remember iteration order.
-		byDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Recoveries))
+		// Convert declarations to sectors grouped by deadline, then partition.
+		//
+		// Deadlines are processed in declaration order, partitions are
+		// processed in order of ascending partition index.
+		partitionsByDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Recoveries))
 		var deadlinesToLoad []uint64
 		for _, decl := range params.Recoveries {
-			forDl, ok := byDeadline[decl.Deadline]
+			forDl, ok := partitionsByDeadline[decl.Deadline]
 			if !ok {
 				forDl = make(map[uint64]*bitfield.BitField, 1)
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
@@ -1209,7 +1225,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			err = deadline.DeclareFaultsRecovered(store, sectors, info.SectorSize, byDeadline[dlIdx])
+			err = deadline.DeclareFaultsRecovered(store, sectors, info.SectorSize, partitionsByDeadline[dlIdx])
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare recoveries for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
@@ -1637,7 +1653,7 @@ func handleProvingDeadline(rt Runtime) {
 			faultExpiration := dlInfo.Last() + FaultMaxAge
 			penalizePowerTotal := big.Zero()
 
-			newFaultyPower, failedRecoveryPower, err := deadline.ProcessPoSt(store, quant, faultExpiration)
+			newFaultyPower, failedRecoveryPower, err := deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process end of deadline %d", dlInfo.Index)
 
 			st.FaultyPower = st.FaultyPower.Add(newFaultyPower)

@@ -306,7 +306,7 @@ func TestDeadlines(t *testing.T) {
 
 		sectorArr := sectorsArr(t, rt, sectors)
 
-		postResult1, err := dl.ProcessWindowedPoSt(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+		postResult1, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
 			{Index: 0, Skipped: bf()},
 			{Index: 1, Skipped: bf()},
 		})
@@ -325,7 +325,7 @@ func TestDeadlines(t *testing.T) {
 				bf(9),
 			).assert(t, rt, dl)
 
-		postResult2, err := dl.ProcessWindowedPoSt(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+		postResult2, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
 			{Index: 1, Skipped: bf()}, // ignore already posted partitions
 			{Index: 2, Skipped: bf()},
 		})
@@ -344,7 +344,7 @@ func TestDeadlines(t *testing.T) {
 				bf(9),
 			).assert(t, rt, dl)
 
-		newFaultyPower, failedRecoveryPower, err := dl.ProcessPoSt(store, quantSpec, 13)
+		newFaultyPower, failedRecoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13)
 		require.NoError(t, err)
 
 		// No power change on successful post.

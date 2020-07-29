@@ -823,9 +823,10 @@ func (dl *Deadline) DeclareFaultsRecovered(
 	return nil
 }
 
-// ProcessPoSt processes all PoSt submissions, marking unproven sectors as
-// faulty. It returns any new faulty power and failed recovery power.
-func (dl *Deadline) ProcessPoSt(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
+// ProcessDeadlineEnd processes all PoSt submissions, marking unproven sectors as
+// faulty and clearing failed recoveries. It returns any new faulty power and
+// failed recovery power.
+func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
 	newFaultyPower, failedRecoveryPower PowerPair, err error,
 ) {
 	newFaultyPower = NewPowerPairZero()
@@ -900,7 +901,17 @@ func (p *PoStResult) PenaltyPower() PowerPair {
 	return p.NewFaultyPower.Add(p.RetractedRecoveryPower)
 }
 
-func (dl *Deadline) ProcessWindowedPoSt(
+// RecordProvenSectors processes a series of posts, recording proven partitions
+// and marking skipped sectors as faulty.
+//
+// It returns a PoStResult containing the list of proven and skipped sectors and
+// changes to power (newly faulty power, power that should have been proven
+// recovered but wasn't, and newly recovered power).
+//
+// NOTE: This function does not actually _verify_ any proofs. The returned
+// Sectors and IgnoredSectors must subsequently be validated against the PoSt
+// submitted by the miner.
+func (dl *Deadline) RecordProvenSectors(
 	store adt.Store, sectors Sectors,
 	ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch,
 	postPartitions []PoStPartition,
