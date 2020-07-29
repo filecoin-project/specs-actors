@@ -621,7 +621,7 @@ func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount,
 }
 
 func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.TokenAmount) abi.TokenAmount {
-	amount, err := h.s.UnlockUnvestedFunds(h.store, epoch, target)
+	amount, err := h.s.UnlockUnvestedFunds(epoch, target)
 	require.NoError(h.t, err)
 	return amount
 }
@@ -633,16 +633,7 @@ func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
 }
 
 func (h *stateHarness) vestingFundsStoreEmpty() bool {
-	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
-	require.NoError(h.t, err)
-	empty := true
-	lockedEntry := abi.NewTokenAmount(0)
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		empty = false
-		return nil
-	})
-	require.NoError(h.t, err)
-	return empty
+	return len(h.s.VestingFunds) == 0
 }
 
 //

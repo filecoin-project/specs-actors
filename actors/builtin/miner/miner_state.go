@@ -157,13 +157,12 @@ type SectorLocation struct {
 }
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
-	vestedFundsSize := RewardVestingSpec.InitialDelay + RewardVestingSpec.VestPeriod
 	return &State{
 		Info: infoCid,
 
 		PreCommitDeposits:        abi.NewTokenAmount(0),
 		LockedFunds:              abi.NewTokenAmount(0),
-		VestingFunds:             make([]*VestingFund, 0, vestedFundsSize),
+		VestingFunds:             nil,
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors: emptyMapCid,
@@ -983,7 +982,7 @@ func (st *State) AddLockedFunds(currEpoch abi.ChainEpoch, vestingSum abi.TokenAm
 		} else {
 			// create a new entry and insert at the correct position
 			// st.VestingFunds is sorted by epoch
-			entry := &VestingFund{Epoch: vestEpoch, Amount: vestThisTime}
+			entry := VestingFund{Epoch: vestEpoch, Amount: vestThisTime}
 			st.VestingFunds = append(st.VestingFunds, entry)
 		}
 	}
@@ -1028,21 +1027,23 @@ func (st *State) UnlockUnvestedFunds(currEpoch abi.ChainEpoch, target abi.TokenA
 	lastIndex := -1
 
 	for i := range st.VestingFunds {
-		vf := st.VestingFunds[i]
-		vestedAmt := vf.Amount
-
-		if vf.Epoch >= currEpoch || amountUnlocked.GreaterThanEqual(target) {
+		if amountUnlocked.GreaterThanEqual(target) {
 			break
 		}
 
-		unlockAmount := big.Min(big.Sub(target, amountUnlocked), vestedAmt)
-		amountUnlocked = big.Add(amountUnlocked, unlockAmount)
-		newAmount := big.Sub(vestedAmt, unlockAmount)
+		vf := st.VestingFunds[i]
+		if vf.Epoch >= currEpoch {
+			vestedAmt := vf.Amount
 
-		if newAmount.IsZero() {
-			lastIndex = i
-		} else {
-			st.VestingFunds[i].Amount = newAmount
+			unlockAmount := big.Min(big.Sub(target, amountUnlocked), vestedAmt)
+			amountUnlocked = big.Add(amountUnlocked, unlockAmount)
+			newAmount := big.Sub(vestedAmt, unlockAmount)
+
+			if newAmount.IsZero() {
+				lastIndex = i
+			} else {
+				st.VestingFunds[i].Amount = newAmount
+			}
 		}
 	}
 

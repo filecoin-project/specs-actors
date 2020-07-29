@@ -102,8 +102,8 @@ func TestConstruction(t *testing.T) {
 
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, big.Zero(), st.LockedFunds)
-		assert.True(t, st.VestingFunds.Defined())
 		assert.True(t, st.PreCommittedSectors.Defined())
+		fmt.Printf("\n %v", cap(st.VestingFunds))
 
 		assert.True(t, st.Sectors.Defined())
 		assert.Equal(t, provingPeriodStart, st.ProvingPeriodStart)
@@ -1507,32 +1507,27 @@ func TestAddLockedFund(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		st := getState(rt)
-		store := rt.AdtStore()
 
 		// Nothing vesting to start
-		vestingFunds, err := adt.AsArray(store, st.VestingFunds)
-		require.NoError(t, err)
-		assert.Equal(t, uint64(0), vestingFunds.Length())
+		assert.Empty(t, st.VestingFunds)
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
 		// Lock some funds with AddLockedFund
 		amt := abi.NewTokenAmount(600_000)
 		actor.addLockedFund(rt, amt)
 		st = getState(rt)
-		newVestingFunds, err := adt.AsArray(store, st.VestingFunds)
-		require.NoError(t, err)
-		require.Equal(t, uint64(180), newVestingFunds.Length())
+		require.Len(t, st.VestingFunds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		lockedEntry := abi.NewTokenAmount(0)
 		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
-		err = newVestingFunds.ForEach(&lockedEntry, func(k int64) error {
-			assert.Equal(t, int64(expectedOffset), k%int64(miner.PledgeVestingSpec.Quantization))
-			return nil
-		})
-		require.NoError(t, err)
-		assert.Equal(t, amt, st.LockedFunds)
 
+		for i := range st.VestingFunds {
+			vf := st.VestingFunds[i]
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.PledgeVestingSpec.Quantization))
+
+		}
+
+		assert.Equal(t, amt, st.LockedFunds)
 	})
 
 	t.Run("funds vest when under collateralized", func(t *testing.T) {
