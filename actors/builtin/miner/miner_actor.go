@@ -327,16 +327,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			// Process new faults and accumulate new faulty power.
 			// This updates the faults in partition state ahead of calculating the sectors to include for proof.
 			newFaultPower, retractedRecoveryPower := processSkippedFaults(rt, &st, store, faultExpiration, &partition, post.Skipped, info.SectorSize)
+			st.FaultyPower = st.FaultyPower.Add(newFaultPower)
 
 			// Process recoveries, assuming the proof will be successful.
 			// This similarly updates state.
 			recoveredPower := processRecoveries(rt, &st, store, &partition, info.SectorSize)
+			st.FaultyPower = st.FaultyPower.Sub(recoveredPower)
 
 			// This will be rolled back if the method aborts with a failed proof.
 			err = partitions.Set(post.Index, &partition)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update partition %v", key)
-
-			st.FaultyPower = st.FaultyPower.Add(newFaultPowerTotal)
 
 			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultPower)
 			retractedRecoveryPowerTotal = retractedRecoveryPowerTotal.Add(retractedRecoveryPower)
