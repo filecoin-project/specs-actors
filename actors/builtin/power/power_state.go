@@ -80,7 +80,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
 		FirstCronEpoch:            0,
 		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
-		CronEventQueue:            emptyMapCid,
+		CronEventQueue:            emptyMMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,
 		MinerAboveMinPowerCount:   0,

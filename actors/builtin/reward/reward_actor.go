@@ -66,20 +66,24 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	}
 
 	priorBalance := rt.CurrentBalance()
-
 	penalty := abi.NewTokenAmount(0)
+	totalReward := big.Zero()
 	var st State
-	rt.State().Readonly(&st)
+	rt.State().Transaction(&st, func() interface{} {
+		blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
+		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
+		totalReward = big.Add(blockReward, params.GasReward)
+		if totalReward.GreaterThan(rt.CurrentBalance()) {
+			rt.Log(vmr.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", rt.CurrentBalance(), totalReward)
+			totalReward = rt.CurrentBalance()
 
-	blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
-	blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
-
-	totalReward := big.Add(blockReward, params.GasReward)
-
-	if totalReward.GreaterThan(rt.CurrentBalance()) {
-		rt.Log(vmr.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", rt.CurrentBalance(), totalReward)
-		totalReward = rt.CurrentBalance()
-	}
+			blockReward = big.Sub(totalReward, params.GasReward)
+			// Since we have already asserted the balance is greater than gas reward blockReward is >= 0
+			AssertMsg(blockReward.GreaterThanEqual(big.Zero()), "programming error, block reward is %v below zero", blockReward)
+		}
+		st.TotalMined = big.Add(st.TotalMined, blockReward)
+		return nil
+	})
 
 	// Cap the penalty at the total reward value.
 	penalty = big.Min(params.Penalty, totalReward)
@@ -143,8 +147,8 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 		}
 
 		st.updateToNextEpochWithReward(*currRealizedPower)
-		// only update smoothed estimates after updating rewart
-		st.updateSmoothedEstimates(rt.CurrEpoch() - prev)
+		// only update smoothed estimates after updating reward and epoch
+		st.updateSmoothedEstimates(st.Epoch - prev)
 		return nil
 	})
 	return nil

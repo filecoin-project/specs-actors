@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -114,6 +115,50 @@ func TestAwardBlockReward(t *testing.T) {
 		})
 		rt.Verify()
 	})
+
+	t.Run("TotalMined tracks correctly", func(t *testing.T) {
+		rt := builder.Build(t)
+		startRealizedPower := abi.NewStoragePower(1)
+		actor.constructAndVerify(rt, &startRealizedPower)
+		miner := tutil.NewIDAddr(t, 1000)
+
+		st := getState(rt)
+		assert.Equal(t, big.Zero(), st.TotalMined)
+		st.ThisEpochReward = abi.NewTokenAmount(5000)
+		rt.ReplaceState(st)
+		// enough balance to pay 3 full rewards and one partial
+		totalPayout := abi.NewTokenAmount(3500)
+		rt.SetBalance(totalPayout)
+
+		// award normalized by expected leaders is 1000
+		actor.awardBlockReward(rt, miner, big.Zero(), big.Zero(), 1, big.NewInt(1000))
+		actor.awardBlockReward(rt, miner, big.Zero(), big.Zero(), 1, big.NewInt(1000))
+		actor.awardBlockReward(rt, miner, big.Zero(), big.Zero(), 1, big.NewInt(1000))
+		actor.awardBlockReward(rt, miner, big.Zero(), big.Zero(), 1, big.NewInt(500)) // partial payout when balance below reward
+
+		newState := getState(rt)
+		assert.Equal(t, totalPayout, newState.TotalMined)
+
+	})
+}
+
+func TestSuccessiveKPIUpdates(t *testing.T) {
+	actor := rewardHarness{reward.Actor{}, t}
+	builder := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	rt := builder.Build(t)
+	power := abi.NewStoragePower(1 << 50)
+	actor.constructAndVerify(rt, &power)
+
+	rt.SetEpoch(abi.ChainEpoch(1))
+	actor.updateNetworkKPI(rt, &power)
+
+	rt.SetEpoch(abi.ChainEpoch(2))
+	actor.updateNetworkKPI(rt, &power)
+
+	rt.SetEpoch(abi.ChainEpoch(3))
+	actor.updateNetworkKPI(rt, &power)
+
 }
 
 type rewardHarness struct {
@@ -127,6 +172,29 @@ func (h *rewardHarness) constructAndVerify(rt *mock.Runtime, currRawPower *abi.S
 	assert.Nil(h.t, ret)
 	rt.Verify()
 
+}
+
+func (h *rewardHarness) updateNetworkKPI(rt *mock.Runtime, currRawPower *abi.StoragePower) {
+	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+	ret := rt.Call(h.UpdateNetworkKPI, currRawPower)
+	assert.Nil(h.t, ret)
+	rt.Verify()
+}
+
+func (h *rewardHarness) awardBlockReward(rt *mock.Runtime, miner address.Address, penalty, gasReward abi.TokenAmount, winCount int64, expectedTotalReward abi.TokenAmount) {
+	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+	rt.ExpectSend(miner, builtin.MethodsMiner.AddLockedFund, &expectedTotalReward, expectedTotalReward, nil, 0)
+	rt.Call(h.AwardBlockReward, &reward.AwardBlockRewardParams{
+		Miner:     miner,
+		Penalty:   big.Zero(),
+		GasReward: big.Zero(),
+		WinCount:  1,
+	})
+	if penalty.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, &penalty, penalty, nil, 0)
+	}
+	rt.Verify()
 }
 
 func getState(rt *mock.Runtime) *reward.State {

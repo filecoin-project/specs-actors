@@ -1,43 +1,5 @@
 package exitcode
 
-import (
-	"fmt"
-	"strconv"
-)
-
-type ExitCode int64
-
-func (x ExitCode) IsSuccess() bool {
-	return x == Ok
-}
-
-func (x ExitCode) IsError() bool {
-	return !x.IsSuccess()
-}
-
-// Whether an exit code indicates a message send failure.
-// A send failure means that the caller's CallSeqNum is not incremented and the caller has not paid
-// gas fees for the message (because the caller doesn't exist or can't afford it).
-// A receipt with send failure does not indicate that the message (or another one carrying the same CallSeqNum)
-// could not apply in the future, against a different state.
-func (x ExitCode) IsSendFailure() bool {
-	return x == SysErrSenderInvalid || x == SysErrSenderStateInvalid
-}
-
-// A non-canonical string representation for human inspection.
-func (x ExitCode) String() string {
-	name, ok := names[x]
-	if ok {
-		return fmt.Sprintf("%s(%d)", name, x)
-	}
-	return strconv.FormatInt(int64(x), 10)
-}
-
-// Implement error to trigger Go compiler checking of exit code return values.
-func (x ExitCode) Error() string {
-	return x.String()
-}
-
 // The system error codes are reserved for use by the runtime.
 // No actor may use one explicitly. Correspondingly, no runtime invocation should abort with an exit
 // code outside this list.
