@@ -1940,23 +1940,8 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 			params.ReplaceSectorNumber, replaceSector.Expiration, params.Expiration)
 	}
 
-	status, err := st.SectorStatus(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector health %v", params.ReplaceSectorNumber)
-
-	switch status {
-	case SectorNotFound:
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector %d not found at %d:%d (deadline:partition)",
-			params.ReplaceSectorNumber, params.ReplaceSectorDeadline, params.ReplaceSectorPartition,
-		)
-	case SectorFaulty:
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace faulty sector %d", params.ReplaceSectorNumber)
-	case SectorTerminated:
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace terminated sector %d", params.ReplaceSectorNumber)
-	case SectorHealthy:
-		// pass
-	default:
-		panic(fmt.Sprintf("unexpected sector status %d", status))
-	}
+	err = st.CheckSectorHealth(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector %v", params.ReplaceSectorNumber)
 
 	return replaceSector
 }

@@ -121,7 +121,8 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 			assert.False(t, di0.HasElapsed())
 			assert.True(t, di0.FaultCutoffPassed())
 
-			// The next not-elapsed is this one, which is still open
+			// The next not-elapsed is this one, which is not yet
+			// open, but not elapsed either.
 			nxt0 := di0.NextNotElapsed()
 			assert.Equal(t, periodStart, nxt0.PeriodStart)
 			assert.Equal(t, uint64(0), nxt0.Index)
@@ -129,7 +130,8 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 			di1 := miner.NewDeadlineInfo(periodStart, 1, curr)
 			assert.False(t, di1.IsOpen())
 			assert.False(t, di1.HasElapsed())
-			assert.False(t, di1.FaultCutoffPassed())
+			// The fault cutoff is more than one deadline into the future.
+			assert.True(t, di1.FaultCutoffPassed())
 
 			// The next not-elapsed is the upcoming one
 			nxt1 := di1.NextNotElapsed()
