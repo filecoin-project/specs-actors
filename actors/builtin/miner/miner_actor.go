@@ -103,6 +103,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
 	}
 
+	emptyBitfield := bitfield.NewFromSet(nil)
+	emptyBitfieldCid := rt.Store().Put(emptyBitfield)
+
 	emptyDeadline := ConstructDeadline(emptyArray)
 	emptyDeadlineCid := rt.Store().Put(emptyDeadline)
 
@@ -119,7 +122,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
 	infoCid := rt.Store().Put(info)
 
-	state, err := ConstructState(infoCid, periodStart, emptyArray, emptyMap, emptyDeadlinesCid)
+	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
@@ -483,16 +486,22 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
 		}
 
+		err := st.AllocateSectorNumber(store, params.SectorNumber)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
+
+		// The following two checks shouldn't be necessary, but it can't
+		// hurt to double-check (unless it's really just too
+		// expensive?).
 		_, preCommitFound, err := st.GetPrecommittedSector(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit %v", params.SectorNumber)
 		if preCommitFound {
-			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already pre-committed", params.SectorNumber)
+			rt.Abortf(exitcode.ErrIllegalState, "sector %v already pre-committed", params.SectorNumber)
 		}
 
 		sectorFound, err := st.HasSectorNo(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector %v", params.SectorNumber)
 		if sectorFound {
-			rt.Abortf(exitcode.ErrIllegalArgument, "sector %v already committed", params.SectorNumber)
+			rt.Abortf(exitcode.ErrIllegalState, "sector %v already committed", params.SectorNumber)
 		}
 
 		validateExpiration(rt, rt.CurrEpoch(), params.Expiration, params.SealProof)
@@ -1332,6 +1341,10 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	return nil
 }
 
+/////////////////
+// Maintenance //
+/////////////////
+
 type CompactPartitionsParams struct {
 	Deadline   uint64
 	Partitions *abi.BitField
@@ -1391,6 +1404,44 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, newPower)
 		}
 
+		return nil
+	})
+	return nil
+}
+
+type CompactSectorNumbersParams struct {
+	MaskSectorNumbers *abi.BitField
+}
+
+// Compacts sector number allocations to reduce the size of the allocated sector
+// number bitfield.
+//
+// When allocating sector numbers sequentially, or in sequential groups, this
+// bitfield should remain fairly small. However, if the bitfield grows large
+// enough such that PreCommitSector fails (or becomes expensive), this method
+// can be called to mask out (throw away) entire ranges of unused sector IDs.
+// For example, if sectors 1-99 and 101-200 have been allocated, sector number
+// 99 can be masked out to collapse these two ranges into one.
+func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *adt.EmptyValue {
+	if params.MaskSectorNumbers == nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "nil sector mask")
+	}
+
+	lastSectorNo, err := params.MaskSectorNumbers.Last()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid mask bitfield")
+	if lastSectorNo > abi.MaxSectorNumber {
+		rt.Abortf(exitcode.ErrIllegalArgument, "masked sector number %d exceeded max sector number", lastSectorNo)
+	}
+
+	store := adt.AsStore(rt)
+	var st State
+	rt.State().Transaction(&st, func() interface{} {
+		info := getMinerInfo(rt, &st)
+		rt.ValidateImmediateCallerIs(info.Worker)
+
+		err := st.MaskSectorNumbers(store, params.MaskSectorNumbers)
+
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to mask sector numbers")
 		return nil
 	})
 	return nil
@@ -1940,23 +1991,8 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 			params.ReplaceSectorNumber, replaceSector.Expiration, params.Expiration)
 	}
 
-	status, err := st.SectorStatus(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector health %v", params.ReplaceSectorNumber)
-
-	switch status {
-	case SectorNotFound:
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector %d not found at %d:%d (deadline:partition)",
-			params.ReplaceSectorNumber, params.ReplaceSectorDeadline, params.ReplaceSectorPartition,
-		)
-	case SectorFaulty:
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace faulty sector %d", params.ReplaceSectorNumber)
-	case SectorTerminated:
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace terminated sector %d", params.ReplaceSectorNumber)
-	case SectorHealthy:
-		// pass
-	default:
-		panic(fmt.Sprintf("unexpected sector status %d", status))
-	}
+	err = st.CheckSectorHealth(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector %v", params.ReplaceSectorNumber)
 
 	return replaceSector
 }

@@ -13,6 +13,7 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -37,6 +38,9 @@ type State struct {
 
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
+
+	// Allocated sector IDs. Sector IDs can never be reused once allocated.
+	AllocatedSectors cid.Cid // BitField
 
 	// Information for all proven and not-yet-expired sectors.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
@@ -146,16 +150,7 @@ type SectorLocation struct {
 	SectorNumber        abi.SectorNumber
 }
 
-type SectorStatus int
-
-const (
-	SectorNotFound SectorStatus = iota
-	SectorFaulty
-	SectorTerminated
-	SectorHealthy
-)
-
-func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
+func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
 
@@ -165,6 +160,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyArrayCid, 
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors: emptyMapCid,
+		AllocatedSectors:    emptyBitfieldCid,
 		Sectors:             emptyArrayCid,
 		ProvingPeriodStart:  periodStart,
 		CurrentDeadline:     0,
@@ -235,6 +231,60 @@ func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
 		return 0, err
 	}
 	return 2 * sectorCount, nil
+}
+
+func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {
+	// This will likely already have been checked, but this is a good place
+	// to catch any mistakes.
+	if sectorNo > abi.MaxSectorNumber {
+		return xc.ErrIllegalArgument.Wrapf("sector number out of range: %d", sectorNo)
+	}
+
+	allocatedSectors := new(bitfield.BitField)
+	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
+	}
+	if allocated, err := allocatedSectors.IsSet(uint64(sectorNo)); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to lookup sector number in allocated sectors bitfield: %w", err)
+	} else if allocated {
+		return xc.ErrIllegalArgument.Wrapf("sector number %d has already been allocated", sectorNo)
+	}
+	allocatedSectors.Set(uint64(sectorNo))
+
+	if root, err := store.Put(store.Context(), allocatedSectors); err != nil {
+		return xc.ErrIllegalArgument.Wrapf("failed to store allocated sectors bitfield after adding sector %d: %w", sectorNo, err)
+	} else {
+		st.AllocatedSectors = root
+	}
+	return nil
+}
+
+func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField) error {
+	lastSectorNo, err := sectorNos.Last()
+	if err != nil {
+		return xc.ErrIllegalArgument.Wrapf("invalid mask bitfield: %w", err)
+	}
+
+	if lastSectorNo > abi.MaxSectorNumber {
+		return xc.ErrIllegalArgument.Wrapf("masked sector number %d exceeded max sector number", lastSectorNo)
+	}
+
+	allocatedSectors := new(bitfield.BitField)
+	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
+	}
+
+	allocatedSectors, err = bitfield.MergeBitFields(allocatedSectors, sectorNos)
+	if err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to merge allocated bitfield with mask: %w", err)
+	}
+
+	if root, err := store.Put(store.Context(), allocatedSectors); err != nil {
+		return xc.ErrIllegalArgument.Wrapf("failed to mask allocated sectors bitfield: %w", err)
+	} else {
+		st.AllocatedSectors = root
+	}
+	return nil
 }
 
 func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
@@ -415,6 +465,9 @@ func (st *State) WalkSectors(
 
 	var toVisit [WPoStPeriodDeadlines]map[uint64][]uint64
 	for _, loc := range locations {
+		if loc.Deadline >= WPoStPeriodDeadlines {
+			return xc.ErrIllegalArgument.Wrapf("deadline %d out of range", loc.Deadline)
+		}
 		dl := toVisit[loc.Deadline]
 		if dl == nil {
 			dl = make(map[uint64][]uint64, 1)
@@ -516,8 +569,6 @@ func (st *State) WalkSectors(
 // If it can't find any given sector, it skips it.
 //
 // This method assumes that each sector's power has not changed, despite the rescheduling.
-//
-// TODO: distinguish bad arguments from invalid state https://github.com/filecoin-project/specs-actors/issues/597
 func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectors []SectorLocation,
 	ssize abi.SectorSize, quant QuantSpec) error {
 	var (
@@ -716,49 +767,42 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 	return result, !noEarlyTerminations, nil
 }
 
-// Returns a sector's status (healthy, faulty, missing, not found, terminated)
-func (st *State) SectorStatus(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (SectorStatus, error) {
+// Returns an error if the target sector cannot be found and/or is faulty/terminated.
+func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) error {
 	dls, err := st.LoadDeadlines(store)
 	if err != nil {
-		return SectorNotFound, err
-	}
-
-	// Pre-check this because LoadDeadline will return an actual error.
-	if dlIdx >= WPoStPeriodDeadlines {
-		return SectorNotFound, nil
+		return err
 	}
 
 	dl, err := dls.LoadDeadline(store, dlIdx)
 	if err != nil {
-		return SectorNotFound, err
+		return err
 	}
 
-	// TODO: distinguish partition not found from state errors in exit code
-	// https://github.com/filecoin-project/specs-actors/issues/597
 	partition, err := dl.LoadPartition(store, pIdx)
 	if err != nil {
-		return SectorNotFound, xerrors.Errorf("in deadline %d: %w", dlIdx, err)
+		return err
 	}
 
 	if exists, err := partition.Sectors.IsSet(uint64(sector)); err != nil {
-		return SectorNotFound, err
+		return xc.ErrIllegalState.Wrapf("failed to decode sectors bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if !exists {
-		return SectorNotFound, nil
+		return xc.ErrNotFound.Wrapf("sector %d not a member of partition %d, deadline %d", sector, pIdx, dlIdx)
 	}
 
 	if faulty, err := partition.Faults.IsSet(uint64(sector)); err != nil {
-		return SectorNotFound, err
+		return xc.ErrIllegalState.Wrapf("failed to decode faults bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if faulty {
-		return SectorFaulty, nil
+		return xc.ErrForbidden.Wrapf("sector %d of partition %d, deadline %d is faulty", sector, pIdx, dlIdx)
 	}
 
 	if terminated, err := partition.Terminated.IsSet(uint64(sector)); err != nil {
-		return SectorNotFound, err
+		return xc.ErrIllegalState.Wrapf("failed to decode terminated bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if terminated {
-		return SectorTerminated, nil
+		return xc.ErrNotFound.Wrapf("sector %d of partition %d, deadline %d is terminated", sector, pIdx, dlIdx)
 	}
 
-	return SectorHealthy, nil
+	return nil
 }
 
 // Loads sector info for a sequence of sectors.
@@ -862,7 +906,7 @@ func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitF
 func (st *State) LoadDeadlines(store adt.Store) (*Deadlines, error) {
 	var deadlines Deadlines
 	if err := store.Get(store.Context(), st.Deadlines, &deadlines); err != nil {
-		return nil, fmt.Errorf("failed to load deadlines (%s): %w", st.Deadlines, err)
+		return nil, xc.ErrIllegalState.Wrapf("failed to load deadlines (%s): %w", st.Deadlines, err)
 	}
 
 	return &deadlines, nil

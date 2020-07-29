@@ -76,7 +76,7 @@ func TestConstruction(t *testing.T) {
 			Multiaddrs:    testMultiaddrs,
 		}
 
-		provingPeriodStart := abi.ChainEpoch(2386) // This is just set from running the code.
+		provingPeriodStart := abi.ChainEpoch(658) // This is just set from running the code.
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		// Fetch worker pubkey.
 		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
@@ -538,7 +538,7 @@ func TestCommitments(t *testing.T) {
 			// Phew!
 
 			rt.ReplaceState(st)
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
 				actor.preCommitSector(rt, &params)
 			})
 			rt.ReplaceState(&prevState)

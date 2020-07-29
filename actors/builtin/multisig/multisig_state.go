@@ -2,12 +2,13 @@ package multisig
 
 import (
 	address "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+	"golang.org/x/xerrors"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
-	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
-	"golang.org/x/xerrors"
 )
 
 type State struct {
@@ -39,16 +40,16 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
 func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
 	if amountToSpend.LessThan(big.Zero()) {
-		return errors.Errorf("amount to spend %s less than zero", amountToSpend.String())
+		return xerrors.Errorf("amount to spend %s less than zero", amountToSpend.String())
 	}
 	if currBalance.LessThan(amountToSpend) {
-		return errors.Errorf("current balance %s less than amount to spend %s", currBalance.String(), amountToSpend.String())
+		return xerrors.Errorf("current balance %s less than amount to spend %s", currBalance.String(), amountToSpend.String())
 	}
 
 	remainingBalance := big.Sub(currBalance, amountToSpend)
 	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
 	if remainingBalance.LessThan(amountLocked) {
-		return errors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
+		return xerrors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
 	}
 
 	return nil
@@ -58,11 +59,10 @@ func getPendingTransaction(ptx *adt.Map, txnID TxnID) (Transaction, error) {
 	var out Transaction
 	found, err := ptx.Get(txnID, &out)
 	if err != nil {
-		return Transaction{}, errors.Wrapf(err, "failed to read transaction")
+		return Transaction{}, xerrors.Errorf("failed to read transaction: %w", err)
 	}
 	if !found {
-		return Transaction{}, xerrors.Errorf("failed to find transaction %v", txnID)
+		return Transaction{}, exitcode.ErrNotFound.Wrapf("failed to find transaction %v", txnID)
 	}
-
 	return out, nil
 }

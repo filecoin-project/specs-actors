@@ -14,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{136}
+var lengthBufState = []byte{137}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -78,6 +78,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
+
+	// t.TotalMined (big.Int) (struct)
+	if err := t.TotalMined.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -95,7 +100,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 8 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -214,6 +219,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.Epoch = abi.ChainEpoch(extraI)
+	}
+	// t.TotalMined (big.Int) (struct)
+
+	{
+
+		if err := t.TotalMined.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalMined: %w", err)
+		}
+
 	}
 	return nil
 }
