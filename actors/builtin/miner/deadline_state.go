@@ -761,3 +761,70 @@ func (dl *Deadline) DeclareFaults(
 	}
 	return newFaultyPower, nil
 }
+
+func (dl *Deadline) DeclareFaultsRecovered(
+	store adt.Store, sectors Sectors, ssize abi.SectorSize,
+	partitionSectors map[uint64]*abi.BitField,
+) (err error) {
+	partitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return err
+	}
+
+	partitionIdxs := make([]uint64, 0, len(partitionSectors))
+	for partIdx := range partitionSectors { //nolint:nomaprange
+		partitionIdxs = append(partitionIdxs, partIdx)
+	}
+	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
+
+	for _, partIdx := range partitionIdxs {
+		sectorNos := partitionSectors[partIdx]
+
+		var partition Partition
+		found, err := partitions.Get(partIdx, &partition)
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+		}
+		if !found {
+			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
+		}
+
+		err = validateFRDeclarationPartition(&partition, sectorNos)
+		if err != nil {
+			return exitcode.ErrIllegalArgument.Wrapf("failed fault declaration for %d: %w", partIdx, err)
+		}
+
+		// Ignore sectors not faulty or already declared recovered
+		recoveries, err := bitfield.IntersectBitField(sectorNos, partition.Faults)
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to intersect recoveries with faults: %w", err)
+		}
+		recoveries, err = bitfield.SubtractBitField(recoveries, partition.Recoveries)
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to subtract existing recoveries: %w", err)
+		}
+
+		// Record the new recoveries for processing at Window PoSt or deadline cron.
+		recoverySectors, err := sectors.Load(recoveries)
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to load recovery sectors: %w", err)
+		}
+		recoveryPower := PowerForSectors(ssize, recoverySectors)
+
+		err = partition.AddRecoveries(recoveries, recoveryPower)
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to add recoveries: %w", err)
+		}
+
+		err = partitions.Set(partIdx, &partition)
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to update partition %d: %w", partIdx, err)
+		}
+	}
+
+	dl.Partitions, err = partitions.Root()
+	if err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to store partitions root: %w", err)
+	}
+	return nil
+}
