@@ -577,6 +577,35 @@ func TestCron(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("test amount sent to reward actor and state change", func(t *testing.T) {
+		powerUnit := power.ConsensusMinerMinPower
+		miner3 := tutil.NewIDAddr(t, 103)
+		miner4 := tutil.NewIDAddr(t, 104)
+
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+
+		expectedPower := big.Mul(big.NewInt(4), powerUnit)
+
+		delta := abi.NewTokenAmount(1)
+		actor.updatePledgeTotal(rt, miner1, delta)
+		actor.onEpochTickEnd(rt, 0, expectedPower, nil, nil)
+
+		st := getState(rt)
+		require.EqualValues(t, delta, st.ThisEpochPledgeCollateral)
+		require.EqualValues(t, expectedPower, st.ThisEpochQualityAdjPower)
+		require.EqualValues(t, expectedPower, st.ThisEpochRawBytePower)
+	})
+
 	t.Run("event scheduled in null round called next round", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -766,8 +795,6 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 }
 
 func TestCronBatchProofVerifies(t *testing.T) {
-	miner1 := tutil.NewIDAddr(t, 101)
-
 	sealInfo := func(i int) *abi.SealVerifyInfo {
 		var sealInfo abi.SealVerifyInfo
 		sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i), &mineract.SealedCIDPrefix)
@@ -776,92 +803,88 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		return &sealInfo
 	}
 
+	miner1 := tutil.NewIDAddr(t, 101)
+	info := sealInfo(0)
+	info1 := sealInfo(1)
+	info2 := sealInfo(2)
+	info3 := sealInfo(3)
+	info4 := sealInfo(101)
+	info5 := sealInfo(200)
+	info6 := sealInfo(201)
+	info7 := sealInfo(300)
+	info8 := sealInfo(301)
+
 	t.Run("success with one miner and one confirmed sector", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
-		info := sealInfo(1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info)
 
 		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info}}
-		cs := []confirmedSectorSend{{miner1, []int{1}}}
+		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
 	})
 
 	t.Run("success with one miner and multiple confirmed sectors", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
-		info1 := sealInfo(1)
-		info2 := sealInfo(2)
-		info3 := sealInfo(3)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
 		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
-		cs := []confirmedSectorSend{{miner1, []int{1, 2, 3}}}
+		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number, info3.Number}}}
+
+		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+	})
+
+	t.Run("duplicate sector numbers are ignored for a miner", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+		ac.submitPoRepForBulkVerify(rt, miner1, info2)
+
+		// duplicates will be sent to the batch verify call
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info1, *info2}}
+
+		// however, duplicates will not be sent to the miner as confirmed
+		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
 	})
 
 	t.Run("success with multiple miners and multiple confirmed sectors and assert expected power", func(t *testing.T) {
-		owner := tutil.NewIDAddr(t, 100)
 		miner2 := tutil.NewIDAddr(t, 102)
 		miner3 := tutil.NewIDAddr(t, 103)
 		miner4 := tutil.NewIDAddr(t, 104)
-		powerUnit := power.ConsensusMinerMinPower
 
 		rt, ac := basicPowerSetup(t)
-		info1 := sealInfo(0)
-		info2 := sealInfo(1)
+
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 
-		info3 := sealInfo(100)
-		info4 := sealInfo(101)
 		ac.submitPoRepForBulkVerify(rt, miner2, info3)
 		ac.submitPoRepForBulkVerify(rt, miner2, info4)
 
-		info5 := sealInfo(200)
-		info6 := sealInfo(201)
 		ac.submitPoRepForBulkVerify(rt, miner3, info5)
 		ac.submitPoRepForBulkVerify(rt, miner3, info6)
 
-		info7 := sealInfo(300)
-		info8 := sealInfo(301)
 		ac.submitPoRepForBulkVerify(rt, miner4, info7)
 		ac.submitPoRepForBulkVerify(rt, miner4, info8)
 
 		// TODO Because read order of keys in a multi-map is not as per insertion order,
 		// we have to move around the expected sends
-		cs := []confirmedSectorSend{{miner1, []int{0, 1}},
-			{miner3, []int{200, 201}},
-			{miner4, []int{300, 301}},
-			{miner2, []int{100, 101}}}
+		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number}},
+			{miner3, []abi.SectorNumber{info5.Number, info6.Number}},
+			{miner4, []abi.SectorNumber{info7.Number, info8.Number}},
+			{miner2, []abi.SectorNumber{info3.Number, info4.Number}}}
 
 		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2},
 			miner2: []abi.SealVerifyInfo{*info3, *info4},
 			miner3: []abi.SealVerifyInfo{*info5, *info6},
 			miner4: []abi.SealVerifyInfo{*info7, *info8}}
 
-		ac.createMinerBasic(rt, owner, owner, miner1)
-		ac.createMinerBasic(rt, owner, owner, miner2)
-		ac.createMinerBasic(rt, owner, owner, miner3)
-		ac.createMinerBasic(rt, owner, owner, miner4)
-		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
-		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
-		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
-		ac.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
-
-		expectedPower := big.Mul(big.NewInt(4), powerUnit)
-
-		delta := abi.NewTokenAmount(1)
-		ac.updatePledgeTotal(rt, miner1, delta)
-		ac.onEpochTickEnd(rt, 0, expectedPower, cs, infos)
-
-		st := getState(rt)
-		require.EqualValues(t, delta, st.ThisEpochPledgeCollateral)
-		require.EqualValues(t, expectedPower, st.ThisEpochQualityAdjPower)
-		require.EqualValues(t, expectedPower, st.ThisEpochRawBytePower)
+		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
 	})
 
 	t.Run("success when no confirmed sector", func(t *testing.T) {
@@ -872,8 +895,6 @@ func TestCronBatchProofVerifies(t *testing.T) {
 	t.Run("fails if batch verify seals does not return result for a miner", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		miner2 := tutil.NewIDAddr(t, 201)
-		info1 := sealInfo(1)
-		info2 := sealInfo(2)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner2, info2)
@@ -897,10 +918,6 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 	t.Run("fails if batch verify seals fails", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
-		info1 := sealInfo(1)
-		info2 := sealInfo(2)
-		info3 := sealInfo(3)
-
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
@@ -978,7 +995,7 @@ func (h *spActorHarness) constructAndVerify(rt *mock.Runtime) {
 
 type confirmedSectorSend struct {
 	miner      addr.Address
-	sectorNums []int
+	sectorNums []abi.SectorNumber
 }
 
 func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpoch, expectedRawPower abi.StoragePower,
@@ -986,11 +1003,7 @@ func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpo
 
 	// expect sends for confirmed sectors
 	for _, cs := range confirmedSectors {
-		var sectors []abi.SectorNumber
-		for _, sec := range cs.sectorNums {
-			sectors = append(sectors, abi.SectorNumber(sec))
-		}
-		param := &builtin.ConfirmSectorProofsParams{Sectors: sectors}
+		param := &builtin.ConfirmSectorProofsParams{Sectors: cs.sectorNums}
 		rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
 	}
 
