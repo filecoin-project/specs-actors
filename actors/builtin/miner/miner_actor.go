@@ -1096,6 +1096,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			forDl, ok := partitionsByDeadline[decl.Deadline]
 			if !ok {
 				forDl = make(map[uint64]*bitfield.BitField, 1)
+				partitionsByDeadline[decl.Deadline] = forDl
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			}
 			sectors := decl.Sectors
@@ -1203,6 +1204,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 			forDl, ok := partitionsByDeadline[decl.Deadline]
 			if !ok {
 				forDl = make(map[uint64]*bitfield.BitField, 1)
+				partitionsByDeadline[decl.Deadline] = forDl
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			}
 			sectors := decl.Sectors
