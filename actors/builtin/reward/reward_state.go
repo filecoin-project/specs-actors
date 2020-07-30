@@ -9,7 +9,7 @@ import (
 // A quantity of space * time (in byte-epochs) representing power committed to the network for some duration.
 type Spacetime = big.Int
 
-// 36.266260308195979330 FIL
+// 36.266260308195979333 FIL
 const InitialRewardPositionEstimateStr = "36266260308195979333"
 
 var InitialRewardPositionEstimate = big.MustFromString(InitialRewardPositionEstimateStr)
