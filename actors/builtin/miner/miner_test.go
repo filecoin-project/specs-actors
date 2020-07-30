@@ -429,6 +429,7 @@ func TestCommitments(t *testing.T) {
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
+		faultExpiration := dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge
 
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
 
@@ -450,9 +451,12 @@ func TestCommitments(t *testing.T) {
 		assert.True(t, newSectorPower.Equals(partition.LivePower))
 		assert.True(t, newSectorPower.Equals(partition.FaultyPower))
 
+		// we expect the expiration to be scheduled twice, once early
+		// and once on-time.
 		dQueue = actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
 			newSector.Expiration: {uint64(0)},
+			faultExpiration:      {uint64(0)},
 		}, dQueue)
 
 		// Old sector gone from pledge requirement and deposit
