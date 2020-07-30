@@ -66,9 +66,6 @@ type State struct {
 
 	// Deadlines with outstanding fees for early sector termination.
 	EarlyTerminations *bitfield.BitField
-
-	// Memoized power information
-	FaultyPower PowerPair
 }
 
 type MinerInfo struct {
@@ -166,7 +163,6 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		CurrentDeadline:     0,
 		Deadlines:           emptyDeadlinesCid,
 
-		FaultyPower:       NewPowerPairZero(),
 		EarlyTerminations: abi.NewBitField(),
 	}, nil
 }

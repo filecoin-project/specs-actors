@@ -300,6 +300,32 @@ func TestDeadlines(t *testing.T) {
 		require.Error(t, err, "should have failed to remove a partition with faults")
 	})
 
+	t.Run("terminate faulty", func(t *testing.T) {
+		rt := builder.Build(t)
+		dl := emptyDeadline(t, rt)
+
+		addThenMarkFaulty(t, rt, dl) // 5, 6 faulty
+
+		store := adt.AsStore(rt)
+		removedPower, err := dl.TerminateSectors(store, 15, map[uint64][]*miner.SectorOnChainInfo{
+			0: selectSectors(t, sectors, bf(1, 3)),
+			1: selectSectors(t, sectors, bf(6)),
+		}, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// Sector 1, 3 were active, 6 faulty
+		expectedPowerLoss := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1, 3)))
+		require.True(t, expectedPowerLoss.Equals(removedPower), "dlState to remove power for terminated sectors")
+
+		dlState.withTerminations(1, 3, 6).
+			withFaults(5).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+	})
+
 	t.Run("faulty sectors expire", func(t *testing.T) {
 		rt := builder.Build(t)
 
@@ -668,6 +694,7 @@ func checkDeadlineInvariants(
 	allFaults = bitfield.NewFromSet(nil)
 	allRecoveries = bitfield.NewFromSet(nil)
 	allTerminations = bitfield.NewFromSet(nil)
+	allFaultyPower := miner.NewPowerPairZero()
 
 	expectPartIndex := int64(0)
 	var partition miner.Partition
@@ -693,6 +720,8 @@ func checkDeadlineInvariants(
 
 		allTerminations, err = bitfield.MergeBitFields(allTerminations, partition.Terminated)
 		require.NoError(t, err)
+
+		allFaultyPower = allFaultyPower.Add(partition.FaultyPower)
 
 		// 1. This will check things like "recoveries is a subset of
 		//    sectors" so we don't need to check that here.
@@ -734,6 +763,7 @@ func checkDeadlineInvariants(
 
 	require.Equal(t, dl.LiveSectors, allSectorsCount-deadSectorsCount)
 	require.Equal(t, dl.TotalSectors, allSectorsCount)
+	require.True(t, allFaultyPower.Equals(dl.FaultyPower))
 
 	// Validate expiration queue. The deadline expiration queue is a
 	// superset of the partition expiration queues because we never remove

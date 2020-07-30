@@ -263,11 +263,13 @@ func TestPartitions(t *testing.T) {
 		terminations := bf(1, 3, 5)
 		terminatedSectors := selectSectors(t, sectors, terminations)
 		terminationEpoch := abi.ChainEpoch(3)
-		powerDelta, err := partition.TerminateSectors(store, terminationEpoch, terminatedSectors, sectorSize, quantSpec)
+		removed, err := partition.TerminateSectors(store, terminationEpoch, terminatedSectors, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		expectedPowerDelta := miner.PowerForSectors(sectorSize, terminatedSectors)
-		assert.True(t, expectedPowerDelta.Equals(powerDelta))
+		expectedActivePower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1)))
+		assert.True(t, expectedActivePower.Equals(removed.ActivePower))
+		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(3, 5)))
+		assert.True(t, expectedFaultyPower.Equals(removed.FaultyPower))
 
 		// expect partition state to no longer reflect power and pledge from terminated sectors and terminations to contain new sectors
 		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(4, 6), bf(4), terminations)

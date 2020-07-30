@@ -332,9 +332,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 		}
 
-		// Adjust faulty power for recovering/faulty.
-		st.FaultyPower = st.FaultyPower.Sub(postResult.PowerDelta())
-
 		// Penalize new skipped faults and retracted recoveries as undeclared faults.
 		// These pay a higher fee than faults declared before the deadline challenge window opened.
 		undeclaredPenaltyPower := postResult.PenaltyPower()
@@ -1124,16 +1121,14 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, quant, faultExpirationEpoch, partitionsByDeadline[dlIdx])
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
-			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultyPower)
-
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions", dlIdx)
+
+			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultyPower)
 		}
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		st.FaultyPower = st.FaultyPower.Add(newFaultPowerTotal)
 
 		return nil
 	})
@@ -1658,7 +1653,6 @@ func handleProvingDeadline(rt Runtime) {
 			newFaultyPower, failedRecoveryPower, err := deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process end of deadline %d", dlInfo.Index)
 
-			st.FaultyPower = st.FaultyPower.Add(newFaultyPower)
 			powerDelta = powerDelta.Sub(newFaultyPower)
 			penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultyPower.QA, failedRecoveryPower.QA)
 
@@ -1676,8 +1670,7 @@ func handleProvingDeadline(rt Runtime) {
 		{
 			// Record faulty power for penalisation of ongoing faults, before popping expirations.
 			// This includes any power that was just faulted from missing a PoSt.
-			faultyPower := st.FaultyPower.QA
-			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, faultyPower)
+			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, deadline.FaultyPower.QA)
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance) //nolint:ineffassign
@@ -1698,7 +1691,6 @@ func handleProvingDeadline(rt Runtime) {
 			// Record reduction in power of the amount of expiring active power.
 			// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
 			powerDelta = powerDelta.Sub(expired.ActivePower)
-			st.FaultyPower = st.FaultyPower.Sub(expired.FaultyPower)
 
 			// Record deadlines with early terminations. While this
 			// bitfield is non-empty, the miner is locked until they
