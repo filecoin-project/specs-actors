@@ -17,8 +17,8 @@ var (
 	defaultInitialPosition big.Int
 	defaultInitialVelocity big.Int
 
-	DefaultAlpha                   big.Int // Q.128 value of 0.000164
-	DefaultBeta                    big.Int //  Q.128 value of 0.000115
+	DefaultAlpha                   big.Int // Q.128 value of 0.0008
+	DefaultBeta                    big.Int //  Q.128 value of 3.2e-7
 	ExtrapolatedCumSumRatioEpsilon big.Int // Q.128 value of 2^-50
 )
 
@@ -54,8 +54,8 @@ func init() {
 
 	// Alpha Beta Filter constants
 	constStrs := []string{
-		"55806300000000000000000000000000000",     // DefaultAlpha
-		"39132500000000000000000000000000000",     // DefaultBeta
+		"272226000000000000000000000000000000",    // DefaultAlpha
+		"108890000000000000000000000000000",       // DefaultBeta
 		"302231454903657293676544",                // Epsilon
 		"235865763225513294137944142764154484399", // ln(2)
 	}
