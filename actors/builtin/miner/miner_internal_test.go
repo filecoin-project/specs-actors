@@ -129,8 +129,8 @@ func TestFaultFeeInvariants(t *testing.T) {
 		// 1.2e18 * 10 bytes * 1 quality ~ 1e19
 		tensOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(10))
 		lowPowerEstimate := smoothing.TestingConstantEstimate(tensOfEiBs)
-		brSmallLow := ExpectedDayRewardForPower(rewardEstimate, lowPowerEstimate, smallPower, builtin.EpochsInDay)
-		brHugeLow := ExpectedDayRewardForPower(rewardEstimate, lowPowerEstimate, hugePower, builtin.EpochsInDay)
+		brSmallLow := ExpectedRewardForPower(rewardEstimate, lowPowerEstimate, smallPower, builtin.EpochsInDay)
+		brHugeLow := ExpectedRewardForPower(rewardEstimate, lowPowerEstimate, hugePower, builtin.EpochsInDay)
 		assert.Equal(t, big.Div(smallPowerBRNum, tensOfEiBs), brSmallLow)
 		assert.Equal(t, big.Div(hugePowerBRNum, tensOfEiBs), brHugeLow)		
 
@@ -138,8 +138,8 @@ func TestFaultFeeInvariants(t *testing.T) {
 		// 1.2e18 * 100 bytes * 5 quality ~ 6e20
 		hundredsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(6e2))
 		midPowerEstimate := smoothing.TestingConstantEstimate(hundredsOfEiBs)
-		brSmallMid := ExpectedDayRewardForPower(rewardEstimate, midPowerEstimate, smallPower, builtin.EpochsInDay)
-		brHugeMid := ExpectedDayRewardForPower(rewardEstimate, midPowerEstimate, hugePower, builtin.EpochsInDay)
+		brSmallMid := ExpectedRewardForPower(rewardEstimate, midPowerEstimate, smallPower, builtin.EpochsInDay)
+		brHugeMid := ExpectedRewardForPower(rewardEstimate, midPowerEstimate, hugePower, builtin.EpochsInDay)
 		assert.Equal(t, big.Div(smallPowerBRNum, hundredsOfEiBs), brSmallMid)
 		assert.Equal(t, big.Div(hugePowerBRNum, hundredsOfEiBs), brHugeMid)		
 		
@@ -147,8 +147,8 @@ func TestFaultFeeInvariants(t *testing.T) {
 		// 1.2e18 * 1000 bytes * 10 quality = 1.2e22 ~ 2e22
 		thousandsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(2e4))
 		upperPowerEstimate := smoothing.TestingConstantEstimate(thousandsOfEiBs)
-		brSmallUpper := ExpectedDayRewardForPower(rewardEstimate, upperPowerEstimate, smallPower, builtin.EpochsInDay)
-		brHugeUpper := ExpectedDayRewardForPower(rewardEstimate, upperPowerEstimate, hugePower, builtin.EpochsInDay)
+		brSmallUpper := ExpectedRewardForPower(rewardEstimate, upperPowerEstimate, smallPower, builtin.EpochsInDay)
+		brHugeUpper := ExpectedRewardForPower(rewardEstimate, upperPowerEstimate, hugePower, builtin.EpochsInDay)
 		assert.Equal(t, big.Div(smallPowerBRNum, thousandsOfEiBs), brSmallUpper)
 		assert.Equal(t, big.Div(hugePowerBRNum, thousandsOfEiBs), brHugeUpper)			
 	})

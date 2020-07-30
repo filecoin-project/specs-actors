@@ -673,8 +673,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
-			dayReward := ExpectedDayRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
-			twentyDayReward := ExpectedDayRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
+			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
+			twentyDayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
 
 			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
 				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
