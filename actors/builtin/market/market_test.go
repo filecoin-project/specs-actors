@@ -645,7 +645,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			"deal duration greater than max deal duration": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
 					d.StartEpoch = abi.ChainEpoch(10)
-					d.EndEpoch = d.StartEpoch + (366 * builtin.EpochsInDay) + 1
+					d.EndEpoch = d.StartEpoch + (540 * builtin.EpochsInDay) + 1
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
