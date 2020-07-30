@@ -1,16 +1,17 @@
 package market
 
 import (
-	"fmt"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	cbg "github.com/whyrusleeping/cbor-gen"
-	xerrors "golang.org/x/xerrors"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -46,19 +47,13 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	emptyMSet, err := MakeEmptySetMultimap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage market state: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	st := ConstructState(emptyArray, emptyMap, emptyMSet)
 	rt.State().Create(st)
@@ -176,6 +171,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 
 	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
+	baselinePower := requestCurrentBaselinePower(rt)
+	networkQAPower := requestCurrentNetworkQAPower(rt)
 
 	var newDealIds []abi.DealID
 	var st State
@@ -187,7 +184,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
-			validateDeal(rt, deal)
+			validateDeal(rt, deal, baselinePower, networkQAPower)
 
 			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
@@ -326,14 +323,10 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get dealId %d", dealID)
 
 			propc, err := proposal.Cid()
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get proposal cid %v", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate proposal CID")
 
 			has, err := msm.pendingDeals.Get(adt.CidKey(propc), nil)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "no pending proposal for  %v", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get pending proposal %v", propc)
 
 			if !has {
 				rt.Abortf(exitcode.ErrIllegalState, "tried to active deal that was not in the pending set (%s)", propc)
@@ -407,9 +400,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 		for _, dealID := range params.DealIDs {
 			deal, found, err := msm.dealProposals.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal proposal %v", dealID)
 			// deal could have terminated and hence deleted before the sector is terminated.
 			// we should simply continue instead of aborting execution here if a deal is not found.
 			if !found {
@@ -424,11 +415,9 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 
 			state, found, err := msm.dealStates.Get(dealID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "get deal: %v", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state %v", dealID)
 			if !found {
-				rt.Abortf(exitcode.ErrIllegalArgument, "no state found for deal in sector being terminated")
+				rt.Abortf(exitcode.ErrIllegalArgument, "no state for deal %v", dealID)
 			}
 
 			// if a deal is already slashed, we don't need to do anything here.
@@ -440,9 +429,8 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
 			state.SlashEpoch = params.Epoch
 
-			if err := msm.dealStates.Set(dealID, state); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "set deal: %v", err)
-			}
+			err = msm.dealStates.Set(dealID, state)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %v", dealID)
 		}
 
 		err = msm.commitState()
@@ -469,14 +457,12 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
-			if err := msm.dealsByEpoch.ForEach(i, func(dealID abi.DealID) error {
+			err = msm.dealsByEpoch.ForEach(i, func(dealID abi.DealID) error {
 				deal, err := getDealProposal(msm.dealProposals, dealID)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get dealId %d", dealID)
 
 				dcid, err := deal.Cid()
-				if err != nil {
-					return xerrors.Errorf("failed to get cid for deal proposal: %w", err)
-				}
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate CID for proposal %v", dealID)
 
 				state, found, err := msm.dealStates.Get(dealID)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state")
@@ -511,7 +497,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 				}
 
-				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, dealID, rt.CurrEpoch())
+				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, rt.CurrEpoch())
 				Assert(slashAmount.GreaterThanEqual(big.Zero()))
 				if removeDeal {
 					AssertMsg(nextEpoch == epochUndefined, "next scheduled epoch should be undefined as deal has been removed")
@@ -532,10 +518,11 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 				}
 
 				return nil
-			}); err != nil {
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deals for epoch")
-			}
-			builtin.RequireNoErr(rt, msm.dealsByEpoch.RemoveAll(i), exitcode.ErrIllegalState, "failed to delete deals from set")
+			})
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deal ops")
+
+			err = msm.dealsByEpoch.RemoveAll(i)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal ops for epoch %v", i)
 		}
 
 		// Iterate changes in sorted order to ensure that loads/stores
@@ -549,9 +536,8 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		sort.Slice(changedEpochs, func(i, j int) bool { return changedEpochs[i] < changedEpochs[j] })
 
 		for _, epoch := range changedEpochs {
-			if err := msm.dealsByEpoch.PutMany(epoch, updatesNeeded[epoch]); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to reinsert deal IDs into epoch set: %s", err)
-			}
+			err = msm.dealsByEpoch.PutMany(epoch, updatesNeeded[epoch])
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to reinsert deal IDs for epoch %v", epoch)
 		}
 
 		st.LastCron = rt.CurrEpoch()
@@ -591,14 +577,14 @@ func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, propos
 	removeState bool) error {
 	if removeProposal {
 		if err := proposals.Delete(uint64(dealId)); err != nil {
-			return fmt.Errorf("failed to delete deal proposal: %w", err)
+			return xerrors.Errorf("failed to delete deal proposal: %w", err)
 		}
 
 	}
 
 	if removeState {
 		if err := states.Delete(dealId); err != nil {
-			return fmt.Errorf("failed to delete deal state: %w", err)
+			return xerrors.Errorf("failed to delete deal state: %w", err)
 		}
 	}
 
@@ -616,7 +602,7 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 
 	proposals, err := AsDealProposalArray(store, st.Proposals)
 	if err != nil {
-		return big.Int{}, big.Int{}, fmt.Errorf("failed to load dealProposals: %w", err)
+		return big.Int{}, big.Int{}, xerrors.Errorf("failed to load dealProposals: %w", err)
 	}
 
 	totalDealSpaceTime := big.Zero()
@@ -624,13 +610,13 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 	for _, dealID := range dealIDs {
 		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
-			return big.Int{}, big.Int{}, fmt.Errorf("failed to load deal %d: %w", dealID, err)
+			return big.Int{}, big.Int{}, xerrors.Errorf("failed to load deal %d: %w", dealID, err)
 		}
 		if !found {
-			return big.Int{}, big.Int{}, fmt.Errorf("dealId %d not found", dealID)
+			return big.Int{}, big.Int{}, exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
 		}
 		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
-			return big.Int{}, big.Int{}, fmt.Errorf("cannot activate deal %d: %w", dealID, err)
+			return big.Int{}, big.Int{}, xerrors.Errorf("cannot activate deal %d: %w", dealID, err)
 		}
 
 		// Compute deal weight
@@ -650,18 +636,18 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 
 func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sectorExpiration, currEpoch abi.ChainEpoch) error {
 	if proposal.Provider != minerAddr {
-		return fmt.Errorf("proposal has provider %v, must be %v", proposal.Provider, minerAddr)
+		return exitcode.ErrForbidden.Wrapf("proposal has provider %v, must be %v", proposal.Provider, minerAddr)
 	}
 	if currEpoch > proposal.StartEpoch {
-		return fmt.Errorf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, currEpoch)
+		return exitcode.ErrIllegalArgument.Wrapf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, currEpoch)
 	}
 	if proposal.EndEpoch > sectorExpiration {
-		return fmt.Errorf("proposal expiration %d exceeds sector expiration %d", proposal.EndEpoch, sectorExpiration)
+		return exitcode.ErrIllegalArgument.Wrapf("proposal expiration %d exceeds sector expiration %d", proposal.EndEpoch, sectorExpiration)
 	}
 	return nil
 }
 
-func validateDeal(rt Runtime, deal ClientDealProposal) {
+func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkQAPower abi.StoragePower) {
 	if err := dealProposalIsInternallyValid(rt, deal); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal: %s", err)
 	}
@@ -698,16 +684,21 @@ func validateDeal(rt Runtime, deal ClientDealProposal) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := dealProviderCollateralBounds(proposal.PieceSize, proposal.Duration())
+	minProviderCollateral, maxProviderCollateral := DealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal,
+		networkQAPower, baselinePower, rt.TotalFilCircSupply())
 	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
 
-	minClientCollateral, maxClientCollateral := dealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
+	minClientCollateral, maxClientCollateral := DealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.ClientCollateral.LessThan(minClientCollateral) || proposal.ClientCollateral.GreaterThan(maxClientCollateral) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
 	}
 }
+
+//
+// Helpers
+//
 
 // Resolves a provider or client address to the canonical form against which a balance should be held, and
 // the designated recipient address of withdrawals (which is the same, for simple account parties).
@@ -735,11 +726,31 @@ func escrowAddress(rt Runtime, address addr.Address) (nominal addr.Address, reci
 func getDealProposal(proposals *DealArray, dealID abi.DealID) (*DealProposal, error) {
 	proposal, found, err := proposals.Get(dealID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load proposal: %w", err)
+		return nil, xerrors.Errorf("failed to load proposal: %w", err)
 	}
 	if !found {
-		return nil, fmt.Errorf("deal %d not found", dealID)
+		return nil, exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
 	}
 
 	return proposal, nil
+}
+
+// Requests the current epoch target block reward from the reward actor.
+func requestCurrentBaselinePower(rt Runtime) abi.StoragePower {
+	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
+	var ret reward.ThisEpochRewardReturn
+	err := rwret.Into(&ret)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
+	return ret.ThisEpochBaselinePower
+}
+
+// Requests the current network total power and pledge from the power actor.
+func requestCurrentNetworkQAPower(rt Runtime) abi.StoragePower {
+	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
+	builtin.RequireSuccess(rt, code, "failed to check current power")
+	var pwr power.CurrentTotalPowerReturn
+	err := pwret.Into(&pwr)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
+	return pwr.QualityAdjPower
 }

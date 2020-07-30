@@ -12,6 +12,8 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
@@ -441,6 +443,7 @@ func TestPublishStorageDeals(t *testing.T) {
 			&miner.GetControlAddressesReturn{Owner: mAddr.owner, Worker: mAddr.worker},
 			exitcode.Ok,
 		)
+		expectQueryNetworkInfo(rt, actor)
 		//  create a client proposal with a valid signature
 		var params market.PublishStorageDealsParams
 		buf := bytes.Buffer{}
@@ -491,6 +494,29 @@ func TestPublishStorageDeals(t *testing.T) {
 		rt.SetEpoch(newEpoch)
 		deal2ID := actor.publishDeals(rt, mAddr, deal2)[0]
 		actor.activateDeals(rt, endEpoch+1, provider, newEpoch, deal2ID)
+	})
+
+	t.Run("publish a deal with enough collateral when circulating supply > 0", func(t *testing.T) {
+		startEpoch := abi.ChainEpoch(1000)
+		endEpoch := startEpoch + 200*builtin.EpochsInDay
+		publishEpoch := abi.ChainEpoch(1)
+
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+
+		clientCollateral := abi.NewTokenAmount(10) // min is zero so this is placeholder
+
+		// given power and circ supply cancel this should be 5*dealqapower / 100
+		dealSize := abi.PaddedPieceSize(2048) // generateDealProposal's deal size
+		providerCollateral := big.Div(
+			big.Mul(big.NewInt(int64(dealSize)), market.ProvCollateralPercentSupplyNum),
+			market.ProvCollateralPercentSupplyDenom,
+		)
+		deal := actor.generateDealWithCollateralAndAddFunds(rt, client, mAddr, providerCollateral, clientCollateral, startEpoch, endEpoch)
+		rt.SetCirculatingSupply(actor.networkQAPower) // convenient for these two numbers to cancel out
+
+		// publish the deal successfully
+		rt.SetEpoch(publishEpoch)
+		actor.publishDeals(rt, mAddr, deal)
 	})
 
 	t.Run("publish multiple deals for different clients and ensure balances are correct", func(t *testing.T) {
@@ -647,6 +673,19 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
+			"provider collateral less than bound": {
+				setup: func(rt *mock.Runtime, h *marketActorTestHarness, d *market.DealProposal) {
+					// with these two equal provider collatreal min is 5/100 * deal size
+					rt.SetCirculatingSupply(h.networkQAPower)
+					dealSize := big.NewInt(2048) // default deal size used
+					providerMin := big.Div(
+						big.Mul(dealSize, market.ProvCollateralPercentSupplyNum),
+						market.ProvCollateralPercentSupplyDenom,
+					)
+					d.ProviderCollateral = big.Sub(providerMin, big.NewInt(1))
+				},
+				exitCode: exitcode.ErrIllegalArgument,
+			},
 			"negative client collateral": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
 					d.ClientCollateral = big.NewInt(-1)
@@ -735,6 +774,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 				rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 				rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+				expectQueryNetworkInfo(rt, actor)
 				rt.SetCaller(worker, builtin.AccountActorCodeID)
 				rt.ExpectVerifySignature(crypto.Signature{}, dealProposal.Client, mustCbor(&dealProposal), tc.signatureVerificationError)
 				rt.ExpectAbort(tc.exitCode, func() {
@@ -760,6 +800,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
@@ -780,6 +821,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
@@ -803,6 +845,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 			rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal2.Client, mustCbor(&deal2), nil)
@@ -947,7 +990,7 @@ func TestActivateDealFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrForbidden, func() {
 				rt.Call(actor.ActivateDeals, params)
 			})
 
@@ -977,7 +1020,7 @@ func TestActivateDealFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrNotFound, func() {
 				rt.Call(actor.ActivateDeals, params)
 			})
 
@@ -1011,7 +1054,7 @@ func TestActivateDealFailures(t *testing.T) {
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 			rt.SetEpoch(startEpoch + 1)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.ActivateDeals, mkActivateDealParams(sectorExpiry, dealId))
 			})
 
@@ -1024,7 +1067,7 @@ func TestActivateDealFailures(t *testing.T) {
 
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.ActivateDeals, mkActivateDealParams(endEpoch-1, dealId))
 			})
 
@@ -1303,7 +1346,7 @@ func TestCronTick(t *testing.T) {
 
 		// move the current epoch to the start epoch of the deal
 		rt.SetEpoch(startEpoch)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.cronTick(rt)
 		})
 	})
@@ -1379,6 +1422,7 @@ func TestCronTick(t *testing.T) {
 		params := mkPublishStorageParams(d2)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectVerifySignature(crypto.Signature{}, d2.Client, mustCbor(&d2), nil)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -1459,23 +1503,26 @@ func TestLockedFundTrackingStates(t *testing.T) {
 	clc = big.Sub(clc, d3.ClientCollateral)
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
-	// deal1 and deal2 will now be charged at epoch = 51 + 100 = 151, so nothing changes before that
-	rt.SetEpoch(150)
+	// deal1 and deal2 will now be charged at epoch curr + market.DealUpdatesInterval, so nothing changes before that.
+	rt.SetEpoch(curr + market.DealUpdatesInterval - 1)
 	actor.cronTick(rt)
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// one more round of payment for deal1 and deal2
-	rt.SetEpoch(200)
-	payment = big.Product(big.NewInt(2), d1.StoragePricePerEpoch, big.NewInt(149)) // 149 = 200 - 51 (epoch when payment was last made)
+	curr2 := curr + market.DealUpdatesInterval
+	rt.SetEpoch(curr2)
+	duration := big.NewInt(int64(curr2 - curr))
+	payment = big.Product(big.NewInt(2), d1.StoragePricePerEpoch, duration)
 	csf = big.Sub(csf, payment)
 	actor.cronTick(rt)
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// slash deal1 at 201
-	rt.SetEpoch(201)
+	slashEpoch := curr2 + 1
+	rt.SetEpoch(slashEpoch)
 	actor.terminateDeals(rt, m1.provider, dealId1)
 
-	// cron tick to deal end to slash deal1 and expire deal2
+	// cron tick to slash deal1 and expire deal2
 	rt.SetEpoch(endEpoch)
 	csf = big.Zero()
 	clc = big.Zero()
@@ -1526,6 +1573,7 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 		params := mkPublishStorageParams(d2)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectVerifySignature(crypto.Signature{}, d2.Client, mustCbor(&d2), nil)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -1636,45 +1684,39 @@ func TestCronTickDealExpiry(t *testing.T) {
 		// move the current epoch to startEpoch + 5 so payment is made
 		current := startEpoch + 5 // 55
 		rt.SetEpoch(current)
-
 		// assert payment
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
-		// The next epoch for this deal's cron schedule is 155 (50 + 5 + 100).
-		// Setting the current epoch to anything less than that wont make any payment
-		current = 154
-		rt.SetEpoch(current)
+		// Setting the current epoch to anything less than next schedule wont make any payment
+		rt.SetEpoch(current + market.DealUpdatesInterval - 1)
 		actor.cronTickNoChange(rt, client, provider)
 
-		// however setting the current epoch to 155 will make the payment
-		current = 155
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, big.Mul(big.NewInt(100), d.StoragePricePerEpoch), pay)
+		// however setting the current epoch to next schedle will make the payment
+		current2 := current + market.DealUpdatesInterval
+		rt.SetEpoch(current2)
+		duration := big.NewInt(int64(current2 - current))
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current2, dealId)
+		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// a second cron tick for the same epoch should not change anything
 		actor.cronTickNoChange(rt, client, provider)
 
-		// next epoch for cron schedule is 155 + 100 = 255
-		current = 255
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, pay, big.Mul(big.NewInt(100), d.StoragePricePerEpoch))
+		// next epoch schedule
+		current3 := current2 + market.DealUpdatesInterval
+		rt.SetEpoch(current3)
+		duration = big.NewInt(int64(current3 - current2))
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current3, dealId)
+		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
-		// next epoch for cron schedule is deal end i.e. 300. An epoch less than that wont do anything
-		current = 299
-		rt.SetEpoch(current)
-		actor.cronTickNoChange(rt, client, provider)
-
-		// however setting epoch to end + 10 will expire the deal, make the payment and unlock all funds
-		current = endEpoch + 300
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		duration := big.NewInt(int64(endEpoch - 255)) // time between end and last payment (255)
+		// setting epoch to greater than end will expire the deal, make the payment and unlock all funds
+		current4 := endEpoch + 300
+		rt.SetEpoch(current4)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current4, dealId)
+		duration = big.NewInt(int64(endEpoch - current3))
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
@@ -1902,24 +1944,23 @@ func TestCronTickDealSlashing(t *testing.T) {
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
 
-		// move the current epoch to startEpoch so next cron epoch will be start + 100 = 150
+		// move the current epoch to startEpoch so next cron epoch will be start + Interval
 		current := startEpoch
 		rt.SetEpoch(current)
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Zero(), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
-		// set slash epoch of deal at 151
-		current = 151
-		rt.SetEpoch(current)
+		// set slash epoch of deal
+		slashEpoch := current + market.DealUpdatesInterval + 1
+		rt.SetEpoch(slashEpoch)
 		actor.terminateDeals(rt, provider, dealId)
 
-		// move the epoch to 155(anything greater than 150), so deal is first processed at 150 & then slashed at 151
-		// total payment = (end - start) = 151 - 50 = 101
-		current = 155
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, big.Mul(big.NewInt(101), d.StoragePricePerEpoch), pay)
+		current2 := current + market.DealUpdatesInterval + 2
+		rt.SetEpoch(current2)
+		duration := big.NewInt(int64(slashEpoch - current))
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current2, dealId)
+		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, d.ProviderCollateral, slashed)
 
 		// deal should be deleted as it should have expired
@@ -1964,50 +2005,49 @@ func TestCronTickDealSlashing(t *testing.T) {
 		d := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch to startEpoch + 5 so payment is made
-		current := abi.ChainEpoch(55)
+		current := startEpoch + 5
 		rt.SetEpoch(current)
-
 		// assert payment
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
-		// Setting the current epoch to less than 155 will NOT make any changes as the deal
+		// Setting the current epoch to before the next schedule will NOT make any changes as the deal
 		// is still not scheduled
-		current = 154
-		rt.SetEpoch(current)
+		current2 := current + market.DealUpdatesInterval - 1
+		rt.SetEpoch(current2)
 		actor.cronTickNoChange(rt, client, provider)
 
 		// a second cron tick for the same epoch should not change anything
 		actor.cronTickNoChange(rt, client, provider)
 
-		//  Setting the current epoch to 155 will make another payment (5 + 100 epochs)
-		current = 155
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, pay, big.Mul(big.NewInt(100), d.StoragePricePerEpoch))
+		//  make another payment
+		current3 := current2 + 1
+		rt.SetEpoch(current3)
+		duration := big.NewInt(int64(current3 - current))
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current3, dealId)
+		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// a second cron tick for the same epoch should not change anything
 		actor.cronTickNoChange(rt, client, provider)
 
 		// now terminate the deal
-		current = 200
-		rt.SetEpoch(current)
+		slashEpoch := current3 + 1
+		rt.SetEpoch(slashEpoch)
 		actor.terminateDeals(rt, provider, dealId)
 
-		// Setting the epoch to anything less than 255 will NOT make any changes even though the deal is slashed (155 + 100)
-		current = 254
-		rt.SetEpoch(current)
+		// Setting the epoch to anything less than next schedule will not make any change even though the deal is slashed
+		current4 := current3 + market.DealUpdatesInterval - 1
+		rt.SetEpoch(current4)
 		actor.cronTickNoChange(rt, client, provider)
 
-		// next epoch for cron schedule is 155 + 100 = 255 -> payment will be made and deal will be slashed
-		current = 255
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		// payment will only be made till the 200th epoch as the deal was slashed at that epoch.
-		// so duration = 200 - 155(epoch of last payment) = 45.
-		require.EqualValues(t, pay, big.Mul(big.NewInt(45), d.StoragePricePerEpoch))
+		// next epoch for cron schedule  -> payment will be made and deal will be slashed
+		current5 := current4 + 1
+		rt.SetEpoch(current5)
+		duration = big.NewInt(int64(slashEpoch - current3))
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current5, dealId)
+		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, d.ProviderCollateral, slashed)
 
 		// deal should be deleted as it should have expired
@@ -2028,16 +2068,16 @@ func TestCronTickDealSlashing(t *testing.T) {
 		require.EqualValues(t, big.Zero(), slashed)
 
 		//  Setting the current epoch to 155 will make another payment
-		current = 155
-		rt.SetEpoch(current)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		require.EqualValues(t, pay, big.Mul(big.NewInt(100), d.StoragePricePerEpoch))
+		current2 := current + market.DealUpdatesInterval
+		rt.SetEpoch(current2)
+		duration := big.NewInt(int64(current2 - current))
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current2, dealId)
+		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// set current epoch to deal end epoch and attempt to slash it -> should not be slashed
 		// as deal is considered to be expired.
-		current = endEpoch
-		rt.SetEpoch(current)
+		rt.SetEpoch(endEpoch)
 		actor.terminateDeals(rt, provider, dealId)
 
 		// next epoch for cron schedule is endEpoch + 300 ->
@@ -2046,7 +2086,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		current = endEpoch + 300
 		rt.SetEpoch(current)
 		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		duration := big.NewInt(int64(endEpoch - 155)) // the end epoch MINUS the previous payment epoch i.e. 155
+		duration = big.NewInt(int64(endEpoch - current2))
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
@@ -2084,7 +2124,7 @@ func TestMarketActorDeals(t *testing.T) {
 	{
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
-
+		expectQueryNetworkInfo(rt, actor)
 		rt.ExpectVerifySignature(crypto.Signature{}, client, mustCbor(&params.Deals[0].Proposal), nil)
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -2142,7 +2182,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		param := &market.ComputeDataCommitmentParams{DealIDs: []abi.DealID{1}, SectorType: 1}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(actor.ComputeDataCommitment, param)
 		})
 	})
@@ -2235,7 +2275,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{1}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2249,7 +2289,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.SetCaller(provider2, builtin.StorageMinerActorCodeID)
 
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2261,7 +2301,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2273,7 +2313,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
@@ -2282,6 +2322,9 @@ func TestVerifyDealsForActivation(t *testing.T) {
 type marketActorTestHarness struct {
 	market.Actor
 	t testing.TB
+
+	networkQAPower       abi.StoragePower
+	networkBaselinePower abi.StoragePower
 }
 
 func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
@@ -2484,6 +2527,7 @@ func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, minerAddrs *mine
 		&miner.GetControlAddressesReturn{Owner: minerAddrs.owner, Worker: minerAddrs.worker},
 		exitcode.Ok,
 	)
+	expectQueryNetworkInfo(rt, h)
 
 	var params market.PublishStorageDealsParams
 
@@ -2755,15 +2799,30 @@ func (h *marketActorTestHarness) generateDealAndAddFunds(rt *mock.Runtime, clien
 	return deal4
 }
 
-func generateDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+func (h *marketActorTestHarness) generateDealWithCollateralAndAddFunds(rt *mock.Runtime, client address.Address,
+	minerAddrs *minerAddrs, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+	deal := generateDealProposalWithCollateral(client, minerAddrs.provider, providerCollateral, clientCollateral,
+		startEpoch, endEpoch)
+	h.addProviderFunds(rt, deal.ProviderCollateral, minerAddrs)
+	h.addParticipantFunds(rt, client, deal.ClientBalanceRequirement())
+
+	return deal
+}
+
+func generateDealProposalWithCollateral(client, provider address.Address, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
 	pieceCid := tutil.MakeCID("1", &market.PieceCIDPrefix)
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
-	clientCollateral := big.NewInt(10)
-	providerCollateral := big.NewInt(10)
 
 	return market.DealProposal{pieceCid, pieceSize, false, client, provider, "label", startEpoch,
 		endEpoch, storagePerEpoch, providerCollateral, clientCollateral}
+}
+
+func generateDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {
+	clientCollateral := big.NewInt(10)
+	providerCollateral := big.NewInt(10)
+
+	return generateDealProposalWithCollateral(client, provider, clientCollateral, providerCollateral, startEpoch, endEpoch)
 }
 
 func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Address) (*mock.Runtime, *marketActorTestHarness) {
@@ -2775,8 +2834,12 @@ func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Addr
 		WithActorType(client, builtin.AccountActorCodeID)
 
 	rt := builder.Build(t)
-
-	actor := marketActorTestHarness{t: t}
+	power := abi.NewStoragePower(1 << 50)
+	actor := marketActorTestHarness{
+		t:                    t,
+		networkQAPower:       power,
+		networkBaselinePower: power,
+	}
 	actor.constructAndVerify(rt)
 
 	return rt, &actor
@@ -2796,4 +2859,30 @@ func mkActivateDealParams(sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *m
 
 func mkTerminateDealParams(epoch abi.ChainEpoch, dealIds ...abi.DealID) *market.OnMinerSectorsTerminateParams {
 	return &market.OnMinerSectorsTerminateParams{Epoch: epoch, DealIDs: dealIds}
+}
+
+func expectQueryNetworkInfo(rt *mock.Runtime, h *marketActorTestHarness) {
+	currentPower := power.CurrentTotalPowerReturn{
+		QualityAdjPower: h.networkQAPower,
+	}
+	currentReward := reward.ThisEpochRewardReturn{
+		ThisEpochBaselinePower: h.networkBaselinePower,
+	}
+	rt.ExpectSend(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.ThisEpochReward,
+		nil,
+		big.Zero(),
+		&currentReward,
+		exitcode.Ok,
+	)
+
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.CurrentTotalPower,
+		nil,
+		big.Zero(),
+		&currentPower,
+		exitcode.Ok,
+	)
 }

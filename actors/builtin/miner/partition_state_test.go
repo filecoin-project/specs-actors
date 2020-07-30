@@ -299,8 +299,8 @@ func TestPartitions(t *testing.T) {
 		expset, err := partition.PopExpiredSectors(store, expireEpoch, quantSpec)
 		require.NoError(t, err)
 
-		assertBitfieldsEqual(t, expset.OnTimeSectors, bf(1, 2))
-		assertBitfieldsEqual(t, expset.EarlySectors, bf(4))
+		assertBitfieldEquals(t, expset.OnTimeSectors, 1, 2)
+		assertBitfieldEquals(t, expset.EarlySectors, 4)
 		assert.Equal(t, abi.NewTokenAmount(1000+1001), expset.OnTimePledge)
 
 		// active power only contains power from non-faulty sectors
@@ -406,7 +406,7 @@ func TestPartitions(t *testing.T) {
 		require.NoError(t, err)
 
 		// expect first sector to be in early terminations
-		assertBitfieldsEqual(t, bf(1), result.Sectors[terminationEpoch])
+		assertBitfieldEquals(t, result.Sectors[terminationEpoch], 1)
 
 		// expect more results
 		assert.True(t, hasMore)
@@ -425,7 +425,7 @@ func TestPartitions(t *testing.T) {
 		require.NoError(t, err)
 
 		// expect 3 and 5
-		assertBitfieldsEqual(t, bf(3, 5), result.Sectors[terminationEpoch])
+		assertBitfieldEquals(t, result.Sectors[terminationEpoch], 3, 5)
 
 		// expect no more results
 		assert.False(t, hasMore)
@@ -699,27 +699,6 @@ func emptyPartition(t *testing.T, rt *mock.Runtime) *miner.Partition {
 	require.NoError(t, err)
 
 	return miner.ConstructPartition(root)
-}
-
-func assertBitfieldsEqual(t *testing.T, bf1 *bitfield.BitField, bf2 *bitfield.BitField) {
-	count, err := bf2.Count()
-	require.NoError(t, err)
-
-	err = bf1.ForEach(func(v uint64) error {
-		other, err := bf2.First()
-		require.NoError(t, err)
-
-		assert.Equal(t, other, v)
-
-		bf2, err = bf2.Slice(1, count-1)
-		require.NoError(t, err)
-		count -= 1
-		return nil
-	})
-	require.NoError(t, err)
-
-	// assert no bits left in second bitfield.
-	assert.Equal(t, uint64(0), count)
 }
 
 func rescheduleSectors(t *testing.T, target abi.ChainEpoch, sectors []*miner.SectorOnChainInfo, filter *bitfield.BitField) []*miner.SectorOnChainInfo {

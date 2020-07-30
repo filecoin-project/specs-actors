@@ -5,7 +5,6 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
-	errors "github.com/pkg/errors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -15,6 +14,7 @@ import (
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type Runtime = vmr.Runtime
@@ -23,12 +23,6 @@ type SectorTermination int64
 
 const (
 	ErrTooManyProveCommits = exitcode.FirstActorSpecificExitCode + iota
-)
-
-const (
-	SectorTerminationExpired SectorTermination = iota // Implicit termination after all deals expire
-	SectorTerminationManual                           // Unscheduled explicit termination by the miner
-	SectorTerminationFaulty                           // Implicit termination due to unrecovered fault
 )
 
 type Actor struct{}
@@ -74,13 +68,9 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to create storage power state: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 	emptyMMapCid, err := adt.MakeEmptyMultimap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to get empty multimap cid")
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 
 	st := ConstructState(emptyMap, emptyMMapCid)
 	rt.State().Create(st)
@@ -112,9 +102,8 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	}
 	ctorParamBuf := new(bytes.Buffer)
 	err := ctorParams.MarshalCBOR(ctorParamBuf)
-	if err != nil {
-		rt.Abortf(exitcode.ErrPlaceholder, "failed to serialize miner constructor params %v: %v", ctorParams, err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to serialize miner constructor params %v", ctorParams)
+
 	ret, code := rt.Send(
 		builtin.InitActorAddr,
 		builtin.MethodsInit.Exec,
@@ -127,9 +116,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	builtin.RequireSuccess(rt, code, "failed to init new actor")
 	var addresses initact.ExecReturn
 	err = ret.Into(&addresses)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "unmarshaling exec return value: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal exec return value %v", ret)
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
@@ -137,9 +124,8 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
 		err = setClaim(claims, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0)})
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner: %v", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner")
+
 		st.MinerCount += 1
 
 		st.Claims, err = claims.Root()
@@ -217,23 +203,22 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
-	if err := a.processDeferredCronEvents(rt); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
-	}
-
+	a.processDeferredCronEvents(rt)
 	a.processBatchProofVerifies(rt)
 
 	var st State
-	rt.State().Readonly(&st)
-
-	// update next epoch's power and pledge values
-	// this must come before the next epoch's rewards are calculated
-	// so that next epoch reward reflects power added this epoch
 	rt.State().Transaction(&st, func() interface{} {
+		// update next epoch's power and pledge values
+		// this must come before the next epoch's rewards are calculated
+		// so that next epoch reward reflects power added this epoch
 		rawBytePower, qaPower := CurrentTotalPower(&st)
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
 		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
+		delta := rt.CurrEpoch() - st.LastProcessedCronEpoch
+		st.updateSmoothedEstimate(delta)
+
+		st.LastProcessedCronEpoch = rt.CurrEpoch()
 		return nil
 	})
 
@@ -269,11 +254,9 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
 		claim, powerOk, err := getClaim(claims, minerAddr)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to read claimed power for fault: %v", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to read claimed power for fault")
 		if !powerOk {
-			rt.Abortf(exitcode.ErrIllegalArgument, "miner %v not registered (already slashed?)", minerAddr)
+			rt.Abortf(exitcode.ErrNotFound, "miner %v not registered (already slashed?)", minerAddr)
 		}
 		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
@@ -315,9 +298,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 		} else {
 			var err error
 			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to load proof batching set: %s", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
 		}
 
 		arr, found, err := mmap.Get(adt.AddrKey(minerAddr))
@@ -326,14 +307,12 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 			rt.Abortf(ErrTooManyProveCommits, "miner %s attempting to prove commit over %d sectors in epoch", minerAddr, MaxMinerProveCommitsPerEpoch)
 		}
 
-		if err := mmap.Add(adt.AddrKey(minerAddr), sealInfo); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to insert proof into set: %s", err)
-		}
+		err = mmap.Add(adt.AddrKey(minerAddr), sealInfo)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to insert proof into batch")
 
 		mmrc, err := mmap.Root()
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to flush proofs batch map: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush proofs batch")
+
 		rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 		st.ProofValidationBatch = &mmrc
 		return nil
@@ -343,9 +322,10 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo
 }
 
 type CurrentTotalPowerReturn struct {
-	RawBytePower     abi.StoragePower
-	QualityAdjPower  abi.StoragePower
-	PledgeCollateral abi.TokenAmount
+	RawBytePower            abi.StoragePower
+	QualityAdjPower         abi.StoragePower
+	PledgeCollateral        abi.TokenAmount
+	QualityAdjPowerSmoothed *smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.
@@ -358,9 +338,10 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 	rt.State().Readonly(&st)
 
 	return &CurrentTotalPowerReturn{
-		RawBytePower:     st.ThisEpochRawBytePower,
-		QualityAdjPower:  st.ThisEpochQualityAdjPower,
-		PledgeCollateral: st.ThisEpochPledgeCollateral,
+		RawBytePower:            st.ThisEpochRawBytePower,
+		QualityAdjPower:         st.ThisEpochQualityAdjPower,
+		PledgeCollateral:        st.ThisEpochPledgeCollateral,
+		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 	}
 }
 
@@ -442,7 +423,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	}
 }
 
-func (a Actor) processDeferredCronEvents(rt Runtime) error {
+func (a Actor) processDeferredCronEvents(rt Runtime) {
 	rtEpoch := rt.CurrEpoch()
 
 	var cronEvents []CronEvent
@@ -453,17 +434,13 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 		for epoch := st.FirstCronEpoch; epoch <= rtEpoch; epoch++ {
 			epochEvents, err := loadCronEvents(events, epoch)
-			if err != nil {
-				return errors.Wrapf(err, "failed to load cron events at %v", epoch)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events at %v", epoch)
 
 			cronEvents = append(cronEvents, epochEvents...)
 
 			if len(epochEvents) > 0 {
 				err = events.RemoveAll(epochKey(epoch))
-				if err != nil {
-					return errors.Wrapf(err, "failed to clear cron events at %v", epoch)
-				}
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to clear cron events at %v", epoch)
 			}
 		}
 
@@ -471,7 +448,6 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 		st.CronEventQueue, err = events.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush events")
-
 		return nil
 	})
 	failedMinerCrons := make([]addr.Address, 0)
@@ -520,5 +496,4 @@ func (a Actor) processDeferredCronEvents(rt Runtime) error {
 
 		return nil
 	})
-	return nil
 }

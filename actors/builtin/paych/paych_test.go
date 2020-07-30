@@ -142,7 +142,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
 			amt: 10, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
-			expExitCode: exitcode.ErrIllegalState},
+			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if new send balance is negative", targetCode: builtin.AccountActorCodeID,
 			amt: -1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
@@ -380,7 +380,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		{
 			name: "fails: not enough funds in channel to cover voucher",
 			lane: 1, balance: 1, voucherNonce: 10, mergeNonce: 10,
-			expExitCode: exitcode.ErrIllegalState,
+			expExitCode: exitcode.ErrIllegalArgument,
 		},
 		{
 			name: "fails: voucher cannot merge lanes into its own lane",

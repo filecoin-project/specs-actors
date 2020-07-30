@@ -11,8 +11,10 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type State struct {
@@ -29,6 +31,7 @@ type State struct {
 	ThisEpochRawBytePower     abi.StoragePower
 	ThisEpochQualityAdjPower  abi.StoragePower
 	ThisEpochPledgeCollateral abi.TokenAmount
+	ThisEpochQAPowerSmoothed  *smoothing.FilterEstimate
 
 	MinerCount int64
 	// Number of miners having proven the minimum consensus power.
@@ -40,6 +43,9 @@ type State struct {
 	// First epoch in which a cron task may be stored.
 	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
 	FirstCronEpoch abi.ChainEpoch
+
+	// Last epoch power cron tick has been processed.
+	LastProcessedCronEpoch abi.ChainEpoch
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -72,8 +78,10 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochRawBytePower:     abi.NewStoragePower(0),
 		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
+		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
 		FirstCronEpoch:            0,
-		CronEventQueue:            emptyMapCid,
+		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
+		CronEventQueue:            emptyMMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,
 		MinerAboveMinPowerCount:   0,
@@ -139,7 +147,7 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		return fmt.Errorf("failed to get claim: %w", err)
 	}
 	if !ok {
-		return errors.Errorf("no claim for actor %v", miner)
+		return exitcode.ErrNotFound.Wrapf("no claim for actor %v", miner)
 	}
 
 	// TotalBytes always update directly
@@ -200,10 +208,15 @@ func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, eve
 	}
 
 	if err := events.Add(epochKey(epoch), event); err != nil {
-		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
+		return xerrors.Errorf("failed to store cron event at epoch %v for miner %v: %w", epoch, event, err)
 	}
 
 	return nil
+}
+
+func (st *State) updateSmoothedEstimate(delta abi.ChainEpoch) {
+	filterQAPower := smoothing.LoadFilter(st.ThisEpochQAPowerSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochQAPowerSmoothed = filterQAPower.NextEstimate(st.ThisEpochQualityAdjPower, delta)
 }
 
 func loadCronEvents(mmap *adt.Multimap, epoch abi.ChainEpoch) ([]CronEvent, error) {
@@ -221,7 +234,7 @@ func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
 	if err := claims.Put(AddrKey(a), claim); err != nil {
-		return errors.Wrapf(err, "failed to put claim with address %s power %v", a, claim)
+		return xerrors.Errorf("failed to put claim with address %s power %v: %w", a, claim, err)
 	}
 
 	return nil

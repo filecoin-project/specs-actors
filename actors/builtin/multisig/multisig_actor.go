@@ -258,9 +258,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 
 		// confirm the hashes match
 		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute proposal hash for %v", params.ID)
 		if params.ProposalHash != nil && !bytes.Equal(params.ProposalHash, calculatedHash[:]) {
 			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
 		}
@@ -411,9 +409,8 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
-		if err := ptx.Put(txnID, txn); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to put transaction for approval: %v", err)
-		}
+		 err = ptx.Put(txnID, txn)
+		 builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put transaction %v for approval", txnID)
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
@@ -437,9 +434,7 @@ func getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []by
 	// confirm the hashes match
 	if checkHash {
 		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to compute proposal hash: %v", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute proposal hash for %v", txnID)
 		if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "hash does not match proposal params")
 		}
@@ -471,9 +466,8 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 
 		// Pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails
 		// since it just copies the bytes.
-		if err := ret.Into(&out); err != nil {
-			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize result: %v", err)
-		}
+		err := ret.Into(&out)
+		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to deserialize result")
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.State().Transaction(&st, func() interface{} {

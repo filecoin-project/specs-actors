@@ -3,6 +3,7 @@ package reward
 import (
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 // A quantity of space * time (in byte-epochs) representing power committed to the network for some duration.
@@ -29,12 +30,17 @@ type State struct {
 	// The actual reward total paid out depends on the number of winners in any round.
 	// This value is recomputed every non-null epoch and used in the next non-null epoch.
 	ThisEpochReward abi.TokenAmount
+	// Smoothed ThisEpochReward
+	ThisEpochRewardSmoothed *smoothing.FilterEstimate
 
 	// The baseline power the network is targeting at st.Epoch
 	ThisEpochBaselinePower abi.StoragePower
 
 	// Epoch tracks for which epoch the Reward was computed
 	Epoch abi.ChainEpoch
+
+	// TotalMined tracks the total FIL awared to block miners
+	TotalMined abi.TokenAmount
 }
 
 func ConstructState(currRealizedPower abi.StoragePower) *State {
@@ -47,6 +53,9 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		ThisEpochReward:        big.Zero(),
 		ThisEpochBaselinePower: InitBaselinePower(),
 		Epoch:                  -1,
+
+		ThisEpochRewardSmoothed: smoothing.InitialEstimate(),
+		TotalMined:              big.Zero(),
 	}
 
 	st.updateToNextEpochWithReward(currRealizedPower)
@@ -78,4 +87,9 @@ func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower)
 
 	st.ThisEpochReward = computeReward(st.Epoch, prevRewardTheta, currRewardTheta)
 
+}
+
+func (st *State) updateSmoothedEstimates(delta abi.ChainEpoch) {
+	filterReward := smoothing.LoadFilter(st.ThisEpochRewardSmoothed, smoothing.DefaultAlpha, smoothing.DefaultBeta)
+	st.ThisEpochRewardSmoothed = filterReward.NextEstimate(st.ThisEpochReward, delta)
 }

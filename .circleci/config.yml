@@ -51,6 +51,21 @@ jobs:
       - store_artifacts:
           path: specs-actors
 
+  check-gen:
+    executor: golang
+    steps:
+      - install-deps
+      - prepare
+      - go/mod-download
+      - run:
+          name: "Install goimports"
+          command: |
+            cd / && go get golang.org/x/tools/cmd/goimports
+      - run:
+          name: "Ensure we don't need to run 'make gen'"
+          command: |
+            make gen && git diff --exit-code
+
   test-all:
     executor: golang
     steps:
@@ -111,3 +126,4 @@ workflows:
       - mod-tidy-check
       - build-all
       - test-all
+      - check-gen
