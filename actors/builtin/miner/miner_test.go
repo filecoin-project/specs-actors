@@ -1447,9 +1447,10 @@ func TestTerminateSectors(t *testing.T) {
 		sectorSize, err := sector.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorPower := miner.QAPowerForSector(sectorSize, sector)
-		dayReward := miner.ExpectedDayRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		dayReward := miner.ExpectedDayRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
+		twentyDayReward := big.Mul(dayReward,big.NewInt(20))
 		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
