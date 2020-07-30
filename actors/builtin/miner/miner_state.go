@@ -216,23 +216,6 @@ func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *DeadlineInfo {
 	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
 }
 
-func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
-	sectors, err := LoadSectors(store, st.Sectors)
-	if err != nil {
-		return 0, err
-	}
-
-	return sectors.Length(), nil
-}
-
-func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
-	sectorCount, err := st.GetSectorCount(store)
-	if err != nil {
-		return 0, err
-	}
-	return 2 * sectorCount, nil
-}
-
 func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {
 	// This will likely already have been checked, but this is a good place
 	// to catch any mistakes.
