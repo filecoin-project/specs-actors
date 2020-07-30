@@ -214,6 +214,47 @@ func TestDeadlines(t *testing.T) {
 		require.Error(t, err, "should have failed to remove a partition with early terminations")
 	})
 
+	t.Run("can pop early terminations in multiple steps", func(t *testing.T) {
+		rt := builder.Build(t)
+		dl := emptyDeadline(t, rt)
+		addThenTerminate(t, rt, dl)
+
+		store := adt.AsStore(rt)
+
+		var result miner.TerminationResult
+
+		// process 1 sector, 2 partitions (should pop 1 sector)
+		result1, hasMore, err := dl.PopEarlyTerminations(store, 2, 1)
+		require.NoError(t, err)
+		require.True(t, hasMore)
+		require.NoError(t, result.Add(result1))
+
+		// process 2 sectors, 1 partitions (should pop 1 sector)
+		result2, hasMore, err := dl.PopEarlyTerminations(store, 2, 1)
+		require.NoError(t, err)
+		require.True(t, hasMore)
+		require.NoError(t, result.Add(result2))
+
+		// process 1 sectors, 1 partitions (should pop 1 sector)
+		result3, hasMore, err := dl.PopEarlyTerminations(store, 1, 1)
+		require.NoError(t, err)
+		require.False(t, hasMore)
+		require.NoError(t, result.Add(result3))
+
+		assert.Equal(t, uint64(3), result.PartitionsProcessed)
+		assert.Equal(t, uint64(3), result.SectorsProcessed)
+		assert.Len(t, result.Sectors, 1)
+		assertBitfieldEquals(t, result.Sectors[15], 1, 3, 6)
+
+		// Popping early terminations doesn't affect the terminations bitfield.
+		dlState.withTerminations(1, 3, 6).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+	})
+
 	t.Run("cannot remove missing partition", func(t *testing.T) {
 		rt := builder.Build(t)
 		dl := emptyDeadline(t, rt)
