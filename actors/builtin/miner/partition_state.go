@@ -124,6 +124,10 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 // Returns the power of the now-faulty sectors.
 func (p *Partition) AddFaults(store adt.Store, sectorNos *abi.BitField, sectors []*SectorOnChainInfo, faultExpiration abi.ChainEpoch,
 	ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
+	if len(sectors) == 0 {
+		return NewPowerPairZero(), nil
+	}
+
 	var err error
 	// Load expiration queue
 	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)

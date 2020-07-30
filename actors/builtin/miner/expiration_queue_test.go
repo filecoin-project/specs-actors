@@ -632,6 +632,52 @@ func TestExpirationQueue(t *testing.T) {
 		// no further sets remain
 		requireNoExpirationGroupsBefore(t, 20, queue)
 	})
+
+	t.Run("adding no sectors leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+		_, _, _, err := queue.AddActiveSectors(nil, sectorSize)
+		require.NoError(t, err)
+		assert.Zero(t, queue.Length())
+	})
+	t.Run("rescheduling no expirations leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+		err := queue.RescheduleExpirations(10, nil, sectorSize)
+		require.NoError(t, err)
+		assert.Zero(t, queue.Length())
+	})
+
+	t.Run("rescheduling no expirations as faults leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+
+		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
+		require.NoError(t, err)
+
+		// all sectors already expire before epoch 15, nothing should change.
+		length := queue.Length()
+		_, err = queue.RescheduleAsFaults(15, sectors, sectorSize)
+		require.NoError(t, err)
+		assert.Equal(t, length, queue.Length())
+	})
+
+	t.Run("rescheduling all expirations as faults leaves the queue empty if it was empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+
+		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
+		require.NoError(t, err)
+
+		// all sectors already expire before epoch 15, nothing should change.
+		length := queue.Length()
+		err = queue.RescheduleAllAsFaults(15)
+		require.NoError(t, err)
+		assert.Equal(t, length, queue.Length())
+	})
+
+	t.Run("rescheduling no sectors as recovered leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+		_, err := queue.RescheduleRecovered(nil, sectorSize)
+		require.NoError(t, err)
+		assert.Zero(t, queue.Length())
+	})
 }
 
 func testSector(expiration, number, weight, vweight, pledge int64) *miner.SectorOnChainInfo {
