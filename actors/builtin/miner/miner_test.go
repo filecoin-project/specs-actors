@@ -884,25 +884,41 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
-		t.Skip("Disabled in miner state refactor #648, restore soon")
-		//rt := builder.Build(t)
-		//deadline, infos, partitions := runTillFirstDeadline(rt)
-		//
-		//// skip the first sector in the partition
-		//skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-		//
-		//pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
-		//
-		//// expected penalty is the fee for an undeclared fault
-		//expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-		//
-		//cfg := &poStConfig{
-		//	expectedRawPowerDelta: pwr.Raw.Neg(),
-		//	expectedQAPowerDelta:  pwr.QA.Neg(),
-		//	expectedPenalty:       expectedPenalty,
-		//}
-		//
-		//actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt)
+		infos := actor.commitAndProveSectors(rt, 2, 181, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
+
+		// advance to epoch when submitPoSt is due
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		dlIdx2, _, err := st.FindSector(rt.AdtStore(), infos[1].SectorNumber)
+		require.NoError(t, err)
+		assert.Equal(t, dlIdx, dlIdx2) // this test will need to change when these are not equal
+
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlinfo = actor.deadline(rt)
+		}
+
+		// Now submit PoSt with a skipped fault for first sector
+		// First sector should be penalized as an undeclared fault and its power should be removed
+		faultFee := actor.undeclaredFaultPenalty(infos)
+		pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
+		cfg := &poStConfig{
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
+			expectedPenalty:       faultFee,
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bf(uint64(infos[0].SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 	})
 
 	// TODO minerstate
