@@ -154,6 +154,10 @@ func (q ExpirationQueue) AddActiveSectors(sectors []*SectorOnChainInfo, ssize ab
 // rather than early expiration.
 // The sectors' power and pledge are assumed not to change, despite the new expiration.
 func (q ExpirationQueue) RescheduleExpirations(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) error {
+	if len(sectors) == 0 {
+		return nil
+	}
+
 	snos, power, pledge, err := q.removeActiveSectors(sectors, ssize)
 	if err != nil {
 		return xerrors.Errorf("failed to remove sector expirations: %w", err)
@@ -205,13 +209,15 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 		}
 	}
 
-	// Add sectors to new expiration as early-terminating and faulty.
-	earlySectors := bitfield.NewFromSet(sectorsTotal)
-	noOnTimeSectors := abi.NewBitField()
-	noOnTimePledge := abi.NewTokenAmount(0)
-	noActivePower := NewPowerPairZero()
-	if err := q.add(newExpiration, noOnTimeSectors, earlySectors, noActivePower, rescheduledPower, noOnTimePledge); err != nil {
-		return NewPowerPairZero(), err
+	if len(sectorsTotal) > 0 {
+		// Add sectors to new expiration as early-terminating and faulty.
+		earlySectors := bitfield.NewFromSet(sectorsTotal)
+		noOnTimeSectors := abi.NewBitField()
+		noOnTimePledge := abi.NewTokenAmount(0)
+		noActivePower := NewPowerPairZero()
+		if err := q.add(newExpiration, noOnTimeSectors, earlySectors, noActivePower, rescheduledPower, noOnTimePledge); err != nil {
+			return NewPowerPairZero(), err
+		}
 	}
 
 	return rescheduledPower.Add(expiringPower), nil
@@ -219,7 +225,7 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 
 // Re-schedules *all* sectors to expire at an early expiration epoch, if they wouldn't expire before then anyway.
 func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) error {
-	var rescheduedEpochs []uint64
+	var rescheduledEpochs []uint64
 	var rescheduledSectors []*abi.BitField
 	rescheduledPower := NewPowerPairZero()
 
@@ -235,7 +241,7 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 				return err
 			}
 		} else {
-			rescheduedEpochs = append(rescheduedEpochs, uint64(epoch))
+			rescheduledEpochs = append(rescheduledEpochs, uint64(epoch))
 			rescheduledSectors = append(rescheduledSectors, es.OnTimeSectors, es.EarlySectors)
 			rescheduledPower = rescheduledPower.Add(es.ActivePower)
 			rescheduledPower = rescheduledPower.Add(es.FaultyPower)
@@ -243,6 +249,11 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	// If we didn't reschedule anything, we're done.
+	if len(rescheduledEpochs) == 0 {
+		return nil
 	}
 
 	// Add rescheduled sectors to new expiration as early-terminating and faulty.
@@ -258,7 +269,7 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 	}
 
 	// Trim the rescheduled epochs from the queue.
-	if err = q.BatchDelete(rescheduedEpochs); err != nil {
+	if err = q.BatchDelete(rescheduledEpochs); err != nil {
 		return err
 	}
 
