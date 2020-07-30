@@ -160,12 +160,12 @@ type ChangeWorkerAddressParams struct {
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
 	var st State
+	worker := resolveWorkerAddress(rt, params.NewWorker)
+
 	rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(info.Owner)
-
-		worker := resolveWorkerAddress(rt, params.NewWorker)
 
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
@@ -269,7 +269,13 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() interface{} {
 		info = getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		// if a key change is in progress, we also allow the owner to call this
+		// otherwise, we only allow the worker.
+		if info.PendingWorkerKey == nil {
+			rt.ValidateImmediateCallerIs(info.Worker)
+		} else {
+			rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		}
 
 		// Validate that the miner didn't try to prove too many partitions at once.
 		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
@@ -1080,7 +1086,13 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	newFaultPowerTotal := NewPowerPairZero()
 	rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		// if a key change is in progress, we also allow the owner to call this
+		// otherwise, we only allow the worker.
+		if info.PendingWorkerKey == nil {
+			rt.ValidateImmediateCallerIs(info.Worker)
+		} else {
+			rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		}
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")

@@ -783,6 +783,43 @@ func TestWindowPost(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{})
 	})
 
+	t.Run("works when owner is the caller if key change is in progress", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		// key change is in progress
+		effectiveEpoch := 1 + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
+		require.NoError(t, err)
+
+		// Skip over deadlines until the beginning of the one with the new sector
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlinfo = actor.deadline(rt)
+		}
+
+		// Submit PoSt
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: abi.NewBitField()},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
+
+		// Verify proof recorded
+		deadline := actor.getDeadline(rt, dlIdx)
+		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+
+		// Advance to end-of-deadline cron to verify no penalties.
+		advanceDeadline(rt, actor, &cronConfig{})
+	})
+
 	t.Run("test duplicate proof ignored", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -1275,10 +1312,7 @@ func TestDeclareFaults(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("declare fault pays fee", func(t *testing.T) {
-		// Get sector into proving state
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
+	paramsFunc := func(rt *mock.Runtime) (abi.TokenAmount, *miner.SectorOnChainInfo) {
 		precommits := actor.commitAndProveSectors(rt, 1, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
@@ -1291,7 +1325,96 @@ func TestDeclareFaults(t *testing.T) {
 		sectorQAPower := miner.QAPowerForSector(ss, info)
 		fee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorQAPower)
 
+		return fee, info
+	}
+
+	t.Run("declare fault pays fee", func(t *testing.T) {
+		// Get sector into proving state
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		fee, info := paramsFunc(rt)
+
 		actor.declareFaults(rt, fee, info)
+	})
+
+}
+
+func TestDeclareFaultsKeyChange(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("fails when caller is the owner but NO key change is in progress", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		params := &miner.DeclareFaultsParams{nil}
+
+		rt.ExpectValidateCallerAddr(actor.worker)
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.DeclareFaults, params)
+		})
+		rt.Verify()
+	})
+
+	t.Run("owner can call this if worker key change is in progress", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		// key change is in progress
+		effectiveEpoch := 0 + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		params := &miner.DeclareFaultsParams{nil}
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		rt.Call(actor.a.DeclareFaults, params)
+		rt.Verify()
+	})
+
+	t.Run("fails when key change is in progress but caller is neither the owner nor current worker", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		// key change is in progress
+		effectiveEpoch := 0 + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		params := &miner.DeclareFaultsParams{nil}
+
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.SetCaller(newWorker, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.DeclareFaults, params)
+		})
+		rt.Verify()
+	})
+
+	t.Run("only the new worker can call this after key change is complete", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		// key change is in progress
+		effectiveEpoch := 0 + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		// key change done
+		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+
+		params := &miner.DeclareFaultsParams{nil}
+		rt.ExpectValidateCallerAddr(newWorker)
+
+		rt.SetCaller(newWorker, builtin.AccountActorCodeID)
+		rt.Call(actor.a.DeclareFaults, params)
+		rt.Verify()
 	})
 }
 
@@ -1513,6 +1636,170 @@ func TestWithdrawBalance(t *testing.T) {
 			actor.withdrawFunds(rt, big.Mul(big.NewInt(10), big.NewInt(1e18)))
 		})
 	})
+}
+
+func TestChangeWorkerAddress(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	setupFunc := func() (*mock.Runtime, *actorHarness) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+
+		return rt, actor
+	}
+
+	t.Run("successfully change a worker address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		currentEpoch := abi.ChainEpoch(5)
+		rt.SetEpoch(currentEpoch)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		// no change if current epoch is less than effective epoch
+		rt.SetEpoch(effectiveEpoch - 1)
+		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
+				EventType: miner.CronEventWorkerKeyChange,
+			})
+		})
+		rt.Verify()
+
+		// set current epoch to effective epoch and ask to change the address
+		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+	})
+
+	t.Run("fails if unable to resolve worker address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewBLSAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if worker public key is not BLS", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+		key := tutil.NewIDAddr(t, 505)
+
+		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &key, exitcode.Ok)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if new worker address does not have a code", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 5001)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if new worker is not an account actor", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.StorageMinerActorCodeID)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails when caller is not the owner", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+		rt.ExpectValidateCallerAddr(actor.owner)
+		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &actor.key, exitcode.Ok)
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+}
+
+func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch) {
+	rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+	param := &miner.ChangeWorkerAddressParams{newWorker}
+
+	cronPayload := miner.CronEventPayload{
+		EventType: miner.CronEventWorkerKeyChange,
+	}
+	payload := new(bytes.Buffer)
+	err := cronPayload.MarshalCBOR(payload)
+	require.NoError(h.t, err)
+	cronEvt := &power.EnrollCronEventParams{
+		EventEpoch: effectiveEpoch,
+		Payload:    payload.Bytes(),
+	}
+
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
+
+	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
+		cronEvt, big.Zero(), nil, exitcode.Ok)
+
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	rt.Call(h.a.ChangeWorkerAddress, param)
+	rt.Verify()
+
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
+	require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+}
+
+func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
+	rt.SetEpoch(effectiveEpoch)
+	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
+		EventType: miner.CronEventWorkerKeyChange,
+	})
+	rt.Verify()
+
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.Nil(h.t, info.PendingWorkerKey)
+	require.EqualValues(h.t, newWorker, info.Worker)
 }
 
 func TestReportConsensusFault(t *testing.T) {
@@ -2058,8 +2345,16 @@ type poStConfig struct {
 }
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
-	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	if info.PendingWorkerKey == nil {
+		rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(h.worker)
+	} else {
+		rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	}
 
 	expectQueryNetworkInfo(rt, h)
 

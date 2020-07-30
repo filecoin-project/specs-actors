@@ -94,12 +94,12 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
 		"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
 
-	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
-	builtin.RequireSuccess(rt, code, "failed to send reward to miner: %s", minerAddr)
+	// if this fails, we can assume the miner is responsible and do not to fail here
+	_, _ = rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
 
 	// Burn the penalty amount.
 	if penalty.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
 		builtin.RequireSuccess(rt, code, "failed to send penalty to burnt funds actor")
 	}
 
