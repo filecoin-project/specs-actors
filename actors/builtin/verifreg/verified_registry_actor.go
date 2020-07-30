@@ -39,9 +39,7 @@ func (a Actor) Constructor(rt vmr.Runtime, rootKey *addr.Address) *adt.EmptyValu
 	builtin.RequireParam(rt, ok, "root should be an ID address")
 
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to create verified registry state: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	st := ConstructState(emptyMap, idAddr)
 	rt.State().Create(st)
@@ -120,7 +118,7 @@ type AddVerifiedClientParams struct {
 
 func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
+		rt.Abortf(exitcode.ErrIllegalArgument, "allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
 	}
 	rt.ValidateImmediateCallerAcceptAny()
 
@@ -143,10 +141,9 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 		verifierAddr := rt.Message().Caller()
 		var verifierCap DataCap
 		found, err := verifiers.Get(AddrKey(verifierAddr), &verifierCap)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to get Verifier for %v", err)
-		} else if !found {
-			rt.Abortf(exitcode.ErrNotFound, "Invalid verifier %v", verifierAddr)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier %v", verifierAddr)
+		if !found {
+			rt.Abortf(exitcode.ErrNotFound, "no such verifier %v", verifierAddr)
 		}
 
 		// Validate client to be added isn't a verifier
@@ -158,35 +155,31 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 
 		// Compute new verifier cap and update.
 		if verifierCap.LessThan(params.Allowance) {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Add more DataCap (%d) for VerifiedClient than allocated %d", params.Allowance, verifierCap)
+			rt.Abortf(exitcode.ErrIllegalArgument, "add more DataCap (%d) for VerifiedClient than allocated %d", params.Allowance, verifierCap)
 		}
 		newVerifierCap := big.Sub(verifierCap, params.Allowance)
 
-		if err := verifiers.Put(AddrKey(verifierAddr), &newVerifierCap); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to update new verifier cap (%d) for %v", newVerifierCap, verifierAddr)
-		}
+		err = verifiers.Put(AddrKey(verifierAddr), &newVerifierCap)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update new verifier cap (%d) for %v", newVerifierCap, verifierAddr)
 
 		// This is a one-time, upfront allocation.
 		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
 		// If parties need more allowance, they need to create a new verified client or use up the the current allowance
 		// and then create a new verified client.
 		found, err = verifiedClients.Get(AddrKey(params.Address), &verifierCap)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to load verified client state for %v", params.Address)
-		} else if found {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Verified client already exists: %v", params.Address)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
+		if found {
+			rt.Abortf(exitcode.ErrIllegalArgument, "verified client already exists: %v", params.Address)
 		}
 
-		if err := verifiedClients.Put(AddrKey(params.Address), &params.Allowance); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to add verified client %v with cap %d", params.Address, params.Allowance)
-		}
+		err = verifiedClients.Put(AddrKey(params.Address), &params.Allowance)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified client %v with cap %d", params.Address, params.Allowance)
 
 		st.Verifiers, err = verifiers.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verifiers")
 
 		st.VerifiedClients, err = verifiedClients.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
-
 		return nil
 	})
 
@@ -215,10 +208,9 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue 
 
 		var vcCap DataCap
 		found, err := verifiedClients.Get(AddrKey(params.Address), &vcCap)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to get verified client state for %v", params.Address)
-		} else if !found {
-			rt.Abortf(exitcode.ErrIllegalArgument, "Invalid address for verified client %v", params.Address)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
+		if !found {
+			rt.Abortf(exitcode.ErrNotFound, "no such verified client %v", params.Address)
 		}
 		Assert(vcCap.GreaterThanEqual(big.Zero()))
 
@@ -231,14 +223,10 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue 
 			// Delete entry if remaining DataCap is less than MinVerifiedDealSize.
 			// Will be restored later if the deal did not get activated with a ProvenSector.
 			err = verifiedClients.Delete(AddrKey(params.Address))
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "Failed to delete verified client %v with cap %d when %d bytes are used.", params.Address, vcCap, params.DealSize)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", params.Address)
 		} else {
 			err = verifiedClients.Put(AddrKey(params.Address), &newVcCap)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "Failed to update verified client %v when %d bytes are used.", params.Address, params.DealSize)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update verified client %v with %v", params.Address, newVcCap)
 		}
 
 		st.VerifiedClients, err = verifiedClients.Root()
@@ -288,18 +276,14 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 
 		var vcCap DataCap
 		found, err = verifiedClients.Get(AddrKey(params.Address), &vcCap)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to get verified client state for %v", params.Address)
-		}
-
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
 		if !found {
 			vcCap = big.Zero()
 		}
 
 		newVcCap := big.Add(vcCap, params.DealSize)
-		if err := verifiedClients.Put(AddrKey(params.Address), &newVcCap); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "Failed to restore verified client state for %v", params.Address)
-		}
+		err = verifiedClients.Put(AddrKey(params.Address), &newVcCap)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put verified client %v with %v", params.Address, newVcCap)
 
 		st.VerifiedClients, err = verifiedClients.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")

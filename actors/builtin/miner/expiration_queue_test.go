@@ -2,6 +2,7 @@ package miner_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -10,6 +11,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/support/testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -639,6 +641,7 @@ func testSector(expiration, number, weight, vweight, pledge int64) *miner.Sector
 		DealWeight:         big.NewInt(weight),
 		VerifiedDealWeight: big.NewInt(vweight),
 		InitialPledge:      abi.NewTokenAmount(pledge),
+		SealedCID:          tutil.MakeCID(fmt.Sprintf("commR-%d", number), &miner.SealedCIDPrefix),
 	}
 }
 

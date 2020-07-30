@@ -443,7 +443,7 @@ func TestUseBytes(t *testing.T) {
 		dSize2 := verifreg.MinVerifiedDealSize
 		param := &verifreg.UseBytesParams{clientAddr, dSize2}
 
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
 
 		})
@@ -481,7 +481,7 @@ func TestUseBytes(t *testing.T) {
 		dSize2 := verifreg.MinVerifiedDealSize
 		param := &verifreg.UseBytesParams{clientAddr, dSize2}
 
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
 
 		})
