@@ -17,6 +17,11 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
+// genesis power in bytes = 750,000 GiB
+var InitialQAPowerEstimatePosition = big.Mul(big.NewInt(750_000), big.NewInt(1<<30))
+// max chain throughput in bytes per epoch = 120 ProveCommits / epoch = 3,840 GiB
+var InitialQAPowerEstimateVelocity = big.Mul(big.NewInt(3_840), big.NewInt(1<<30))
+
 type State struct {
 	TotalRawBytePower abi.StoragePower
 	// TotalBytesCommitted includes claims from miners below min power threshold
@@ -78,7 +83,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochRawBytePower:     abi.NewStoragePower(0),
 		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
-		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
+		ThisEpochQAPowerSmoothed:  smoothing.NewEstimate(InitialQAPowerEstimatePosition, InitialQAPowerEstimateVelocity),
 		FirstCronEpoch:            0,
 		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
 		CronEventQueue:            emptyMMapCid,
@@ -259,4 +264,5 @@ func init() {
 	if reflect.TypeOf(e).Kind() != reflect.Int64 {
 		panic("incorrect chain epoch encoding")
 	}
+
 }

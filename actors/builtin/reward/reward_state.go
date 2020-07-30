@@ -9,6 +9,14 @@ import (
 // A quantity of space * time (in byte-epochs) representing power committed to the network for some duration.
 type Spacetime = big.Int
 
+// 36.266260308195979333 FIL
+const InitialRewardPositionEstimateStr = "36266260308195979333"
+
+var InitialRewardPositionEstimate = big.MustFromString(InitialRewardPositionEstimateStr)
+
+// -1.0982489*10^-7 FIL per epoch.  Change of simple minted tokens between epochs 0 and 1
+var InitialRewardVelocityEstimate = abi.NewTokenAmount(-109897758509)
+
 type State struct {
 	// CumsumBaseline is a target CumsumRealized needs to reach for EffectiveNetworkTime to increase
 	// CumsumBaseline and CumsumRealized are expressed in byte-epochs.
@@ -54,7 +62,7 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		ThisEpochBaselinePower: InitBaselinePower(),
 		Epoch:                  -1,
 
-		ThisEpochRewardSmoothed: smoothing.InitialEstimate(),
+		ThisEpochRewardSmoothed: smoothing.NewEstimate(InitialRewardPositionEstimate, InitialRewardVelocityEstimate),
 		TotalMined:              big.Zero(),
 	}
 
