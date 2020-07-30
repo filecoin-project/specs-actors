@@ -892,27 +892,38 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.onEpochTickEnd(rt, 0, big.Zero(), nil, nil)
 	})
 
-	t.Run("fails if batch verify seals does not return result for a miner", func(t *testing.T) {
+	t.Run("verification for one sector fails but others succeeds for a miner", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
-		miner2 := tutil.NewIDAddr(t, 201)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
-		ac.submitPoRepForBulkVerify(rt, miner2, info2)
+		ac.submitPoRepForBulkVerify(rt, miner1, info2)
+		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1},
-			miner2: []abi.SealVerifyInfo{*info2}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
 
-		res := batchVerifyDefaultOutput(infos)
-		delete(res, miner1)
+		res := map[addr.Address][]bool{
+			miner1: []bool{true, false, true},
+		}
+
+		// send will only be for the first and third sector as the middle sector will fail verification
+		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info3.Number}}}
+
+		// expect sends for confirmed sectors
+		for _, cs := range cs {
+			param := &builtin.ConfirmSectorProofsParams{Sectors: cs.sectorNums}
+			rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
+		}
+
 		rt.ExpectBatchVerifySeals(infos, res, nil)
+		power := big.Zero()
+		//expect power sends to reward actor
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &power, abi.NewTokenAmount(0), nil, 0)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 
-		rt.SetEpoch(abi.ChainEpoch(0))
+		rt.SetEpoch(0)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
-		rt.ExpectAbort(exitcode.ErrNotFound, func() {
-			rt.Call(ac.Actor.OnEpochTickEnd, nil)
-		})
+		rt.Call(ac.OnEpochTickEnd, nil)
 		rt.Verify()
 	})
 

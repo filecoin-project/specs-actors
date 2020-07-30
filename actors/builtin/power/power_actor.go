@@ -6,7 +6,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	errors "github.com/pkg/errors"
-	xerrors "golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -222,9 +221,7 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		rt.Abortf(exitcode.ErrIllegalState, "Failed to process deferred cron events: %v", err)
 	}
 
-	if err := a.processBatchProofVerifies(rt); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to process batch proof verification: %s", err)
-	}
+	a.processBatchProofVerifies(rt)
 
 	var st State
 	rt.State().Readonly(&st)
@@ -371,12 +368,7 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-type minerConfirmSector struct {
-	miner         addr.Address
-	confirmations []abi.SectorNumber
-}
-
-func (a Actor) processBatchProofVerifies(rt Runtime) error {
+func (a Actor) processBatchProofVerifies(rt Runtime) {
 	var st State
 
 	var miners []address.Address
@@ -388,15 +380,11 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 			return nil
 		}
 		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to load proofs validation batch: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs validation batch")
 
 		err = mmap.ForAll(func(k string, arr *adt.Array) error {
 			a, err := address.NewFromBytes([]byte(k))
-			if err != nil {
-				return xerrors.Errorf("failed to parse address key: %w", err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to parse address key")
 
 			miners = append(miners, a)
 
@@ -406,27 +394,19 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 				infos = append(infos, svi)
 				return nil
 			})
-			if err != nil {
-				return xerrors.Errorf("failed to iterate over proof verify array for miner %s: %w", a, err)
-			}
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate over proof verify array for miner %s", a)
+
 			verifies[a] = infos
 			return nil
 		})
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to iterate proof batch: %s", err)
-		}
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate proof batch")
 
 		st.ProofValidationBatch = nil
-
 		return nil
 	})
 
 	res, err := rt.Syscalls().BatchVerifySeals(verifies)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to batch verify: %s", err)
-	}
-
-	confirms := make([]*minerConfirmSector, 0, len(miners))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
 
 	for _, m := range miners {
 		vres, ok := res[m]
@@ -452,21 +432,14 @@ func (a Actor) processBatchProofVerifies(rt Runtime) error {
 			}
 		}
 
-		confirms = append(confirms, &minerConfirmSector{m, successful})
-	}
-
-	for i := range confirms {
-		cs := confirms[i]
 		// The exit code is explicitly ignored
 		_, _ = rt.Send(
-			cs.miner,
+			m,
 			builtin.MethodsMiner.ConfirmSectorProofsValid,
-			&builtin.ConfirmSectorProofsParams{Sectors: cs.confirmations},
+			&builtin.ConfirmSectorProofsParams{Sectors: successful},
 			abi.NewTokenAmount(0),
 		)
 	}
-
-	return nil
 }
 
 func (a Actor) processDeferredCronEvents(rt Runtime) error {
