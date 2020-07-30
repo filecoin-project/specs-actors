@@ -304,7 +304,7 @@ func TestDeadlines(t *testing.T) {
 		rt := builder.Build(t)
 		dl := emptyDeadline(t, rt)
 
-		addThenMarkFaulty(t, rt, dl) // 5, 6 faulty
+		addThenMarkFaulty(t, rt, dl) // 1, 5, 6 faulty
 
 		store := adt.AsStore(rt)
 		removedPower, err := dl.TerminateSectors(store, 15, map[uint64][]*miner.SectorOnChainInfo{
@@ -313,8 +313,8 @@ func TestDeadlines(t *testing.T) {
 		}, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		// Sector 1, 3 were active, 6 faulty
-		expectedPowerLoss := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1, 3)))
+		// Sector 3 active, 1, 6 faulty
+		expectedPowerLoss := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(3)))
 		require.True(t, expectedPowerLoss.Equals(removedPower), "dlState to remove power for terminated sectors")
 
 		dlState.withTerminations(1, 3, 6).

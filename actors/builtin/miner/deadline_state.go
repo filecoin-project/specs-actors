@@ -1039,6 +1039,14 @@ func (dl *Deadline) RecordProvenSectors(
 		return nil, xc.ErrIllegalState.Wrapf("failed to update expirations for partitions with faults: %w", err)
 	}
 
+	// Save everything back.
+	dl.FaultyPower = dl.FaultyPower.Sub(recoveredPowerTotal).Add(newFaultyPowerTotal)
+
+	dl.Partitions, err = partitions.Root()
+	if err != nil {
+		return nil, xc.ErrIllegalState.Wrapf("failed to persist partitions: %w", err)
+	}
+
 	// Collect all sectors, faults, and recoveries for proof verification.
 	allSectorNos, err := bitfield.MultiMerge(allSectors...)
 	if err != nil {
@@ -1049,20 +1057,11 @@ func (dl *Deadline) RecordProvenSectors(
 		return nil, xc.ErrIllegalState.Wrapf("failed to merge ignored sectors bitfields: %w", err)
 	}
 
-	result := &PoStResult{
+	return &PoStResult{
 		Sectors:                allSectorNos,
 		IgnoredSectors:         allIgnoredSectorNos,
 		NewFaultyPower:         newFaultyPowerTotal,
 		RecoveredPower:         recoveredPowerTotal,
 		RetractedRecoveryPower: retractedRecoveryPowerTotal,
-	}
-
-	// Save everything back.
-	dl.Partitions, err = partitions.Root()
-	if err != nil {
-		return nil, xc.ErrIllegalState.Wrapf("failed to persist partitions: %w", err)
-	}
-
-	dl.FaultyPower = dl.FaultyPower.Sub(result.PowerDelta())
-	return result, nil
+	}, nil
 }
