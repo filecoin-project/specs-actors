@@ -129,16 +129,17 @@ type SectorPreCommitOnChainInfo struct {
 
 // Information stored on-chain for a proven sector.
 type SectorOnChainInfo struct {
-	SectorNumber       abi.SectorNumber
-	SealProof          abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
-	SealedCID          cid.Cid                 // CommR
-	DealIDs            []abi.DealID
-	Activation         abi.ChainEpoch  // Epoch during which the sector proof was accepted
-	Expiration         abi.ChainEpoch  // Epoch during which the sector expires
-	DealWeight         abi.DealWeight  // Integral of active deals over sector lifetime
-	VerifiedDealWeight abi.DealWeight  // Integral of active verified deals over sector lifetime
-	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
-	ExpectedDayReward  abi.TokenAmount // Expect daily reward for sector computed at activation time
+	SectorNumber            abi.SectorNumber
+	SealProof               abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
+	SealedCID               cid.Cid                 // CommR
+	DealIDs                 []abi.DealID
+	Activation              abi.ChainEpoch  // Epoch during which the sector proof was accepted
+	Expiration              abi.ChainEpoch  // Epoch during which the sector expires
+	DealWeight              abi.DealWeight  // Integral of active deals over sector lifetime
+	VerifiedDealWeight      abi.DealWeight  // Integral of active verified deals over sector lifetime
+	InitialPledge           abi.TokenAmount // Pledge collected to commit this sector
+	ExpectedDayReward       abi.TokenAmount // Expected one day projection of reward for sector computed at activation time
+	ExpectedTwentyDayReward abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 }
 
 // Location of a specific sector

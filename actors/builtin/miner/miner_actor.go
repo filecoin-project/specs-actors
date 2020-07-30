@@ -674,22 +674,25 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			duration := precommit.Info.Expiration - activation
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			dayReward := ExpectedDayRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
+			twentyDayReward := ExpectedDayRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
+
 			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
 				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
 			newSectorInfo := SectorOnChainInfo{
-				SectorNumber:       precommit.Info.SectorNumber,
-				SealProof:          precommit.Info.SealProof,
-				SealedCID:          precommit.Info.SealedCID,
-				DealIDs:            precommit.Info.DealIDs,
-				Expiration:         precommit.Info.Expiration,
-				Activation:         activation,
-				DealWeight:         precommit.DealWeight,
-				VerifiedDealWeight: precommit.VerifiedDealWeight,
-				InitialPledge:      initialPledge,
-				ExpectedDayReward:  dayReward,
+				SectorNumber:            precommit.Info.SectorNumber,
+				SealProof:               precommit.Info.SealProof,
+				SealedCID:               precommit.Info.SealedCID,
+				DealIDs:                 precommit.Info.DealIDs,
+				Expiration:              precommit.Info.Expiration,
+				Activation:              activation,
+				DealWeight:              precommit.DealWeight,
+				VerifiedDealWeight:      precommit.VerifiedDealWeight,
+				InitialPledge:           initialPledge,
+				ExpectedDayReward:       dayReward,
+				ExpectedTwentyDayReward: twentyDayReward,
 			}
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
@@ -2247,8 +2250,7 @@ func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, rew
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		twentyDayReward := big.Mul(s.ExpectedDayReward, big.NewInt(20))
-		fee := PledgePenaltyForTermination(s.ExpectedDayReward, twentyDayReward, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
+		fee := PledgePenaltyForTermination(s.ExpectedDayReward, s.ExpectedTwentyDayReward, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee
