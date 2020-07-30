@@ -110,7 +110,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	emptyDeadlineCid := rt.Store().Put(emptyDeadline)
 
 	emptyDeadlines := ConstructDeadlines(emptyDeadlineCid)
+	emptyVestingFunds := ConstructVestingFunds()
 	emptyDeadlinesCid := rt.Store().Put(emptyDeadlines)
+	emptyVestingFundsCid := rt.Store().Put(emptyVestingFunds)
 
 	currEpoch := rt.CurrEpoch()
 	offset, err := assignProvingPeriodOffset(rt.Message().Receiver(), currEpoch, rt.Syscalls().HashBlake2b)
@@ -122,7 +124,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
 	infoCid := rt.Store().Put(info)
 
-	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid)
+	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
@@ -475,6 +477,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	store := adt.AsStore(rt)
 	var st State
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		vestingFunds, err := st.LoadVestingFunds(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 		if params.SealProof != info.SealProofType {
@@ -486,7 +491,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
 		}
 
-		err := st.AllocateSectorNumber(store, params.SectorNumber)
+		err = st.AllocateSectorNumber(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
 
 		// The following two checks shouldn't be necessary, but it can't
@@ -513,7 +518,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			depositMinimum = replaceSector.InitialPledge
 		}
 
-		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(vestingFunds, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		duration := params.Expiration - rt.CurrEpoch()
@@ -539,6 +544,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		}); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
+
+		err = st.SaveVestingFunds(store, vestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save vesting funds")
 
 		return newlyVestedFund
 	}).(abi.TokenAmount)
@@ -703,6 +711,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	totalPrecommitDeposit := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		vestingFunds, err := st.LoadVestingFunds(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
 		quant := st.QuantEndOfDeadline()
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
@@ -747,7 +758,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
-		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(vestingFunds, rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
 		}
@@ -762,6 +773,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		st.AddInitialPledgeRequirement(totalPledge)
 		st.AssertBalanceInvariants(rt.CurrentBalance())
+
+		err = st.SaveVestingFunds(store, vestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save vesting funds")
 
 		return newlyVestedFund
 	}).(abi.TokenAmount)
@@ -1460,10 +1474,13 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 	var st State
 
 	newlyVested := rt.State().Transaction(&st, func() interface{} {
+		vestingFunds, err := st.LoadVestingFunds(adt.AsStore(rt))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
 
-		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(vestingFunds, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
@@ -1474,9 +1491,13 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *amountToLock)
 		}
 
-		if err := st.AddLockedFunds(rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
+		if err := st.AddLockedFunds(vestingFunds, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to lock funds in vesting table: %v", err)
 		}
+
+		err = st.SaveVestingFunds(adt.AsStore(rt), vestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save vesting funds")
+
 		return newlyVestedFund
 	}).(abi.TokenAmount)
 
@@ -1542,6 +1563,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	}
 	var info *MinerInfo
 	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+		vestingFunds, err := st.LoadVestingFunds(adt.AsStore(rt))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
+
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Owner)
 		// Ensure we don't have any pending terminations.
@@ -1555,13 +1579,16 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		}
 
 		// Unlock vested funds so we can spend them.
-		newlyVestedFund, err := st.UnlockVestedFunds(rt.CurrEpoch())
+		newlyVestedFund, err := st.UnlockVestedFunds(vestingFunds, rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
 
 		// Verify InitialPledgeRequirement does not exceed unlocked funds
 		verifyPledgeMeetsInitialRequirements(rt, &st)
+
+		err = st.SaveVestingFunds(adt.AsStore(rt), vestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save vesting funds")
 
 		return newlyVestedFund
 	}).(abi.TokenAmount)
@@ -1714,13 +1741,14 @@ func handleProvingDeadline(rt Runtime) {
 
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
+		vestingFunds, err := st.LoadVestingFunds(store)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load vesting funds")
 
-		var err error
 		{
 			// Vest locked funds.
 			// This happens first so that any subsequent penalties are taken
 			// from locked vesting funds before funds free this epoch.
-			newlyVested, err := st.UnlockVestedFunds(rt.CurrEpoch())
+			newlyVested, err := st.UnlockVestedFunds(vestingFunds, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 			pledgeDelta = big.Add(pledgeDelta, newlyVested.Neg())
 		}
@@ -1859,6 +1887,9 @@ func handleProvingDeadline(rt Runtime) {
 				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
 			}
 		}
+
+		err = st.SaveVestingFunds(store, vestingFunds)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save vesting funds")
 
 		return nil
 	})

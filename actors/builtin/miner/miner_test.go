@@ -103,7 +103,6 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 		assert.True(t, st.PreCommittedSectors.Defined())
-		fmt.Printf("\n %v", cap(st.VestingFunds))
 
 		assert.True(t, st.Sectors.Defined())
 		assert.Equal(t, provingPeriodStart, st.ProvingPeriodStart)
@@ -1508,23 +1507,28 @@ func TestAddLockedFund(t *testing.T) {
 		actor.constructAndVerify(rt)
 		st := getState(rt)
 
+		vestingFunds, err := st.LoadVestingFunds(adt.AsStore(rt))
+		require.NoError(t, err)
+
 		// Nothing vesting to start
-		assert.Empty(t, st.VestingFunds)
+		assert.Empty(t, vestingFunds.Funds)
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
 		// Lock some funds with AddLockedFund
 		amt := abi.NewTokenAmount(600_000)
 		actor.addLockedFund(rt, amt)
 		st = getState(rt)
-		require.Len(t, st.VestingFunds, 180)
+		vestingFunds, err = st.LoadVestingFunds(adt.AsStore(rt))
+		require.NoError(t, err)
+
+		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
 		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
 
-		for i := range st.VestingFunds {
-			vf := st.VestingFunds[i]
+		for i := range vestingFunds.Funds {
+			vf := vestingFunds.Funds[i]
 			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.PledgeVestingSpec.Quantization))
-
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)

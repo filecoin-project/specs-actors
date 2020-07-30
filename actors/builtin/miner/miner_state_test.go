@@ -616,24 +616,40 @@ type stateHarness struct {
 //
 
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
-	err := h.s.AddLockedFunds(epoch, sum, spec)
+	vestingFunds, err := h.s.LoadVestingFunds(h.store)
+	require.NoError(h.t, err)
+
+	err = h.s.AddLockedFunds(vestingFunds, epoch, sum, spec)
+	require.NoError(h.t, err)
+
+	err = h.s.SaveVestingFunds(h.store, vestingFunds)
 	require.NoError(h.t, err)
 }
 
 func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.TokenAmount) abi.TokenAmount {
-	amount, err := h.s.UnlockUnvestedFunds(epoch, target)
+	amount, err := h.s.UnlockUnvestedFunds(h.store, epoch, target)
 	require.NoError(h.t, err)
 	return amount
 }
 
 func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
-	amount, err := h.s.UnlockVestedFunds(epoch)
+	vestingFunds, err := h.s.LoadVestingFunds(h.store)
 	require.NoError(h.t, err)
+
+	amount, err := h.s.UnlockVestedFunds(vestingFunds, epoch)
+	require.NoError(h.t, err)
+
+	err = h.s.SaveVestingFunds(h.store, vestingFunds)
+	require.NoError(h.t, err)
+
 	return amount
 }
 
 func (h *stateHarness) vestingFundsStoreEmpty() bool {
-	return len(h.s.VestingFunds) == 0
+	funds, err := h.s.LoadVestingFunds(h.store)
+	require.NoError(h.t, err)
+
+	return len(funds.Funds) == 0
 }
 
 //
@@ -738,7 +754,12 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	infoCid, err := store.Put(context.Background(), &info)
 	require.NoError(t, err)
 
-	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid)
+	emptyVestingFunds := miner.ConstructVestingFunds()
+	emptyVestingFundsCid, err := store.Put(context.Background(), emptyVestingFunds)
+	require.NoError(t, err)
+
+	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid,
+		emptyVestingFundsCid)
 	require.NoError(t, err)
 
 	return &stateHarness{

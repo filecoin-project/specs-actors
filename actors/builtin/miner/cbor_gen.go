@@ -44,18 +44,10 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.VestingFunds ([]miner.VestingFund) (slice)
-	if len(t.VestingFunds) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.VestingFunds was too long")
-	}
+	// t.VestingFunds (cid.Cid) (struct)
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.VestingFunds))); err != nil {
-		return err
-	}
-	for _, v := range t.VestingFunds {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
+	if err := cbg.WriteCidBuf(scratch, w, t.VestingFunds); err != nil {
+		return xerrors.Errorf("failed to write cid field t.VestingFunds: %w", err)
 	}
 
 	// t.InitialPledgeRequirement (big.Int) (struct)
@@ -164,35 +156,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.VestingFunds ([]miner.VestingFund) (slice)
+	// t.VestingFunds (cid.Cid) (struct)
 
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.VestingFunds: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.VestingFunds = make([]VestingFund, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v VestingFund
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.VestingFunds: %w", err)
 		}
 
-		t.VestingFunds[i] = v
-	}
+		t.VestingFunds = c
 
+	}
 	// t.InitialPledgeRequirement (big.Int) (struct)
 
 	{
@@ -2045,6 +2020,85 @@ func (t *WorkerKeyChange) UnmarshalCBOR(r io.Reader) error {
 
 		t.EffectiveAt = abi.ChainEpoch(extraI)
 	}
+	return nil
+}
+
+var lengthBufVestingFunds = []byte{129}
+
+func (t *VestingFunds) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufVestingFunds); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.Funds ([]miner.VestingFund) (slice)
+	if len(t.Funds) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Funds was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.Funds))); err != nil {
+		return err
+	}
+	for _, v := range t.Funds {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *VestingFunds) UnmarshalCBOR(r io.Reader) error {
+	*t = VestingFunds{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Funds ([]miner.VestingFund) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Funds: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.Funds = make([]VestingFund, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v VestingFund
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.Funds[i] = v
+	}
+
 	return nil
 }
 
