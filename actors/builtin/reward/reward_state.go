@@ -9,8 +9,8 @@ import (
 // A quantity of space * time (in byte-epochs) representing power committed to the network for some duration.
 type Spacetime = big.Int
 
-// 36.242212 FIL
-var InitialRewardPositionEstimate = big.Mul(abi.NewTokenAmount(36242212), abi.NewTokenAmount(1e12))
+// 36.266260308195979330 FIL
+var InitialRewardPositionEstimate = big.Mul(abi.NewTokenAmount(3626626030819597933), abi.NewTokenAmount(10))
 
 // -1.0982489*10^-7 FIL per epoch.  Change of simple minted tokens between epochs 0 and 1
 var InitialRewardVelocityEstimate = abi.NewTokenAmount(-109824890000)
