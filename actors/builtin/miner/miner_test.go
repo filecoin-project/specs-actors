@@ -1265,7 +1265,47 @@ func TestProvingPeriodCron(t *testing.T) {
 		assert.True(t, faultPwr.Equals(deadline.FaultyPower))
 	})
 
-	// TODO: test cron being called one epoch late because the scheduled epoch had no blocks.
+	t.Run("test cron run late", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// add lots of funds so we can pay penalties without going into debt
+		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
+
+		// create enough sectors that one will be in a different partition
+		allSectors := actor.commitAndProveSectors(rt, 1, 181, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		st := getState(rt)
+		dlIdx, _, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
+		require.NoError(t, err)
+
+		// advance to deadline prior to first
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// advance clock well past the end of next period (into next deadline period) without calling cron
+		rt.SetEpoch(dlinfo.Last() + miner.WPoStChallengeWindow + 5)
+
+		// run cron and expect all sectors to be penalized as undetected faults
+		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+
+		// power for sectors is removed
+		powerDeltaClaim := miner.NewPowerPair(pwr.Raw.Neg(), pwr.QA.Neg())
+
+		// expect next cron to be one deadline period after expected cron for this deadline
+		nextCron := dlinfo.Last() + +miner.WPoStChallengeWindow
+
+		actor.onDeadlineCron(rt, &cronConfig{
+			expectedEnrollment:       nextCron,
+			detectedFaultsPenalty:    undetectedPenalty,
+			detectedFaultsPowerDelta: &powerDeltaClaim,
+		})
+	})
 }
 
 func TestDeclareFaults(t *testing.T) {
