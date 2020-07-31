@@ -995,66 +995,97 @@ func TestWindowPost(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: declaredFee})
 	})
 
-	// TODO minerstate
-	//t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	deadline, infos, partitions := runTillFirstDeadline(rt)
-	//	st := getState(rt)
-	//
-	//	// mark all sectors as recovered faults
-	//	sectors := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-	//	err := st.AddFaults(rt.AdtStore(), sectors, rt.Epoch())
-	//	require.NoError(t, err)
-	//	err = st.AddRecoveries(sectors)
-	//	require.NoError(t, err)
-	//	rt.ReplaceState(st)
-	//
-	//	pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
-	//
-	//	// skip the first sector in the partition
-	//	skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-	//	// expected penalty is the fee for an undeclared fault
-	//	expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		expectedRawPowerDelta: big.Zero(),
-	//		expectedQAPowerDelta:  big.Zero(),
-	//		expectedPenalty:       expectedPenalty,
-	//		skipped:               skipped,
-	//	}
-	//
-	//	actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
-	//})
+	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
+		rt := builder.Build(t)
 
-	//t.Run("skipping a fault from the wrong deadline is an error", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	deadline, infos, partitions := runTillFirstDeadline(rt)
-	//	st := getState(rt)
-	//
-	//	// look ahead to next deadline to find a sector not in this deadline
-	//	deadlines, err := st.LoadDeadlines(rt.AdtStore())
-	//	require.NoError(t, err)
-	//	nextDeadline := st.DeadlineInfo(deadline.NextOpen())
-	//	nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline.Index)
-	//
-	//	pwr := miner.PowerForSectors(actor.sectorSize, nextInfos[:1])
-	//
-	//	// skip the first sector in the partition
-	//	skipped := bitfield.NewFromSet([]uint64{uint64(nextInfos[0].SectorNumber)})
-	//	// expected penalty is the fee for an undeclared fault
-	//	expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		expectedRawPowerDelta: big.Zero(),
-	//		expectedQAPowerDelta:  big.Zero(),
-	//		expectedPenalty:       expectedPenalty,
-	//		skipped:               skipped,
-	//	}
-	//
-	//	rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline", func() {
-	//		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
-	//	})
-	//})
+		actor.constructAndVerify(rt)
+		infos := actor.commitAndProveSectors(rt, 1, 181, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
+
+		// Submit first PoSt to ensure we are sufficiently early to add a fault
+		// advance to next proving period
+		advanceAndSubmitPoSt(rt, actor, infos[0])
+
+		// advance deadline and declare fault
+		advanceDeadline(rt, actor, &cronConfig{})
+		actor.declareFaults(rt, infos...)
+
+		// advance a deadline and declare recovery
+		advanceDeadline(rt, actor, &cronConfig{})
+
+		// declare recovery
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
+
+		// advance to epoch when submitPoSt is due
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Now submit PoSt and skip recovered sector
+		// No power should be returned
+		// Retracted recovery will be charged difference between undeclared and ongoing fault fees
+		ongoingFee := actor.declaredFaultPenalty(infos)
+		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos), ongoingFee)
+		cfg := &poStConfig{
+			expectedRawPowerDelta: big.Zero(),
+			expectedQAPowerDelta:  big.Zero(),
+			expectedPenalty:       recoveryFee,
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bf(uint64(infos[0].SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+
+		// sector will be charged ongoing fee at proving period cron
+		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: ongoingFee})
+
+	})
+
+	t.Run("skipping a fault from the wrong partition is an error", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// create enough sectors that one will be in a different partition
+		n := 95
+		infos := actor.commitAndProveSectors(rt, n, 181, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		st := getState(rt)
+		dlIdx0, pIdx0, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		dlIdx1, pIdx1, err := st.FindSector(rt.AdtStore(), infos[n-1].SectorNumber)
+		require.NoError(t, err)
+
+		// if these assertions no longer hold, the test must be changed
+		require.LessOrEqual(t, dlIdx0, dlIdx1)
+		require.NotEqual(t, pIdx0, pIdx1)
+
+		// advance to deadline when sector is due
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx0 {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Now submit PoSt for partition 1 and skip sector from other partition
+		cfg := &poStConfig{
+			expectedRawPowerDelta: big.Zero(),
+			expectedQAPowerDelta:  big.Zero(),
+			expectedPenalty:       big.Zero(),
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx0, Skipped: bf(uint64(infos[n-1].SectorNumber))},
+		}
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition", func() {
+			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+		})
+	})
 
 	// TODO minerstate
 	//t.Run("detects faults from previous missed posts", func(t *testing.T) {
