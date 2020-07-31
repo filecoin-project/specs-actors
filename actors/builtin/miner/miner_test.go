@@ -1184,8 +1184,11 @@ func TestProvingPeriodCron(t *testing.T) {
 		st = getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
-		// next cron moves proving period forward
-		advanceDeadline(rt, actor, &cronConfig{})
+		// next cron moves proving period forward and enrolls for next cron
+		rt.SetEpoch(dlinfo.Last())
+		actor.onDeadlineCron(rt, &cronConfig{
+			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
+		})
 		st = getState(rt)
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
 	})
