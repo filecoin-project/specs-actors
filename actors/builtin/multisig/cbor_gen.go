@@ -293,7 +293,7 @@ func (t *Transaction) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Params); err != nil {
+	if _, err := w.Write(t.Params[:]); err != nil {
 		return err
 	}
 
@@ -376,8 +376,12 @@ func (t *Transaction) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Params = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Params); err != nil {
+
+	if extra > 0 {
+		t.Params = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Params[:]); err != nil {
 		return err
 	}
 	// t.Approved ([]address.Address) (slice)
@@ -455,7 +459,7 @@ func (t *ProposalHashData) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Params); err != nil {
+	if _, err := w.Write(t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -533,8 +537,12 @@ func (t *ProposalHashData) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Params = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Params); err != nil {
+
+	if extra > 0 {
+		t.Params = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -713,7 +721,7 @@ func (t *ProposeParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Params); err != nil {
+	if _, err := w.Write(t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -782,8 +790,12 @@ func (t *ProposeParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Params = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Params); err != nil {
+
+	if extra > 0 {
+		t.Params = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -962,7 +974,7 @@ func (t *TxnIDParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.ProposalHash); err != nil {
+	if _, err := w.Write(t.ProposalHash[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1024,8 +1036,12 @@ func (t *TxnIDParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.ProposalHash = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.ProposalHash); err != nil {
+
+	if extra > 0 {
+		t.ProposalHash = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.ProposalHash[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1188,7 +1204,7 @@ func (t *ApproveReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Ret); err != nil {
+	if _, err := w.Write(t.Ret[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1267,8 +1283,12 @@ func (t *ApproveReturn) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Ret = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Ret); err != nil {
+
+	if extra > 0 {
+		t.Ret = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Ret[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1323,7 +1343,7 @@ func (t *ProposeReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Ret); err != nil {
+	if _, err := w.Write(t.Ret[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1427,8 +1447,12 @@ func (t *ProposeReturn) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Ret = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Ret); err != nil {
+
+	if extra > 0 {
+		t.Ret = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Ret[:]); err != nil {
 		return err
 	}
 	return nil
