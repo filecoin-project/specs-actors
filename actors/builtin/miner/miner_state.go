@@ -66,9 +66,6 @@ type State struct {
 
 	// Deadlines with outstanding fees for early sector termination.
 	EarlyTerminations *bitfield.BitField
-
-	// Memoized power information
-	FaultyPower PowerPair
 }
 
 type MinerInfo struct {
@@ -132,16 +129,17 @@ type SectorPreCommitOnChainInfo struct {
 
 // Information stored on-chain for a proven sector.
 type SectorOnChainInfo struct {
-	SectorNumber       abi.SectorNumber
-	SealProof          abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
-	SealedCID          cid.Cid                 // CommR
-	DealIDs            []abi.DealID
-	Activation         abi.ChainEpoch  // Epoch during which the sector proof was accepted
-	Expiration         abi.ChainEpoch  // Epoch during which the sector expires
-	DealWeight         abi.DealWeight  // Integral of active deals over sector lifetime
-	VerifiedDealWeight abi.DealWeight  // Integral of active verified deals over sector lifetime
-	InitialPledge      abi.TokenAmount // Pledge collected to commit this sector
-	ExpectedDayReward  abi.TokenAmount // Expect daily reward for sector computed at activation time
+	SectorNumber          abi.SectorNumber
+	SealProof             abi.RegisteredSealProof // The seal proof type implies the PoSt proof/s
+	SealedCID             cid.Cid                 // CommR
+	DealIDs               []abi.DealID
+	Activation            abi.ChainEpoch  // Epoch during which the sector proof was accepted
+	Expiration            abi.ChainEpoch  // Epoch during which the sector expires
+	DealWeight            abi.DealWeight  // Integral of active deals over sector lifetime
+	VerifiedDealWeight    abi.DealWeight  // Integral of active verified deals over sector lifetime
+	InitialPledge         abi.TokenAmount // Pledge collected to commit this sector
+	ExpectedDayReward     abi.TokenAmount // Expected one day projection of reward for sector computed at activation time
+	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 }
 
 // Location of a specific sector
@@ -166,7 +164,6 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		CurrentDeadline:     0,
 		Deadlines:           emptyDeadlinesCid,
 
-		FaultyPower:       NewPowerPairZero(),
 		EarlyTerminations: abi.NewBitField(),
 	}, nil
 }
@@ -214,23 +211,6 @@ func (st *State) SaveInfo(store adt.Store, info *MinerInfo) error {
 // Returns deadline calculations for the current (according to state) proving period.
 func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *DeadlineInfo {
 	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
-}
-
-func (st *State) GetSectorCount(store adt.Store) (uint64, error) {
-	sectors, err := LoadSectors(store, st.Sectors)
-	if err != nil {
-		return 0, err
-	}
-
-	return sectors.Length(), nil
-}
-
-func (st *State) GetMaxAllowedFaults(store adt.Store) (uint64, error) {
-	sectorCount, err := st.GetSectorCount(store)
-	if err != nil {
-		return 0, err
-	}
-	return 2 * sectorCount, nil
 }
 
 func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {

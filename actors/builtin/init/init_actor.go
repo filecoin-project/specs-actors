@@ -66,11 +66,12 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	// Allocate an ID for this actor.
 	// Store mapping of pubkey or actor address to actor ID
 	var st State
-	idAddr := rt.State().Transaction(&st, func() interface{} {
-		idAddr, err := st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
+	var idAddr addr.Address
+	rt.State().Transaction(&st, func() {
+		var err error
+		idAddr, err = st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate ID address")
-		return idAddr
-	}).(addr.Address)
+	})
 
 	// Create an empty actor.
 	rt.CreateActor(params.CodeCID, idAddr)

@@ -148,7 +148,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	var txnID TxnID
 	var st State
 	var txn *Transaction
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if !isSigner(rt.ResolveAddress, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
@@ -172,8 +172,6 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
-
-		return nil
 	})
 
 	applied, ret, code := a.approveTransaction(rt, txnID, txn)
@@ -207,7 +205,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	callerAddr := rt.Message().Caller()
 	var st State
 	var txn *Transaction
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if !isSigner(rt.ResolveAddress, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
@@ -216,7 +214,6 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 		txn = getTransaction(rt, ptx, params.ID, params.ProposalHash, true)
-		return nil
 	})
 
 	// if the transaction already has enough approvers, execute it without "processing" this approval.
@@ -239,7 +236,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	callerAddr := rt.Message().Caller()
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if !isSigner(rt.ResolveAddress, &st, callerAddr) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
@@ -268,8 +265,6 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
-
-		return nil
 	})
 	return nil
 }
@@ -284,7 +279,7 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if isSigner(rt.ResolveAddress, &st, params.Signer) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "%s is already a signer", params.Signer)
 		}
@@ -292,7 +287,6 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 		if params.Increase {
 			st.NumApprovalsThreshold = st.NumApprovalsThreshold + 1
 		}
-		return nil
 	})
 	return nil
 }
@@ -307,7 +301,7 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if !isSigner(rt.ResolveAddress, &st, params.Signer) {
 			rt.Abortf(exitcode.ErrNotFound, "%s is not a signer", params.Signer)
 		}
@@ -334,7 +328,6 @@ func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.Emp
 			st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 		}
 		st.Signers = newSigners
-		return nil
 	})
 
 	return nil
@@ -350,7 +343,7 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if !isSigner(rt.ResolveAddress, &st, params.From) {
 			rt.Abortf(exitcode.ErrNotFound, "%s is not a signer", params.From)
 		}
@@ -367,7 +360,6 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 		}
 		newSigners = append(newSigners, params.To)
 		st.Signers = newSigners
-		return nil
 	})
 
 	return nil
@@ -382,13 +374,12 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		if params.NewThreshold == 0 || params.NewThreshold > uint64(len(st.Signers)) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "New threshold value not supported")
 		}
 
 		st.NumApprovalsThreshold = params.NewThreshold
-		return nil
 	})
 	return nil
 }
@@ -403,7 +394,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 	}
 
 	// add the caller to the list of approvers
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
@@ -414,8 +405,6 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
-
-		return nil
 	})
 
 	return executeTransactionIfApproved(rt, st, txnID, txn)
@@ -470,7 +459,7 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to deserialize result")
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
-		rt.State().Transaction(&st, func() interface{} {
+		rt.State().Transaction(&st, func() {
 			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
@@ -480,8 +469,6 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 
 			st.PendingTxns, err = ptx.Root()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
-
-			return nil
 		})
 	}
 

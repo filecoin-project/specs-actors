@@ -645,7 +645,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			"deal duration greater than max deal duration": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
 					d.StartEpoch = abi.ChainEpoch(10)
-					d.EndEpoch = d.StartEpoch + (366 * builtin.EpochsInDay) + 1
+					d.EndEpoch = d.StartEpoch + (540 * builtin.EpochsInDay) + 1
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
@@ -2754,8 +2754,7 @@ func (h *marketActorTestHarness) publishAndActivateDeal(rt *mock.Runtime, client
 
 func (h *marketActorTestHarness) updateLastUpdated(rt *mock.Runtime, dealId abi.DealID, newLastUpdated abi.ChainEpoch) {
 	var st market.State
-
-	rt.Transaction(&st, func() interface{} {
+	rt.Transaction(&st, func() {
 		states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
 		require.NoError(h.t, err)
 		s, found, err := states.Get(dealId)
@@ -2766,20 +2765,18 @@ func (h *marketActorTestHarness) updateLastUpdated(rt *mock.Runtime, dealId abi.
 		require.NoError(h.t, states.Set(dealId, &market.DealState{s.SectorStartEpoch, newLastUpdated, s.SlashEpoch}))
 		st.States, err = states.Root()
 		require.NoError(h.t, err)
-		return nil
 	})
 }
 
 func (h *marketActorTestHarness) deleteDealProposal(rt *mock.Runtime, dealId abi.DealID) {
 	var st market.State
 
-	rt.Transaction(&st, func() interface{} {
+	rt.Transaction(&st, func() {
 		deals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		require.NoError(h.t, err)
 		require.NoError(h.t, deals.Delete(uint64(dealId)))
 		st.Proposals, err = deals.Root()
 		require.NoError(h.t, err)
-		return nil
 	})
 }
 

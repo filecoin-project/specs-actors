@@ -15,7 +15,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{141}
+var lengthBufState = []byte{140}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -100,11 +100,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 	if err := t.EarlyTerminations.MarshalCBOR(w); err != nil {
 		return err
 	}
-
-	// t.FaultyPower (miner.PowerPair) (struct)
-	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -122,7 +117,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 13 {
+	if extra != 12 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -282,15 +277,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 			if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.EarlyTerminations pointer: %w", err)
 			}
-		}
-
-	}
-	// t.FaultyPower (miner.PowerPair) (struct)
-
-	{
-
-		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
 		}
 
 	}
@@ -639,7 +625,7 @@ func (t *Deadlines) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufDeadline = []byte{134}
+var lengthBufDeadline = []byte{135}
 
 func (t *Deadline) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -686,6 +672,10 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.FaultyPower (miner.PowerPair) (struct)
+	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -703,7 +693,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 6 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -799,6 +789,15 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
 		t.TotalSectors = uint64(extra)
+
+	}
+	// t.FaultyPower (miner.PowerPair) (struct)
+
+	{
+
+		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
+		}
 
 	}
 	return nil
@@ -1652,7 +1651,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{138}
+var lengthBufSectorOnChainInfo = []byte{139}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1743,6 +1742,11 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.ExpectedDayReward.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.ExpectedStoragePledge (big.Int) (struct)
+	if err := t.ExpectedStoragePledge.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1760,7 +1764,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1931,6 +1935,15 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ExpectedDayReward.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ExpectedDayReward: %w", err)
+		}
+
+	}
+	// t.ExpectedStoragePledge (big.Int) (struct)
+
+	{
+
+		if err := t.ExpectedStoragePledge.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ExpectedStoragePledge: %w", err)
 		}
 
 	}

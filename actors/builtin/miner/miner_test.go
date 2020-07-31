@@ -122,7 +122,6 @@ func TestConstruction(t *testing.T) {
 		}
 
 		assertEmptyBitfield(t, st.EarlyTerminations)
-		assert.Equal(t, miner.NewPowerPairZero(), st.FaultyPower)
 	})
 }
 
@@ -579,20 +578,11 @@ func TestCommitments(t *testing.T) {
 		upgrade := actor.preCommitSector(rt, upgradeParams)
 
 		// Declare the old sector faulty
-		_, qaPower := powerForSectors(actor.sectorSize, []*miner.SectorOnChainInfo{oldSector})
-		fee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
-		actor.declareFaults(rt, fee, oldSector)
+		actor.declareFaults(rt, oldSector)
 
 		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
-		// Proof is initially denied because the fault fee has reduced locked funds.
-		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
-				makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
-		})
-		rt.Reset()
 
 		// Prove the new sector
-		actor.addLockedFunds(rt, fee)
 		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
 			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
 
@@ -875,7 +865,8 @@ func TestWindowPost(t *testing.T) {
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
 		// add lots of funds so we can pay penalties without going into debt
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
+		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
 
 		// Submit first PoSt to ensure we are sufficiently early to add a fault
 		// advance to next proving period
@@ -883,11 +874,10 @@ func TestWindowPost(t *testing.T) {
 
 		// advance deadline and declare fault
 		advanceDeadline(rt, actor, &cronConfig{})
-		actor.declareFaults(rt, actor.declaredFaultPenalty(infos), infos...)
+		actor.declareFaults(rt, infos...)
 
 		// advance a deadline and declare recovery
-		ongoingFee := actor.declaredFaultPenalty(infos)
-		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: ongoingFee})
+		advanceDeadline(rt, actor, &cronConfig{})
 
 		// declare recovery
 		st := getState(rt)
@@ -898,35 +888,36 @@ func TestWindowPost(t *testing.T) {
 		// advance to epoch when submitPoSt is due
 		dlinfo := actor.deadline(rt)
 		for dlinfo.Index != dlIdx {
-			advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: ongoingFee})
+			advanceDeadline(rt, actor, &cronConfig{})
 			dlinfo = actor.deadline(rt)
 		}
 
 		// Now submit PoSt
 		// Power should return for recovered sector.
-		// Recovery should be charged ongoing fee one more time.
+		// Recovery should be charged ongoing fee.
+		recoveryFee := actor.declaredFaultPenalty(infos)
 		cfg := &poStConfig{
 			expectedRawPowerDelta: pwr.Raw,
 			expectedQAPowerDelta:  pwr.QA,
-			expectedPenalty:       ongoingFee,
+			expectedPenalty:       recoveryFee,
 		}
 		partitions := []miner.PoStPartition{
 			{Index: pIdx, Skipped: abi.NewBitField()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 
-		// faulty power has been removed
-		st = getState(rt)
-		assert.Equal(t, miner.NewPowerPairZero(), st.FaultyPower)
-
-		// partition containing sector no longer has faults or recoveries
-		partition := loadParitionForSector(t, st, rt.AdtStore(), infos[0])
+		// faulty power has been removed, partition no longer has faults or recoveries
+		deadline, partition := actor.findSector(rt, infos[0].SectorNumber)
+		assert.Equal(t, miner.NewPowerPairZero(), deadline.FaultyPower)
 		assert.Equal(t, miner.NewPowerPairZero(), partition.FaultyPower)
 		assertBitfieldEmpty(t, partition.Faults)
 		assertBitfieldEmpty(t, partition.Recoveries)
 
 		// Next deadline cron does not charge for the fault
 		advanceDeadline(rt, actor, &cronConfig{})
+
+		expectedBalance := big.Sub(initialLocked, recoveryFee)
+		assert.Equal(t, expectedBalance, actor.getLockedFunds(rt))
 	})
 
 	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
@@ -1149,7 +1140,7 @@ func TestProveCommit(t *testing.T) {
 				sectorNoA: exitcode.ErrIllegalArgument,
 			},
 		}
-		actor.confirmSectorProofsValid(rt, conf, precommitEpoch, precommitA, precommitB)
+		actor.confirmSectorProofsValid(rt, conf, precommitA, precommitB)
 	})
 }
 
@@ -1313,6 +1304,10 @@ func TestDeclareFaults(t *testing.T) {
 		WithBalance(bigBalance, big.Zero())
 
 	paramsFunc := func(rt *mock.Runtime) (abi.TokenAmount, *miner.SectorOnChainInfo) {
+	t.Run("declare fault pays fee at window post", func(t *testing.T) {
+		// Get sector into proving state
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
 		precommits := actor.commitAndProveSectors(rt, 1, 100, nil)
 
 		// Skip to end of proving period, cron adds sectors to proving set.
@@ -1320,24 +1315,9 @@ func TestDeclareFaults(t *testing.T) {
 		info := actor.getSector(rt, precommits[0].SectorNumber)
 
 		// Declare the sector as faulted
-		ss, err := info.SealProof.SectorSize()
-		require.NoError(t, err)
-		sectorQAPower := miner.QAPowerForSector(ss, info)
-		fee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorQAPower)
-
+		actor.declareFaults(rt, info)
 		return fee, info
 	}
-
-	t.Run("declare fault pays fee", func(t *testing.T) {
-		// Get sector into proving state
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-
-		fee, info := paramsFunc(rt)
-
-		actor.declareFaults(rt, fee, info)
-	})
-
 }
 
 func TestDeclareFaultsKeyChange(t *testing.T) {
@@ -1577,9 +1557,10 @@ func TestTerminateSectors(t *testing.T) {
 		sectorSize, err := sector.SealProof.SectorSize()
 		require.NoError(t, err)
 		sectorPower := miner.QAPowerForSector(sectorSize, sector)
-		dayReward := miner.ExpectedDayRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
+		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -1588,7 +1569,7 @@ func TestTerminateSectors(t *testing.T) {
 			st := getState(rt)
 
 			// expect sector to be marked as terminated and the early termination queue to be empty (having been fully processed)
-			partition := loadParitionForSector(t, st, rt.AdtStore(), sector)
+			_, partition := actor.findSector(rt, sector.SectorNumber)
 			terminated, err := partition.Terminated.IsSet(uint64(sector.SectorNumber))
 			require.NoError(t, err)
 			assert.True(t, terminated)
@@ -2068,6 +2049,21 @@ func (h *actorHarness) getDeadlineAndPartition(rt *mock.Runtime, dlIdx, pIdx uin
 	return deadline, partition
 }
 
+func (h *actorHarness) findSector(rt *mock.Runtime, sno abi.SectorNumber) (*miner.Deadline, *miner.Partition) {
+	var st miner.State
+	rt.GetState(&st)
+	deadlines, err := st.LoadDeadlines(rt.AdtStore())
+	require.NoError(h.t, err)
+	dlIdx, pIdx, err := miner.FindSector(rt.AdtStore(), deadlines, sno)
+	require.NoError(h.t, err)
+
+	deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
+	require.NoError(h.t, err)
+	partition, err := deadline.LoadPartition(rt.AdtStore(), pIdx)
+	require.NoError(h.t, err)
+	return deadline, partition
+}
+
 // Collects all sector infos into a map.
 func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*miner.SectorOnChainInfo {
 	sectors := map[abi.SectorNumber]*miner.SectorOnChainInfo{}
@@ -2107,6 +2103,11 @@ func (h *actorHarness) collectPartitionExpirations(rt *mock.Runtime, partition *
 		return nil
 	})
 	return expirations
+}
+
+func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
+	st := getState(rt)
+	return st.LockedFunds
 }
 
 //
@@ -2217,7 +2218,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	rt.Verify()
 }
 
-func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommitEpoch abi.ChainEpoch, precommits ...*miner.SectorPreCommitInfo) {
+func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitInfo) {
 	// expect calls to get network stats
 	expectQueryNetworkInfo(rt, h)
 
@@ -2273,7 +2274,7 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 func (h *actorHarness) proveCommitSectorAndConfirm(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, precommitEpoch abi.ChainEpoch,
 	params *miner.ProveCommitSectorParams, conf proveCommitConf) *miner.SectorOnChainInfo {
 	h.proveCommitSector(rt, precommit, precommitEpoch, params)
-	h.confirmSectorProofsValid(rt, conf, precommitEpoch, precommit)
+	h.confirmSectorProofsValid(rt, conf, precommit)
 
 	newSector := h.getSector(rt, params.SectorNumber)
 	return newSector
@@ -2432,7 +2433,6 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta,
 				abi.NewTokenAmount(0), nil, exitcode.Ok)
 		}
-		//skipped = *poStCfg.skipped
 	}
 
 	params := miner.SubmitWindowedPoStParams{
@@ -2445,34 +2445,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	rt.Verify()
 }
 
-func (h *actorHarness) computePartitions(rt *mock.Runtime, deadlines *miner.Deadlines, deadlineIdx uint64) ([]*miner.SectorOnChainInfo, []uint64) {
-	panic("todo")
-	// TODO minerstate
-	//st := getState(rt)
-	//firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, h.partitionSize, deadlineIdx)
-	//require.NoError(h.t, err)
-	//if sectorCount == 0 {
-	//	return nil, nil
-	//}
-	//partitionCount, _, err := miner.DeadlineCount(deadlines, h.partitionSize, deadlineIdx)
-	//require.NoError(h.t, err)
-	//
-	//partitions := make([]uint64, partitionCount)
-	//for i := uint64(0); i < partitionCount; i++ {
-	//	partitions[i] = firstPartIdx + i
-	//}
-	//
-	//partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadlineIdx, partitions)
-	//require.NoError(h.t, err)
-	//provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
-	//require.NoError(h.t, err)
-	//infos, _, err := st.LoadSectorInfosForProof(rt.AdtStore(), provenSectors)
-	//require.NoError(h.t, err)
-	//
-	//return infos, partitions
-}
-
-func (h *actorHarness) declareFaults(rt *mock.Runtime, fee abi.TokenAmount, faultSectorInfos ...*miner.SectorOnChainInfo) {
+func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2657,8 +2630,8 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	}, nil)
 
 	// slash reward
-	reward := miner.RewardForConsensusSlashReport(1, rt.Balance())
-	rt.ExpectSend(from, builtin.MethodSend, nil, reward, nil, exitcode.Ok)
+	rwd := miner.RewardForConsensusSlashReport(1, rt.Balance())
+	rt.ExpectSend(from, builtin.MethodSend, nil, rwd, nil, exitcode.Ok)
 
 	// power termination
 	lockedFunds := getState(rt).LockedFunds
@@ -2707,12 +2680,12 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	// Preamble
-	reward := reward.ThisEpochRewardReturn{
+	rwd := reward.ThisEpochRewardReturn{
 		ThisEpochReward:         h.epochReward,
 		ThisEpochBaselinePower:  h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
 	}
-	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &reward, exitcode.Ok)
+	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rwd, exitcode.Ok)
 	networkPower := big.NewIntUnsigned(1 << 50)
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
 		&power.CurrentTotalPowerReturn{
@@ -2967,19 +2940,6 @@ func fixedHasher(target uint64) func([]byte) [32]byte {
 		copy(digest[:], buf.Bytes())
 		return digest
 	}
-}
-
-func loadParitionForSector(t *testing.T, st *miner.State, store adt.Store, sector *miner.SectorOnChainInfo) *miner.Partition {
-	deadlines, err := st.LoadDeadlines(store)
-	require.NoError(t, err)
-	dlIdx, pIdx, err := miner.FindSector(store, deadlines, sector.SectorNumber)
-	require.NoError(t, err)
-
-	deadline, err := deadlines.LoadDeadline(store, dlIdx)
-	require.NoError(t, err)
-	partition, err := deadline.LoadPartition(store, pIdx)
-	require.NoError(t, err)
-	return partition
 }
 
 func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
