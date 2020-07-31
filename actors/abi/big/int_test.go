@@ -52,7 +52,9 @@ func TestNewInt(t *testing.T) {
 	ta := NewInt(a)
 	b := big.NewInt(999)
 	tb := Int{Int: b}
+	tc := NewIntUnsigned(999)
 	assert.True(t, ta.Equals(tb))
+	assert.True(t, ta.Equals(tc))
 	assert.Equal(t, "999", ta.String())
 }
 
