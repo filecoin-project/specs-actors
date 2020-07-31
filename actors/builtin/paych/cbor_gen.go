@@ -464,7 +464,7 @@ func (t *UpdateChannelStateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Secret); err != nil {
+	if _, err := w.Write(t.Secret[:]); err != nil {
 		return err
 	}
 
@@ -477,7 +477,7 @@ func (t *UpdateChannelStateParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Proof); err != nil {
+	if _, err := w.Write(t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -523,8 +523,12 @@ func (t *UpdateChannelStateParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Secret = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Secret); err != nil {
+
+	if extra > 0 {
+		t.Secret = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Secret[:]); err != nil {
 		return err
 	}
 	// t.Proof ([]uint8) (slice)
@@ -540,8 +544,12 @@ func (t *UpdateChannelStateParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Proof = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Proof); err != nil {
+
+	if extra > 0 {
+		t.Proof = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -596,7 +604,7 @@ func (t *SignedVoucher) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.SecretPreimage); err != nil {
+	if _, err := w.Write(t.SecretPreimage[:]); err != nil {
 		return err
 	}
 
@@ -744,8 +752,12 @@ func (t *SignedVoucher) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.SecretPreimage = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.SecretPreimage); err != nil {
+
+	if extra > 0 {
+		t.SecretPreimage = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.SecretPreimage[:]); err != nil {
 		return err
 	}
 	// t.Extra (paych.ModVerifyParams) (struct)
@@ -917,7 +929,7 @@ func (t *ModVerifyParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Data); err != nil {
+	if _, err := w.Write(t.Data[:]); err != nil {
 		return err
 	}
 	return nil
@@ -977,8 +989,12 @@ func (t *ModVerifyParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Data = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Data); err != nil {
+
+	if extra > 0 {
+		t.Data = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Data[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1006,7 +1022,7 @@ func (t *PaymentVerifyParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Extra); err != nil {
+	if _, err := w.Write(t.Extra[:]); err != nil {
 		return err
 	}
 
@@ -1019,7 +1035,7 @@ func (t *PaymentVerifyParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Proof); err != nil {
+	if _, err := w.Write(t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1056,8 +1072,12 @@ func (t *PaymentVerifyParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Extra = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Extra); err != nil {
+
+	if extra > 0 {
+		t.Extra = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Extra[:]); err != nil {
 		return err
 	}
 	// t.Proof ([]uint8) (slice)
@@ -1073,8 +1093,12 @@ func (t *PaymentVerifyParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Proof = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Proof); err != nil {
+
+	if extra > 0 {
+		t.Proof = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
