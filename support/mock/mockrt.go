@@ -63,10 +63,17 @@ type Runtime struct {
 	expectVerifyPoSt               *expectVerifyPoSt
 	expectVerifyConsensusFault     *expectVerifyConsensusFault
 	expectDeleteActor              *addr.Address
+	expectBatchVerifySeals         *expectBatchVerifySeals
 
 	logs []string
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
 	gasCharged int64
+}
+
+type expectBatchVerifySeals struct {
+	in  map[addr.Address][]abi.SealVerifyInfo
+	out map[addr.Address][]bool
+	err error
 }
 
 type expectRandomness struct {
@@ -547,16 +554,51 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 	return nil
 }
 
-func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]abi.SealVerifyInfo) (map[addr.Address][]bool, error) {
-	out := make(map[addr.Address][]bool)
-	for k, v := range vis { //nolint:nomaprange
-		validations := make([]bool, len(v))
-		for i := range validations {
-			validations[i] = true
-		}
-		out[k] = validations
+func (rt *Runtime) ExpectBatchVerifySeals(in map[addr.Address][]abi.SealVerifyInfo, out map[addr.Address][]bool, err error) {
+	rt.expectBatchVerifySeals = &expectBatchVerifySeals{
+		in, out, err,
 	}
-	return out, nil
+}
+
+func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]abi.SealVerifyInfo) (map[addr.Address][]bool, error) {
+	exp := rt.expectBatchVerifySeals
+	if exp != nil {
+		if len(vis) != len(exp.in) {
+			rt.failTest("length mismatch, expected: %v, actual: %v", exp.in, vis)
+		}
+
+		for key, value := range exp.in { //nolint:nomaprange
+			v, ok := vis[key]
+			if !ok {
+				rt.failTest("address %v expected but not found", key)
+			}
+
+			if len(v) != len(value) {
+				rt.failTest("sector info length mismatch for address %v, \n expected: %v, \n actual: %v", key, value, v)
+			}
+			for i, info := range value {
+				if v[i].SealedCID != info.SealedCID {
+					rt.failTest("sealed cid does not match for address %v", key)
+				}
+
+				if v[i].UnsealedCID != info.UnsealedCID {
+					rt.failTest("unsealed cid does not match for address %v", key)
+				}
+			}
+
+			delete(exp.in, key)
+		}
+
+		if len(exp.in) != 0 {
+			rt.failTest("addresses in expected map absent in actual: %v", exp.in)
+		}
+		defer func() {
+			rt.expectBatchVerifySeals = nil
+		}()
+		return exp.out, exp.err
+	}
+	rt.failTestNow("unexpected syscall to batch verify seals with %v", vis)
+	return nil, nil
 }
 
 func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
@@ -817,6 +859,10 @@ func (rt *Runtime) Verify() {
 		rt.failTest("missing expected verify seal with %v", rt.expectVerifySeal.seal)
 	}
 
+	if rt.expectBatchVerifySeals != nil {
+		rt.failTest("missing expected batch verify seals with %v", rt.expectBatchVerifySeals)
+	}
+
 	if rt.expectComputeUnsealedSectorCID != nil {
 		rt.failTest("missing expected ComputeUnsealedSectorCID with %v", rt.expectComputeUnsealedSectorCID)
 	}
@@ -841,6 +887,7 @@ func (rt *Runtime) Reset() {
 	rt.expectCreateActor = nil
 	rt.expectVerifySigs = nil
 	rt.expectVerifySeal = nil
+	rt.expectBatchVerifySeals = nil
 	rt.expectComputeUnsealedSectorCID = nil
 }
 
