@@ -131,7 +131,7 @@ func (t *SendParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Params); err != nil {
+	if _, err := w.Write(t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -200,8 +200,12 @@ func (t *SendParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Params = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Params); err != nil {
+
+	if extra > 0 {
+		t.Params = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -229,7 +233,7 @@ func (t *SendReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Return); err != nil {
+	if _, err := w.Write(t.Return[:]); err != nil {
 		return err
 	}
 
@@ -277,8 +281,12 @@ func (t *SendReturn) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Return = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Return); err != nil {
+
+	if extra > 0 {
+		t.Return = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Return[:]); err != nil {
 		return err
 	}
 	// t.Code (exitcode.ExitCode) (int64)
