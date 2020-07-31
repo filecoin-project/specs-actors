@@ -160,7 +160,7 @@ type ChangeWorkerAddressParams struct {
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(info.Owner)
@@ -176,7 +176,6 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		}
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
-		return nil
 	})
 
 	cronPayload := CronEventPayload{
@@ -194,14 +193,13 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	// TODO: Consider limiting the maximum number of bytes used by the peer ID on-chain.
 	// https://github.com/filecoin-project/specs-actors/issues/712
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(info.Worker)
 		info.PeerId = params.NewID
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
-		return nil
 	})
 	return nil
 }
@@ -214,13 +212,12 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt
 	// TODO: Consider limiting the maximum number of bytes used by multiaddrs on-chain.
 	// https://github.com/filecoin-project/specs-actors/issues/712
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 		info.Multiaddrs = params.NewMultiaddrs
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
-		return nil
 	})
 	return nil
 }
@@ -267,7 +264,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var postResult *PoStResult
 
 	var info *MinerInfo
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
@@ -365,8 +362,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		return nil
 	})
 
 	// Restore power for recovered sectors. Remove power for new faults.
@@ -432,7 +427,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	store := adt.AsStore(rt)
 	var st State
-	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+	newlyVested := big.Zero()
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 		if params.SealProof != info.SealProofType {
@@ -471,7 +467,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			depositMinimum = replaceSector.InitialPledge
 		}
 
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		duration := params.Expiration - rt.CurrEpoch()
@@ -497,11 +493,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		}); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
+	})
 
-		return newlyVestedFund
-	}).(abi.TokenAmount)
-
-	notifyPledgeChanged(rt, newlyVestedAmount.Neg())
+	notifyPledgeChanged(rt, newlyVested.Neg())
 
 	bf := abi.NewBitField()
 	bf.Set(uint64(params.SectorNumber))
@@ -660,7 +654,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	totalPledge := big.Zero()
 	totalPrecommitDeposit := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
-	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+	newlyVested := big.Zero()
+	rt.State().Transaction(&st, func() {
 		quant := st.QuantEndOfDeadline()
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
@@ -673,23 +668,26 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
-			dayReward := ExpectedDayRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power)
+			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
+			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
+
 			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
 				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
 			newSectorInfo := SectorOnChainInfo{
-				SectorNumber:       precommit.Info.SectorNumber,
-				SealProof:          precommit.Info.SealProof,
-				SealedCID:          precommit.Info.SealedCID,
-				DealIDs:            precommit.Info.DealIDs,
-				Expiration:         precommit.Info.Expiration,
-				Activation:         activation,
-				DealWeight:         precommit.DealWeight,
-				VerifiedDealWeight: precommit.VerifiedDealWeight,
-				InitialPledge:      initialPledge,
-				ExpectedDayReward:  dayReward,
+				SectorNumber:          precommit.Info.SectorNumber,
+				SealProof:             precommit.Info.SealProof,
+				SealedCID:             precommit.Info.SealedCID,
+				DealIDs:               precommit.Info.DealIDs,
+				Expiration:            precommit.Info.Expiration,
+				Activation:            activation,
+				DealWeight:            precommit.DealWeight,
+				VerifiedDealWeight:    precommit.VerifiedDealWeight,
+				InitialPledge:         initialPledge,
+				ExpectedDayReward:     dayReward,
+				ExpectedStoragePledge: storagePledge,
 			}
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
@@ -705,7 +703,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
 		}
@@ -720,13 +718,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		st.AddInitialPledgeRequirement(totalPledge)
 		st.AssertBalanceInvariants(rt.CurrentBalance())
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
+	})
 
 	// Request power and pledge update for activated sector.
 	requestUpdatePower(rt, newPower)
-	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVestedAmount))
+	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVested))
 
 	return nil
 }
@@ -799,7 +795,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	pledgeDelta := big.Zero()
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
@@ -877,8 +873,6 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		return nil
 	})
 
 	requestUpdatePower(rt, powerDelta)
@@ -961,7 +955,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	store := adt.AsStore(rt)
 	currEpoch := rt.CurrEpoch()
 	powerDelta := NewPowerPairZero()
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		info := getMinerInfo(rt, &st)
@@ -1012,8 +1006,6 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		return nil
 	})
 
 	// Now, try to process these sectors.
@@ -1075,7 +1067,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	store := adt.AsStore(rt)
 	var st State
 	newFaultPowerTotal := NewPowerPairZero()
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
@@ -1129,8 +1121,6 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		return nil
 	})
 
 	// Remove power for new faulty sectors.
@@ -1182,7 +1172,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
@@ -1231,8 +1221,6 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		return nil
 	})
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
@@ -1264,7 +1252,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
@@ -1301,8 +1289,6 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		if !removedPower.Equals(newPower) {
 			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, newPower)
 		}
-
-		return nil
 	})
 	return nil
 }
@@ -1333,14 +1319,13 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker)
 
 		err := st.MaskSectorNumbers(store, params.MaskSectorNumbers)
 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to mask sector numbers")
-		return nil
 	})
 	return nil
 }
@@ -1357,12 +1342,13 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 
 	store := adt.AsStore(rt)
 	var st State
-
-	newlyVested := rt.State().Transaction(&st, func() interface{} {
+	newlyVested := big.Zero()
+	rt.State().Transaction(&st, func() {
+		var err error
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
 
-		newlyVestedFund, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
+		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
@@ -1376,8 +1362,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to lock funds in vesting table: %v", err)
 		}
-		return newlyVestedFund
-	}).(abi.TokenAmount)
+	})
 
 	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
 
@@ -1440,7 +1425,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative fund requested for withdrawal: %s", params.AmountRequested)
 	}
 	var info *MinerInfo
-	newlyVestedAmount := rt.State().Transaction(&st, func() interface{} {
+	newlyVested := big.Zero()
+	rt.State().Transaction(&st, func() {
+		var err error
 		info = getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Owner)
 		// Ensure we don't have any pending terminations.
@@ -1454,16 +1441,14 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		}
 
 		// Unlock vested funds so we can spend them.
-		newlyVestedFund, err := st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
+		newlyVested, err = st.UnlockVestedFunds(adt.AsStore(rt), rt.CurrEpoch())
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
 
 		// Verify InitialPledgeRequirement does not exceed unlocked funds
 		verifyPledgeMeetsInitialRequirements(rt, &st)
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
+	})
 
 	currBalance := rt.CurrentBalance()
 	amountWithdrawn := big.Min(st.GetAvailableBalance(currBalance), params.AmountRequested)
@@ -1473,7 +1458,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn)
 	builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 
-	pledgeDelta := newlyVestedAmount.Neg()
+	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
 
 	st.AssertBalanceInvariants(rt.CurrentBalance())
@@ -1526,7 +1511,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 	)
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		var err error
 		result, more, err = st.PopEarlyTerminations(store, AddressedPartitionsMax, AddressedSectorsMax)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop early terminations")
@@ -1535,7 +1520,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		// This can happen if we end up processing early terminations
 		// before the cron callback fires.
 		if result.IsEmpty() {
-			return nil
+			return
 		}
 
 		info := getMinerInfo(rt, &st)
@@ -1574,8 +1559,6 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		// Remove pledge requirement.
 		st.AddInitialPledgeRequirement(totalInitialPledge.Neg())
 		pledgeDelta = big.Add(totalInitialPledge.Neg(), penaltyFromVesting.Neg())
-
-		return nil
 	})
 
 	// We didn't do anything, abort.
@@ -1613,8 +1596,7 @@ func handleProvingDeadline(rt Runtime) {
 	pledgeDelta := abi.NewTokenAmount(0)
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
-
+	rt.State().Transaction(&st, func() {
 		var err error
 		{
 			// Vest locked funds.
@@ -1636,7 +1618,7 @@ func handleProvingDeadline(rt Runtime) {
 		// Use dlInfo.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
 		dlInfo := st.DeadlineInfo(currEpoch)
 		if !dlInfo.PeriodStarted() {
-			return nil // Skip checking faults on the first, incomplete period.
+			return // Skip checking faults on the first, incomplete period.
 		}
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1722,8 +1704,6 @@ func handleProvingDeadline(rt Runtime) {
 				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
 			}
 		}
-
-		return nil
 	})
 
 	// Remove power for new faults, and burn penalties.
@@ -1806,7 +1786,7 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 
 	// initialize here to add together for all sectors and minimize calls across actors
 	depositToBurn := abi.NewTokenAmount(0)
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		var sectorNos []abi.SectorNumber
 		err := sectors.ForEach(func(i uint64) error {
 			sectorNo := abi.SectorNumber(i)
@@ -1836,7 +1816,6 @@ func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
 
 		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
 		Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
-		return nil
 	})
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
@@ -2054,7 +2033,7 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 
 func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		if info.PendingWorkerKey == nil {
 			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
@@ -2068,8 +2047,6 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 		info.PendingWorkerKey = nil
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
-
-		return nil
 	})
 	return nil
 }
@@ -2247,7 +2224,7 @@ func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, rew
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.ExpectedDayReward, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
+		fee := PledgePenaltyForTermination(s.ExpectedDayReward, s.ExpectedStoragePledge, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee
