@@ -77,9 +77,9 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, rt, dl)
 
 		store := adt.AsStore(rt)
-		removedPower, err := dl.TerminateSectors(store, 15, map[uint64][]*miner.SectorOnChainInfo{
-			0: selectSectors(t, sectors, bf(1, 3)),
-			1: selectSectors(t, sectors, bf(6)),
+		removedPower, err := dl.TerminateSectors(store, sectorsArr(t, rt, sectors), 15, miner.PartitionSectorMap{
+			0: bf(1, 3),
+			1: bf(6),
 		}, sectorSize, quantSpec)
 		require.NoError(t, err)
 
@@ -307,9 +307,10 @@ func TestDeadlines(t *testing.T) {
 		addThenMarkFaulty(t, rt, dl) // 1, 5, 6 faulty
 
 		store := adt.AsStore(rt)
-		removedPower, err := dl.TerminateSectors(store, 15, map[uint64][]*miner.SectorOnChainInfo{
-			0: selectSectors(t, sectors, bf(1, 3)),
-			1: selectSectors(t, sectors, bf(6)),
+		sectorArr := sectorsArr(t, rt, sectors)
+		removedPower, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
+			0: bf(1, 3),
+			1: bf(6),
 		}, sectorSize, quantSpec)
 		require.NoError(t, err)
 
