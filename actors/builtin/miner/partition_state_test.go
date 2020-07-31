@@ -165,9 +165,11 @@ func TestPartitions(t *testing.T) {
 	t.Run("reschedules expirations", func(t *testing.T) {
 		rt, store, partition := setup(t)
 
-		sectorsToMove := selectSectors(t, sectors, bf(2, 4, 6))
-		err := partition.RescheduleExpirations(store, 18, sectorsToMove, sectorSize, quantSpec)
+		moved, err := partition.RescheduleExpirations(store, sectorsArr(t, rt, sectors), sectorSize, quantSpec, 18, bf(2, 4, 6))
 		require.NoError(t, err)
+
+		// Make sure we moved them.
+		assertBitfieldEquals(t, moved, 2, 4, 6)
 
 		// We need to change the actual sector infos so our queue validation works.
 		rescheduled := rescheduleSectors(t, 18, sectors, bf(2, 4, 6))

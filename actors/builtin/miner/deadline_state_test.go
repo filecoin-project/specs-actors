@@ -584,12 +584,6 @@ func TestDeadlines(t *testing.T) {
 	})
 }
 
-func sectorsArr(t *testing.T, rt *mock.Runtime, sectors []*miner.SectorOnChainInfo) miner.Sectors {
-	sectorArr := miner.Sectors{adt.MakeEmptyArray(adt.AsStore(rt))}
-	require.NoError(t, sectorArr.Store(sectors...))
-	return sectorArr
-}
-
 func emptyDeadline(t *testing.T, rt *mock.Runtime) *miner.Deadline {
 	store := adt.AsStore(rt)
 	root, err := adt.MakeEmptyArray(store).Root()
