@@ -471,16 +471,15 @@ func (rt *Runtime) Readonly(st runtime.CBORUnmarshaler) {
 	}
 }
 
-func (rt *Runtime) Transaction(st runtime.CBORer, f func() interface{}) interface{} {
+func (rt *Runtime) Transaction(st runtime.CBORer, f func()) {
 	if rt.inTransaction {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "nested transaction")
 	}
 	rt.Readonly(st)
 	rt.inTransaction = true
 	defer func() { rt.inTransaction = false }()
-	ret := f()
+	f()
 	rt.state = rt.Put(st)
-	return ret
 }
 
 ///// Syscalls implementation /////
