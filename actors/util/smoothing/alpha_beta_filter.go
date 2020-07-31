@@ -14,17 +14,17 @@ var (
 	lnDenomCoef []*gbig.Int
 	ln2         big.Int
 
-	initialPosition big.Int
-	initialVelocity big.Int
+	defaultInitialPosition big.Int
+	defaultInitialVelocity big.Int
 
-	DefaultAlpha                   big.Int // Q.128 value of 0.000164
-	DefaultBeta                    big.Int //  Q.128 value of 0.000115
+	DefaultAlpha                   big.Int // Q.128 value of 9.25e-4
+	DefaultBeta                    big.Int // Q.128 value of 2.84e-7
 	ExtrapolatedCumSumRatioEpsilon big.Int // Q.128 value of 2^-50
 )
 
 func init() {
-	initialPosition = big.Zero()
-	initialVelocity = big.Zero()
+	defaultInitialPosition = big.Zero()
+	defaultInitialVelocity = big.Zero()
 
 	// ln approximation coefficients
 	// parameters are in integer format,
@@ -54,8 +54,8 @@ func init() {
 
 	// Alpha Beta Filter constants
 	constStrs := []string{
-		"55806300000000000000000000000000000",     // DefaultAlpha
-		"39132500000000000000000000000000000",     // DefaultBeta
+		"314760000000000000000000000000000000",    // DefaultAlpha
+		"96640100000000000000000000000000",        // DefaultBeta
 		"302231454903657293676544",                // Epsilon
 		"235865763225513294137944142764154484399", // ln(2)
 	}
@@ -79,10 +79,18 @@ func (fe *FilterEstimate) Estimate() big.Int {
 	return big.Rsh(fe.PositionEstimate, math.Precision) // Q.128 => Q.0
 }
 
-func InitialEstimate() *FilterEstimate {
+func DefaultInitialEstimate() *FilterEstimate {
 	return &FilterEstimate{
-		PositionEstimate: initialPosition,
-		VelocityEstimate: initialVelocity,
+		PositionEstimate: defaultInitialPosition,
+		VelocityEstimate: defaultInitialVelocity,
+	}
+}
+
+// Create a new filter estimate given two Q.0 format ints.
+func NewEstimate(position, velocity big.Int) *FilterEstimate {
+	return &FilterEstimate{
+		PositionEstimate: big.Lsh(position, math.Precision), // Q.0 => Q.128
+		VelocityEstimate: big.Lsh(velocity, math.Precision), // Q.0 => Q.128
 	}
 }
 
@@ -163,12 +171,12 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 
 	}
 
-	halfDeltaT := big.Rsh(deltaT, 1)                          // Q.128 / Q.0 => Q.128
+	halfDeltaT := big.Rsh(deltaT, 1)                   // Q.128 / Q.0 => Q.128
 	x1m := big.Mul(velocity1, big.Sum(t0, halfDeltaT)) // Q.128 * Q.128 => Q.256
-	x1m = big.Rsh(x1m, math.Precision)                                    // Q.256 => Q.128
+	x1m = big.Rsh(x1m, math.Precision)                 // Q.256 => Q.128
 	x1m = big.Add(position1, x1m)
 
-	cumsumRatio := big.Mul(x1m, deltaT)                                // Q.128 * Q.128 => Q.256
+	cumsumRatio := big.Mul(x1m, deltaT)           // Q.128 * Q.128 => Q.256
 	cumsumRatio = big.Div(cumsumRatio, position2) // Q.256 / Q.128 => Q.128
 	return cumsumRatio
 
@@ -178,7 +186,7 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 func Ln(z big.Int) big.Int {
 	// bitlen - 1 - precision
 	k := int64(z.BitLen()) - 1 - math.Precision // Q.0
-	x := big.Zero()                // nolint:ineffassign
+	x := big.Zero()                             // nolint:ineffassign
 
 	if k > 0 {
 		x = big.Rsh(z, uint(k)) // Q.128

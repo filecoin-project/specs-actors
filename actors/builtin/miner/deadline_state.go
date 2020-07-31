@@ -53,6 +53,9 @@ type Deadline struct {
 
 	// The total number of sectors in this deadline (incl dead).
 	TotalSectors uint64
+
+	// Memoized sum of faulty power in partitions.
+	FaultyPower PowerPair
 }
 
 //
@@ -116,6 +119,8 @@ func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 		PostSubmissions:   abi.NewBitField(),
 		EarlyTerminations: abi.NewBitField(),
 		LiveSectors:       0,
+		TotalSectors:      0,
+		FaultyPower:       NewPowerPairZero(),
 	}
 }
 
@@ -240,12 +245,15 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 	}
 	dl.LiveSectors -= onTimeCount + earlyCount
 
+	dl.FaultyPower = dl.FaultyPower.Sub(allFaultyPower)
+
 	return NewExpirationSet(allOnTimeSectors, allEarlySectors, allOnTimePledge, allActivePower, allFaultyPower), nil
 }
 
 // Adds sectors to a deadline. It's the caller's responsibility to make sure
 // that this deadline isn't currently "open" (i.e., being proved at this point
 // in time).
+// The sectors are assumed to be non-faulty.
 func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []*SectorOnChainInfo,
 	ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
 	if len(sectors) == 0 {
@@ -454,7 +462,7 @@ func (dl *Deadline) TerminateSectors(
 	partitionSectors map[uint64][]*SectorOnChainInfo,
 	ssize abi.SectorSize,
 	quant QuantSpec,
-) (removedPower PowerPair, err error) {
+) (powerLost PowerPair, err error) {
 
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
@@ -467,7 +475,7 @@ func (dl *Deadline) TerminateSectors(
 	}
 	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
 
-	removedPower = NewPowerPairZero()
+	powerLost = NewPowerPairZero()
 
 	var partition Partition
 	for _, partIdx := range partitionIdxs {
@@ -477,7 +485,7 @@ func (dl *Deadline) TerminateSectors(
 		} else if !found {
 			return NewPowerPairZero(), xerrors.Errorf("failed to find partition %d", partIdx)
 		}
-		pwr, err := partition.TerminateSectors(store, epoch, partSectors, ssize, quant)
+		removed, err := partition.TerminateSectors(store, epoch, partSectors, ssize, quant)
 		if err != nil {
 			return NewPowerPairZero(), xerrors.Errorf("failed to terminate sectors in partition %d: %w", partIdx, err)
 		}
@@ -489,11 +497,12 @@ func (dl *Deadline) TerminateSectors(
 
 		// Record that partition now has pending early terminations.
 		dl.EarlyTerminations.Set(partIdx)
-		// Record live sector change
+		// Record change to sectors and power
 		dl.LiveSectors -= uint64(len(partSectors))
+		dl.FaultyPower = dl.FaultyPower.Sub(removed.FaultyPower)
 
-		// update power
-		removedPower = removedPower.Add(pwr)
+		// Aggregate power lost from active sectors
+		powerLost = powerLost.Add(removed.ActivePower)
 	}
 
 	// save partitions back
@@ -502,7 +511,7 @@ func (dl *Deadline) TerminateSectors(
 		return NewPowerPairZero(), xerrors.Errorf("failed to persist partitions: %w", err)
 	}
 
-	return removedPower, nil
+	return powerLost, nil
 }
 
 // RemovePartitions removes the specified partitions, shifting the remaining
@@ -753,6 +762,9 @@ func (dl *Deadline) DeclareFaults(
 	if err != nil {
 		return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to update expirations for partitions with faults: %w", err)
 	}
+
+	dl.FaultyPower = dl.FaultyPower.Add(newFaultyPower)
+
 	return newFaultyPower, nil
 }
 
@@ -815,6 +827,8 @@ func (dl *Deadline) DeclareFaultsRecovered(
 			return xc.ErrIllegalState.Wrapf("failed to update partition %d: %w", partIdx, err)
 		}
 	}
+
+	// Power is not regained until the deadline end, when the recovery is confirmed.
 
 	dl.Partitions, err = partitions.Root()
 	if err != nil {
@@ -900,6 +914,8 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	if err != nil {
 		return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to update deadline expiration queue: %w", err)
 	}
+
+	dl.FaultyPower = dl.FaultyPower.Add(newFaultyPower)
 
 	// Reset PoSt submissions.
 	dl.PostSubmissions = abi.NewBitField()
@@ -1023,6 +1039,14 @@ func (dl *Deadline) RecordProvenSectors(
 		return nil, xc.ErrIllegalState.Wrapf("failed to update expirations for partitions with faults: %w", err)
 	}
 
+	// Save everything back.
+	dl.FaultyPower = dl.FaultyPower.Sub(recoveredPowerTotal).Add(newFaultyPowerTotal)
+
+	dl.Partitions, err = partitions.Root()
+	if err != nil {
+		return nil, xc.ErrIllegalState.Wrapf("failed to persist partitions: %w", err)
+	}
+
 	// Collect all sectors, faults, and recoveries for proof verification.
 	allSectorNos, err := bitfield.MultiMerge(allSectors...)
 	if err != nil {
@@ -1031,12 +1055,6 @@ func (dl *Deadline) RecordProvenSectors(
 	allIgnoredSectorNos, err := bitfield.MultiMerge(allIgnored...)
 	if err != nil {
 		return nil, xc.ErrIllegalState.Wrapf("failed to merge ignored sectors bitfields: %w", err)
-	}
-
-	// Save everything back.
-	dl.Partitions, err = partitions.Root()
-	if err != nil {
-		return nil, xc.ErrIllegalState.Wrapf("failed to persist partitions: %w", err)
 	}
 
 	return &PoStResult{
