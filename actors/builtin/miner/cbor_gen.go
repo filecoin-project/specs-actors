@@ -1743,8 +1743,8 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ExpectedTwentyDayReward (big.Int) (struct)
-	if err := t.ExpectedTwentyDayReward.MarshalCBOR(w); err != nil {
+	// t.ExpectedStoragePledge (big.Int) (struct)
+	if err := t.ExpectedStoragePledge.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -1938,12 +1938,12 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.ExpectedTwentyDayReward (big.Int) (struct)
+	// t.ExpectedStoragePledge (big.Int) (struct)
 
 	{
 
-		if err := t.ExpectedTwentyDayReward.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.ExpectedTwentyDayReward: %w", err)
+		if err := t.ExpectedStoragePledge.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ExpectedStoragePledge: %w", err)
 		}
 
 	}
