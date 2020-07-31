@@ -2076,12 +2076,8 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
-		if info.PendingWorkerKey == nil {
-			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
-		}
-
-		if info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
-			rt.Abortf(exitcode.ErrIllegalState, "Too early for key change. Current: %v, Change: %v)", rt.CurrEpoch(), info.PendingWorkerKey.EffectiveAt)
+		if info.PendingWorkerKey == nil || info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
+			return nil
 		}
 
 		info.Worker = info.PendingWorkerKey.NewWorker

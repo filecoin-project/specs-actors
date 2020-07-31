@@ -1665,13 +1665,15 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.SetEpoch(effectiveEpoch - 1)
 		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 		rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
-				EventType: miner.CronEventWorkerKeyChange,
-			})
+		rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
+			EventType: miner.CronEventWorkerKeyChange,
 		})
 		rt.Verify()
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.NotNil(t, info.PendingWorkerKey)
+		require.EqualValues(t, actor.worker, info.Worker)
 
 		// set current epoch to effective epoch and ask to change the address
 		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
