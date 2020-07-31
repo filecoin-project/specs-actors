@@ -582,6 +582,43 @@ func TestDeadlines(t *testing.T) {
 				bf(9),
 			).assert(t, rt, dl)
 	})
+
+	t.Run("reschedule expirations", func(t *testing.T) {
+		rt := builder.Build(t)
+		dl := emptyDeadline(t, rt)
+
+		store := adt.AsStore(rt)
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
+		addThenMarkFaulty(t, rt, dl)
+
+		// Try to reschedule two sectors, only the 7 (non faulty) should succeed.
+		err := dl.RescheduleSectorExpirations(store, sectorArr, sectorSize, quantSpec, 1, miner.PartitionSectorMap{
+			1: bf(6, 7, 99), // 99 should be skipped, it doesn't exist.
+			5: bf(100),      // partition 5 doesn't exist.
+			2: bf(),         // empty bitfield should be fine.
+		})
+		require.NoError(t, err)
+
+		exp, err := dl.PopExpiredSectors(store, 1, quantSpec)
+		require.NoError(t, err)
+
+		sector7 := selectSectors(t, sectors, bf(7))[0]
+
+		dlState.withFaults(1, 5, 6).
+			withTerminations(7).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, rt, dl)
+		assertBitfieldEmpty(t, exp.EarlySectors)
+		assertBitfieldEquals(t, exp.OnTimeSectors, 7)
+		assert.True(t, exp.ActivePower.Equals(miner.PowerForSector(sectorSize, sector7)))
+		assert.True(t, exp.FaultyPower.IsZero())
+		assert.True(t, exp.OnTimePledge.Equals(sector7.InitialPledge))
+	})
 }
 
 func emptyDeadline(t *testing.T, rt *mock.Runtime) *miner.Deadline {
