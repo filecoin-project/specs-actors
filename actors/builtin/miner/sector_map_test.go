@@ -2,9 +2,11 @@ package miner_test
 
 import (
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
+	rlepluslazy "github.com/filecoin-project/go-bitfield/rle"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,4 +81,33 @@ func TestPartitionSectorMapValues(t *testing.T) {
 	assert.NoError(t, pm.AddValues(0, 0, 1, 2, 3))
 
 	assertBitfieldEquals(t, pm[0], 0, 1, 2, 3)
+}
+
+func TestDeadlineSectorMapOverflow(t *testing.T) {
+	dm := make(miner.DeadlineSectorMap)
+	dlCount := uint64(10)
+	bf, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: []rlepluslazy.Run{{Val: true, Len: math.MaxUint64}}})
+	require.NoError(t, err)
+	for dlIdx := uint64(0); dlIdx < dlCount; dlIdx++ {
+		assert.NoError(t, dm.Add(dlIdx, 0, bf))
+	}
+
+	_, _, err = dm[0].Count()
+	require.NoError(t, err)
+
+	_, _, err = dm.Count()
+	require.Error(t, err)
+}
+
+func TestPartitionSectorMapOverflow(t *testing.T) {
+	pm := make(miner.PartitionSectorMap)
+	partCount := uint64(2)
+	bf, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: []rlepluslazy.Run{{Val: true, Len: math.MaxUint64}}})
+	require.NoError(t, err)
+	for partIdx := uint64(0); partIdx < partCount; partIdx++ {
+		assert.NoError(t, pm.Add(partIdx, bf))
+	}
+
+	_, _, err = pm.Count()
+	require.Error(t, err)
 }
