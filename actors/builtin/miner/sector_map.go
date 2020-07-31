@@ -88,7 +88,7 @@ func (dm DeadlineSectorMap) Deadlines() []uint64 {
 func (dm DeadlineSectorMap) ForEach(cb func(dlIdx uint64, pm PartitionSectorMap) error) error {
 	for _, dlIdx := range dm.Deadlines() {
 		if err := cb(dlIdx, dm[dlIdx]); err != nil {
-			return xerrors.Errorf("while processing deadline %d: %w", dlIdx, err)
+			return err
 		}
 	}
 	return nil
@@ -144,7 +144,7 @@ func (pm PartitionSectorMap) Partitions() []uint64 {
 func (pm PartitionSectorMap) ForEach(cb func(partIdx uint64, sectorNos *bitfield.BitField) error) error {
 	for _, partIdx := range pm.Partitions() {
 		if err := cb(partIdx, pm[partIdx]); err != nil {
-			return xerrors.Errorf("while processing partition %d: %w", partIdx, err)
+			return err
 		}
 	}
 	return nil
