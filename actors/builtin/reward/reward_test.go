@@ -31,7 +31,7 @@ func TestConstructor(t *testing.T) {
 		st := getState(rt)
 		assert.Equal(t, abi.ChainEpoch(0), st.Epoch)
 		assert.Equal(t, abi.NewStoragePower(0), st.CumsumRealized)
-		assert.Equal(t, big.MustFromString("32969331176161031581"), st.ThisEpochReward)
+		assert.Equal(t, big.MustFromString("36266264293777134739"), st.ThisEpochReward)
 		epochZeroBaseline := big.Sub(reward.BaselineInitialValue, big.NewInt(1)) // account for rounding error of one byte during construction
 		assert.Equal(t, epochZeroBaseline, st.ThisEpochBaselinePower)
 		assert.Equal(t, reward.BaselineInitialValue, st.EffectiveBaselinePower)
