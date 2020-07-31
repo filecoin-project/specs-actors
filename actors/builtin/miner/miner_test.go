@@ -1221,7 +1221,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
 
 		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment:      dlinfo.NextPeriodStart(),
+			expectedEnrollment:       dlinfo.NextPeriodStart(),
 			detectedFaultsPenalty:    undetectedPenalty,
 			detectedFaultsPowerDelta: &powerDeltaClaim,
 			ongoingFaultsPenalty:     ongoingPenalty,
@@ -1252,7 +1252,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, faultPwr.QA)
 
 		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment:   dlinfo.Close,
+			expectedEnrollment:    dlinfo.Close,
 			detectedFaultsPenalty: retractedPenalty,
 			ongoingFaultsPenalty:  ongoingPenalty,
 		})
@@ -2066,7 +2066,7 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
 	h.onDeadlineCron(rt, &cronConfig{
-		expectedEntrollment: nextCron,
+		expectedEnrollment: nextCron,
 	})
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
@@ -2354,7 +2354,7 @@ func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
 }
 
 type cronConfig struct {
-	expectedEntrollment       abi.ChainEpoch
+	expectedEnrollment        abi.ChainEpoch
 	vestingPledgeDelta        abi.TokenAmount // nolint:structcheck,unused
 	detectedFaultsPowerDelta  *miner.PowerPair
 	detectedFaultsPenalty     abi.TokenAmount
@@ -2421,7 +2421,7 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeDeadlineCronEventParams(h.t, config.expectedEntrollment), big.Zero(), nil, exitcode.Ok)
+		makeDeadlineCronEventParams(h.t, config.expectedEnrollment), big.Zero(), nil, exitcode.Ok)
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
@@ -2477,7 +2477,7 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, config *cronConfig) {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.PeriodEnd())
-	config.expectedEntrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+	config.expectedEnrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
 	h.onDeadlineCron(rt, config)
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
@@ -2487,7 +2487,7 @@ func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, config *cronConfig
 func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *miner.DeadlineInfo {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.Last())
-	config.expectedEntrollment = deadline.Last() + miner.WPoStChallengeWindow
+	config.expectedEnrollment = deadline.Last() + miner.WPoStChallengeWindow
 	h.onDeadlineCron(rt, config)
 	rt.SetEpoch(deadline.NextOpen())
 	return h.deadline(rt)
