@@ -97,9 +97,8 @@ func (a Actor) RuntimeTransactionMarshalCBORFailure(rt runtime.Runtime, _ *adt.E
 
 	var st State
 
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		st.OptFailToMarshalCBOR = []*FailToMarshalCBOR{{}}
-		return nil
 	})
 
 	return nil
