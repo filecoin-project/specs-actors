@@ -1201,7 +1201,13 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	var st State
 	rt.State().Transaction(&st, func() interface{} {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		// if a key change is in progress, we also allow the owner to call this
+		// otherwise, we only allow the worker.
+		if info.PendingWorkerKey == nil {
+			rt.ValidateImmediateCallerIs(info.Worker)
+		} else {
+			rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		}
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")

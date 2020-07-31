@@ -2504,6 +2504,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, fee abi.TokenAmount, faul
 }
 
 func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors *bitfield.BitField) {
+
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2519,7 +2520,6 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 }
 
 func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
-
 	// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
 	// Submit a window post for all partitions due at each deadline when necessary.
 	deadline := h.deadline(rt)
