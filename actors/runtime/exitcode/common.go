@@ -20,7 +20,4 @@ const (
 	// Common error codes stop here.  If you define a common error code above
 	// this value it will have conflicting interpretations
 	FirstActorSpecificExitCode = ExitCode(32)
-
-	// An error code intended to be replaced by different code structure or a more descriptive error.
-	ErrPlaceholder = ExitCode(1000)
 )

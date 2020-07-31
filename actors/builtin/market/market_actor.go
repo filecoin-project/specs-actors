@@ -81,7 +81,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(WritePermission).
 			withLockedTable(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
@@ -99,7 +99,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 
 		amountExtracted = ex
-		return nil
 	})
 
 	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
@@ -118,7 +117,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(WritePermission).
 			withLockedTable(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
@@ -128,8 +127,6 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
-
-		return nil
 	})
 	return nil
 }
@@ -176,7 +173,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	var newDealIds []abi.DealID
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(WritePermission).
 			withDealProposals(WritePermission).withDealsByEpoch(WritePermission).withEscrowTable(WritePermission).
 			withLockedTable(WritePermission).build()
@@ -227,8 +224,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
-
-		return nil
 	})
 
 	for _, deal := range params.Deals {
@@ -302,7 +297,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 	store := adt.AsStore(rt)
 
 	// Update deal dealStates.
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		_, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
@@ -342,7 +337,6 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
-		return nil
 	})
 
 	return nil
@@ -393,7 +387,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 	minerAddr := rt.Message().Caller()
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
 			withDealProposals(ReadOnlyPermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state")
@@ -435,8 +429,6 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
-
-		return nil
 	})
 	return nil
 }
@@ -448,7 +440,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var timedOutVerifiedDeals []*DealProposal
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
@@ -544,8 +536,6 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
-
-		return nil
 	})
 
 	for _, d := range timedOutVerifiedDeals {

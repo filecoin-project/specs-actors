@@ -46,7 +46,7 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(t.NetworkName))); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, t.NetworkName); err != nil {
+	if _, err := io.WriteString(w, string(t.NetworkName)); err != nil {
 		return err
 	}
 	return nil
@@ -130,7 +130,7 @@ func (t *ConstructorParams) MarshalCBOR(w io.Writer) error {
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(t.NetworkName))); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, t.NetworkName); err != nil {
+	if _, err := io.WriteString(w, string(t.NetworkName)); err != nil {
 		return err
 	}
 	return nil
@@ -195,7 +195,7 @@ func (t *ExecParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.ConstructorParams); err != nil {
+	if _, err := w.Write(t.ConstructorParams[:]); err != nil {
 		return err
 	}
 	return nil
@@ -244,8 +244,12 @@ func (t *ExecParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.ConstructorParams = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.ConstructorParams); err != nil {
+
+	if extra > 0 {
+		t.ConstructorParams = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.ConstructorParams[:]); err != nil {
 		return err
 	}
 	return nil

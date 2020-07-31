@@ -38,6 +38,9 @@ var testMultiaddrs []abi.Multiaddrs
 // A balance for use in tests where the miner's low balance is not interesting.
 var bigBalance = big.Mul(big.NewInt(10000), big.NewInt(1e18))
 
+// an expriration 1 greater than min expiration
+const defaultSectorExpiration = 181
+
 func init() {
 	testPid = abi.PeerID("peerID")
 
@@ -165,7 +168,7 @@ func TestCommitments(t *testing.T) {
 		// Make a good commitment for the proof to target.
 		// Use the max sector number to make sure everything works.
 		sectorNo := abi.SectorNumber(abi.MaxSectorNumber)
-		expiration := dlInfo.PeriodEnd() + 181*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
 		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
 		actor.preCommitSector(rt, precommit)
 
@@ -267,10 +270,10 @@ func TestCommitments(t *testing.T) {
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
 
-		oldSector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		oldSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
 
 		// Good commitment.
-		expiration := deadline.PeriodEnd() + 181*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
 
 		// Duplicate pre-commit sector ID
@@ -353,7 +356,7 @@ func TestCommitments(t *testing.T) {
 
 		// Commit a sector to upgrade
 		// Use the max sector number to make sure everything works.
-		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, 181, nil)
+		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
@@ -471,7 +474,7 @@ func TestCommitments(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// Commit sectors to target upgrade. The first has no deals, the second has a deal.
-		oldSectors := actor.commitAndProveSectors(rt, 2, 181, [][]abi.DealID{nil, {10}})
+		oldSectors := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{nil, {10}})
 
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSectors[0].SectorNumber)
@@ -619,7 +622,7 @@ func TestCommitments(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+181*miner.WPoStProvingPeriod, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
 		actor.preCommitSector(rt, precommit)
 
 		// Sector pre-commitment missing.
@@ -718,7 +721,7 @@ func TestCommitments(t *testing.T) {
 		for proof, limit := range dealLimits {
 			// attempt to pre-commmit a sector with too many sectors
 			rt, actor, deadline := setup(proof)
-			expiration := deadline.PeriodEnd() + 181*miner.WPoStProvingPeriod
+			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit+1))
 			rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
 				actor.preCommitSector(rt, precommit)
@@ -746,7 +749,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
-		sector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
@@ -755,8 +758,7 @@ func TestWindowPost(t *testing.T) {
 		// Skip over deadlines until the beginning of the one with the new sector
 		dlinfo := actor.deadline(rt)
 		for dlinfo.Index != dlIdx {
-			advanceDeadline(rt, actor, &cronConfig{})
-			dlinfo = actor.deadline(rt)
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 
 		// Submit PoSt
@@ -777,7 +779,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
-		sector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
@@ -786,8 +788,7 @@ func TestWindowPost(t *testing.T) {
 		// Skip over deadlines until the beginning of the one with the new sector
 		dlinfo := actor.deadline(rt)
 		for dlinfo.Index != dlIdx {
-			advanceDeadline(rt, actor, &cronConfig{})
-			dlinfo = actor.deadline(rt)
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 
 		// Submit PoSt
@@ -824,7 +825,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
-		infos := actor.commitAndProveSectors(rt, 1, 181, nil)
+		infos := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
 		// add lots of funds so we can pay penalties without going into debt
@@ -851,8 +852,7 @@ func TestWindowPost(t *testing.T) {
 		// advance to epoch when submitPoSt is due
 		dlinfo := actor.deadline(rt)
 		for dlinfo.Index != dlIdx {
-			advanceDeadline(rt, actor, &cronConfig{})
-			dlinfo = actor.deadline(rt)
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 
 		// Now submit PoSt
@@ -883,158 +883,212 @@ func TestWindowPost(t *testing.T) {
 		assert.Equal(t, expectedBalance, actor.getLockedFunds(rt))
 	})
 
-	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
-		t.Skip("Disabled in miner state refactor #648, restore soon")
-		//rt := builder.Build(t)
-		//deadline, infos, partitions := runTillFirstDeadline(rt)
-		//
-		//// skip the first sector in the partition
-		//skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-		//
-		//pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
-		//
-		//// expected penalty is the fee for an undeclared fault
-		//expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-		//
-		//cfg := &poStConfig{
-		//	expectedRawPowerDelta: pwr.Raw.Neg(),
-		//	expectedQAPowerDelta:  pwr.QA.Neg(),
-		//	expectedPenalty:       expectedPenalty,
-		//}
-		//
-		//actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
+	t.Run("skipped faults are penalized and adjust power", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt)
+		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
+
+		// advance to epoch when submitPoSt is due
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		dlIdx2, pIdx2, err := st.FindSector(rt.AdtStore(), infos[1].SectorNumber)
+		require.NoError(t, err)
+		assert.Equal(t, dlIdx, dlIdx2) // this test will need to change when these are not equal
+
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Now submit PoSt with a skipped fault for first sector
+		// First sector should be penalized as an undeclared fault and its power should be removed
+		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
+		// which is charged at next cron and the rest which is charged during submit PoSt.
+		undeclaredFee := actor.undeclaredFaultPenalty(infos[:1])
+		declaredFee := actor.declaredFaultPenalty(infos[:1])
+		faultFee := big.Sub(undeclaredFee, declaredFee)
+
+		pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
+		cfg := &poStConfig{
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
+			expectedPenalty:       faultFee,
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bf(uint64(infos[0].SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+
+		// expect declared fee to be charged during cron
+		dlinfo = advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: declaredFee})
+
+		// advance to next proving period, expect no fees
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// skip second fault
+		undeclaredFee = actor.undeclaredFaultPenalty(infos[1:])
+		declaredFee = actor.declaredFaultPenalty(infos[1:])
+		faultFee = big.Sub(undeclaredFee, declaredFee)
+		pwr = miner.PowerForSectors(actor.sectorSize, infos[1:])
+
+		cfg = &poStConfig{
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
+			expectedPenalty:       faultFee,
+		}
+		partitions = []miner.PoStPartition{
+			{Index: pIdx2, Skipped: bf(uint64(infos[1].SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+
+		// expect ongoing fault from both sectors
+		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: actor.declaredFaultPenalty(infos)})
 	})
 
-	// TODO minerstate
-	//t.Run("skipped all sectors in a deadline may be skipped", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	deadline, infos, partitions := runTillFirstDeadline(rt)
-	//
-	//	// skip all sectors in deadline
-	//	st := getState(rt)
-	//	deadlines, err := st.LoadDeadlines(rt.AdtStore())
-	//	require.NoError(t, err)
-	//	skipped := deadlines.Due[deadline.Index]
-	//	count, err := skipped.Count()
-	//	require.NoError(t, err)
-	//	assert.Greater(t, count, uint64(0))
-	//
-	//	pwr := miner.PowerForSectors(actor.sectorSize, infos)
-	//
-	//	// expected penalty is the fee for an undeclared fault
-	//	expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		skipped:               skipped,
-	//		expectedRawPowerDelta: pwr.Raw.Neg(),
-	//		expectedQAPowerDelta:  pwr.QA.Neg(),
-	//		expectedPenalty:       expectedPenalty,
-	//	}
-	//
-	//	actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
-	//})
+	t.Run("skipped all sectors in a deadline may be skipped", func(t *testing.T) {
+		rt := builder.Build(t)
 
-	// TODO minerstate
-	//t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	deadline, infos, partitions := runTillFirstDeadline(rt)
-	//	st := getState(rt)
-	//
-	//	// mark all sectors as recovered faults
-	//	sectors := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-	//	err := st.AddFaults(rt.AdtStore(), sectors, rt.Epoch())
-	//	require.NoError(t, err)
-	//	err = st.AddRecoveries(sectors)
-	//	require.NoError(t, err)
-	//	rt.ReplaceState(st)
-	//
-	//	pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
-	//
-	//	// skip the first sector in the partition
-	//	skipped := bitfield.NewFromSet([]uint64{uint64(infos[0].SectorNumber)})
-	//	// expected penalty is the fee for an undeclared fault
-	//	expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		expectedRawPowerDelta: big.Zero(),
-	//		expectedQAPowerDelta:  big.Zero(),
-	//		expectedPenalty:       expectedPenalty,
-	//		skipped:               skipped,
-	//	}
-	//
-	//	actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
-	//})
+		actor.constructAndVerify(rt)
+		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
-	//t.Run("skipping a fault from the wrong deadline is an error", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	deadline, infos, partitions := runTillFirstDeadline(rt)
-	//	st := getState(rt)
-	//
-	//	// look ahead to next deadline to find a sector not in this deadline
-	//	deadlines, err := st.LoadDeadlines(rt.AdtStore())
-	//	require.NoError(t, err)
-	//	nextDeadline := st.DeadlineInfo(deadline.NextOpen())
-	//	nextInfos, _ := actor.computePartitions(rt, deadlines, nextDeadline.Index)
-	//
-	//	pwr := miner.PowerForSectors(actor.sectorSize, nextInfos[:1])
-	//
-	//	// skip the first sector in the partition
-	//	skipped := bitfield.NewFromSet([]uint64{uint64(nextInfos[0].SectorNumber)})
-	//	// expected penalty is the fee for an undeclared fault
-	//	expectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		expectedRawPowerDelta: big.Zero(),
-	//		expectedQAPowerDelta:  big.Zero(),
-	//		expectedPenalty:       expectedPenalty,
-	//		skipped:               skipped,
-	//	}
-	//
-	//	rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors not due in deadline", func() {
-	//		actor.submitWindowPoSt(rt, deadline, partitions, infos, cfg)
-	//	})
-	//})
+		// add lots of funds so we can pay penalties without going into debt
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
 
-	// TODO minerstate
-	//t.Run("detects faults from previous missed posts", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//
-	//	// skip two PoSts
-	//	_, infos1, _ := runTillFirstDeadline(rt)
-	//	_, infos2, _ := runTillNextDeadline(rt)
-	//	deadline, infos3, partitions := runTillNextDeadline(rt)
-	//
-	//	// assert we have sectors in each deadline
-	//	assert.Greater(t, len(infos1), 0)
-	//	assert.Greater(t, len(infos2), 0)
-	//	assert.Greater(t, len(infos3), 0)
-	//
-	//	// expect power to be deducted for all sectors in first two deadlines
-	//	pwr := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
-	//
-	//	// expected penalty is the late undeclared fault penalty for all faulted sectors including retracted recoveries..
-	//	expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		skipped:               abi.NewBitField(),
-	//		expectedRawPowerDelta: pwr.Raw.Neg(),
-	//		expectedQAPowerDelta:  pwr.QA.Neg(),
-	//		expectedPenalty:       expectedPenalty,
-	//	}
-	//
-	//	actor.submitWindowPoSt(rt, deadline, partitions, infos3, cfg)
-	//
-	//	// same size and every info is set in bitset implies info1+info2 and st.Faults represent the same sectors
-	//	st := getState(rt)
-	//	faultCount, err := st.Faults.Count()
-	//	require.NoError(t, err)
-	//	assert.Equal(t, uint64(len(infos1)+len(infos2)), faultCount)
-	//	for _, info := range append(infos1, infos2...) {
-	//		set, err := st.Faults.IsSet(uint64(info.SectorNumber))
-	//		require.NoError(t, err)
-	//		assert.True(t, set)
-	//	}
-	//})
+		// advance to epoch when submitPoSt is due
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		dlIdx2, pIdx2, err := st.FindSector(rt.AdtStore(), infos[1].SectorNumber)
+		require.NoError(t, err)
+		assert.Equal(t, dlIdx, dlIdx2) // this test will need to change when these are not equal
+		assert.Equal(t, pIdx, pIdx2)   // this test will need to change when these are not equal
+
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Now submit PoSt with all faults skipped
+		// Sectors should be penalized as an undeclared fault and its power should be removed
+		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
+		// which is charged at next cron and the rest which is charged during submit PoSt.
+		undeclaredFee := actor.undeclaredFaultPenalty(infos)
+		declaredFee := actor.declaredFaultPenalty(infos)
+		faultFee := big.Sub(undeclaredFee, declaredFee)
+
+		pwr := miner.PowerForSectors(actor.sectorSize, infos)
+		cfg := &poStConfig{
+			expectedRawPowerDelta: pwr.Raw.Neg(),
+			expectedQAPowerDelta:  pwr.QA.Neg(),
+			expectedPenalty:       faultFee,
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bf(uint64(infos[0].SectorNumber), uint64(infos[1].SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+
+		// expect declared fee to be charged during cron
+		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: declaredFee})
+	})
+
+	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt)
+		infos := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
+
+		// Submit first PoSt to ensure we are sufficiently early to add a fault
+		// advance to next proving period
+		advanceAndSubmitPoSt(rt, actor, infos[0])
+
+		// advance deadline and declare fault
+		advanceDeadline(rt, actor, &cronConfig{})
+		actor.declareFaults(rt, infos...)
+
+		// advance a deadline and declare recovery
+		advanceDeadline(rt, actor, &cronConfig{})
+
+		// declare recovery
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
+
+		// advance to epoch when submitPoSt is due
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Now submit PoSt and skip recovered sector
+		// No power should be returned
+		// Retracted recovery will be charged difference between undeclared and ongoing fault fees
+		ongoingFee := actor.declaredFaultPenalty(infos)
+		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos), ongoingFee)
+		cfg := &poStConfig{
+			expectedRawPowerDelta: big.Zero(),
+			expectedQAPowerDelta:  big.Zero(),
+			expectedPenalty:       recoveryFee,
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bf(uint64(infos[0].SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+
+		// sector will be charged ongoing fee at proving period cron
+		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: ongoingFee})
+
+	})
+
+	t.Run("skipping a fault from the wrong partition is an error", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// create enough sectors that one will be in a different partition
+		n := 95
+		infos := actor.commitAndProveSectors(rt, n, defaultSectorExpiration, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		st := getState(rt)
+		dlIdx0, pIdx0, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
+		require.NoError(t, err)
+		dlIdx1, pIdx1, err := st.FindSector(rt.AdtStore(), infos[n-1].SectorNumber)
+		require.NoError(t, err)
+
+		// if these assertions no longer hold, the test must be changed
+		require.LessOrEqual(t, dlIdx0, dlIdx1)
+		require.NotEqual(t, pIdx0, pIdx1)
+
+		// advance to deadline when sector is due
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx0 {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Now submit PoSt for partition 1 and skip sector from other partition
+		cfg := &poStConfig{
+			expectedRawPowerDelta: big.Zero(),
+			expectedQAPowerDelta:  big.Zero(),
+			expectedPenalty:       big.Zero(),
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx0, Skipped: bf(uint64(infos[n-1].SectorNumber))},
+		}
+		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition", func() {
+			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+		})
+	})
 }
 
 func TestProveCommit(t *testing.T) {
@@ -1048,10 +1102,10 @@ func TestProveCommit(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// prove one sector to establish collateral and locked funds
-		actor.commitAndProveSectors(rt, 1, 181, nil)
+		actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// preecommit another sector so we may prove it
-		expiration := 181*miner.WPoStProvingPeriod + periodOffset - 1
+		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		precommit := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
@@ -1080,7 +1134,7 @@ func TestProveCommit(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// make two precommits
-		expiration := 181*miner.WPoStProvingPeriod + periodOffset - 1
+		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
@@ -1114,68 +1168,29 @@ func TestProvingPeriodCron(t *testing.T) {
 		WithBalance(bigBalance, big.Zero())
 
 	t.Run("empty periods", func(t *testing.T) {
-		t.Skip("Disabled in miner state refactor #648, restore soon")
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		st := getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
-		// First cron invocation just before the first proving period starts.
-		rt.SetEpoch(periodOffset - 1)
+		// crons before proving period do nothing
 		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment: secondCronEpoch,
-		})
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Close < secondCronEpoch {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
 		// The proving period start isn't changed, because the period hadn't started yet.
 		st = getState(rt)
 		assert.Equal(t, periodOffset, st.ProvingPeriodStart)
 
-		rt.SetEpoch(secondCronEpoch)
+		// next cron moves proving period forward and enrolls for next cron
+		rt.SetEpoch(dlinfo.Last())
 		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment: periodOffset + 2*miner.WPoStProvingPeriod - 1,
+			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
 		})
-		// Proving period moves forward
 		st = getState(rt)
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
-	})
-
-	t.Run("first period gets randomness from previous epoch", func(t *testing.T) {
-		t.Skip("Disabled in miner state refactor #648, restore soon")
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		//st := getState(rt)
-
-		//sectorInfo := actor.commitAndProveSectors(rt, 1, 100, nil)
-
-		// Flag new sectors to trigger request for randomness
-		//rt.Transaction(st, func() interface{} {
-		//	st.NewSectors.Set(uint64(sectorInfo[0].SectorNumber))
-		//	return nil
-		//})
-
-		// First cron invocation just before the first proving period starts
-		// requires randomness come from current epoch minus lookback
-		rt.SetEpoch(periodOffset - 1)
-		secondCronEpoch := periodOffset + miner.WPoStProvingPeriod - 1
-		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment: secondCronEpoch,
-		})
-
-		// cron invocation after the proving period starts, requires randomness come from end of proving period
-		rt.SetEpoch(periodOffset)
-		actor.advanceProvingPeriodWithoutFaults(rt)
-
-		// triggers a new request for randomness
-		// TODO minerstate
-		//rt.Transaction(st, func() interface{} {
-		//	st.NewSectors.Set(uint64(sectorInfo[0].SectorNumber))
-		//	return nil
-		//})
-
-		thirdCronEpoch := secondCronEpoch + miner.WPoStProvingPeriod
-		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment: thirdCronEpoch,
-		})
 	})
 
 	t.Run("detects and penalizes faults", func(t *testing.T) {
@@ -1185,78 +1200,112 @@ func TestProvingPeriodCron(t *testing.T) {
 
 		allSectors := actor.commitAndProveSectors(rt, 2, 100, nil)
 
-		// advance to end of proving period to add sectors to proving set
 		st := getState(rt)
-		deadline := st.DeadlineInfo(rt.Epoch())
-		nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-		rt.SetEpoch(deadline.PeriodEnd())
-		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment: nextCron,
-		})
+		dlIdx, _, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
+		require.NoError(t, err)
 
 		// advance to next deadline where we expect the first sectors to appear
-		st = getState(rt)
-		deadline = st.DeadlineInfo(rt.Epoch() + 1)
-		rt.SetEpoch(deadline.NextOpen())
-		deadline = st.DeadlineInfo(rt.Epoch())
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
 
 		// Skip to end of proving period, cron detects all sectors as faulty
-		rt.SetEpoch(deadline.PeriodEnd())
-		nextCron = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+		dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 
 		// Undetected faults penalized once as a late undetected fault
-		rawPower, qaPower := powerForSectors(actor.sectorSize, allSectors)
-		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
+		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
 
 		// power for sectors is removed
-		powerDeltaClaim := miner.NewPowerPair(rawPower.Neg(), qaPower.Neg())
+		powerDeltaClaim := miner.NewPowerPair(pwr.Raw.Neg(), pwr.QA.Neg())
 
 		// Faults are charged again as ongoing faults
-		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
+		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
 
 		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment:      nextCron,
+			expectedEnrollment:       dlinfo.NextPeriodStart(),
 			detectedFaultsPenalty:    undetectedPenalty,
 			detectedFaultsPowerDelta: &powerDeltaClaim,
 			ongoingFaultsPenalty:     ongoingPenalty,
 		})
 
 		// expect both faults are added to state
-		// TODO minerstate
-		//st = getState(rt)
-		//set, err := st.Faults.IsSet(uint64(allSectors[0].SectorNumber))
-		//require.NoError(t, err)
-		//assert.True(t, set)
-		//set, err = st.Faults.IsSet(uint64(allSectors[1].SectorNumber))
-		//require.NoError(t, err)
-		//assert.True(t, set)
+		deadline := actor.getDeadline(rt, dlIdx)
+		assert.True(t, pwr.Equals(deadline.FaultyPower))
 
 		// advance 3 deadlines
-		rt.SetEpoch(deadline.NextOpen() + 3*miner.WPoStChallengeWindow)
-		deadline = st.DeadlineInfo(rt.Epoch())
+		advanceDeadline(rt, actor, &cronConfig{})
+		advanceDeadline(rt, actor, &cronConfig{})
+		dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 
 		actor.declareRecoveries(rt, 1, 0, sectorInfoAsBitfield(allSectors[1:]))
 
 		// Skip to end of proving period, cron detects all sectors as faulty
-		rt.SetEpoch(deadline.PeriodEnd())
-		nextCron = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
 
 		// Retracted recovery is penalized as an undetected fault, but power is unchanged
-		_, retractedQAPower := powerForSectors(actor.sectorSize, allSectors[1:])
-		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedQAPower)
+		retractedPwr := miner.PowerForSectors(actor.sectorSize, allSectors[1:])
+		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA)
 
 		// Faults are charged again as ongoing faults
-		_, faultQAPower := powerForSectors(actor.sectorSize, allSectors)
-		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, faultQAPower)
+		faultPwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, faultPwr.QA)
 
 		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEntrollment:   nextCron,
+			expectedEnrollment:    dlinfo.Close,
 			detectedFaultsPenalty: retractedPenalty,
 			ongoingFaultsPenalty:  ongoingPenalty,
 		})
+
+		// recorded faulty power is unchanged
+		deadline = actor.getDeadline(rt, dlIdx)
+		assert.True(t, faultPwr.Equals(deadline.FaultyPower))
 	})
 
-	// TODO: test cron being called one epoch late because the scheduled epoch had no blocks.
+	t.Run("test cron run late", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// add lots of funds so we can pay penalties without going into debt
+		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
+
+		// create enough sectors that one will be in a different partition
+		allSectors := actor.commitAndProveSectors(rt, 1, 181, nil)
+
+		// add lots of funds so we can pay penalties without going into debt
+		st := getState(rt)
+		dlIdx, _, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
+		require.NoError(t, err)
+
+		// advance to deadline prior to first
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// advance clock well past the end of next period (into next deadline period) without calling cron
+		rt.SetEpoch(dlinfo.Last() + miner.WPoStChallengeWindow + 5)
+
+		// run cron and expect all sectors to be penalized as undetected faults
+		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+
+		// power for sectors is removed
+		powerDeltaClaim := miner.NewPowerPair(pwr.Raw.Neg(), pwr.QA.Neg())
+
+		// expect next cron to be one deadline period after expected cron for this deadline
+		nextCron := dlinfo.Last() + +miner.WPoStChallengeWindow
+
+		actor.onDeadlineCron(rt, &cronConfig{
+			expectedEnrollment:       nextCron,
+			detectedFaultsPenalty:    undetectedPenalty,
+			detectedFaultsPowerDelta: &powerDeltaClaim,
+		})
+	})
 }
 
 func TestDeclareFaults(t *testing.T) {
@@ -1429,7 +1478,7 @@ func TestTerminateSectors(t *testing.T) {
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
-		sectorInfo := actor.commitAndProveSectors(rt, 1, 181, nil)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		return sectorInfo[0]
 	}
 
@@ -1495,7 +1544,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// prove one sector to establish collateral and locked funds
-		actor.commitAndProveSectors(rt, 1, 181, nil)
+		actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// alter initial pledge requirement to simulate undercollateralization
 		st := getState(rt)
@@ -2060,7 +2109,7 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
 	h.onDeadlineCron(rt, &cronConfig{
-		expectedEntrollment: nextCron,
+		expectedEnrollment: nextCron,
 	})
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
@@ -2080,18 +2129,23 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	proofs := makePoStProofs(h.postProofType)
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
 
-	allSkipped := map[abi.SectorNumber]struct{}{}
+	// only sectors that are not skipped and not existing non-recovered faults will be verified
+	allIgnored := bf()
+	dln := h.getDeadline(rt, deadline.Index)
 	for _, p := range partitions {
-		_ = p.Skipped.ForEach(func(u uint64) error {
-			allSkipped[abi.SectorNumber(u)] = struct{}{}
-			return nil
-		})
+		partition := h.getPartition(rt, dln, p.Index)
+		expectedFaults, err := bitfield.SubtractBitField(partition.Faults, partition.Recoveries)
+		require.NoError(h.t, err)
+		allIgnored, err = bitfield.MultiMerge(allIgnored, expectedFaults, p.Skipped)
+		require.NoError(h.t, err)
 	}
 
-	// find the first non-faulty sector in poSt to replace all faulty sectors.
+	// find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
 	var goodInfo *miner.SectorOnChainInfo
 	for _, ci := range infos {
-		if _, contains := allSkipped[ci.SectorNumber]; !contains {
+		contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+		require.NoError(h.t, err)
+		if !contains {
 			goodInfo = ci
 			break
 		}
@@ -2112,7 +2166,8 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 		proofInfos := make([]abi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			si := ci
-			_, contains := allSkipped[ci.SectorNumber]
+			contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+			require.NoError(h.t, err)
 			if contains {
 				si = goodInfo
 			}
@@ -2205,47 +2260,6 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 
 	rt.Call(h.a.DeclareFaultsRecovered, params)
 	rt.Verify()
-}
-
-func (h *actorHarness) advanceProvingPeriodWithoutFaults(rt *mock.Runtime) {
-
-	// Iterate deadlines in the proving period, setting epoch to the first in each deadline.
-	// Submit a window post for all partitions due at each deadline when necessary.
-	deadline := h.deadline(rt)
-	for !deadline.PeriodElapsed() {
-		// TODO minerstate
-		//st := getState(rt)
-		//store := rt.AdtStore()
-		//deadlines, err := st.LoadDeadlines(store)
-		//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load deadlines")
-
-		//firstPartIdx, sectorCount, err := miner.PartitionsForDeadline(deadlines, h.partitionSize, deadline.Index)
-		//builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partitions for deadline")
-		//if sectorCount != 0 {
-		//	partitionCount, _, err := miner.DeadlineCount(deadlines, h.partitionSize, deadline.Index)
-		//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get partition count")
-		//
-		//	partitions := make([]uint64, partitionCount)
-		//	for i := uint64(0); i < partitionCount; i++ {
-		//		partitions[i] = firstPartIdx + i
-		//	}
-		//
-		//	partitionsSectors, err := miner.ComputePartitionsSectors(deadlines, h.partitionSize, deadline.Index, partitions)
-		//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not compute partitions")
-		//	provenSectors, err := bitfield.MultiMerge(partitionsSectors...)
-		//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not get proven sectors")
-		//	infos, _, err := st.LoadSectorInfosForProof(store, provenSectors)
-		//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not load sector info for proof")
-		//
-		//	h.submitWindowPoSt(rt, deadline, partitions, infos, nil)
-		//}
-
-		rt.SetEpoch(deadline.NextOpen())
-		deadline = h.deadline(rt)
-	}
-	// Rewind one epoch to leave the current epoch as the penultimate one in the proving period,
-	// ready for proving-period cron.
-	rt.SetEpoch(rt.Epoch() - 1)
 }
 
 func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension abi.ChainEpoch, params *miner.ExtendSectorExpirationParams) {
@@ -2383,7 +2397,7 @@ func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
 }
 
 type cronConfig struct {
-	expectedEntrollment       abi.ChainEpoch
+	expectedEnrollment        abi.ChainEpoch
 	vestingPledgeDelta        abi.TokenAmount // nolint:structcheck,unused
 	detectedFaultsPowerDelta  *miner.PowerPair
 	detectedFaultsPenalty     abi.TokenAmount
@@ -2450,7 +2464,7 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 	// Re-enrollment for next period.
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		makeDeadlineCronEventParams(h.t, config.expectedEntrollment), big.Zero(), nil, exitcode.Ok)
+		makeDeadlineCronEventParams(h.t, config.expectedEnrollment), big.Zero(), nil, exitcode.Ok)
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
@@ -2506,19 +2520,20 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, config *cronConfig) {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.PeriodEnd())
-	config.expectedEntrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+	config.expectedEnrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
 	h.onDeadlineCron(rt, config)
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
 // Completes a deadline by moving the epoch forward to the penultimate one, calling the deadline cron handler,
 // and then advancing to the first epoch in the new deadline.
-func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) {
+func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *miner.DeadlineInfo {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.Last())
-	config.expectedEntrollment = deadline.Last() + miner.WPoStChallengeWindow
+	config.expectedEnrollment = deadline.Last() + miner.WPoStChallengeWindow
 	h.onDeadlineCron(rt, config)
 	rt.SetEpoch(deadline.NextOpen())
+	return h.deadline(rt)
 }
 
 func advanceToEpochWithCron(rt *mock.Runtime, h *actorHarness, e abi.ChainEpoch) {

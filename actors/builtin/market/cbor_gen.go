@@ -1101,7 +1101,7 @@ func (t *DealProposal) MarshalCBOR(w io.Writer) error {
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(t.Label))); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, t.Label); err != nil {
+	if _, err := io.WriteString(w, string(t.Label)); err != nil {
 		return err
 	}
 
