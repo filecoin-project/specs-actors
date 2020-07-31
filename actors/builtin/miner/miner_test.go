@@ -1086,47 +1086,6 @@ func TestWindowPost(t *testing.T) {
 			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 		})
 	})
-
-	// TODO minerstate
-	//t.Run("detects faults from previous missed posts", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//
-	//	// skip two PoSts
-	//	_, infos1, _ := runTillFirstDeadline(rt)
-	//	_, infos2, _ := runTillNextDeadline(rt)
-	//	deadline, infos3, partitions := runTillNextDeadline(rt)
-	//
-	//	// assert we have sectors in each deadline
-	//	assert.Greater(t, len(infos1), 0)
-	//	assert.Greater(t, len(infos2), 0)
-	//	assert.Greater(t, len(infos3), 0)
-	//
-	//	// expect power to be deducted for all sectors in first two deadlines
-	//	pwr := miner.PowerForSectors(actor.sectorSize, append(infos1, infos2...))
-	//
-	//	// expected penalty is the late undeclared fault penalty for all faulted sectors including retracted recoveries..
-	//	expectedPenalty := miner.PledgePenaltyForLateUndeclaredFault(actor.epochReward, actor.networkQAPower, pwr.QA)
-	//
-	//	cfg := &poStConfig{
-	//		skipped:               abi.NewBitField(),
-	//		expectedRawPowerDelta: pwr.Raw.Neg(),
-	//		expectedQAPowerDelta:  pwr.QA.Neg(),
-	//		expectedPenalty:       expectedPenalty,
-	//	}
-	//
-	//	actor.submitWindowPoSt(rt, deadline, partitions, infos3, cfg)
-	//
-	//	// same size and every info is set in bitset implies info1+info2 and st.Faults represent the same sectors
-	//	st := getState(rt)
-	//	faultCount, err := st.Faults.Count()
-	//	require.NoError(t, err)
-	//	assert.Equal(t, uint64(len(infos1)+len(infos2)), faultCount)
-	//	for _, info := range append(infos1, infos2...) {
-	//		set, err := st.Faults.IsSet(uint64(info.SectorNumber))
-	//		require.NoError(t, err)
-	//		assert.True(t, set)
-	//	}
-	//})
 }
 
 func TestProveCommit(t *testing.T) {
