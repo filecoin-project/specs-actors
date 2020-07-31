@@ -9,11 +9,15 @@ import decimal
 # Number of seconds per epoch.
 EPOCH_DURATION_SECONDS = 30
 
+# Total Filecoin supply
+SIMPLE_SUPPLY_TOTAL=330000000
+
 # Growth factor per year. Currently 200%.
 GROWTH_FACTOR = 2
 
 # Precision factor.
 Q128 = 2**128
+
 
 # Set the precision to enough digits to store (Q128 * Q128).
 #
@@ -25,6 +29,9 @@ def epochs_in_year() -> Decimal:
 
 def q128(val, round) -> str:
     return str((Q128 * val).to_integral_value(round))
+
+def atto(val) -> str:
+    return str((10**18 * val).to_integral_value(decimal.ROUND_DOWN))
 
 # exp(ln[1 + 200%] / epochsInYear)
 def baseline_exponent() -> Decimal: 
@@ -48,10 +55,25 @@ def reward_lambda_prime() -> Decimal:
 def reward_lambda_prime_q128() -> str: 
     return q128(reward_lambda_prime(), decimal.ROUND_FLOOR)
 
+# exp(-lambda) - 1
+def initial_reward_veolocity_estimate() -> Decimal: 
+    return reward_lambda().copy_negate().exp() - 1
+
+def initial_reward_veolocity_estimate_atto() -> str: 
+    return atto(initial_reward_veolocity_estimate())
+
+def initial_reward_position_estimate() -> Decimal: 
+    return (1 - reward_lambda().copy_negate().exp())*SIMPLE_SUPPLY_TOTAL
+
+def initial_reward_position_estimate_atto() -> str: 
+    return atto(initial_reward_position_estimate())
+
 def main():
     print("BaselineExponent: ", baseline_exponent_q128())
     print("lambda: ", reward_lambda_q128())
     print("expLamSubOne: ", reward_lambda_prime_q128())
+    print("InitialRewardVelocityEstimate: ", initial_reward_veolocity_estimate_atto())
+    print("InitialRewardPositionEstimate: ", initial_reward_position_estimate_atto())
 
 if __name__ == "__main__":
     main()
