@@ -200,7 +200,6 @@ type StateHandle interface {
 	// the execution from side effects (including message send).
 	//
 	// The second argument is a function which allows the caller to mutate the state.
-	// The return value from that function will be returned from the call to Transaction().
 	//
 	// If the state is modified after this function returns, execution will abort.
 	//
@@ -218,7 +217,7 @@ type StateHandle interface {
 	// })
 	// // state.ImLoaded = False // BAD!! state is readonly outside the lambda, it will panic
 	// ```
-	Transaction(obj CBORer, f func() interface{}) interface{}
+	Transaction(obj CBORer, f func())
 }
 
 // Result of checking two headers for a consensus fault.

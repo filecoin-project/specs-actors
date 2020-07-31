@@ -65,7 +65,7 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 	if params.Address == st.RootKey {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
 	}
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -84,8 +84,6 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 
 		st.Verifiers, err = verifiers.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verifiers")
-
-		return nil
 	})
 
 	return nil
@@ -96,7 +94,7 @@ func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr *addr.Address) *adt.E
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -105,7 +103,6 @@ func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr *addr.Address) *adt.E
 
 		st.Verifiers, err = verifiers.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verifiers")
-		return nil
 	})
 
 	return nil
@@ -130,7 +127,7 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as a verified client")
 	}
 
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -180,7 +177,6 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 
 		st.VerifiedClients, err = verifiedClients.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
-		return nil
 	})
 
 	return nil
@@ -202,7 +198,7 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue 
 	}
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
@@ -231,8 +227,6 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue 
 
 		st.VerifiedClients, err = verifiedClients.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
-
-		return nil
 	})
 
 	return nil
@@ -260,7 +254,7 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "Cannot restore allowance for Rootkey")
 	}
 
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
@@ -287,8 +281,6 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 
 		st.VerifiedClients, err = verifiedClients.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
-
-		return nil
 	})
 
 	return nil

@@ -197,7 +197,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		builtin.RequireSuccess(rt, code, "spend voucher verification failed")
 	}
 
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		laneFound := true
 		// Find the voucher lane, create and insert it in sorted order if necessary.
 		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
@@ -271,15 +271,13 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 				st.MinSettleHeight = sv.MinSettleHeight
 			}
 		}
-		return nil
 	})
 	return nil
 }
 
 func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
-
+	rt.State().Transaction(&st, func() {
 		rt.ValidateImmediateCallerIs(st.From, st.To)
 
 		if st.SettlingAt != 0 {
@@ -290,8 +288,6 @@ func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		if st.SettlingAt < st.MinSettleHeight {
 			st.SettlingAt = st.MinSettleHeight
 		}
-
-		return nil
 	})
 	return nil
 }
