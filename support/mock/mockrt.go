@@ -350,11 +350,6 @@ func (rt *Runtime) Abortf(errExitCode exitcode.ExitCode, msg string, args ...int
 	panic(abort{errExitCode, fmt.Sprintf(msg, args...)})
 }
 
-func (rt *Runtime) AbortStateMsg(msg string) {
-	rt.requireInCall()
-	rt.Abortf(exitcode.ErrPlaceholder, msg)
-}
-
 func (rt *Runtime) Syscalls() runtime.Syscalls {
 	rt.requireInCall()
 	return rt
