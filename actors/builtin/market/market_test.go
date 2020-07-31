@@ -1440,6 +1440,7 @@ func TestCronTick(t *testing.T) {
 }
 
 func TestLockedFundTrackingStates(t *testing.T) {
+	t.Parallel()
 	owner := tutil.NewIDAddr(t, 101)
 	worker := tutil.NewIDAddr(t, 103)
 
@@ -1650,6 +1651,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 	sectorExpiry := endEpoch + 400
 
 	t.Run("deal expiry -> deal is correctly processed twice in the same crontick", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
@@ -1677,6 +1679,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 	})
 
 	t.Run("deal expiry -> regular payments till deal expires and then locked funds are unlocked", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
@@ -1725,6 +1728,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 	})
 
 	t.Run("deal expiry -> payment for a deal if deal is already expired before a cron tick", func(t *testing.T) {
+		t.Parallel()
 		start := abi.ChainEpoch(5)
 		end := start + 200*builtin.EpochsInDay
 
@@ -1746,6 +1750,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 	})
 
 	t.Run("expired deal should unlock the remaining client and provider locked balance after payment and deal should be deleted", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		deal := actor.getDealProposal(rt, dealId)
@@ -1771,6 +1776,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 	})
 
 	t.Run("all payments are made for a deal -> deal expires -> client withdraws collateral and client account is removed", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		deal := actor.getDealProposal(rt, dealId)
@@ -1867,6 +1873,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 		for n, tc := range tcs {
 			t.Run(n, func(t *testing.T) {
+				t.Parallel()
 				rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 				// publish and activate
@@ -1917,6 +1924,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 	endEpoch := abi.ChainEpoch(50 + 200*builtin.EpochsInDay)
 
 	t.Run("deal is slashed AT the end epoch -> should NOT be slashed and should be considered expired", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
@@ -1940,6 +1948,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 	})
 
 	t.Run("deal is correctly processed twice in the same crontick and slashed", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
@@ -1969,6 +1978,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 	// end-end tests for slashing
 	t.Run("slash multiple deals in the same epoch", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 		// three deals for slashing
@@ -2000,6 +2010,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 	})
 
 	t.Run("regular payments till deal is slashed and then slashing is processed", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
@@ -2056,6 +2067,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 	// expired deals should NOT be slashed
 	t.Run("regular payments till deal expires and then we attempt to slash it but it will NOT be slashed", func(t *testing.T) {
+		t.Parallel()
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
