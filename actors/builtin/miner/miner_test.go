@@ -38,6 +38,9 @@ var testMultiaddrs []abi.Multiaddrs
 // A balance for use in tests where the miner's low balance is not interesting.
 var bigBalance = big.Mul(big.NewInt(10000), big.NewInt(1e18))
 
+// an expriration 1 greater than min expiration
+const defaultSectorExpiration = 181
+
 func init() {
 	testPid = abi.PeerID("peerID")
 
@@ -165,7 +168,7 @@ func TestCommitments(t *testing.T) {
 		// Make a good commitment for the proof to target.
 		// Use the max sector number to make sure everything works.
 		sectorNo := abi.SectorNumber(abi.MaxSectorNumber)
-		expiration := dlInfo.PeriodEnd() + 181*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
 		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
 		actor.preCommitSector(rt, precommit)
 
@@ -267,10 +270,10 @@ func TestCommitments(t *testing.T) {
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
 
-		oldSector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		oldSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
 
 		// Good commitment.
-		expiration := deadline.PeriodEnd() + 181*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
 
 		// Duplicate pre-commit sector ID
@@ -353,7 +356,7 @@ func TestCommitments(t *testing.T) {
 
 		// Commit a sector to upgrade
 		// Use the max sector number to make sure everything works.
-		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, 181, nil)
+		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
@@ -471,7 +474,7 @@ func TestCommitments(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// Commit sectors to target upgrade. The first has no deals, the second has a deal.
-		oldSectors := actor.commitAndProveSectors(rt, 2, 181, [][]abi.DealID{nil, {10}})
+		oldSectors := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{nil, {10}})
 
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSectors[0].SectorNumber)
@@ -619,7 +622,7 @@ func TestCommitments(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+181*miner.WPoStProvingPeriod, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
 		actor.preCommitSector(rt, precommit)
 
 		// Sector pre-commitment missing.
@@ -718,7 +721,7 @@ func TestCommitments(t *testing.T) {
 		for proof, limit := range dealLimits {
 			// attempt to pre-commmit a sector with too many sectors
 			rt, actor, deadline := setup(proof)
-			expiration := deadline.PeriodEnd() + 181*miner.WPoStProvingPeriod
+			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit+1))
 			rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
 				actor.preCommitSector(rt, precommit)
@@ -746,7 +749,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
-		sector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
@@ -776,7 +779,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
-		sector := actor.commitAndProveSectors(rt, 1, 181, nil)[0]
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
@@ -822,7 +825,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
-		infos := actor.commitAndProveSectors(rt, 1, 181, nil)
+		infos := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
 		// add lots of funds so we can pay penalties without going into debt
@@ -880,11 +883,11 @@ func TestWindowPost(t *testing.T) {
 		assert.Equal(t, expectedBalance, actor.getLockedFunds(rt))
 	})
 
-	t.Run("skipped faults are penalized and adjust power adjusted", func(t *testing.T) {
+	t.Run("skipped faults are penalized and adjust power", func(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
-		infos := actor.commitAndProveSectors(rt, 2, 181, nil)
+		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
@@ -953,7 +956,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
-		infos := actor.commitAndProveSectors(rt, 2, 181, nil)
+		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
@@ -999,7 +1002,7 @@ func TestWindowPost(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
-		infos := actor.commitAndProveSectors(rt, 1, 181, nil)
+		infos := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
 		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
@@ -1054,7 +1057,7 @@ func TestWindowPost(t *testing.T) {
 
 		// create enough sectors that one will be in a different partition
 		n := 95
-		infos := actor.commitAndProveSectors(rt, n, 181, nil)
+		infos := actor.commitAndProveSectors(rt, n, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
 		st := getState(rt)
@@ -1099,10 +1102,10 @@ func TestProveCommit(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// prove one sector to establish collateral and locked funds
-		actor.commitAndProveSectors(rt, 1, 181, nil)
+		actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// preecommit another sector so we may prove it
-		expiration := 181*miner.WPoStProvingPeriod + periodOffset - 1
+		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		precommit := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
@@ -1131,7 +1134,7 @@ func TestProveCommit(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// make two precommits
-		expiration := 181*miner.WPoStProvingPeriod + periodOffset - 1
+		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
@@ -1432,7 +1435,7 @@ func TestTerminateSectors(t *testing.T) {
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
-		sectorInfo := actor.commitAndProveSectors(rt, 1, 181, nil)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		return sectorInfo[0]
 	}
 
@@ -1498,7 +1501,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// prove one sector to establish collateral and locked funds
-		actor.commitAndProveSectors(rt, 1, 181, nil)
+		actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// alter initial pledge requirement to simulate undercollateralization
 		st := getState(rt)
