@@ -165,24 +165,31 @@ func TestPartitions(t *testing.T) {
 	t.Run("reschedules expirations", func(t *testing.T) {
 		rt, store, partition := setup(t)
 
+		// Mark sector 2 faulty, we should skip it when rescheudling
+		faultSet := bf(2)
+		faultSectors := selectSectors(t, sectors, faultSet)
+		_, err := partition.AddFaults(store, faultSet, faultSectors, abi.ChainEpoch(7), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// reschedule
 		moved, err := partition.RescheduleExpirations(store, sectorsArr(t, rt, sectors), sectorSize, quantSpec, 18, bf(2, 4, 6))
 		require.NoError(t, err)
 
-		// Make sure we moved them.
-		assertBitfieldEquals(t, moved, 2, 4, 6)
+		// Make sure we moved the right ones.
+		assertBitfieldEquals(t, moved, 4, 6)
 
 		// We need to change the actual sector infos so our queue validation works.
-		rescheduled := rescheduleSectors(t, 18, sectors, bf(2, 4, 6))
+		rescheduled := rescheduleSectors(t, 18, sectors, bf(4, 6))
 
 		// partition power and sector categorization should remain the same
-		assertPartitionState(t, store, partition, quantSpec, sectorSize, rescheduled, bf(1, 2, 3, 4, 5, 6), bf(), bf(), bf())
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, rescheduled, bf(1, 2, 3, 4, 5, 6), bf(2), bf(), bf())
 
 		// sectors should move to new expiration group
 		assertPartitionExpirationQueue(t, rt, partition, quantSpec, []expectExpirationGroup{
-			{expiration: 5, sectors: bf(1)},
+			{expiration: 5, sectors: bf(1, 2)},
 			{expiration: 9, sectors: bf(3)},
 			{expiration: 13, sectors: bf(5)},
-			{expiration: 21, sectors: bf(2, 4, 6)},
+			{expiration: 21, sectors: bf(4, 6)},
 		})
 	})
 
