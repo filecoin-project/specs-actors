@@ -30,9 +30,9 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		initialPledge := abi.NewTokenAmount(1 << 10)
 		dayReward := big.Div(initialPledge, big.NewInt(int64(miner.InitialPledgeFactor)))
 		twentyDayReward := big.Mul(dayReward, big.NewInt(int64(miner.InitialPledgeFactor)))
-		sectorAge := 20 * abi.ChainEpoch(builtin.EpochsInDay)
+		sectorRestOfLife := 20 * abi.ChainEpoch(builtin.EpochsInDay)
 
-		fee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, rewardEstimate, powerEstimate, qaSectorPower)
+		fee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorRestOfLife, rewardEstimate, powerEstimate, qaSectorPower)
 
 		assert.Equal(t, undeclaredPenalty, fee)
 	})
@@ -42,16 +42,16 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		initialPledge := undeclaredPenalty
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
-		sectorAgeInDays := int64(20)
-		sectorAge := abi.ChainEpoch(sectorAgeInDays * builtin.EpochsInDay)
+		sectorRestOfLifeInDays := int64(20)
+		sectorRestOfLife := abi.ChainEpoch(sectorRestOfLifeInDays * builtin.EpochsInDay)
 
-		fee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, rewardEstimate, powerEstimate, qaSectorPower)
+		fee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorRestOfLife, rewardEstimate, powerEstimate, qaSectorPower)
 
 		// expect fee to be pledge * br * age where br = pledge/initialPledgeFactor
 		expectedFee := big.Add(
 			initialPledge,
 			big.Div(
-				big.Mul(initialPledge, big.NewInt(sectorAgeInDays)),
+				big.Mul(initialPledge, big.NewInt(sectorRestOfLifeInDays)),
 				big.NewInt(int64(miner.InitialPledgeFactor))))
 		assert.Equal(t, expectedFee, fee)
 	})
@@ -60,10 +60,10 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		initialPledge := undeclaredPenalty
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
-		sectorAgeInDays := 500
-		sectorAge := abi.ChainEpoch(sectorAgeInDays * builtin.EpochsInDay)
+		sectorRestOfLifeInDays := 500
+		sectorRestOfLife := abi.ChainEpoch(sectorRestOfLifeInDays * builtin.EpochsInDay)
 
-		fee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, rewardEstimate, powerEstimate, qaSectorPower)
+		fee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorRestOfLife, rewardEstimate, powerEstimate, qaSectorPower)
 
 		// expect fee to be pledge * br * age where br = pledge/initialPledgeFactor
 		expectedFee := big.Add(

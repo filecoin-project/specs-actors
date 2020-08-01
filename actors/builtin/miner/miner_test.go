@@ -1498,8 +1498,8 @@ func TestTerminateSectors(t *testing.T) {
 		sectorPower := miner.QAPowerForSector(sectorSize, sector)
 		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
-		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		sectorRestOfLife := sector.Expiration - rt.Epoch()
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorRestOfLife, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
