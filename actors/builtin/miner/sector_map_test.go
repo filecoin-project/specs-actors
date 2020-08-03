@@ -119,10 +119,10 @@ func TestDeadlineSectorMapEmpty(t *testing.T) {
 	require.Zero(t, partitions)
 	require.Zero(t, sectors)
 
-	dm.ForEach(func(dlIdx uint64, pm miner.PartitionSectorMap) error {
+	require.NoError(t, dm.ForEach(func(dlIdx uint64, pm miner.PartitionSectorMap) error {
 		require.Fail(t, "should not iterate over an empty map")
 		return nil
-	})
+	}))
 	require.Empty(t, dm.Deadlines())
 }
 
@@ -134,9 +134,9 @@ func TestPartitionSectorMapEmpty(t *testing.T) {
 	require.Zero(t, partitions)
 	require.Zero(t, sectors)
 
-	pm.ForEach(func(dlIdx uint64, sectorNos *bitfield.BitField) error {
+	require.NoError(t, pm.ForEach(func(dlIdx uint64, sectorNos *bitfield.BitField) error {
 		require.Fail(t, "should not iterate over an empty map")
 		return nil
-	})
+	}))
 	require.Empty(t, pm.Partitions())
 }
