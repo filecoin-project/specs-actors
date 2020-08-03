@@ -612,7 +612,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
-	var replaceSectorLocations []SectorLocation
+	replaceSectors := make(DeadlineSectorMap)
 	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
 	for _, precommit := range precommittedSectors {
@@ -637,11 +637,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		preCommits = append(preCommits, precommit)
 
 		if precommit.Info.ReplaceCapacity {
-			replaceSectorLocations = append(replaceSectorLocations, SectorLocation{
-				Deadline:     precommit.Info.ReplaceSectorDeadline,
-				Partition:    precommit.Info.ReplaceSectorPartition,
-				SectorNumber: precommit.Info.ReplaceSectorNumber,
-			})
+			err := replaceSectors.AddValues(
+				precommit.Info.ReplaceSectorDeadline,
+				precommit.Info.ReplaceSectorPartition,
+				uint64(precommit.Info.ReplaceSectorNumber),
+			)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to record sectors for replacement")
+
 		}
 	}
 
@@ -656,10 +658,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
-		quant := st.QuantEndOfDeadline()
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
-		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), replaceSectorLocations, info.SectorSize, quant)
+		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
@@ -699,7 +700,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
 
-		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize, quant)
+		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
@@ -923,32 +924,15 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
 
-	// Enforce partition/sector maximums.
-	// https://github.com/filecoin-project/specs-actors/issues/416
-	if uint64(len(params.Terminations)) > AddressedPartitionsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument,
-			"too many partitions for declarations %d, max %d",
-			len(params.Terminations), AddressedPartitionsMax,
-		)
-	}
-	var sectorCount uint64
+	toProcess := make(DeadlineSectorMap)
 	for _, term := range params.Terminations {
-		if term.Deadline >= WPoStPeriodDeadlines {
-			rt.Abortf(exitcode.ErrIllegalArgument, "deadline %d not in range 0..%d", term.Deadline, WPoStPeriodDeadlines)
-		}
-		count, err := term.Sectors.Count()
+		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
-			"failed to count sectors for deadline %d, partition %d",
-			term.Deadline, term.Partition,
-		)
-		sectorCount += count
-	}
-	if sectorCount > AddressedSectorsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument,
-			"too many sectors for declaration %d, max %d",
-			sectorCount, AddressedSectorsMax,
+			"failed to process deadline %d, partition %d", term.Deadline, term.Partition,
 		)
 	}
+	err := toProcess.Check(AddressedPartitionsMax, AddressedSectorsMax)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "cannot process requested parameters")
 
 	var hadEarlyTerminations bool
 	var st State
@@ -965,35 +949,16 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 		quant := st.QuantEndOfDeadline()
 
-		// Group declarations by deadline, and remember iteration order.
-		declsByDeadline := map[uint64][]*TerminationDeclaration{}
-		var deadlinesToLoad []uint64
-		for _, decl := range params.Terminations {
-			if _, ok := declsByDeadline[decl.Deadline]; !ok {
-				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
-			}
-			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
-		}
-
 		// We're only reading the sectors, so there's no need to save this back.
 		// However, we still want to avoid re-loading this array per-partition.
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 
-		for _, dlIdx := range deadlinesToLoad {
-			decls := declsByDeadline[dlIdx]
-
+		err = toProcess.ForEach(func(dlIdx uint64, partitionSectors PartitionSectorMap) error {
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			byPartition := make(map[uint64][]*SectorOnChainInfo, len(decls))
-			for _, decl := range decls {
-				sectors, err := sectors.Load(decl.Sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
-				byPartition[decl.Partition] = append(byPartition[decl.Partition], sectors...)
-			}
-
-			removedPower, err := deadline.TerminateSectors(store, currEpoch, byPartition, info.SectorSize, quant)
+			removedPower, err := deadline.TerminateSectors(store, sectors, currEpoch, partitionSectors, info.SectorSize, quant)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to terminate sectors in deadline %d", dlIdx)
 
 			st.EarlyTerminations.Set(dlIdx)
@@ -1002,7 +967,10 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", dlIdx)
-		}
+
+			return nil
+		})
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to walk sectors")
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
@@ -1042,27 +1010,15 @@ type FaultDeclaration struct {
 }
 
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
-	if uint64(len(params.Faults)) > AddressedPartitionsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Faults), AddressedPartitionsMax)
-	}
-	var sectorCount uint64
-	for _, decl := range params.Faults {
-		if decl.Deadline >= WPoStPeriodDeadlines {
-			rt.Abortf(exitcode.ErrIllegalArgument, "deadline %d not in range 0..%d", decl.Deadline, WPoStPeriodDeadlines)
-		}
-		count, err := decl.Sectors.Count()
+	toProcess := make(DeadlineSectorMap)
+	for _, term := range params.Faults {
+		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
-			"failed to count sectors for deadline %d, partition %d",
-			decl.Deadline, decl.Partition,
-		)
-		sectorCount += count
-	}
-	if sectorCount > AddressedSectorsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument,
-			"too many sectors for declaration %d, max %d",
-			sectorCount, AddressedSectorsMax,
+			"failed to process deadline %d, partition %d", term.Deadline, term.Partition,
 		)
 	}
+	err := toProcess.Check(AddressedPartitionsMax, AddressedSectorsMax)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "cannot process requested parameters")
 
 	store := adt.AsStore(rt)
 	var st State
@@ -1075,31 +1031,10 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 		quant := st.QuantEndOfDeadline()
 
-		// Convert declarations to sectors grouped by deadline, then partition.
-		//
-		// Deadlines are processed in declaration order, partitions are
-		// processed in order of ascending partition index.
-		partitionsByDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Faults))
-		var deadlinesToLoad []uint64
-		for _, decl := range params.Faults {
-			forDl, ok := partitionsByDeadline[decl.Deadline]
-			if !ok {
-				forDl = make(map[uint64]*bitfield.BitField, 1)
-				partitionsByDeadline[decl.Deadline] = forDl
-				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
-			}
-			sectors := decl.Sectors
-			if old, ok := forDl[decl.Partition]; ok {
-				sectors, err = bitfield.MergeBitFields(old, sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to merge sector bitfields")
-			}
-			forDl[decl.Partition] = sectors
-		}
-
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 
-		for _, dlIdx := range deadlinesToLoad {
+		err = toProcess.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
 			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
 
@@ -1110,14 +1045,16 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
-			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, quant, faultExpirationEpoch, partitionsByDeadline[dlIdx])
+			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, quant, faultExpirationEpoch, pm)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d partitions", dlIdx)
 
 			newFaultPowerTotal = newFaultPowerTotal.Add(newFaultyPower)
-		}
+			return nil
+		})
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate deadlines")
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
@@ -1147,28 +1084,15 @@ type RecoveryDeclaration struct {
 }
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
-	if uint64(len(params.Recoveries)) > AddressedPartitionsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Recoveries), AddressedPartitionsMax)
-	}
-
-	var sectorCount uint64
-	for _, decl := range params.Recoveries {
-		if decl.Deadline >= WPoStPeriodDeadlines {
-			rt.Abortf(exitcode.ErrIllegalArgument, "deadline %d not in range 0..%d", decl.Deadline, WPoStPeriodDeadlines)
-		}
-		count, err := decl.Sectors.Count()
+	toProcess := make(DeadlineSectorMap)
+	for _, term := range params.Recoveries {
+		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument,
-			"failed to count sectors for deadline %d, partition %d",
-			decl.Deadline, decl.Partition,
-		)
-		sectorCount += count
-	}
-	if sectorCount > AddressedSectorsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument,
-			"too many sectors for declaration %d, max %d",
-			sectorCount, AddressedSectorsMax,
+			"failed to process deadline %d, partition %d", term.Deadline, term.Partition,
 		)
 	}
+	err := toProcess.Check(AddressedPartitionsMax, AddressedSectorsMax)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "cannot process requested parameters")
 
 	store := adt.AsStore(rt)
 	var st State
@@ -1179,31 +1103,10 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		// Convert declarations to sectors grouped by deadline, then partition.
-		//
-		// Deadlines are processed in declaration order, partitions are
-		// processed in order of ascending partition index.
-		partitionsByDeadline := make(map[uint64]map[uint64]*bitfield.BitField, len(params.Recoveries))
-		var deadlinesToLoad []uint64
-		for _, decl := range params.Recoveries {
-			forDl, ok := partitionsByDeadline[decl.Deadline]
-			if !ok {
-				forDl = make(map[uint64]*bitfield.BitField, 1)
-				partitionsByDeadline[decl.Deadline] = forDl
-				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
-			}
-			sectors := decl.Sectors
-			if old, ok := forDl[decl.Partition]; ok {
-				sectors, err = bitfield.MergeBitFields(old, sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to merge sector bitfields")
-			}
-			forDl[decl.Partition] = sectors
-		}
-
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 
-		for _, dlIdx := range deadlinesToLoad {
+		err = toProcess.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
 			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration deadline %d", dlIdx)
 			err = validateFRDeclarationDeadline(targetDeadline)
@@ -1212,12 +1115,14 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			err = deadline.DeclareFaultsRecovered(store, sectors, info.SectorSize, partitionsByDeadline[dlIdx])
+			err = deadline.DeclareFaultsRecovered(store, sectors, info.SectorSize, pm)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare recoveries for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store deadline %d", dlIdx)
-		}
+			return nil
+		})
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to walk sectors")
 
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")

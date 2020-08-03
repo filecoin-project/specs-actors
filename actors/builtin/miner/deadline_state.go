@@ -3,7 +3,6 @@ package miner
 import (
 	"bytes"
 	"errors"
-	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
@@ -458,8 +457,9 @@ func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, 
 
 func (dl *Deadline) TerminateSectors(
 	store adt.Store,
+	sectors Sectors,
 	epoch abi.ChainEpoch,
-	partitionSectors map[uint64][]*SectorOnChainInfo,
+	partitionSectors PartitionSectorMap,
 	ssize abi.SectorSize,
 	quant QuantSpec,
 ) (powerLost PowerPair, err error) {
@@ -469,40 +469,40 @@ func (dl *Deadline) TerminateSectors(
 		return NewPowerPairZero(), err
 	}
 
-	partitionIdxs := make([]uint64, 0, len(partitionSectors))
-	for partIdx := range partitionSectors { //nolint:nomaprange
-		partitionIdxs = append(partitionIdxs, partIdx)
-	}
-	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
-
 	powerLost = NewPowerPairZero()
-
 	var partition Partition
-	for _, partIdx := range partitionIdxs {
-		partSectors := partitionSectors[partIdx]
+	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
 		if found, err := partitions.Get(partIdx, &partition); err != nil {
-			return NewPowerPairZero(), xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
+			return xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
 		} else if !found {
-			return NewPowerPairZero(), xerrors.Errorf("failed to find partition %d", partIdx)
+			return xc.ErrNotFound.Wrapf("failed to find partition %d", partIdx)
 		}
-		removed, err := partition.TerminateSectors(store, epoch, partSectors, ssize, quant)
+
+		sectorInfos, err := sectors.Load(sectorNos)
 		if err != nil {
-			return NewPowerPairZero(), xerrors.Errorf("failed to terminate sectors in partition %d: %w", partIdx, err)
+			return xerrors.Errorf("failed to load sectors for termination for partition %d: %w", partIdx, err)
+		}
+		removed, err := partition.TerminateSectors(store, epoch, sectorInfos, ssize, quant)
+		if err != nil {
+			return xerrors.Errorf("failed to terminate sectors in partition %d: %w", partIdx, err)
 		}
 
 		err = partitions.Set(partIdx, &partition)
 		if err != nil {
-			return NewPowerPairZero(), xerrors.Errorf("failed to store updated partition %d: %w", partIdx, err)
+			return xerrors.Errorf("failed to store updated partition %d: %w", partIdx, err)
 		}
 
 		// Record that partition now has pending early terminations.
 		dl.EarlyTerminations.Set(partIdx)
 		// Record change to sectors and power
-		dl.LiveSectors -= uint64(len(partSectors))
+		dl.LiveSectors -= uint64(len(sectorInfos))
 		dl.FaultyPower = dl.FaultyPower.Sub(removed.FaultyPower)
 
 		// Aggregate power lost from active sectors
 		powerLost = powerLost.Add(removed.ActivePower)
+		return nil
+	}); err != nil {
+		return NewPowerPairZero(), err
 	}
 
 	// save partitions back
@@ -654,7 +654,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove *bitfield.BitFiel
 
 func (dl *Deadline) DeclareFaults(
 	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
-	faultExpirationEpoch abi.ChainEpoch, partitionSectors map[uint64]*abi.BitField,
+	faultExpirationEpoch abi.ChainEpoch, partitionSectors PartitionSectorMap,
 ) (newFaultyPower PowerPair, err error) {
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
@@ -664,66 +664,56 @@ func (dl *Deadline) DeclareFaults(
 	// Record partitions with some fault, for subsequently indexing in the deadline.
 	// Duplicate entries don't matter, they'll be stored in a bitfield (a set).
 	partitionsWithFault := make([]uint64, 0, len(partitionSectors))
-
-	partitionIdxs := make([]uint64, 0, len(partitionSectors))
-	for partIdx := range partitionSectors { //nolint:nomaprange
-		partitionIdxs = append(partitionIdxs, partIdx)
-	}
-	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
-
 	newFaultyPower = NewPowerPairZero()
-
-	for _, partIdx := range partitionIdxs {
-		sectorNos := partitionSectors[partIdx]
-
+	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
 		var partition Partition
 		found, err := partitions.Get(partIdx, &partition)
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+			return xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
 		}
 		if !found {
-			return NewPowerPairZero(), xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
+			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
 		}
 
 		err = validateFRDeclarationPartition(&partition, sectorNos)
 		if err != nil {
-			return NewPowerPairZero(), exitcode.ErrIllegalArgument.Wrapf("failed fault declaration for %d: %w", partIdx, err)
+			return exitcode.ErrIllegalArgument.Wrapf("failed fault declaration for %d: %w", partIdx, err)
 		}
 
 		// Split declarations into declarations of new faults, and retraction of declared recoveries.
 		retractedRecoveries, err := bitfield.IntersectBitField(partition.Recoveries, sectorNos)
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
+			return xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
 		}
 
 		newFaults, err := bitfield.SubtractBitField(sectorNos, retractedRecoveries)
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract recoveries from sectors: %w", err)
+			return xc.ErrIllegalState.Wrapf("failed to subtract recoveries from sectors: %w", err)
 		}
 		// Ignore any terminated sectors and previously declared or detected faults
 		newFaults, err = bitfield.SubtractBitField(newFaults, partition.Terminated)
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract terminations from faults: %w", err)
+			return xc.ErrIllegalState.Wrapf("failed to subtract terminations from faults: %w", err)
 		}
 		newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract existing faults from faults: %w", err)
+			return xc.ErrIllegalState.Wrapf("failed to subtract existing faults from faults: %w", err)
 		}
 
 		// Add new faults to state.
 		empty, err := newFaults.IsEmpty()
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
+			return xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
 		}
 		if !empty {
 			newFaultSectors, err := sectors.Load(newFaults)
 			if err != nil {
-				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load fault sectors: %w", err)
+				return xc.ErrIllegalState.Wrapf("failed to load fault sectors: %w", err)
 			}
 
 			newPartitionFaultyPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, ssize, quant)
 			if err != nil {
-				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to add faults: %w", err)
+				return xc.ErrIllegalState.Wrapf("failed to add faults: %w", err)
 			}
 
 			newFaultyPower = newFaultyPower.Add(newPartitionFaultyPower)
@@ -733,26 +723,31 @@ func (dl *Deadline) DeclareFaults(
 		// Remove faulty recoveries from state.
 		empty, err = retractedRecoveries.IsEmpty()
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
+			return xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
 		}
 		if !empty {
 			retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
 			if err != nil {
-				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load recovery sectors: %w", err)
+				return xc.ErrIllegalState.Wrapf("failed to load recovery sectors: %w", err)
 			}
 			retractedRecoveryPower := PowerForSectors(ssize, retractedRecoverySectors)
 
 			err = partition.RemoveRecoveries(retractedRecoveries, retractedRecoveryPower)
 			if err != nil {
-				return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
+				return xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
 			}
 		}
 
 		err = partitions.Set(partIdx, &partition)
 		if err != nil {
-			return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to store partition %d: %w", partIdx, err)
+			return xc.ErrIllegalState.Wrapf("failed to store partition %d: %w", partIdx, err)
 		}
+
+		return nil
+	}); err != nil {
+		return NewPowerPairZero(), err
 	}
+
 	dl.Partitions, err = partitions.Root()
 	if err != nil {
 		return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to store partitions root: %w", err)
@@ -770,22 +765,14 @@ func (dl *Deadline) DeclareFaults(
 
 func (dl *Deadline) DeclareFaultsRecovered(
 	store adt.Store, sectors Sectors, ssize abi.SectorSize,
-	partitionSectors map[uint64]*abi.BitField,
+	partitionSectors PartitionSectorMap,
 ) (err error) {
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
 		return err
 	}
 
-	partitionIdxs := make([]uint64, 0, len(partitionSectors))
-	for partIdx := range partitionSectors { //nolint:nomaprange
-		partitionIdxs = append(partitionIdxs, partIdx)
-	}
-	sort.Slice(partitionIdxs, func(i, j int) bool { return i < j })
-
-	for _, partIdx := range partitionIdxs {
-		sectorNos := partitionSectors[partIdx]
-
+	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
 		var partition Partition
 		found, err := partitions.Get(partIdx, &partition)
 		if err != nil {
@@ -826,6 +813,9 @@ func (dl *Deadline) DeclareFaultsRecovered(
 		if err != nil {
 			return xc.ErrIllegalState.Wrapf("failed to update partition %d: %w", partIdx, err)
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Power is not regained until the deadline end, when the recovery is confirmed.
@@ -1064,4 +1054,68 @@ func (dl *Deadline) RecordProvenSectors(
 		RecoveredPower:         recoveredPowerTotal,
 		RetractedRecoveryPower: retractedRecoveryPowerTotal,
 	}, nil
+}
+
+// RescheduleSectorExpirations reschedules the expirations of the given sectors
+// to the target epoch, skipping any sectors it can't find.
+//
+// The power of the rescheduled sectors is assumed to have not changed since
+// initial scheduling.
+//
+// Note: see the docs on State.RescheduleSectorExpirations for details on why we
+// skip sectors/partitions we can't find.
+func (dl *Deadline) RescheduleSectorExpirations(
+	store adt.Store, sectors Sectors,
+	expiration abi.ChainEpoch, partitionSectors PartitionSectorMap,
+	ssize abi.SectorSize, quant QuantSpec,
+) error {
+	partitions, err := dl.PartitionsArray(store)
+	if err != nil {
+		return err
+	}
+
+	var rescheduledPartitions []uint64 // track partitions with moved expirations.
+	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
+		var partition Partition
+		if found, err := partitions.Get(partIdx, &partition); err != nil {
+			return xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
+		} else if !found {
+			// We failed to find the partition, it could have moved
+			// due to compaction. This function is only reschedules
+			// sectors it can find so we'll just skip it.
+			return nil
+		}
+
+		moved, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
+		if err != nil {
+			return xerrors.Errorf("failed to reschedule expirations in partition %d: %w", partIdx, err)
+		}
+		if empty, err := moved.IsEmpty(); err != nil {
+			return xerrors.Errorf("failed to parse bitfield of rescheduled expirations: %w", err)
+		} else if empty {
+			// nothing moved.
+			return nil
+		}
+
+		rescheduledPartitions = append(rescheduledPartitions, partIdx)
+		if err = partitions.Set(partIdx, &partition); err != nil {
+			return xerrors.Errorf("failed to store partition %d: %w", partIdx, err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if len(rescheduledPartitions) > 0 {
+		dl.Partitions, err = partitions.Root()
+		if err != nil {
+			return xerrors.Errorf("failed to save partitions: %w", err)
+		}
+		err := dl.AddExpirationPartitions(store, expiration, rescheduledPartitions, quant)
+		if err != nil {
+			return xerrors.Errorf("failed to reschedule partition expirations: %w", err)
+		}
+	}
+
+	return nil
 }

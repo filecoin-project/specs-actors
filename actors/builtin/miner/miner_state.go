@@ -142,12 +142,6 @@ type SectorOnChainInfo struct {
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 }
 
-// Location of a specific sector
-type SectorLocation struct {
-	Deadline, Partition uint64
-	SectorNumber        abi.SectorNumber
-}
-
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
@@ -418,190 +412,51 @@ func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint
 	return FindSector(store, deadlines, sno)
 }
 
-// Walks the given sectors, deadline by deadline, partition by partition,
-// skipping missing partitions/sectors.
-func (st *State) WalkSectors(
-	store adt.Store,
-	locations []SectorLocation,
-	beforeDeadlineCb func(dlIdx uint64, dl *Deadline) (update bool, err error),
-	partitionCb func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (update bool, err error),
-	afterDeadlineCb func(dlIdx uint64, dl *Deadline) (update bool, err error),
+// Schedules each sector to expire at its next deadline end. If it can't find
+// any given sector, it skips it.
+//
+// This method assumes that each sector's power has not changed, despite the rescheduling.
+//
+// Note: this method is used to "upgrade" sectors, rescheduling the now-replaced
+// sectors to expire at the end of the next deadline. Given the expense of
+// sealing a sector, this function skips missing/faulty/terminated "upgraded"
+// sectors instead of failing. That way, the new sectors can still be proved.
+func (st *State) RescheduleSectorExpirations(
+	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
+	deadlineSectors DeadlineSectorMap,
 ) error {
+	quant := st.QuantEndOfDeadline()
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return err
 	}
-
-	var toVisit [WPoStPeriodDeadlines]map[uint64][]uint64
-	for _, loc := range locations {
-		if loc.Deadline >= WPoStPeriodDeadlines {
-			return xc.ErrIllegalArgument.Wrapf("deadline %d out of range", loc.Deadline)
-		}
-		dl := toVisit[loc.Deadline]
-		if dl == nil {
-			dl = make(map[uint64][]uint64, 1)
-			toVisit[loc.Deadline] = dl
-		}
-		dl[loc.Partition] = append(dl[loc.Partition], uint64(loc.SectorNumber))
+	sectors, err := LoadSectors(store, st.Sectors)
+	if err != nil {
+		return err
 	}
 
-	var deadlinesUpdated bool
-	for dlIdx, partitions := range toVisit {
-		if partitions == nil {
-			continue
-		}
+	if err = deadlineSectors.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
+		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch).NextNotElapsed()
+		newExpiration := dlInfo.Last()
 
-		var deadlineUpdated bool
-		dl, err := deadlines.LoadDeadline(store, uint64(dlIdx))
+		dl, err := deadlines.LoadDeadline(store, dlIdx)
 		if err != nil {
 			return err
 		}
 
-		deadlineUpdated, err = beforeDeadlineCb(uint64(dlIdx), dl)
-		if err != nil {
+		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, quant); err != nil {
 			return err
 		}
 
-		partitionsArr, err := dl.PartitionsArray(store)
-		if err != nil {
+		if err := deadlines.UpdateDeadline(store, dlIdx, dl); err != nil {
 			return err
 		}
 
-		partitionNumbers := make([]uint64, 0, len(partitions))
-		for partIdx := range partitions { // nolint:nomaprange // subsequently sorted
-			partitionNumbers = append(partitionNumbers, partIdx)
-		}
-		sort.Slice(partitionNumbers, func(i, j int) bool {
-			return partitionNumbers[i] < partitionNumbers[j]
-		})
-
-		for _, partIdx := range partitionNumbers {
-			var partition Partition
-			found, err := partitionsArr.Get(partIdx, &partition)
-			if err != nil {
-				return err
-			}
-			if !found {
-				continue
-			}
-
-			sectorNos := partitions[partIdx]
-			foundSectors, err := bitfield.IntersectBitField(bitfield.NewFromSet(sectorNos), partition.Sectors)
-			if err != nil {
-				return err
-			}
-
-			// Anything to update?
-			if empty, err := foundSectors.IsEmpty(); err != nil {
-				return err
-			} else if empty {
-				// no.
-				continue
-			}
-
-			if updated, err := partitionCb(dl, &partition, uint64(dlIdx), partIdx, foundSectors); err != nil {
-				return err
-			} else if updated {
-				err = partitionsArr.Set(partIdx, &partition)
-				if err != nil {
-					return err
-				}
-
-				deadlineUpdated = true
-			}
-		}
-		if deadlineUpdated {
-			dl.Partitions, err = partitionsArr.Root()
-			if err != nil {
-				return err
-			}
-		}
-		if updated, err := afterDeadlineCb(uint64(dlIdx), dl); err != nil {
-			return err
-		} else if updated || deadlineUpdated {
-			if err := deadlines.UpdateDeadline(store, uint64(dlIdx), dl); err != nil {
-				return err
-			}
-			deadlinesUpdated = true
-		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	if deadlinesUpdated {
-		if err := st.SaveDeadlines(store, deadlines); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Schedule's each sector to expire at its next deadline end.
-//
-// If it can't find any given sector, it skips it.
-//
-// This method assumes that each sector's power has not changed, despite the rescheduling.
-func (st *State) RescheduleSectorExpirations(store adt.Store, currEpoch abi.ChainEpoch, sectors []SectorLocation,
-	ssize abi.SectorSize, quant QuantSpec) error {
-	var (
-		newEpoch              abi.ChainEpoch
-		rescheduledPartitions []uint64 // track partitions with moved expirations.
-	)
-	return st.WalkSectors(store, sectors,
-		// Prepare to process deadline.
-		func(dlIdx uint64, dl *Deadline) (bool, error) {
-			rescheduledPartitions = nil
-
-			// Figure out the sector's next deadline end.
-			dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch).NextNotElapsed()
-			newEpoch = dlInfo.Last()
-			return false, nil
-		},
-		// Process partitions in deadline.
-		func(dl *Deadline, partition *Partition, dlIdx, partIdx uint64, sectors *bitfield.BitField) (bool, error) {
-			// Sectors are uniquified by being represented in a bitfield.
-			// This is an important property for the reschedule logic to be correct.
-			live, err := bitfield.SubtractBitField(sectors, partition.Terminated)
-			if err != nil {
-				return false, err
-			}
-
-			active, err := bitfield.SubtractBitField(live, partition.Faults)
-			if err != nil {
-				return false, err
-			}
-
-			sectorInfos, err := st.LoadSectorInfos(store, active)
-			if err != nil {
-				return false, err
-			}
-
-			if len(sectorInfos) == 0 {
-				// Nothing to do
-				return false, nil
-			}
-
-			// Note: The expiration stored in the sector info is not altered, but remains the initially-scheduled epoch.
-			err = partition.RescheduleExpirations(store, newEpoch, sectorInfos, ssize, quant)
-			if err != nil {
-				return false, err
-			}
-
-			// Make sure we update the deadline's queue as well.
-			rescheduledPartitions = append(rescheduledPartitions, partIdx)
-			return true, nil
-		},
-		// Update deadline.
-		func(dlIdx uint64, dl *Deadline) (bool, error) {
-			if len(rescheduledPartitions) == 0 {
-				return false, nil
-			}
-
-			// Record partitions that now expire at the new epoch.
-			// Don't _remove_ anything from this queue, that's not safe.
-			if err := dl.AddExpirationPartitions(store, newEpoch, rescheduledPartitions, quant); err != nil {
-				return false, xerrors.Errorf("failed to add partition expirations: %w", err)
-			}
-			return true, nil
-		},
-	)
+	return st.SaveDeadlines(store, deadlines)
 }
 
 // Assign new sectors to deadlines.
@@ -611,12 +466,13 @@ func (st *State) AssignSectorsToDeadlines(
 	sectors []*SectorOnChainInfo,
 	partitionSize uint64,
 	sectorSize abi.SectorSize,
-	quant QuantSpec,
 ) (PowerPair, error) {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return NewPowerPairZero(), err
 	}
+
+	quant := st.QuantEndOfDeadline()
 
 	// Sort sectors by number to get better runs in partition bitfields.
 	sort.Slice(sectors, func(i, j int) bool {
