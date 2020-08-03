@@ -37,6 +37,10 @@ func TestExpirationSet(t *testing.T) {
 		assert.Equal(t, onTimePledge, set.OnTimePledge)
 		assert.True(t, activePower.Equals(set.ActivePower))
 		assert.True(t, faultyPower.Equals(set.FaultyPower))
+
+		count, err := set.Count()
+		require.NoError(t, err)
+		assert.EqualValues(t, 5, count)
 	})
 
 	t.Run("adds sectors and power to non-empty set", func(t *testing.T) {
@@ -156,6 +160,10 @@ func TestExpirationSet(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, empty)
 
+		count, err := set.Count()
+		require.NoError(t, err)
+		assert.Zero(t, count)
+
 		err = set.Add(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 		require.NoError(t, err)
 
@@ -169,6 +177,10 @@ func TestExpirationSet(t *testing.T) {
 		empty, err = set.IsEmpty()
 		require.NoError(t, err)
 		assert.True(t, empty)
+
+		count, err = set.Count()
+		require.NoError(t, err)
+		assert.Zero(t, count)
 	})
 }
 
