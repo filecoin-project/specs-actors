@@ -289,7 +289,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Bad sealed CID
-		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "sealed CID had wrong prefix", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sealed CID had wrong prefix", func() {
 			pc := actor.makePreCommit(102, challengeEpoch, deadline.PeriodEnd(), nil)
 			pc.SealedCID = tutil.MakeCID("Random Data", nil)
 			actor.preCommitSector(rt, pc)
@@ -325,7 +325,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Expires too early
-		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration-20*builtin.EpochsInDay, nil))
 		})
 		rt.Reset()
@@ -333,7 +333,7 @@ func TestCommitments(t *testing.T) {
 		// Errors when expiry too far in the future
 		rt.SetEpoch(precommitEpoch)
 		expiration = deadline.PeriodEnd() + miner.WPoStProvingPeriod*(miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod+1)
-		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "invalid expiration", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid expiration", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, deadline.PeriodEnd()-1, nil))
 		})
 
@@ -723,7 +723,7 @@ func TestCommitments(t *testing.T) {
 			rt, actor, deadline := setup(proof)
 			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit+1))
-			rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
 				actor.preCommitSector(rt, precommit)
 			})
 
@@ -1085,7 +1085,7 @@ func TestWindowPost(t *testing.T) {
 		partitions := []miner.PoStPartition{
 			{Index: pIdx0, Skipped: bf(uint64(infos[n-1].SectorNumber))},
 		}
-		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition", func() {
 			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 		})
 	})
@@ -1350,134 +1350,211 @@ func TestDeclareFaults(t *testing.T) {
 }
 
 func TestExtendSectorExpiration(t *testing.T) {
-	//periodOffset := abi.ChainEpoch(100)
-	//actor := newHarness(t, periodOffset)
-	//precommitEpoch := abi.ChainEpoch(1)
-	//builder := builderForHarness(actor).
-	//	WithEpoch(precommitEpoch).
-	//	WithBalance(bigBalance, big.Zero())
-	//
-	//commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
-	//	actor.constructAndVerify(rt)
-	//	sectorInfo := actor.commitAndProveSectors(rt, 1, 100, nil)
-	//	return sectorInfo[0]
-	//}
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	precommitEpoch := abi.ChainEpoch(1)
+	builder := builderForHarness(actor).
+		WithEpoch(precommitEpoch).
+		WithBalance(bigBalance, big.Zero())
 
-	// TODO minerstate
+	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
+		actor.constructAndVerify(rt)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, 181, nil)
+		return sectorInfo[0]
+	}
 
-	//t.Run("rejects negative extension", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	sector := commitSector(t, rt)
-	//	// attempt to shorten epoch
-	//	newExpiration := sector.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
-	//	params := &miner.ExtendSectorExpirationParams{
-	//		SectorNumber:  sector.SectorNumber,
-	//		NewExpiration: newExpiration,
-	//	}
-	//
-	//	rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-	//		actor.extendSector(rt, sector, 0, params)
-	//	})
-	//})
-	//
-	//t.Run("rejects extension to invalid epoch", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	sector := commitSector(t, rt)
-	//
-	//	// attempt to extend to an epoch that is not a multiple of the proving period + the commit epoch
-	//	extension := 42*miner.WPoStProvingPeriod + 1
-	//	newExpiration := sector.Expiration - abi.ChainEpoch(extension)
-	//	params := &miner.ExtendSectorExpirationParams{
-	//		SectorNumber:  sector.SectorNumber,
-	//		NewExpiration: newExpiration,
-	//	}
-	//
-	//	rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-	//		actor.extendSector(rt, sector, extension, params)
-	//	})
-	//})
-	//
-	//t.Run("rejects extension too far in future", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	sector := commitSector(t, rt)
-	//
-	//	// extend by even proving period after max
-	//	rt.SetEpoch(sector.Expiration)
-	//	extension := miner.WPoStProvingPeriod * (miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod + 1)
-	//	newExpiration := rt.Epoch() + extension
-	//	params := &miner.ExtendSectorExpirationParams{
-	//		SectorNumber:  sector.SectorNumber,
-	//		NewExpiration: newExpiration,
-	//	}
-	//
-	//	rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-	//		actor.extendSector(rt, sector, extension, params)
-	//	})
-	//})
-	//
-	//t.Run("rejects extension past max for seal proof", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	sector := commitSector(t, rt)
-	//	rt.SetEpoch(sector.Expiration)
-	//
-	//	maxLifetime := sector.SealProof.SectorMaximumLifetime()
-	//
-	//	// extend sector until just below threshold
-	//	expiration := sector.Activation + sector.SealProof.SectorMaximumLifetime()
-	//	extension := expiration - rt.Epoch()
-	//	for ; expiration-sector.Activation < maxLifetime; expiration += extension {
-	//		params := &miner.ExtendSectorExpirationParams{
-	//			SectorNumber:  sector.SectorNumber,
-	//			NewExpiration: expiration,
-	//		}
-	//
-	//		actor.extendSector(rt, sector, extension, params)
-	//		rt.SetEpoch(expiration)
-	//	}
-	//
-	//	// next extension fails because it extends sector past max lifetime
-	//	params := &miner.ExtendSectorExpirationParams{
-	//		SectorNumber:  sector.SectorNumber,
-	//		NewExpiration: expiration,
-	//	}
-	//
-	//	rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-	//		actor.extendSector(rt, sector, extension, params)
-	//	})
-	//})
-	//
-	//t.Run("updates expiration with valid params", func(t *testing.T) {
-	//	rt := builder.Build(t)
-	//	oldSector := commitSector(t, rt)
-	//
-	//	extension := 42 * miner.WPoStProvingPeriod
-	//	newExpiration := oldSector.Expiration + extension
-	//	params := &miner.ExtendSectorExpirationParams{
-	//		SectorNumber:  oldSector.SectorNumber,
-	//		NewExpiration: newExpiration,
-	//	}
-	//
-	//	actor.extendSector(rt, oldSector, extension, params)
-	//
-	//	// assert sector expiration is set to the new value
-	//	st := getState(rt)
-	//	newSector := actor.getSector(rt, oldSector.SectorNumber)
-	//	assert.Equal(t, newExpiration, newSector.Expiration)
-	//
-	//	// assert that an expiration exists at the target epoch
-	//	expirations, err := st.GetSectorExpirations(rt.AdtStore(), newExpiration)
-	//	require.NoError(t, err)
-	//	exists, err := expirations.IsSet(uint64(newSector.SectorNumber))
-	//	require.NoError(t, err)
-	//	assert.True(t, exists)
-	//
-	//	// assert that the expiration has been removed from the old epoch
-	//	expirations, err = st.GetSectorExpirations(rt.AdtStore(), oldSector.Expiration)
-	//	require.NoError(t, err)
-	//	exists, err = expirations.IsSet(uint64(newSector.SectorNumber))
-	//	require.NoError(t, err)
-	//	assert.False(t, exists)
-	//})
+	t.Run("rejects negative extension", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
+		// attempt to shorten epoch
+		newExpiration := sector.Expiration - abi.ChainEpoch(miner.WPoStProvingPeriod)
+
+		// find deadline and partition
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
+		require.NoError(t, err)
+
+		params := &miner.ExtendSectorExpirationParams{
+			Extensions: []miner.ExpirationExtension{{
+				Deadline:      dlIdx,
+				Partition:     pIdx,
+				Sectors:       bf(uint64(sector.SectorNumber)),
+				NewExpiration: newExpiration,
+			}},
+		}
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "cannot reduce sector expiration", func() {
+			actor.extendSector(rt, sector, 0, params)
+		})
+	})
+
+	t.Run("rejects extension too far in future", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+
+		// extend by even proving period after max
+		rt.SetEpoch(sector.Expiration)
+		extension := miner.WPoStProvingPeriod * (miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod + 1)
+		newExpiration := rt.Epoch() + extension
+
+		// find deadline and partition
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
+		require.NoError(t, err)
+
+		params := &miner.ExtendSectorExpirationParams{
+			Extensions: []miner.ExpirationExtension{{
+				Deadline:      dlIdx,
+				Partition:     pIdx,
+				Sectors:       bf(uint64(sector.SectorNumber)),
+				NewExpiration: newExpiration,
+			}},
+		}
+
+		expectedMessage := fmt.Sprintf("cannot be more than %d past current epoch", miner.MaxSectorExpirationExtension)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, expectedMessage, func() {
+			actor.extendSector(rt, sector, 0, params)
+		})
+	})
+
+	t.Run("rejects extension past max for seal proof", func(t *testing.T) {
+		rt := builder.Build(t)
+		sector := commitSector(t, rt)
+		rt.SetEpoch(sector.Expiration)
+
+		maxLifetime := sector.SealProof.SectorMaximumLifetime()
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
+		require.NoError(t, err)
+
+		// extend sector until just below threshold
+		rt.SetEpoch(sector.Expiration)
+		extension := abi.ChainEpoch(miner.MinSectorExpiration)
+		expiration := sector.Expiration + extension
+		for ; expiration-sector.Activation < maxLifetime; expiration += extension {
+			params := &miner.ExtendSectorExpirationParams{
+				Extensions: []miner.ExpirationExtension{{
+					Deadline:      dlIdx,
+					Partition:     pIdx,
+					Sectors:       bf(uint64(sector.SectorNumber)),
+					NewExpiration: expiration,
+				}},
+			}
+
+			actor.extendSector(rt, sector, extension, params)
+			sector.Expiration = expiration
+			rt.SetEpoch(expiration)
+		}
+
+		// next extension fails because it extends sector past max lifetime
+		params := &miner.ExtendSectorExpirationParams{
+			Extensions: []miner.ExpirationExtension{{
+				Deadline:      dlIdx,
+				Partition:     pIdx,
+				Sectors:       bf(uint64(sector.SectorNumber)),
+				NewExpiration: expiration,
+			}},
+		}
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "total sector lifetime", func() {
+			actor.extendSector(rt, sector, extension, params)
+		})
+	})
+
+	t.Run("updates expiration with valid params", func(t *testing.T) {
+		rt := builder.Build(t)
+		oldSector := commitSector(t, rt)
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		extension := 42 * miner.WPoStProvingPeriod
+		newExpiration := oldSector.Expiration + extension
+		params := &miner.ExtendSectorExpirationParams{
+			Extensions: []miner.ExpirationExtension{{
+				Deadline:      dlIdx,
+				Partition:     pIdx,
+				Sectors:       bf(uint64(oldSector.SectorNumber)),
+				NewExpiration: newExpiration,
+			}},
+		}
+
+		actor.extendSector(rt, oldSector, extension, params)
+
+		// assert sector expiration is set to the new value
+		newSector := actor.getSector(rt, oldSector.SectorNumber)
+		assert.Equal(t, newExpiration, newSector.Expiration)
+
+		// assert that new expiration exists
+		st = getState(rt)
+		_, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
+		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+		require.NoError(t, err)
+		empty, err := expirationSet.IsEmpty()
+		require.NoError(t, err)
+		assert.True(t, empty)
+
+		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), newExpiration, st.QuantEndOfDeadline())
+		require.NoError(t, err)
+		empty, err = expirationSet.IsEmpty()
+		require.NoError(t, err)
+		assert.False(t, empty)
+	})
+
+	t.Run("supports extensions off deadline boundary", func(t *testing.T) {
+		rt := builder.Build(t)
+		oldSector := commitSector(t, rt)
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		extension := 42*miner.WPoStProvingPeriod + miner.WPoStProvingPeriod/3
+		newExpiration := oldSector.Expiration + extension
+		params := &miner.ExtendSectorExpirationParams{
+			Extensions: []miner.ExpirationExtension{{
+				Deadline:      dlIdx,
+				Partition:     pIdx,
+				Sectors:       bf(uint64(oldSector.SectorNumber)),
+				NewExpiration: newExpiration,
+			}},
+		}
+
+		actor.extendSector(rt, oldSector, extension, params)
+
+		// assert sector expiration is set to the new value
+		st = getState(rt)
+		newSector := actor.getSector(rt, oldSector.SectorNumber)
+		assert.Equal(t, newExpiration, newSector.Expiration)
+
+		// advance clock to expiration
+		rt.SetEpoch(newSector.Expiration)
+		st.ProvingPeriodStart += miner.WPoStProvingPeriod * ((rt.Epoch()-st.ProvingPeriodStart)/miner.WPoStProvingPeriod + 1)
+		rt.ReplaceState(st)
+
+		// confirm it is not in sector's deadline
+		dlinfo := actor.deadline(rt)
+		assert.NotEqual(t, dlIdx, dlinfo.Index)
+
+		// advance to deadline and submit one last PoSt
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: abi.NewBitField()},
+		}
+		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{newSector}, nil)
+
+		// advance one more time. No missed PoSt fees are charged. Total Power and pledge are lowered.
+		pwr := miner.PowerForSectors(actor.sectorSize, []*miner.SectorOnChainInfo{newSector}).Neg()
+		advanceDeadline(rt, actor, &cronConfig{
+			expiredSectorsPowerDelta:  &pwr,
+			expiredSectorsPledgeDelta: newSector.InitialPledge.Neg(),
+		})
+	})
 }
 
 func TestTerminateSectors(t *testing.T) {
@@ -2282,16 +2359,18 @@ func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChai
 	newSector.Expiration += extension
 	qaDelta := big.Sub(miner.QAPowerForSector(h.sectorSize, &newSector), miner.QAPowerForSector(h.sectorSize, sector))
 
-	rt.ExpectSend(builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.UpdateClaimedPower,
-		&power.UpdateClaimedPowerParams{
-			RawByteDelta:         big.Zero(),
-			QualityAdjustedDelta: qaDelta,
-		},
-		abi.NewTokenAmount(0),
-		nil,
-		exitcode.Ok,
-	)
+	if !qaDelta.IsZero() {
+		rt.ExpectSend(builtin.StoragePowerActorAddr,
+			builtin.MethodsPower.UpdateClaimedPower,
+			&power.UpdateClaimedPowerParams{
+				RawByteDelta:         big.Zero(),
+				QualityAdjustedDelta: qaDelta,
+			},
+			abi.NewTokenAmount(0),
+			nil,
+			exitcode.Ok,
+		)
+	}
 	rt.Call(h.a.ExtendSectorExpiration, params)
 	rt.Verify()
 }

@@ -682,7 +682,7 @@ func TestCron(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// enroll a cron task at epoch 2 (which is in the past)
-		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
 			actor.enrollCronEvent(rt, miner1, -2, []byte{0x1, 0x3})
 		})
 	})
