@@ -88,15 +88,18 @@ var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
 }
 
-// Maximum duration to allow for the sealing process for seal algorithms.
+// Maximum delay to allow between precommit and provecommit
 // Dependent on algorithm and sector size
-var MaxSealDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
+var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg32GiBV1:  abi.ChainEpoch(10000), // PARAM_FINISH
 	abi.RegisteredSealProof_StackedDrg2KiBV1:   abi.ChainEpoch(10000),
 	abi.RegisteredSealProof_StackedDrg8MiBV1:   abi.ChainEpoch(10000),
 	abi.RegisteredSealProof_StackedDrg512MiBV1: abi.ChainEpoch(10000),
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  abi.ChainEpoch(10000),
 }
+
+// Maximum delay between challenge and precommit
+var MaxPreCommitRandomnessLookback = abi.ChainEpoch(10000)
 
 // Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
 // used to ensure it is not predictable by miner.

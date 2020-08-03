@@ -482,7 +482,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	// Require sector lifetime meets minimum by assuming activation happens at last epoch permitted for seal proof.
 	// This could make sector maximum lifetime validation more lenient if the maximum sector limit isn't hit first.
-	maxActivation := rt.CurrEpoch() + MaxSealDuration[params.SealProof]
+	maxActivation := rt.CurrEpoch() + MaxProveCommitDuration[params.SealProof]
 	validateExpiration(rt, maxActivation, params.Expiration, params.SealProof)
 
 	if params.ReplaceCapacity && len(params.DealIDs) == 0 {
@@ -579,7 +579,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
 		// add precommit expiry to the queue
-		msd, ok := MaxSealDuration[params.SealProof]
+		msd, ok := MaxProveCommitDuration[params.SealProof]
 		if !ok {
 			rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
 		}
@@ -632,7 +632,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		}
 	})
 
-	msd, ok := MaxSealDuration[precommit.Info.SealProof]
+	msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.SealProof)
 	}
@@ -2278,7 +2278,7 @@ func PowerForSectors(ssize abi.SectorSize, sectors []*SectorOnChainInfo) PowerPa
 
 // The oldest seal challenge epoch that will be accepted in the current epoch.
 func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
-	return currEpoch - ChainFinality - MaxSealDuration[proof]
+	return currEpoch - ChainFinality - MaxPreCommitRandomnessLookback
 }
 
 func getMinerInfo(rt Runtime, st *State) *MinerInfo {
