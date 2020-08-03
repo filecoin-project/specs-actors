@@ -546,6 +546,68 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 
 }
 
+func TestSectorAssignment(t *testing.T) {
+	partitionSectors, err := abi.RegisteredSealProof_StackedDrg32GiBV1.WindowPoStPartitionSectors()
+	require.NoError(t, err)
+	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
+	require.NoError(t, err)
+
+	openDeadlines := miner.WPoStPeriodDeadlines - 2
+
+	partitionsPerDeadline := uint64(3)
+	noSectors := int(partitionSectors * openDeadlines * partitionsPerDeadline)
+	sectorInfos := make([]*miner.SectorOnChainInfo, noSectors)
+	for i := range sectorInfos {
+		sectorInfos[i] = newSectorOnChainInfo(
+			abi.SectorNumber(i), tutils.MakeCID(fmt.Sprintf("%d", i), &miner.SealedCIDPrefix), big.NewInt(1), abi.ChainEpoch(0),
+		)
+	}
+
+	dlState := expectedDeadlineState{
+		sectorSize:    sectorSize,
+		partitionSize: partitionSectors,
+		sectors:       sectorInfos,
+	}
+
+	t.Run("assign sectors to deadlines", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, partitionSectors, sectorSize)
+		require.NoError(t, err)
+		require.True(t, newPower.Equals(miner.PowerForSectors(sectorSize, sectorInfos)))
+
+		dls, err := harness.s.LoadDeadlines(harness.store)
+		require.NoError(t, err)
+		require.NoError(t, dls.ForEach(harness.store, func(dlIdx uint64, dl *miner.Deadline) error {
+			dlInfo := miner.NewDeadlineInfo(harness.s.ProvingPeriodStart, dlIdx, 0)
+			// deadlines 0 & 1 are closed for assignment right now.
+			if dlIdx < 2 {
+				dlState.withQuantSpec(dlInfo.QuantSpec()).
+					assert(t, harness.store, dl)
+				return nil
+			}
+
+			var partitions []*bitfield.BitField
+			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
+				var runs []rlepluslazy.Run
+				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
+				if start > 0 {
+					runs = append(runs, rlepluslazy.Run{Val: false, Len: start})
+				}
+				runs = append(runs, rlepluslazy.Run{Val: true, Len: partitionSectors})
+				bf, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: runs})
+				require.NoError(t, err)
+				partitions = append(partitions, bf)
+			}
+			dlState.withQuantSpec(dlInfo.QuantSpec()).
+				withPartitions(partitions...).
+				assert(t, harness.store, dl)
+
+			return nil
+		}))
+	})
+}
+
 func TestSectorNumberAllocation(t *testing.T) {
 	t.Run("can't allocate the same sector number twice", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
