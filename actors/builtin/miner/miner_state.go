@@ -425,7 +425,6 @@ func (st *State) RescheduleSectorExpirations(
 	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
 	deadlineSectors DeadlineSectorMap,
 ) error {
-	quant := st.QuantEndOfDeadline()
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return err
@@ -444,7 +443,7 @@ func (st *State) RescheduleSectorExpirations(
 			return err
 		}
 
-		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, quant); err != nil {
+		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, dlInfo.QuantSpec()); err != nil {
 			return err
 		}
 
@@ -472,8 +471,6 @@ func (st *State) AssignSectorsToDeadlines(
 		return NewPowerPairZero(), err
 	}
 
-	quant := st.QuantEndOfDeadline()
-
 	// Sort sectors by number to get better runs in partition bitfields.
 	sort.Slice(sectors, func(i, j int) bool {
 		return sectors[i].SectorNumber < sectors[j].SectorNumber
@@ -497,6 +494,7 @@ func (st *State) AssignSectorsToDeadlines(
 			continue
 		}
 
+		quant := NewDeadlineInfo(st.ProvingPeriodStart, uint64(dlIdx), currentEpoch).QuantSpec()
 		dl := deadlineArr[dlIdx]
 
 		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
@@ -954,12 +952,6 @@ func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmoun
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
 	availableBalance := st.GetUnlockedBalance(actorBalance)
 	return big.Sub(availableBalance, st.InitialPledgeRequirement)
-}
-
-// Returns a quantization spec that quantizes values to the last epoch in each deadline.
-func (st *State) QuantEndOfDeadline() QuantSpec {
-	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart-1)
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {

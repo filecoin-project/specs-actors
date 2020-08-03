@@ -236,9 +236,12 @@ func TestCommitments(t *testing.T) {
 		assertEmptyBitfield(t, deadline.PostSubmissions)
 		assertEmptyBitfield(t, deadline.EarlyTerminations)
 
+		quant := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch()).QuantSpec()
+		quantizedExpiration := quant.QuantizeUp(precommit.Expiration)
+
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			precommit.Expiration: {pIdx},
+			quantizedExpiration: {pIdx},
 		}, dQueue)
 
 		assertBitfieldEquals(t, partition.Sectors, uint64(sectorNo))
@@ -250,7 +253,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, miner.NewPowerPairZero(), partition.RecoveringPower)
 
 		pQueue := actor.collectPartitionExpirations(rt, partition)
-		entry, ok := pQueue[precommit.Expiration]
+		entry, ok := pQueue[quantizedExpiration]
 		require.True(t, ok)
 		assertBitfieldEquals(t, entry.OnTimeSectors, uint64(sectorNo))
 		assertEmptyBitfield(t, entry.EarlySectors)
@@ -414,14 +417,15 @@ func TestCommitments(t *testing.T) {
 		// The partition is registered with an expiry at both epochs.
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
+		quantizedExpiration := dlInfo.QuantSpec().QuantizeUp(oldSector.Expiration)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
 			dlInfo.NextNotElapsed().Last(): {uint64(0)},
-			oldSector.Expiration:           {uint64(0)},
+			quantizedExpiration:            {uint64(0)},
 		}, dQueue)
 
 		pQueue := actor.collectPartitionExpirations(rt, partition)
 		assertBitfieldEquals(t, pQueue[dlInfo.NextNotElapsed().Last()].OnTimeSectors, uint64(oldSector.SectorNumber))
-		assertBitfieldEquals(t, pQueue[oldSector.Expiration].OnTimeSectors, uint64(newSector.SectorNumber))
+		assertBitfieldEquals(t, pQueue[quantizedExpiration].OnTimeSectors, uint64(newSector.SectorNumber))
 
 		// Roll forward to the beginning of the next iteration of this deadline
 		advanceToEpochWithCron(rt, actor, dlInfo.NextNotElapsed().Open)
@@ -431,7 +435,7 @@ func TestCommitments(t *testing.T) {
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
-		faultExpiration := dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge
+		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
 
@@ -457,8 +461,8 @@ func TestCommitments(t *testing.T) {
 		// and once on-time.
 		dQueue = actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			newSector.Expiration: {uint64(0)},
-			faultExpiration:      {uint64(0)},
+			dlInfo.QuantSpec().QuantizeUp(newSector.Expiration): {uint64(0)},
+			faultExpiration: {uint64(0)},
 		}, dQueue)
 
 		// Old sector gone from pledge requirement and deposit
@@ -523,6 +527,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			st := getState(rt)
 			prevState := *st
+			quant := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0).QuantSpec()
 			deadlines, err := st.LoadDeadlines(rt.AdtStore())
 			require.NoError(t, err)
 			deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
@@ -536,7 +541,7 @@ func TestCommitments(t *testing.T) {
 			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
 			require.NoError(t, err)
 			newFaults, _, err := partition.DeclareFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
-				actor.sectorSize, st.QuantEndOfDeadline())
+				actor.sectorSize, quant)
 			require.NoError(t, err)
 			assertBitfieldEquals(t, newFaults, uint64(oldSectors[0].SectorNumber))
 			require.NoError(t, partitions.Set(partIdx, &partition))
@@ -2008,9 +2013,7 @@ func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*mi
 }
 
 func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *miner.Deadline) map[abi.ChainEpoch][]uint64 {
-	st := getState(rt)
-	quant := st.QuantEndOfDeadline()
-	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, quant)
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
@@ -2023,9 +2026,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 }
 
 func (h *actorHarness) collectPartitionExpirations(rt *mock.Runtime, partition *miner.Partition) map[abi.ChainEpoch]*miner.ExpirationSet {
-	st := getState(rt)
-	quant := st.QuantEndOfDeadline()
-	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, quant)
+	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.NoQuantization)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch]*miner.ExpirationSet{}
 	var es miner.ExpirationSet
