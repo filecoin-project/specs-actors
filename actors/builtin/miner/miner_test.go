@@ -533,9 +533,12 @@ func TestCommitments(t *testing.T) {
 			found, err := partitions.Get(partIdx, &partition)
 			require.True(t, found)
 			require.NoError(t, err)
-			_, err = partition.AddFaults(rt.AdtStore(), bf(uint64(oldSectors[0].SectorNumber)), oldSectors[0:1], 100000,
+			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
+			require.NoError(t, err)
+			newFaults, _, err := partition.DeclareFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
 				actor.sectorSize, st.QuantEndOfDeadline())
 			require.NoError(t, err)
+			assertBitfieldEquals(t, newFaults, uint64(oldSectors[0].SectorNumber))
 			require.NoError(t, partitions.Set(partIdx, &partition))
 			deadline.Partitions, err = partitions.Root()
 			require.NoError(t, err)
