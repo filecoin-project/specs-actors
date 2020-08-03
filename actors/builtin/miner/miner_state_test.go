@@ -579,10 +579,10 @@ func TestSectorAssignment(t *testing.T) {
 		dls, err := harness.s.LoadDeadlines(harness.store)
 		require.NoError(t, err)
 		require.NoError(t, dls.ForEach(harness.store, func(dlIdx uint64, dl *miner.Deadline) error {
-			dlInfo := miner.NewDeadlineInfo(harness.s.ProvingPeriodStart, dlIdx, 0)
+			quantSpec := harness.s.QuantSpecForDeadline(dlIdx)
 			// deadlines 0 & 1 are closed for assignment right now.
 			if dlIdx < 2 {
-				dlState.withQuantSpec(dlInfo.QuantSpec()).
+				dlState.withQuantSpec(quantSpec).
 					assert(t, harness.store, dl)
 				return nil
 			}
@@ -599,7 +599,7 @@ func TestSectorAssignment(t *testing.T) {
 				require.NoError(t, err)
 				partitions = append(partitions, bf)
 			}
-			dlState.withQuantSpec(dlInfo.QuantSpec()).
+			dlState.withQuantSpec(quantSpec).
 				withPartitions(partitions...).
 				assert(t, harness.store, dl)
 

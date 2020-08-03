@@ -207,6 +207,11 @@ func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *DeadlineInfo {
 	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
 }
 
+// Returns deadline calculations for the current (according to state) proving period.
+func (st *State) QuantSpecForDeadline(dlIdx uint64) QuantSpec {
+	return NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0).QuantSpec()
+}
+
 func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {
 	// This will likely already have been checked, but this is a good place
 	// to catch any mistakes.
@@ -494,7 +499,7 @@ func (st *State) AssignSectorsToDeadlines(
 			continue
 		}
 
-		quant := NewDeadlineInfo(st.ProvingPeriodStart, uint64(dlIdx), currentEpoch).QuantSpec()
+		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
 		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)

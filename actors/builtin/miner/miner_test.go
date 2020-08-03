@@ -236,7 +236,7 @@ func TestCommitments(t *testing.T) {
 		assertEmptyBitfield(t, deadline.PostSubmissions)
 		assertEmptyBitfield(t, deadline.EarlyTerminations)
 
-		quant := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch()).QuantSpec()
+		quant := st.QuantSpecForDeadline(dlIdx)
 		quantizedExpiration := quant.QuantizeUp(precommit.Expiration)
 
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
@@ -527,7 +527,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			st := getState(rt)
 			prevState := *st
-			quant := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0).QuantSpec()
+			quant := st.QuantSpecForDeadline(dlIdx)
 			deadlines, err := st.LoadDeadlines(rt.AdtStore())
 			require.NoError(t, err)
 			deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
