@@ -475,7 +475,7 @@ func (dl *Deadline) TerminateSectors(
 		if found, err := partitions.Get(partIdx, &partition); err != nil {
 			return xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
 		} else if !found {
-			return xerrors.Errorf("failed to find partition %d", partIdx)
+			return xc.ErrNotFound.Wrapf("failed to find partition %d", partIdx)
 		}
 
 		sectorInfos, err := sectors.Load(sectorNos)
@@ -1056,9 +1056,18 @@ func (dl *Deadline) RecordProvenSectors(
 	}, nil
 }
 
+// RescheduleSectorExpirations reschedules the expirations of the given sectors
+// to the target epoch, skipping any sectors it can't find.
+//
+// The power of the rescheduled sectors is assumed to have not changed since
+// initial scheduling.
+//
+// Note: see the docs on State.RescheduleSectorExpirations for details on why we
+// skip sectors/partitions we can't find.
 func (dl *Deadline) RescheduleSectorExpirations(
-	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
+	store adt.Store, sectors Sectors,
 	expiration abi.ChainEpoch, partitionSectors PartitionSectorMap,
+	ssize abi.SectorSize, quant QuantSpec,
 ) error {
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
@@ -1069,18 +1078,20 @@ func (dl *Deadline) RescheduleSectorExpirations(
 	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
 		var partition Partition
 		if found, err := partitions.Get(partIdx, &partition); err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+			return xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
 		} else if !found {
-			// We failed to find the partition. That's ok, we'll skip it.
+			// We failed to find the partition, it could have moved
+			// due to compaction. This function is only reschedules
+			// sectors it can find so we'll just skip it.
 			return nil
 		}
 
-		moved, err := partition.RescheduleExpirations(store, sectors, ssize, quant, expiration, sectorNos)
+		moved, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
 		if err != nil {
 			return xerrors.Errorf("failed to reschedule expirations in partition %d: %w", partIdx, err)
 		}
 		if empty, err := moved.IsEmpty(); err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to parse bitfield of rescheduled expirations: %w", err)
+			return xerrors.Errorf("failed to parse bitfield of rescheduled expirations: %w", err)
 		} else if empty {
 			// nothing moved.
 			return nil
@@ -1088,7 +1099,7 @@ func (dl *Deadline) RescheduleSectorExpirations(
 
 		rescheduledPartitions = append(rescheduledPartitions, partIdx)
 		if err = partitions.Set(partIdx, &partition); err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to store partition %d: %w", partIdx, err)
+			return xerrors.Errorf("failed to store partition %d: %w", partIdx, err)
 		}
 		return nil
 	}); err != nil {
@@ -1098,7 +1109,7 @@ func (dl *Deadline) RescheduleSectorExpirations(
 	if len(rescheduledPartitions) > 0 {
 		dl.Partitions, err = partitions.Root()
 		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to save partitions: %w", err)
+			return xerrors.Errorf("failed to save partitions: %w", err)
 		}
 		err := dl.AddExpirationPartitions(store, expiration, rescheduledPartitions, quant)
 		if err != nil {

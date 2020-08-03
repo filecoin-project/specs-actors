@@ -142,7 +142,6 @@ type SectorOnChainInfo struct {
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 }
 
-// Location of a specific sector
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
@@ -413,11 +412,15 @@ func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint
 	return FindSector(store, deadlines, sno)
 }
 
-// Schedule's each sector to expire at its next deadline end.
-//
-// If it can't find any given sector, it skips it.
+// Schedules each sector to expire at its next deadline end. If it can't find
+// any given sector, it skips it.
 //
 // This method assumes that each sector's power has not changed, despite the rescheduling.
+//
+// Note: this method is used to "upgrade" sectors, rescheduling the now-replaced
+// sectors to expire at the end of the next deadline. Given the expense of
+// sealing a sector, this function skips missing/faulty/terminated "upgraded"
+// sectors instead of failing. That way, the new sectors can still be proved.
 func (st *State) RescheduleSectorExpirations(
 	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
 	deadlineSectors DeadlineSectorMap,
@@ -441,7 +444,7 @@ func (st *State) RescheduleSectorExpirations(
 			return err
 		}
 
-		if err := dl.RescheduleSectorExpirations(store, sectors, ssize, quant, newExpiration, pm); err != nil {
+		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, quant); err != nil {
 			return err
 		}
 

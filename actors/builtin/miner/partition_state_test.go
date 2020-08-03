@@ -172,7 +172,7 @@ func TestPartitions(t *testing.T) {
 		require.NoError(t, err)
 
 		// reschedule
-		moved, err := partition.RescheduleExpirations(store, sectorsArr(t, rt, sectors), sectorSize, quantSpec, 18, bf(2, 4, 6))
+		moved, err := partition.RescheduleExpirations(store, sectorsArr(t, rt, sectors), 18, bf(2, 4, 6), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// Make sure we moved the right ones.

@@ -236,11 +236,18 @@ func (p *Partition) RemoveRecoveries(sectorNos *abi.BitField, power PowerPair) (
 	return nil
 }
 
-// RescheduleExpirations moves expiring sectors to the target expiration.
-// The power of the rescheduled sectors is assumed to have not changed since initial scheduling.
+// RescheduleExpirations moves expiring sectors to the target expiration,
+// skipping any sectors it can't find.
+//
+// The power of the rescheduled sectors is assumed to have not changed since
+// initial scheduling.
+//
+// Note: see the docs on State.RescheduleSectorExpirations for details on why we
+// skip sectors/partitions we can't find.
 func (p *Partition) RescheduleExpirations(
-	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
+	store adt.Store, sectors Sectors,
 	newExpiration abi.ChainEpoch, sectorNos *bitfield.BitField,
+	ssize abi.SectorSize, quant QuantSpec,
 ) (moved *bitfield.BitField, err error) {
 	// Ensure these sectors actually belong to this partition.
 	present, err := bitfield.IntersectBitField(sectorNos, p.Sectors)
@@ -254,7 +261,7 @@ func (p *Partition) RescheduleExpirations(
 		return nil, err
 	}
 
-	// And faulty sectors.
+	// Filter out faulty sectors.
 	active, err := bitfield.SubtractBitField(live, p.Faults)
 	if err != nil {
 		return nil, err
