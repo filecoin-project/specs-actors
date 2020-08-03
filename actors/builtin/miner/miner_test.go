@@ -1194,14 +1194,18 @@ func TestProvingPeriodCron(t *testing.T) {
 	})
 
 	t.Run("detects and penalizes faults", func(t *testing.T) {
-		t.Skip("Disabled in miner state refactor #648, restore soon")
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		allSectors := actor.commitAndProveSectors(rt, 2, 100, nil)
+		allSectors := actor.commitAndProveSectors(rt, 2, 181, nil)
+		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+
+		// add lots of funds so penalties come from vesting funds
+		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
 
 		st := getState(rt)
-		dlIdx, _, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
 		require.NoError(t, err)
 
 		// advance to next deadline where we expect the first sectors to appear
@@ -1210,27 +1214,15 @@ func TestProvingPeriodCron(t *testing.T) {
 			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 
-		// Skip to end of proving period, cron detects all sectors as faulty
-		dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-
-		// Undetected faults penalized once as a late undetected fault
-		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
-		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
-
-		// power for sectors is removed
-		powerDeltaClaim := miner.NewPowerPair(pwr.Raw.Neg(), pwr.QA.Neg())
-
-		// Faults are charged again as ongoing faults
-		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
-
-		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEnrollment:       dlinfo.NextPeriodStart(),
-			detectedFaultsPenalty:    undetectedPenalty,
-			detectedFaultsPowerDelta: &powerDeltaClaim,
-			ongoingFaultsPenalty:     ongoingPenalty,
+		// Skip to end of proving period, cron detects and penalizes sectors as faulty
+		undeclaredFee := actor.undeclaredFaultPenalty(allSectors)
+		pwrDelta := pwr.Neg()
+		advanceDeadline(rt, actor, &cronConfig{
+			detectedFaultsPowerDelta: &pwrDelta,
+			detectedFaultsPenalty:    undeclaredFee,
 		})
 
-		// expect both faults are added to state
+		// expect faulty power to be added to state
 		deadline := actor.getDeadline(rt, dlIdx)
 		assert.True(t, pwr.Equals(deadline.FaultyPower))
 
@@ -1239,9 +1231,9 @@ func TestProvingPeriodCron(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{})
 		dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 
-		actor.declareRecoveries(rt, 1, 0, sectorInfoAsBitfield(allSectors[1:]))
+		actor.declareRecoveries(rt, dlIdx, pIdx, sectorInfoAsBitfield(allSectors[1:]))
 
-		// Skip to end of proving period, cron detects all sectors as faulty
+		// Skip to end of proving period for sectors, cron detects all sectors as faulty
 		for dlinfo.Index != dlIdx {
 			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
@@ -1249,20 +1241,21 @@ func TestProvingPeriodCron(t *testing.T) {
 		// Retracted recovery is penalized as an undetected fault, but power is unchanged
 		retractedPwr := miner.PowerForSectors(actor.sectorSize, allSectors[1:])
 		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA)
+		// subtract ongoing penalty, because it's chareged below (this prevents round-off mismatches)
+		retractedPenalty = big.Sub(retractedPenalty, miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA))
 
-		// Faults are charged again as ongoing faults
-		faultPwr := miner.PowerForSectors(actor.sectorSize, allSectors)
-		ongoingPenalty = miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, faultPwr.QA)
+		// Un-recovered faults are charged as ongoing faults
+		ongoingPwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA)
 
-		actor.onDeadlineCron(rt, &cronConfig{
-			expectedEnrollment:    dlinfo.Close,
+		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPenalty: retractedPenalty,
 			ongoingFaultsPenalty:  ongoingPenalty,
 		})
 
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
-		assert.True(t, faultPwr.Equals(deadline.FaultyPower))
+		assert.True(t, pwr.Equals(deadline.FaultyPower))
 	})
 
 	t.Run("test cron run late", func(t *testing.T) {
