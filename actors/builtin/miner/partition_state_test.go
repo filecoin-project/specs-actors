@@ -298,6 +298,38 @@ func TestPartitions(t *testing.T) {
 			Equals(t, queue)
 	})
 
+	t.Run("terminate non-existent sectors", func(t *testing.T) {
+		rt, store, partition := setup(t)
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		terminations := bf(99)
+		terminationEpoch := abi.ChainEpoch(3)
+		_, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.Error(t, err)
+	})
+
+	t.Run("terminate already terminated sector", func(t *testing.T) {
+		rt, store, partition := setup(t)
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		terminations := bf(1)
+		terminationEpoch := abi.ChainEpoch(3)
+
+		// First termination works.
+		removed, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.NoError(t, err)
+		expectedActivePower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1)))
+		assert.True(t, expectedActivePower.Equals(removed.ActivePower))
+		assert.True(t, removed.FaultyPower.Equals(miner.NewPowerPairZero()))
+		count, err := removed.Count()
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, count)
+
+		// Second termination fails
+		_, err = partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.Error(t, err)
+	})
+
 	t.Run("pop expiring sectors", func(t *testing.T) {
 		rt, store, partition := setup(t)
 
