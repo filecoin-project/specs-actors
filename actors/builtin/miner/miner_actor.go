@@ -1254,7 +1254,6 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
 
-
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
 		// This ensures that the amountToLock is always locked up if the miner account
 		// can cover it.
@@ -1263,11 +1262,9 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *amountToLock)
 		}
 
-		newlyVestedFund, err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *amountToLock, &RewardVestingSpec)
+		newlyVested, err = st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *amountToLock, &RewardVestingSpec)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
-
-		return newlyVestedFund
-	}).(abi.TokenAmount)
+	})
 
 	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
 
