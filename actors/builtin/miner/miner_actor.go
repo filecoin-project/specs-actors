@@ -812,11 +812,14 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*ExpirationExtension{}
 		var deadlinesToLoad []uint64
-		for _, decl := range params.Extensions {
+		for i := range params.Extensions {
+			// Take a pointer to the value inside the slice, don't
+			// take a reference to the temporary loop variable.
+			decl := &params.Extensions[i]
 			if _, ok := declsByDeadline[decl.Deadline]; !ok {
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			}
-			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
+			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], decl)
 		}
 
 		sectors, err := LoadSectors(store, st.Sectors)
