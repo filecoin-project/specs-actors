@@ -245,9 +245,8 @@ var consensusFaultReporterShareGrowthRate = BigFrac{
 // PARAM_SPEC
 // Maximum share of slasher's reward
 var consensusFaultMaxReporterShare = BigFrac{
-	// PARAM_FINISH
 	numerator:   big.NewInt(1),
-	denominator: big.NewInt(4),
+	denominator: big.NewInt(20),
 }
 
 // Specification for a linear vesting schedule.
