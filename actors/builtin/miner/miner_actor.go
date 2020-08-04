@@ -474,9 +474,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.SealProof)
 	if params.SealRandEpoch < challengeEarliest {
-		// The subsequent commitment proof can't possibly be accepted because the seal challenge will be deemed
-		// too old. Note that passing this check doesn't guarantee the proof will be soon enough, depending on
-		// when it arrives.
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
 	}
 
