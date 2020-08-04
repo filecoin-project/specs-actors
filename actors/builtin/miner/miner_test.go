@@ -1241,7 +1241,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		// Retracted recovery is penalized as an undetected fault, but power is unchanged
 		retractedPwr := miner.PowerForSectors(actor.sectorSize, allSectors[1:])
 		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA)
-		// subtract ongoing penalty, because it's chareged below (this prevents round-off mismatches)
+		// subtract ongoing penalty, because it's charged below (this prevents round-off mismatches)
 		retractedPenalty = big.Sub(retractedPenalty, miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA))
 
 		// Un-recovered faults are charged as ongoing faults
