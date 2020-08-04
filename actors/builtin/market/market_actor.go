@@ -93,7 +93,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get locked balance")
 
 		ex, err := msm.escrowTable.SubtractWithMinimum(nominal, params.Amount, minBalance)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract form escrow table")
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract from escrow table")
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
@@ -324,7 +324,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get pending proposal %v", propc)
 
 			if !has {
-				rt.Abortf(exitcode.ErrIllegalState, "tried to active deal that was not in the pending set (%s)", propc)
+				rt.Abortf(exitcode.ErrIllegalState, "tried to activate deal that was not in the pending set (%s)", propc)
 			}
 
 			err = msm.dealStates.Set(dealID, &DealState{
@@ -350,12 +350,12 @@ type ComputeDataCommitmentParams struct {
 func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
-	pieces := make([]abi.PieceInfo, 0)
 	var st State
 	rt.State().Readonly(&st)
 	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal dealProposals")
 
+	pieces := make([]abi.PieceInfo, 0)
 	for _, dealID := range params.DealIDs {
 		deal, err := getDealProposal(proposals, dealID)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get dealId %d", dealID)
