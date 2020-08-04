@@ -36,7 +36,7 @@ var testPid abi.PeerID
 var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
-var bigBalance = big.Mul(big.NewInt(10000), big.NewInt(1e18))
+var bigBalance = big.Mul(big.NewInt(1000000), big.NewInt(1e18))
 
 // an expriration 1 greater than min expiration
 const defaultSectorExpiration = 181
@@ -1335,7 +1335,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "cannot reduce sector expiration", func() {
-			actor.extendSector(rt, sector, 0, params)
+			actor.extendSectors(rt, params)
 		})
 	})
 
@@ -1364,7 +1364,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 
 		expectedMessage := fmt.Sprintf("cannot be more than %d past current epoch", miner.MaxSectorExpirationExtension)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, expectedMessage, func() {
-			actor.extendSector(rt, sector, 0, params)
+			actor.extendSectors(rt, params)
 		})
 	})
 
@@ -1393,7 +1393,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 				}},
 			}
 
-			actor.extendSector(rt, sector, extension, params)
+			actor.extendSectors(rt, params)
 			sector.Expiration = expiration
 			rt.SetEpoch(expiration)
 		}
@@ -1409,7 +1409,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "total sector lifetime", func() {
-			actor.extendSector(rt, sector, extension, params)
+			actor.extendSectors(rt, params)
 		})
 	})
 
@@ -1432,7 +1432,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}},
 		}
 
-		actor.extendSector(rt, oldSector, extension, params)
+		actor.extendSectors(rt, params)
 
 		// assert sector expiration is set to the new value
 		newSector := actor.getSector(rt, oldSector.SectorNumber)
@@ -1454,6 +1454,92 @@ func TestExtendSectorExpiration(t *testing.T) {
 		assert.False(t, empty)
 	})
 
+	t.Run("updates many sectors", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		const sectorCount = 4000
+
+		// commit a bunch of sectors to ensure that we get multiple partitions.
+		sectorInfos := actor.commitAndProveSectors(rt, sectorCount, defaultSectorExpiration, nil)
+
+		newExpiration := sectorInfos[0].Expiration + 42*miner.WPoStProvingPeriod
+
+		var params miner.ExtendSectorExpirationParams
+
+		// extend all odd-numbered sectors.
+		{
+			st := getState(rt)
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
+				partitions, err := dl.PartitionsArray(rt.AdtStore())
+				require.NoError(t, err)
+				var partition miner.Partition
+				require.NoError(t, partitions.ForEach(&partition, func(partIdx int64) error {
+					oldSectorNos, err := partition.Sectors.All(miner.SectorsMax)
+					require.NoError(t, err)
+
+					// filter out even-numbered sectors.
+					newSectorNos := make([]uint64, 0, len(oldSectorNos)/2)
+					for _, sno := range oldSectorNos {
+						if sno%2 == 0 {
+							continue
+						}
+						newSectorNos = append(newSectorNos, sno)
+					}
+					params.Extensions = append(params.Extensions, miner.ExpirationExtension{
+						Deadline:      dlIdx,
+						Partition:     uint64(partIdx),
+						Sectors:       bf(newSectorNos...),
+						NewExpiration: newExpiration,
+					})
+					return nil
+				}))
+				return nil
+			}))
+		}
+
+		// Make sure we're touching at least to sectors.
+		require.GreaterOrEqual(t, len(params.Extensions), 2,
+			"test error: this test should touch more than one partition",
+		)
+
+		actor.extendSectors(rt, &params)
+
+		{
+			st := getState(rt)
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+
+			// Half the sectors should expire on-time.
+			var onTimeTotal uint64
+			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
+				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+				require.NoError(t, err)
+
+				count, err := expirationSet.Count()
+				require.NoError(t, err)
+				onTimeTotal += count
+				return nil
+			}))
+			assert.EqualValues(t, sectorCount/2, onTimeTotal)
+
+			// Half the sectors should expire late.
+			var extendedTotal uint64
+			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
+				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+				require.NoError(t, err)
+
+				count, err := expirationSet.Count()
+				require.NoError(t, err)
+				extendedTotal += count
+				return nil
+			}))
+			assert.EqualValues(t, sectorCount/2, extendedTotal)
+		}
+	})
+
 	t.Run("supports extensions off deadline boundary", func(t *testing.T) {
 		rt := builder.Build(t)
 		oldSector := commitSector(t, rt)
@@ -1473,7 +1559,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}},
 		}
 
-		actor.extendSector(rt, oldSector, extension, params)
+		actor.extendSectors(rt, params)
 
 		// assert sector expiration is set to the new value
 		st = getState(rt)
@@ -2335,14 +2421,24 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 	rt.Verify()
 }
 
-func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension abi.ChainEpoch, params *miner.ExtendSectorExpirationParams) {
+func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
-	newSector := *sector
-	newSector.Expiration += extension
-	qaDelta := big.Sub(miner.QAPowerForSector(h.sectorSize, &newSector), miner.QAPowerForSector(h.sectorSize, sector))
-
+	qaDelta := big.Zero()
+	for _, extension := range params.Extensions {
+		err := extension.Sectors.ForEach(func(sno uint64) error {
+			sector := h.getSector(rt, abi.SectorNumber(sno))
+			newSector := *sector
+			newSector.Expiration = extension.NewExpiration
+			qaDelta = big.Sum(qaDelta,
+				miner.QAPowerForSector(h.sectorSize, &newSector),
+				miner.QAPowerForSector(h.sectorSize, sector).Neg(),
+			)
+			return nil
+		})
+		require.NoError(h.t, err)
+	}
 	if !qaDelta.IsZero() {
 		rt.ExpectSend(builtin.StoragePowerActorAddr,
 			builtin.MethodsPower.UpdateClaimedPower,
