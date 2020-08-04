@@ -1775,7 +1775,7 @@ func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealI
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "failed to terminate deals, exit code %v", code)
-		dealIDs = dealIDs[:size]
+		dealIDs = dealIDs[size:]
 	}
 }
 

@@ -559,60 +559,6 @@ func TestCommitments(t *testing.T) {
 		rt.Verify()
 	})
 
-	t.Run("faulty committed capacity sector not replaced", func(t *testing.T) {
-		t.Skip("Disabled in miner state refactor #648, restore soon")
-		actor := newHarness(t, periodOffset)
-		rt := builderForHarness(actor).
-			WithBalance(bigBalance, big.Zero()).
-			Build(t)
-		actor.constructAndVerify(rt)
-
-		// Commit a sector to target upgrade
-		oldSector := actor.commitAndProveSectors(rt, 1, 100, nil)[0]
-
-		// Complete proving period
-		// June 2020: it is impossible to declare fault for a sector not yet assigned to a deadline
-		completeProvingPeriod(rt, actor, &cronConfig{})
-
-		// Pre-commit a sector to replace the existing one
-		challengeEpoch := rt.Epoch() - 1
-		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{20})
-		upgradeParams.ReplaceCapacity = true
-		// TODO minerstate sector location
-		upgradeParams.ReplaceSectorNumber = oldSector.SectorNumber
-
-		upgrade := actor.preCommitSector(rt, upgradeParams)
-
-		// Declare the old sector faulty
-		actor.declareFaults(rt, oldSector)
-
-		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
-
-		// Prove the new sector
-		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
-			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
-
-		// The old sector's expiration has *not* changed
-		oldSectorAgain := actor.getSector(rt, oldSector.SectorNumber)
-		assert.Equal(t, oldSector.Expiration, oldSectorAgain.Expiration)
-
-		// Roll forward to PP cron. The faulty old sector pays a fee, but is not terminated.
-		penalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth,
-			miner.QAPowerForSector(actor.sectorSize, oldSector))
-		completeProvingPeriod(rt, actor, &cronConfig{
-			ongoingFaultsPenalty: penalty,
-		})
-
-		// Both sectors remain
-		sectors := actor.collectSectors(rt)
-		assert.Equal(t, 2, len(sectors))
-		assert.Equal(t, oldSector, sectors[oldSector.SectorNumber])
-		assert.Equal(t, newSector, sectors[newSector.SectorNumber])
-		//expirations := actor.collectExpirations(rt)
-		//assert.Equal(t, 1, len(expirations))
-		//assert.Equal(t, []uint64{100, 200}, expirations[newSector.Expiration])
-	})
-
 	t.Run("invalid proof rejected", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -1652,32 +1598,66 @@ func TestWithdrawBalance(t *testing.T) {
 }
 
 func TestReportConsensusFault(t *testing.T) {
-	t.Skip("Disabled in miner state refactor #648, restore soon")
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	rt := builder.Build(t)
-	actor.constructAndVerify(rt)
-	precommitEpoch := abi.ChainEpoch(1)
-	rt.SetEpoch(precommitEpoch)
-	dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
-	sectorInfo := actor.commitAndProveSectors(rt, 2, 10, dealIDs)
-	_ = sectorInfo
+	t.Run("Report consensus fault terminates deals when multiple sectors have multiple deals", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
+		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
+		_ = sectorInfo
 
-	params := &miner.ReportConsensusFaultParams{
-		BlockHeader1:     nil,
-		BlockHeader2:     nil,
-		BlockHeaderExtra: nil,
-	}
+		params := &miner.ReportConsensusFaultParams{
+			BlockHeader1:     nil,
+			BlockHeader2:     nil,
+			BlockHeaderExtra: nil,
+		}
 
-	// miner should send a single call to terminate the deals for all its sectors
-	allDeals := []abi.DealID{}
-	for _, ids := range dealIDs {
-		allDeals = append(allDeals, ids...)
-	}
-	actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
+		// miner should send a single call to terminate the deals for all its sectors
+		allDeals := []abi.DealID{}
+		for _, ids := range dealIDs {
+			allDeals = append(allDeals, ids...)
+		}
+		actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
+	})
+
+	t.Run("miner batches termination requests when number of deals exceeds limit", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+
+		numSectors := 40
+		dealsPerSector := 256
+		dealIDs := make([][]abi.DealID, numSectors)
+		for i := 0; i < numSectors; i++ {
+			dealIDs[i] = make([]abi.DealID, dealsPerSector)
+			for j := 0; j < dealsPerSector; j++ {
+				dealIDs[i][j] = abi.DealID(dealsPerSector*i + j)
+			}
+		}
+		sectorInfo := actor.commitAndProveSectors(rt, numSectors, defaultSectorExpiration, dealIDs)
+		_ = sectorInfo
+
+		params := &miner.ReportConsensusFaultParams{
+			BlockHeader1:     nil,
+			BlockHeader2:     nil,
+			BlockHeaderExtra: nil,
+		}
+
+		// report consensus fault will assert deal termination is split into multiple requests
+		allDeals := []abi.DealID{}
+		for _, ids := range dealIDs {
+			allDeals = append(allDeals, ids...)
+		}
+		actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
+	})
+
 }
 
 func TestAddLockedFund(t *testing.T) {
@@ -2462,10 +2442,18 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	lockedFunds := getState(rt).LockedFunds
 	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.OnConsensusFault, &lockedFunds, abi.NewTokenAmount(0), nil, exitcode.Ok)
 
-	// expect every deal to be closed out
-	rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
-		DealIDs: dealIDs,
-	}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+	// expect sends to be batched into a limited number of deals
+	for len(dealIDs) > 0 {
+		size := len(dealIDs)
+		if size > cbg.MaxLength {
+			size = cbg.MaxLength
+		}
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
+			Epoch:   rt.Epoch(),
+			DealIDs: dealIDs[:size],
+		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		dealIDs = dealIDs[size:]
+	}
 
 	// expect actor to be deleted
 	rt.ExpectDeleteActor(builtin.BurntFundsActorAddr)
@@ -2609,16 +2597,6 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 //
 // Higher-level orchestration
 //
-
-// Completes a proving period by moving the epoch forward to the penultimate one, calling the proving period cron handler,
-// and then advancing to the first epoch in the new period.
-func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, config *cronConfig) {
-	deadline := h.deadline(rt)
-	rt.SetEpoch(deadline.PeriodEnd())
-	config.expectedEnrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-	h.onDeadlineCron(rt, config)
-	rt.SetEpoch(deadline.NextPeriodStart())
-}
 
 // Completes a deadline by moving the epoch forward to the penultimate one, calling the deadline cron handler,
 // and then advancing to the first epoch in the new deadline.
