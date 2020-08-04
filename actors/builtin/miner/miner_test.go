@@ -1603,7 +1603,7 @@ func TestReportConsensusFault(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("Report consensus fault terminates deals when multipler sectors have multiple deals", func(t *testing.T) {
+	t.Run("Report consensus fault terminates deals when multiple sectors have multiple deals", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
