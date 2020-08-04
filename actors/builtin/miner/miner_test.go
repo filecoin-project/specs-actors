@@ -1303,7 +1303,6 @@ func TestDeclareFaults(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	paramsFunc := func(rt *mock.Runtime) (abi.TokenAmount, *miner.SectorOnChainInfo) {
 	t.Run("declare fault pays fee at window post", func(t *testing.T) {
 		// Get sector into proving state
 		rt := builder.Build(t)
@@ -1316,8 +1315,7 @@ func TestDeclareFaults(t *testing.T) {
 
 		// Declare the sector as faulted
 		actor.declareFaults(rt, info)
-		return fee, info
-	}
+	})
 }
 
 func TestDeclareFaultsKeyChange(t *testing.T) {

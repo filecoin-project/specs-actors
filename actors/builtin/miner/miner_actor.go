@@ -2053,8 +2053,10 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
+		// A previously scheduled key change could have been replaced with a new key change request
+		// scheduled in the future. This case should be treated as a no-op.
 		if info.PendingWorkerKey == nil || info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
-			return nil
+			return
 		}
 
 		info.Worker = info.PendingWorkerKey.NewWorker
