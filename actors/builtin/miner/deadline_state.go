@@ -478,11 +478,7 @@ func (dl *Deadline) TerminateSectors(
 			return xc.ErrNotFound.Wrapf("failed to find partition %d", partIdx)
 		}
 
-		sectorInfos, err := sectors.Load(sectorNos)
-		if err != nil {
-			return xerrors.Errorf("failed to load sectors for termination for partition %d: %w", partIdx, err)
-		}
-		removed, err := partition.TerminateSectors(store, epoch, sectorInfos, ssize, quant)
+		removed, err := partition.TerminateSectors(store, sectors, epoch, sectorNos, ssize, quant)
 		if err != nil {
 			return xerrors.Errorf("failed to terminate sectors in partition %d: %w", partIdx, err)
 		}
@@ -492,10 +488,15 @@ func (dl *Deadline) TerminateSectors(
 			return xerrors.Errorf("failed to store updated partition %d: %w", partIdx, err)
 		}
 
-		// Record that partition now has pending early terminations.
-		dl.EarlyTerminations.Set(partIdx)
-		// Record change to sectors and power
-		dl.LiveSectors -= uint64(len(sectorInfos))
+		if count, err := removed.Count(); err != nil {
+			return xerrors.Errorf("failed to count terminated sectors in partition %d: %w", partIdx, err)
+		} else if count > 0 {
+			// Record that partition now has pending early terminations.
+			dl.EarlyTerminations.Set(partIdx)
+			// Record change to sectors and power
+			dl.LiveSectors -= count
+		} // note: we should _always_ have early terminations, unless the early termination bitfield is empty.
+
 		dl.FaultyPower = dl.FaultyPower.Sub(removed.FaultyPower)
 
 		// Aggregate power lost from active sectors

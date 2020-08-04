@@ -254,6 +254,7 @@ func TestPartitions(t *testing.T) {
 
 	t.Run("terminate sectors", func(t *testing.T) {
 		rt, store, partition := setup(t)
+		sectorArr := sectorsArr(t, rt, sectors)
 
 		// fault sector 3, 4, 5 and 6
 		faultSet := bf(3, 4, 5, 6)
@@ -270,9 +271,8 @@ func TestPartitions(t *testing.T) {
 
 		// now terminate 1, 3 and 5
 		terminations := bf(1, 3, 5)
-		terminatedSectors := selectSectors(t, sectors, terminations)
 		terminationEpoch := abi.ChainEpoch(3)
-		removed, err := partition.TerminateSectors(store, terminationEpoch, terminatedSectors, sectorSize, quantSpec)
+		removed, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		expectedActivePower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1)))
@@ -296,6 +296,38 @@ func TestPartitions(t *testing.T) {
 		ExpectBQ().
 			Add(terminationEpoch, 1, 3, 5).
 			Equals(t, queue)
+	})
+
+	t.Run("terminate non-existent sectors", func(t *testing.T) {
+		rt, store, partition := setup(t)
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		terminations := bf(99)
+		terminationEpoch := abi.ChainEpoch(3)
+		_, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.Error(t, err)
+	})
+
+	t.Run("terminate already terminated sector", func(t *testing.T) {
+		rt, store, partition := setup(t)
+		sectorArr := sectorsArr(t, rt, sectors)
+
+		terminations := bf(1)
+		terminationEpoch := abi.ChainEpoch(3)
+
+		// First termination works.
+		removed, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.NoError(t, err)
+		expectedActivePower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1)))
+		assert.True(t, expectedActivePower.Equals(removed.ActivePower))
+		assert.True(t, removed.FaultyPower.Equals(miner.NewPowerPairZero()))
+		count, err := removed.Count()
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, count)
+
+		// Second termination fails
+		_, err = partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.Error(t, err)
 	})
 
 	t.Run("pop expiring sectors", func(t *testing.T) {
@@ -390,7 +422,8 @@ func TestPartitions(t *testing.T) {
 	})
 
 	t.Run("pops early terminations", func(t *testing.T) {
-		_, store, partition := setup(t)
+		rt, store, partition := setup(t)
+		sectorArr := sectorsArr(t, rt, sectors)
 
 		// fault sector 3, 4, 5 and 6
 		faultSet := bf(3, 4, 5, 6)
@@ -407,9 +440,8 @@ func TestPartitions(t *testing.T) {
 
 		// now terminate 1, 3 and 5
 		terminations := bf(1, 3, 5)
-		terminatedSectors := selectSectors(t, sectors, terminations)
 		terminationEpoch := abi.ChainEpoch(3)
-		_, err = partition.TerminateSectors(store, terminationEpoch, terminatedSectors, sectorSize, quantSpec)
+		_, err = partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// pop first termination

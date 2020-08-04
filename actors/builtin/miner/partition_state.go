@@ -349,13 +349,28 @@ func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch
 // Marks a collection of sectors as terminated.
 // The sectors are removed from Faults and Recoveries.
 // The epoch of termination is recorded for future termination fee calculation.
-func (p *Partition) TerminateSectors(store adt.Store, epoch abi.ChainEpoch, sectors []*SectorOnChainInfo,
+func (p *Partition) TerminateSectors(
+	store adt.Store, sectors Sectors, epoch abi.ChainEpoch, sectorNos *bitfield.BitField,
 	ssize abi.SectorSize, quant QuantSpec) (*ExpirationSet, error) {
+	liveSectors, err := p.LiveSectors()
+	if err != nil {
+		return nil, err
+	}
+	if contains, err := abi.BitFieldContainsAll(liveSectors, sectorNos); err != nil {
+		return nil, xc.ErrIllegalArgument.Wrapf("failed to intersect live sectors with terminating sectors: %w", err)
+	} else if !contains {
+		return nil, xc.ErrIllegalArgument.Wrapf("can only terminate live sectors")
+	}
+
+	sectorInfos, err := sectors.Load(sectorNos)
+	if err != nil {
+		return nil, err
+	}
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
-	removed, removedRecovering, err := expirations.RemoveSectors(sectors, p.Faults, p.Recoveries, ssize)
+	removed, removedRecovering, err := expirations.RemoveSectors(sectorInfos, p.Faults, p.Recoveries, ssize)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to remove sector expirations: %w", err)
 	}
