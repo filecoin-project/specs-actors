@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -784,6 +785,9 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 			"failed to count sectors for deadline %d, partition %d",
 			decl.Deadline, decl.Partition,
 		)
+		if sectorCount > math.MaxUint64-count {
+			rt.Abortf(exitcode.ErrIllegalArgument, "sector bitfield integer overflow")
+		}
 		sectorCount += count
 	}
 	if sectorCount > AddressedSectorsMax {
