@@ -1210,7 +1210,7 @@ func TestDeadlineCron(t *testing.T) {
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
 		assert.True(t, pwr.Equals(deadline.FaultyPower))
-		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantEndOfDeadline(), actor.sectorSize, uint64(4), allSectors)
+		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantSpecForDeadline(dlIdx), actor.sectorSize, uint64(4), allSectors)
 	})
 
 	t.Run("test cron run late", func(t *testing.T) {
@@ -1446,13 +1446,13 @@ func TestExtendSectorExpiration(t *testing.T) {
 		// assert that new expiration exists
 		st = getState(rt)
 		_, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
-		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantSpecForDeadline(dlIdx))
 		require.NoError(t, err)
 		empty, err := expirationSet.IsEmpty()
 		require.NoError(t, err)
 		assert.True(t, empty)
 
-		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), newExpiration, st.QuantEndOfDeadline())
+		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), newExpiration, st.QuantSpecForDeadline(dlIdx))
 		require.NoError(t, err)
 		empty, err = expirationSet.IsEmpty()
 		require.NoError(t, err)
