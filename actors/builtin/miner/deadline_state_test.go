@@ -4,12 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
+	"github.com/filecoin-project/specs-actors/support/ipld"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +32,6 @@ func TestDeadlines(t *testing.T) {
 	sectorSize := abi.SectorSize(32 << 30)
 	quantSpec := miner.NewQuantSpec(4, 1)
 	partitionSize := uint64(4)
-	builder := mock.NewBuilder(context.Background(), address.Undef)
 
 	dlState := expectedDeadlineState{
 		quant:         quantSpec,
@@ -163,33 +161,33 @@ func TestDeadlines(t *testing.T) {
 	// Test the basic scenarios (technically, we could just run the final one).
 
 	t.Run("adds sectors", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 		addSectors(t, store, dl)
 	})
 
 	t.Run("terminates sectors", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 		addThenTerminate(t, store, dl)
 	})
 
 	t.Run("pops early terminations", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		addThenTerminateThenPopEarly(t, store, dl)
 	})
 
 	t.Run("removes partitions", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		addThenTerminateThenRemovePartition(t, store, dl)
 	})
 
 	t.Run("marks faulty", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		addThenMarkFaulty(t, store, dl)
@@ -200,7 +198,7 @@ func TestDeadlines(t *testing.T) {
 	//
 
 	t.Run("cannot remove partitions with early terminations", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 		addThenTerminate(t, store, dl)
 
@@ -209,7 +207,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("can pop early terminations in multiple steps", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 		addThenTerminate(t, store, dl)
 
@@ -248,7 +246,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("cannot remove missing partition", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		addThenTerminateThenRemovePartition(t, store, dl)
@@ -258,7 +256,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("removing no partitions does nothing", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		addThenTerminateThenPopEarly(t, store, dl)
@@ -279,7 +277,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("fails to remove partitions with faulty sectors", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 
 		dl := emptyDeadline(t, store)
 		addThenMarkFaulty(t, store, dl)
@@ -290,7 +288,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("terminate faulty", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		addThenMarkFaulty(t, store, dl) // 1, 5, 6 faulty
@@ -316,7 +314,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("faulty sectors expire", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 
 		dl := emptyDeadline(t, store)
 		// Mark sectors 5 & 6 faulty, expiring at epoch 9.
@@ -358,7 +356,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("post all the things", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 
 		dl := emptyDeadline(t, store)
 		addSectors(t, store, dl)
@@ -419,7 +417,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("post with faults, recoveries, and retracted recoveries", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
@@ -490,7 +488,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("retract recoveries", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
@@ -566,7 +564,7 @@ func TestDeadlines(t *testing.T) {
 	})
 
 	t.Run("reschedule expirations", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
 		sectorArr := sectorsArr(t, store, sectors)

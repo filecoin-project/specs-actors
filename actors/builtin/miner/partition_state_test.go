@@ -5,13 +5,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
+	"github.com/filecoin-project/specs-actors/support/ipld"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,11 +26,10 @@ func TestPartitions(t *testing.T) {
 	}
 	sectorSize := abi.SectorSize(32 << 30)
 
-	builder := mock.NewBuilder(context.Background(), address.Undef)
 	quantSpec := miner.NewQuantSpec(4, 1)
 
 	setup := func(t *testing.T) (adt.Store, *miner.Partition) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		partition := emptyPartition(t, store)
 
 		power, err := partition.AddSectors(store, sectors, sectorSize, quantSpec)
@@ -567,7 +565,7 @@ func TestPartitions(t *testing.T) {
 	})
 
 	t.Run("test max sectors", func(t *testing.T) {
-		store := adt.AsStore(builder.Build(t))
+		store := ipld.NewADTStore(context.Background())
 		partition := emptyPartition(t, store)
 
 		proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
