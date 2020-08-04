@@ -1443,16 +1443,18 @@ func TestExtendSectorExpiration(t *testing.T) {
 		newSector := actor.getSector(rt, oldSector.SectorNumber)
 		assert.Equal(t, newExpiration, newSector.Expiration)
 
+		quant := st.QuantSpecForDeadline(dlIdx)
+
 		// assert that new expiration exists
 		st = getState(rt)
 		_, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
-		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantSpecForDeadline(dlIdx))
+		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, quant)
 		require.NoError(t, err)
 		empty, err := expirationSet.IsEmpty()
 		require.NoError(t, err)
 		assert.True(t, empty)
 
-		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), newExpiration, st.QuantSpecForDeadline(dlIdx))
+		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), quant.QuantizeUp(newExpiration), quant)
 		require.NoError(t, err)
 		empty, err = expirationSet.IsEmpty()
 		require.NoError(t, err)
