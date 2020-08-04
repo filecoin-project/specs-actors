@@ -357,6 +357,16 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 			periodStart: abi.ChainEpoch(55),
 			vepocs:      []int64{0, 0, 0, 20, 0, 20, 0, 20, 0, 20, 0, 20},
 		},
+		{
+			desc: "vest funds with step much smaller than quantization",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   10,
+				StepDuration: 1,
+				Quantization: 5,
+			},
+			vepocs: []int64{0, 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 50},
+		},
 	}
 	for _, tc := range testcase {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -616,13 +626,7 @@ type stateHarness struct {
 //
 
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
-	vestingFunds, err := h.s.LoadVestingFunds(h.store)
-	require.NoError(h.t, err)
-
-	err = h.s.AddLockedFunds(vestingFunds, epoch, sum, spec)
-	require.NoError(h.t, err)
-
-	err = h.s.SaveVestingFunds(h.store, vestingFunds)
+	_, err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
 	require.NoError(h.t, err)
 }
 
@@ -633,13 +637,7 @@ func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.Toke
 }
 
 func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
-	vestingFunds, err := h.s.LoadVestingFunds(h.store)
-	require.NoError(h.t, err)
-
-	amount, err := h.s.UnlockVestedFunds(vestingFunds, epoch)
-	require.NoError(h.t, err)
-
-	err = h.s.SaveVestingFunds(h.store, vestingFunds)
+	amount, err := h.s.UnlockVestedFunds(h.store, epoch)
 	require.NoError(h.t, err)
 
 	return amount

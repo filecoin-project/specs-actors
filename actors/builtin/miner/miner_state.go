@@ -32,6 +32,8 @@ type State struct {
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
 	LockedFunds       abi.TokenAmount // Total rewards and added funds locked in vesting table
 
+	VestingFunds cid.Cid
+
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
@@ -61,8 +63,6 @@ type State struct {
 	// New sectors are added and expired ones removed at proving period boundary.
 	// Faults are not subtracted from this in state, but on the fly.
 	Deadlines cid.Cid
-
-	VestingFunds cid.Cid
 
 	// Deadlines with outstanding fees for early sector termination.
 	EarlyTerminations *bitfield.BitField
@@ -926,7 +926,7 @@ func (st *State) SaveDeadlines(store adt.Store, deadlines *Deadlines) error {
 func (st *State) LoadVestingFunds(store adt.Store) (*VestingFunds, error) {
 	var funds VestingFunds
 	if err := store.Get(store.Context(), st.VestingFunds, &funds); err != nil {
-		return nil, xc.ErrIllegalState.Wrapf("failed to load vesting funds (%s): %w", st.VestingFunds, err)
+		return nil, xerrors.Errorf("failed to load vesting funds (%s): %w", st.VestingFunds, err)
 	}
 
 	return &funds, nil
@@ -960,13 +960,20 @@ func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	st.InitialPledgeRequirement = newTotal
 }
 
-func (st *State) AddLockedFunds(vestingFunds *VestingFunds, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
+func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) (vested abi.TokenAmount, err error) {
+	vestingFunds, err := st.LoadVestingFunds(store)
+	if err != nil {
+		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
+	}
+
 	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
+
+	// unlock vested funds first
+	amountUnlocked := st.unlockVestedFunds(vestingFunds, currEpoch)
 
 	// maps the epochs in VestingFunds to their indices in the slice
 	epochToIndex := make(map[abi.ChainEpoch]int, len(vestingFunds.Funds))
-	for i := range vestingFunds.Funds {
-		vf := vestingFunds.Funds[i]
+	for i, vf := range vestingFunds.Funds {
 		epochToIndex[vf.Epoch] = i
 	}
 
@@ -995,10 +1002,10 @@ func (st *State) AddLockedFunds(vestingFunds *VestingFunds, currEpoch abi.ChainE
 			currentAmt := vestingFunds.Funds[index].Amount
 			vestingFunds.Funds[index].Amount = big.Add(currentAmt, vestThisTime)
 		} else {
-			// create a new entry and insert at the correct position
-			// st.VestingFunds is sorted by epoch
+			// append a new entry -> slice will be sorted by epoch later.
 			entry := VestingFund{Epoch: vestEpoch, Amount: vestThisTime}
 			vestingFunds.Funds = append(vestingFunds.Funds, entry)
+			epochToIndex[vestEpoch] = len(vestingFunds.Funds) - 1
 		}
 	}
 
@@ -1009,7 +1016,11 @@ func (st *State) AddLockedFunds(vestingFunds *VestingFunds, currEpoch abi.ChainE
 
 	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
-	return nil
+	if err := st.SaveVestingFunds(store, vestingFunds); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to save vesting funds: %w", err)
+	}
+
+	return amountUnlocked, nil
 }
 
 // PenalizeFundsInPriorityOrder first unlocks unvested funds from the vesting table.
@@ -1044,32 +1055,29 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 	}
 
 	amountUnlocked := abi.NewTokenAmount(0)
-	lastIndex := -1
+	lastIndexToRemove := -1
 
-	for i := range vestingFunds.Funds {
+	for i, vf := range vestingFunds.Funds {
 		if amountUnlocked.GreaterThanEqual(target) {
 			break
 		}
 
-		vf := vestingFunds.Funds[i]
 		if vf.Epoch >= currEpoch {
-			vestedAmt := vf.Amount
-
-			unlockAmount := big.Min(big.Sub(target, amountUnlocked), vestedAmt)
+			unlockAmount := big.Min(big.Sub(target, amountUnlocked), vf.Amount)
 			amountUnlocked = big.Add(amountUnlocked, unlockAmount)
-			newAmount := big.Sub(vestedAmt, unlockAmount)
+			newAmount := big.Sub(vf.Amount, unlockAmount)
 
 			if newAmount.IsZero() {
-				lastIndex = i
+				lastIndexToRemove = i
 			} else {
 				vestingFunds.Funds[i].Amount = newAmount
 			}
 		}
 	}
 
-	// remove all entries upto and including lastIndex
-	if lastIndex != -1 {
-		vestingFunds.Funds = vestingFunds.Funds[lastIndex+1:]
+	// remove all entries upto and including lastIndexToRemove
+	if lastIndexToRemove != -1 {
+		vestingFunds.Funds = vestingFunds.Funds[lastIndexToRemove+1:]
 	}
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
@@ -1084,29 +1092,44 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 
 // Unlocks all vesting funds that have vested before the provided epoch.
 // Returns the amount unlocked.
-func (st *State) UnlockVestedFunds(vestingFunds *VestingFunds, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+	vestingFunds, err := st.LoadVestingFunds(store)
+	if err != nil {
+		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
+	}
+
+	amountUnlocked := st.unlockVestedFunds(vestingFunds, currEpoch)
+
+	err = st.SaveVestingFunds(store, vestingFunds)
+	if err != nil {
+		return big.Zero(), xerrors.Errorf("failed to save vesing funds: %w", err)
+	}
+
+	return amountUnlocked, nil
+}
+
+func (st *State) unlockVestedFunds(vestingFunds *VestingFunds, currEpoch abi.ChainEpoch) abi.TokenAmount {
 	amountUnlocked := abi.NewTokenAmount(0)
 
-	lastIndex := -1
-	for i := range vestingFunds.Funds {
-		vf := vestingFunds.Funds[i]
+	lastIndexToRemove := -1
+	for i, vf := range vestingFunds.Funds {
 		if vf.Epoch >= currEpoch {
 			break
 		}
 
 		amountUnlocked = big.Add(amountUnlocked, vf.Amount)
-		lastIndex = i
+		lastIndexToRemove = i
 	}
 
-	// remove all entries upto and including lastIndex
-	if lastIndex != -1 {
-		vestingFunds.Funds = vestingFunds.Funds[lastIndex+1:]
+	// remove all entries upto and including lastIndexToRemove
+	if lastIndexToRemove != -1 {
+		vestingFunds.Funds = vestingFunds.Funds[lastIndexToRemove+1:]
 	}
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
 
-	return amountUnlocked, nil
+	return amountUnlocked
 }
 
 // CheckVestedFunds returns the amount of vested funds that have vested before the provided epoch.
