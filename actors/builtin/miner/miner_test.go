@@ -1259,7 +1259,7 @@ func TestDeadlineCron(t *testing.T) {
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
 		assert.True(t, pwr.Equals(deadline.FaultyPower))
-		checkDeadlineInvariants(t, rt, deadline, st.QuantEndOfDeadline(), actor.sectorSize, uint64(4), allSectors)
+		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantEndOfDeadline(), actor.sectorSize, uint64(4), allSectors)
 	})
 
 	t.Run("test cron run late", func(t *testing.T) {
