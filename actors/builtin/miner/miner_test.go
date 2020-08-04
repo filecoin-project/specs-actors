@@ -2598,16 +2598,6 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 // Higher-level orchestration
 //
 
-// Completes a proving period by moving the epoch forward to the penultimate one, calling the proving period cron handler,
-// and then advancing to the first epoch in the new period.
-func completeProvingPeriod(rt *mock.Runtime, h *actorHarness, config *cronConfig) {
-	deadline := h.deadline(rt)
-	rt.SetEpoch(deadline.PeriodEnd())
-	config.expectedEnrollment = deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
-	h.onDeadlineCron(rt, config)
-	rt.SetEpoch(deadline.NextPeriodStart())
-}
-
 // Completes a deadline by moving the epoch forward to the penultimate one, calling the deadline cron handler,
 // and then advancing to the first epoch in the new deadline.
 func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *miner.DeadlineInfo {
