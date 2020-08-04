@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
-	rlepluslazy "github.com/filecoin-project/go-bitfield/rle"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -589,14 +588,8 @@ func TestSectorAssignment(t *testing.T) {
 
 			var partitions []*bitfield.BitField
 			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
-				var runs []rlepluslazy.Run
 				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
-				if start > 0 {
-					runs = append(runs, rlepluslazy.Run{Val: false, Len: start})
-				}
-				runs = append(runs, rlepluslazy.Run{Val: true, Len: partitionSectors})
-				bf, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: runs})
-				require.NoError(t, err)
+				bf := seq(t, start, partitionSectors)
 				partitions = append(partitions, bf)
 			}
 			dlState.withQuantSpec(quantSpec).
@@ -654,8 +647,7 @@ func TestSectorNumberAllocation(t *testing.T) {
 				assert.Equal(t, code, exitcode.ErrIllegalArgument)
 
 				// mask half the sector ranges.
-				mask, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: []rlepluslazy.Run{{Val: true, Len: uint64(no) / 2}}})
-				require.NoError(t, err)
+				mask := seq(t, 0, uint64(no)/2)
 				require.NoError(t, harness.s.MaskSectorNumbers(harness.store, mask))
 
 				// try again
