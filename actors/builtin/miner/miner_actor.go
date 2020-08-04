@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -2112,15 +2113,15 @@ func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
 	return nil
 }
 
-// Validates that a fault or recovery declaration for a partition is valid.
-func validateFRDeclarationPartition(partition *Partition, sectors *abi.BitField) error {
+// Validates that a partition contains the given sectors.
+func validatePartitionContainsSectors(partition *Partition, sectors *abi.BitField) error {
 	// Check that the declared sectors are actually assigned to the partition.
 	contains, err := abi.BitFieldContainsAll(partition.Sectors, sectors)
 	if err != nil {
-		return fmt.Errorf("failed to check sectors: %w", err)
+		return xerrors.Errorf("failed to check sectors: %w", err)
 	}
 	if !contains {
-		return fmt.Errorf("sectors not all due")
+		return xerrors.Errorf("not all sectors are assigned to the partition")
 	}
 	return nil
 }
