@@ -1161,7 +1161,7 @@ func TestProveCommit(t *testing.T) {
 	})
 }
 
-func TestProvingPeriodCron(t *testing.T) {
+func TestDeadlineCron(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
 	builder := builderForHarness(actor).
@@ -1197,7 +1197,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		allSectors := actor.commitAndProveSectors(rt, 2, 181, nil)
+		allSectors := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
 
 		// add lots of funds so penalties come from vesting funds
@@ -1214,7 +1214,7 @@ func TestProvingPeriodCron(t *testing.T) {
 			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 
-		// Skip to end of proving period, cron detects and penalizes sectors as faulty
+		// Skip to end of the deadline, cron detects and penalizes sectors as faulty
 		undeclaredFee := actor.undeclaredFaultPenalty(allSectors)
 		pwrDelta := pwr.Neg()
 		advanceDeadline(rt, actor, &cronConfig{
@@ -1256,6 +1256,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
 		assert.True(t, pwr.Equals(deadline.FaultyPower))
+		checkDeadlineInvariants(t, rt, deadline, st.QuantEndOfDeadline(), actor.sectorSize, uint64(4), allSectors)
 	})
 
 	t.Run("test cron run late", func(t *testing.T) {
@@ -1267,7 +1268,7 @@ func TestProvingPeriodCron(t *testing.T) {
 		actor.addLockedFunds(rt, initialLocked)
 
 		// create enough sectors that one will be in a different partition
-		allSectors := actor.commitAndProveSectors(rt, 1, 181, nil)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
 		st := getState(rt)
@@ -1311,7 +1312,7 @@ func TestDeclareFaults(t *testing.T) {
 		// Get sector into proving state
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		allSectors := actor.commitAndProveSectors(rt, 1, 181, nil)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
 
 		// add lots of funds so penalties come from vesting funds
@@ -1359,7 +1360,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 
 	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
 		actor.constructAndVerify(rt)
-		sectorInfo := actor.commitAndProveSectors(rt, 1, 181, nil)
+		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		return sectorInfo[0]
 	}
 
