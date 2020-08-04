@@ -2,7 +2,6 @@ package market
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/ipfs/go-cid"
 	xerrors "golang.org/x/xerrors"
@@ -82,8 +81,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 // Deal state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, dealID abi.DealID, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount,
-	nextEpoch abi.ChainEpoch, removeDeal bool) {
+func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount, nextEpoch abi.ChainEpoch, removeDeal bool) {
 	amountSlashed = abi.NewTokenAmount(0)
 
 	everUpdated := state.LastUpdatedEpoch != epochUndefined
@@ -159,7 +157,7 @@ func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealStat
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.
-// Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
+// Slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
 func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProposal) abi.TokenAmount {
 	if err := m.unlockBalance(deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
@@ -183,7 +181,7 @@ func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProp
 	return amountSlashed
 }
 
-// Normal expiration. Delete deal and unlock collaterals for both miner and client.
+// Normal expiration. Unlock collaterals for both provider and client.
 func (m *marketStateMutation) processDealExpired(rt Runtime, deal *DealProposal, state *DealState) {
 	Assert(state.SectorStartEpoch != epochUndefined)
 
@@ -284,7 +282,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	if m.proposalPermit != Invalid {
 		proposals, err := AsDealProposalArray(m.store, m.st.Proposals)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load deal proposals: %w", err)
+			return nil, xerrors.Errorf("failed to load deal proposals: %w", err)
 		}
 		m.dealProposals = proposals
 	}
@@ -292,7 +290,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	if m.statePermit != Invalid {
 		states, err := AsDealStateArray(m.store, m.st.States)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load deal state: %w", err)
+			return nil, xerrors.Errorf("failed to load deal state: %w", err)
 		}
 		m.dealStates = states
 	}
@@ -300,7 +298,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	if m.lockedPermit != Invalid {
 		lt, err := adt.AsBalanceTable(m.store, m.st.LockedTable)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load locked table: %w", err)
+			return nil, xerrors.Errorf("failed to load locked table: %w", err)
 		}
 		m.lockedTable = lt
 		m.totalClientLockedCollateral = m.st.TotalClientLockedCollateral.Copy()
@@ -311,7 +309,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	if m.escrowPermit != Invalid {
 		et, err := adt.AsBalanceTable(m.store, m.st.EscrowTable)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load escrow table: %w", err)
+			return nil, xerrors.Errorf("failed to load escrow table: %w", err)
 		}
 		m.escrowTable = et
 	}
@@ -319,7 +317,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	if m.pendingPermit != Invalid {
 		pending, err := adt.AsMap(m.store, m.st.PendingProposals)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load pending proposals: %w", err)
+			return nil, xerrors.Errorf("failed to load pending proposals: %w", err)
 		}
 		m.pendingDeals = pending
 	}
@@ -327,7 +325,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	if m.dpePermit != Invalid {
 		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load deals by epoch: %w", err)
+			return nil, xerrors.Errorf("failed to load deals by epoch: %w", err)
 		}
 		m.dealsByEpoch = dbe
 	}
@@ -371,19 +369,19 @@ func (m *marketStateMutation) commitState() error {
 	var err error
 	if m.proposalPermit == WritePermission {
 		if m.st.Proposals, err = m.dealProposals.Root(); err != nil {
-			return fmt.Errorf("failed to flush deal dealProposals: %w", err)
+			return xerrors.Errorf("failed to flush deal dealProposals: %w", err)
 		}
 	}
 
 	if m.statePermit == WritePermission {
 		if m.st.States, err = m.dealStates.Root(); err != nil {
-			return fmt.Errorf("failed to flush deal states: %w", err)
+			return xerrors.Errorf("failed to flush deal states: %w", err)
 		}
 	}
 
 	if m.lockedPermit == WritePermission {
 		if m.st.LockedTable, err = m.lockedTable.Root(); err != nil {
-			return fmt.Errorf("failed to flush locked table: %w", err)
+			return xerrors.Errorf("failed to flush locked table: %w", err)
 		}
 		m.st.TotalClientLockedCollateral = m.totalClientLockedCollateral.Copy()
 		m.st.TotalProviderLockedCollateral = m.totalProviderLockedCollateral.Copy()
@@ -392,23 +390,22 @@ func (m *marketStateMutation) commitState() error {
 
 	if m.escrowPermit == WritePermission {
 		if m.st.EscrowTable, err = m.escrowTable.Root(); err != nil {
-			return fmt.Errorf("failed to flush escrow table: %w", err)
+			return xerrors.Errorf("failed to flush escrow table: %w", err)
 		}
 	}
 
 	if m.pendingPermit == WritePermission {
 		if m.st.PendingProposals, err = m.pendingDeals.Root(); err != nil {
-			return fmt.Errorf("failed to flush pending deals: %w", err)
+			return xerrors.Errorf("failed to flush pending deals: %w", err)
 		}
 	}
 
 	if m.dpePermit == WritePermission {
 		if m.st.DealOpsByEpoch, err = m.dealsByEpoch.Root(); err != nil {
-			return fmt.Errorf("failed to flush deals by epoch: %w", err)
+			return xerrors.Errorf("failed to flush deals by epoch: %w", err)
 		}
 	}
 
 	m.st.NextID = m.nextDealId
-
 	return nil
 }

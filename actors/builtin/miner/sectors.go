@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"golang.org/x/xerrors"
 
@@ -30,14 +31,17 @@ func (sa Sectors) Load(sectorNos *abi.BitField) ([]*SectorOnChainInfo, error) {
 		var sectorOnChain SectorOnChainInfo
 		found, err := sa.Array.Get(i, &sectorOnChain)
 		if err != nil {
-			return xerrors.Errorf("failed to load sector %v: %w", abi.SectorNumber(i), err)
+			return xc.ErrIllegalState.Wrapf("failed to load sector %v: %w", abi.SectorNumber(i), err)
 		} else if !found {
-			return xerrors.Errorf("can't find sector %d", i)
+			return xc.ErrNotFound.Wrapf("can't find sector %d", i)
 		}
 		sectorInfos = append(sectorInfos, &sectorOnChain)
 		return nil
 	}); err != nil {
-		return nil, err
+		// Keep the underlying error code, unless the error was from
+		// traversing the bitfield. In that case, it's an illegal
+		// argument error.
+		return nil, xc.Unwrap(err, xc.ErrIllegalArgument).Wrapf("failed to load sectors: %w", err)
 	}
 	return sectorInfos, nil
 }
@@ -64,6 +68,11 @@ func (sa Sectors) Store(infos ...*SectorOnChainInfo) error {
 			return fmt.Errorf("failed to store sector %d: %w", info.SectorNumber, err)
 		}
 	}
+
+	if sa.Length() > SectorsMax {
+		return xerrors.Errorf("too many sectors")
+	}
+
 	return nil
 }
 

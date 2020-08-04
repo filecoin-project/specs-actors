@@ -142,7 +142,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
 			amt: 10, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
-			expExitCode: exitcode.ErrIllegalState},
+			expExitCode: exitcode.ErrIllegalArgument},
 		{desc: "fails if new send balance is negative", targetCode: builtin.AccountActorCodeID,
 			amt: -1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
@@ -380,7 +380,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		{
 			name: "fails: not enough funds in channel to cover voucher",
 			lane: 1, balance: 1, voucherNonce: 10, mergeNonce: 10,
-			expExitCode: exitcode.ErrIllegalState,
+			expExitCode: exitcode.ErrIllegalArgument,
 		},
 		{
 			name: "fails: voucher cannot merge lanes into its own lane",
@@ -495,9 +495,9 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 		ucp.Sv.Extra = ex
 
 		rt.ExpectValidateCallerAddr(st1.From, st1.To)
-		rt.ExpectSend(otherAddr, mnum, expSendParams, big.Zero(), nil, exitcode.ErrPlaceholder)
+		rt.ExpectSend(otherAddr, mnum, expSendParams, big.Zero(), nil, exitcode.ErrIllegalArgument)
 		rt.ExpectVerifySignature(*ucp.Sv.Signature, st1.To, voucherBytes(t, &ucp.Sv), nil)
-		rt.ExpectAbort(exitcode.ErrPlaceholder, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor1.UpdateChannelState, ucp)
 		})
 		rt.Verify()
@@ -702,7 +702,7 @@ func TestActor_Collect(t *testing.T) {
 		dontSettle                                     bool
 	}{
 		{name: "fails if not settling with: payment channel not settling or settled", dontSettle: true, expCollectExit: exitcode.ErrForbidden},
-		{name: "fails if Failed to send funds to `To`", expSendToCode: exitcode.ErrPlaceholder, expCollectExit: exitcode.ErrPlaceholder},
+		{name: "fails if Failed to send funds to `To`", expSendToCode: exitcode.ErrIllegalArgument, expCollectExit: exitcode.ErrIllegalArgument},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

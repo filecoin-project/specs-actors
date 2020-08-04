@@ -11,10 +11,16 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
+
+// genesis power in bytes = 750,000 GiB
+var InitialQAPowerEstimatePosition = big.Mul(big.NewInt(750_000), big.NewInt(1<<30))
+// max chain throughput in bytes per epoch = 120 ProveCommits / epoch = 3,840 GiB
+var InitialQAPowerEstimateVelocity = big.Mul(big.NewInt(3_840), big.NewInt(1<<30))
 
 type State struct {
 	TotalRawBytePower abi.StoragePower
@@ -77,7 +83,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochRawBytePower:     abi.NewStoragePower(0),
 		ThisEpochQualityAdjPower:  abi.NewStoragePower(0),
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
-		ThisEpochQAPowerSmoothed:  smoothing.InitialEstimate(),
+		ThisEpochQAPowerSmoothed:  smoothing.NewEstimate(InitialQAPowerEstimatePosition, InitialQAPowerEstimateVelocity),
 		FirstCronEpoch:            0,
 		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
 		CronEventQueue:            emptyMMapCid,
@@ -146,7 +152,7 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		return fmt.Errorf("failed to get claim: %w", err)
 	}
 	if !ok {
-		return errors.Errorf("no claim for actor %v", miner)
+		return exitcode.ErrNotFound.Wrapf("no claim for actor %v", miner)
 	}
 
 	// TotalBytes always update directly
@@ -207,7 +213,7 @@ func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, eve
 	}
 
 	if err := events.Add(epochKey(epoch), event); err != nil {
-		return errors.Wrapf(err, "failed to store cron event at epoch %v for miner %v", epoch, event)
+		return xerrors.Errorf("failed to store cron event at epoch %v for miner %v: %w", epoch, event, err)
 	}
 
 	return nil
@@ -233,7 +239,7 @@ func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
 	if err := claims.Put(AddrKey(a), claim); err != nil {
-		return errors.Wrapf(err, "failed to put claim with address %s power %v", a, claim)
+		return xerrors.Errorf("failed to put claim with address %s power %v: %w", a, claim, err)
 	}
 
 	return nil
@@ -258,4 +264,5 @@ func init() {
 	if reflect.TypeOf(e).Kind() != reflect.Int64 {
 		panic("incorrect chain epoch encoding")
 	}
+
 }

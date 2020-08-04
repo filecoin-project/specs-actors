@@ -32,9 +32,7 @@ type ConstructorParams struct {
 func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to construct state: %v", err)
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 
 	st := ConstructState(emptyMap, params.NetworkName)
 	rt.State().Create(st)
@@ -68,13 +66,12 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	// Allocate an ID for this actor.
 	// Store mapping of pubkey or actor address to actor ID
 	var st State
-	idAddr := rt.State().Transaction(&st, func() interface{} {
-		idAddr, err := st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "exec failed: %v", err)
-		}
-		return idAddr
-	}).(addr.Address)
+	var idAddr addr.Address
+	rt.State().Transaction(&st, func() {
+		var err error
+		idAddr, err = st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate ID address")
+	})
 
 	// Create an empty actor.
 	rt.CreateActor(params.CodeCID, idAddr)

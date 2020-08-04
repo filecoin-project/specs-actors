@@ -48,6 +48,9 @@ func TestExec(t *testing.T) {
 			actor.execAndVerify(rt, builtin.StoragePowerActorCodeID, []byte{})
 		})
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.execAndVerify(rt, builtin.StorageMinerActorCodeID, []byte{})
+		})
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.execAndVerify(rt, cid.Undef, []byte{})
 		})
 	})

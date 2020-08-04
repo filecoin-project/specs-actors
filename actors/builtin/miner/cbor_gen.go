@@ -15,7 +15,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{141}
+var lengthBufState = []byte{140}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -100,11 +100,6 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 	if err := t.EarlyTerminations.MarshalCBOR(w); err != nil {
 		return err
 	}
-
-	// t.FaultyPower (miner.PowerPair) (struct)
-	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -122,7 +117,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 13 {
+	if extra != 12 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -285,15 +280,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.FaultyPower (miner.PowerPair) (struct)
-
-	{
-
-		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
-		}
-
-	}
 	return nil
 }
 
@@ -334,7 +320,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.PeerId); err != nil {
+	if _, err := w.Write(t.PeerId[:]); err != nil {
 		return err
 	}
 
@@ -355,7 +341,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(v[:]); err != nil {
 			return err
 		}
 	}
@@ -456,8 +442,12 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.PeerId = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.PeerId); err != nil {
+
+	if extra > 0 {
+		t.PeerId = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.PeerId[:]); err != nil {
 		return err
 	}
 	// t.Multiaddrs ([][]uint8) (slice)
@@ -496,8 +486,12 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			if maj != cbg.MajByteString {
 				return fmt.Errorf("expected byte array")
 			}
-			t.Multiaddrs[i] = make([]byte, extra)
-			if _, err := io.ReadFull(br, t.Multiaddrs[i]); err != nil {
+
+			if extra > 0 {
+				t.Multiaddrs[i] = make([]uint8, extra)
+			}
+
+			if _, err := io.ReadFull(br, t.Multiaddrs[i][:]); err != nil {
 				return err
 			}
 		}
@@ -639,7 +633,7 @@ func (t *Deadlines) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufDeadline = []byte{134}
+var lengthBufDeadline = []byte{135}
 
 func (t *Deadline) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -686,6 +680,10 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.FaultyPower (miner.PowerPair) (struct)
+	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -703,7 +701,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 6 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -799,6 +797,15 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
 		t.TotalSectors = uint64(extra)
+
+	}
+	// t.FaultyPower (miner.PowerPair) (struct)
+
+	{
+
+		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
+		}
 
 	}
 	return nil
@@ -1652,7 +1659,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{138}
+var lengthBufSectorOnChainInfo = []byte{139}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1743,6 +1750,11 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.ExpectedDayReward.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.ExpectedStoragePledge (big.Int) (struct)
+	if err := t.ExpectedStoragePledge.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1760,7 +1772,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1931,6 +1943,15 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ExpectedDayReward.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ExpectedDayReward: %w", err)
+		}
+
+	}
+	// t.ExpectedStoragePledge (big.Int) (struct)
+
+	{
+
+		if err := t.ExpectedStoragePledge.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ExpectedStoragePledge: %w", err)
 		}
 
 	}
@@ -2487,7 +2508,7 @@ func (t *ChangePeerIDParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.NewID); err != nil {
+	if _, err := w.Write(t.NewID[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2524,8 +2545,12 @@ func (t *ChangePeerIDParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.NewID = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.NewID); err != nil {
+
+	if extra > 0 {
+		t.NewID = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.NewID[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2561,7 +2586,7 @@ func (t *ChangeMultiaddrsParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(v[:]); err != nil {
 			return err
 		}
 	}
@@ -2622,8 +2647,12 @@ func (t *ChangeMultiaddrsParams) UnmarshalCBOR(r io.Reader) error {
 			if maj != cbg.MajByteString {
 				return fmt.Errorf("expected byte array")
 			}
-			t.NewMultiaddrs[i] = make([]byte, extra)
-			if _, err := io.ReadFull(br, t.NewMultiaddrs[i]); err != nil {
+
+			if extra > 0 {
+				t.NewMultiaddrs[i] = make([]uint8, extra)
+			}
+
+			if _, err := io.ReadFull(br, t.NewMultiaddrs[i][:]); err != nil {
 				return err
 			}
 		}
@@ -2660,7 +2689,7 @@ func (t *ProveCommitSectorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Proof); err != nil {
+	if _, err := w.Write(t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2711,8 +2740,12 @@ func (t *ProveCommitSectorParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Proof = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Proof); err != nil {
+
+	if extra > 0 {
+		t.Proof = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -3025,7 +3058,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.BlockHeader1); err != nil {
+	if _, err := w.Write(t.BlockHeader1[:]); err != nil {
 		return err
 	}
 
@@ -3038,7 +3071,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.BlockHeader2); err != nil {
+	if _, err := w.Write(t.BlockHeader2[:]); err != nil {
 		return err
 	}
 
@@ -3051,7 +3084,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.BlockHeaderExtra); err != nil {
+	if _, err := w.Write(t.BlockHeaderExtra[:]); err != nil {
 		return err
 	}
 	return nil
@@ -3088,8 +3121,12 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.BlockHeader1 = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.BlockHeader1); err != nil {
+
+	if extra > 0 {
+		t.BlockHeader1 = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.BlockHeader1[:]); err != nil {
 		return err
 	}
 	// t.BlockHeader2 ([]uint8) (slice)
@@ -3105,8 +3142,12 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.BlockHeader2 = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.BlockHeader2); err != nil {
+
+	if extra > 0 {
+		t.BlockHeader2 = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.BlockHeader2[:]); err != nil {
 		return err
 	}
 	// t.BlockHeaderExtra ([]uint8) (slice)
@@ -3122,8 +3163,12 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.BlockHeaderExtra = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.BlockHeaderExtra); err != nil {
+
+	if extra > 0 {
+		t.BlockHeaderExtra = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.BlockHeaderExtra[:]); err != nil {
 		return err
 	}
 	return nil

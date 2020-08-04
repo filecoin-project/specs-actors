@@ -84,6 +84,11 @@ func TestEpochTick(t *testing.T) {
 		actor.epochTickAndVerify(rt)
 	})
 
+	t.Run("built-in entries", func(t *testing.T) {
+		bie := cron.BuiltInEntries()
+		assert.True(t, len(bie) > 0)
+	})
+
 }
 
 type cronHarness struct {

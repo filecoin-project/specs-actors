@@ -7,7 +7,7 @@ import (
 )
 
 // DealUpdatesInterval is the number of blocks between payouts for deals
-const DealUpdatesInterval = 100
+const DealUpdatesInterval = builtin.EpochsInDay
 
 // ProvCollateralPercentSupplyNum is the numerator of the percentage of normalized cirulating
 // supply that must be covered by provider collateral
@@ -19,9 +19,7 @@ var ProvCollateralPercentSupplyDenom = big.NewInt(100)
 
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
-	// Cryptoeconomic modelling to date has used an assumption of a maximum deal duration of up to one year.
-	// It very likely can be much longer, but we're not sure yet.
-	return abi.ChainEpoch(180 * builtin.EpochsInDay), abi.ChainEpoch(366 * builtin.EpochsInDay) // PARAM_FINISH
+	return abi.ChainEpoch(180 * builtin.EpochsInDay), abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_FINISH
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {

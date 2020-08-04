@@ -62,14 +62,14 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	minerAddr, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to resolve given owner address")
+		rt.Abortf(exitcode.ErrNotFound, "failed to resolve given owner address")
 	}
 
 	priorBalance := rt.CurrentBalance()
 	penalty := abi.NewTokenAmount(0)
 	totalReward := big.Zero()
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
 		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 		totalReward = big.Add(blockReward, params.GasReward)
@@ -82,7 +82,6 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 			AssertMsg(blockReward.GreaterThanEqual(big.Zero()), "programming error, block reward is %v below zero", blockReward)
 		}
 		st.TotalMined = big.Add(st.TotalMined, blockReward)
-		return nil
 	})
 
 	// Cap the penalty at the total reward value.
@@ -137,7 +136,7 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 	}
 
 	var st State
-	rt.State().Transaction(&st, func() interface{} {
+	rt.State().Transaction(&st, func() {
 		prev := st.Epoch
 		// if there were null runs catch up the computation until
 		// st.Epoch == rt.CurrEpoch()
@@ -149,7 +148,6 @@ func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePo
 		st.updateToNextEpochWithReward(*currRealizedPower)
 		// only update smoothed estimates after updating reward and epoch
 		st.updateSmoothedEstimates(st.Epoch - prev)
-		return nil
 	})
 	return nil
 }

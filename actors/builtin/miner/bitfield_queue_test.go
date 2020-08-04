@@ -267,22 +267,3 @@ func (bqe *bqExpectation) Equals(t *testing.T, q miner.BitfieldQueue) {
 	})
 	require.NoError(t, err)
 }
-
-func assertBitfieldEquals(t *testing.T, bf *bitfield.BitField, values ...uint64) {
-	count, err := bf.Count()
-	require.NoError(t, err)
-	require.Equal(t, len(values), int(count))
-
-	err = bf.ForEach(func(v uint64) error {
-		assert.Equal(t, values[0], v)
-		values = values[1:]
-		return nil
-	})
-	require.NoError(t, err)
-}
-
-func assertBitfieldEmpty(t *testing.T, bf *bitfield.BitField) {
-	empty, err := bf.IsEmpty()
-	require.NoError(t, err)
-	assert.True(t, empty)
-}

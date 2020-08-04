@@ -2,6 +2,7 @@ package miner_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -10,6 +11,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/support/testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +37,10 @@ func TestExpirationSet(t *testing.T) {
 		assert.Equal(t, onTimePledge, set.OnTimePledge)
 		assert.True(t, activePower.Equals(set.ActivePower))
 		assert.True(t, faultyPower.Equals(set.FaultyPower))
+
+		count, err := set.Count()
+		require.NoError(t, err)
+		assert.EqualValues(t, 5, count)
 	})
 
 	t.Run("adds sectors and power to non-empty set", func(t *testing.T) {
@@ -154,6 +160,10 @@ func TestExpirationSet(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, empty)
 
+		count, err := set.Count()
+		require.NoError(t, err)
+		assert.Zero(t, count)
+
 		err = set.Add(onTimeSectors, earlySectors, onTimePledge, activePower, faultyPower)
 		require.NoError(t, err)
 
@@ -167,6 +177,10 @@ func TestExpirationSet(t *testing.T) {
 		empty, err = set.IsEmpty()
 		require.NoError(t, err)
 		assert.True(t, empty)
+
+		count, err = set.Count()
+		require.NoError(t, err)
+		assert.Zero(t, count)
 	})
 }
 
@@ -630,6 +644,52 @@ func TestExpirationQueue(t *testing.T) {
 		// no further sets remain
 		requireNoExpirationGroupsBefore(t, 20, queue)
 	})
+
+	t.Run("adding no sectors leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+		_, _, _, err := queue.AddActiveSectors(nil, sectorSize)
+		require.NoError(t, err)
+		assert.Zero(t, queue.Length())
+	})
+	t.Run("rescheduling no expirations leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+		err := queue.RescheduleExpirations(10, nil, sectorSize)
+		require.NoError(t, err)
+		assert.Zero(t, queue.Length())
+	})
+
+	t.Run("rescheduling no expirations as faults leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+
+		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
+		require.NoError(t, err)
+
+		// all sectors already expire before epoch 15, nothing should change.
+		length := queue.Length()
+		_, err = queue.RescheduleAsFaults(15, sectors, sectorSize)
+		require.NoError(t, err)
+		assert.Equal(t, length, queue.Length())
+	})
+
+	t.Run("rescheduling all expirations as faults leaves the queue empty if it was empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+
+		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
+		require.NoError(t, err)
+
+		// all sectors already expire before epoch 15, nothing should change.
+		length := queue.Length()
+		err = queue.RescheduleAllAsFaults(15)
+		require.NoError(t, err)
+		assert.Equal(t, length, queue.Length())
+	})
+
+	t.Run("rescheduling no sectors as recovered leaves the queue empty", func(t *testing.T) {
+		queue := emptyExpirationQueueWithQuantizing(t, miner.NewQuantSpec(4, 1))
+		_, err := queue.RescheduleRecovered(nil, sectorSize)
+		require.NoError(t, err)
+		assert.Zero(t, queue.Length())
+	})
 }
 
 func testSector(expiration, number, weight, vweight, pledge int64) *miner.SectorOnChainInfo {
@@ -639,6 +699,7 @@ func testSector(expiration, number, weight, vweight, pledge int64) *miner.Sector
 		DealWeight:         big.NewInt(weight),
 		VerifiedDealWeight: big.NewInt(vweight),
 		InitialPledge:      abi.NewTokenAmount(pledge),
+		SealedCID:          tutil.MakeCID(fmt.Sprintf("commR-%d", number), &miner.SealedCIDPrefix),
 	}
 }
 
