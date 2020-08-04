@@ -883,7 +883,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufPartition = []byte{137}
+var lengthBufPartition = []byte{139}
 
 func (t *Partition) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -898,6 +898,11 @@ func (t *Partition) MarshalCBOR(w io.Writer) error {
 
 	// t.Sectors (bitfield.BitField) (struct)
 	if err := t.Sectors.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Unproven (bitfield.BitField) (struct)
+	if err := t.Unproven.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -933,6 +938,11 @@ func (t *Partition) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	// t.UnprovenPower (miner.PowerPair) (struct)
+	if err := t.UnprovenPower.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.FaultyPower (miner.PowerPair) (struct)
 	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
 		return err
@@ -959,7 +969,7 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -969,6 +979,15 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
+		}
+
+	}
+	// t.Unproven (bitfield.BitField) (struct)
+
+	{
+
+		if err := t.Unproven.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Unproven: %w", err)
 		}
 
 	}
@@ -1029,6 +1048,15 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.LivePower.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.LivePower: %w", err)
+		}
+
+	}
+	// t.UnprovenPower (miner.PowerPair) (struct)
+
+	{
+
+		if err := t.UnprovenPower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.UnprovenPower: %w", err)
 		}
 
 	}

@@ -152,3 +152,23 @@ func (sa Sectors) LoadWithFaultMask(sectors bitfield.BitField, faults bitfield.B
 	})
 	return sectorInfos, err
 }
+
+func selectSectors(sectors []*SectorOnChainInfo, field bitfield.BitField) ([]*SectorOnChainInfo, error) {
+	toInclude, err := field.AllMap(uint64(len(sectors)))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to expand bitfield when selecting sectors: %w", err)
+	}
+
+	included := make([]*SectorOnChainInfo, 0, len(toInclude))
+	for _, s := range sectors {
+		if !toInclude[uint64(s.SectorNumber)] {
+			continue
+		}
+		included = append(included, s)
+		delete(toInclude, uint64(s.SectorNumber))
+	}
+	if len(toInclude) > 0 {
+		return nil, xerrors.Errorf("failed to find %d expected sectors", len(toInclude))
+	}
+	return included, nil
+}

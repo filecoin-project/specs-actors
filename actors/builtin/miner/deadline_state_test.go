@@ -48,17 +48,41 @@ func TestDeadlines(t *testing.T) {
 	// Define some basic test scenarios that build one each other.
 	//
 
-	// Adds sectors
+	// Adds sectors, and proves them if requested.
 	//
 	// Partition 1: sectors 1, 2, 3, 4
 	// Partition 2: sectors 5, 6, 7, 8
 	// Partition 3: sectors 9
-	addSectors := func(t *testing.T, store adt.Store, dl *miner.Deadline) {
-		power, err := dl.AddSectors(store, partitionSize, sectors, sectorSize, quantSpec)
+	addSectors := func(t *testing.T, store adt.Store, dl *miner.Deadline, prove bool) {
+		activatedPower, err := dl.AddSectors(store, partitionSize, false, sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+		assert.True(t, activatedPower.IsZero())
+
+		dlState.withUnproven(1, 2, 3, 4, 5, 6, 7, 8, 9).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, store, dl)
+
+		if !prove {
+			return
+		}
+
+		sectorArr := sectorsArr(t, store, sectors)
+
+		// Prove everything
+		result, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 0, []miner.PoStPartition{{Index: 0}, {Index: 1}, {Index: 2}})
 		require.NoError(t, err)
 
-		expectedPower := miner.PowerForSectors(sectorSize, sectors)
-		assert.True(t, expectedPower.Equals(power))
+		unprovenPower := miner.PowerForSectors(sectorSize, sectors)
+		require.True(t, result.PowerDelta.Equals(unprovenPower))
+
+		faultyPower, recoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 0)
+		require.NoError(t, err)
+		require.True(t, faultyPower.IsZero())
+		require.True(t, recoveryPower.IsZero())
+
 		dlState.withPartitions(
 			bf(1, 2, 3, 4),
 			bf(5, 6, 7, 8),
@@ -70,8 +94,8 @@ func TestDeadlines(t *testing.T) {
 	//
 	// From partition 0: sectors 1 & 3
 	// From partition 1: sectors 6
-	addThenTerminate := func(t *testing.T, store adt.Store, dl *miner.Deadline) {
-		addSectors(t, store, dl)
+	addThenTerminate := func(t *testing.T, store adt.Store, dl *miner.Deadline, proveFirst bool) {
+		addSectors(t, store, dl, proveFirst)
 
 		removedPower, err := dl.TerminateSectors(store, sectorsArr(t, store, sectors), 15, miner.PartitionSectorMap{
 			0: bf(1, 3),
@@ -79,10 +103,16 @@ func TestDeadlines(t *testing.T) {
 		}, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		expectedPower := sectorPower(t, 1, 3, 6)
+		expectedPower := miner.NewPowerPairZero()
+		unproven := []uint64{2, 4, 5, 7, 8, 9} // not 1, 3, 6
+		if proveFirst {
+			unproven = nil
+			expectedPower = sectorPower(t, 1, 3, 6)
+		}
 		require.True(t, expectedPower.Equals(removedPower), "dlState to remove power for terminated sectors")
 
 		dlState.withTerminations(1, 3, 6).
+			withUnproven(unproven...).
 			withPartitions(
 				bf(1, 2, 3, 4),
 				bf(5, 6, 7, 8),
@@ -93,7 +123,7 @@ func TestDeadlines(t *testing.T) {
 	// Adds and terminates sectors according to the previous two functions,
 	// then pops early terminations.
 	addThenTerminateThenPopEarly := func(t *testing.T, store adt.Store, dl *miner.Deadline) {
-		addThenTerminate(t, store, dl)
+		addThenTerminate(t, store, dl, true)
 
 		earlyTerminations, more, err := dl.PopEarlyTerminations(store, 100, 100)
 		require.NoError(t, err)
@@ -134,11 +164,11 @@ func TestDeadlines(t *testing.T) {
 	// faulty, expiring at epoch 9.
 	//
 	// Sector 5 will expire on-time at epoch 9 while 6 will expire early at epoch 9.
-	addThenMarkFaulty := func(t *testing.T, store adt.Store, dl *miner.Deadline) {
-		addSectors(t, store, dl)
+	addThenMarkFaulty := func(t *testing.T, store adt.Store, dl *miner.Deadline, proveFirst bool) {
+		addSectors(t, store, dl, proveFirst)
 
 		// Mark faulty.
-		faultyPower, err := dl.DeclareFaults(
+		powerDelta, err := dl.DeclareFaults(
 			store, sectorsArr(t, store, sectors), sectorSize, quantSpec, 9,
 			map[uint64]bitfield.BitField{
 				0: bf(1),
@@ -147,10 +177,16 @@ func TestDeadlines(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		expectedPower := sectorPower(t, 1, 5, 6)
-		assert.True(t, faultyPower.Equals(expectedPower))
+		expectedPower := miner.NewPowerPairZero()
+		unproven := []uint64{2, 3, 4, 7, 8, 9} // not 1, 5, 6
+		if proveFirst {
+			unproven = nil
+			expectedPower = sectorPower(t, 1, 5, 6)
+		}
+		assert.True(t, powerDelta.Equals(expectedPower.Neg()))
 
 		dlState.withFaults(1, 5, 6).
+			withUnproven(unproven...).
 			withPartitions(
 				bf(1, 2, 3, 4),
 				bf(5, 6, 7, 8),
@@ -163,13 +199,25 @@ func TestDeadlines(t *testing.T) {
 	t.Run("adds sectors", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
-		addSectors(t, store, dl)
+		addSectors(t, store, dl, false)
+	})
+
+	t.Run("adds sectors and proves", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+		addSectors(t, store, dl, true)
 	})
 
 	t.Run("terminates sectors", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
-		addThenTerminate(t, store, dl)
+		addThenTerminate(t, store, dl, true)
+	})
+
+	t.Run("terminates unproven sectors", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+		addThenTerminate(t, store, dl, false)
 	})
 
 	t.Run("pops early terminations", func(t *testing.T) {
@@ -190,7 +238,14 @@ func TestDeadlines(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
-		addThenMarkFaulty(t, store, dl)
+		addThenMarkFaulty(t, store, dl, true)
+	})
+
+	t.Run("marks unproven sectors faulty", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		addThenMarkFaulty(t, store, dl, false)
 	})
 
 	//
@@ -200,7 +255,7 @@ func TestDeadlines(t *testing.T) {
 	t.Run("cannot remove partitions with early terminations", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
-		addThenTerminate(t, store, dl)
+		addThenTerminate(t, store, dl, false)
 
 		_, _, _, err := dl.RemovePartitions(store, bf(0), quantSpec)
 		require.Error(t, err, "should have failed to remove a partition with early terminations")
@@ -209,7 +264,7 @@ func TestDeadlines(t *testing.T) {
 	t.Run("can pop early terminations in multiple steps", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
-		addThenTerminate(t, store, dl)
+		addThenTerminate(t, store, dl, true)
 
 		var result miner.TerminationResult
 
@@ -280,18 +335,18 @@ func TestDeadlines(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 
 		dl := emptyDeadline(t, store)
-		addThenMarkFaulty(t, store, dl)
+		addThenMarkFaulty(t, store, dl, false)
 
 		// Try to remove a partition with faulty sectors.
 		_, _, _, err := dl.RemovePartitions(store, bf(1), quantSpec)
 		require.Error(t, err, "should have failed to remove a partition with faults")
 	})
 
-	t.Run("terminate faulty", func(t *testing.T) {
+	t.Run("terminate proven & faulty", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
 
-		addThenMarkFaulty(t, store, dl) // 1, 5, 6 faulty
+		addThenMarkFaulty(t, store, dl, true) // 1, 5, 6 faulty
 
 		sectorArr := sectorsArr(t, store, sectors)
 		removedPower, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
@@ -313,12 +368,38 @@ func TestDeadlines(t *testing.T) {
 			).assert(t, store, dl)
 	})
 
+	t.Run("terminate unproven & faulty", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		addThenMarkFaulty(t, store, dl, false) // 1, 5, 6 faulty
+
+		sectorArr := sectorsArr(t, store, sectors)
+		removedPower, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
+			0: bf(1, 3),
+			1: bf(6),
+		}, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// Sector 3 unproven, 1, 6 faulty
+		require.True(t, removedPower.Equals(miner.NewPowerPairZero()), "should remove no power")
+
+		dlState.withTerminations(1, 3, 6).
+			withUnproven(2, 4, 7, 8, 9). // not 1, 3, 5, & 6
+			withFaults(5).
+			withPartitions(
+				bf(1, 2, 3, 4),
+				bf(5, 6, 7, 8),
+				bf(9),
+			).assert(t, store, dl)
+	})
+
 	t.Run("faulty sectors expire", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 
 		dl := emptyDeadline(t, store)
 		// Mark sectors 5 & 6 faulty, expiring at epoch 9.
-		addThenMarkFaulty(t, store, dl)
+		addThenMarkFaulty(t, store, dl, true)
 
 		// We expect all sectors but 7 to have expired at this point.
 		exp, err := dl.PopExpiredSectors(store, 9, quantSpec)
@@ -355,11 +436,24 @@ func TestDeadlines(t *testing.T) {
 			).assert(t, store, dl)
 	})
 
+	t.Run("cannot pop expired sectors before proving", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+
+		dl := emptyDeadline(t, store)
+		// Add sectors, but don't prove.
+		addSectors(t, store, dl, false)
+
+		// Try to pop some expirations.
+		_, err := dl.PopExpiredSectors(store, 9, quantSpec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot pop expired sectors from a partition with unproven sectors")
+	})
+
 	t.Run("post all the things", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 
 		dl := emptyDeadline(t, store)
-		addSectors(t, store, dl)
+		addSectors(t, store, dl, true)
 
 		sectorArr := sectorsArr(t, store, sectors)
 
@@ -421,7 +515,7 @@ func TestDeadlines(t *testing.T) {
 		dl := emptyDeadline(t, store)
 
 		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
-		addThenMarkFaulty(t, store, dl)
+		addThenMarkFaulty(t, store, dl, true)
 
 		sectorArr := sectorsArr(t, store, sectors)
 
@@ -492,7 +586,7 @@ func TestDeadlines(t *testing.T) {
 		dl := emptyDeadline(t, store)
 
 		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
-		addThenMarkFaulty(t, store, dl)
+		addThenMarkFaulty(t, store, dl, true)
 
 		sectorArr := sectorsArr(t, store, sectors)
 
@@ -503,13 +597,13 @@ func TestDeadlines(t *testing.T) {
 		}))
 
 		// Retract recovery for sector 1.
-		faultyPower, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 13, map[uint64]bitfield.BitField{
+		powerDelta, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 13, map[uint64]bitfield.BitField{
 			0: bf(1),
 		})
 
 		// We're just retracting a recovery, this doesn't count as a new fault.
 		require.NoError(t, err)
-		require.True(t, faultyPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, powerDelta.Equals(miner.NewPowerPairZero()))
 
 		// We're now recovering 6.
 		dlState.withRecovering(6).
@@ -570,7 +664,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
-		addThenMarkFaulty(t, store, dl)
+		addThenMarkFaulty(t, store, dl, true)
 
 		// Try to reschedule two sectors, only the 7 (non faulty) should succeed.
 		replaced, err := dl.RescheduleSectorExpirations(store, sectorArr, 1, miner.PartitionSectorMap{
@@ -622,6 +716,7 @@ type expectedDeadlineState struct {
 	faults       bitfield.BitField
 	recovering   bitfield.BitField
 	terminations bitfield.BitField
+	unproven     bitfield.BitField
 	posts        bitfield.BitField
 
 	partitionSectors []bitfield.BitField
@@ -652,6 +747,12 @@ func (s expectedDeadlineState) withTerminations(terminations ...uint64) expected
 }
 
 //nolint:unused
+func (s expectedDeadlineState) withUnproven(unproven ...uint64) expectedDeadlineState {
+	s.unproven = bf(unproven...)
+	return s
+}
+
+//nolint:unused
 func (s expectedDeadlineState) withPosts(posts ...uint64) expectedDeadlineState {
 	s.posts = bf(posts...)
 	return s
@@ -665,13 +766,14 @@ func (s expectedDeadlineState) withPartitions(partitions ...bitfield.BitField) e
 
 // Assert that the deadline's state matches the expected state.
 func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.Deadline) {
-	_, faults, recoveries, terminations, partitions := checkDeadlineInvariants(
+	_, faults, recoveries, terminations, unproven, partitions := checkDeadlineInvariants(
 		t, store, dl, s.quant, s.sectorSize, s.partitionSize, s.sectors,
 	)
 
 	assertBitfieldsEqual(t, s.faults, faults)
 	assertBitfieldsEqual(t, s.recovering, recoveries)
 	assertBitfieldsEqual(t, s.terminations, terminations)
+	assertBitfieldsEqual(t, s.unproven, unproven)
 	assertBitfieldsEqual(t, s.posts, dl.PostSubmissions)
 
 	require.Equal(t, len(s.partitionSectors), len(partitions), "unexpected number of partitions")
@@ -692,6 +794,7 @@ func checkDeadlineInvariants(
 	allFaults bitfield.BitField,
 	allRecoveries bitfield.BitField,
 	allTerminations bitfield.BitField,
+	allUnproven bitfield.BitField,
 	partitionSectors []bitfield.BitField,
 ) {
 	partitions, err := dl.PartitionsArray(store)
@@ -704,6 +807,7 @@ func checkDeadlineInvariants(
 	allFaults = bitfield.NewFromSet(nil)
 	allRecoveries = bitfield.NewFromSet(nil)
 	allTerminations = bitfield.NewFromSet(nil)
+	allUnproven = bitfield.NewFromSet(nil)
 	allFaultyPower := miner.NewPowerPairZero()
 
 	expectPartIndex := int64(0)
@@ -729,6 +833,9 @@ func checkDeadlineInvariants(
 		require.NoError(t, err)
 
 		allTerminations, err = bitfield.MergeBitFields(allTerminations, partition.Terminated)
+		require.NoError(t, err)
+
+		allUnproven, err = bitfield.MergeBitFields(allUnproven, partition.Unproven)
 		require.NoError(t, err)
 
 		allFaultyPower = allFaultyPower.Add(partition.FaultyPower)
