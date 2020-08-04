@@ -149,9 +149,6 @@ func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealStat
 	}
 
 	nextEpoch = epoch + DealUpdatesInterval
-	if nextEpoch > deal.EndEpoch {
-		nextEpoch = deal.EndEpoch
-	}
 
 	return amountSlashed, nextEpoch, false
 }

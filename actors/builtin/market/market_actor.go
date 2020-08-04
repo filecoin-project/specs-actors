@@ -1,9 +1,12 @@
 package market
 
 import (
+	"bytes"
+	"encoding/binary"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -491,6 +494,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, rt.CurrEpoch())
 				Assert(slashAmount.GreaterThanEqual(big.Zero()))
+
 				if removeDeal {
 					AssertMsg(nextEpoch == epochUndefined, "next scheduled epoch should be undefined as deal has been removed")
 
@@ -500,6 +504,22 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 				} else {
 					AssertMsg(nextEpoch > rt.CurrEpoch() && slashAmount.IsZero(), "deal should not be slashed and should have a schedule for next cron tick"+
 						" as it has not been removed")
+
+					// If this is the first cron tick for the deal, we should  randomize the next epoch
+					// for when it will be processed so an attacker isn't able to schedule too many deals for the same tick.
+					if state.LastUpdatedEpoch == epochUndefined {
+						buf := bytes.Buffer{}
+						err = deal.MarshalCBOR(&buf)
+						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to marshal proposal")
+
+						rb := rt.GetRandomness(crypto.DomainSeparationTag_MarketNextCronSchedule, rt.CurrEpoch()-1, buf.Bytes())
+
+						// generate a random epoch in [currentEpoch + 1, currentEpoch + DealUpdatesInterval]
+						var offset uint64
+						err = binary.Read(bytes.NewBuffer(rb), binary.BigEndian, &offset)
+						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate offset")
+						nextEpoch = rt.CurrEpoch() + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)) + 1
+					}
 
 					// Update deal's LastUpdatedEpoch in DealStates
 					state.LastUpdatedEpoch = rt.CurrEpoch()
