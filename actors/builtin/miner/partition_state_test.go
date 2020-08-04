@@ -62,7 +62,7 @@ func TestPartitions(t *testing.T) {
 		_, store, partition := setup(t)
 
 		_, err := partition.AddSectors(store, sectors[:1], sectorSize, quantSpec)
-		require.Error(t, err)
+		require.EqualError(t, err, "not all added sectors are new")
 	})
 
 	t.Run("adds faults", func(t *testing.T) {
@@ -120,6 +120,7 @@ func TestPartitions(t *testing.T) {
 		faultSet := bf(99)
 		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not all sectors are assigned to the partition")
 	})
 
 	t.Run("adds recoveries", func(t *testing.T) {
@@ -227,9 +228,10 @@ func TestPartitions(t *testing.T) {
 		rt, _, partition := setup(t)
 		sectorArr := sectorsArr(t, rt, sectors)
 
-		// add 4 and 5 as recoveries
+		// try to add 99 as a recovery but it's not in the partition
 		err := partition.DeclareFaultsRecovered(sectorArr, sectorSize, bf(99))
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not all sectors are assigned to the partition")
 	})
 
 	t.Run("reschedules expirations", func(t *testing.T) {
@@ -372,7 +374,7 @@ func TestPartitions(t *testing.T) {
 		terminations := bf(99)
 		terminationEpoch := abi.ChainEpoch(3)
 		_, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
-		require.Error(t, err)
+		require.EqualError(t, err, "can only terminate live sectors")
 	})
 
 	t.Run("terminate already terminated sector", func(t *testing.T) {
@@ -394,7 +396,7 @@ func TestPartitions(t *testing.T) {
 
 		// Second termination fails
 		_, err = partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
-		require.Error(t, err)
+		require.EqualError(t, err, "can only terminate live sectors")
 	})
 
 	t.Run("mark terminated sectors as faulty", func(t *testing.T) {
@@ -404,11 +406,11 @@ func TestPartitions(t *testing.T) {
 		terminations := bf(1)
 		terminationEpoch := abi.ChainEpoch(3)
 
-		// First termination works.
+		// Termination works.
 		_, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		// Second termination fails
+		// Fault declaration for terminated sectors fails.
 		newFaults, _, err := partition.DeclareFaults(store, sectorArr, terminations, abi.ChainEpoch(5), sectorSize, quantSpec)
 		require.NoError(t, err)
 		empty, err := newFaults.IsEmpty()

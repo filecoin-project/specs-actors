@@ -169,7 +169,7 @@ func (p *Partition) DeclareFaults(
 	store adt.Store, sectors Sectors, sectorNos *abi.BitField, faultExpirationEpoch abi.ChainEpoch,
 	ssize abi.SectorSize, quant QuantSpec,
 ) (newFaults *bitfield.BitField, newFaultyPower PowerPair, err error) {
-	err = validateFRDeclarationPartition(p, sectorNos)
+	err = validatePartitionContainsSectors(p, sectorNos)
 	if err != nil {
 		return nil, NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed fault declaration: %w", err)
 	}
@@ -219,7 +219,10 @@ func (p *Partition) DeclareFaults(
 	return newFaults, newFaultyPower, nil
 }
 
-// Recovers all faulty sectors marked recovering.
+// Removes sector numbers from faults and thus from recoveries.
+// The sectors are removed from the Faults and Recovering bitfields, and FaultyPower and RecoveringPower reduced.
+// The sectors are re-scheduled for expiration shortly after their target expiration epoch.
+// Returns the power of the now-recovered sectors.
 func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
 	// Process recoveries, assuming the proof will be successful.
 	// This similarly updates state.
@@ -260,7 +263,7 @@ func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.Se
 // Declares sectors as recovering. Non-faulty and already recovering sectors will be skipped.
 func (p *Partition) DeclareFaultsRecovered(sectors Sectors, ssize abi.SectorSize, sectorNos *abi.BitField) (err error) {
 	// Check that the declared sectors are actually assigned to the partition.
-	err = validateFRDeclarationPartition(p, sectorNos)
+	err = validatePartitionContainsSectors(p, sectorNos)
 	if err != nil {
 		return xc.ErrIllegalArgument.Wrapf("failed fault declaration: %w", err)
 	}
