@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 func TestBigIntSerializationRoundTrip(t *testing.T) {
@@ -186,4 +187,42 @@ func TestFromString(t *testing.T) {
 	require.NoError(t, err)
 	expected := Int{Int: big.NewInt(12345)}
 	assert.Equal(t, expected, res)
+}
+
+func TestCBOR(t *testing.T) {
+	t.Run("happy", func(t *testing.T) {
+		ints := []Int{
+			NewInt(0),
+			NewInt(-1),
+			NewInt(1),
+			NewInt(1e18),
+			Lsh(NewInt(1), 80),
+		}
+		for _, n :=  range ints {
+			var b bytes.Buffer
+			assert.NoError(t, n.MarshalCBOR(&b))
+			var out Int
+			assert.NoError(t, out.UnmarshalCBOR(&b))
+			assert.Equal(t, n, out)
+		}
+	})
+
+	t.Run("fails to marshal too large", func(t *testing.T) {
+		giant := Lsh(NewInt(1), 8 * (BigIntMaxSerializedLen - 1))
+		var b bytes.Buffer
+		assert.Error(t, giant.MarshalCBOR(&b))
+	})
+
+	t.Run("fails to unmarshal too large", func(t *testing.T) {
+		// Construct CBOR for a too-large byte array
+		var b bytes.Buffer
+		header := cbg.CborEncodeMajorType(cbg.MajByteString, uint64(BigIntMaxSerializedLen+1))
+		_, err := b.Write(header)
+		require.NoError(t, err)
+		_, err = b.Write(make([]byte, BigIntMaxSerializedLen+1))
+		require.NoError(t, err)
+
+		var out Int
+		assert.Error(t, out.UnmarshalCBOR(&b))
+	})
 }
