@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	address "github.com/filecoin-project/go-address"
 	"github.com/stretchr/testify/assert"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
-
 
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, reward.Actor{})
