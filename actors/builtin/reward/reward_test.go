@@ -16,7 +16,6 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
-
 func TestExports(t *testing.T) {
 	mock.CheckActorExports(t, reward.Actor{})
 }
@@ -184,6 +183,34 @@ func TestAwardBlockReward(t *testing.T) {
 		newState := getState(rt)
 		assert.Equal(t, totalPayout, newState.TotalMined)
 
+	})
+
+	t.Run("funds are sent to the burnt funds actor if sending locked funds to miner fails", func(t *testing.T) {
+		rt := builder.Build(t)
+		startRealizedPower := abi.NewStoragePower(1)
+		actor.constructAndVerify(rt, &startRealizedPower)
+		miner := tutil.NewIDAddr(t, 1000)
+		st := getState(rt)
+		assert.Equal(t, big.Zero(), st.TotalMined)
+		st.ThisEpochReward = abi.NewTokenAmount(5000)
+		rt.ReplaceState(st)
+		// enough balance to pay 3 full rewards and one partial
+		totalPayout := abi.NewTokenAmount(3500)
+		rt.SetBalance(totalPayout)
+
+		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
+		expectedReward := big.NewInt(1000)
+		rt.ExpectSend(miner, builtin.MethodsMiner.AddLockedFund, &expectedReward, expectedReward, nil, exitcode.ErrForbidden)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedReward, nil, exitcode.Ok)
+
+		rt.Call(actor.AwardBlockReward, &reward.AwardBlockRewardParams{
+			Miner:     miner,
+			Penalty:   big.Zero(),
+			GasReward: big.Zero(),
+			WinCount:  1,
+		})
+
+		rt.Verify()
 	})
 }
 
