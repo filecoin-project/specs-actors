@@ -124,7 +124,17 @@ type expectVerifyPoSt struct {
 }
 
 func (m *expectedMessage) Equal(to addr.Address, method abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) bool {
-	return m.to == to && m.method == method && m.value.Equals(value) && reflect.DeepEqual(m.params, params)
+	// avoid nil vs. zero/empty discrepancies that would disappear in serialization
+	paramBuf1 := new(bytes.Buffer)
+	if m.params != nil {
+		m.params.MarshalCBOR(paramBuf1) // nolint: errcheck
+	}
+	paramBuf2 := new(bytes.Buffer)
+	if params != nil {
+		params.MarshalCBOR(paramBuf2) // nolint: errcheck
+	}
+
+	return m.to == to && m.method == method && m.value.Equals(value) && bytes.Equal(paramBuf1.Bytes(), paramBuf2.Bytes())
 }
 
 func (m *expectedMessage) String() string {
@@ -888,11 +898,11 @@ func (rt *Runtime) Reset() {
 
 // Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code.
 func (rt *Runtime) ExpectAbort(expected exitcode.ExitCode, f func()) {
-	rt.ExpectAbortConstainsMessage(expected, "", f)
+	rt.ExpectAbortContainsMessage(expected, "", f)
 }
 
 // Calls f() expecting it to invoke Runtime.Abortf() with a specified exit code and message.
-func (rt *Runtime) ExpectAbortConstainsMessage(expected exitcode.ExitCode, substr string, f func()) {
+func (rt *Runtime) ExpectAbortContainsMessage(expected exitcode.ExitCode, substr string, f func()) {
 	rt.t.Helper()
 	prevState := rt.state
 
