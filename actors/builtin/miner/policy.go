@@ -243,14 +243,13 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	// High level description
 	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
 	// var multiplier = growthRate^elapsedEpoch
-	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 1.0)
+	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 0.05)
 	// return collateral * slasherProportion
 
 	// BigInt Operation
 	// NUM = SLASHER_SHARE_GROWTH_RATE_NUM^elapsedEpoch * INITIAL_SLASHER_SHARE_NUM * collateral
 	// DENOM = SLASHER_SHARE_GROWTH_RATE_DENOM^elapsedEpoch * INITIAL_SLASHER_SHARE_DENOM
 	// slasher_amount = min(NUM/DENOM, collateral)
-
 	elapsed := big.NewInt(int64(elapsedEpoch))
 
 	// The following is equivalent to: slasherShare = growthRate^elapsed
