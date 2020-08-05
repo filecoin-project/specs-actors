@@ -494,7 +494,7 @@ func (t *CronEvent) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.CallbackPayload); err != nil {
+	if _, err := w.Write(t.CallbackPayload[:]); err != nil {
 		return err
 	}
 	return nil
@@ -540,8 +540,12 @@ func (t *CronEvent) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.CallbackPayload = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.CallbackPayload); err != nil {
+
+	if extra > 0 {
+		t.CallbackPayload = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.CallbackPayload[:]); err != nil {
 		return err
 	}
 	return nil
@@ -590,7 +594,7 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Peer); err != nil {
+	if _, err := w.Write(t.Peer[:]); err != nil {
 		return err
 	}
 
@@ -611,7 +615,7 @@ func (t *CreateMinerParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(v[:]); err != nil {
 			return err
 		}
 	}
@@ -692,8 +696,12 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Peer = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Peer); err != nil {
+
+	if extra > 0 {
+		t.Peer = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Peer[:]); err != nil {
 		return err
 	}
 	// t.Multiaddrs ([][]uint8) (slice)
@@ -732,8 +740,12 @@ func (t *CreateMinerParams) UnmarshalCBOR(r io.Reader) error {
 			if maj != cbg.MajByteString {
 				return fmt.Errorf("expected byte array")
 			}
-			t.Multiaddrs[i] = make([]byte, extra)
-			if _, err := io.ReadFull(br, t.Multiaddrs[i]); err != nil {
+
+			if extra > 0 {
+				t.Multiaddrs[i] = make([]uint8, extra)
+			}
+
+			if _, err := io.ReadFull(br, t.Multiaddrs[i][:]); err != nil {
 				return err
 			}
 		}
@@ -775,7 +787,7 @@ func (t *EnrollCronEventParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Payload); err != nil {
+	if _, err := w.Write(t.Payload[:]); err != nil {
 		return err
 	}
 	return nil
@@ -837,8 +849,12 @@ func (t *EnrollCronEventParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Payload = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Payload); err != nil {
+
+	if extra > 0 {
+		t.Payload = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Payload[:]); err != nil {
 		return err
 	}
 	return nil
@@ -1113,7 +1129,7 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.PeerId); err != nil {
+	if _, err := w.Write(t.PeerId[:]); err != nil {
 		return err
 	}
 
@@ -1134,7 +1150,7 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(v[:]); err != nil {
 			return err
 		}
 	}
@@ -1215,8 +1231,12 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.PeerId = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.PeerId); err != nil {
+
+	if extra > 0 {
+		t.PeerId = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.PeerId[:]); err != nil {
 		return err
 	}
 	// t.Multiaddrs ([][]uint8) (slice)
@@ -1255,8 +1275,12 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 			if maj != cbg.MajByteString {
 				return fmt.Errorf("expected byte array")
 			}
-			t.Multiaddrs[i] = make([]byte, extra)
-			if _, err := io.ReadFull(br, t.Multiaddrs[i]); err != nil {
+
+			if extra > 0 {
+				t.Multiaddrs[i] = make([]uint8, extra)
+			}
+
+			if _, err := io.ReadFull(br, t.Multiaddrs[i][:]); err != nil {
 				return err
 			}
 		}

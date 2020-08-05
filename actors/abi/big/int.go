@@ -55,10 +55,7 @@ func FromString(s string) (Int, error) {
 }
 
 func (bi Int) Copy() Int {
-	cpy := Int{}
-	cpy.Int = &big.Int{}
-	cpy.Int.Set(bi.Int)
-	return cpy
+	return Int{Int: new(big.Int).Set(bi.Int)}
 }
 
 func Product(ints ...Int) Int {
@@ -184,7 +181,7 @@ func (bi Int) Neg() Int {
 // Abs returns the absolute value of bi.
 func (bi Int) Abs() Int {
 	if bi.GreaterThanEqual(Zero()) {
-		return Int{big.NewInt(0).Set(bi.Int)}
+		return bi.Copy()
 	}
 	return bi.Neg()
 }
@@ -285,7 +282,12 @@ func (bi *Int) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	header := cbg.CborEncodeMajorType(cbg.MajByteString, uint64(len(enc)))
+	encLen := len(enc)
+	if encLen > BigIntMaxSerializedLen {
+		return fmt.Errorf("big integer byte array too long (%d bytes)", encLen)
+	}
+
+	header := cbg.CborEncodeMajorType(cbg.MajByteString, uint64(encLen))
 	if _, err := w.Write(header); err != nil {
 		return err
 	}
@@ -313,7 +315,7 @@ func (bi *Int) UnmarshalCBOR(br io.Reader) error {
 	}
 
 	if extra > BigIntMaxSerializedLen {
-		return fmt.Errorf("big integer byte array too long")
+		return fmt.Errorf("big integer byte array too long (%d bytes)", extra)
 	}
 
 	buf := make([]byte, extra)

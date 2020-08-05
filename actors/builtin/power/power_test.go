@@ -682,7 +682,7 @@ func TestCron(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// enroll a cron task at epoch 2 (which is in the past)
-		rt.ExpectAbortConstainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
 			actor.enrollCronEvent(rt, miner1, -2, []byte{0x1, 0x3})
 		})
 	})
@@ -707,11 +707,11 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(2)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		// First send fails
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{}), big.Zero(), nil, exitcode.ErrIllegalState)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.ErrIllegalState)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
 		// Subsequent one still invoked
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
 		// Reward actor still invoked
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)

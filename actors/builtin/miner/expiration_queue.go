@@ -105,6 +105,21 @@ func (es *ExpirationSet) IsEmpty() (empty bool, err error) {
 	}
 }
 
+// Counts all sectors in the expiration set.
+func (es *ExpirationSet) Count() (count uint64, err error) {
+	onTime, err := es.OnTimeSectors.Count()
+	if err != nil {
+		return 0, err
+	}
+
+	early, err := es.EarlySectors.Count()
+	if err != nil {
+		return 0, err
+	}
+
+	return onTime + early, nil
+}
+
 // A queue of expiration sets by epoch, representing the on-time or early termination epoch for a collection of sectors.
 // Wraps an AMT[ChainEpoch]*ExpirationSet.
 // Keys in the queue are quantized (upwards), modulo some offset, to reduce the cardinality of keys.
@@ -655,10 +670,7 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 		totalPledge := big.Zero()
 		for i, sector := range epochSectors {
 			sectorNumbers[i] = uint64(sector.SectorNumber)
-			totalPower = totalPower.Add(PowerPair{
-				Raw: big.NewIntUnsigned(uint64(sectorSize)),
-				QA:  QAPowerForSector(sectorSize, sector),
-			})
+			totalPower = totalPower.Add(PowerForSector(sectorSize, sector))
 			totalPledge = big.Add(totalPledge, sector.InitialPledge)
 		}
 		sectorEpochSets = append(sectorEpochSets, sectorEpochSet{

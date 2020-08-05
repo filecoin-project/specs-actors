@@ -327,7 +327,7 @@ func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Randomness); err != nil {
+	if _, err := w.Write(t.Randomness[:]); err != nil {
 		return err
 	}
 
@@ -340,7 +340,7 @@ func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.InteractiveRandomness); err != nil {
+	if _, err := w.Write(t.InteractiveRandomness[:]); err != nil {
 		return err
 	}
 
@@ -353,7 +353,7 @@ func (t *SealVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Proof); err != nil {
+	if _, err := w.Write(t.Proof[:]); err != nil {
 		return err
 	}
 
@@ -470,8 +470,12 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Randomness = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Randomness); err != nil {
+
+	if extra > 0 {
+		t.Randomness = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Randomness[:]); err != nil {
 		return err
 	}
 	// t.InteractiveRandomness (abi.InteractiveSealRandomness) (slice)
@@ -487,8 +491,12 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.InteractiveRandomness = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.InteractiveRandomness); err != nil {
+
+	if extra > 0 {
+		t.InteractiveRandomness = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.InteractiveRandomness[:]); err != nil {
 		return err
 	}
 	// t.Proof ([]uint8) (slice)
@@ -504,8 +512,12 @@ func (t *SealVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Proof = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Proof); err != nil {
+
+	if extra > 0 {
+		t.Proof = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
 		return err
 	}
 	// t.SealedCID (cid.Cid) (struct)
@@ -568,7 +580,7 @@ func (t *PoStProof) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.ProofBytes); err != nil {
+	if _, err := w.Write(t.ProofBytes[:]); err != nil {
 		return err
 	}
 	return nil
@@ -630,8 +642,12 @@ func (t *PoStProof) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.ProofBytes = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.ProofBytes); err != nil {
+
+	if extra > 0 {
+		t.ProofBytes = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.ProofBytes[:]); err != nil {
 		return err
 	}
 	return nil
@@ -659,7 +675,7 @@ func (t *WindowPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Randomness); err != nil {
+	if _, err := w.Write(t.Randomness[:]); err != nil {
 		return err
 	}
 
@@ -731,8 +747,12 @@ func (t *WindowPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Randomness = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Randomness); err != nil {
+
+	if extra > 0 {
+		t.Randomness = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Randomness[:]); err != nil {
 		return err
 	}
 	// t.Proofs ([]abi.PoStProof) (slice)
@@ -832,7 +852,7 @@ func (t *WinningPoStVerifyInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Randomness); err != nil {
+	if _, err := w.Write(t.Randomness[:]); err != nil {
 		return err
 	}
 
@@ -904,8 +924,12 @@ func (t *WinningPoStVerifyInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Randomness = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Randomness); err != nil {
+
+	if extra > 0 {
+		t.Randomness = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Randomness[:]); err != nil {
 		return err
 	}
 	// t.Proofs ([]abi.PoStProof) (slice)

@@ -320,7 +320,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.PeerId); err != nil {
+	if _, err := w.Write(t.PeerId[:]); err != nil {
 		return err
 	}
 
@@ -341,7 +341,7 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(v[:]); err != nil {
 			return err
 		}
 	}
@@ -442,8 +442,12 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.PeerId = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.PeerId); err != nil {
+
+	if extra > 0 {
+		t.PeerId = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.PeerId[:]); err != nil {
 		return err
 	}
 	// t.Multiaddrs ([][]uint8) (slice)
@@ -482,8 +486,12 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			if maj != cbg.MajByteString {
 				return fmt.Errorf("expected byte array")
 			}
-			t.Multiaddrs[i] = make([]byte, extra)
-			if _, err := io.ReadFull(br, t.Multiaddrs[i]); err != nil {
+
+			if extra > 0 {
+				t.Multiaddrs[i] = make([]uint8, extra)
+			}
+
+			if _, err := io.ReadFull(br, t.Multiaddrs[i][:]); err != nil {
 				return err
 			}
 		}
@@ -2335,7 +2343,7 @@ func (t *ChangePeerIDParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.NewID); err != nil {
+	if _, err := w.Write(t.NewID[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2372,8 +2380,12 @@ func (t *ChangePeerIDParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.NewID = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.NewID); err != nil {
+
+	if extra > 0 {
+		t.NewID = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.NewID[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2409,7 +2421,7 @@ func (t *ChangeMultiaddrsParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(v[:]); err != nil {
 			return err
 		}
 	}
@@ -2470,8 +2482,12 @@ func (t *ChangeMultiaddrsParams) UnmarshalCBOR(r io.Reader) error {
 			if maj != cbg.MajByteString {
 				return fmt.Errorf("expected byte array")
 			}
-			t.NewMultiaddrs[i] = make([]byte, extra)
-			if _, err := io.ReadFull(br, t.NewMultiaddrs[i]); err != nil {
+
+			if extra > 0 {
+				t.NewMultiaddrs[i] = make([]uint8, extra)
+			}
+
+			if _, err := io.ReadFull(br, t.NewMultiaddrs[i][:]); err != nil {
 				return err
 			}
 		}
@@ -2508,7 +2524,7 @@ func (t *ProveCommitSectorParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.Proof); err != nil {
+	if _, err := w.Write(t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2559,8 +2575,12 @@ func (t *ProveCommitSectorParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.Proof = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.Proof); err != nil {
+
+	if extra > 0 {
+		t.Proof = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2873,7 +2893,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.BlockHeader1); err != nil {
+	if _, err := w.Write(t.BlockHeader1[:]); err != nil {
 		return err
 	}
 
@@ -2886,7 +2906,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.BlockHeader2); err != nil {
+	if _, err := w.Write(t.BlockHeader2[:]); err != nil {
 		return err
 	}
 
@@ -2899,7 +2919,7 @@ func (t *ReportConsensusFaultParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if _, err := w.Write(t.BlockHeaderExtra); err != nil {
+	if _, err := w.Write(t.BlockHeaderExtra[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2936,8 +2956,12 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.BlockHeader1 = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.BlockHeader1); err != nil {
+
+	if extra > 0 {
+		t.BlockHeader1 = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.BlockHeader1[:]); err != nil {
 		return err
 	}
 	// t.BlockHeader2 ([]uint8) (slice)
@@ -2953,8 +2977,12 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.BlockHeader2 = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.BlockHeader2); err != nil {
+
+	if extra > 0 {
+		t.BlockHeader2 = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.BlockHeader2[:]); err != nil {
 		return err
 	}
 	// t.BlockHeaderExtra ([]uint8) (slice)
@@ -2970,8 +2998,12 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
-	t.BlockHeaderExtra = make([]byte, extra)
-	if _, err := io.ReadFull(br, t.BlockHeaderExtra); err != nil {
+
+	if extra > 0 {
+		t.BlockHeaderExtra = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.BlockHeaderExtra[:]); err != nil {
 		return err
 	}
 	return nil
