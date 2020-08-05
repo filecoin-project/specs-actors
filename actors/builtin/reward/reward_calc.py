@@ -15,6 +15,10 @@ SIMPLE_SUPPLY_TOTAL=330000000
 # Growth factor per year. Currently 200%.
 GROWTH_FACTOR = 2
 
+# Seconds in a year, according to filecoin. This is actually slightly shorter
+# than a year, but it's close enough.
+SECONDS_PER_YEAR=60*60*365*24
+
 # Precision factor.
 Q128 = 2**128
 
@@ -25,10 +29,10 @@ Q128 = 2**128
 decimal.getcontext().prec=int(Decimal(Q128**2).log10().to_integral_value(decimal.ROUND_CEILING))
 
 def epochs_in_year() -> Decimal:
-    return Decimal(60*60*365*24)/Decimal(EPOCH_DURATION_SECONDS)
+    return Decimal(SECONDS_PER_YEAR)/Decimal(EPOCH_DURATION_SECONDS)
 
-def q128(val, round) -> str:
-    return str((Q128 * val).to_integral_value(round))
+def q128(val) -> str:
+    return str((Q128 * val).to_integral_value(decimal.ROUND_DOWN))
 
 def atto(val) -> str:
     return str((10**18 * val).to_integral_value(decimal.ROUND_DOWN))
@@ -37,43 +41,28 @@ def atto(val) -> str:
 def baseline_exponent() -> Decimal: 
     return (Decimal(1 + GROWTH_FACTOR).ln() / epochs_in_year()).exp()
 
-def baseline_exponent_q128() -> str: 
-    return q128(baseline_exponent(), decimal.ROUND_HALF_UP)
-
 # ln(2) / (6 * epochsInYear)
 def reward_lambda() -> Decimal: 
     # 2 is a constant such that the half life is 6 years.
     return Decimal(2).ln() / (6 * epochs_in_year())
 
-def reward_lambda_q128() -> str: 
-    return q128(reward_lambda(), decimal.ROUND_FLOOR)
-
 # exp(lambda) - 1
 def reward_lambda_prime() -> Decimal: 
     return reward_lambda().exp() - 1
-
-def reward_lambda_prime_q128() -> str: 
-    return q128(reward_lambda_prime(), decimal.ROUND_FLOOR)
 
 # exp(-lambda) - 1
 def initial_reward_veolocity_estimate() -> Decimal: 
     return reward_lambda().copy_negate().exp() - 1
 
-def initial_reward_veolocity_estimate_atto() -> str: 
-    return atto(initial_reward_veolocity_estimate())
-
 def initial_reward_position_estimate() -> Decimal: 
     return (1 - reward_lambda().copy_negate().exp())*SIMPLE_SUPPLY_TOTAL
 
-def initial_reward_position_estimate_atto() -> str: 
-    return atto(initial_reward_position_estimate())
-
 def main():
-    print("BaselineExponent: ", baseline_exponent_q128())
-    print("lambda: ", reward_lambda_q128())
-    print("expLamSubOne: ", reward_lambda_prime_q128())
-    print("InitialRewardVelocityEstimate: ", initial_reward_veolocity_estimate_atto())
-    print("InitialRewardPositionEstimate: ", initial_reward_position_estimate_atto())
+    print("BaselineExponent: ", q128(baseline_exponent()))
+    print("lambda: ", q128(reward_lambda()))
+    print("expLamSubOne: ", q128(reward_lambda_prime()))
+    print("InitialRewardVelocityEstimate: ", atto(initial_reward_veolocity_estimate()))
+    print("InitialRewardPositionEstimate: ", atto(initial_reward_position_estimate()))
 
 if __name__ == "__main__":
     main()
