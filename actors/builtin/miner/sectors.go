@@ -3,6 +3,7 @@ package miner
 import (
 	"fmt"
 
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -25,7 +26,7 @@ type Sectors struct {
 	*adt.Array
 }
 
-func (sa Sectors) Load(sectorNos *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (sa Sectors) Load(sectorNos bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	var sectorInfos []*SectorOnChainInfo
 	if err := sectorNos.ForEach(func(i uint64) error {
 		var sectorOnChain SectorOnChainInfo

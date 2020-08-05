@@ -717,7 +717,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
 
@@ -747,7 +747,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
 
@@ -819,7 +819,7 @@ func TestWindowPost(t *testing.T) {
 			expectedPenalty:       recoveryFee,
 		}
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 
@@ -1586,7 +1586,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{newSector}, nil)
 
@@ -2134,7 +2134,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
-	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		expanded, err := bf.All(miner.SectorsMax)
 		require.NoError(h.t, err)
 		expirations[epoch] = expanded
@@ -2574,7 +2574,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	rt.Verify()
 }
 
-func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors *bitfield.BitField) {
+func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2623,7 +2623,7 @@ func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSecto
 	rt.Verify()
 }
 
-func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField, expectedFee abi.TokenAmount) {
+func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitField, expectedFee abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2900,7 +2900,7 @@ func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.
 			for _, sector := range dlSectors {
 				_, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
 				require.NoError(h.t, err)
-				partitions = append(partitions, miner.PoStPartition{Index: pIdx, Skipped: abi.NewBitField()})
+				partitions = append(partitions, miner.PoStPartition{Index: pIdx, Skipped: bitfield.New()})
 			}
 			h.submitWindowPoSt(rt, dlinfo, partitions, dlSectors, nil)
 			delete(deadlines, dlinfo.Index)
@@ -2985,12 +2985,12 @@ func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt
 	return &miner.DeclareFaultsParams{Faults: declarations}
 }
 
-func sectorInfoAsBitfield(infos []*miner.SectorOnChainInfo) *bitfield.BitField {
+func sectorInfoAsBitfield(infos []*miner.SectorOnChainInfo) bitfield.BitField {
 	bf := bitfield.New()
 	for _, info := range infos {
 		bf.Set(uint64(info.SectorNumber))
 	}
-	return &bf
+	return bf
 }
 
 func powerForSectors(sectorSize abi.SectorSize, sectors []*miner.SectorOnChainInfo) (rawBytePower, qaPower big.Int) {
@@ -3002,7 +3002,7 @@ func powerForSectors(sectorSize abi.SectorSize, sectors []*miner.SectorOnChainIn
 	return rawBytePower, qaPower
 }
 
-func assertEmptyBitfield(t *testing.T, b *abi.BitField) {
+func assertEmptyBitfield(t *testing.T, b bitfield.BitField) {
 	empty, err := b.IsEmpty()
 	require.NoError(t, err)
 	assert.True(t, empty)

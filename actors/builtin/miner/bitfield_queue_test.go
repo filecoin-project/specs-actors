@@ -258,7 +258,7 @@ func (bqe *bqExpectation) Equals(t *testing.T, q miner.BitfieldQueue) {
 
 	assert.Equal(t, uint64(len(bqe.expected)), q.Length())
 
-	err = q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+	err = q.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		values, ok := bqe.expected[epoch]
 		require.True(t, ok)
 
