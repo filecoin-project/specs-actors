@@ -472,7 +472,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v must be before now %v", params.SealRandEpoch, rt.CurrEpoch())
 	}
 
-	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.SealProof)
+	challengeEarliest := rt.CurrEpoch() - ChainFinality - MaxPreCommitRandomnessLookback
 	if params.SealRandEpoch < challengeEarliest {
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
 	}
@@ -1975,12 +1975,6 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
 
-	// Check randomness.
-	challengeEarliest := sealChallengeEarliest(rt.CurrEpoch(), params.RegisteredSealProof)
-	if params.SealRandEpoch < challengeEarliest {
-		rt.Abortf(exitcode.ErrIllegalArgument, "seal epoch %v too old, expected >= %v", params.SealRandEpoch, challengeEarliest)
-	}
-
 	commD := requestUnsealedSectorCID(rt, params.RegisteredSealProof, params.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
@@ -2271,11 +2265,6 @@ func PowerForSectors(ssize abi.SectorSize, sectors []*SectorOnChainInfo) PowerPa
 		Raw: big.Mul(big.NewIntUnsigned(uint64(ssize)), big.NewIntUnsigned(uint64(len(sectors)))),
 		QA:  qa,
 	}
-}
-
-// The oldest seal challenge epoch that will be accepted in the current epoch.
-func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
-	return currEpoch - ChainFinality - MaxPreCommitRandomnessLookback
 }
 
 func getMinerInfo(rt Runtime, st *State) *MinerInfo {
