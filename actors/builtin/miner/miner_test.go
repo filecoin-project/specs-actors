@@ -1521,7 +1521,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			// Half the sectors should expire on-time.
 			var onTimeTotal uint64
 			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
-				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantSpecForDeadline(dlIdx))
 				require.NoError(t, err)
 
 				count, err := expirationSet.Count()
@@ -1534,7 +1534,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			// Half the sectors should expire late.
 			var extendedTotal uint64
 			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
-				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantSpecForDeadline(dlIdx))
 				require.NoError(t, err)
 
 				count, err := expirationSet.Count()
