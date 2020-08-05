@@ -1825,7 +1825,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	var addrBuf bytes.Buffer
 	err = rt.Message().Receiver().MarshalCBOR(&addrBuf)
 	AssertNoError(err)
-	postRandomness := rt.GetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
+	postRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
 
 	sectorProofInfo := make([]abi.SectorInfo, len(sectors))
 	for i, s := range sectors {
@@ -1884,8 +1884,8 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 	err = rt.Message().Receiver().MarshalCBOR(buf)
 	AssertNoError(err)
 
-	svInfoRandomness := rt.GetRandomness(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
-	svInfoInteractiveRandomness := rt.GetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
+	svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
+	svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
 
 	return &abi.SealVerifyInfo{
 		SealProof: params.RegisteredSealProof,
