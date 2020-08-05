@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -784,6 +785,9 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 			"failed to count sectors for deadline %d, partition %d",
 			decl.Deadline, decl.Partition,
 		)
+		if sectorCount > math.MaxUint64-count {
+			rt.Abortf(exitcode.ErrIllegalArgument, "sector bitfield integer overflow")
+		}
 		sectorCount += count
 	}
 	if sectorCount > AddressedSectorsMax {
@@ -808,11 +812,15 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		// Group declarations by deadline, and remember iteration order.
 		declsByDeadline := map[uint64][]*ExpirationExtension{}
 		var deadlinesToLoad []uint64
-		for _, decl := range params.Extensions {
+		for i := range params.Extensions {
+			// Take a pointer to the value inside the slice, don't
+			// take a reference to the temporary loop variable as it
+			// will be overwritten every iteration.
+			decl := &params.Extensions[i]
 			if _, ok := declsByDeadline[decl.Deadline]; !ok {
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)
 			}
-			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], &decl)
+			declsByDeadline[decl.Deadline] = append(declsByDeadline[decl.Deadline], decl)
 		}
 
 		sectors, err := LoadSectors(store, st.Sectors)
@@ -846,7 +854,6 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 					newSector := *sector
 					newSector.Expiration = decl.NewExpiration
-					//qaPowerDelta := big.Sub(QAPowerForSector(info.SectorSize, &newSector), QAPowerForSector(info.SectorSize, sector))
 
 					newSectors[i] = &newSector
 				}
@@ -856,8 +863,11 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update sectors %v", decl.Sectors)
 
 				// Remove old sectors from partition and assign new sectors.
-				powerDelta, pledgeDelta, err = partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize, quant)
+				partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize, quant)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
+
+				powerDelta = powerDelta.Add(partitionPowerDelta)
+				pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta) // expected to be zero, see note below.
 
 				err = partitions.Set(decl.Partition, &partition)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partition", key)
