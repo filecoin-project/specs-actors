@@ -668,75 +668,21 @@ func (dl *Deadline) DeclareFaults(
 	newFaultyPower = NewPowerPairZero()
 	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
 		var partition Partition
-		found, err := partitions.Get(partIdx, &partition)
-		if err != nil {
+		if found, err := partitions.Get(partIdx, &partition); err != nil {
 			return xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
-		}
-		if !found {
+		} else if !found {
 			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
 		}
 
-		err = validateFRDeclarationPartition(&partition, sectorNos)
+		newFaults, newPartitionFaultyPower, err := partition.DeclareFaults(store, sectors, sectorNos, faultExpirationEpoch, ssize, quant)
 		if err != nil {
-			return exitcode.ErrIllegalArgument.Wrapf("failed fault declaration for %d: %w", partIdx, err)
+			return xerrors.Errorf("failed to declare faults in partition %d: %w", partIdx, err)
 		}
-
-		// Split declarations into declarations of new faults, and retraction of declared recoveries.
-		retractedRecoveries, err := bitfield.IntersectBitField(partition.Recoveries, sectorNos)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
-		}
-
-		newFaults, err := bitfield.SubtractBitField(sectorNos, retractedRecoveries)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to subtract recoveries from sectors: %w", err)
-		}
-		// Ignore any terminated sectors and previously declared or detected faults
-		newFaults, err = bitfield.SubtractBitField(newFaults, partition.Terminated)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to subtract terminations from faults: %w", err)
-		}
-		newFaults, err = bitfield.SubtractBitField(newFaults, partition.Faults)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to subtract existing faults from faults: %w", err)
-		}
-
-		// Add new faults to state.
-		empty, err := newFaults.IsEmpty()
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
-		}
-		if !empty {
-			newFaultSectors, err := sectors.Load(newFaults)
-			if err != nil {
-				return xc.ErrIllegalState.Wrapf("failed to load fault sectors: %w", err)
-			}
-
-			newPartitionFaultyPower, err := partition.AddFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, ssize, quant)
-			if err != nil {
-				return xc.ErrIllegalState.Wrapf("failed to add faults: %w", err)
-			}
-
-			newFaultyPower = newFaultyPower.Add(newPartitionFaultyPower)
+		newFaultyPower = newFaultyPower.Add(newPartitionFaultyPower)
+		if empty, err := newFaults.IsEmpty(); err != nil {
+			return xerrors.Errorf("failed to count new faults: %w", err)
+		} else if !empty {
 			partitionsWithFault = append(partitionsWithFault, partIdx)
-		}
-
-		// Remove faulty recoveries from state.
-		empty, err = retractedRecoveries.IsEmpty()
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to check if bitfield was empty: %w", err)
-		}
-		if !empty {
-			retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
-			if err != nil {
-				return xc.ErrIllegalState.Wrapf("failed to load recovery sectors: %w", err)
-			}
-			retractedRecoveryPower := PowerForSectors(ssize, retractedRecoverySectors)
-
-			err = partition.RemoveRecoveries(retractedRecoveries, retractedRecoveryPower)
-			if err != nil {
-				return xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
-			}
 		}
 
 		err = partitions.Set(partIdx, &partition)
@@ -775,38 +721,13 @@ func (dl *Deadline) DeclareFaultsRecovered(
 
 	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos *abi.BitField) error {
 		var partition Partition
-		found, err := partitions.Get(partIdx, &partition)
-		if err != nil {
+		if found, err := partitions.Get(partIdx, &partition); err != nil {
 			return xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
-		}
-		if !found {
+		} else if !found {
 			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
 		}
 
-		err = validateFRDeclarationPartition(&partition, sectorNos)
-		if err != nil {
-			return exitcode.ErrIllegalArgument.Wrapf("failed fault declaration for %d: %w", partIdx, err)
-		}
-
-		// Ignore sectors not faulty or already declared recovered
-		recoveries, err := bitfield.IntersectBitField(sectorNos, partition.Faults)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to intersect recoveries with faults: %w", err)
-		}
-		recoveries, err = bitfield.SubtractBitField(recoveries, partition.Recoveries)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to subtract existing recoveries: %w", err)
-		}
-
-		// Record the new recoveries for processing at Window PoSt or deadline cron.
-		recoverySectors, err := sectors.Load(recoveries)
-		if err != nil {
-			return xc.ErrIllegalState.Wrapf("failed to load recovery sectors: %w", err)
-		}
-		recoveryPower := PowerForSectors(ssize, recoverySectors)
-
-		err = partition.AddRecoveries(recoveries, recoveryPower)
-		if err != nil {
+		if err = partition.DeclareFaultsRecovered(sectors, ssize, sectorNos); err != nil {
 			return xc.ErrIllegalState.Wrapf("failed to add recoveries: %w", err)
 		}
 
@@ -973,9 +894,9 @@ func (dl *Deadline) RecordProvenSectors(
 		var partition Partition
 		found, err := partitions.Get(post.Index, &partition)
 		if err != nil {
-			return nil, xc.ErrIllegalState.Wrapf("failed to load partition d: %w", post.Index, err)
+			return nil, xerrors.Errorf("failed to load partition %d: %w", post.Index, err)
 		} else if !found {
-			return nil, exitcode.ErrNotFound.Wrapf("no such partition %d", post.Index)
+			return nil, xc.ErrNotFound.Wrapf("no such partition %d", post.Index)
 		}
 
 		// Process new faults and accumulate new faulty power.
@@ -993,16 +914,9 @@ func (dl *Deadline) RecordProvenSectors(
 			rescheduledPartitions = append(rescheduledPartitions, post.Index)
 		}
 
-		// Process recoveries, assuming the proof will be successful.
-		// This similarly updates state.
-		recoveredSectors, err := sectors.Load(partition.Recoveries)
+		recoveredPower, err := partition.RecoverFaults(store, sectors, ssize, quant)
 		if err != nil {
-			return nil, xc.ErrIllegalState.Wrapf("failed to load recovered sectors for partition %d: %w", post.Index, err)
-		}
-
-		recoveredPower, err := partition.RecoverFaults(store, partition.Recoveries, recoveredSectors, ssize, quant)
-		if err != nil {
-			return nil, xc.ErrIllegalState.Wrapf("failed to remove recoveries from faults for partition %d: %w", post.Index, err)
+			return nil, xerrors.Errorf("failed to recover faulty sectors for partition %d: %w", post.Index, err)
 		}
 
 		// This will be rolled back if the method aborts with a failed proof.
