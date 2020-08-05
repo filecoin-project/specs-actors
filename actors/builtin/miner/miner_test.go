@@ -1597,6 +1597,123 @@ func TestWithdrawBalance(t *testing.T) {
 	})
 }
 
+func TestChangeWorkerAddress(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	setupFunc := func() (*mock.Runtime, *actorHarness) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+
+		return rt, actor
+	}
+
+	t.Run("successfully change a worker address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		currentEpoch := abi.ChainEpoch(5)
+		rt.SetEpoch(currentEpoch)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		// no change if current epoch is less than effective epoch
+		rt.SetEpoch(effectiveEpoch - 1)
+		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+		rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
+			EventType: miner.CronEventWorkerKeyChange,
+		})
+		rt.Verify()
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.NotNil(t, info.PendingWorkerKey)
+		require.EqualValues(t, actor.worker, info.Worker)
+
+		// set current epoch to effective epoch and ask to change the address
+		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+	})
+
+	t.Run("fails if unable to resolve worker address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewBLSAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if worker public key is not BLS", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+		key := tutil.NewIDAddr(t, 505)
+
+		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &key, exitcode.Ok)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if new worker address does not have a code", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 5001)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if new worker is not an account actor", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.StorageMinerActorCodeID)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails when caller is not the owner", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+		rt.ExpectValidateCallerAddr(actor.owner)
+		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &actor.key, exitcode.Ok)
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+}
+
 func TestReportConsensusFault(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
@@ -1959,6 +2076,55 @@ func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
 //
 // Actor method calls
 //
+
+func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch) {
+	rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+	param := &miner.ChangeWorkerAddressParams{newWorker}
+
+	cronPayload := miner.CronEventPayload{
+		EventType: miner.CronEventWorkerKeyChange,
+	}
+	payload := new(bytes.Buffer)
+	err := cronPayload.MarshalCBOR(payload)
+	require.NoError(h.t, err)
+	cronEvt := &power.EnrollCronEventParams{
+		EventEpoch: effectiveEpoch,
+		Payload:    payload.Bytes(),
+	}
+
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
+
+	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
+		cronEvt, big.Zero(), nil, exitcode.Ok)
+
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	rt.Call(h.a.ChangeWorkerAddress, param)
+	rt.Verify()
+
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
+	require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+}
+
+func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
+	rt.SetEpoch(effectiveEpoch)
+	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
+		EventType: miner.CronEventWorkerKeyChange,
+	})
+	rt.Verify()
+
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.Nil(h.t, info.PendingWorkerKey)
+	require.EqualValues(h.t, newWorker, info.Worker)
+}
 
 func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address) {
 	rt.ExpectValidateCallerAny()
