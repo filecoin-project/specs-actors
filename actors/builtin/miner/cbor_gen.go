@@ -3153,6 +3153,54 @@ func (t *CompactPartitionsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+var lengthBufCompactSectorNumbersParams = []byte{129}
+
+func (t *CompactSectorNumbersParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufCompactSectorNumbersParams); err != nil {
+		return err
+	}
+
+	// t.MaskSectorNumbers (bitfield.BitField) (struct)
+	if err := t.MaskSectorNumbers.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *CompactSectorNumbersParams) UnmarshalCBOR(r io.Reader) error {
+	*t = CompactSectorNumbersParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.MaskSectorNumbers (bitfield.BitField) (struct)
+
+	{
+
+		if err := t.MaskSectorNumbers.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.MaskSectorNumbers: %w", err)
+		}
+
+	}
+	return nil
+}
+
 var lengthBufCronEventPayload = []byte{129}
 
 func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {

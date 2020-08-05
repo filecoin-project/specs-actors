@@ -69,6 +69,7 @@ func (a Actor) Exports() []interface{} {
 		17:                        a.ConfirmSectorProofsValid,
 		18:                        a.ChangeMultiaddrs,
 		19:                        a.CompactPartitions,
+		20:                        a.CompactSectorNumbers,
 	}
 }
 
