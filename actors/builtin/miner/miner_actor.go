@@ -814,7 +814,8 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		var deadlinesToLoad []uint64
 		for i := range params.Extensions {
 			// Take a pointer to the value inside the slice, don't
-			// take a reference to the temporary loop variable.
+			// take a reference to the temporary loop variable as it
+			// will be overwritten every iteration.
 			decl := &params.Extensions[i]
 			if _, ok := declsByDeadline[decl.Deadline]; !ok {
 				deadlinesToLoad = append(deadlinesToLoad, decl.Deadline)

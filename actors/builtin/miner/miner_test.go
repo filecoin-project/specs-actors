@@ -1500,7 +1500,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}))
 		}
 
-		// Make sure we're touching at least to sectors.
+		// Make sure we're touching at least two sectors.
 		require.GreaterOrEqual(t, len(params.Extensions), 2,
 			"test error: this test should touch more than one partition",
 		)
