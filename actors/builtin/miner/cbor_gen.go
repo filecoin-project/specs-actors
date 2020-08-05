@@ -15,7 +15,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{140}
+var lengthBufState = []byte{141}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -59,6 +59,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectors); err != nil {
 		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
+	}
+
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectorsExpiry); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PreCommittedSectorsExpiry: %w", err)
 	}
 
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -117,7 +123,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 12 {
+	if extra != 13 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -182,6 +188,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.PreCommittedSectors = c
+
+	}
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PreCommittedSectorsExpiry: %w", err)
+		}
+
+		t.PreCommittedSectorsExpiry = c
 
 	}
 	// t.AllocatedSectors (cid.Cid) (struct)

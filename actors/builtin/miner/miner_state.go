@@ -39,6 +39,9 @@ type State struct {
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
+	// PreCommittedSectorsExpiry maintains the state required to expire PreCommittedSectors.
+	PreCommittedSectorsExpiry cid.Cid // BitFieldQueue (AMT[Epoch]*BitField)
+
 	// Allocated sector IDs. Sector IDs can never be reused once allocated.
 	AllocatedSectors cid.Cid // BitField
 
@@ -151,12 +154,14 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		VestingFunds:             emptyArrayCid,
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
-		PreCommittedSectors: emptyMapCid,
-		AllocatedSectors:    emptyBitfieldCid,
-		Sectors:             emptyArrayCid,
-		ProvingPeriodStart:  periodStart,
-		CurrentDeadline:     0,
-		Deadlines:           emptyDeadlinesCid,
+		PreCommittedSectors:       emptyMapCid,
+		PreCommittedSectorsExpiry: emptyArrayCid,
+
+		AllocatedSectors:   emptyBitfieldCid,
+		Sectors:            emptyArrayCid,
+		ProvingPeriodStart: periodStart,
+		CurrentDeadline:    0,
+		Deadlines:          emptyDeadlinesCid,
 
 		EarlyTerminations: abi.NewBitField(),
 	}, nil

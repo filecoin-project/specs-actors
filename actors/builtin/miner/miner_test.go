@@ -1992,20 +1992,6 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
-	{
-		eventPayload := miner.CronEventPayload{
-			EventType: miner.CronEventPreCommitExpiry,
-			Sectors:   bitfield.NewFromSet([]uint64{uint64(params.SectorNumber)}),
-		}
-		buf := bytes.Buffer{}
-		err := eventPayload.MarshalCBOR(&buf)
-		require.NoError(h.t, err)
-		cronParams := power.EnrollCronEventParams{
-			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.SealProof] + 1,
-			Payload:    buf.Bytes(),
-		}
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
-	}
 
 	rt.Call(h.a.PreCommitSector, params)
 	rt.Verify()

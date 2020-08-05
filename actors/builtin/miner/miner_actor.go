@@ -31,7 +31,6 @@ type CronEventType int64
 
 const (
 	CronEventWorkerKeyChange CronEventType = iota
-	CronEventPreCommitExpiry
 	CronEventProvingDeadline
 	CronEventProcessEarlyTerminations
 )
@@ -498,25 +497,31 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
-	bf := abi.NewBitField()
-	bf.Set(uint64(params.SectorNumber))
-
-	// Request deferred Cron check for PreCommit expiry check.
-	cronPayload := CronEventPayload{
-		EventType: CronEventPreCommitExpiry,
-		Sectors:   bf,
-	}
-
+	// add precommit expiry to the queue
 	msd, ok := MaxSealDuration[params.SealProof]
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
 	}
-
 	// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
 	// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
 	// ConfirmSectorProofsValid would fail to find it.
 	expiryBound := rt.CurrEpoch() + msd + 1
-	enrollCronEvent(rt, expiryBound, &cronPayload)
+
+	// create BitField for this sector
+	bf := abi.NewBitField()
+	bf.Set(uint64(params.SectorNumber))
+
+	// Load BitField Queue for sector expiry
+	quant := st.QuantEndOfDeadline()
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-commit expiry queue")
+
+	// add entry for this sector to the queue
+	err = queue.AddToQueue(expiryBound, bf)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit sector expiry to queue")
+
+	st.PreCommittedSectorsExpiry, err = queue.Root()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save pre-commit sector queue")
 
 	return nil
 }
@@ -1381,10 +1386,6 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	switch payload.EventType {
 	case CronEventProvingDeadline:
 		handleProvingDeadline(rt)
-	case CronEventPreCommitExpiry:
-		if payload.Sectors != nil {
-			checkPrecommitExpiry(rt, payload.Sectors)
-		}
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
 	case CronEventProcessEarlyTerminations:
@@ -1610,6 +1611,24 @@ func handleProvingDeadline(rt Runtime) {
 				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
 			}
 		}
+
+		// expire pre-committed sectors
+		expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector expiry queue")
+
+		bf, modified, err := expiryQ.PopUntil(currEpoch)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop expired sectors")
+
+		if modified {
+			st.PreCommittedSectorsExpiry, err = expiryQ.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save expiry queue")
+		}
+
+		if bf != nil {
+			depositToBurn, err := st.checkPrecommitExpiry(store, bf)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
+			burnFunds(rt, depositToBurn)
+		}
 	})
 
 	// Remove power for new faults, and burn penalties.
@@ -1686,46 +1705,44 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 	return replaceSector
 }
 
-func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
-	store := adt.AsStore(rt)
-	var st State
-
+func (st *State) checkPrecommitExpiry(store adt.Store, sectors *abi.BitField) (depositToBurn abi.TokenAmount, err error) {
 	// initialize here to add together for all sectors and minimize calls across actors
-	depositToBurn := abi.NewTokenAmount(0)
-	rt.State().Transaction(&st, func() {
-		var sectorNos []abi.SectorNumber
-		err := sectors.ForEach(func(i uint64) error {
-			sectorNo := abi.SectorNumber(i)
-			sector, found, err := st.GetPrecommittedSector(store, sectorNo)
-			if err != nil {
-				return err
-			}
-			if !found {
-				// already committed/deleted
-				return nil
-			}
+	depositToBurn = abi.NewTokenAmount(0)
 
-			// mark it for deletion
-			sectorNos = append(sectorNos, sectorNo)
-
-			// increment deposit to burn
-			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+	var sectorNos []abi.SectorNumber
+	if err = sectors.ForEach(func(i uint64) error {
+		sectorNo := abi.SectorNumber(i)
+		sector, found, err := st.GetPrecommittedSector(store, sectorNo)
+		if err != nil {
+			return err
+		}
+		if !found {
+			// already committed/deleted
 			return nil
-		})
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit expiries")
-
-		// Actually delete it.
-		if len(sectorNos) > 0 {
-			err = st.DeletePrecommittedSectors(store, sectorNos...)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pre-commits")
 		}
 
-		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
-		Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
-	})
+		// mark it for deletion
+		sectorNos = append(sectorNos, sectorNo)
+
+		// increment deposit to burn
+		depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+		return nil
+	}); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to check pre-commit expiries: %w", err)
+	}
+
+	// Actually delete it.
+	if len(sectorNos) > 0 {
+		if err := st.DeletePrecommittedSectors(store, sectorNos...); err != nil {
+			return big.Zero(), fmt.Errorf("failed to delete pre-commits: %w", err)
+		}
+	}
+
+	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
+	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
-	burnFunds(rt, depositToBurn)
+	return depositToBurn, nil
 }
 
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
