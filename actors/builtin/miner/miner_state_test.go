@@ -545,7 +545,6 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 
 }
 
-
 func TestAddPreCommitExpiry(t *testing.T) {
 	epoch := abi.ChainEpoch(10)
 	sectorNum := abi.SectorNumber(1)
@@ -582,7 +581,8 @@ func TestAddPreCommitExpiry(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		err := harness.s.AddPreCommitExpiry(harness.store, epoch, abi.RegisteredSealProof(10), sectorNum)
 		require.Error(t, err)
-  }}
+	})
+}
 
 func TestSectorAssignment(t *testing.T) {
 	partitionSectors, err := abi.RegisteredSealProof_StackedDrg32GiBV1.WindowPoStPartitionSectors()
