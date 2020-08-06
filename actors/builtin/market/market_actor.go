@@ -219,7 +219,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			err = msm.dealProposals.Set(id, &deal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal")
 
-			err = msm.dealsByEpoch.Put(deal.Proposal.StartEpoch, id)
+			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
+			// schedule too many deals for the same tick.
+			processEpoch, err := genRandNextEpoch(deal.Proposal.StartEpoch, rt.CurrEpoch(), &deal.Proposal, rt.GetRandomness)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
+
+			err = msm.dealsByEpoch.Put(processEpoch, id)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal ops by epoch")
 
 			newDealIds = append(newDealIds, id)
@@ -505,22 +510,6 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 					AssertMsg(nextEpoch > rt.CurrEpoch() && slashAmount.IsZero(), "deal should not be slashed and should have a schedule for next cron tick"+
 						" as it has not been removed")
 
-					// If this is the first cron tick for the deal, we should  randomize the next epoch
-					// for when it will be processed so an attacker isn't able to schedule too many deals for the same tick.
-					if state.LastUpdatedEpoch == epochUndefined {
-						buf := bytes.Buffer{}
-						err = deal.MarshalCBOR(&buf)
-						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to marshal proposal")
-
-						rb := rt.GetRandomness(crypto.DomainSeparationTag_MarketNextCronSchedule, rt.CurrEpoch()-1, buf.Bytes())
-
-						// generate a random epoch in [currentEpoch + 1, currentEpoch + DealUpdatesInterval]
-						var offset uint64
-						err = binary.Read(bytes.NewBuffer(rb), binary.BigEndian, &offset)
-						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate offset")
-						nextEpoch = rt.CurrEpoch() + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)) + 1
-					}
-
 					// Update deal's LastUpdatedEpoch in DealStates
 					state.LastUpdatedEpoch = rt.CurrEpoch()
 					err = msm.dealStates.Set(dealID, state)
@@ -583,13 +572,29 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
+func genRandNextEpoch(baseEpoch, currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(crypto.DomainSeparationTag, abi.ChainEpoch, []byte) abi.Randomness) (abi.ChainEpoch, error) {
+	buf := bytes.Buffer{}
+	if err := deal.MarshalCBOR(&buf); err != nil {
+		return epochUndefined, xerrors.Errorf("failed to marshal proposal: %w", err)
+	}
+
+	rb := rbF(crypto.DomainSeparationTag_MarketDealCronSeed, currEpoch-1, buf.Bytes())
+
+	// generate a random epoch in [baseEpoch, baseEpoch + DealUpdatesInterval)
+	var offset uint64
+	if err := binary.Read(bytes.NewBuffer(rb), binary.BigEndian, &offset); err != nil {
+		return epochUndefined, xerrors.Errorf("failed to generate offset: %w", err)
+	}
+
+	return baseEpoch + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)), nil
+}
+
 func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
 	removeState bool) error {
 	if removeProposal {
 		if err := proposals.Delete(uint64(dealId)); err != nil {
 			return xerrors.Errorf("failed to delete deal proposal: %w", err)
 		}
-
 	}
 
 	if removeState {

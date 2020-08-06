@@ -11,5 +11,5 @@ const (
 	DomainSeparationTag_SealRandomness
 	DomainSeparationTag_InteractiveSealChallengeSeed
 	DomainSeparationTag_WindowedPoStDeadlineAssignment
-	DomainSeparationTag_MarketNextCronSchedule
+	DomainSeparationTag_MarketDealCronSeed
 )
