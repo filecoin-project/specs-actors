@@ -400,8 +400,8 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
-		 err = ptx.Put(txnID, txn)
-		 builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put transaction %v for approval", txnID)
+		err = ptx.Put(txnID, txn)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put transaction %v for approval", txnID)
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
@@ -424,7 +424,7 @@ func getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []by
 	if checkHash {
 		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute proposal hash for %v", txnID)
-		if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
+		if !bytes.Equal(proposalHash, calculatedHash[:]) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "hash does not match proposal params (ensure requester is an ID address)")
 		}
 	}

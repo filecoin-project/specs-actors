@@ -522,6 +522,13 @@ func TestApprove(t *testing.T) {
 			})
 			_ = actor.approve(rt, txnID, proposalHashData, nil)
 		})
+
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			_ = actor.approve(rt, txnID, nil, nil)
+		})
 	})
 
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
