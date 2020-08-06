@@ -472,7 +472,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v must be before now %v", params.SealRandEpoch, rt.CurrEpoch())
 	}
 
-	challengeEarliest := rt.CurrEpoch() - ChainFinality - MaxPreCommitRandomnessLookback
+	challengeEarliest := rt.CurrEpoch() - MaxPreCommitRandomnessLookback
 	if params.SealRandEpoch < challengeEarliest {
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
 	}
