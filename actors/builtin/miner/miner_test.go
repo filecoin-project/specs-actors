@@ -36,7 +36,7 @@ var testPid abi.PeerID
 var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
-var bigBalance = big.Mul(big.NewInt(10000), big.NewInt(1e18))
+var bigBalance = big.Mul(big.NewInt(1000000), big.NewInt(1e18))
 
 // an expriration 1 greater than min expiration
 const defaultSectorExpiration = 181
@@ -236,9 +236,12 @@ func TestCommitments(t *testing.T) {
 		assertEmptyBitfield(t, deadline.PostSubmissions)
 		assertEmptyBitfield(t, deadline.EarlyTerminations)
 
+		quant := st.QuantSpecForDeadline(dlIdx)
+		quantizedExpiration := quant.QuantizeUp(precommit.Expiration)
+
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			precommit.Expiration: {pIdx},
+			quantizedExpiration: {pIdx},
 		}, dQueue)
 
 		assertBitfieldEquals(t, partition.Sectors, uint64(sectorNo))
@@ -250,7 +253,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, miner.NewPowerPairZero(), partition.RecoveringPower)
 
 		pQueue := actor.collectPartitionExpirations(rt, partition)
-		entry, ok := pQueue[precommit.Expiration]
+		entry, ok := pQueue[quantizedExpiration]
 		require.True(t, ok)
 		assertBitfieldEquals(t, entry.OnTimeSectors, uint64(sectorNo))
 		assertEmptyBitfield(t, entry.EarlySectors)
@@ -414,14 +417,15 @@ func TestCommitments(t *testing.T) {
 		// The partition is registered with an expiry at both epochs.
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
+		quantizedExpiration := dlInfo.QuantSpec().QuantizeUp(oldSector.Expiration)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
 			dlInfo.NextNotElapsed().Last(): {uint64(0)},
-			oldSector.Expiration:           {uint64(0)},
+			quantizedExpiration:            {uint64(0)},
 		}, dQueue)
 
 		pQueue := actor.collectPartitionExpirations(rt, partition)
 		assertBitfieldEquals(t, pQueue[dlInfo.NextNotElapsed().Last()].OnTimeSectors, uint64(oldSector.SectorNumber))
-		assertBitfieldEquals(t, pQueue[oldSector.Expiration].OnTimeSectors, uint64(newSector.SectorNumber))
+		assertBitfieldEquals(t, pQueue[quantizedExpiration].OnTimeSectors, uint64(newSector.SectorNumber))
 
 		// Roll forward to the beginning of the next iteration of this deadline
 		advanceToEpochWithCron(rt, actor, dlInfo.NextNotElapsed().Open)
@@ -431,7 +435,7 @@ func TestCommitments(t *testing.T) {
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
-		faultExpiration := dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge
+		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
 
@@ -457,8 +461,8 @@ func TestCommitments(t *testing.T) {
 		// and once on-time.
 		dQueue = actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			newSector.Expiration: {uint64(0)},
-			faultExpiration:      {uint64(0)},
+			dlInfo.QuantSpec().QuantizeUp(newSector.Expiration): {uint64(0)},
+			faultExpiration: {uint64(0)},
 		}, dQueue)
 
 		// Old sector gone from pledge requirement and deposit
@@ -523,6 +527,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			st := getState(rt)
 			prevState := *st
+			quant := st.QuantSpecForDeadline(dlIdx)
 			deadlines, err := st.LoadDeadlines(rt.AdtStore())
 			require.NoError(t, err)
 			deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
@@ -536,7 +541,7 @@ func TestCommitments(t *testing.T) {
 			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
 			require.NoError(t, err)
 			newFaults, _, err := partition.DeclareFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
-				actor.sectorSize, st.QuantEndOfDeadline())
+				actor.sectorSize, quant)
 			require.NoError(t, err)
 			assertBitfieldEquals(t, newFaults, uint64(oldSectors[0].SectorNumber))
 			require.NoError(t, partitions.Set(partIdx, &partition))
@@ -1205,7 +1210,7 @@ func TestDeadlineCron(t *testing.T) {
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
 		assert.True(t, pwr.Equals(deadline.FaultyPower))
-		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantEndOfDeadline(), actor.sectorSize, uint64(4), allSectors)
+		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantSpecForDeadline(dlIdx), actor.sectorSize, uint64(4), allSectors)
 	})
 
 	t.Run("test cron run late", func(t *testing.T) {
@@ -1335,7 +1340,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "cannot reduce sector expiration", func() {
-			actor.extendSector(rt, sector, 0, params)
+			actor.extendSectors(rt, params)
 		})
 	})
 
@@ -1364,7 +1369,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 
 		expectedMessage := fmt.Sprintf("cannot be more than %d past current epoch", miner.MaxSectorExpirationExtension)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, expectedMessage, func() {
-			actor.extendSector(rt, sector, 0, params)
+			actor.extendSectors(rt, params)
 		})
 	})
 
@@ -1393,7 +1398,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 				}},
 			}
 
-			actor.extendSector(rt, sector, extension, params)
+			actor.extendSectors(rt, params)
 			sector.Expiration = expiration
 			rt.SetEpoch(expiration)
 		}
@@ -1409,7 +1414,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "total sector lifetime", func() {
-			actor.extendSector(rt, sector, extension, params)
+			actor.extendSectors(rt, params)
 		})
 	})
 
@@ -1432,26 +1437,113 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}},
 		}
 
-		actor.extendSector(rt, oldSector, extension, params)
+		actor.extendSectors(rt, params)
 
 		// assert sector expiration is set to the new value
 		newSector := actor.getSector(rt, oldSector.SectorNumber)
 		assert.Equal(t, newExpiration, newSector.Expiration)
 
+		quant := st.QuantSpecForDeadline(dlIdx)
+
 		// assert that new expiration exists
-		st = getState(rt)
 		_, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
-		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantEndOfDeadline())
+		expirationSet, err := partition.PopExpiredSectors(rt.AdtStore(), newExpiration-1, quant)
 		require.NoError(t, err)
 		empty, err := expirationSet.IsEmpty()
 		require.NoError(t, err)
 		assert.True(t, empty)
 
-		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), newExpiration, st.QuantEndOfDeadline())
+		expirationSet, err = partition.PopExpiredSectors(rt.AdtStore(), quant.QuantizeUp(newExpiration), quant)
 		require.NoError(t, err)
 		empty, err = expirationSet.IsEmpty()
 		require.NoError(t, err)
 		assert.False(t, empty)
+	})
+
+	t.Run("updates many sectors", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		const sectorCount = 4000
+
+		// commit a bunch of sectors to ensure that we get multiple partitions.
+		sectorInfos := actor.commitAndProveSectors(rt, sectorCount, defaultSectorExpiration, nil)
+
+		newExpiration := sectorInfos[0].Expiration + 42*miner.WPoStProvingPeriod
+
+		var params miner.ExtendSectorExpirationParams
+
+		// extend all odd-numbered sectors.
+		{
+			st := getState(rt)
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
+				partitions, err := dl.PartitionsArray(rt.AdtStore())
+				require.NoError(t, err)
+				var partition miner.Partition
+				require.NoError(t, partitions.ForEach(&partition, func(partIdx int64) error {
+					oldSectorNos, err := partition.Sectors.All(miner.SectorsMax)
+					require.NoError(t, err)
+
+					// filter out even-numbered sectors.
+					newSectorNos := make([]uint64, 0, len(oldSectorNos)/2)
+					for _, sno := range oldSectorNos {
+						if sno%2 == 0 {
+							continue
+						}
+						newSectorNos = append(newSectorNos, sno)
+					}
+					params.Extensions = append(params.Extensions, miner.ExpirationExtension{
+						Deadline:      dlIdx,
+						Partition:     uint64(partIdx),
+						Sectors:       bf(newSectorNos...),
+						NewExpiration: newExpiration,
+					})
+					return nil
+				}))
+				return nil
+			}))
+		}
+
+		// Make sure we're touching at least two sectors.
+		require.GreaterOrEqual(t, len(params.Extensions), 2,
+			"test error: this test should touch more than one partition",
+		)
+
+		actor.extendSectors(rt, &params)
+
+		{
+			st := getState(rt)
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+
+			// Half the sectors should expire on-time.
+			var onTimeTotal uint64
+			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
+				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantSpecForDeadline(dlIdx))
+				require.NoError(t, err)
+
+				count, err := expirationSet.Count()
+				require.NoError(t, err)
+				onTimeTotal += count
+				return nil
+			}))
+			assert.EqualValues(t, sectorCount/2, onTimeTotal)
+
+			// Half the sectors should expire late.
+			var extendedTotal uint64
+			require.NoError(t, deadlines.ForEach(rt.AdtStore(), func(dlIdx uint64, dl *miner.Deadline) error {
+				expirationSet, err := dl.PopExpiredSectors(rt.AdtStore(), newExpiration-1, st.QuantSpecForDeadline(dlIdx))
+				require.NoError(t, err)
+
+				count, err := expirationSet.Count()
+				require.NoError(t, err)
+				extendedTotal += count
+				return nil
+			}))
+			assert.EqualValues(t, sectorCount/2, extendedTotal)
+		}
 	})
 
 	t.Run("supports extensions off deadline boundary", func(t *testing.T) {
@@ -1473,7 +1565,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}},
 		}
 
-		actor.extendSector(rt, oldSector, extension, params)
+		actor.extendSectors(rt, params)
 
 		// assert sector expiration is set to the new value
 		st = getState(rt)
@@ -1594,6 +1686,123 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.withdrawFunds(rt, big.Mul(big.NewInt(10), big.NewInt(1e18)))
 		})
+	})
+}
+
+func TestChangeWorkerAddress(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	setupFunc := func() (*mock.Runtime, *actorHarness) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+
+		return rt, actor
+	}
+
+	t.Run("successfully change a worker address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		currentEpoch := abi.ChainEpoch(5)
+		rt.SetEpoch(currentEpoch)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+
+		// no change if current epoch is less than effective epoch
+		rt.SetEpoch(effectiveEpoch - 1)
+		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+		rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
+			EventType: miner.CronEventWorkerKeyChange,
+		})
+		rt.Verify()
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.NotNil(t, info.PendingWorkerKey)
+		require.EqualValues(t, actor.worker, info.Worker)
+
+		// set current epoch to effective epoch and ask to change the address
+		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+	})
+
+	t.Run("fails if unable to resolve worker address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewBLSAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if worker public key is not BLS", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+		key := tutil.NewIDAddr(t, 505)
+
+		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &key, exitcode.Ok)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if new worker address does not have a code", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 5001)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if new worker is not an account actor", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.StorageMinerActorCodeID)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails when caller is not the owner", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newWorker := tutil.NewIDAddr(t, 999)
+		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+		rt.ExpectValidateCallerAddr(actor.owner)
+		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &actor.key, exitcode.Ok)
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{newWorker}
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
 	})
 }
 
@@ -1922,9 +2131,7 @@ func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*mi
 }
 
 func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *miner.Deadline) map[abi.ChainEpoch][]uint64 {
-	st := getState(rt)
-	quant := st.QuantEndOfDeadline()
-	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, quant)
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
@@ -1937,9 +2144,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 }
 
 func (h *actorHarness) collectPartitionExpirations(rt *mock.Runtime, partition *miner.Partition) map[abi.ChainEpoch]*miner.ExpirationSet {
-	st := getState(rt)
-	quant := st.QuantEndOfDeadline()
-	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, quant)
+	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.NoQuantization)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch]*miner.ExpirationSet{}
 	var es miner.ExpirationSet
@@ -1959,6 +2164,55 @@ func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
 //
 // Actor method calls
 //
+
+func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch) {
+	rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
+
+	param := &miner.ChangeWorkerAddressParams{newWorker}
+
+	cronPayload := miner.CronEventPayload{
+		EventType: miner.CronEventWorkerKeyChange,
+	}
+	payload := new(bytes.Buffer)
+	err := cronPayload.MarshalCBOR(payload)
+	require.NoError(h.t, err)
+	cronEvt := &power.EnrollCronEventParams{
+		EventEpoch: effectiveEpoch,
+		Payload:    payload.Bytes(),
+	}
+
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
+
+	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
+		cronEvt, big.Zero(), nil, exitcode.Ok)
+
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	rt.Call(h.a.ChangeWorkerAddress, param)
+	rt.Verify()
+
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
+	require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+}
+
+func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
+	rt.SetEpoch(effectiveEpoch)
+	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
+	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
+		EventType: miner.CronEventWorkerKeyChange,
+	})
+	rt.Verify()
+
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.Nil(h.t, info.PendingWorkerKey)
+	require.EqualValues(h.t, newWorker, info.Worker)
+}
 
 func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address) {
 	rt.ExpectValidateCallerAny()
@@ -2023,8 +2277,8 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		var buf bytes.Buffer
 		err := rt.Receiver().MarshalCBOR(&buf)
 		require.NoError(h.t, err)
-		rt.ExpectGetRandomness(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
-		rt.ExpectGetRandomness(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
+		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
 	}
 	{
 		actorId, err := addr.IDFromAddress(h.receiver)
@@ -2216,7 +2470,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 		err := rt.Receiver().MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 
-		rt.ExpectGetRandomness(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
+		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
 
 		actorId, err := addr.IDFromAddress(h.receiver)
 		require.NoError(h.t, err)
@@ -2321,14 +2575,24 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 	rt.Verify()
 }
 
-func (h *actorHarness) extendSector(rt *mock.Runtime, sector *miner.SectorOnChainInfo, extension abi.ChainEpoch, params *miner.ExtendSectorExpirationParams) {
+func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
-	newSector := *sector
-	newSector.Expiration += extension
-	qaDelta := big.Sub(miner.QAPowerForSector(h.sectorSize, &newSector), miner.QAPowerForSector(h.sectorSize, sector))
-
+	qaDelta := big.Zero()
+	for _, extension := range params.Extensions {
+		err := extension.Sectors.ForEach(func(sno uint64) error {
+			sector := h.getSector(rt, abi.SectorNumber(sno))
+			newSector := *sector
+			newSector.Expiration = extension.NewExpiration
+			qaDelta = big.Sum(qaDelta,
+				miner.QAPowerForSector(h.sectorSize, &newSector),
+				miner.QAPowerForSector(h.sectorSize, sector).Neg(),
+			)
+			return nil
+		})
+		require.NoError(h.t, err)
+	}
 	if !qaDelta.IsZero() {
 		rt.ExpectSend(builtin.StoragePowerActorAddr,
 			builtin.MethodsPower.UpdateClaimedPower,
