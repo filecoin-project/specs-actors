@@ -31,15 +31,15 @@ func TestConstruction(t *testing.T) {
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
+	anneNonId := tutil.NewBLSAddr(t, 1)
 
 	bob := tutil.NewIDAddr(t, 102)
 	bobNonId := tutil.NewBLSAddr(t, 2)
 
 	charlie := tutil.NewIDAddr(t, 103)
 
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
-
 	t.Run("simple construction", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
@@ -66,7 +66,29 @@ func TestConstruction(t *testing.T) {
 		assert.Empty(t, keys)
 	})
 
+	t.Run("construction by resolving signers to ID addresses", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{anneNonId, bobNonId, charlie},
+			NumApprovalsThreshold: 2,
+			UnlockDuration:        0,
+		}
+		rt.AddIDAddress(anneNonId, anne)
+		rt.AddIDAddress(bobNonId, bob)
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		ret := rt.Call(actor.Constructor, &params)
+		assert.Nil(t, ret)
+		rt.Verify()
+
+		var st multisig.State
+		rt.GetState(&st)
+		require.Equal(t, []addr.Address{anne, bob, charlie}, st.Signers)
+	})
+
 	t.Run("construction with vesting", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.WithEpoch(1234).Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
@@ -89,6 +111,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig actor with 0 signers", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{},
@@ -104,6 +127,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
@@ -117,7 +141,24 @@ func TestConstruction(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("fail to construct multisig if a signer is not resolvable to an ID address", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+		rt := builder.Build(t)
+		params := multisig.ConstructorParams{
+			Signers:               []addr.Address{anneNonId, bob, charlie},
+			NumApprovalsThreshold: 2,
+			UnlockDuration:        1,
+		}
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectSend(anneNonId, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+	})
+
 	t.Run("fail to construct multisig with duplicate signers(all ID addresses)", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, bob},
@@ -133,6 +174,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig with duplicate signers(ID & non-ID addresses)", func(t *testing.T) {
+		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bobNonId, bob},
@@ -1045,7 +1087,7 @@ func TestAddSigner(t *testing.T) {
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
 			expectApprovals: uint64(3),
-			code:            exitcode.ErrIllegalArgument,
+			code:            exitcode.ErrForbidden,
 		},
 		{
 			desc: "fail to add signer with ID address that already exists(even though we ONLY have the non ID address as an approver)",
@@ -1059,7 +1101,7 @@ func TestAddSigner(t *testing.T) {
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
 			expectApprovals: uint64(3),
-			code:            exitcode.ErrIllegalArgument,
+			code:            exitcode.ErrForbidden,
 		},
 		{
 			desc:             "fail to add signer with non-ID address that already exists(even though we ONLY have the ID address as an approver)",
@@ -1072,22 +1114,23 @@ func TestAddSigner(t *testing.T) {
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
 			expectApprovals: uint64(3),
-			code:            exitcode.ErrIllegalArgument,
+			code:            exitcode.ErrForbidden,
 		},
 	}
 
-	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 			rt := builder.Build(t)
+			for src, target := range tc.idAddrsMapping {
+				rt.AddIDAddress(src, target)
+			}
 
 			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
-			for src, target := range tc.idAddrsMapping {
-				rt.AddIDAddress(src, target)
-			}
+
 			if tc.code != exitcode.Ok {
 				rt.ExpectAbort(tc.code, func() {
 					actor.addSigner(rt, tc.addSigner, tc.increase)
@@ -1243,13 +1286,13 @@ func TestRemoveSigner(t *testing.T) {
 
 			expectSigners:   []addr.Address{anne, bob, chuck},
 			expectApprovals: uint64(2),
-			code:            exitcode.ErrNotFound,
+			code:            exitcode.ErrForbidden,
 		},
 	}
 
-	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 			rt := builder.Build(t)
 			rt.AddIDAddress(anneNonID, anne)
 
@@ -1344,7 +1387,7 @@ func TestSwapSigners(t *testing.T) {
 			to:            chuck,
 			from:          darlene,
 			expect:        []addr.Address{anne, chuck},
-			code:          exitcode.ErrNotFound,
+			code:          exitcode.ErrForbidden,
 		},
 		{
 			desc:          "fail to swap when to signer already present",
@@ -1372,9 +1415,9 @@ func TestSwapSigners(t *testing.T) {
 		},
 	}
 
-	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 			rt := builder.Build(t)
 			rt.AddIDAddress(bobNonId, bob)
 
