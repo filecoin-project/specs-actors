@@ -373,7 +373,7 @@ func (s fakeSyscalls) VerifySeal(_ abi.SealVerifyInfo) error {
 
 func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
 	res := map[address.Address][]bool{}
-	for addr, infos := range vi {
+	for addr, infos := range vi { //nolint:nomaprange
 		verified := make([]bool, len(infos))
 		for i := range infos {
 			// everyone wins
@@ -448,14 +448,12 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 			if err := ic.rt.rollback(priorRoot); err != nil {
 				panic(err)
 			}
-			switch r.(type) {
+			switch r := r.(type) {
 			case abort:
-				p := r.(abort)
-
 				ic.rt.Log(runtime.WARN, "Abort during actor execution. errMsg: %v exitCode: %d sender: %v receiver; %v method: %d value %v",
-					p, p.code, ic.msg.from, ic.msg.to, ic.msg.method, ic.msg.value)
+					r, r.code, ic.msg.from, ic.msg.to, ic.msg.method, ic.msg.value)
 				ret = returnWrapper{adt.Empty} // The Empty here should never be used, but slightly safer than zero value.
-				errcode = p.code
+				errcode = r.code
 				return
 			default:
 				// do not trap unknown panics

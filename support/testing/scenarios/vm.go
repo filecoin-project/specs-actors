@@ -58,6 +58,9 @@ type internalMessage struct {
 func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM {
 	actors := adt.MakeEmptyMap(store)
 	actorRoot, err := actors.Root()
+	if err != nil {
+		panic(err)
+	}
 
 	emptyObject, err := store.Put(context.TODO(), []struct{}{})
 	if err != nil {
