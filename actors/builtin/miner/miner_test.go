@@ -641,6 +641,37 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 	})
 
+	t.Run("sector with non-positive lifetime is skipped in confirmation", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+
+		sectorNo := abi.SectorNumber(100)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
+		actor.preCommitSector(rt, precommit)
+
+		// precommit at correct epoch
+		rt.SetEpoch(rt.Epoch() + miner.PreCommitChallengeDelay + 1)
+		actor.proveCommitSector(rt, precommit, precommitEpoch, makeProveCommit(sectorNo))
+
+		// confirm at sector expiration (this probably can't happen)
+		rt.SetEpoch(precommit.Expiration)
+		// sector skipped but no failure occurs
+		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		rt.ExpectLogsContain("has non-positive lifetime")
+
+		// it still skips if sector lifetime is negative
+		rt.ClearLogs()
+		rt.SetEpoch(precommit.Expiration + 1)
+		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		rt.ExpectLogsContain("has non-positive lifetime")
+	})
+
 	t.Run("fails with too many deals", func(t *testing.T) {
 		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *miner.DeadlineInfo) {
 			actor := newHarness(t, periodOffset)
@@ -2383,20 +2414,27 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 		for _, precommit := range validPrecommits {
 			precommitOnChain := h.getPreCommit(rt, precommit.SectorNumber)
 
-			qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, precommit.Expiration-rt.Epoch(), precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
-			expectQAPower = big.Add(expectQAPower, qaPowerDelta)
-			expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
-			pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge,
-				h.epochRewardSmooth, h.epochQAPowerSmooth, rt.TotalFilCircSupply())
-			expectPledge = big.Add(expectPledge, pledge)
+			duration := precommit.Expiration - rt.Epoch()
+			if duration > 0 {
+				qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, duration, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
+				expectQAPower = big.Add(expectQAPower, qaPowerDelta)
+				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
+				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge,
+					h.epochRewardSmooth, h.epochQAPowerSmooth, rt.TotalFilCircSupply())
+				expectPledge = big.Add(expectPledge, pledge)
+			}
 		}
 
-		pcParams := power.UpdateClaimedPowerParams{
-			RawByteDelta:         expectRawPower,
-			QualityAdjustedDelta: expectQAPower,
+		if !expectRawPower.IsZero() || !expectQAPower.IsZero() {
+			pcParams := power.UpdateClaimedPowerParams{
+				RawByteDelta:         expectRawPower,
+				QualityAdjustedDelta: expectQAPower,
+			}
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &pcParams, big.Zero(), nil, exitcode.Ok)
 		}
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, &pcParams, big.Zero(), nil, exitcode.Ok)
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &expectPledge, big.Zero(), nil, exitcode.Ok)
+		if !expectPledge.IsZero() {
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &expectPledge, big.Zero(), nil, exitcode.Ok)
+		}
 	}
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)

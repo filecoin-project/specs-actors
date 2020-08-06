@@ -676,6 +676,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			// compute initial pledge
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
+
+			// Avoid math errors if duration is too low somehow.
+			if duration <= 0 {
+				rt.Log(vmr.WARN, "precommit %d has non-positive lifetime %d. ignoring", precommit.Info.SectorNumber, duration)
+				continue
+			}
+
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
 			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
