@@ -4,6 +4,7 @@ import (
 	"context"
 	initactor "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/stretchr/testify/require"
 	"testing"
 
@@ -57,10 +58,27 @@ func TestCreateMiner(t *testing.T) {
 	assert.Equal(t, ownerIdAddr, minerInfo.Worker)
 	assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, minerInfo.SealProofType)
 
-	// check that miner is registered in power actor and that it has set up a cron for its proving period
+	// check that miner is registered in power actor
 	var powerState power.State
 	err = vm.GetState(builtin.StoragePowerActorAddr, &powerState)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(1), powerState.MinerCount)
+
+	// Check that miner has added itself to cron queue exactly once
+	// This is a call back to the power actor from its constructor
+	queue, err := adt.AsMultimap(vm.Store(), powerState.CronEventQueue)
+	require.NoError(t, err)
+
+	cronCount := uint64(0)
+	var ev power.CronEvent
+	err = queue.ForAll(func(k string, arr *adt.Array) error {
+		return arr.ForEach(&ev, func(i int64) error {
+			assert.Equal(t, createMinerRet.IDAddress, ev.MinerAddr)
+			cronCount++
+			return nil
+		})
+	})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), cronCount)
 }
