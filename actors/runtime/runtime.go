@@ -57,9 +57,15 @@ type Runtime interface {
 	// Look up the code ID at an actor address.
 	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)
 
-	// Randomness returns a (pseudo)random byte array drawing from a
+	// GetRandomnessFromBeacon returns a (pseudo)random byte array drawing from a
 	// random beacon at a given epoch and incorporating reequisite entropy
-	GetRandomness(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
+	GetRandomnessFromBeacon(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
+
+	// GetRandomnessFromTickets samples randomness from the ticket chain. Randomess
+	// sampled through this method is unique per potential fork, and as a
+	// result, processes relying on this randomness are tied to whichever fork
+	// they choose.
+	GetRandomnessFromTickets(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
 
 	// Provides a handle for the actor's state object.
 	State() StateHandle

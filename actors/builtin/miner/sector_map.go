@@ -61,7 +61,7 @@ func (dm DeadlineSectorMap) Add(dlIdx, partIdx uint64, sectorNos *bitfield.BitFi
 	}
 	dl, ok := dm[dlIdx]
 	if !ok {
-		dl = make(PartitionSectorMap, 1)
+		dl = make(PartitionSectorMap)
 		dm[dlIdx] = dl
 	}
 	return dl.Add(partIdx, sectorNos)
