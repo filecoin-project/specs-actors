@@ -37,7 +37,6 @@ const (
 
 type CronEventPayload struct {
 	EventType CronEventType
-	Sectors   *abi.BitField
 }
 
 // Identifier for a single partition within a miner.
@@ -493,35 +492,12 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		}); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
+		// add precommit expiry to the queue
+		err = st.AddPreCommitExpiry(store, rt.CurrEpoch(), params.SealProof, params.SectorNumber)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
 	})
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
-
-	// add precommit expiry to the queue
-	msd, ok := MaxSealDuration[params.SealProof]
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
-	}
-	// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
-	// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
-	// ConfirmSectorProofsValid would fail to find it.
-	expiryBound := rt.CurrEpoch() + msd + 1
-
-	// create BitField for this sector
-	bf := abi.NewBitField()
-	bf.Set(uint64(params.SectorNumber))
-
-	// Load BitField Queue for sector expiry
-	quant := st.QuantEndOfDeadline()
-	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-commit expiry queue")
-
-	// add entry for this sector to the queue
-	err = queue.AddToQueue(expiryBound, bf)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit sector expiry to queue")
-
-	st.PreCommittedSectorsExpiry, err = queue.Root()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save pre-commit sector queue")
 
 	return nil
 }
@@ -1514,6 +1490,25 @@ func handleProvingDeadline(rt Runtime) {
 			pledgeDelta = big.Add(pledgeDelta, newlyVested.Neg())
 		}
 
+		{
+			// expire pre-committed sectors
+			expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector expiry queue")
+
+			bf, modified, err := expiryQ.PopUntil(currEpoch)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop expired sectors")
+			AssertMsg(bf != nil, "sectors to check expiry for at epoch %d were nil", currEpoch)
+
+			if modified {
+				st.PreCommittedSectorsExpiry, err = expiryQ.Root()
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save expiry queue")
+			}
+
+			depositToBurn, err := st.checkPrecommitExpiry(store, bf)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
+			penaltyTotal = big.Add(penaltyTotal, depositToBurn)
+		}
+
 		// Record whether or not we _had_ early terminations in the queue before this method.
 		// That way, don't re-schedule a cron callback if one is already scheduled.
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
@@ -1611,24 +1606,6 @@ func handleProvingDeadline(rt Runtime) {
 				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
 			}
 		}
-
-		// expire pre-committed sectors
-		expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector expiry queue")
-
-		bf, modified, err := expiryQ.PopUntil(currEpoch)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop expired sectors")
-
-		if modified {
-			st.PreCommittedSectorsExpiry, err = expiryQ.Root()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save expiry queue")
-		}
-
-		if bf != nil {
-			depositToBurn, err := st.checkPrecommitExpiry(store, bf)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
-			burnFunds(rt, depositToBurn)
-		}
 	})
 
 	// Remove power for new faults, and burn penalties.
@@ -1704,47 +1681,6 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 
 	return replaceSector
 }
-
-func (st *State) checkPrecommitExpiry(store adt.Store, sectors *abi.BitField) (depositToBurn abi.TokenAmount, err error) {
-	// initialize here to add together for all sectors and minimize calls across actors
-	depositToBurn = abi.NewTokenAmount(0)
-
-	var sectorNos []abi.SectorNumber
-	if err = sectors.ForEach(func(i uint64) error {
-		sectorNo := abi.SectorNumber(i)
-		sector, found, err := st.GetPrecommittedSector(store, sectorNo)
-		if err != nil {
-			return err
-		}
-		if !found {
-			// already committed/deleted
-			return nil
-		}
-
-		// mark it for deletion
-		sectorNos = append(sectorNos, sectorNo)
-
-		// increment deposit to burn
-		depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
-		return nil
-	}); err != nil {
-		return big.Zero(), xerrors.Errorf("failed to check pre-commit expiries: %w", err)
-	}
-
-	// Actually delete it.
-	if len(sectorNos) > 0 {
-		if err := st.DeletePrecommittedSectors(store, sectorNos...); err != nil {
-			return big.Zero(), fmt.Errorf("failed to delete pre-commits: %w", err)
-		}
-	}
-
-	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
-	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
-
-	// This deposit was locked separately to pledge collateral so there's no pledge change here.
-	return depositToBurn, nil
-}
-
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
 	payload := new(bytes.Buffer)
 	err := callbackPayload.MarshalCBOR(payload)

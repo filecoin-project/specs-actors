@@ -978,6 +978,81 @@ func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
 	return available.GreaterThanEqual(st.InitialPledgeRequirement)
 }
 
+// pre-commit expiry
+func (st *State) AddPreCommitExpiry(store adt.Store, currEpoch abi.ChainEpoch, sealProof abi.RegisteredSealProof, sectorNum abi.SectorNumber) error {
+	msd, ok := MaxSealDuration[sealProof]
+	if !ok {
+		return xerrors.Errorf("no max seal duration set for proof type: %d", sealProof)
+	}
+	// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
+	// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
+	// ConfirmSectorProofsValid would fail to find it.
+	expiryBound := currEpoch + msd + 1
+
+	// create BitField for this sector
+	bf := abi.NewBitField()
+	bf.Set(uint64(sectorNum))
+
+	// Load BitField Queue for sector expiry
+	quant := NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+	if err != nil {
+		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
+	}
+
+	// add entry for this sector to the queue
+	if err := queue.AddToQueueValues(expiryBound, uint64(sectorNum)); err != nil {
+		return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
+	}
+
+	st.PreCommittedSectorsExpiry, err = queue.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to save pre-commit sector queue")
+	}
+
+	return nil
+}
+
+func (st *State) checkPrecommitExpiry(store adt.Store, sectors *abi.BitField) (depositToBurn abi.TokenAmount, err error) {
+	// initialize here to add together for all sectors and minimize calls across actors
+	depositToBurn = abi.NewTokenAmount(0)
+
+	var precommitsToDelete []abi.SectorNumber
+	if err = sectors.ForEach(func(i uint64) error {
+		sectorNo := abi.SectorNumber(i)
+		sector, found, err := st.GetPrecommittedSector(store, sectorNo)
+		if err != nil {
+			return err
+		}
+		if !found {
+			// already committed/deleted
+			return nil
+		}
+
+		// mark it for deletion
+		precommitsToDelete = append(precommitsToDelete, sectorNo)
+
+		// increment deposit to burn
+		depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+		return nil
+	}); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to check pre-commit expiries: %w", err)
+	}
+
+	// Actually delete it.
+	if len(precommitsToDelete) > 0 {
+		if err := st.DeletePrecommittedSectors(store, precommitsToDelete...); err != nil {
+			return big.Zero(), fmt.Errorf("failed to delete pre-commits: %w", err)
+		}
+	}
+
+	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
+	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
+
+	// This deposit was locked separately to pledge collateral so there's no pledge change here.
+	return depositToBurn, nil
+}
+
 //
 // Misc helpers
 //
