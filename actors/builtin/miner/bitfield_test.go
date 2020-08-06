@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
+	rlepluslazy "github.com/filecoin-project/go-bitfield/rle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,4 +34,16 @@ func assertBitfieldEmpty(t *testing.T, bf *bitfield.BitField) {
 	empty, err := bf.IsEmpty()
 	require.NoError(t, err)
 	assert.True(t, empty)
+}
+
+// Create a bitfield with count bits set, starting at "start".
+func seq(t *testing.T, start, count uint64) *bitfield.BitField {
+	var runs []rlepluslazy.Run
+	if start > 0 {
+		runs = append(runs, rlepluslazy.Run{Val: false, Len: start})
+	}
+	runs = append(runs, rlepluslazy.Run{Val: true, Len: count})
+	bf, err := bitfield.NewFromIter(&rlepluslazy.RunSliceIterator{Runs: runs})
+	require.NoError(t, err)
+	return bf
 }
