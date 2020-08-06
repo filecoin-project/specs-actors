@@ -33,7 +33,7 @@ type State struct {
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
 	LockedFunds       abi.TokenAmount // Total rewards and added funds locked in vesting table
 
-	VestingFunds cid.Cid // Vesting Funds schedule for the miner. Slice[(VestingEpoch, VestingAmount)]
+	VestingFunds cid.Cid // VestingFunds (Vesting Funds schedule for the miner).
 
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
@@ -767,13 +767,14 @@ func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	st.InitialPledgeRequirement = newTotal
 }
 
+// AddLockedFunds first vests and unlocks the vested funds AND then locks the given funds in the vesting table.
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) (vested abi.TokenAmount, err error) {
+	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
+
 	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
 		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
 	}
-
-	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
 
 	// unlock vested funds first
 	amountUnlocked := vestingFunds.unlockVestedFunds(currEpoch)
@@ -862,7 +863,7 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
 	}
 
-	amountUnlocked := abi.NewTokenAmount(0)
+	amountVested := abi.NewTokenAmount(0)
 
 	for i := range vestingFunds.Funds {
 		vf := vestingFunds.Funds[i]
@@ -873,10 +874,10 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 			break
 		}
 
-		amountUnlocked = big.Add(amountUnlocked, amount)
+		amountVested = big.Add(amountVested, amount)
 	}
 
-	return amountUnlocked, nil
+	return amountVested, nil
 }
 
 // Unclaimed funds that are not locked -- includes funds used to cover initial pledge requirement

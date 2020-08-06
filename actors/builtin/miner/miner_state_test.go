@@ -554,6 +554,42 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 
 	})
 
+	t.Run("Unlock unvested funds when there are vested funds in the table", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   50,
+			StepDuration: 1,
+			Quantization: 1,
+		}
+
+		vestStart := abi.ChainEpoch(10)
+		vestSum := abi.NewTokenAmount(100)
+
+		// will lock funds from epochs 11 to 60
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+
+		// unlock funds from epochs 30 to 60
+		newEpoch := abi.ChainEpoch(30)
+		target := abi.NewTokenAmount(60)
+		remaining := big.Sub(vestSum, target)
+		unvestedFunds := harness.unlockUnvestedFunds(newEpoch, target)
+		assert.Equal(t, target, unvestedFunds)
+
+		assert.EqualValues(t, remaining, harness.s.LockedFunds)
+
+		// vesting funds should have all epochs from 11 to 29
+		funds, err := harness.s.LoadVestingFunds(harness.store)
+		assert.NoError(t, err)
+		epoch := 11
+		for _, vf := range funds.Funds {
+			assert.EqualValues(t, epoch, vf.Epoch)
+			epoch = epoch + 1
+			if epoch == 30 {
+				break
+			}
+		}
+	})
 }
 
 func TestSectorNumberAllocation(t *testing.T) {

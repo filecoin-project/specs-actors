@@ -84,7 +84,9 @@ func (v *VestingFunds) addLockedFunds(currEpoch abi.ChainEpoch, vestingSum abi.T
 func (v *VestingFunds) unlockUnvestedFunds(currEpoch abi.ChainEpoch, target abi.TokenAmount) abi.TokenAmount {
 	amountUnlocked := abi.NewTokenAmount(0)
 	lastIndexToRemove := -1
+	startIndexForRemove := 0
 
+	// retain funds that should have vested and unlock unvested funds
 	for i, vf := range v.Funds {
 		if amountUnlocked.GreaterThanEqual(target) {
 			break
@@ -100,12 +102,14 @@ func (v *VestingFunds) unlockUnvestedFunds(currEpoch abi.ChainEpoch, target abi.
 			} else {
 				v.Funds[i].Amount = newAmount
 			}
+		} else {
+			startIndexForRemove = i + 1
 		}
 	}
 
-	// remove all entries upto and including lastIndexToRemove
+	// remove all entries in [startIndexForRemove, lastIndexToRemove]
 	if lastIndexToRemove != -1 {
-		v.Funds = v.Funds[lastIndexToRemove+1:]
+		v.Funds = append(v.Funds[0:startIndexForRemove], v.Funds[lastIndexToRemove+1:]...)
 	}
 
 	return amountUnlocked
