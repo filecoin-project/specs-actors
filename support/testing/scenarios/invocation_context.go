@@ -170,7 +170,11 @@ func (ic *invocationContext) GetActorCodeCID(a address.Address) (cid.Cid, bool) 
 	return entry.Code, true
 }
 
-func (ic *invocationContext) GetRandomness(_ crypto.DomainSeparationTag, _ abi.ChainEpoch, _ []byte) abi.Randomness {
+func (ic *invocationContext) GetRandomnessFromBeacon(_ crypto.DomainSeparationTag, _ abi.ChainEpoch, _ []byte) abi.Randomness {
+	return []byte("not really random")
+}
+
+func (ic *invocationContext) GetRandomnessFromTickets(_ crypto.DomainSeparationTag, _ abi.ChainEpoch, _ []byte) abi.Randomness {
 	return []byte("not really random")
 }
 
