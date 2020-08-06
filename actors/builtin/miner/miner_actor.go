@@ -39,7 +39,7 @@ const (
 
 type CronEventPayload struct {
 	EventType CronEventType
-	Sectors   *abi.BitField
+	Sectors   bitfield.BitField
 }
 
 // Identifier for a single partition within a miner.
@@ -161,13 +161,12 @@ type ChangeWorkerAddressParams struct {
 
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
+	worker := resolveWorkerAddress(rt, params.NewWorker)
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(info.Owner)
-
-		worker := resolveWorkerAddress(rt, params.NewWorker)
 
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
@@ -232,7 +231,7 @@ type PoStPartition struct {
 	// Partitions are numbered per-deadline, from zero.
 	Index uint64
 	// Sectors skipped while proving that weren't already declared faulty
-	Skipped *abi.BitField
+	Skipped bitfield.BitField
 }
 
 // Information submitted by a miner to provide a Window PoSt.
@@ -499,7 +498,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
-	bf := abi.NewBitField()
+	bf := bitfield.New()
 	bf.Set(uint64(params.SectorNumber))
 
 	// Request deferred Cron check for PreCommit expiry check.
@@ -761,7 +760,7 @@ type ExtendSectorExpirationParams struct {
 type ExpirationExtension struct {
 	Deadline      uint64
 	Partition     uint64
-	Sectors       *abi.BitField
+	Sectors       bitfield.BitField
 	NewExpiration abi.ChainEpoch
 }
 
@@ -902,7 +901,7 @@ type TerminateSectorsParams struct {
 type TerminationDeclaration struct {
 	Deadline  uint64
 	Partition uint64
-	Sectors   *abi.BitField
+	Sectors   bitfield.BitField
 }
 
 type TerminateSectorsReturn struct {
@@ -1019,7 +1018,7 @@ type FaultDeclaration struct {
 	// Partition index within the deadline containing the faulty sectors.
 	Partition uint64
 	// Sectors in the partition being declared faulty.
-	Sectors *abi.BitField
+	Sectors bitfield.BitField
 }
 
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
@@ -1092,7 +1091,7 @@ type RecoveryDeclaration struct {
 	// Partition index within the deadline containing the recovered sectors.
 	Partition uint64
 	// Sectors in the partition being declared recovered.
-	Sectors *abi.BitField
+	Sectors bitfield.BitField
 }
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
@@ -1150,7 +1149,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 type CompactPartitionsParams struct {
 	Deadline   uint64
-	Partitions *abi.BitField
+	Partitions bitfield.BitField
 }
 
 // Compacts a number of partitions at one deadline by removing terminated sectors, re-ordering the remaining sectors,
@@ -1211,7 +1210,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 }
 
 type CompactSectorNumbersParams struct {
-	MaskSectorNumbers *abi.BitField
+	MaskSectorNumbers bitfield.BitField
 }
 
 // Compacts sector number allocations to reduce the size of the allocated sector
@@ -1224,10 +1223,6 @@ type CompactSectorNumbersParams struct {
 // For example, if sectors 1-99 and 101-200 have been allocated, sector number
 // 99 can be masked out to collapse these two ranges into one.
 func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *adt.EmptyValue {
-	if params.MaskSectorNumbers == nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "nil sector mask")
-	}
-
 	lastSectorNo, err := params.MaskSectorNumbers.Last()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid mask bitfield")
 	if lastSectorNo > abi.MaxSectorNumber {
@@ -1393,9 +1388,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	case CronEventProvingDeadline:
 		handleProvingDeadline(rt)
 	case CronEventPreCommitExpiry:
-		if payload.Sectors != nil {
-			checkPrecommitExpiry(rt, payload.Sectors)
-		}
+		checkPrecommitExpiry(rt, payload.Sectors)
 	case CronEventWorkerKeyChange:
 		commitWorkerKeyChange(rt)
 	case CronEventProcessEarlyTerminations:
@@ -1447,7 +1440,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 		totalInitialPledge := big.Zero()
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(result.Sectors))
-		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
+		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos bitfield.BitField) error {
 			sectors, err := sectors.Load(sectorNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
 			params := market.OnMinerSectorsTerminateParams{
@@ -1697,7 +1690,7 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 	return replaceSector
 }
 
-func checkPrecommitExpiry(rt Runtime, sectors *abi.BitField) {
+func checkPrecommitExpiry(rt Runtime, sectors bitfield.BitField) {
 	store := adt.AsStore(rt)
 	var st State
 
@@ -1952,12 +1945,10 @@ func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		if info.PendingWorkerKey == nil {
-			rt.Abortf(exitcode.ErrIllegalState, "No pending key change.")
-		}
-
-		if info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
-			rt.Abortf(exitcode.ErrIllegalState, "Too early for key change. Current: %v, Change: %v)", rt.CurrEpoch(), info.PendingWorkerKey.EffectiveAt)
+		// A previously scheduled key change could have been replaced with a new key change request
+		// scheduled in the future. This case should be treated as a no-op.
+		if info.PendingWorkerKey == nil || info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
+			return
 		}
 
 		info.Worker = info.PendingWorkerKey.NewWorker
@@ -2125,7 +2116,7 @@ func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
 }
 
 // Validates that a partition contains the given sectors.
-func validatePartitionContainsSectors(partition *Partition, sectors *abi.BitField) error {
+func validatePartitionContainsSectors(partition *Partition, sectors bitfield.BitField) error {
 	// Check that the declared sectors are actually assigned to the partition.
 	contains, err := abi.BitFieldContainsAll(partition.Sectors, sectors)
 	if err != nil {

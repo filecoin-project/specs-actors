@@ -76,7 +76,7 @@ func TestSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		bf := abi.NewBitField()
+		bf := bitfield.New()
 		bf.Set(uint64(sectorNo))
 
 		assert.Error(t, harness.s.DeleteSectors(harness.store, bf))
@@ -586,7 +586,7 @@ func TestSectorAssignment(t *testing.T) {
 				return nil
 			}
 
-			var partitions []*bitfield.BitField
+			var partitions []bitfield.BitField
 			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
 				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
 				bf := seq(t, start, partitionSectors)

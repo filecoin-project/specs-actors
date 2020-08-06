@@ -12,14 +12,14 @@ import (
 func TestTerminationResult(t *testing.T) {
 	var result miner.TerminationResult
 	require.True(t, result.IsEmpty())
-	err := result.ForEach(func(epoch abi.ChainEpoch, sectors *abi.BitField) error {
+	err := result.ForEach(func(epoch abi.ChainEpoch, sectors bitfield.BitField) error {
 		require.FailNow(t, "unreachable")
 		return nil
 	})
 	require.NoError(t, err)
 
 	resultA := miner.TerminationResult{
-		Sectors: map[abi.ChainEpoch]*abi.BitField{
+		Sectors: map[abi.ChainEpoch]bitfield.BitField{
 			3: bitfield.NewFromSet([]uint64{9}),
 			0: bitfield.NewFromSet([]uint64{1, 2, 4}),
 			2: bitfield.NewFromSet([]uint64{3, 5, 7}),
@@ -29,7 +29,7 @@ func TestTerminationResult(t *testing.T) {
 	}
 	require.False(t, resultA.IsEmpty())
 	resultB := miner.TerminationResult{
-		Sectors: map[abi.ChainEpoch]*abi.BitField{
+		Sectors: map[abi.ChainEpoch]bitfield.BitField{
 			1: bitfield.NewFromSet([]uint64{12}),
 			0: bitfield.NewFromSet([]uint64{10}),
 		},
@@ -41,7 +41,7 @@ func TestTerminationResult(t *testing.T) {
 	require.NoError(t, result.Add(resultB))
 	require.False(t, result.IsEmpty())
 	expected := miner.TerminationResult{
-		Sectors: map[abi.ChainEpoch]*abi.BitField{
+		Sectors: map[abi.ChainEpoch]bitfield.BitField{
 			2: bitfield.NewFromSet([]uint64{3, 5, 7}),
 			0: bitfield.NewFromSet([]uint64{1, 2, 4, 10}),
 			1: bitfield.NewFromSet([]uint64{12}),
@@ -55,7 +55,7 @@ func TestTerminationResult(t *testing.T) {
 	require.Equal(t, len(expected.Sectors), len(result.Sectors))
 
 	expectedEpoch := abi.ChainEpoch(0)
-	err = result.ForEach(func(epoch abi.ChainEpoch, actualBf *abi.BitField) error {
+	err = result.ForEach(func(epoch abi.ChainEpoch, actualBf bitfield.BitField) error {
 		require.Equal(t, expectedEpoch, epoch)
 		expectedEpoch++
 		expectedBf, ok := expected.Sectors[epoch]

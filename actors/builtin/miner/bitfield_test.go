@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func assertBitfieldsEqual(t *testing.T, expected *bitfield.BitField, actual *bitfield.BitField) {
+func assertBitfieldsEqual(t *testing.T, expected bitfield.BitField, actual bitfield.BitField) {
 	const maxDiff = 100
 
 	missing, err := bitfield.SubtractBitField(expected, actual)
@@ -26,18 +26,18 @@ func assertBitfieldsEqual(t *testing.T, expected *bitfield.BitField, actual *bit
 	assert.Empty(t, unexpectedSet, "unexpected bits set")
 }
 
-func assertBitfieldEquals(t *testing.T, actual *bitfield.BitField, expected ...uint64) {
+func assertBitfieldEquals(t *testing.T, actual bitfield.BitField, expected ...uint64) {
 	assertBitfieldsEqual(t, actual, bf(expected...))
 }
 
-func assertBitfieldEmpty(t *testing.T, bf *bitfield.BitField) {
+func assertBitfieldEmpty(t *testing.T, bf bitfield.BitField) {
 	empty, err := bf.IsEmpty()
 	require.NoError(t, err)
 	assert.True(t, empty)
 }
 
 // Create a bitfield with count bits set, starting at "start".
-func seq(t *testing.T, start, count uint64) *bitfield.BitField {
+func seq(t *testing.T, start, count uint64) bitfield.BitField {
 	var runs []rlepluslazy.Run
 	if start > 0 {
 		runs = append(runs, rlepluslazy.Run{Val: false, Len: start})
