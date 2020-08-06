@@ -65,7 +65,7 @@ type State struct {
 	Deadlines cid.Cid
 
 	// Deadlines with outstanding fees for early sector termination.
-	EarlyTerminations *bitfield.BitField
+	EarlyTerminations bitfield.BitField
 }
 
 type MinerInfo struct {
@@ -158,7 +158,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		CurrentDeadline:     0,
 		Deadlines:           emptyDeadlinesCid,
 
-		EarlyTerminations: abi.NewBitField(),
+		EarlyTerminations: bitfield.New(),
 	}, nil
 }
 
@@ -219,8 +219,8 @@ func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber
 		return xc.ErrIllegalArgument.Wrapf("sector number out of range: %d", sectorNo)
 	}
 
-	allocatedSectors := new(bitfield.BitField)
-	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 	if allocated, err := allocatedSectors.IsSet(uint64(sectorNo)); err != nil {
@@ -238,7 +238,7 @@ func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber
 	return nil
 }
 
-func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField) error {
+func (st *State) MaskSectorNumbers(store adt.Store, sectorNos bitfield.BitField) error {
 	lastSectorNo, err := sectorNos.Last()
 	if err != nil {
 		return xc.ErrIllegalArgument.Wrapf("invalid mask bitfield: %w", err)
@@ -248,8 +248,8 @@ func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField
 		return xc.ErrIllegalArgument.Wrapf("masked sector number %d exceeded max sector number", lastSectorNo)
 	}
 
-	allocatedSectors := new(bitfield.BitField)
-	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 
@@ -376,7 +376,7 @@ func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorO
 	return sectors.Get(sectorNo)
 }
 
-func (st *State) DeleteSectors(store adt.Store, sectorNos *abi.BitField) error {
+func (st *State) DeleteSectors(store adt.Store, sectorNos bitfield.BitField) error {
 	sectors, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return err
@@ -634,7 +634,7 @@ func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector a
 }
 
 // Loads sector info for a sequence of sectors.
-func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfos(store adt.Store, sectors bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	sectorsArr, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return nil, err
@@ -645,7 +645,7 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 // Loads info for a set of sectors to be proven.
 // If any of the sectors are declared faulty and not to be recovered, info for the first non-faulty sector is substituted instead.
 // If any of the sectors are declared recovered, they are returned from this method.
-func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to diff bitfields: %w", err)
@@ -673,7 +673,7 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expecte
 }
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
-func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitField, faults *abi.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors bitfield.BitField, faults bitfield.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
 	sectorArr, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load sectors array: %w", err)

@@ -1,21 +1,11 @@
 package abi
 
 import (
-	"fmt"
-
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-bitfield/rle"
 )
 
 type BitField = bitfield.BitField
-
-func NewBitField() *BitField {
-	bf, err := bitfield.NewFromBytes([]byte{})
-	if err != nil {
-		panic(fmt.Sprintf("creating empty rle: %+v", err))
-	}
-	return &bf
-}
 
 func isEmpty(iter rlepluslazy.RunIterator) (bool, error) {
 	// Look for the first non-zero bit.
@@ -32,7 +22,7 @@ func isEmpty(iter rlepluslazy.RunIterator) (bool, error) {
 }
 
 // Checks whether bitfield `a` contains any bit that is set in bitfield `b`.
-func BitFieldContainsAny(a, b *BitField) (bool, error) {
+func BitFieldContainsAny(a, b BitField) (bool, error) {
 	aruns, err := a.RunIterator()
 	if err != nil {
 		return false, err
@@ -58,7 +48,7 @@ func BitFieldContainsAny(a, b *BitField) (bool, error) {
 }
 
 // Checks whether bitfield `a` contains all bits set in bitfield `b`.
-func BitFieldContainsAll(a, b *BitField) (bool, error) {
+func BitFieldContainsAll(a, b BitField) (bool, error) {
 	aruns, err := a.RunIterator()
 	if err != nil {
 		return false, err
