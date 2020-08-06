@@ -2,6 +2,9 @@ package scenarios_test
 
 import (
 	"context"
+	initactor "github.com/filecoin-project/specs-actors/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -22,8 +25,42 @@ func TestCreateMiner(t *testing.T) {
 		Owner:         addrs[0],
 		Worker:        addrs[0],
 		SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
-		Peer:          abi.PeerID("not reallly a peer id"),
+		Peer:          abi.PeerID("not really a peer id"),
 	}
-	_, code := vm.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &params)
+	ret, code := vm.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
 	assert.Equal(t, exitcode.Ok, code)
+
+	createMinerRet, ok := ret.(*power.CreateMinerReturn)
+	require.True(t, ok)
+
+	// check that address has been added to init map
+	var initState initactor.State
+	err := vm.GetState(builtin.InitActorAddr, &initState)
+	require.NoError(t, err)
+
+	idAddr, err := initState.ResolveAddress(vm.Store(), createMinerRet.RobustAddress)
+	require.NoError(t, err)
+	assert.Equal(t, createMinerRet.IDAddress, idAddr)
+
+	// check that the miner exists and has expected state
+	var minerState miner.State
+	err = vm.GetState(createMinerRet.IDAddress, &minerState)
+	require.NoError(t, err)
+	var minerInfo miner.MinerInfo
+	err = vm.Store().Get(ctx, minerState.Info, &minerInfo)
+	require.NoError(t, err)
+
+	ownerIdAddr, err := initState.ResolveAddress(vm.Store(), addrs[0])
+	require.NoError(t, err)
+
+	assert.Equal(t, ownerIdAddr, minerInfo.Owner)
+	assert.Equal(t, ownerIdAddr, minerInfo.Worker)
+	assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, minerInfo.SealProofType)
+
+	// check that miner is registered in power actor and that it has set up a cron for its proving period
+	var powerState power.State
+	err = vm.GetState(builtin.StoragePowerActorAddr, &powerState)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(1), powerState.MinerCount)
 }

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/filecoin-project/go-address"
+	"reflect"
+	"runtime/debug"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -16,10 +18,10 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/testing"
+
+	"github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
-	"reflect"
-	"runtime/debug"
 )
 
 var EmptyObjectCid cid.Cid
@@ -91,6 +93,8 @@ func (ic *invocationContext) Transaction(obj runtime.CBORer, f func()) {
 	ic.allowSideEffects = false
 	f()
 	ic.allowSideEffects = true
+
+	ic.replace(obj)
 }
 
 func (ic *invocationContext) loadState(obj runtime.CBORUnmarshaler) cid.Cid {
@@ -109,7 +113,7 @@ func (ic *invocationContext) loadState(obj runtime.CBORUnmarshaler) cid.Cid {
 }
 
 func (ic *invocationContext) loadActor() *TestActor {
-	actr, found, err := ic.rt.getActor(ic.rt.ctx, ic.msg.to)
+	actr, found, err := ic.rt.GetActor(ic.msg.to)
 	if err != nil {
 		panic(err)
 	}
@@ -156,7 +160,7 @@ func (ic *invocationContext) CurrentBalance() abi.TokenAmount {
 }
 
 func (ic *invocationContext) GetActorCodeCID(a address.Address) (cid.Cid, bool) {
-	entry, found, err := ic.rt.getActor(context.Background(), a)
+	entry, found, err := ic.rt.GetActor(a)
 	if !found {
 		return cid.Undef, false
 	}
@@ -263,7 +267,7 @@ func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
 	// Check existing address. If nothing there, create empty actor.
 	//
 	// Note: we are storing the actors by ActorID *address*
-	_, found, err := ic.rt.getActor(ic.rt.ctx, addr)
+	_, found, err := ic.rt.GetActor(addr)
 	if err != nil {
 		panic(err)
 	}
@@ -284,7 +288,7 @@ func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
 // deleteActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) DeleteActor(beneficiary address.Address) {
 	receiver := ic.msg.to
-	receiverActor, found, err := ic.rt.getActor(ic.rt.ctx, receiver)
+	receiverActor, found, err := ic.rt.GetActor(receiver)
 	if err != nil {
 		panic(err)
 	}
@@ -586,7 +590,7 @@ func (ic *invocationContext) dispatch(actor exported.BuiltinActor, method abi.Me
 // Otherwise, this method will abort execution.
 func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, address.Address) {
 	// resolve the target address via the InitActor, and attempt to load state.
-	initActorEntry, found, err := ic.rt.getActor(ic.rt.ctx, builtin.InitActorAddr)
+	initActorEntry, found, err := ic.rt.GetActor(builtin.InitActorAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -654,7 +658,7 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, 
 	}
 
 	// load actor
-	targetActor, found, err := ic.rt.getActor(ic.rt.ctx, targetIDAddr)
+	targetActor, found, err := ic.rt.GetActor(targetIDAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -666,6 +670,26 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, 
 	}
 
 	return targetActor, targetIDAddr
+}
+
+func (ic *invocationContext) replace(obj runtime.CBORMarshaler) cid.Cid {
+	actr, found, err := ic.rt.GetActor(ic.msg.to)
+	if err != nil {
+		panic(err)
+	}
+	if !found {
+		ic.rt.Abortf(exitcode.ErrIllegalState, "failed to find actor %s for state", ic.msg.to)
+	}
+	c, err := ic.rt.store.Put(ic.rt.ctx, obj)
+	if err != nil {
+		ic.rt.Abortf(exitcode.ErrIllegalState, "could not save new state")
+	}
+	actr.Head = c
+	err = ic.rt.setActor(ic.rt.ctx, ic.msg.to, actr)
+	if err != nil {
+		ic.rt.Abortf(exitcode.ErrIllegalState, "could not save actor %s", ic.msg.to)
+	}
+	return c
 }
 
 func decodeBytes(t reflect.Type, argBytes []byte) (interface{}, error) {

@@ -94,7 +94,7 @@ func (vm *VM) rollback(root cid.Cid) error {
 	return nil
 }
 
-func (vm *VM) getActor(ctx context.Context, a address.Address) (*TestActor, bool, error) {
+func (vm *VM) GetActor(a address.Address) (*TestActor, bool, error) {
 	var act TestActor
 	found, err := vm.actors.Get(adt.AddrKey(a), &act)
 	return &act, found, err
@@ -148,7 +148,7 @@ func (vm *VM) normalizeAddress(addr address.Address) (address.Address, bool) {
 	}
 
 	// resolve the target address via the InitActor, and attempt to load state.
-	initActorEntry, found, err := vm.getActor(vm.ctx, builtin.InitActorAddr)
+	initActorEntry, found, err := vm.GetActor(builtin.InitActorAddr)
 	if err != nil {
 		panic(errors.Wrapf(err, "failed to load init actor"))
 	}
@@ -183,7 +183,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		return nil, exitcode.SysErrSenderInvalid
 	}
 
-	fromActor, found, err := vm.getActor(vm.ctx, from)
+	fromActor, found, err := vm.GetActor(from)
 	if err != nil {
 		panic(err)
 	}
@@ -251,6 +251,21 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	return ret.inner, exitCode
 }
 
+func (vm *VM) GetState(addr address.Address, out runtime.CBORUnmarshaler) error {
+	act, found, err := vm.GetActor(addr)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.Errorf("actor %v not found", addr)
+	}
+	return vm.store.Get(vm.ctx, act.Head, out)
+}
+
+func (vm *VM) Store() adt.Store {
+	return vm.store
+}
+
 // transfer debits money from one account and credits it to another.
 // avoid calling this method with a zero amount else it will perform unnecessary actor loading.
 //
@@ -266,7 +281,7 @@ func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amou
 	ctx := context.Background()
 
 	// retrieve debit account
-	fromActor, found, err := vm.getActor(ctx, debitFrom)
+	fromActor, found, err := vm.GetActor(debitFrom)
 	if err != nil {
 		panic(err)
 	}
@@ -286,7 +301,7 @@ func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amou
 	}
 
 	// retrieve credit account
-	toActor, found, err := vm.getActor(ctx, creditTo)
+	toActor, found, err := vm.GetActor(creditTo)
 	if err != nil {
 		panic(err)
 	}
