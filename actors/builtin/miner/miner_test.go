@@ -1730,6 +1730,26 @@ func TestWithdrawBalance(t *testing.T) {
 	})
 }
 
+func TestChangePeerID(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	setupFunc := func() (*mock.Runtime, *actorHarness) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+
+		return rt, actor
+	}
+
+	t.Run("successfully change peer id", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		newPID := tutil.MakePID("test-change-peer-id")
+		actor.changePeerID(rt, newPID)
+	})
+}
+
 func TestChangeWorkerAddress(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
@@ -2281,6 +2301,19 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	require.NoError(h.t, err)
 	require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
 	require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+}
+
+func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
+	param := &miner.ChangePeerIDParams{NewID: newPID}
+	rt.ExpectValidateCallerAddr(h.worker)
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+
+	rt.Call(h.a.ChangePeerID, param)
+	rt.Verify()
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.EqualValues(h.t, newPID, info.PeerId)
 }
 
 func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
