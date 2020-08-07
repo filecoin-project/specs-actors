@@ -46,13 +46,9 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 
 	// check that both parties are capable of signing vouchers
 	to, err := pca.resolveAccount(rt, params.To)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve to address")
 	from, err := pca.resolveAccount(rt, params.From)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve from address")
 
 	st := ConstructState(from, to)
 	rt.State().Create(st)
@@ -71,7 +67,7 @@ func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef, exitcode.ErrIllegalState.Wrapf("no code for address %v", resolved)
+		return addr.Undef, exitcode.ErrForbidden.Wrapf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
 		return addr.Undef, exitcode.ErrForbidden.Wrapf("actor %v must be an account (%v), was %v", raw,
