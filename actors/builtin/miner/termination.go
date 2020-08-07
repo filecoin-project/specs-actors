@@ -10,14 +10,14 @@ import (
 type TerminationResult struct {
 	// Sectors maps epochs at which sectors expired, to bitfields of sector
 	// numbers.
-	Sectors map[abi.ChainEpoch]*abi.BitField
+	Sectors map[abi.ChainEpoch]bitfield.BitField
 	// Counts the number of partitions & sectors processed.
 	PartitionsProcessed, SectorsProcessed uint64
 }
 
 func (t *TerminationResult) Add(newResult TerminationResult) error {
 	if t.Sectors == nil {
-		t.Sectors = make(map[abi.ChainEpoch]*abi.BitField, len(newResult.Sectors))
+		t.Sectors = make(map[abi.ChainEpoch]bitfield.BitField, len(newResult.Sectors))
 	}
 	t.PartitionsProcessed += newResult.PartitionsProcessed
 	t.SectorsProcessed += newResult.SectorsProcessed
@@ -45,7 +45,7 @@ func (t *TerminationResult) IsEmpty() bool {
 	return t.SectorsProcessed == 0
 }
 
-func (t *TerminationResult) ForEach(cb func(epoch abi.ChainEpoch, sectors *abi.BitField) error) error {
+func (t *TerminationResult) ForEach(cb func(epoch abi.ChainEpoch, sectors bitfield.BitField) error) error {
 	// We're sorting here, so iterating over the map is fine.
 	epochs := make([]abi.ChainEpoch, 0, len(t.Sectors))
 	for epoch := range t.Sectors { //nolint:nomaprange

@@ -229,7 +229,7 @@ type PoStPartition struct {
 	// Partitions are numbered per-deadline, from zero.
 	Index uint64
 	// Sectors skipped while proving that weren't already declared faulty
-	Skipped *abi.BitField
+	Skipped bitfield.BitField
 }
 
 // Information submitted by a miner to provide a Window PoSt.
@@ -750,7 +750,7 @@ type ExtendSectorExpirationParams struct {
 type ExpirationExtension struct {
 	Deadline      uint64
 	Partition     uint64
-	Sectors       *abi.BitField
+	Sectors       bitfield.BitField
 	NewExpiration abi.ChainEpoch
 }
 
@@ -891,7 +891,7 @@ type TerminateSectorsParams struct {
 type TerminationDeclaration struct {
 	Deadline  uint64
 	Partition uint64
-	Sectors   *abi.BitField
+	Sectors   bitfield.BitField
 }
 
 type TerminateSectorsReturn struct {
@@ -1008,7 +1008,7 @@ type FaultDeclaration struct {
 	// Partition index within the deadline containing the faulty sectors.
 	Partition uint64
 	// Sectors in the partition being declared faulty.
-	Sectors *abi.BitField
+	Sectors bitfield.BitField
 }
 
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
@@ -1081,7 +1081,7 @@ type RecoveryDeclaration struct {
 	// Partition index within the deadline containing the recovered sectors.
 	Partition uint64
 	// Sectors in the partition being declared recovered.
-	Sectors *abi.BitField
+	Sectors bitfield.BitField
 }
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
@@ -1139,7 +1139,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 type CompactPartitionsParams struct {
 	Deadline   uint64
-	Partitions *abi.BitField
+	Partitions bitfield.BitField
 }
 
 // Compacts a number of partitions at one deadline by removing terminated sectors, re-ordering the remaining sectors,
@@ -1200,7 +1200,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 }
 
 type CompactSectorNumbersParams struct {
-	MaskSectorNumbers *abi.BitField
+	MaskSectorNumbers bitfield.BitField
 }
 
 // Compacts sector number allocations to reduce the size of the allocated sector
@@ -1213,10 +1213,6 @@ type CompactSectorNumbersParams struct {
 // For example, if sectors 1-99 and 101-200 have been allocated, sector number
 // 99 can be masked out to collapse these two ranges into one.
 func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *adt.EmptyValue {
-	if params.MaskSectorNumbers == nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "nil sector mask")
-	}
-
 	lastSectorNo, err := params.MaskSectorNumbers.Last()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid mask bitfield")
 	if lastSectorNo > abi.MaxSectorNumber {
@@ -1432,7 +1428,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 		totalInitialPledge := big.Zero()
 		dealsToTerminate = make([]market.OnMinerSectorsTerminateParams, 0, len(result.Sectors))
-		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos *abi.BitField) error {
+		err = result.ForEach(func(epoch abi.ChainEpoch, sectorNos bitfield.BitField) error {
 			sectors, err := sectors.Load(sectorNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector infos")
 			params := market.OnMinerSectorsTerminateParams{
@@ -1700,6 +1696,50 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 
 	return replaceSector
 }
+
+
+func checkPrecommitExpiry(rt Runtime, sectors bitfield.BitField) {
+	store := adt.AsStore(rt)
+	var st State
+
+	// initialize here to add together for all sectors and minimize calls across actors
+	depositToBurn := abi.NewTokenAmount(0)
+	rt.State().Transaction(&st, func() {
+		var sectorNos []abi.SectorNumber
+		err := sectors.ForEach(func(i uint64) error {
+			sectorNo := abi.SectorNumber(i)
+			sector, found, err := st.GetPrecommittedSector(store, sectorNo)
+			if err != nil {
+				return err
+			}
+			if !found {
+				// already committed/deleted
+				return nil
+			}
+
+			// mark it for deletion
+			sectorNos = append(sectorNos, sectorNo)
+
+			// increment deposit to burn
+			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+			return nil
+		})
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit expiries")
+
+		// Actually delete it.
+		if len(sectorNos) > 0 {
+			err = st.DeletePrecommittedSectors(store, sectorNos...)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pre-commits")
+		}
+
+		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
+		Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
+	})
+
+	// This deposit was locked separately to pledge collateral so there's no pledge change here.
+	burnFunds(rt, depositToBurn)
+}
+
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
 	payload := new(bytes.Buffer)
 	err := callbackPayload.MarshalCBOR(payload)
@@ -2084,7 +2124,7 @@ func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
 }
 
 // Validates that a partition contains the given sectors.
-func validatePartitionContainsSectors(partition *Partition, sectors *abi.BitField) error {
+func validatePartitionContainsSectors(partition *Partition, sectors bitfield.BitField) error {
 	// Check that the declared sectors are actually assigned to the partition.
 	contains, err := abi.BitFieldContainsAll(partition.Sectors, sectors)
 	if err != nil {
