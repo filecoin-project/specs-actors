@@ -326,7 +326,7 @@ func TestCommitments(t *testing.T) {
 
 		// Expires before min duration + max seal duration
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
-			expiration := rt.Epoch() + miner.MinSectorExpiration + miner.MaxSealDuration[actor.sealProofType]-1
+			expiration := rt.Epoch() + miner.MinSectorExpiration + miner.MaxSealDuration[actor.sealProofType] - 1
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
 		})
 		rt.Reset()
@@ -663,13 +663,19 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommit.Expiration)
 		// sector skipped but no failure occurs
 		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
-		rt.ExpectLogsContain("has non-positive lifetime")
+		rt.ExpectLogsContain("less than minimum. ignoring")
 
 		// it still skips if sector lifetime is negative
 		rt.ClearLogs()
 		rt.SetEpoch(precommit.Expiration + 1)
 		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
-		rt.ExpectLogsContain("has non-positive lifetime")
+		rt.ExpectLogsContain("less than minimum. ignoring")
+
+		// it fails up to the miniumum expiration
+		rt.ClearLogs()
+		rt.SetEpoch(precommit.Expiration - miner.MinSectorExpiration + 1)
+		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		rt.ExpectLogsContain("less than minimum. ignoring")
 	})
 
 	t.Run("fails with too many deals", func(t *testing.T) {
@@ -2415,7 +2421,7 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 			precommitOnChain := h.getPreCommit(rt, precommit.SectorNumber)
 
 			duration := precommit.Expiration - rt.Epoch()
-			if duration > 0 {
+			if duration >= miner.MinSectorExpiration {
 				qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, duration, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
 				expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))

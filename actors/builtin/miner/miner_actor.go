@@ -679,9 +679,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
 
-			// Avoid math errors if duration is too low somehow.
-			if duration <= 0 {
-				rt.Log(vmr.WARN, "precommit %d has non-positive lifetime %d. ignoring", precommit.Info.SectorNumber, duration)
+			// This should have been caught in precommit, but don't let other sectors fail because of it.
+			if duration < MinSectorExpiration {
+				rt.Log(vmr.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
 				continue
 			}
 
