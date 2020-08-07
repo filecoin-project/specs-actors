@@ -1001,7 +1001,7 @@ func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch,
 	return nil
 }
 
-func (st *State) checkPrecommitExpiry(store adt.Store, sectors *abi.BitField) (depositToBurn abi.TokenAmount, err error) {
+func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (depositToBurn abi.TokenAmount, err error) {
 	depositToBurn = abi.NewTokenAmount(0)
 
 	var precommitsToDelete []abi.SectorNumber

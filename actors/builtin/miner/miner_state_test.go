@@ -560,9 +560,9 @@ func TestAddPreCommitExpiry(t *testing.T) {
 		require.NoError(t, err)
 
 		require.EqualValues(t, 1, queue.Length())
-		bf := abi.NewBitField()
+		bf := abi.BitField{}
 		qEpoch := quant.QuantizeUp(epoch)
-		found, err := queue.Get(uint64(qEpoch), bf)
+		found, err := queue.Get(uint64(qEpoch), &bf)
 		require.NoError(t, err)
 		require.True(t, found)
 		c, err := bf.Count()

@@ -1512,7 +1512,6 @@ func handleProvingDeadline(rt Runtime) {
 
 			bf, modified, err := expiryQ.PopUntil(currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop expired sectors")
-			AssertMsg(bf != nil, "sectors to check expiry for at epoch %d were nil", currEpoch)
 
 			if modified {
 				st.PreCommittedSectorsExpiry, err = expiryQ.Root()
@@ -1695,49 +1694,6 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector %v", params.ReplaceSectorNumber)
 
 	return replaceSector
-}
-
-
-func checkPrecommitExpiry(rt Runtime, sectors bitfield.BitField) {
-	store := adt.AsStore(rt)
-	var st State
-
-	// initialize here to add together for all sectors and minimize calls across actors
-	depositToBurn := abi.NewTokenAmount(0)
-	rt.State().Transaction(&st, func() {
-		var sectorNos []abi.SectorNumber
-		err := sectors.ForEach(func(i uint64) error {
-			sectorNo := abi.SectorNumber(i)
-			sector, found, err := st.GetPrecommittedSector(store, sectorNo)
-			if err != nil {
-				return err
-			}
-			if !found {
-				// already committed/deleted
-				return nil
-			}
-
-			// mark it for deletion
-			sectorNos = append(sectorNos, sectorNo)
-
-			// increment deposit to burn
-			depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
-			return nil
-		})
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit expiries")
-
-		// Actually delete it.
-		if len(sectorNos) > 0 {
-			err = st.DeletePrecommittedSectors(store, sectorNos...)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pre-commits")
-		}
-
-		st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
-		Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
-	})
-
-	// This deposit was locked separately to pledge collateral so there's no pledge change here.
-	burnFunds(rt, depositToBurn)
 }
 
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {

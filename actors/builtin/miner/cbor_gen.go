@@ -3222,17 +3222,6 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 
 		t.EventType = CronEventType(extraI)
 	}
-
-	// t.Sectors (bitfield.BitField) (struct)
-
-	{
-
-		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
-		}
-
-	}
-  
 	return nil
 }
 
