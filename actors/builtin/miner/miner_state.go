@@ -976,42 +976,32 @@ func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
 }
 
 // pre-commit expiry
-func (st *State) AddPreCommitExpiry(store adt.Store, currEpoch abi.ChainEpoch, sealProof abi.RegisteredSealProof, sectorNum abi.SectorNumber) error {
-	msd, ok := MaxSealDuration[sealProof]
-	if !ok {
-		return xerrors.Errorf("no max seal duration set for proof type: %d", sealProof)
-	}
-	// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
-	// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
-	// ConfirmSectorProofsValid would fail to find it.
-	expiryBound := currEpoch + msd + 1
+func (st *State) QuantSpecEveryDeadline() QuantSpec {
+	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+}
 
-	// create BitField for this sector
-	bf := abi.NewBitField()
-	bf.Set(uint64(sectorNum))
-
+func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch, sectorNum abi.SectorNumber) error {
 	// Load BitField Queue for sector expiry
-	quant := NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+	quant := st.QuantSpecEveryDeadline()
 	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
 	if err != nil {
 		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
 	}
 
 	// add entry for this sector to the queue
-	if err := queue.AddToQueueValues(expiryBound, uint64(sectorNum)); err != nil {
+	if err := queue.AddToQueueValues(expireEpoch, uint64(sectorNum)); err != nil {
 		return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
 	}
 
 	st.PreCommittedSectorsExpiry, err = queue.Root()
 	if err != nil {
-		return xerrors.Errorf("failed to save pre-commit sector queue")
+		return xerrors.Errorf("failed to save pre-commit sector queue: %w", err)
 	}
 
 	return nil
 }
 
 func (st *State) checkPrecommitExpiry(store adt.Store, sectors *abi.BitField) (depositToBurn abi.TokenAmount, err error) {
-	// initialize here to add together for all sectors and minimize calls across actors
 	depositToBurn = abi.NewTokenAmount(0)
 
 	var precommitsToDelete []abi.SectorNumber

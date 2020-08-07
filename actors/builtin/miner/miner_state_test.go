@@ -548,25 +548,21 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 func TestAddPreCommitExpiry(t *testing.T) {
 	epoch := abi.ChainEpoch(10)
 	sectorNum := abi.SectorNumber(1)
-	proof := abi.RegisteredSealProof_StackedDrg2KiBV1
 
 	t.Run("successfully add a sector to pre commit expiry queue", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		err := harness.s.AddPreCommitExpiry(harness.store, epoch, proof, sectorNum)
+		err := harness.s.AddPreCommitExpiry(harness.store, epoch, sectorNum)
 		require.NoError(t, err)
 
 		// assert
-		quant := miner.NewQuantSpec(miner.WPoStChallengeWindow, harness.s.ProvingPeriodStart)
-		msd, ok := miner.MaxSealDuration[proof]
-		require.True(t, ok)
-		expectedEpoch := quant.QuantizeUp(epoch + msd + 1)
-
+		quant := harness.s.QuantSpecEveryDeadline()
 		queue, err := miner.LoadBitfieldQueue(harness.store, harness.s.PreCommittedSectorsExpiry, quant)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 1, queue.Length())
 		bf := abi.NewBitField()
-		found, err := queue.Get(uint64(expectedEpoch), bf)
+		qEpoch := quant.QuantizeUp(epoch)
+		found, err := queue.Get(uint64(qEpoch), bf)
 		require.NoError(t, err)
 		require.True(t, found)
 		c, err := bf.Count()
@@ -575,12 +571,6 @@ func TestAddPreCommitExpiry(t *testing.T) {
 		f, err := bf.IsSet(uint64(sectorNum))
 		require.NoError(t, err)
 		require.True(t, f)
-	})
-
-	t.Run("fails if no max seal duration for proof type", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		err := harness.s.AddPreCommitExpiry(harness.store, epoch, abi.RegisteredSealProof(10), sectorNum)
-		require.Error(t, err)
 	})
 }
 

@@ -493,7 +493,16 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
 		// add precommit expiry to the queue
-		err = st.AddPreCommitExpiry(store, rt.CurrEpoch(), params.SealProof, params.SectorNumber)
+		msd, ok := MaxSealDuration[params.SealProof]
+		if !ok {
+			rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
+		}
+		// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
+		// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
+		// ConfirmSectorProofsValid would fail to find it.
+		expiryBound := rt.CurrEpoch() + msd + 1
+
+		err = st.AddPreCommitExpiry(store, expiryBound, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
 	})
 
@@ -1502,7 +1511,7 @@ func handleProvingDeadline(rt Runtime) {
 
 		{
 			// expire pre-committed sectors
-			expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart))
+			expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector expiry queue")
 
 			bf, modified, err := expiryQ.PopUntil(currEpoch)
