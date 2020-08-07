@@ -149,6 +149,11 @@ func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, e
 
 // Adds some partition numbers to the set expiring at an epoch.
 func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions []uint64, quant QuantSpec) error {
+	// Avoid doing any work if there's nothing to reschedule.
+	if len(partitions) == 0 {
+		return nil
+	}
+
 	queue, err := LoadBitfieldQueue(store, d.ExpirationsEpochs, quant)
 	if err != nil {
 		return xerrors.Errorf("failed to load expiration queue: %w", err)
