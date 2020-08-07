@@ -399,16 +399,14 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.PendingWorkerKey = new(WorkerKeyChange)
 			if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.PendingWorkerKey pointer: %w", err)
