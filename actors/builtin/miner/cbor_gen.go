@@ -14,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{140}
+var lengthBufState = []byte{141}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -58,6 +58,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectors); err != nil {
 		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
+	}
+
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectorsExpiry); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PreCommittedSectorsExpiry: %w", err)
 	}
 
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -116,7 +122,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 12 {
+	if extra != 13 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -181,6 +187,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.PreCommittedSectors = c
+
+	}
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PreCommittedSectorsExpiry: %w", err)
+		}
+
+		t.PreCommittedSectorsExpiry = c
 
 	}
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -3135,7 +3153,7 @@ func (t *CompactPartitionsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufCronEventPayload = []byte{130}
+var lengthBufCronEventPayload = []byte{129}
 
 func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -3158,11 +3176,6 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.Sectors (bitfield.BitField) (struct)
-	if err := t.Sectors.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -3180,7 +3193,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -3208,15 +3221,6 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.EventType = CronEventType(extraI)
-	}
-	// t.Sectors (bitfield.BitField) (struct)
-
-	{
-
-		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
-		}
-
 	}
 	return nil
 }
