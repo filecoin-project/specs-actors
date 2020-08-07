@@ -474,7 +474,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "sector %v already committed", params.SectorNumber)
 		}
 
-		validateExpiration(rt, rt.CurrEpoch(), params.Expiration, params.SealProof)
+		// Require sector lifetime meets minimum by assuming activation happens at last epoch permitted for seal proof.
+		maxActivation := rt.CurrEpoch() + MaxSealDuration[params.SealProof]
+		validateExpiration(rt, maxActivation, params.Expiration, params.SealProof)
 
 		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
