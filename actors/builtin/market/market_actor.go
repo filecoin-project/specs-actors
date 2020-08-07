@@ -221,7 +221,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
 			// schedule too many deals for the same tick.
-			processEpoch, err := genRandNextEpoch(deal.Proposal.StartEpoch, rt.CurrEpoch(), &deal.Proposal, rt.GetRandomness)
+			processEpoch, err := genRandNextEpoch(rt.CurrEpoch(), &deal.Proposal, rt.GetRandomness)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
 
 			err = msm.dealsByEpoch.Put(processEpoch, id)
@@ -572,7 +572,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func genRandNextEpoch(baseEpoch, currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(crypto.DomainSeparationTag, abi.ChainEpoch, []byte) abi.Randomness) (abi.ChainEpoch, error) {
+func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(crypto.DomainSeparationTag, abi.ChainEpoch, []byte) abi.Randomness) (abi.ChainEpoch, error) {
 	buf := bytes.Buffer{}
 	if err := deal.MarshalCBOR(&buf); err != nil {
 		return epochUndefined, xerrors.Errorf("failed to marshal proposal: %w", err)
@@ -586,7 +586,7 @@ func genRandNextEpoch(baseEpoch, currEpoch abi.ChainEpoch, deal *DealProposal, r
 		return epochUndefined, xerrors.Errorf("failed to generate offset: %w", err)
 	}
 
-	return baseEpoch + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)), nil
+	return deal.StartEpoch + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)), nil
 }
 
 func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
