@@ -169,16 +169,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
 			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
@@ -405,16 +403,14 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
 			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
