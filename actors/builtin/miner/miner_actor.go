@@ -1468,7 +1468,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 		// Remove pledge requirement.
 		st.AddInitialPledgeRequirement(totalInitialPledge.Neg())
-		pledgeDelta = big.Add(totalInitialPledge.Neg(), penaltyFromVesting.Neg())
+		pledgeDelta = big.Add(totalInitialPledge, penaltyFromVesting).Neg()
 	})
 
 	// We didn't do anything, abort.
