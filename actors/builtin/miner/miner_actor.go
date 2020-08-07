@@ -1567,7 +1567,7 @@ func handleProvingDeadline(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance) //nolint:ineffassign
 			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
-			pledgeDelta = big.Sum(pledgeDelta, penaltyFromVesting.Neg())
+			pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
 		}
 		{
 			// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
@@ -1577,7 +1577,7 @@ func handleProvingDeadline(rt Runtime) {
 			// Release pledge requirements for the sectors expiring on-time.
 			// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
 			// when the early termination is processed.
-			pledgeDelta = big.Add(pledgeDelta, expired.OnTimePledge.Neg())
+			pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
 			st.AddInitialPledgeRequirement(expired.OnTimePledge.Neg())
 
 			// Record reduction in power of the amount of expiring active power.
