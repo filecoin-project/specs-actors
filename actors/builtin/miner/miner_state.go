@@ -502,15 +502,15 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	newPower := NewPowerPairZero()
-	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
-		if len(newPartitions) == 0 {
+	for dlIdx, deadlineSectors := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
+		if len(deadlineSectors) == 0 {
 			continue
 		}
 
 		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
+		deadlineNewPower, err := dl.AddSectors(store, partitionSize, deadlineSectors, sectorSize, quant)
 		if err != nil {
 			return NewPowerPairZero(), err
 		}

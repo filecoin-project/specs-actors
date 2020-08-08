@@ -69,6 +69,7 @@ func (a Actor) Exports() []interface{} {
 		17:                        a.ConfirmSectorProofsValid,
 		18:                        a.ChangeMultiaddrs,
 		19:                        a.CompactPartitions,
+		20:                        a.CompactSectorNumbers,
 	}
 }
 
@@ -241,6 +242,10 @@ type SubmitWindowedPoStParams struct {
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
+	// The epoch at which these proofs is being committed to a particular chain.
+	ChainCommitEpoch abi.ChainEpoch
+	// The ticket randomness on the chain at the ChainCommitEpoch on the chain this post is committed to
+	ChainCommitRand abi.Randomness
 }
 
 // Invoked by miner's worker address to submit their fallback post
@@ -251,6 +256,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
+	}
+	if params.ChainCommitEpoch >= currEpoch {
+		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d must be in the past", params.ChainCommitEpoch)
+	}
+	if params.ChainCommitEpoch < currEpoch-WPoStMaxChainCommitAge {
+		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must be after %d", params.ChainCommitEpoch, currEpoch-WPoStMaxChainCommitAge)
+	}
+	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
+	if !bytes.Equal(commRand, params.ChainCommitRand) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 	}
 	// TODO: limit the length of proofs array https://github.com/filecoin-project/specs-actors/issues/416
 

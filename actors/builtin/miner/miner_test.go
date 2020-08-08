@@ -753,17 +753,22 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit a duplicate proof for the same partition, which should be ignored.
 		// The skipped fault declared here has no effect.
+		commitEpoch := rt.Epoch() - 1
+		commitRand := abi.Randomness("chaincommitment")
 		params := miner.SubmitWindowedPoStParams{
 			Deadline: dlIdx,
 			Partitions: []miner.PoStPartition{{
 				Index:   pIdx,
 				Skipped: bf(uint64(sector.SectorNumber)),
 			}},
-			Proofs: makePoStProofs(actor.postProofType),
+			Proofs:           makePoStProofs(actor.postProofType),
+			ChainCommitEpoch: commitEpoch,
+			ChainCommitRand:  commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(actor.worker)
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
 
@@ -1951,6 +1956,50 @@ func TestAddLockedFund(t *testing.T) {
 
 }
 
+func TestCompactSectorNumbers(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("compact sector numbers then pre-commit", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		actor.compactSectorNumbers(rt, bf(uint64(targetSno), uint64(targetSno)+1))
+
+		precommitEpoch := rt.Epoch()
+		deadline := actor.deadline(rt)
+		expiration := deadline.PeriodEnd() + abi.ChainEpoch(defaultSectorExpiration)*miner.WPoStProvingPeriod
+
+		// Allocating masked sector number should fail.
+		{
+			precommit := actor.makePreCommit(targetSno+1, precommitEpoch-1, expiration, nil)
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				actor.preCommitSector(rt, precommit)
+			})
+		}
+
+		{
+			precommit := actor.makePreCommit(targetSno+2, precommitEpoch-1, expiration, nil)
+			actor.preCommitSector(rt, precommit)
+		}
+	})
+
+	t.Run("compacting no sector numbers aborts", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			// compact nothing
+			actor.compactSectorNumbers(rt, bf())
+		})
+	})
+}
+
 type actorHarness struct {
 	a miner.Actor
 	t testing.TB
@@ -2399,6 +2448,16 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 	return info
 }
 
+func (h *actorHarness) compactSectorNumbers(rt *mock.Runtime, bf bitfield.BitField) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(h.worker)
+
+	rt.Call(h.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+		MaskSectorNumbers: bf,
+	})
+	rt.Verify()
+}
+
 func (h *actorHarness) commitAndProveSector(rt *mock.Runtime, sectorNo abi.SectorNumber, lifetimePeriods uint64, dealIDs []abi.DealID) *miner.SectorOnChainInfo {
 	precommitEpoch := rt.Epoch()
 	deadline := h.deadline(rt)
@@ -2435,6 +2494,10 @@ type poStConfig struct {
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	commitRand := abi.Randomness("chaincommitment")
+	commitEpoch := rt.Epoch() - 4
+	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	expectQueryNetworkInfo(rt, h)
@@ -2520,9 +2583,11 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 
 	params := miner.SubmitWindowedPoStParams{
-		Deadline:   deadline.Index,
-		Partitions: partitions,
-		Proofs:     proofs,
+		Deadline:         deadline.Index,
+		Partitions:       partitions,
+		Proofs:           proofs,
+		ChainCommitEpoch: commitEpoch,
+		ChainCommitRand:  commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)

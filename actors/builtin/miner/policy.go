@@ -22,6 +22,9 @@ var WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(48)
 
+// WPoStMaxChainCommitAge is the maximum distance back that a valid Window PoSt must commit to the current chain.
+var WPoStMaxChainCommitAge = WPoStChallengeWindow
+
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
 	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {
