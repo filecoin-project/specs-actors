@@ -35,18 +35,28 @@ const (
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
 	// Information related to the current message being executed.
+	// When an actor invokes a method on another actor as a sub-call, these values reflect
+	// the sub-call context, rather than the top-level context.
 	Message() Message
 
 	// The current chain epoch number. The genesis block has epoch zero.
 	CurrEpoch() abi.ChainEpoch
 
-	// Validates the caller against some predicate.
-	// Exported actor methods must invoke at least one caller validation before returning.
+	// Satisfies the requirement that every exported actor method must invoke at least one caller validation
+	// method before returning, without making any assertions about the caller.
 	ValidateImmediateCallerAcceptAny()
+
+	// Validates that the immediate caller's address exactly matches one of a set of expected addresses,
+	// aborting if it does not.
+	// The caller address is always normalized to an ID address, so expected addresses must be
+	// ID addresses to have any expectation of passing validation.
 	ValidateImmediateCallerIs(addrs ...addr.Address)
+
+	// Validates that the immediate caller is an actor with code CID matching one of a set of
+	// expected CIDs, aborting if it does not.
 	ValidateImmediateCallerType(types ...cid.Cid)
 
-	// The balance of the receiver.
+	// The balance of the receiver. Always >= zero.
 	CurrentBalance() abi.TokenAmount
 
 	// Resolves an address of any protocol to an ID address (via the Init actor's table).
@@ -55,16 +65,22 @@ type Runtime interface {
 	ResolveAddress(address addr.Address) (addr.Address, bool)
 
 	// Look up the code ID at an actor address.
+	// The address will be resolved as if via ResolveAddress, if necessary, so need not be an ID-address.
 	GetActorCodeCID(addr addr.Address) (ret cid.Cid, ok bool)
 
-	// GetRandomnessFromBeacon returns a (pseudo)random byte array drawing from a
-	// random beacon at a given epoch and incorporating reequisite entropy
+	// GetRandomnessFromBeacon returns a (pseudo)random byte array drawing from a random beacon at a prior epoch.
+	// The beacon value is combined with the personalization tag, epoch number, and explicitly provided entropy.
+	// The personalization tag may be any int64 value.
+	// The epoch must be less than the current epoch. The epoch may be negative, in which case
+	// it addresses the beacon value from genesis block.
+	// The entropy may be any byte array, or nil.
 	GetRandomnessFromBeacon(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
 
 	// GetRandomnessFromTickets samples randomness from the ticket chain. Randomess
 	// sampled through this method is unique per potential fork, and as a
 	// result, processes relying on this randomness are tied to whichever fork
 	// they choose.
+	// See GetRandomnessFromBeacon for notes about the personalization tag, epoch, and entropy.
 	GetRandomnessFromTickets(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
 
 	// Provides a handle for the actor's state object.
@@ -81,6 +97,7 @@ type Runtime interface {
 	// Halts execution upon an error from which the receiver cannot recover. The caller will receive the exitcode and
 	// an empty return value. State changes made within this call will be rolled back.
 	// This method does not return.
+	// The provided exit code must be >= exitcode.FirstActorExitCode.
 	// The message and args are for diagnostic purposes and do not persist on chain. They should be suitable for
 	// passing to fmt.Errorf(msg, args...).
 	Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{})
@@ -91,11 +108,13 @@ type Runtime interface {
 	// Always an ActorExec address.
 	NewActorAddress() addr.Address
 
-	// Creates an actor with code `codeID` and address `address`, with empty state. May only be called by Init actor.
+	// Creates an actor with code `codeID` and address `address`, with empty state.
+	// May only be called by Init actor.
+	// Aborts if the provided address has previously been created.
 	CreateActor(codeId cid.Cid, address addr.Address)
 
 	// Deletes the executing actor from the state tree, transferring any balance to beneficiary.
-	// Aborts if the beneficiary does not exist.
+	// Aborts if the beneficiary does not exist or is the calling actor.
 	// May only be called by the actor itself.
 	DeleteActor(beneficiary addr.Address)
 
@@ -140,20 +159,27 @@ type Store interface {
 }
 
 // Message contains information available to the actor about the executing message.
+// These values are fixed for the duration of an invocation.
 type Message interface {
 	// The address of the immediate calling actor. Always an ID-address.
+	// If an actor invokes its own method, Caller() == Receiver().
 	Caller() addr.Address
 
 	// The address of the actor receiving the message. Always an ID-address.
 	Receiver() addr.Address
 
-	// The value attached to the message being processed, implicitly added to CurrentBalance() before method invocation.
+	// The value attached to the message being processed, implicitly added to CurrentBalance()
+	// of Receiver() before method invocation.
+	// This value came from Caller().
 	ValueReceived() abi.TokenAmount
 }
 
 // Pure functions implemented as primitives by the runtime.
 type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
+	// If the address is a public-key type address, it is used directly.
+	// If it's an ID-address, the actor is looked up in state. It must be an account actor, and the
+	// public key is obtained from it's state.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) error
 	// Hashes input data using blake2b with 256 bit output.
 	HashBlake2b(data []byte) [32]byte

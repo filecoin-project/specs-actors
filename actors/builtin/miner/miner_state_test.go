@@ -545,6 +545,35 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 
 }
 
+func TestAddPreCommitExpiry(t *testing.T) {
+	epoch := abi.ChainEpoch(10)
+	sectorNum := abi.SectorNumber(1)
+
+	t.Run("successfully add a sector to pre commit expiry queue", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		err := harness.s.AddPreCommitExpiry(harness.store, epoch, sectorNum)
+		require.NoError(t, err)
+
+		// assert
+		quant := harness.s.QuantSpecEveryDeadline()
+		queue, err := miner.LoadBitfieldQueue(harness.store, harness.s.PreCommittedSectorsExpiry, quant)
+		require.NoError(t, err)
+
+		require.EqualValues(t, 1, queue.Length())
+		bf := abi.BitField{}
+		qEpoch := quant.QuantizeUp(epoch)
+		found, err := queue.Get(uint64(qEpoch), &bf)
+		require.NoError(t, err)
+		require.True(t, found)
+		c, err := bf.Count()
+		require.NoError(t, err)
+		require.EqualValues(t, 1, c)
+		f, err := bf.IsSet(uint64(sectorNum))
+		require.NoError(t, err)
+		require.True(t, f)
+	})
+}
+
 func TestSectorAssignment(t *testing.T) {
 	partitionSectors, err := abi.RegisteredSealProof_StackedDrg32GiBV1.WindowPoStPartitionSectors()
 	require.NoError(t, err)

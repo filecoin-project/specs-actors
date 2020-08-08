@@ -14,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{140}
+var lengthBufState = []byte{141}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -58,6 +58,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectors); err != nil {
 		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
+	}
+
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectorsExpiry); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PreCommittedSectorsExpiry: %w", err)
 	}
 
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -116,7 +122,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 12 {
+	if extra != 13 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -181,6 +187,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.PreCommittedSectors = c
+
+	}
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PreCommittedSectorsExpiry: %w", err)
+		}
+
+		t.PreCommittedSectorsExpiry = c
 
 	}
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -399,16 +417,14 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.PendingWorkerKey = new(WorkerKeyChange)
 			if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.PendingWorkerKey pointer: %w", err)
@@ -3137,7 +3153,55 @@ func (t *CompactPartitionsParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufCronEventPayload = []byte{130}
+var lengthBufCompactSectorNumbersParams = []byte{129}
+
+func (t *CompactSectorNumbersParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufCompactSectorNumbersParams); err != nil {
+		return err
+	}
+
+	// t.MaskSectorNumbers (bitfield.BitField) (struct)
+	if err := t.MaskSectorNumbers.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *CompactSectorNumbersParams) UnmarshalCBOR(r io.Reader) error {
+	*t = CompactSectorNumbersParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.MaskSectorNumbers (bitfield.BitField) (struct)
+
+	{
+
+		if err := t.MaskSectorNumbers.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.MaskSectorNumbers: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufCronEventPayload = []byte{129}
 
 func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -3160,11 +3224,6 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.Sectors (bitfield.BitField) (struct)
-	if err := t.Sectors.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -3182,7 +3241,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -3210,15 +3269,6 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.EventType = CronEventType(extraI)
-	}
-	// t.Sectors (bitfield.BitField) (struct)
-
-	{
-
-		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
-		}
-
 	}
 	return nil
 }
