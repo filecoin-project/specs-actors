@@ -753,17 +753,22 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit a duplicate proof for the same partition, which should be ignored.
 		// The skipped fault declared here has no effect.
+		commitEpoch := rt.Epoch() - 1
+		commitRand := abi.Randomness("chaincommitment")
 		params := miner.SubmitWindowedPoStParams{
 			Deadline: dlIdx,
 			Partitions: []miner.PoStPartition{{
 				Index:   pIdx,
 				Skipped: bf(uint64(sector.SectorNumber)),
 			}},
-			Proofs: makePoStProofs(actor.postProofType),
+			Proofs:           makePoStProofs(actor.postProofType),
+			ChainCommitEpoch: commitEpoch,
+			ChainCommitRand:  commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(actor.worker)
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
 
@@ -2489,6 +2494,10 @@ type poStConfig struct {
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	commitRand := abi.Randomness("chaincommitment")
+	commitEpoch := rt.Epoch() - 4
+	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	expectQueryNetworkInfo(rt, h)
@@ -2574,9 +2583,11 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 
 	params := miner.SubmitWindowedPoStParams{
-		Deadline:   deadline.Index,
-		Partitions: partitions,
-		Proofs:     proofs,
+		Deadline:         deadline.Index,
+		Partitions:       partitions,
+		Proofs:           proofs,
+		ChainCommitEpoch: commitEpoch,
+		ChainCommitRand:  commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)

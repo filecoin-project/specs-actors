@@ -524,6 +524,34 @@ func TestApprove(t *testing.T) {
 		})
 	})
 
+	t.Run("accept approval with no proposal hash", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		rt.Verify()
+
+		actor.assertTransactions(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		rt.SetBalance(sendValue)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+
+		actor.approveOK(rt, txnID, nil, nil)
+
+		// Transaction should be removed from actor state after send
+		actor.assertTransactions(rt)
+	})
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
 		const numApprovals = uint64(2)
 		rt := builder.Build(t)
