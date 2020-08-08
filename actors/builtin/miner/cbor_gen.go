@@ -1997,6 +1997,30 @@ func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
+
+	// t.ChainCommitEpoch (abi.ChainEpoch) (int64)
+	if t.ChainCommitEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ChainCommitEpoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ChainCommitEpoch-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.ChainCommitRand (abi.Randomness) (slice)
+	if len(t.ChainCommitRand) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.ChainCommitRand was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.ChainCommitRand))); err != nil {
+		return err
+	}
+
+	if _, err := w.Write(t.ChainCommitRand[:]); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2164,30 +2188,6 @@ func (t *TerminateSectorsParams) MarshalCBOR(w io.Writer) error {
 		if err := v.MarshalCBOR(w); err != nil {
 			return err
 		}
-	}
-
-	// t.ChainCommitEpoch (abi.ChainEpoch) (int64)
-	if t.ChainCommitEpoch >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ChainCommitEpoch)); err != nil {
-			return err
-		}
-	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ChainCommitEpoch-1)); err != nil {
-			return err
-		}
-	}
-
-	// t.ChainCommitRand (abi.Randomness) (slice)
-	if len(t.ChainCommitRand) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.ChainCommitRand was too long")
-	}
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.ChainCommitRand))); err != nil {
-		return err
-	}
-
-	if _, err := w.Write(t.ChainCommitRand[:]); err != nil {
-		return err
 	}
 	return nil
 }

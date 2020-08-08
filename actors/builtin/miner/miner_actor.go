@@ -260,8 +260,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	if params.ChainCommitEpoch >= currEpoch {
 		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d must be in the past", params.ChainCommitEpoch)
 	}
-	if params.ChainCommitEpoch < currEpoch-MaxPoStChainCommitAge {
-		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must exceed %d", params.ChainCommitEpoch, currEpoch-MaxPoStChainCommitAge)
+	if params.ChainCommitEpoch < currEpoch-WPoStMaxChainCommitAge {
+		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must be after %d", params.ChainCommitEpoch, currEpoch-WPoStMaxChainCommitAge)
 	}
 	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
 	if !bytes.Equal(commRand, params.ChainCommitRand) {
