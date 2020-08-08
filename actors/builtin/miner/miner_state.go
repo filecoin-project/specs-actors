@@ -45,7 +45,10 @@ type State struct {
 	// Allocated sector IDs. Sector IDs can never be reused once allocated.
 	AllocatedSectors cid.Cid // BitField
 
-	// Information for all proven and not-yet-expired sectors.
+	// Information for all proven and not-yet-garbage-collected sectors.
+	//
+	// Sectors are removed from this AMT when the partition to which the
+	// sector belongs is compacted.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
 
 	// The first epoch in this miner's current proving period. This is the first epoch in which a PoSt for a
