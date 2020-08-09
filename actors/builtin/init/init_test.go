@@ -84,8 +84,9 @@ func TestExec(t *testing.T) {
 
 		var st init_.State
 		rt.GetState(&st)
-		actualIdAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr1)
+		actualIdAddr, found, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr1)
 		assert.NoError(t, err)
+		assert.True(t, found)
 		assert.Equal(t, expectedIdAddr1, actualIdAddr)
 
 		// creating another actor should get a different address, the below logic is a repeat of the above to insure
@@ -106,8 +107,9 @@ func TestExec(t *testing.T) {
 
 		var st2 init_.State
 		rt.GetState(&st2)
-		actualIdAddr2, err := st2.ResolveAddress(adt.AsStore(rt), uniqueAddr2)
+		actualIdAddr2, found, err := st2.ResolveAddress(adt.AsStore(rt), uniqueAddr2)
 		assert.NoError(t, err)
+		assert.True(t, found)
 		assert.Equal(t, expectedIdAddr2, actualIdAddr2)
 	})
 
@@ -135,14 +137,16 @@ func TestExec(t *testing.T) {
 
 		var st init_.State
 		rt.GetState(&st)
-		actualIdAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
+		actualIdAddr, found, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
 		assert.NoError(t, err)
+		assert.True(t, found)
 		assert.Equal(t, expectedIdAddr, actualIdAddr)
 
-		// returns error if not able to resolve
+		// returns false if not able to resolve
 		expUnknowAddr := tutil.NewActorAddr(t, "flurbo")
-		actualUnknownAddr, err := st.ResolveAddress(adt.AsStore(rt), expUnknowAddr)
-		assert.Error(t, err)
+		actualUnknownAddr, found, err := st.ResolveAddress(adt.AsStore(rt), expUnknowAddr)
+		assert.NoError(t, err)
+		assert.False(t, found)
 		assert.Equal(t, addr.Undef, actualUnknownAddr)
 	})
 
@@ -196,8 +200,9 @@ func TestExec(t *testing.T) {
 		// since the send failed the uniqueAddr not resolve
 		var st init_.State
 		rt.GetState(&st)
-		noResoAddr, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
-		assert.Error(t, err)
+		noResoAddr, found, err := st.ResolveAddress(adt.AsStore(rt), uniqueAddr)
+		assert.NoError(t, err)
+		assert.False(t, found)
 		assert.Equal(t, addr.Undef, noResoAddr)
 
 	})
