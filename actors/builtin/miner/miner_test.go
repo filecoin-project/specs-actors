@@ -148,8 +148,10 @@ func TestCommitments(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
 	// TODO more tests
+	// https://github.com/filecoin-project/specs-actors/issues/936
 	// - Concurrent attempts to upgrade the same CC sector (one should succeed)
 	// - Insufficient funds for prove-commit (charged in power actor -- scenario testing candidate)
+	// - Invalid seal proofs (checked in power actor -- scenario testing candidate)
 	// - CC sector targeted for upgrade expires naturally before the upgrade is proven
 	// - Insufficient funds to cover CC sector IP but sufficient funds to cover pre commit fee for new sector fails
 
