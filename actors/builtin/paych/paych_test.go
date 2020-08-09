@@ -45,44 +45,52 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 	})
 
+	nonAccountCodeID := builtin.MultisigActorCodeID
 	testCases := []struct {
-		desc               string
-		paymentChannelAddr addr.Address
-		callerCode         cid.Cid
-		newActorCode       cid.Cid
-		payerCode          cid.Cid
-		expExitCode        exitcode.ExitCode
+		desc        string
+		fromCode    cid.Cid
+		fromAddr    addr.Address
+		toCode      cid.Cid
+		toAddr      addr.Address
+		expExitCode exitcode.ExitCode
 	}{
 		{"fails if target (to) is not account actor",
-			paychAddr,
-			builtin.InitActorCodeID,
-			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
-			exitcode.ErrIllegalArgument,
+			payerAddr,
+			nonAccountCodeID,
+			payeeAddr,
+			exitcode.ErrForbidden,
 		}, {"fails if sender (from) is not account actor",
-			paychAddr,
-			builtin.InitActorCodeID,
-			builtin.MultisigActorCodeID,
+			nonAccountCodeID,
+			payerAddr,
 			builtin.AccountActorCodeID,
-			exitcode.ErrIllegalArgument,
-		}, {"fails if addr is not ID type",
+			payeeAddr,
+			exitcode.ErrForbidden,
+		}, {"fails if target cannot be resolved",
+			builtin.AccountActorCodeID,
 			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
-			builtin.InitActorCodeID,
 			builtin.AccountActorCodeID,
+			payeeAddr,
+			exitcode.ErrNotFound,
+		}, {"fails if sender cannot be resolved",
 			builtin.AccountActorCodeID,
-			exitcode.ErrIllegalArgument,
+			payerAddr,
+			builtin.AccountActorCodeID,
+			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
+			exitcode.ErrNotFound,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			builder := mock.NewBuilder(ctx, paychAddr).
-				WithCaller(callerAddr, tc.callerCode).
-				WithActorType(tc.paymentChannelAddr, tc.newActorCode).
-				WithActorType(payerAddr, tc.payerCode)
+				WithCaller(callerAddr, builtin.InitActorCodeID).
+				WithActorType(paychAddr, builtin.PaymentChannelActorCodeID).
+				WithActorType(payerAddr, tc.toCode).
+				WithActorType(payeeAddr, tc.fromCode)
 			rt := builder.Build(t)
 			rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 			rt.ExpectAbort(tc.expExitCode, func() {
-				rt.Call(actor.Constructor, &ConstructorParams{To: tc.paymentChannelAddr})
+				rt.Call(actor.Constructor, &ConstructorParams{To: tc.toAddr, From: tc.fromAddr})
 			})
 		})
 	}
@@ -93,7 +101,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
 		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.Constructor, &ConstructorParams{To: paychAddr})
 		})
 	})

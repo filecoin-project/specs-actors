@@ -615,7 +615,7 @@ func TestPartitions(t *testing.T) {
 
 type expectExpirationGroup struct {
 	expiration abi.ChainEpoch
-	sectors    *bitfield.BitField
+	sectors    bitfield.BitField
 }
 
 func assertPartitionExpirationQueue(t *testing.T, store adt.Store, partition *miner.Partition, quant miner.QuantSpec, groups []expectExpirationGroup) {
@@ -763,7 +763,7 @@ func checkPartitionInvariants(t *testing.T,
 		earlyQ, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization)
 		require.NoError(t, err)
 
-		err = earlyQ.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+		err = earlyQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 			return bf.ForEach(func(i uint64) error {
 				assert.False(t, seenSectors[i], "sector already seen")
 				seenSectors[i] = true
@@ -789,10 +789,10 @@ func assertPartitionState(t *testing.T,
 	quant miner.QuantSpec,
 	sectorSize abi.SectorSize,
 	sectors []*miner.SectorOnChainInfo,
-	allSectorIds *bitfield.BitField,
-	faults *bitfield.BitField,
-	recovering *bitfield.BitField,
-	terminations *bitfield.BitField) {
+	allSectorIds bitfield.BitField,
+	faults bitfield.BitField,
+	recovering bitfield.BitField,
+	terminations bitfield.BitField) {
 
 	assertBitfieldsEqual(t, faults, partition.Faults)
 	assertBitfieldsEqual(t, recovering, partition.Recoveries)
@@ -802,11 +802,11 @@ func assertPartitionState(t *testing.T,
 	checkPartitionInvariants(t, store, partition, quant, sectorSize, sectors)
 }
 
-func bf(secNos ...uint64) *bitfield.BitField {
+func bf(secNos ...uint64) bitfield.BitField {
 	return bitfield.NewFromSet(secNos)
 }
 
-func selectSectors(t *testing.T, sectors []*miner.SectorOnChainInfo, field *bitfield.BitField) []*miner.SectorOnChainInfo {
+func selectSectors(t *testing.T, sectors []*miner.SectorOnChainInfo, field bitfield.BitField) []*miner.SectorOnChainInfo {
 	toInclude, err := field.AllMap(miner.SectorsMax)
 	require.NoError(t, err)
 
@@ -829,7 +829,7 @@ func emptyPartition(t *testing.T, store adt.Store) *miner.Partition {
 	return miner.ConstructPartition(root)
 }
 
-func rescheduleSectors(t *testing.T, target abi.ChainEpoch, sectors []*miner.SectorOnChainInfo, filter *bitfield.BitField) []*miner.SectorOnChainInfo {
+func rescheduleSectors(t *testing.T, target abi.ChainEpoch, sectors []*miner.SectorOnChainInfo, filter bitfield.BitField) []*miner.SectorOnChainInfo {
 	toReschedule, err := filter.AllMap(miner.SectorsMax)
 	require.NoError(t, err)
 	output := make([]*miner.SectorOnChainInfo, len(sectors))

@@ -76,7 +76,7 @@ func TestSectorsStore(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 		sectorNo := abi.SectorNumber(1)
-		bf := abi.NewBitField()
+		bf := bitfield.New()
 		bf.Set(uint64(sectorNo))
 
 		assert.Error(t, harness.s.DeleteSectors(harness.store, bf))
@@ -356,6 +356,16 @@ func TestVesting_AddLockedFunds_Table(t *testing.T) {
 			periodStart: abi.ChainEpoch(55),
 			vepocs:      []int64{0, 0, 0, 20, 0, 20, 0, 20, 0, 20, 0, 20},
 		},
+		{
+			desc: "vest funds with step much smaller than quantization",
+			vspec: &miner.VestSpec{
+				InitialDelay: 0,
+				VestPeriod:   10,
+				StepDuration: 1,
+				Quantization: 5,
+			},
+			vepocs: []int64{0, 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 50},
+		},
 	}
 	for _, tc := range testcase {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -543,6 +553,71 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 
 	})
 
+	t.Run("Unlock unvested funds when there are vested funds in the table", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		vspec := &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   50,
+			StepDuration: 1,
+			Quantization: 1,
+		}
+
+		vestStart := abi.ChainEpoch(10)
+		vestSum := abi.NewTokenAmount(100)
+
+		// will lock funds from epochs 11 to 60
+		harness.addLockedFunds(vestStart, vestSum, vspec)
+
+		// unlock funds from epochs 30 to 60
+		newEpoch := abi.ChainEpoch(30)
+		target := abi.NewTokenAmount(60)
+		remaining := big.Sub(vestSum, target)
+		unvestedFunds := harness.unlockUnvestedFunds(newEpoch, target)
+		assert.Equal(t, target, unvestedFunds)
+
+		assert.EqualValues(t, remaining, harness.s.LockedFunds)
+
+		// vesting funds should have all epochs from 11 to 29
+		funds, err := harness.s.LoadVestingFunds(harness.store)
+		assert.NoError(t, err)
+		epoch := 11
+		for _, vf := range funds.Funds {
+			assert.EqualValues(t, epoch, vf.Epoch)
+			epoch = epoch + 1
+			if epoch == 30 {
+				break
+			}
+		}
+	})
+}
+
+func TestAddPreCommitExpiry(t *testing.T) {
+	epoch := abi.ChainEpoch(10)
+	sectorNum := abi.SectorNumber(1)
+
+	t.Run("successfully add a sector to pre commit expiry queue", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		err := harness.s.AddPreCommitExpiry(harness.store, epoch, sectorNum)
+		require.NoError(t, err)
+
+		// assert
+		quant := harness.s.QuantSpecEveryDeadline()
+		queue, err := miner.LoadBitfieldQueue(harness.store, harness.s.PreCommittedSectorsExpiry, quant)
+		require.NoError(t, err)
+
+		require.EqualValues(t, 1, queue.Length())
+		bf := abi.BitField{}
+		qEpoch := quant.QuantizeUp(epoch)
+		found, err := queue.Get(uint64(qEpoch), &bf)
+		require.NoError(t, err)
+		require.True(t, found)
+		c, err := bf.Count()
+		require.NoError(t, err)
+		require.EqualValues(t, 1, c)
+		f, err := bf.IsSet(uint64(sectorNum))
+		require.NoError(t, err)
+		require.True(t, f)
+	})
 }
 
 func TestSectorAssignment(t *testing.T) {
@@ -586,7 +661,7 @@ func TestSectorAssignment(t *testing.T) {
 				return nil
 			}
 
-			var partitions []*bitfield.BitField
+			var partitions []bitfield.BitField
 			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
 				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
 				bf := seq(t, start, partitionSectors)
@@ -670,7 +745,7 @@ type stateHarness struct {
 //
 
 func (h *stateHarness) addLockedFunds(epoch abi.ChainEpoch, sum abi.TokenAmount, spec *miner.VestSpec) {
-	err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
+	_, err := h.s.AddLockedFunds(h.store, epoch, sum, spec)
 	require.NoError(h.t, err)
 }
 
@@ -683,20 +758,15 @@ func (h *stateHarness) unlockUnvestedFunds(epoch abi.ChainEpoch, target abi.Toke
 func (h *stateHarness) unlockVestedFunds(epoch abi.ChainEpoch) abi.TokenAmount {
 	amount, err := h.s.UnlockVestedFunds(h.store, epoch)
 	require.NoError(h.t, err)
+
 	return amount
 }
 
 func (h *stateHarness) vestingFundsStoreEmpty() bool {
-	vestingFunds, err := adt.AsArray(h.store, h.s.VestingFunds)
+	funds, err := h.s.LoadVestingFunds(h.store)
 	require.NoError(h.t, err)
-	empty := true
-	lockedEntry := abi.NewTokenAmount(0)
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		empty = false
-		return nil
-	})
-	require.NoError(h.t, err)
-	return empty
+
+	return len(funds.Funds) == 0
 }
 
 //
@@ -801,7 +871,12 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	infoCid, err := store.Put(context.Background(), &info)
 	require.NoError(t, err)
 
-	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid)
+	emptyVestingFunds := miner.ConstructVestingFunds()
+	emptyVestingFundsCid, err := store.Put(context.Background(), emptyVestingFunds)
+	require.NoError(t, err)
+
+	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid,
+		emptyVestingFundsCid)
 	require.NoError(t, err)
 
 	return &stateHarness{

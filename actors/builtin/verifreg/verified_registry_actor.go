@@ -163,7 +163,7 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
 		// If parties need more allowance, they need to create a new verified client or use up the the current allowance
 		// and then create a new verified client.
-		found, err = verifiedClients.Get(AddrKey(params.Address), &verifierCap)
+		found, err = verifiedClients.Get(AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "verified client already exists: %v", params.Address)
