@@ -111,7 +111,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	emptyDeadlineCid := rt.Store().Put(emptyDeadline)
 
 	emptyDeadlines := ConstructDeadlines(emptyDeadlineCid)
+	emptyVestingFunds := ConstructVestingFunds()
 	emptyDeadlinesCid := rt.Store().Put(emptyDeadlines)
+	emptyVestingFundsCid := rt.Store().Put(emptyVestingFunds)
 
 	currEpoch := rt.CurrEpoch()
 	offset, err := assignProvingPeriodOffset(rt.Message().Receiver(), currEpoch, rt.Syscalls().HashBlake2b)
@@ -123,7 +125,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
 	infoCid := rt.Store().Put(info)
 
-	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid)
+	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
@@ -1257,16 +1259,12 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
 
-	store := adt.AsStore(rt)
 	var st State
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
-
-		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
 		// This ensures that the amountToLock is always locked up if the miner account
@@ -1276,9 +1274,8 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *amountToLock)
 		}
 
-		if err := st.AddLockedFunds(store, rt.CurrEpoch(), *amountToLock, &RewardVestingSpec); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to lock funds in vesting table: %v", err)
-		}
+		newlyVested, err = st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *amountToLock, &RewardVestingSpec)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
 	})
 
 	notifyPledgeChanged(rt, big.Sub(*amountToLock, newlyVested))
