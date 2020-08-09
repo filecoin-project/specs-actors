@@ -158,24 +158,15 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		LockedFunds:              abi.NewTokenAmount(0),
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
-
-		PreCommittedSectors: emptyMapCid,
-		AllocatedSectors:    emptyBitfieldCid,
-		Sectors:             emptyArrayCid,
-		ProvingPeriodStart:  periodStart,
-		CurrentDeadline:     0,
-		Deadlines:           emptyDeadlinesCid,
-		VestingFunds:        emptyVestingFundsCid,
-
 		PreCommittedSectors:       emptyMapCid,
 		PreCommittedSectorsExpiry: emptyArrayCid,
-
-		AllocatedSectors:   emptyBitfieldCid,
-		Sectors:            emptyArrayCid,
-		ProvingPeriodStart: periodStart,
-		CurrentDeadline:    0,
-		Deadlines:          emptyDeadlinesCid,
-		EarlyTerminations: bitfield.New(),
+		AllocatedSectors:          emptyBitfieldCid,
+		Sectors:                   emptyArrayCid,
+		ProvingPeriodStart:        periodStart,
+		CurrentDeadline:           0,
+		Deadlines:                 emptyDeadlinesCid,
+		VestingFunds:              emptyVestingFundsCid,
+		EarlyTerminations:         bitfield.New(),
 	}, nil
 }
 
