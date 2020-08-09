@@ -149,7 +149,7 @@ func TestCommitments(t *testing.T) {
 
 	// TODO more tests
 	// - Concurrent attempts to upgrade the same CC sector (one should succeed)
-	// - Insufficient funds for pre-commit, for prove-commit
+	// - Insufficient funds for prove-commit (charged in power actor -- scenario testing candidate)
 	// - CC sector targeted for upgrade expires naturally before the upgrade is proven
 	// - Insufficient funds to cover CC sector IP but sufficient funds to cover pre commit fee for new sector fails
 
@@ -359,6 +359,13 @@ func TestCommitments(t *testing.T) {
 		// Sector ID out of range
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "out of range", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(abi.MaxSectorNumber+1, challengeEpoch, expiration, nil))
+		})
+		rt.Reset()
+
+		// Seal randomness challenge too far in past 
+		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxSealDuration[actor.sealProofType] - 1
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
 		})
 		rt.Reset()
 	})
