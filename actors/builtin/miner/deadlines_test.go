@@ -181,4 +181,12 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		assert.Equal(t, miner.WPoStProvingPeriod-1, d.PeriodEnd())
 		assert.Equal(t, miner.WPoStProvingPeriod, d.NextPeriodStart())
 	})
+
+	t.Run("quantization spec rounds to the next deadline", func(t *testing.T) {
+		periodStart := abi.ChainEpoch(2)
+		curr := periodStart + miner.WPoStProvingPeriod
+		d := miner.NewDeadlineInfo(periodStart, 10, curr)
+		quant := d.QuantSpec()
+		assert.Equal(t, d.NextNotElapsed().Last(), quant.QuantizeUp(curr))
+	})
 }

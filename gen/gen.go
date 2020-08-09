@@ -195,6 +195,7 @@ func main() {
 		miner.CheckSectorProvenParams{},
 		miner.WithdrawBalanceParams{},
 		miner.CompactPartitionsParams{},
+		miner.CompactSectorNumbersParams{},
 		// other types
 		miner.CronEventPayload{},
 		miner.FaultDeclaration{},

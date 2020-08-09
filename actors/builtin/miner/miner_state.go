@@ -39,10 +39,16 @@ type State struct {
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
+	// PreCommittedSectorsExpiry maintains the state required to expire PreCommittedSectors.
+	PreCommittedSectorsExpiry cid.Cid // BitFieldQueue (AMT[Epoch]*BitField)
+
 	// Allocated sector IDs. Sector IDs can never be reused once allocated.
 	AllocatedSectors cid.Cid // BitField
 
-	// Information for all proven and not-yet-expired sectors.
+	// Information for all proven and not-yet-garbage-collected sectors.
+	//
+	// Sectors are removed from this AMT when the partition to which the
+	// sector belongs is compacted.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
 
 	// The first epoch in this miner's current proving period. This is the first epoch in which a PoSt for a
@@ -65,7 +71,7 @@ type State struct {
 	Deadlines cid.Cid
 
 	// Deadlines with outstanding fees for early sector termination.
-	EarlyTerminations *bitfield.BitField
+	EarlyTerminations bitfield.BitField
 }
 
 type MinerInfo struct {
@@ -151,14 +157,16 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		VestingFunds:             emptyArrayCid,
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
-		PreCommittedSectors: emptyMapCid,
-		AllocatedSectors:    emptyBitfieldCid,
-		Sectors:             emptyArrayCid,
-		ProvingPeriodStart:  periodStart,
-		CurrentDeadline:     0,
-		Deadlines:           emptyDeadlinesCid,
+		PreCommittedSectors:       emptyMapCid,
+		PreCommittedSectorsExpiry: emptyArrayCid,
 
-		EarlyTerminations: abi.NewBitField(),
+		AllocatedSectors:   emptyBitfieldCid,
+		Sectors:            emptyArrayCid,
+		ProvingPeriodStart: periodStart,
+		CurrentDeadline:    0,
+		Deadlines:          emptyDeadlinesCid,
+
+		EarlyTerminations: bitfield.New(),
 	}, nil
 }
 
@@ -207,6 +215,11 @@ func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *DeadlineInfo {
 	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
 }
 
+// Returns deadline calculations for the current (according to state) proving period.
+func (st *State) QuantSpecForDeadline(dlIdx uint64) QuantSpec {
+	return NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0).QuantSpec()
+}
+
 func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {
 	// This will likely already have been checked, but this is a good place
 	// to catch any mistakes.
@@ -214,8 +227,8 @@ func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber
 		return xc.ErrIllegalArgument.Wrapf("sector number out of range: %d", sectorNo)
 	}
 
-	allocatedSectors := new(bitfield.BitField)
-	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 	if allocated, err := allocatedSectors.IsSet(uint64(sectorNo)); err != nil {
@@ -233,7 +246,7 @@ func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber
 	return nil
 }
 
-func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField) error {
+func (st *State) MaskSectorNumbers(store adt.Store, sectorNos bitfield.BitField) error {
 	lastSectorNo, err := sectorNos.Last()
 	if err != nil {
 		return xc.ErrIllegalArgument.Wrapf("invalid mask bitfield: %w", err)
@@ -243,8 +256,8 @@ func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField
 		return xc.ErrIllegalArgument.Wrapf("masked sector number %d exceeded max sector number", lastSectorNo)
 	}
 
-	allocatedSectors := new(bitfield.BitField)
-	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 
@@ -371,7 +384,7 @@ func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorO
 	return sectors.Get(sectorNo)
 }
 
-func (st *State) DeleteSectors(store adt.Store, sectorNos *abi.BitField) error {
+func (st *State) DeleteSectors(store adt.Store, sectorNos bitfield.BitField) error {
 	sectors, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return err
@@ -425,7 +438,6 @@ func (st *State) RescheduleSectorExpirations(
 	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
 	deadlineSectors DeadlineSectorMap,
 ) error {
-	quant := st.QuantEndOfDeadline()
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return err
@@ -444,7 +456,7 @@ func (st *State) RescheduleSectorExpirations(
 			return err
 		}
 
-		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, quant); err != nil {
+		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, dlInfo.QuantSpec()); err != nil {
 			return err
 		}
 
@@ -472,8 +484,6 @@ func (st *State) AssignSectorsToDeadlines(
 		return NewPowerPairZero(), err
 	}
 
-	quant := st.QuantEndOfDeadline()
-
 	// Sort sectors by number to get better runs in partition bitfields.
 	sort.Slice(sectors, func(i, j int) bool {
 		return sectors[i].SectorNumber < sectors[j].SectorNumber
@@ -492,14 +502,15 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	newPower := NewPowerPairZero()
-	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
-		if len(newPartitions) == 0 {
+	for dlIdx, deadlineSectors := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
+		if len(deadlineSectors) == 0 {
 			continue
 		}
 
+		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
+		deadlineNewPower, err := dl.AddSectors(store, partitionSize, deadlineSectors, sectorSize, quant)
 		if err != nil {
 			return NewPowerPairZero(), err
 		}
@@ -631,7 +642,7 @@ func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector a
 }
 
 // Loads sector info for a sequence of sectors.
-func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfos(store adt.Store, sectors bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	sectorsArr, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return nil, err
@@ -642,7 +653,7 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 // Loads info for a set of sectors to be proven.
 // If any of the sectors are declared faulty and not to be recovered, info for the first non-faulty sector is substituted instead.
 // If any of the sectors are declared recovered, they are returned from this method.
-func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to diff bitfields: %w", err)
@@ -670,7 +681,7 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expecte
 }
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
-func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitField, faults *abi.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors bitfield.BitField, faults bitfield.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
 	sectorArr, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load sectors array: %w", err)
@@ -956,12 +967,6 @@ func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmou
 	return big.Sub(availableBalance, st.InitialPledgeRequirement)
 }
 
-// Returns a quantization spec that quantizes values to the last epoch in each deadline.
-func (st *State) QuantEndOfDeadline() QuantSpec {
-	// Proving period start is the first epoch of the first deadline, so we want values that are earlier by one.
-	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart-1)
-}
-
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
@@ -971,6 +976,71 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
 	available := st.GetUnlockedBalance(balance)
 	return available.GreaterThanEqual(st.InitialPledgeRequirement)
+}
+
+// pre-commit expiry
+func (st *State) QuantSpecEveryDeadline() QuantSpec {
+	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+}
+
+func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch, sectorNum abi.SectorNumber) error {
+	// Load BitField Queue for sector expiry
+	quant := st.QuantSpecEveryDeadline()
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+	if err != nil {
+		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
+	}
+
+	// add entry for this sector to the queue
+	if err := queue.AddToQueueValues(expireEpoch, uint64(sectorNum)); err != nil {
+		return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
+	}
+
+	st.PreCommittedSectorsExpiry, err = queue.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to save pre-commit sector queue: %w", err)
+	}
+
+	return nil
+}
+
+func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (depositToBurn abi.TokenAmount, err error) {
+	depositToBurn = abi.NewTokenAmount(0)
+
+	var precommitsToDelete []abi.SectorNumber
+	if err = sectors.ForEach(func(i uint64) error {
+		sectorNo := abi.SectorNumber(i)
+		sector, found, err := st.GetPrecommittedSector(store, sectorNo)
+		if err != nil {
+			return err
+		}
+		if !found {
+			// already committed/deleted
+			return nil
+		}
+
+		// mark it for deletion
+		precommitsToDelete = append(precommitsToDelete, sectorNo)
+
+		// increment deposit to burn
+		depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+		return nil
+	}); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to check pre-commit expiries: %w", err)
+	}
+
+	// Actually delete it.
+	if len(precommitsToDelete) > 0 {
+		if err := st.DeletePrecommittedSectors(store, precommitsToDelete...); err != nil {
+			return big.Zero(), fmt.Errorf("failed to delete pre-commits: %w", err)
+		}
+	}
+
+	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
+	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
+
+	// This deposit was locked separately to pledge collateral so there's no pledge change here.
+	return depositToBurn, nil
 }
 
 //

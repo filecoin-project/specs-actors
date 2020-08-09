@@ -78,6 +78,10 @@ func (d *DeadlineInfo) NextNotElapsed() *DeadlineInfo {
 	return next
 }
 
+func (d *DeadlineInfo) QuantSpec() QuantSpec {
+	return NewQuantSpec(WPoStProvingPeriod, d.Last())
+}
+
 // Returns deadline-related calculations for a deadline in some proving period and the current epoch.
 func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) *DeadlineInfo {
 	if deadlineIdx < WPoStPeriodDeadlines {

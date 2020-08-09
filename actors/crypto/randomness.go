@@ -1,7 +1,7 @@
 package crypto
 
 // Specifies a domain for randomness generation.
-type DomainSeparationTag int
+type DomainSeparationTag int64
 
 const (
 	DomainSeparationTag_TicketProduction DomainSeparationTag = 1 + iota
@@ -12,4 +12,5 @@ const (
 	DomainSeparationTag_InteractiveSealChallengeSeed
 	DomainSeparationTag_WindowedPoStDeadlineAssignment
 	DomainSeparationTag_MarketDealCronSeed
+	DomainSeparationTag_PoStChainCommit
 )

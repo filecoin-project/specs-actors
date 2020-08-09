@@ -187,7 +187,9 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 }
 
 type TxnIDParams struct {
-	ID           TxnID
+	ID TxnID
+	// Optional hash of proposal to ensure an operation can only apply to a
+	// specific proposal.
 	ProposalHash []byte
 }
 
@@ -257,7 +259,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute proposal hash for %v", params.ID)
 		if params.ProposalHash != nil && !bytes.Equal(params.ProposalHash, calculatedHash[:]) {
-			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params")
+			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params (ensure requester is an ID address)")
 		}
 
 		err = ptx.Delete(params.ID)
@@ -425,7 +427,7 @@ func getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []by
 		calculatedHash, err := ComputeProposalHash(&txn, rt.Syscalls().HashBlake2b)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute proposal hash for %v", txnID)
 		if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
-			rt.Abortf(exitcode.ErrIllegalArgument, "hash does not match proposal params")
+			rt.Abortf(exitcode.ErrIllegalArgument, "hash does not match proposal params (ensure requester is an ID address)")
 		}
 	}
 

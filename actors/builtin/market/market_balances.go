@@ -91,7 +91,7 @@ func (m *marketStateMutation) maybeLockBalance(addr addr.Address, amount abi.Tok
 	}
 
 	if big.Add(prevLocked, amount).GreaterThan(escrowBalance) {
-		return xerrors.Errorf("not enough balance to lock for addr %s: %s <  %s + %s", addr, escrowBalance, prevLocked, amount),
+		return xerrors.Errorf("not enough balance to lock for addr %s: escrow balance %s < locked %s + required %s", addr, escrowBalance, prevLocked, amount),
 			exitcode.ErrInsufficientFunds
 	}
 

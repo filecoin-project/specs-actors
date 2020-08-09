@@ -10,11 +10,13 @@ import (
 type Spacetime = big.Int
 
 // 36.266260308195979333 FIL
+// https://www.wolframalpha.com/input/?i=IntegerPart%5B330%2C000%2C000+*+%281+-+Exp%5B-Log%5B2%5D+%2F+%286+*+%281+year+%2F+30+seconds%29%29%5D%29+*+10%5E18%5D
 const InitialRewardPositionEstimateStr = "36266260308195979333"
 
 var InitialRewardPositionEstimate = big.MustFromString(InitialRewardPositionEstimateStr)
 
 // -1.0982489*10^-7 FIL per epoch.  Change of simple minted tokens between epochs 0 and 1
+// https://www.wolframalpha.com/input/?i=IntegerPart%5B%28Exp%5B-Log%5B2%5D+%2F+%286+*+%281+year+%2F+30+seconds%29%29%5D+-+1%29+*+10%5E18%5D
 var InitialRewardVelocityEstimate = abi.NewTokenAmount(-109897758509)
 
 type State struct {

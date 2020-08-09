@@ -156,7 +156,7 @@ func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealStat
 }
 
 // Deal start deadline elapsed without appearing in a proven sector.
-// Delete deal, slash a portion of provider's collateral, and unlock remaining collaterals
+// Slash a portion of provider's collateral, and unlock remaining collaterals
 // for both provider and client.
 func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProposal) abi.TokenAmount {
 	if err := m.unlockBalance(deal.Client, deal.TotalStorageFee(), ClientStorageFee); err != nil {
@@ -180,7 +180,7 @@ func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProp
 	return amountSlashed
 }
 
-// Normal expiration. Delete deal and unlock collaterals for both miner and client.
+// Normal expiration. Unlock collaterals for both provider and client.
 func (m *marketStateMutation) processDealExpired(rt Runtime, deal *DealProposal, state *DealState) {
 	Assert(state.SectorStartEpoch != epochUndefined)
 

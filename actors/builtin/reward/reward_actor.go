@@ -2,6 +2,7 @@ package reward
 
 import (
 	"github.com/filecoin-project/go-address"
+
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -40,9 +41,9 @@ func (a Actor) Constructor(rt vmr.Runtime, currRealizedPower *abi.StoragePower) 
 
 type AwardBlockRewardParams struct {
 	Miner     address.Address
-	Penalty   abi.TokenAmount // penalty for including bad messages in a block
-	GasReward abi.TokenAmount // gas reward from all gas fees in a block
-	WinCount  int64
+	Penalty   abi.TokenAmount // penalty for including bad messages in a block, >= 0
+	GasReward abi.TokenAmount // gas reward from all gas fees in a block, >= 0
+	WinCount  int64           // number of reward units won, > 0
 }
 
 // Awards a reward to a block producer.
@@ -57,15 +58,26 @@ type AwardBlockRewardParams struct {
 // - a penalty amount, provided as a parameter, which is burnt,
 func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	AssertMsg(rt.CurrentBalance().GreaterThanEqual(params.GasReward),
-		"actor current balance %v insufficient to pay gas reward %v", rt.CurrentBalance(), params.GasReward)
+	priorBalance := rt.CurrentBalance()
+	if params.Penalty.LessThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "negative penalty %v", params.Penalty)
+	}
+	if params.GasReward.LessThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument,  "negative gas reward %v", params.GasReward)
+	}
+	if priorBalance.LessThan(params.GasReward) {
+		rt.Abortf(exitcode.ErrIllegalState, "actor current balance %v insufficient to pay gas reward %v",
+			priorBalance, params.GasReward)
+	}
+	if params.WinCount <= 0 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid win count %d", params.WinCount)
+	}
 
 	minerAddr, ok := rt.ResolveAddress(params.Miner)
 	if !ok {
 		rt.Abortf(exitcode.ErrNotFound, "failed to resolve given owner address")
 	}
 
-	priorBalance := rt.CurrentBalance()
 	penalty := abi.NewTokenAmount(0)
 	totalReward := big.Zero()
 	var st State
@@ -93,8 +105,15 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
 		"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
 
+	// if this fails, we can assume the miner is responsible and avoid failing here.
 	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
-	builtin.RequireSuccess(rt, code, "failed to send reward to miner: %s", minerAddr)
+	if !code.IsSuccess() {
+		rt.Log(vmr.ERROR, "failed to send AddLockedFund call to the miner actor with funds: %v, code: %v", rewardPayable, code)
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, rewardPayable)
+		if !code.IsSuccess() {
+			rt.Log(vmr.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
+		}
+	}
 
 	// Burn the penalty amount.
 	if penalty.GreaterThan(abi.NewTokenAmount(0)) {
