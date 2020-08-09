@@ -141,8 +141,6 @@ func TestControlAddresses(t *testing.T) {
 		assert.Equal(t, actor.worker, w)
 	})
 
-	// TODO: test changing worker (with delay), changing peer id
-	// https://github.com/filecoin-project/specs-actors/issues/479
 }
 
 // Test for sector precommitment and proving.
@@ -153,6 +151,7 @@ func TestCommitments(t *testing.T) {
 	// - Concurrent attempts to upgrade the same CC sector (one should succeed)
 	// - Insufficient funds for pre-commit, for prove-commit
 	// - CC sector targeted for upgrade expires naturally before the upgrade is proven
+	// - Insufficient funds to cover CC sector IP but sufficient funds to cover pre commit fee for new sector fails
 
 	t.Run("valid precommit then provecommit", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
@@ -259,6 +258,24 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, expectedInitialPledge, entry.OnTimePledge)
 		assert.Equal(t, sectorPower, entry.ActivePower)
 		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyPower)
+	})
+
+	t.Run("insufficient funds for pre-commit", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		insufficientBalance := abi.NewTokenAmount(10) // 10 AttoFIL
+		rt := builderForHarness(actor).
+			WithBalance(insufficientBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+		})
 	})
 
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
