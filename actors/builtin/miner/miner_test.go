@@ -609,7 +609,13 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// TODO: too early to prove sector
+		// Too early.
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay - 1)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{})
+		})
+		rt.Reset()
+
 		// TODO: seal rand epoch too old
 		// TODO: commitment expires before proof
 		// https://github.com/filecoin-project/specs-actors/issues/479
