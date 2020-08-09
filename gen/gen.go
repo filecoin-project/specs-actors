@@ -178,6 +178,8 @@ func main() {
 		miner.SectorPreCommitInfo{},
 		miner.SectorOnChainInfo{},
 		miner.WorkerKeyChange{},
+		miner.VestingFunds{},
+		miner.VestingFund{},
 		// method params
 		// miner.ConstructorParams{},
 		miner.SubmitWindowedPoStParams{},
