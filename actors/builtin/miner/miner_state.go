@@ -154,8 +154,11 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 	return &State{
 		Info: infoCid,
 
-		PreCommitDeposits:        abi.NewTokenAmount(0),
-		LockedFunds:              abi.NewTokenAmount(0),
+		PreCommitDeposits: abi.NewTokenAmount(0),
+		LockedFunds:       abi.NewTokenAmount(0),
+
+		VestingFunds: emptyVestingFundsCid,
+
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
 		PreCommittedSectors:       emptyMapCid,
@@ -165,7 +168,6 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		ProvingPeriodStart:        periodStart,
 		CurrentDeadline:           0,
 		Deadlines:                 emptyDeadlinesCid,
-		VestingFunds:              emptyVestingFundsCid,
 		EarlyTerminations:         bitfield.New(),
 	}, nil
 }
