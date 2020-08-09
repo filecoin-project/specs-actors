@@ -623,10 +623,6 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// TODO: seal rand epoch too old
-		// TODO: commitment expires before proof
-		// https://github.com/filecoin-project/specs-actors/issues/479
-
 		// Set the right epoch for all following tests
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
 
@@ -639,17 +635,6 @@ func TestCommitments(t *testing.T) {
 			})
 		})
 		rt.Reset()
-
-		// Invalid seal proof
-		/* TODO: how should this test work?
-		// https://github.com/filecoin-project/specs-actors/issues/479
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
-				verifySealErr: fmt.Errorf("for testing"),
-			})
-		})
-		rt.Reset()
-		*/
 
 		// Good proof
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
