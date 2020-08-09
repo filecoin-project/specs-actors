@@ -23,7 +23,7 @@ func TestDeadlineSectorMap(t *testing.T) {
 
 	err := dm.ForEach(func(dlIdx uint64, partitions miner.PartitionSectorMap) error {
 		assert.Equal(t, dm[dlIdx], partitions)
-		return partitions.ForEach(func(partIdx uint64, sectorNos *bitfield.BitField) error {
+		return partitions.ForEach(func(partIdx uint64, sectorNos bitfield.BitField) error {
 			assert.Equal(t, partitions[partIdx], sectorNos)
 			assertBitfieldEquals(t, sectorNos, dlIdx*partCount+partIdx)
 			return nil
@@ -61,7 +61,7 @@ func TestDeadlineSectorMapError(t *testing.T) {
 	expErr := errors.New("foobar")
 
 	err := dm.ForEach(func(dlIdx uint64, partitions miner.PartitionSectorMap) error {
-		return partitions.ForEach(func(partIdx uint64, sectorNos *bitfield.BitField) error {
+		return partitions.ForEach(func(partIdx uint64, sectorNos bitfield.BitField) error {
 			return expErr
 		})
 	})
@@ -131,7 +131,7 @@ func TestPartitionSectorMapEmpty(t *testing.T) {
 	require.Zero(t, partitions)
 	require.Zero(t, sectors)
 
-	require.NoError(t, pm.ForEach(func(dlIdx uint64, sectorNos *bitfield.BitField) error {
+	require.NoError(t, pm.ForEach(func(dlIdx uint64, sectorNos bitfield.BitField) error {
 		require.Fail(t, "should not iterate over an empty map")
 		return nil
 	}))

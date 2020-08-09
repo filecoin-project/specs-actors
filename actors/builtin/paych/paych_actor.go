@@ -46,13 +46,9 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 
 	// check that both parties are capable of signing vouchers
 	to, err := pca.resolveAccount(rt, params.To)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve to address: %s", params.To)
 	from, err := pca.resolveAccount(rt, params.From)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, err.Error())
-	}
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve from address: %s", params.From)
 
 	st := ConstructState(from, to)
 	rt.State().Create(st)
@@ -71,7 +67,7 @@ func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef, exitcode.ErrIllegalState.Wrapf("no code for address %v", resolved)
+		return addr.Undef, exitcode.ErrForbidden.Wrapf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
 		return addr.Undef, exitcode.ErrForbidden.Wrapf("actor %v must be an account (%v), was %v", raw,
@@ -150,14 +146,11 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher has no signature")
 	}
 
-	vb, nerr := sv.SigningBytes()
-	if nerr != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
-	}
+	vb, err := sv.SigningBytes()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 
-	if err := rt.Syscalls().VerifySignature(*sv.Signature, signer, vb); err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "voucher signature invalid: %s", err)
-	}
+	err = rt.Syscalls().VerifySignature(*sv.Signature, signer, vb)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "voucher signature invalid")
 
 	pchAddr := rt.Message().Receiver()
 	if pchAddr != sv.ChannelAddr {

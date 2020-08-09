@@ -716,7 +716,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
 
@@ -746,23 +746,28 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, nil)
 
 		// Submit a duplicate proof for the same partition, which should be ignored.
 		// The skipped fault declared here has no effect.
+		commitEpoch := rt.Epoch() - 1
+		commitRand := abi.Randomness("chaincommitment")
 		params := miner.SubmitWindowedPoStParams{
 			Deadline: dlIdx,
 			Partitions: []miner.PoStPartition{{
 				Index:   pIdx,
 				Skipped: bf(uint64(sector.SectorNumber)),
 			}},
-			Proofs: makePoStProofs(actor.postProofType),
+			Proofs:           makePoStProofs(actor.postProofType),
+			ChainCommitEpoch: commitEpoch,
+			ChainCommitRand:  commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(actor.worker)
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
 
@@ -818,7 +823,7 @@ func TestWindowPost(t *testing.T) {
 			expectedPenalty:       recoveryFee,
 		}
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 
@@ -1585,7 +1590,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: abi.NewBitField()},
+			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{newSector}, nil)
 
@@ -1950,6 +1955,50 @@ func TestAddLockedFund(t *testing.T) {
 
 }
 
+func TestCompactSectorNumbers(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("compact sector numbers then pre-commit", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		actor.compactSectorNumbers(rt, bf(uint64(targetSno), uint64(targetSno)+1))
+
+		precommitEpoch := rt.Epoch()
+		deadline := actor.deadline(rt)
+		expiration := deadline.PeriodEnd() + abi.ChainEpoch(defaultSectorExpiration)*miner.WPoStProvingPeriod
+
+		// Allocating masked sector number should fail.
+		{
+			precommit := actor.makePreCommit(targetSno+1, precommitEpoch-1, expiration, nil)
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				actor.preCommitSector(rt, precommit)
+			})
+		}
+
+		{
+			precommit := actor.makePreCommit(targetSno+2, precommitEpoch-1, expiration, nil)
+			actor.preCommitSector(rt, precommit)
+		}
+	})
+
+	t.Run("compacting no sector numbers aborts", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			// compact nothing
+			actor.compactSectorNumbers(rt, bf())
+		})
+	})
+}
+
 type actorHarness struct {
 	a miner.Actor
 	t testing.TB
@@ -2133,7 +2182,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
-	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		expanded, err := bf.All(miner.SectorsMax)
 		require.NoError(h.t, err)
 		expirations[epoch] = expanded
@@ -2244,20 +2293,6 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 			VerifiedDealWeight: big.NewInt(int64(sectorSize / 2)),
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
-	}
-	{
-		eventPayload := miner.CronEventPayload{
-			EventType: miner.CronEventPreCommitExpiry,
-			Sectors:   bitfield.NewFromSet([]uint64{uint64(params.SectorNumber)}),
-		}
-		buf := bytes.Buffer{}
-		err := eventPayload.MarshalCBOR(&buf)
-		require.NoError(h.t, err)
-		cronParams := power.EnrollCronEventParams{
-			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.SealProof] + 1,
-			Payload:    buf.Bytes(),
-		}
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
 	}
 
 	rt.Call(h.a.PreCommitSector, params)
@@ -2412,6 +2447,16 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 	return info
 }
 
+func (h *actorHarness) compactSectorNumbers(rt *mock.Runtime, bf bitfield.BitField) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(h.worker)
+
+	rt.Call(h.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+		MaskSectorNumbers: bf,
+	})
+	rt.Verify()
+}
+
 func (h *actorHarness) commitAndProveSector(rt *mock.Runtime, sectorNo abi.SectorNumber, lifetimePeriods uint64, dealIDs []abi.DealID) *miner.SectorOnChainInfo {
 	precommitEpoch := rt.Epoch()
 	deadline := h.deadline(rt)
@@ -2448,6 +2493,10 @@ type poStConfig struct {
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	commitRand := abi.Randomness("chaincommitment")
+	commitEpoch := rt.Epoch() - 4
+	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+
 	rt.ExpectValidateCallerAddr(h.worker)
 
 	expectQueryNetworkInfo(rt, h)
@@ -2533,9 +2582,11 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 
 	params := miner.SubmitWindowedPoStParams{
-		Deadline:   deadline.Index,
-		Partitions: partitions,
-		Proofs:     proofs,
+		Deadline:         deadline.Index,
+		Partitions:       partitions,
+		Proofs:           proofs,
+		ChainCommitEpoch: commitEpoch,
+		ChainCommitRand:  commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)
@@ -2573,7 +2624,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	rt.Verify()
 }
 
-func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors *bitfield.BitField) {
+func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2622,7 +2673,7 @@ func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSecto
 	rt.Verify()
 }
 
-func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors *abi.BitField, expectedFee abi.TokenAmount) {
+func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitField, expectedFee abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.worker)
 
@@ -2899,7 +2950,7 @@ func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.
 			for _, sector := range dlSectors {
 				_, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
 				require.NoError(h.t, err)
-				partitions = append(partitions, miner.PoStPartition{Index: pIdx, Skipped: abi.NewBitField()})
+				partitions = append(partitions, miner.PoStPartition{Index: pIdx, Skipped: bitfield.New()})
 			}
 			h.submitWindowPoSt(rt, dlinfo, partitions, dlSectors, nil)
 			delete(deadlines, dlinfo.Index)
@@ -2984,12 +3035,12 @@ func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt
 	return &miner.DeclareFaultsParams{Faults: declarations}
 }
 
-func sectorInfoAsBitfield(infos []*miner.SectorOnChainInfo) *bitfield.BitField {
+func sectorInfoAsBitfield(infos []*miner.SectorOnChainInfo) bitfield.BitField {
 	bf := bitfield.New()
 	for _, info := range infos {
 		bf.Set(uint64(info.SectorNumber))
 	}
-	return &bf
+	return bf
 }
 
 func powerForSectors(sectorSize abi.SectorSize, sectors []*miner.SectorOnChainInfo) (rawBytePower, qaPower big.Int) {
@@ -3001,7 +3052,7 @@ func powerForSectors(sectorSize abi.SectorSize, sectors []*miner.SectorOnChainIn
 	return rawBytePower, qaPower
 }
 
-func assertEmptyBitfield(t *testing.T, b *abi.BitField) {
+func assertEmptyBitfield(t *testing.T, b bitfield.BitField) {
 	empty, err := b.IsEmpty()
 	require.NoError(t, err)
 	assert.True(t, empty)
