@@ -1,9 +1,12 @@
 package market
 
 import (
+	"bytes"
+	"encoding/binary"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -216,7 +219,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			err = msm.dealProposals.Set(id, &deal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal")
 
-			err = msm.dealsByEpoch.Put(deal.Proposal.StartEpoch, id)
+			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
+			// schedule too many deals for the same tick.
+			processEpoch, err := genRandNextEpoch(rt.CurrEpoch(), &deal.Proposal, rt.GetRandomnessFromBeacon)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
+
+			err = msm.dealsByEpoch.Put(processEpoch, id)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal ops by epoch")
 
 			newDealIds = append(newDealIds, id)
@@ -491,6 +499,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 
 				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, rt.CurrEpoch())
 				Assert(slashAmount.GreaterThanEqual(big.Zero()))
+
 				if removeDeal {
 					AssertMsg(nextEpoch == epochUndefined, "next scheduled epoch should be undefined as deal has been removed")
 
@@ -563,13 +572,26 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
+func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(crypto.DomainSeparationTag, abi.ChainEpoch, []byte) abi.Randomness) (abi.ChainEpoch, error) {
+	buf := bytes.Buffer{}
+	if err := deal.MarshalCBOR(&buf); err != nil {
+		return epochUndefined, xerrors.Errorf("failed to marshal proposal: %w", err)
+	}
+
+	rb := rbF(crypto.DomainSeparationTag_MarketDealCronSeed, currEpoch-1, buf.Bytes())
+
+	// generate a random epoch in [baseEpoch, baseEpoch + DealUpdatesInterval)
+	offset := binary.BigEndian.Uint64(rb)
+
+	return deal.StartEpoch + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)), nil
+}
+
 func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
 	removeState bool) error {
 	if removeProposal {
 		if err := proposals.Delete(uint64(dealId)); err != nil {
 			return xerrors.Errorf("failed to delete deal proposal: %w", err)
 		}
-
 	}
 
 	if removeState {
