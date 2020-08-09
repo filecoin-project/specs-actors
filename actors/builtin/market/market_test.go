@@ -2662,7 +2662,7 @@ func (h *marketActorTestHarness) expectGetRandom(rt *mock.Runtime, deal *market.
 	diff := uint64(requiredProcessEpoch - deal.StartEpoch)
 	require.NoError(h.t, deal.MarshalCBOR(&dealBuf))
 	require.NoError(h.t, binary.Write(&epochBuf, binary.BigEndian, diff))
-	rt.ExpectGetRandomness(crypto.DomainSeparationTag_MarketDealCronSeed, rt.Epoch()-1, dealBuf.Bytes(), epochBuf.Bytes())
+	rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_MarketDealCronSeed, rt.Epoch()-1, dealBuf.Bytes(), epochBuf.Bytes())
 }
 
 func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, minerAddrs *minerAddrs, publishDealReqs ...publishDealReq) []abi.DealID {
