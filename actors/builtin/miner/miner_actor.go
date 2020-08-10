@@ -615,7 +615,10 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	store := adt.AsStore(rt)
 	var st State
-	var precommit *SectorPreCommitOnChainInfo
+	rt.State().Readonly(&st)
+
+	verifyPledgeMeetsInitialRequirements(rt, &st)
+
 	sectorNo := params.SectorNumber
 	rt.State().Transaction(&st, func() {
 		verifyPledgeMeetsInitialRequirements(rt, &st)
