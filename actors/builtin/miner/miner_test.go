@@ -141,19 +141,11 @@ func TestControlAddresses(t *testing.T) {
 		assert.Equal(t, actor.worker, w)
 	})
 
-	// TODO: test changing worker (with delay), changing peer id
-	// https://github.com/filecoin-project/specs-actors/issues/479
 }
 
 // Test for sector precommitment and proving.
 func TestCommitments(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
-
-	// TODO more tests
-	// - Concurrent attempts to upgrade the same CC sector (one should succeed)
-	// - Insufficient funds for pre-commit, for prove-commit
-	// - CC sector targeted for upgrade expires naturally before the upgrade is proven
-
 	t.Run("valid precommit then provecommit", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -261,6 +253,24 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyPower)
 	})
 
+	t.Run("insufficient funds for pre-commit", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		insufficientBalance := abi.NewTokenAmount(10) // 10 AttoFIL
+		rt := builderForHarness(actor).
+			WithBalance(insufficientBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+		})
+	})
+
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -342,6 +352,13 @@ func TestCommitments(t *testing.T) {
 		// Sector ID out of range
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "out of range", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(abi.MaxSectorNumber+1, challengeEpoch, expiration, nil))
+		})
+		rt.Reset()
+
+		// Seal randomness challenge too far in past 
+		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxSealDuration[actor.sealProofType] - 1
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
 		})
 		rt.Reset()
 	})
@@ -592,10 +609,12 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// TODO: too early to prove sector
-		// TODO: seal rand epoch too old
-		// TODO: commitment expires before proof
-		// https://github.com/filecoin-project/specs-actors/issues/479
+		// Too early.
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay - 1)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{})
+		})
+		rt.Reset()
 
 		// Set the right epoch for all following tests
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -609,17 +628,6 @@ func TestCommitments(t *testing.T) {
 			})
 		})
 		rt.Reset()
-
-		// Invalid seal proof
-		/* TODO: how should this test work?
-		// https://github.com/filecoin-project/specs-actors/issues/479
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
-				verifySealErr: fmt.Errorf("for testing"),
-			})
-		})
-		rt.Reset()
-		*/
 
 		// Good proof
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
@@ -1730,6 +1738,20 @@ func TestWithdrawBalance(t *testing.T) {
 	})
 }
 
+func TestChangePeerID(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	t.Run("successfully change peer id", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		newPID := tutil.MakePID("test-change-peer-id")
+		actor.changePeerID(rt, newPID)
+	})
+}
+
 func TestChangeWorkerAddress(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
@@ -2281,6 +2303,19 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	require.NoError(h.t, err)
 	require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
 	require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+}
+
+func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
+	param := &miner.ChangePeerIDParams{NewID: newPID}
+	rt.ExpectValidateCallerAddr(h.worker)
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+
+	rt.Call(h.a.ChangePeerID, param)
+	rt.Verify()
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.EqualValues(h.t, newPID, info.PeerId)
 }
 
 func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
