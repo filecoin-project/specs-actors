@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
@@ -140,9 +141,35 @@ func TestAddVerifier(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("fails to add verifier with non-ID address if not resolvable to ID address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		verifierNonIdAddr := tutil.NewBLSAddr(t, 1)
+
+		rt.ExpectSend(verifierNonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			ac.addNewVerifier(rt, verifierNonIdAddr, allowance)
+		})
+	})
+
 	t.Run("successfully add a verifier", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		ac.addNewVerifier(rt, va, allowance)
+	})
+
+	t.Run("successfully add a verifier after resolving to ID address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		verifierIdAddr := tutil.NewIDAddr(t, 501)
+		verifierNonIdAddr := tutil.NewBLSAddr(t, 1)
+
+		rt.AddIDAddress(verifierNonIdAddr, verifierIdAddr)
+
+		ac.addNewVerifier(rt, verifierNonIdAddr, allowance)
+
+		dc := ac.getVerifierCap(rt, verifierIdAddr)
+		require.EqualValues(t, allowance, dc)
 	})
 }
 
@@ -183,6 +210,21 @@ func TestRemoveVerifier(t *testing.T) {
 		ac.addNewVerifier(rt, va, allowance)
 
 		ac.removeVerifier(rt, va)
+	})
+
+	t.Run("add verifier with non ID address and then remove with it's ID address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		verifierIdAddr := tutil.NewIDAddr(t, 501)
+		verifierNonIdAddr := tutil.NewBLSAddr(t, 1)
+		rt.AddIDAddress(verifierNonIdAddr, verifierIdAddr)
+
+		// add using non-ID address
+		ac.addNewVerifier(rt, verifierNonIdAddr, allowance)
+
+		// remove using ID address
+		ac.removeVerifier(rt, verifierIdAddr)
+		ac.assertVerifierRemoved(rt, verifierIdAddr)
 	})
 }
 
@@ -261,6 +303,31 @@ func TestAddVerifiedClient(t *testing.T) {
 		require.EqualValues(t, big.Zero(), ac.getVerifierCap(rt, verifierAddr))
 	})
 
+	t.Run("successfully add a verified client after resolving it's given non ID address to it's ID address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		clientIdAddr := tutil.NewIDAddr(t, 501)
+		clientNonIdAddr := tutil.NewBLSAddr(t, 1)
+		rt.AddIDAddress(clientNonIdAddr, clientIdAddr)
+
+		c1 := ac.mkClientParams(clientNonIdAddr, clientAllowance)
+
+		verifier := ac.mkVerifierParams(verifierAddr, allowance)
+		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+
+		require.EqualValues(t, clientAllowance, ac.getClientCap(rt, clientIdAddr))
+
+		// adding another verified client with the same ID address now fails
+		c2 := ac.mkClientParams(clientIdAddr, clientAllowance)
+		verifier = ac.mkVerifierParams(verifierAddr, allowance)
+		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			ac.addVerifiedClient(rt, verifier.Address, c2.Address, c2.Allowance)
+		})
+	})
+
 	t.Run("success when allowance is equal to MinVerifiedDealSize", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 
@@ -272,6 +339,22 @@ func TestAddVerifiedClient(t *testing.T) {
 
 		// add client works
 		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+	})
+
+	t.Run("fails to add verified client if address is not resolvable to ID address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		clientNonIdAddr := tutil.NewBLSAddr(t, 1)
+		c1 := ac.mkClientParams(clientNonIdAddr, clientAllowance)
+
+		verifier := ac.mkVerifierParams(verifierAddr, allowance)
+		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
+
+		rt.ExpectSend(clientNonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+		})
 	})
 
 	t.Run("fails when allowance is less than MinVerifiedDealSize", func(t *testing.T) {
@@ -428,6 +511,22 @@ func TestUseBytes(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("successfully consume deal bytes after resolving verified client address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, verifreg.MinVerifiedDealSize, big.NewInt(1))
+
+		clientIdAddr := tutil.NewIDAddr(t, 501)
+		clientNonIdAddr := tutil.NewBLSAddr(t, 502)
+		rt.AddIDAddress(clientNonIdAddr, clientIdAddr)
+
+		// add verified client
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, clientIdAddr, vallow, clientAllowance)
+
+		// use bytes
+		dSize1 := verifreg.MinVerifiedDealSize
+		ac.useBytes(rt, clientNonIdAddr, dSize1, &capExpectation{expectedCap: big.Sub(clientAllowance, dSize1)})
+	})
+
 	t.Run("successfully consume deal for verified client and then fail on next attempt because it has been removed", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, big.NewInt(1))
@@ -581,6 +680,27 @@ func TestRestoreBytes(t *testing.T) {
 		ac.restoreBytes(rt, clientAddr, sz, &capExpectation{expectedCap: big.Add(bal, sz)})
 	})
 
+	t.Run("successfully restore deal bytes after resolving client address", func(t *testing.T) {
+		rt, ac := basicVerifRegSetup(t, root)
+
+		clientIdAddr := tutil.NewIDAddr(t, 501)
+		clientNonIdAddr := tutil.NewBLSAddr(t, 502)
+		rt.AddIDAddress(clientNonIdAddr, clientIdAddr)
+
+		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, verifreg.MinVerifiedDealSize)
+
+		// add verified client -> use bytes
+		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, clientIdAddr, vallow, clientAllowance)
+		dSize1 := verifreg.MinVerifiedDealSize
+		bal := big.Sub(clientAllowance, dSize1)
+		ac.useBytes(rt, clientIdAddr, dSize1, &capExpectation{expectedCap: bal})
+
+		sz := verifreg.MinVerifiedDealSize
+		ac.restoreBytes(rt, clientNonIdAddr, sz, &capExpectation{expectedCap: big.Add(bal, sz)})
+
+		require.EqualValues(t, big.Add(bal, sz), ac.getClientCap(rt, clientIdAddr))
+	})
+
 	t.Run("successfully restore bytes after using bytes removes a client", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		clientAllowance := big.Sum(verifreg.MinVerifiedDealSize, big.NewInt(1))
@@ -713,7 +833,10 @@ func (h *verifRegActorTestHarness) addVerifiedClient(rt *mock.Runtime, verifier,
 	rt.Call(h.AddVerifiedClient, params)
 	rt.Verify()
 
-	require.EqualValues(h.t, allowance, h.getClientCap(rt, client))
+	clientIdAddr, found := rt.GetIdAddr(client)
+	require.True(h.t, found)
+
+	require.EqualValues(h.t, allowance, h.getClientCap(rt, clientIdAddr))
 }
 
 func (h *verifRegActorTestHarness) addVerifier(rt *mock.Runtime, verifier address.Address, datacap verifreg.DataCap) {
@@ -725,8 +848,11 @@ func (h *verifRegActorTestHarness) addVerifier(rt *mock.Runtime, verifier addres
 	ret := rt.Call(h.AddVerifier, &param)
 	rt.Verify()
 
+	verifierIdAddr, found := rt.GetIdAddr(verifier)
+	require.True(h.t, found)
+
 	require.Nil(h.t, ret)
-	require.EqualValues(h.t, datacap, h.getVerifierCap(rt, verifier))
+	require.EqualValues(h.t, datacap, h.getVerifierCap(rt, verifierIdAddr))
 }
 
 func (h *verifRegActorTestHarness) removeVerifier(rt *mock.Runtime, verifier address.Address) {
@@ -755,11 +881,14 @@ func (h *verifRegActorTestHarness) useBytes(rt *mock.Runtime, a address.Address,
 	rt.Verify()
 	require.Nil(h.t, ret)
 
+	clientIdAddr, found := rt.GetIdAddr(a)
+	require.True(h.t, found)
+
 	// assert client cap now
 	if expectedCap.removed {
-		h.assertClientRemoved(rt, a)
+		h.assertClientRemoved(rt, clientIdAddr)
 	} else {
-		require.EqualValues(h.t, expectedCap.expectedCap, h.getClientCap(rt, a))
+		require.EqualValues(h.t, expectedCap.expectedCap, h.getClientCap(rt, clientIdAddr))
 	}
 }
 
@@ -773,8 +902,11 @@ func (h *verifRegActorTestHarness) restoreBytes(rt *mock.Runtime, a address.Addr
 	rt.Verify()
 	require.Nil(h.t, ret)
 
+	clientIdAddr, found := rt.GetIdAddr(a)
+	require.True(h.t, found)
+
 	// assert client cap now
-	require.EqualValues(h.t, expectedCap.expectedCap, h.getClientCap(rt, a))
+	require.EqualValues(h.t, expectedCap.expectedCap, h.getClientCap(rt, clientIdAddr))
 }
 
 func (h *verifRegActorTestHarness) getVerifierCap(rt *mock.Runtime, a address.Address) verifreg.DataCap {
