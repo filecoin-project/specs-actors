@@ -1671,6 +1671,32 @@ func TestDeclareRecoveries(t *testing.T) {
 			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
 		})
 	})
+
+	t.Run("recovery pays back fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		// advance to first proving period and submit so we'll have time to declare the fault next cycle
+		advanceAndSubmitPoSts(rt, actor, oneSector...)
+
+		// Fault goes into fee debt
+		rt.SetBalance(big.Zero()) 
+
+		actor.declareFaults(rt, oneSector...)
+
+		// Recovery pays back fee debt and IP requirements
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
+		require.NoError(t, err)
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+
+
+	})
+
+	t.Run("recovery fails when it can't pay back fee debt", func(t *testing.T){
+
+	})
+
+
 }
 
 func TestExtendSectorExpiration(t *testing.T) {
