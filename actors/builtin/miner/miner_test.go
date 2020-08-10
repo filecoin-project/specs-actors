@@ -1062,7 +1062,7 @@ func TestWindowPost(t *testing.T) {
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)), big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		dlinfo := actor.deadline(rt)
@@ -1238,7 +1238,7 @@ func TestWindowPost(t *testing.T) {
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)), big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		dlinfo := actor.deadline(rt)
@@ -1446,7 +1446,7 @@ func TestDeadlineCron(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{})
 		dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 
-		actor.declareRecoveries(rt, dlIdx, pIdx, sectorInfoAsBitfield(allSectors[1:]))
+		actor.declareRecoveries(rt, dlIdx, pIdx, sectorInfoAsBitfield(allSectors[1:]), big.Zero())
 
 		// Skip to end of proving period for sectors, cron detects all sectors as faulty
 		for dlinfo.Index != dlIdx {
@@ -1586,61 +1586,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
-
-		dl := actor.getDeadline(rt, dlIdx)
-		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
-		require.NoError(t, err)
-		assert.Equal(t, p.Faults, p.Recoveries)
-	})
-
-	t.Run("recovery fails when in IP debt", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
-
-		// advance to first proving period and submit so we'll have time to declare the fault next cycle
-		advanceAndSubmitPoSts(rt, actor, oneSector...)
-
-		// Declare the sector as faulted
-		actor.declareFaults(rt, oneSector...)
-
-		// Get into IP debt
-		st := getState(rt)
-		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
-		rt.ReplaceState(st)
-
-		// Attempt to recover
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
-		require.NoError(t, err)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
-			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
-		})
-	})
-}
-
-func TestDeclareRecoveries(t *testing.T) {
-	periodOffset := abi.ChainEpoch(100)
-	actor := newHarness(t, periodOffset)
-	builder := builderForHarness(actor).
-		WithBalance(bigBalance, big.Zero())
-
-	t.Run("recovery happy path", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
-
-		// advance to first proving period and submit so we'll have time to declare the fault next cycle
-		advanceAndSubmitPoSts(rt, actor, oneSector...)
-
-		// Declare the sector as faulted
-		actor.declareFaults(rt, oneSector...)
-
-		// Delcare recoveries updates state
-		st := getState(rt)
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
-		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
 
 		dl := actor.getDeadline(rt, dlIdx)
 		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
@@ -1668,34 +1614,57 @@ func TestDeclareRecoveries(t *testing.T) {
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
-			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
 		})
 	})
 
-	t.Run("recovery pays back fee debt", func(t *testing.T) {
+	t.Run("recovery must pay back fee debt", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		// advance to first proving period and submit so we'll have time to declare the fault next cycle
 		advanceAndSubmitPoSts(rt, actor, oneSector...)
 
-		// Fault goes into fee debt
+		// Fault will take miner into fee debt
 		rt.SetBalance(big.Zero()) 
 
 		actor.declareFaults(rt, oneSector...)
 
-		// Recovery pays back fee debt and IP requirements
+		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
 
+		// Skip to end of proving period.
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
 
+		// Can't pay during this deadline so miner goes into fee debt
+		ongoingPwr := miner.PowerForSectors(actor.sectorSize, oneSector)
+		ff := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA)
+		advanceDeadline(rt, actor, &cronConfig{
+			ongoingFaultsPenalty: big.Zero(), // fee is instead added to debt
+		})
+
+		st = getState(rt)
+		//assert.Equal(t, ff, st.FeeDebt)
+
+		// Recovery fails when it can't pay back fee debt
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
+		})
+
+		// Recovery pays back fee debt and IP requirements and succeeds
+		funds := big.Add(ff, st.InitialPledgeRequirement)
+		rt.SetBalance(big.Add(rt.Balance(), funds)) // this is how we send funds along with recovery message using mock rt
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), ff)
+
+		dl := actor.getDeadline(rt, dlIdx)
+		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
+		require.NoError(t, err)
+		assert.Equal(t, p.Faults, p.Recoveries)
 	})
-
-	t.Run("recovery fails when it can't pay back fee debt", func(t *testing.T){
-
-	})
-
 
 }
 
@@ -3258,9 +3227,13 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	rt.Verify()
 }
 
-func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
+func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField, expectedDebtRepaid abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+
+	if expectedDebtRepaid.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedDebtRepaid, nil, exitcode.Ok)
+	}
 
 	// Calculate params from faulted sector infos
 	params := &miner.DeclareFaultsRecoveredParams{Recoveries: []miner.RecoveryDeclaration{{
