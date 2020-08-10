@@ -733,6 +733,24 @@ func TestSectorNumberAllocation(t *testing.T) {
 	})
 }
 
+func TestPenalizationDebt(t *testing.T) {
+	harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+	currentBalance := abi.NewTokenAmount(300)
+	fee := abi.NewTokenAmount(1000)
+	harness.s.PenalizeFundsInPriorityOrder(harness.store, abi.ChainEpoch(0), fee, currentBalance)
+
+	expectedDebt := big.Sub(currentBalance, fee).Neg()
+	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
+
+	currentBalance = abi.NewTokenAmount(0)
+	fee = abi.NewTokenAmount(2050)
+	harness.s.PenalizeFundsInPriorityOrder(harness.store, abi.ChainEpoch(33), fee, currentBalance)
+
+	expectedDebt = big.Add(expectedDebt, fee)
+	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
+}
+
 type stateHarness struct {
 	t testing.TB
 

@@ -163,6 +163,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 
 		PreCommitDeposits: abi.NewTokenAmount(0),
 		LockedFunds:       abi.NewTokenAmount(0),
+		FeeDebt:           abi.NewTokenAmount(0),
 
 		VestingFunds: emptyVestingFundsCid,
 
@@ -750,8 +751,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 // If the target is not yet hit it deducts funds from the (new) available balance.
 // Returns the amount unlocked from the vesting table and the amount taken from current balance.
 // If the penalty exceeds the total amount available in the vesting table and unlocked funds
-// the penalty is reduced to match.  This must be fixed when handling bankrupcy:
-// https://github.com/filecoin-project/specs-actors/issues/627
+// the remainder is tracked in the fee debt field to be paid down later.
 func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target, unlockedBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
 	fromVesting, err = st.UnlockUnvestedFunds(store, currEpoch, target)
 	if err != nil {
@@ -763,8 +763,14 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 
 	// unlocked funds were just deducted from available, so track that
 	remaining := big.Sub(target, fromVesting)
-
 	fromBalance = big.Min(unlockedBalance, remaining)
+
+	// track unpaid fee in fee debt field
+	remaining = big.Sub(remaining, fromBalance)
+	if remaining.GreaterThan(big.Zero()) {
+		st.FeeDebt = big.Add(st.FeeDebt, remaining)
+	}
+
 	return fromVesting, fromBalance, nil
 }
 
