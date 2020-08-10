@@ -660,48 +660,6 @@ func TestApprove(t *testing.T) {
 		})
 	})
 
-	t.Run("fail duplicate approval even if we pass non-ID address of param", func(t *testing.T) {
-		signers = []addr.Address{anne, bob, chuck}
-		builder := mock.NewBuilder(context.Background(), receiver).
-			WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
-			WithHasher(blake2b.Sum256)
-		rt := builder.Build(t)
-
-		numApprovals := uint64(3)
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
-
-		rt.SetCaller(anne, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-
-		// chuck proposes -> 1 approval
-		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
-		rt.Verify()
-
-		actor.assertTransactions(rt, multisig.Transaction{
-			To:       chuck,
-			Value:    sendValue,
-			Method:   fakeMethod,
-			Params:   fakeParams,
-			Approved: []addr.Address{anne},
-		})
-
-		// approve with bob's ID address -> 2 approvals
-		rt.SetBalance(sendValue)
-		rt.SetCaller(bob, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.approveOK(rt, txnID, proposalHash, nil)
-
-		// approve with bob's non-ID address -> should fail
-		bobNonId := tutil.NewBLSAddr(t, 555)
-		rt.AddIDAddress(bobNonId, bob)
-		rt.SetCaller(bobNonId, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.approveOK(rt, txnID, proposalHash, nil)
-		})
-		rt.Verify()
-	})
-
 	t.Run("fail to approve transaction by non-signer", func(t *testing.T) {
 		// non-signer address
 		richard := tutil.NewIDAddr(t, 105)
