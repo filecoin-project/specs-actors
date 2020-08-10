@@ -361,6 +361,19 @@ func TestCommitments(t *testing.T) {
 			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
 		})
 		rt.Reset()
+
+		// Try to precommit while in IP debt
+		st := getState(rt)
+		oldIPReqs := st.InitialPledgeRequirement
+		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+		})
+		// reset state back to normal
+		st.InitialPledgeRequirement = oldIPReqs
+		rt.ReplaceState(st)
+		rt.Reset()
 	})
 
 	t.Run("valid committed capacity upgrade", func(t *testing.T) {
