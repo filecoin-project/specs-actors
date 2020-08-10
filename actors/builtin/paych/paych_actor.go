@@ -5,6 +5,7 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
+	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -63,9 +64,9 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 // The account actor constructor checks that the embedded address is associated with an appropriate key.
 // An alternative (more expensive) would be to send a message to the actor to fetch its key.
 func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error) {
-	resolved, ok := rt.ResolveAddress(raw)
-	if !ok {
-		return addr.Undef, exitcode.ErrNotFound.Wrapf("failed to resolve address %v", raw)
+	resolved, err := builtin.ResolveToIDAddr(rt, raw)
+	if err != nil {
+		return addr.Undef, xerrors.Errorf("failed to resolve address %v: %w", raw, err)
 	}
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
