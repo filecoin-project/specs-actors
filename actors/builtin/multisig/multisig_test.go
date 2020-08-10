@@ -38,8 +38,9 @@ func TestConstruction(t *testing.T) {
 
 	charlie := tutil.NewIDAddr(t, 103)
 
+	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
 	t.Run("simple construction", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
@@ -67,7 +68,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("construction by resolving signers to ID addresses", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anneNonId, bobNonId, charlie},
@@ -88,7 +88,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("construction with vesting", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.WithEpoch(1234).Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
@@ -111,7 +110,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig actor with 0 signers", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{},
@@ -127,7 +125,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
@@ -158,7 +155,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig with duplicate signers(all ID addresses)", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, bob},
@@ -174,7 +170,6 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig with duplicate signers(ID & non-ID addresses)", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bobNonId, bob},
@@ -635,48 +630,6 @@ func TestApprove(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
-	})
-
-	t.Run("fail duplicate approval even if we pass non-ID address of param", func(t *testing.T) {
-		signers = []addr.Address{anne, bob, chuck}
-		builder := mock.NewBuilder(context.Background(), receiver).
-			WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
-			WithHasher(blake2b.Sum256)
-		rt := builder.Build(t)
-
-		numApprovals := uint64(3)
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
-
-		rt.SetCaller(anne, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-
-		// chuck proposes -> 1 approval
-		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
-		rt.Verify()
-
-		actor.assertTransactions(rt, multisig.Transaction{
-			To:       chuck,
-			Value:    sendValue,
-			Method:   fakeMethod,
-			Params:   fakeParams,
-			Approved: []addr.Address{anne},
-		})
-
-		// approve with bob's ID address -> 2 approvals
-		rt.SetBalance(sendValue)
-		rt.SetCaller(bob, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		actor.approveOK(rt, txnID, proposalHash, nil)
-
-		// approve with bob's non-ID address -> should fail
-		bobNonId := tutil.NewBLSAddr(t, 555)
-		rt.AddIDAddress(bobNonId, bob)
-		rt.SetCaller(bobNonId, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.approveOK(rt, txnID, proposalHash, nil)
-		})
-		rt.Verify()
 	})
 
 	t.Run("fail to approve transaction by non-signer", func(t *testing.T) {

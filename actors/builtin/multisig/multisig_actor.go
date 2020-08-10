@@ -81,7 +81,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 	resolvedAddrs := make([]addr.Address, 0, len(params.Signers))
 	deDupSigners := make(map[addr.Address]struct{}, len(params.Signers))
 	for _, signer := range params.Signers {
-		resolved, err := resolveToIDAddr(signer, rt.ResolveAddress, rt.Send)
+		resolved, err := builtin.ResolveToIDAddr(rt, signer)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve addr %v to ID addr", signer)
 
 		if _, ok := deDupSigners[resolved]; ok {
@@ -146,9 +146,6 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
-	resolvedCaller, err := resolveToIDAddr(callerAddr, rt.ResolveAddress, rt.Send)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolved address %v", callerAddr)
-
 	if params.Value.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proposed value must be non-negative, was %v", params.Value)
 	}
@@ -157,9 +154,9 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 	var st State
 	var txn *Transaction
 	rt.State().Transaction(&st, func() {
-		proposerIsSigner := isSigner(resolvedCaller, st.Signers)
+		proposerIsSigner := isSigner(callerAddr, st.Signers)
 		if !proposerIsSigner {
-			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", resolvedCaller)
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
 
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
@@ -183,7 +180,7 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
 	})
 
-	applied, ret, code := a.approveTransaction(rt, resolvedCaller, txnID, txn)
+	applied, ret, code := a.approveTransaction(rt, txnID, txn)
 
 	// Note: this transaction ID may not be stable across chain re-orgs.
 	// The proposal hash may be provided as a stability check when approving.
@@ -212,15 +209,13 @@ type ApproveReturn struct {
 func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
-	resolvedCaller, err := resolveToIDAddr(callerAddr, rt.ResolveAddress, rt.Send)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve address %v", callerAddr)
 
 	var st State
 	var txn *Transaction
 	rt.State().Transaction(&st, func() {
-		callerIsSigner := isSigner(resolvedCaller, st.Signers)
+		callerIsSigner := isSigner(callerAddr, st.Signers)
 		if !callerIsSigner {
-			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", resolvedCaller)
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
 
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
@@ -234,7 +229,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	if !approved {
 		// if the transaction hasn't already been approved, let's "process" this approval
 		// and see if we can execute the transaction
-		approved, ret, code = a.approveTransaction(rt, resolvedCaller, params.ID, txn)
+		approved, ret, code = a.approveTransaction(rt, params.ID, txn)
 	}
 
 	return &ApproveReturn{
@@ -247,14 +242,12 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
-	resolvedCaller, err := resolveToIDAddr(callerAddr, rt.ResolveAddress, rt.Send)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve address %v", callerAddr)
 
 	var st State
 	rt.State().Transaction(&st, func() {
-		callerIsSigner := isSigner(resolvedCaller, st.Signers)
+		callerIsSigner := isSigner(callerAddr, st.Signers)
 		if !callerIsSigner {
-			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", resolvedCaller)
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
 
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
@@ -265,7 +258,7 @@ func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
 			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
 		}
 		proposer := txn.Approved[0]
-		if proposer != resolvedCaller {
+		if proposer != callerAddr {
 			rt.Abortf(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
 		}
 
@@ -293,7 +286,7 @@ type AddSignerParams struct {
 func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
-	resolvedNewSigner, err := resolveToIDAddr(params.Signer, rt.ResolveAddress, rt.Send)
+	resolvedNewSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve address %v", params.Signer)
 
 	var st State
@@ -319,7 +312,7 @@ type RemoveSignerParams struct {
 func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
-	resolvedSigner, err := resolveToIDAddr(params.Signer, rt.ResolveAddress, rt.Send)
+	resolvedSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve address %v", params.Signer)
 
 	var st State
@@ -366,10 +359,10 @@ func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyVa
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
-	fromResolved, err := resolveToIDAddr(params.From, rt.ResolveAddress, rt.Send)
+	fromResolved, err := builtin.ResolveToIDAddr(rt, params.From)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve from address %v", params.From)
 
-	toResolved, err := resolveToIDAddr(params.To, rt.ResolveAddress, rt.Send)
+	toResolved, err := builtin.ResolveToIDAddr(rt, params.To)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve to address %v", params.To)
 
 	var st State
@@ -416,13 +409,14 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, resolvedApprover addr.Address, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
-	AssertMsg(resolvedApprover.Protocol() == addr.ID, "approver %v must be an ID address", resolvedApprover)
+func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
+
+	caller := rt.Message().Caller()
 
 	var st State
 	// abort duplicate approval
 	for _, previousApprover := range txn.Approved {
-		if previousApprover == resolvedApprover {
+		if previousApprover == caller {
 			rt.Abortf(exitcode.ErrForbidden, "%s already approved this message", previousApprover)
 		}
 	}
@@ -433,7 +427,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, resolvedApprover addr.Address,
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 		// update approved on the transaction
-		txn.Approved = append(txn.Approved, resolvedApprover)
+		txn.Approved = append(txn.Approved, caller)
 		err = ptx.Put(txnID, txn)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put transaction %v for approval", txnID)
 
@@ -522,28 +516,6 @@ func isSigner(address addr.Address, signers []addr.Address) bool {
 	}
 
 	return false
-}
-
-func resolveToIDAddr(address addr.Address, resolveFunc AddressResolveFunc, sendFunc SendFunc) (addr.Address, error) {
-	// if we are able to resolve it to an ID address, return the resolved address
-	idAddr, found := resolveFunc(address)
-	if found {
-		return idAddr, nil
-	}
-
-	// send 0 balance to the account so an ID address for it is created and then try to resolve
-	_, code := sendFunc(address, builtin.MethodSend, nil, abi.NewTokenAmount(0))
-	if !code.IsSuccess() {
-		return address, fmt.Errorf("failed to send zero balance to account %v, got code %v", address, code)
-	}
-
-	// now try to resolve it to an ID address -> fail if not possible
-	idAddr, found = resolveFunc(address)
-	if !found {
-		return address, fmt.Errorf("failed to resolve address %v to ID address even after sending zero balance", address)
-	}
-
-	return idAddr, nil
 }
 
 // Computes a digest of a proposed transaction. This digest is used to confirm identity of the transaction

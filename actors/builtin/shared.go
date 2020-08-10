@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"fmt"
+
 	addr "github.com/filecoin-project/go-address"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -53,4 +55,28 @@ type MinerAddrs struct {
 
 type ConfirmSectorProofsParams struct {
 	Sectors []abi.SectorNumber
+}
+
+// ResolveToIDAddr resolves the given address to it's ID address form.
+// If an ID address for the given address dosen't exist yet, it tries to create one by sending a zero balance to the given address.
+func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, error) {
+	// if we are able to resolve it to an ID address, return the resolved address
+	idAddr, found := rt.ResolveAddress(address)
+	if found {
+		return idAddr, nil
+	}
+
+	// send 0 balance to the account so an ID address for it is created and then try to resolve
+	_, code := rt.Send(address, MethodSend, nil, abi.NewTokenAmount(0))
+	if !code.IsSuccess() {
+		return address, fmt.Errorf("failed to send zero balance to account %v, got code %v", address, code)
+	}
+
+	// now try to resolve it to an ID address -> fail if not possible
+	idAddr, found = rt.ResolveAddress(address)
+	if !found {
+		return address, fmt.Errorf("failed to resolve address %v to ID address even after sending zero balance", address)
+	}
+
+	return idAddr, nil
 }
