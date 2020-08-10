@@ -475,6 +475,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		}
 
 		// Require sector lifetime meets minimum by assuming activation happens at last epoch permitted for seal proof.
+		// This could make sector maximum lifetime validation more lenient if the maximum sector limit isn't hit first.
 		maxActivation := rt.CurrEpoch() + MaxSealDuration[params.SealProof]
 		validateExpiration(rt, maxActivation, params.Expiration, params.SealProof)
 
