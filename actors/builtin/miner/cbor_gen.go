@@ -15,7 +15,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{141}
+var lengthBufState = []byte{142}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -48,6 +48,11 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCidBuf(scratch, w, t.VestingFunds); err != nil {
 		return xerrors.Errorf("failed to write cid field t.VestingFunds: %w", err)
+	}
+
+	// t.FeeDebt (big.Int) (struct)
+	if err := t.FeeDebt.MarshalCBOR(w); err != nil {
+		return err
 	}
 
 	// t.InitialPledgeRequirement (big.Int) (struct)
@@ -123,7 +128,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 13 {
+	if extra != 14 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -167,6 +172,15 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.VestingFunds = c
+
+	}
+	// t.FeeDebt (big.Int) (struct)
+
+	{
+
+		if err := t.FeeDebt.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.FeeDebt: %w", err)
+		}
 
 	}
 	// t.InitialPledgeRequirement (big.Int) (struct)

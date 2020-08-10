@@ -35,6 +35,8 @@ type State struct {
 
 	VestingFunds cid.Cid // VestingFunds (Vesting Funds schedule for the miner).
 
+	FeeDebt abi.TokenAmount // Absolute value of debt this miner owes from unpaid fees
+
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
