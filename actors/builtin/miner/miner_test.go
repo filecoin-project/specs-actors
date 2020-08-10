@@ -146,15 +146,6 @@ func TestControlAddresses(t *testing.T) {
 // Test for sector precommitment and proving.
 func TestCommitments(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
-
-	// TODO more tests
-	// https://github.com/filecoin-project/specs-actors/issues/936
-	// - Concurrent attempts to upgrade the same CC sector (one should succeed)
-	// - Insufficient funds for prove-commit (charged in power actor -- scenario testing candidate)
-	// - Invalid seal proofs (checked in power actor -- scenario testing candidate)
-	// - CC sector targeted for upgrade expires naturally before the upgrade is proven
-	// - Insufficient funds to cover CC sector IP but sufficient funds to cover pre commit fee for new sector fails
-
 	t.Run("valid precommit then provecommit", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -1750,17 +1741,11 @@ func TestWithdrawBalance(t *testing.T) {
 func TestChangePeerID(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
-	setupFunc := func() (*mock.Runtime, *actorHarness) {
+	t.Run("successfully change peer id", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		builder := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero())
 		rt := builder.Build(t)
-
-		return rt, actor
-	}
-
-	t.Run("successfully change peer id", func(t *testing.T) {
-		rt, actor := setupFunc()
 		actor.constructAndVerify(rt)
 		newPID := tutil.MakePID("test-change-peer-id")
 		actor.changePeerID(rt, newPID)
