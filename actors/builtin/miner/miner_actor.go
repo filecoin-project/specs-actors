@@ -448,6 +448,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 		if params.SealProof != info.SealProofType {
@@ -547,16 +549,18 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Readonly(&st)
-
-	verifyPledgeMeetsInitialRequirements(rt, &st)
-
+	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
-	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
-	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "no pre-committed sector %v", sectorNo)
-	}
+	rt.State().Transaction(&st, func() {
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+		var found bool
+		var err error
+		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
+		if !found {
+			rt.Abortf(exitcode.ErrNotFound, "no pre-committed sector %v", sectorNo)
+		}
+	})
 
 	msd, ok := MaxSealDuration[precommit.Info.SealProof]
 	if !ok {
@@ -1123,6 +1127,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	store := adt.AsStore(rt)
 	var st State
 	rt.State().Transaction(&st, func() {
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
