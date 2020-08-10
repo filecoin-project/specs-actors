@@ -549,11 +549,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	rt.State().Readonly(&st)
 
-	// Verify locked funds are are at least the sum of sector initial pledges.
-	// Note that this call does not actually compute recent vesting, so the reported locked funds may be
-	// slightly higher than the true amount (i.e. slightly in the miner's favour).
-	// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
-	// Vesting will be at most one proving period old if computed in the cron callback.
 	verifyPledgeMeetsInitialRequirements(rt, &st)
 
 	sectorNo := params.SectorNumber
