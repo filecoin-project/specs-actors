@@ -198,7 +198,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 		info.PeerId = params.NewID
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
@@ -216,7 +216,7 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 		info.Multiaddrs = params.NewMultiaddrs
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
@@ -282,7 +282,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() {
 		info = getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		// Validate that the miner didn't try to prove too many partitions at once.
 		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
@@ -446,7 +446,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 		if params.SealProof != info.SealProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
 		}
@@ -809,7 +809,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -961,7 +961,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1044,7 +1044,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	newFaultPowerTotal := NewPowerPairZero()
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1116,7 +1116,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1177,7 +1177,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		if !deadlineIsMutable(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
@@ -1240,7 +1240,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker)
+		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
 
 		err := st.MaskSectorNumbers(store, params.MaskSectorNumbers)
 
