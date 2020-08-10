@@ -1786,17 +1786,12 @@ func TestTerminateSectors(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(big.Mul(big.NewInt(1e18), big.NewInt(200000)), big.Zero())
 
-	commitSector := func(t *testing.T, rt *mock.Runtime) *miner.SectorOnChainInfo {
-		actor.constructAndVerify(rt)
-		precommitEpoch := abi.ChainEpoch(1)
-		rt.SetEpoch(precommitEpoch)
-		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
-		return sectorInfo[0]
-	}
-
 	t.Run("removes sector with correct accounting", func(t *testing.T) {
 		rt := builder.Build(t)
-		sector := commitSector(t, rt)
+		actor.constructAndVerify(rt)
+		rt.SetEpoch(abi.ChainEpoch(1))
+		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		sector := sectorInfo[0]
 		rt.SetEpoch(rt.Epoch() + 100)
 
 		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
@@ -1811,7 +1806,15 @@ func TestTerminateSectors(t *testing.T) {
 		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(
+			dayReward,
+			big.Zero(),
+			twentyDayReward,
+			sectorAge,
+			0,
+			actor.epochRewardSmooth,
+			actor.epochQAPowerSmooth,
+			sectorPower)
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -1834,6 +1837,67 @@ func TestTerminateSectors(t *testing.T) {
 			// expect pledge requirement to have been decremented
 			assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
 		}
+	})
+
+	t.Run("charges correct fee for young termination of committed capacity upgrade", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
+		// correct fee calculation is used.
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+
+		// Move the current epoch forward so that the first deadline is a stable candidate for both sectors
+		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
+
+		// Commit a sector to upgrade
+		// Use the max sector number to make sure everything works.
+		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
+		st := getState(rt)
+		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
+		actor.epochReward = big.Div(actor.epochReward, big.NewInt(2))
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(actor.epochReward)
+
+		challengeEpoch := rt.Epoch() - 1
+		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
+		upgradeParams.ReplaceCapacity = true
+		upgradeParams.ReplaceSectorDeadline = dlIdx
+		upgradeParams.ReplaceSectorPartition = partIdx
+		upgradeParams.ReplaceSectorNumber = oldSector.SectorNumber
+		upgrade := actor.preCommitSector(rt, upgradeParams)
+
+		// Prove new sector
+		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
+		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
+			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
+
+		// Expect replace parameters have been set
+		assert.Equal(t, oldSector.ExpectedDayReward, newSector.ReplacedDayReward)
+		assert.Equal(t, rt.Epoch()-oldSector.Activation, newSector.ReplacedSectorAge)
+
+		// advance clock a little and terminate new sector
+		rt.SetEpoch(rt.Epoch() + 100)
+		sectorPower := miner.QAPowerForSector(actor.sectorSize, newSector)
+		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
+		sectorAge := rt.Epoch() - newSector.Activation
+		expectedFee := miner.PledgePenaltyForTermination(
+			newSector.ExpectedDayReward,
+			oldSector.ExpectedDayReward,
+			twentyDayReward,
+			sectorAge,
+			newSector.Activation-oldSector.Activation,
+			actor.epochRewardSmooth,
+			actor.epochQAPowerSmooth,
+			sectorPower)
+
+		sectors := bf(uint64(newSector.SectorNumber))
+		actor.terminateSectors(rt, sectors, expectedFee)
 	})
 }
 
@@ -3062,9 +3126,7 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitFi
 	})
 	require.NoError(h.t, err)
 
-	{
-		expectQueryNetworkInfo(rt, h)
-	}
+	expectQueryNetworkInfo(rt, h)
 
 	pledgeDelta := big.Zero()
 	if big.Zero().LessThan(expectedFee) {
@@ -3079,6 +3141,17 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitFi
 	}
 	if !pledgeDelta.Equals(big.Zero()) {
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+	}
+	if len(dealIDs) > 0 {
+		size := len(dealIDs)
+		if size > cbg.MaxLength {
+			size = cbg.MaxLength
+		}
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
+			Epoch:   rt.Epoch(),
+			DealIDs: dealIDs[:size],
+		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		dealIDs = dealIDs[size:]
 	}
 	{
 		sectorPower := miner.PowerForSectors(h.sectorSize, sectorInfos)

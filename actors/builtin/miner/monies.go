@@ -61,6 +61,8 @@ func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smo
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
+// replacedDayReward and replacedSectorAge are the day reward and age of the replaced sector in a capacity upgrade.
+// They must be zero if no upgrade occurred.
 func PledgePenaltyForTermination(dayReward, replacedDayReward, twentyDayRewardAtActivation abi.TokenAmount, sectorAge, replacedSectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d)*min(SectorAgeInDays, 70))
 	// and sectorAgeInDays = sectorAge / EpochsInDay

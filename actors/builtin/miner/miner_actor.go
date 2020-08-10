@@ -737,7 +737,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
-
 			replacedAge, replacedDayReward := replacedSectorParameters(precommit, st, rt)
 
 			newSectorInfo := SectorOnChainInfo{
@@ -802,7 +801,7 @@ func replacedSectorParameters(precommit *SectorPreCommitOnChainInfo, st State, r
 	if !found {
 		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
 	}
-	return minEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
+	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
 }
 
 type CheckSectorProvenParams struct {
@@ -2241,6 +2240,13 @@ func max64(a, b uint64) uint64 {
 
 func minEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
+	if a > b {
 		return a
 	}
 	return b
