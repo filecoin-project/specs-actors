@@ -1366,6 +1366,37 @@ func TestDeclareFaults(t *testing.T) {
 	})
 }
 
+func TestDeclareRecoveries(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("recovery fails when in IP debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		// advance to first proving period and submit so we'll have time to declare the fault next cycle
+		advanceAndSubmitPoSts(rt, actor, oneSector...)
+
+		// Declare the sector as faulted
+		actor.declareFaults(rt, oneSector...)
+
+		// Get into IP debt
+		st := getState(rt)
+		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+
+		// Attempt to recover
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
+		require.NoError(t, err)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+		})
+	})
+}
+
 func TestExtendSectorExpiration(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
