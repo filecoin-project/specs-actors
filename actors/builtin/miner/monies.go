@@ -61,17 +61,24 @@ func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smo
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
-func PledgePenaltyForTermination(dayRewardAtActivation, twentyDayRewardAtActivation abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForTermination(dayReward, replacedDayReward, twentyDayRewardAtActivation abi.TokenAmount, sectorAge, replacedSectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d)*min(SectorAgeInDays, 70))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
-	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, TerminationLifetimeCap*builtin.EpochsInDay)))
+	lifetimeCap := TerminationLifetimeCap * builtin.EpochsInDay
+	cappedSectorAge := minEpoch(sectorAge, lifetimeCap)
+	// expected reward for lifetime of new sector (epochs*AttoFIL/day)
+	expectedReward := big.Mul(dayReward, big.NewInt(int64(cappedSectorAge)))
+	// if lifetime under cap and this sector replaced capacity, add expected reward for old sector's lifetime up to cap
+	relevantReplacedAge := minEpoch(replacedSectorAge, lifetimeCap-cappedSectorAge)
+	expectedReward = big.Add(expectedReward, big.Mul(replacedDayReward, big.NewInt(int64(relevantReplacedAge))))
+
 	return big.Max(
 		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
 		big.Add(
 			twentyDayRewardAtActivation,
 			big.Div(
-				big.Mul(dayRewardAtActivation, cappedSectorAge),
-				big.NewInt(builtin.EpochsInDay))))
+				expectedReward,
+				big.NewInt(builtin.EpochsInDay)))) // (epochs*AttoFIL/day -> AttoFIL)
 }
 
 // Computes the PreCommit Deposit given sector qa weight and current network conditions.

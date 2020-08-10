@@ -150,6 +150,8 @@ type SectorOnChainInfo struct {
 	InitialPledge         abi.TokenAmount // Pledge collected to commit this sector
 	ExpectedDayReward     abi.TokenAmount // Expected one day projection of reward for sector computed at activation time
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
+	ReplacedSectorAge     abi.ChainEpoch  // Age of sector this sector replaced or zero
+	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
 }
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
