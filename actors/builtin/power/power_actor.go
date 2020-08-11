@@ -5,6 +5,8 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
+	"github.com/frrist/specs-actors-model/ent"
+	"github.com/libp2p/go-libp2p-core/peer"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -131,6 +133,22 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		st.Claims, err = claims.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
 	})
+	// TODO make this a singe function call that accepts the required parameters.
+	if tx := ent.TxFromContext(rt.Context()); tx != nil {
+		// TODO find a better strategy for these errors, they should NOT break execution
+		sectorSize, _ := params.SealProofType.SectorSize()
+		pid, _ := peer.IDFromBytes(params.Peer)
+		if _, err := tx.Miner.Create().
+			SetStateRoot(""). // this is filled later in lotus when committing the transaction.
+			SetMinerID(addresses.IDAddress.String()).
+			SetOwnerAddr(params.Owner.String()).
+			SetWorkerAddr(params.Worker.String()).
+			SetPeerID(pid.String()).
+			SetSectorSize(sectorSize.ShortString()).
+			Save(rt.Context()); err != nil {
+			rt.Log(vmr.WARN, "Failed to save miner actor: %w", err)
+		}
+	}
 	return &CreateMinerReturn{
 		IDAddress:     addresses.IDAddress,
 		RobustAddress: addresses.RobustAddress,
