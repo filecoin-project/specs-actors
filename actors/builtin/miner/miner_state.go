@@ -85,6 +85,10 @@ type MinerInfo struct {
 	// The associated pubkey-type address is used to sign blocks and messages on behalf of this miner.
 	Worker addr.Address // Must be an ID-address.
 
+	// ControlAddresses are miner control addresses that are used to submit messages.
+	// They must ALL be ID addresses.
+	ControlAddresses []addr.Address
+
 	PendingWorkerKey *WorkerKeyChange
 
 	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
@@ -172,7 +176,8 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 	}, nil
 }
 
-func ConstructMinerInfo(owner addr.Address, worker addr.Address, pid []byte, multiAddrs [][]byte, sealProofType abi.RegisteredSealProof) (*MinerInfo, error) {
+func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []addr.Address, pid []byte,
+	multiAddrs [][]byte, sealProofType abi.RegisteredSealProof) (*MinerInfo, error) {
 
 	sectorSize, err := sealProofType.SectorSize()
 	if err != nil {
@@ -186,6 +191,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, pid []byte, mul
 	return &MinerInfo{
 		Owner:                      owner,
 		Worker:                     worker,
+		ControlAddresses:           controlAddrs,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,

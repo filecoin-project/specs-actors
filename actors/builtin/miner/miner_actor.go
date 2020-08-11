@@ -93,6 +93,11 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 
 	owner := resolveOwnerAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
+	controlAddrs := make([]addr.Address, 0, len(params.ControlAddrs))
+	for _, ca := range params.ControlAddrs {
+		resolved := resolveControlAddress(rt, ca)
+		controlAddrs = append(controlAddrs, resolved)
+	}
 
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
@@ -121,7 +126,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	periodStart := nextProvingPeriodStart(currEpoch, offset)
 	Assert(periodStart > currEpoch)
 
-	info, err := ConstructMinerInfo(owner, worker, params.PeerId, params.Multiaddrs, params.SealProofType)
+	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
 	infoCid := rt.Store().Put(info)
 
@@ -141,8 +146,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 /////////////
 
 type GetControlAddressesReturn struct {
-	Owner  addr.Address
-	Worker addr.Address
+	Owner        addr.Address
+	Worker       addr.Address
+	ControlAddrs []addr.Address
 }
 
 func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddressesReturn {
@@ -151,8 +157,9 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 	rt.State().Readonly(&st)
 	info := getMinerInfo(rt, &st)
 	return &GetControlAddressesReturn{
-		Owner:  info.Owner,
-		Worker: info.Worker,
+		Owner:        info.Owner,
+		Worker:       info.Worker,
+		ControlAddrs: info.ControlAddresses,
 	}
 }
 
@@ -1995,6 +2002,22 @@ func resolveOwnerAddress(rt Runtime, raw addr.Address) addr.Address {
 	if !builtin.IsPrincipal(ownerCode) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "owner actor type must be a principal, was %v", ownerCode)
 	}
+	return resolved
+}
+
+// Resolves a control address to an ID address and verifies that it is address of an account actor.
+func resolveControlAddress(rt Runtime, raw addr.Address) addr.Address {
+	resolved, err := builtin.ResolveToIDAddr(rt, raw)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve control address: %v", raw)
+
+	code, ok := rt.GetActorCodeCID(resolved)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
+	}
+	if code != builtin.AccountActorCodeID {
+		rt.Abortf(exitcode.ErrIllegalArgument, "control actor type must be an account actor, was %v", code)
+	}
+
 	return resolved
 }
 
