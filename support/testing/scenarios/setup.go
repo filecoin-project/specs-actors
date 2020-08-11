@@ -83,8 +83,8 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	return vm
 }
 
-// Creates n account actors in the VM with a default 10kFIL balance
-func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int) []address.Address {
+// Creates n account actors in the VM with the given balance
+func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance abi.TokenAmount) []address.Address {
 	var initState initactor.State
 	err := vm.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
@@ -113,11 +113,10 @@ func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int) []address.
 	err = vm.setActorState(ctx, builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
 
-	initialAccountBalance := big.Mul(big.NewInt(10_000), FIL)
 	pubAddrs := make([]address.Address, len(addrPairs))
 	for i, addrPair := range addrPairs {
 		st := &account.State{Address: addrPair.pubAddr}
-		initializeActor(ctx, t, vm, st, builtin.AccountActorCodeID, addrPair.idAddr, initialAccountBalance)
+		initializeActor(ctx, t, vm, st, builtin.AccountActorCodeID, addrPair.idAddr, balance)
 		pubAddrs[i] = addrPair.pubAddr
 	}
 	return pubAddrs

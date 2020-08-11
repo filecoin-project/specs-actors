@@ -21,7 +21,7 @@ import (
 func TestCreateMiner(t *testing.T) {
 	ctx := context.Background()
 	vm := scenarios.NewVMWithSingletons(ctx, t)
-	addrs := scenarios.CreateAccounts(ctx, t, vm, 1)
+	addrs := scenarios.CreateAccounts(ctx, t, vm, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
 
 	params := power.CreateMinerParams{
 		Owner:         addrs[0],
