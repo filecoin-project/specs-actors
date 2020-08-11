@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -1080,7 +1081,7 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufMinerConstructorParams = []byte{133}
+var lengthBufMinerConstructorParams = []byte{134}
 
 func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1101,6 +1102,20 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 	// t.WorkerAddr (address.Address) (struct)
 	if err := t.WorkerAddr.MarshalCBOR(w); err != nil {
 		return err
+	}
+
+	// t.ControlAddrs ([]address.Address) (slice)
+	if len(t.ControlAddrs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ControlAddrs was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.ControlAddrs))); err != nil {
+		return err
+	}
+	for _, v := range t.ControlAddrs {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	// t.SealProofType (abi.RegisteredSealProof) (int64)
@@ -1165,7 +1180,7 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 6 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1187,6 +1202,35 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.ControlAddrs ([]address.Address) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ControlAddrs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.ControlAddrs = make([]address.Address, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v address.Address
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.ControlAddrs[i] = v
+	}
+
 	// t.SealProofType (abi.RegisteredSealProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)

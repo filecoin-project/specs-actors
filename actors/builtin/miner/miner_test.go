@@ -136,9 +136,11 @@ func TestControlAddresses(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		o, w := actor.controlAddresses(rt)
+		o, w, control := actor.controlAddresses(rt)
 		assert.Equal(t, actor.owner, o)
 		assert.Equal(t, actor.worker, w)
+		assert.NotEmpty(t, control)
+		assert.Equal(t, actor.controlAddrs, control)
 	})
 
 }
@@ -2103,6 +2105,8 @@ type actorHarness struct {
 	worker   addr.Address
 	key      addr.Address
 
+	controlAddrs []addr.Address
+
 	sealProofType abi.RegisteredSealProof
 	postProofType abi.RegisteredPoStProof
 	sectorSize    abi.SectorSize
@@ -2123,6 +2127,9 @@ type actorHarness struct {
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
+
+	controlAddrs := []addr.Address{tutil.NewIDAddr(t, 999), tutil.NewIDAddr(t, 998), tutil.NewIDAddr(t, 997)}
+
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
 	rwd := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
@@ -2133,6 +2140,8 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		owner:    owner,
 		worker:   worker,
 		key:      workerKey,
+
+		controlAddrs: controlAddrs,
 
 		sealProofType: 0, // Initialized in setProofType
 		sectorSize:    0, // Initialized in setProofType
@@ -2168,6 +2177,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 	params := miner.ConstructorParams{
 		OwnerAddr:     h.owner,
 		WorkerAddr:    h.worker,
+		ControlAddrs:  h.controlAddrs,
 		SealProofType: h.sealProofType,
 		PeerId:        testPid,
 	}
@@ -2370,12 +2380,12 @@ func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi
 	require.EqualValues(h.t, newWorker, info.Worker)
 }
 
-func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address) {
+func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address, control []addr.Address) {
 	rt.ExpectValidateCallerAny()
 	ret := rt.Call(h.a.ControlAddresses, nil).(*miner.GetControlAddressesReturn)
 	require.NotNil(h.t, ret)
 	rt.Verify()
-	return ret.Owner, ret.Worker
+	return ret.Owner, ret.Worker, ret.ControlAddrs
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
@@ -3081,10 +3091,16 @@ func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.
 //
 
 func builderForHarness(actor *actorHarness) *mock.RuntimeBuilder {
-	return mock.NewBuilder(context.Background(), actor.receiver).
+	rb := mock.NewBuilder(context.Background(), actor.receiver).
 		WithActorType(actor.owner, builtin.AccountActorCodeID).
 		WithActorType(actor.worker, builtin.AccountActorCodeID).
 		WithHasher(fixedHasher(uint64(actor.periodOffset)))
+
+	for _, ca := range actor.controlAddrs {
+		rb = rb.WithActorType(ca, builtin.AccountActorCodeID)
+	}
+
+	return rb
 }
 
 func getState(rt *mock.Runtime) *miner.State {
