@@ -29,6 +29,7 @@ import (
 
 var FIL = big.NewInt(1e18)
 
+// Creates a new VM and initializes all singleton actors plus a root verifier account.
 func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	store := ipld.NewADTStore(ctx)
 
@@ -82,6 +83,7 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	return vm
 }
 
+// Creates n account actors in the VM with a default 10kFIL balance
 func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int) []address.Address {
 	var initState initactor.State
 	err := vm.GetState(builtin.InitActorAddr, &initState)
