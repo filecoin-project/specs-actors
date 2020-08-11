@@ -46,10 +46,10 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
 
 	// check that both parties are capable of signing vouchers
-	to, err := pca.resolveAccount(rt, params.To)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve to address: %s", params.To)
-	from, err := pca.resolveAccount(rt, params.From)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve from address: %s", params.From)
+	to, err, code := pca.resolveAccount(rt, params.To)
+	builtin.RequireNoErr(rt, err, code, "failed to resolve to address: %s", params.To)
+	from, err, code := pca.resolveAccount(rt, params.From)
+	builtin.RequireNoErr(rt, err, code, "failed to resolve from address: %s", params.From)
 
 	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
@@ -61,23 +61,21 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 }
 
 // Resolves an address to a canonical ID address and requires it to address an account actor.
-// The account actor constructor checks that the embedded address is associated with an appropriate key.
-// An alternative (more expensive) would be to send a message to the actor to fetch its key.
-func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error) {
+func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error, exitcode.ExitCode) {
 	resolved, err := builtin.ResolveToIDAddr(rt, raw)
 	if err != nil {
-		return addr.Undef, xerrors.Errorf("failed to resolve address %v: %w", raw, err)
+		return addr.Undef, xerrors.Errorf("failed to resolve address %v: %w", raw, err), exitcode.ErrIllegalState
 	}
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef, exitcode.ErrForbidden.Wrapf("no code for address %v", resolved)
+		return addr.Undef, xerrors.Errorf("no code for address %v", resolved), exitcode.ErrIllegalArgument
 	}
 	if codeCID != builtin.AccountActorCodeID {
-		return addr.Undef, exitcode.ErrForbidden.Wrapf("actor %v must be an account (%v), was %v", raw,
-			builtin.AccountActorCodeID, codeCID)
+		return addr.Undef, xerrors.Errorf("actor %v must be an account (%v), was %v", raw,
+			builtin.AccountActorCodeID, codeCID), exitcode.ErrForbidden
 	}
-	return resolved, nil
+	return resolved, nil, exitcode.Ok
 }
 
 ////////////////////////////////////////////////////////////////////////////////

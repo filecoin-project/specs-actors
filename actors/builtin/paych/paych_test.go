@@ -46,6 +46,24 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 	})
 
+	t.Run("creates a payment channel actor after resolving non-ID addresses to ID addresses", func(t *testing.T) {
+		payerAddr := tutil.NewIDAddr(t, 101)
+		payerNonId := tutil.NewBLSAddr(t, 102)
+
+		payeeAddr := tutil.NewIDAddr(t, 103)
+		payeeNonId := tutil.NewBLSAddr(t, 104)
+
+		builder := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID).
+			WithActorType(payeeAddr, builtin.AccountActorCodeID)
+		rt := builder.Build(t)
+		rt.AddIDAddress(payerNonId, payerAddr)
+		rt.AddIDAddress(payeeNonId, payeeAddr)
+
+		actor.constructAndVerify(t, rt, payerNonId, payeeNonId)
+	})
+
 	testCases := []struct {
 		desc               string
 		paymentChannelAddr addr.Address
@@ -59,13 +77,13 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			builtin.InitActorCodeID,
 			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
-			exitcode.ErrIllegalArgument,
+			exitcode.ErrForbidden,
 		}, {"fails if sender (from) is not account actor",
 			paychAddr,
 			builtin.InitActorCodeID,
 			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
-			exitcode.ErrIllegalArgument,
+			exitcode.ErrForbidden,
 		},
 	}
 	for _, tc := range testCases {
@@ -90,7 +108,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 
 		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
 		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			rt.Call(actor.Constructor, &ConstructorParams{To: nonIdAddr})
 		})
 		rt.Verify()
@@ -862,7 +880,14 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 	ret := rt.Call(h.Actor.Constructor, params)
 	assert.Nil(h.t, ret)
 	rt.Verify()
-	verifyInitialState(t, rt, sender, receiver)
+
+	senderId, ok := rt.GetIdAddr(sender)
+	require.True(h.t, ok)
+
+	receiverId, ok := rt.GetIdAddr(receiver)
+	require.True(h.t, ok)
+
+	verifyInitialState(t, rt, senderId, receiverId)
 }
 
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
