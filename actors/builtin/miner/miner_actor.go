@@ -1436,18 +1436,6 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	var st State
 	rt.State().Readonly(&st)
 
-	// Notify power actor with lock-up total being removed.
-	_, code = rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnConsensusFault,
-		&st.LockedFunds,
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
-
-	// close deals and burn funds
-	terminateMiner(rt)
-
 	return nil
 }
 
@@ -1897,20 +1885,6 @@ func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealI
 	}
 }
 
-func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
-	// TODO: red flag this is an ~unbounded computation.
-	// Transform into an idempotent partial computation that can be progressed on each invocation.
-	// https://github.com/filecoin-project/specs-actors/issues/675
-	dealIds := []abi.DealID{}
-	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
-		dealIds = append(dealIds, sector.DealIDs...)
-	}); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
-	}
-
-	requestTerminateDeals(rt, rt.CurrEpoch(), dealIds)
-}
-
 func scheduleEarlyTerminationWork(rt Runtime) {
 	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
 		EventType: CronEventProcessEarlyTerminations,
@@ -2009,17 +1983,6 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 		SealedCID:             params.SealedCID,
 		UnsealedCID:           commD,
 	}
-}
-
-// Closes down this miner by erasing its power, terminating all its deals and burning its funds
-func terminateMiner(rt Runtime) {
-	var st State
-	rt.State().Readonly(&st)
-
-	requestTerminateAllDeals(rt, &st)
-
-	// Delete the actor and burn all remaining funds
-	rt.DeleteActor(builtin.BurntFundsActorAddr)
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.

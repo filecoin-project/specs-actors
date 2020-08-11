@@ -3435,25 +3435,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	rwd := miner.RewardForConsensusSlashReport(1, rt.Balance())
 	rt.ExpectSend(from, builtin.MethodSend, nil, rwd, nil, exitcode.Ok)
 
-	// power termination
-	lockedFunds := getState(rt).LockedFunds
-	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.OnConsensusFault, &lockedFunds, abi.NewTokenAmount(0), nil, exitcode.Ok)
 
-	// expect sends to be batched into a limited number of deals
-	for len(dealIDs) > 0 {
-		size := len(dealIDs)
-		if size > cbg.MaxLength {
-			size = cbg.MaxLength
-		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
-			Epoch:   rt.Epoch(),
-			DealIDs: dealIDs[:size],
-		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
-		dealIDs = dealIDs[size:]
-	}
-
-	// expect actor to be deleted
-	rt.ExpectDeleteActor(builtin.BurntFundsActorAddr)
 
 	rt.Call(h.a.ReportConsensusFault, params)
 	rt.Verify()
