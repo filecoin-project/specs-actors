@@ -1808,7 +1808,8 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 
 	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
-	err = rt.Message().Receiver().MarshalCBOR(&addrBuf)
+	receiver := rt.Message().Receiver()
+	err = receiver.MarshalCBOR(&addrBuf)
 	AssertNoError(err)
 	postRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
 
@@ -1866,7 +1867,8 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 	AssertNoError(err) // Runtime always provides ID-addresses
 
 	buf := new(bytes.Buffer)
-	err = rt.Message().Receiver().MarshalCBOR(buf)
+	receiver := rt.Message().Receiver()
+	err = receiver.MarshalCBOR(buf)
 	AssertNoError(err)
 
 	svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())

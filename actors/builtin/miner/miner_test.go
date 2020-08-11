@@ -2498,7 +2498,8 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	}
 	{
 		var buf bytes.Buffer
-		err := rt.Receiver().MarshalCBOR(&buf)
+		receiver := rt.Receiver()
+		err := receiver.MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_SealRandomness, precommit.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
 		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
@@ -2711,7 +2712,8 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	// goodInfo == nil indicates all the sectors have been skipped and should PoSt verification should not occur
 	if goodInfo != nil {
 		var buf bytes.Buffer
-		err := rt.Receiver().MarshalCBOR(&buf)
+		receiver := rt.Receiver()
+		err := receiver.MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 
 		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
