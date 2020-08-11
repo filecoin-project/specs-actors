@@ -1448,8 +1448,11 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	}
 	var info *MinerInfo
 	newlyVested := big.Zero()
+	debtToBurn := big.Zero()
+	unlockedBalance := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
+		unlockedBalance = st.GetUnlockedBalance(rt.CurrentBalance())
 		info = getMinerInfo(rt, &st)
 		// Only the owner is allowed to withdraw the balance as it belongs to/is controlled by the owner
 		// and not the worker.
@@ -1471,7 +1474,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		}
 
 		// Verify InitialPledgeRequirement does not exceed unlocked funds
-		verifyPledgeMeetsInitialRequirements(rt, &st)
+		debtToBurn = verifyPledgeRequirementsAndRepayDebts(rt, &st)
+		unlockedBalance = big.Sub(unlockedBalance, debtToBurn)
 	})
 
 	currBalance := rt.CurrentBalance()
@@ -1481,6 +1485,11 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 	_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn)
 	builtin.RequireSuccess(rt, code, "failed to withdraw balance")
+
+	if debtToBurn.GreaterThan(big.Zero()) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, debtToBurn)
+		builtin.RequireSuccess(rt, code, "failed to burn debt")
+	}
 
 	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -2077,12 +2086,19 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 // may be slightly lower than the true amount.
 // Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
 // Vesting will be at most one proving period old if computed in the cron callback.
-func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
+func verifyPledgeRequirementsAndRepayDebts(rt Runtime, st *State, currBalance abi.TokenAmount) abi.TokenAmount {
+	if st.FeeDebt.GreaterThan(currBalance) {
+		rt.Abortf(exitcode.ErrInsufficientFunds,
+		"unlocked balance can not repay fee debt (%v < %v)",
+		currBalance
+	)
+	}
 	if !st.MeetsInitialPledgeCondition(rt.CurrentBalance()) {
 		rt.Abortf(exitcode.ErrInsufficientFunds,
 			"unlocked balance does not cover pledge requirements (%v < %v)",
 			st.GetUnlockedBalance(rt.CurrentBalance()), st.InitialPledgeRequirement)
 	}
+	return st.RepayDebt()
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.
