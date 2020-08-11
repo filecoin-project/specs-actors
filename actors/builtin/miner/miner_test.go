@@ -1648,7 +1648,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		})
 
 		st = getState(rt)
-		//assert.Equal(t, ff, st.FeeDebt)
+		assert.Equal(t, ff, st.FeeDebt)
 
 		// Recovery fails when it can't pay back fee debt
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
