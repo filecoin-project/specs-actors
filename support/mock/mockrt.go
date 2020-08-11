@@ -1043,12 +1043,7 @@ func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {
 	rt.require(t.In(1).Kind() == reflect.Ptr, "exported method second parameter must be pointer to params, got %v", t.In(1))
 	rt.require(t.In(1).Implements(typeOfCborUnmarshaler), "exported method second parameter must be CBOR-unmarshalable params, got %v", t.In(1))
 	rt.require(t.NumOut() == 1, "exported method must return a single value")
-	// Allow returning by-value.
-	retType := t.Out(0)
-	rt.require(
-		retType.Implements(typeOfCborMarshaler) || (retType.Kind() != reflect.Ptr && reflect.PtrTo(retType).Implements(typeOfCborMarshaler)),
-		"exported method must return CBOR-marshalable value",
-	)
+	rt.require(t.Out(0).Implements(typeOfCborMarshaler), "exported method must return CBOR-marshalable value")
 }
 
 func (rt *Runtime) requireInCall() {

@@ -65,8 +65,8 @@ func TestAccountactor(t *testing.T) {
 				assert.Equal(t, tc.addr, st.Address)
 
 				rt.ExpectValidateCallerAny()
-				pubkeyAddress := rt.Call(actor.PubkeyAddress, nil).(address.Address)
-				assert.Equal(t, tc.addr, pubkeyAddress)
+				pubkeyAddress := rt.Call(actor.PubkeyAddress, nil).(*address.Address)
+				assert.Equal(t, &tc.addr, pubkeyAddress)
 			} else {
 				rt.ExpectAbort(tc.exitCode, func() {
 					rt.Call(actor.Constructor, &tc.addr)
