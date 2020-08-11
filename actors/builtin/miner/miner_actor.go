@@ -1972,7 +1972,11 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 	return &pwr
 }
 
-// Verifies that the total locked balance exceeds the sum of sector initial pledges.
+// Verifies that the total unlocked balance exceeds the sum of sector initial pledges.
+// Note that this call does not compute recent vesting so reported unlocked balance
+// may be slightly lower than the true amount.
+// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
+// Vesting will be at most one proving period old if computed in the cron callback.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 	if !st.MeetsInitialPledgeCondition(rt.CurrentBalance()) {
 		rt.Abortf(exitcode.ErrInsufficientFunds,
