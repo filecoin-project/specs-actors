@@ -738,14 +738,16 @@ func TestPenalizationDebt(t *testing.T) {
 
 	currentBalance := abi.NewTokenAmount(300)
 	fee := abi.NewTokenAmount(1000)
-	harness.s.PenalizeFundsInPriorityOrder(harness.store, abi.ChainEpoch(0), fee, currentBalance)
+	_, _, err := harness.s.PenalizeFundsInPriorityOrder(harness.store, abi.ChainEpoch(0), fee, currentBalance)
+	require.NoError(t, err)
 
 	expectedDebt := big.Sub(currentBalance, fee).Neg()
 	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
 
 	currentBalance = abi.NewTokenAmount(0)
 	fee = abi.NewTokenAmount(2050)
-	harness.s.PenalizeFundsInPriorityOrder(harness.store, abi.ChainEpoch(33), fee, currentBalance)
+	_, _, err = harness.s.PenalizeFundsInPriorityOrder(harness.store, abi.ChainEpoch(33), fee, currentBalance)
+	require.NoError(t, err)
 
 	expectedDebt = big.Add(expectedDebt, fee)
 	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
