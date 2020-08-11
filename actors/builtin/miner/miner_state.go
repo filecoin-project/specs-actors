@@ -840,7 +840,7 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 }
 
 // Unclaimed funds that are not locked -- includes funds used to cover initial pledge requirement
-// does not account for fee debt.  Always greater than or equal to zero
+// does not account for pledge requirements or fee debt.  Always greater than or equal to zero
 func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
 	unlockedBalance := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits)
 	Assert(unlockedBalance.GreaterThanEqual(big.Zero()))
@@ -850,8 +850,8 @@ func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmoun
 // Unclaimed funds.  Actor balance - (locked funds, precommit deposit, ip requirement, fee debt)
 // Can go negative if the miner is in IP debt
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	availableBalance := st.GetUnlockedBalance(actorBalance)
-	return big.Subtract(availableBalance, st.InitialPledgeRequirement, st.FeeDebt)
+	unlockedBalance := st.GetUnlockedBalance(actorBalance)
+	return big.Subtract(unlockedBalance, st.InitialPledgeRequirement, st.FeeDebt)
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
@@ -861,8 +861,8 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 }
 
 func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
-	available := st.GetUnlockedBalance(balance)
-	return available.GreaterThanEqual(st.InitialPledgeRequirement)
+	unlockedBalance := st.GetUnlockedBalance(balance)
+	return unlockedBalance.GreaterThanEqual(st.InitialPledgeRequirement)
 }
 
 // pre-commit expiry
