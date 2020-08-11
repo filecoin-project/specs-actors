@@ -49,6 +49,8 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 
 	initializeActor(ctx, t, vm, &system.State{}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
 
+	// Verified registry account needs to be instantiated and initialized in init actor prior to construction
+	// of verified registry actor.
 	rootVerifier := verifregRootAddresses(t)
 	addrTreeRoot := initAddressTree(t, vm, rootVerifier)
 	initState := initactor.ConstructState(addrTreeRoot, "scenarios")
