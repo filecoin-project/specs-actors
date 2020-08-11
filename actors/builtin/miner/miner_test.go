@@ -1806,15 +1806,7 @@ func TestTerminateSectors(t *testing.T) {
 		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(
-			dayReward,
-			big.Zero(),
-			twentyDayReward,
-			sectorAge,
-			0,
-			actor.epochRewardSmooth,
-			actor.epochQAPowerSmooth,
-			sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth, big.Zero(), 0)
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -1884,15 +1876,7 @@ func TestTerminateSectors(t *testing.T) {
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		newSectorAge := rt.Epoch() - newSector.Activation
 		oldSectorAge := newSector.Activation - oldSector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(
-			newSector.ExpectedDayReward,
-			oldSector.ExpectedDayReward,
-			twentyDayReward,
-			newSectorAge,
-			oldSectorAge,
-			actor.epochRewardSmooth,
-			actor.epochQAPowerSmooth,
-			sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(newSector.ExpectedDayReward, newSectorAge, twentyDayReward, actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth, oldSector.ExpectedDayReward, oldSectorAge)
 
 		sectors := bf(uint64(newSector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
