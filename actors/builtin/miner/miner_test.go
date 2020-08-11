@@ -62,10 +62,15 @@ func TestConstruction(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
+
+	controlAddrs := []addr.Address{tutil.NewIDAddr(t, 999), tutil.NewIDAddr(t, 998)}
+
 	receiver := tutil.NewIDAddr(t, 1000)
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
+		WithActorType(controlAddrs[0], builtin.AccountActorCodeID).
+		WithActorType(controlAddrs[1], builtin.AccountActorCodeID).
 		WithHasher(blake2b.Sum256).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
@@ -74,6 +79,7 @@ func TestConstruction(t *testing.T) {
 		params := miner.ConstructorParams{
 			OwnerAddr:     owner,
 			WorkerAddr:    worker,
+			ControlAddrs:  controlAddrs,
 			SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
 			PeerId:        testPid,
 			Multiaddrs:    testMultiaddrs,
@@ -97,6 +103,7 @@ func TestConstruction(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, params.OwnerAddr, info.Owner)
 		assert.Equal(t, params.WorkerAddr, info.Worker)
+		assert.Equal(t, params.ControlAddrs, info.ControlAddresses)
 		assert.Equal(t, params.PeerId, info.PeerId)
 		assert.Equal(t, params.Multiaddrs, info.Multiaddrs)
 		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, info.SealProofType)
@@ -124,6 +131,69 @@ func TestConstruction(t *testing.T) {
 		}
 
 		assertEmptyBitfield(t, st.EarlyTerminations)
+	})
+
+	t.Run("control addresses are resolved during construction", func(t *testing.T) {
+		control1 := tutil.NewBLSAddr(t, 501)
+		control1Id := tutil.NewIDAddr(t, 555)
+
+		control2 := tutil.NewBLSAddr(t, 502)
+		control2Id := tutil.NewIDAddr(t, 655)
+
+		rt := builder.WithActorType(control1Id, builtin.AccountActorCodeID).
+			WithActorType(control2Id, builtin.AccountActorCodeID).Build(t)
+		rt.AddIDAddress(control1, control1Id)
+		rt.AddIDAddress(control2, control2Id)
+
+		params := miner.ConstructorParams{
+			OwnerAddr:    owner,
+			WorkerAddr:   worker,
+			ControlAddrs: []addr.Address{control1, control2},
+		}
+
+		provingPeriodStart := abi.ChainEpoch(658) // This is just set from running the code.
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
+			makeDeadlineCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
+		ret := rt.Call(actor.Constructor, &params)
+
+		assert.Nil(t, ret)
+		rt.Verify()
+
+		var st miner.State
+		rt.GetState(&st)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		assert.Equal(t, control1Id, info.ControlAddresses[0])
+		assert.Equal(t, control2Id, info.ControlAddresses[1])
+	})
+
+	t.Run("fails if control address is not an account actor", func(t *testing.T) {
+		control1 := tutil.NewIDAddr(t, 501)
+		builder := mock.NewBuilder(context.Background(), receiver).
+			WithActorType(owner, builtin.AccountActorCodeID).
+			WithActorType(worker, builtin.AccountActorCodeID).
+			WithActorType(controlAddrs[0], builtin.AccountActorCodeID).
+			WithActorType(controlAddrs[1], builtin.AccountActorCodeID).
+			WithHasher(blake2b.Sum256).
+			WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+
+		rt := builder.WithActorType(control1, builtin.MultisigActorCodeID).Build(t)
+
+		params := miner.ConstructorParams{
+			OwnerAddr:    owner,
+			WorkerAddr:   worker,
+			ControlAddrs: []addr.Address{control1},
+		}
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
 	})
 }
 
@@ -813,7 +883,7 @@ func TestWindowPost(t *testing.T) {
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
@@ -2057,7 +2127,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 
 		targetSno := allSectors[0].SectorNumber
 		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 
 		rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
 			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
@@ -2065,16 +2135,32 @@ func TestCompactSectorNumbers(t *testing.T) {
 		rt.Verify()
 	})
 
-	t.Run("fail if caller is neither owner nor worker", func(t *testing.T) {
+	t.Run("one of the control addresses can also compact sectors", func(t *testing.T) {
 		// Create a sector.
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		targetSno := allSectors[0].SectorNumber
-		rAddr := tutil.NewIDAddr(t, 999)
+		rt.SetCaller(actor.controlAddrs[0], builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+
+		rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
+		})
+		rt.Verify()
+	})
+
+	t.Run("fail if caller is not among caller worker or control addresses", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		rAddr := tutil.NewIDAddr(t, 1005)
 		rt.SetCaller(rAddr, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
@@ -2353,7 +2439,7 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 
 func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	param := &miner.ChangePeerIDParams{NewID: newPID}
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 
 	rt.Call(h.a.ChangePeerID, param)
@@ -2391,7 +2477,7 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	{
 		expectQueryNetworkInfo(rt, h)
@@ -2574,7 +2660,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 
 func (h *actorHarness) compactSectorNumbers(rt *mock.Runtime, bf bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	rt.Call(h.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
 		MaskSectorNumbers: bf,
@@ -2622,7 +2708,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	commitEpoch := rt.Epoch() - 4
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	expectQueryNetworkInfo(rt, h)
 
@@ -2720,7 +2806,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 
 func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	ss, err := faultSectorInfos[0].SealProof.SectorSize()
 	require.NoError(h.t, err)
@@ -2751,7 +2837,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 
 func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	// Calculate params from faulted sector infos
 	params := &miner.DeclareFaultsRecoveredParams{Recoveries: []miner.RecoveryDeclaration{{
@@ -2766,7 +2852,7 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 
 func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	qaDelta := big.Zero()
 	for _, extension := range params.Extensions {
@@ -2800,7 +2886,7 @@ func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSecto
 
 func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitField, expectedFee abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	dealIDs := []abi.DealID{}
 	sectorInfos := []*miner.SectorOnChainInfo{}
@@ -2903,7 +2989,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 
 func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner, builtin.RewardActorAddr)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker, builtin.RewardActorAddr)...)
 	// expect pledge update
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
