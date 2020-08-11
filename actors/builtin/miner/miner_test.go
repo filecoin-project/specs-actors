@@ -355,7 +355,7 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// Seal randomness challenge too far in past 
+		// Seal randomness challenge too far in past
 		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxSealDuration[actor.sealProofType] - 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
@@ -811,7 +811,7 @@ func TestWindowPost(t *testing.T) {
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker)
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
@@ -2047,6 +2047,42 @@ func TestCompactSectorNumbers(t *testing.T) {
 		}
 	})
 
+	t.Run("owner can also compact sectors", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+
+		rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
+		})
+		rt.Verify()
+	})
+
+	t.Run("fail if caller is neither owner nor worker", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		rAddr := tutil.NewIDAddr(t, 999)
+		rt.SetCaller(rAddr, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+				MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
+			})
+		})
+
+		rt.Verify()
+	})
+
 	t.Run("compacting no sector numbers aborts", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -2307,7 +2343,7 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 
 func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	param := &miner.ChangePeerIDParams{NewID: newPID}
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 
 	rt.Call(h.a.ChangePeerID, param)
@@ -2345,7 +2381,7 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	{
 		expectQueryNetworkInfo(rt, h)
@@ -2528,7 +2564,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 
 func (h *actorHarness) compactSectorNumbers(rt *mock.Runtime, bf bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	rt.Call(h.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
 		MaskSectorNumbers: bf,
@@ -2576,7 +2612,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	commitEpoch := rt.Epoch() - 4
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	expectQueryNetworkInfo(rt, h)
 
@@ -2674,7 +2710,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 
 func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	ss, err := faultSectorInfos[0].SealProof.SectorSize()
 	require.NoError(h.t, err)
@@ -2705,7 +2741,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 
 func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	// Calculate params from faulted sector infos
 	params := &miner.DeclareFaultsRecoveredParams{Recoveries: []miner.RecoveryDeclaration{{
@@ -2720,7 +2756,7 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 
 func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	qaDelta := big.Zero()
 	for _, extension := range params.Extensions {
@@ -2754,7 +2790,7 @@ func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSecto
 
 func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitField, expectedFee abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 
 	dealIDs := []abi.DealID{}
 	sectorInfos := []*miner.SectorOnChainInfo{}
