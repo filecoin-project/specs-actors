@@ -20,7 +20,8 @@ import (
 
 func TestCreateMiner(t *testing.T) {
 	ctx := context.Background()
-	vm, addrs := scenarios.NewVMWithSingletons(ctx, t, 1)
+	vm := scenarios.NewVMWithSingletons(ctx, t)
+	addrs := scenarios.CreateAccounts(ctx, t, vm, 1)
 
 	params := power.CreateMinerParams{
 		Owner:         addrs[0],
@@ -39,8 +40,9 @@ func TestCreateMiner(t *testing.T) {
 	err := vm.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
 
-	idAddr, err := initState.ResolveAddress(vm.Store(), createMinerRet.RobustAddress)
+	idAddr, found, err := initState.ResolveAddress(vm.Store(), createMinerRet.RobustAddress)
 	require.NoError(t, err)
+	require.True(t, found)
 	assert.Equal(t, createMinerRet.IDAddress, idAddr)
 
 	// check that the miner exists and has expected state
@@ -51,8 +53,9 @@ func TestCreateMiner(t *testing.T) {
 	err = vm.Store().Get(ctx, minerState.Info, &minerInfo)
 	require.NoError(t, err)
 
-	ownerIdAddr, err := initState.ResolveAddress(vm.Store(), addrs[0])
+	ownerIdAddr, found, err := initState.ResolveAddress(vm.Store(), addrs[0])
 	require.NoError(t, err)
+	require.True(t, found)
 
 	assert.Equal(t, ownerIdAddr, minerInfo.Owner)
 	assert.Equal(t, ownerIdAddr, minerInfo.Worker)

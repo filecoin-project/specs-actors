@@ -613,9 +613,11 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, 
 	}
 
 	// lookup the ActorID based on the address
-	targetIDAddr, err := state.ResolveAddress(ic.rt.store, target)
+	targetIDAddr, found, err := state.ResolveAddress(ic.rt.store, target)
 	created := false
-	if err == init_.ErrAddressNotFound {
+	if err != nil {
+		panic(err)
+	} else if !found {
 		if target.Protocol() != address.SECP256K1 && target.Protocol() != address.BLS {
 			// Don't implicitly create an account actor for an address without an associated key.
 			ic.Abortf(exitcode.SysErrInvalidReceiver, "cannot create account for address type")
@@ -657,8 +659,6 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, 
 		}
 
 		created = true
-	} else if err != nil {
-		panic(err)
 	}
 
 	// load actor

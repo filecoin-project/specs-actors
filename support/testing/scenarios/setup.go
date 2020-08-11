@@ -27,7 +27,9 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
-func NewVMWithSingletons(ctx context.Context, t *testing.T, additionalAccounts int) (*VM, []address.Address) {
+var FIL = big.NewInt(1e18)
+
+func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	store := ipld.NewADTStore(ctx)
 
 	lookup := map[cid.Cid]exported.BuiltinActor{}
@@ -37,8 +39,6 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T, additionalAccounts i
 
 	vm := NewVM(ctx, lookup, store)
 
-	rootVerifier := verifregRootAddresses(t)
-
 	emptyMapCID, err := adt.MakeEmptyMap(vm.store).Root()
 	require.NoError(t, err)
 	emptyArrayCID, err := adt.MakeEmptyArray(vm.store).Root()
@@ -46,13 +46,12 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T, additionalAccounts i
 	emptyMultimapCID, err := adt.MakeEmptyMultimap(vm.store).Root()
 	require.NoError(t, err)
 
-	FIL := big.NewInt(1e18)
-
 	initializeActor(ctx, t, vm, &system.State{}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
 
-	addrTreeRoot, accountAddrs := initAddressTree(t, vm, rootVerifier, additionalAccounts)
+	rootVerifier := verifregRootAddresses(t)
+	addrTreeRoot := initAddressTree(t, vm, rootVerifier)
 	initState := initactor.ConstructState(addrTreeRoot, "scenarios")
-	initState.NextID = abi.ActorID(builtin.FirstNonSingletonActorId + additionalAccounts)
+	initState.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
 	initializeActor(ctx, t, vm, initState, builtin.InitActorCodeID, builtin.InitActorAddr, big.Zero())
 
 	rewardState := reward.ConstructState(big.Mul(big.NewInt(100), FIL))
@@ -77,19 +76,49 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T, additionalAccounts i
 	rootVerifierState := &account.State{Address: rootVerifier.pubAddr}
 	initializeActor(ctx, t, vm, rootVerifierState, builtin.AccountActorCodeID, rootVerifier.idAddr, big.Zero())
 
-	// additional accounts
+	_, err = vm.commit()
+	require.NoError(t, err)
+
+	return vm
+}
+
+func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int) []address.Address {
+	var initState initactor.State
+	err := vm.GetState(builtin.InitActorAddr, &initState)
+	require.NoError(t, err)
+
+	m, err := adt.AsMap(vm.store, initState.AddressMap)
+	require.NoError(t, err)
+
+	addrPairs := make([]addrPair, n)
+	for i := range addrPairs {
+		addr := actor_testing.NewBLSAddr(t, 93837778)
+		idAddr, err := address.NewIDAddress(uint64(initState.NextID))
+		require.NoError(t, err)
+		initState.NextID++
+
+		err = m.Put(adt.AddrKey(addr), cborAddrID(t, idAddr))
+		require.NoError(t, err)
+
+		addrPairs[i] = addrPair{
+			pubAddr: addr,
+			idAddr:  idAddr,
+		}
+	}
+	initState.AddressMap, err = m.Root()
+	require.NoError(t, err)
+
+	err = vm.setActorState(ctx, builtin.InitActorAddr, &initState)
+	require.NoError(t, err)
+
 	initialAccountBalance := big.Mul(big.NewInt(10_000), FIL)
-	pubAddrs := make([]address.Address, len(accountAddrs))
-	for i, addrPair := range accountAddrs {
+	pubAddrs := make([]address.Address, len(addrPairs))
+	for i, addrPair := range addrPairs {
 		st := &account.State{Address: addrPair.pubAddr}
 		initializeActor(ctx, t, vm, st, builtin.AccountActorCodeID, addrPair.idAddr, initialAccountBalance)
 		pubAddrs[i] = addrPair.pubAddr
 	}
-
-	_, err = vm.commit()
-	require.NoError(t, err)
-
-	return vm, pubAddrs
+	return pubAddrs
 }
 
 func initializeActor(ctx context.Context, t *testing.T, vm *VM, state runtime.CBORMarshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
@@ -109,28 +138,14 @@ type addrPair struct {
 	idAddr  address.Address
 }
 
-func initAddressTree(t *testing.T, vm *VM, rootVerifier addrPair, additionalAccounts int) (cid.Cid, []addrPair) {
+func initAddressTree(t *testing.T, vm *VM, rootVerifier addrPair) cid.Cid {
 	m := adt.MakeEmptyMap(vm.store)
 	err := m.Put(adt.AddrKey(rootVerifier.pubAddr), cborAddrID(t, rootVerifier.idAddr))
 	require.NoError(t, err)
 
-	newAccounts := make([]addrPair, additionalAccounts)
-	for i := 0; i < additionalAccounts; i++ {
-		addr := actor_testing.NewBLSAddr(t, 93837778)
-		require.NoError(t, err)
-		idAddr, err := address.NewIDAddress(uint64(builtin.FirstNonSingletonActorId + i))
-		require.NoError(t, err)
-		err = m.Put(adt.AddrKey(addr), cborAddrID(t, idAddr))
-		require.NoError(t, err)
-
-		newAccounts[i] = addrPair{
-			pubAddr: addr,
-			idAddr:  idAddr,
-		}
-	}
 	root, err := m.Root()
 	require.NoError(t, err)
-	return root, newAccounts
+	return root
 }
 
 func cborAddrID(t *testing.T, idAddr address.Address) *cbg.CborInt {

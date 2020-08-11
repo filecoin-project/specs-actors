@@ -13,7 +13,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-hamt-ipld"
 	"github.com/pkg/errors"
@@ -111,6 +110,23 @@ func (vm *VM) setActor(ctx context.Context, key address.Address, a *TestActor) e
 	return nil
 }
 
+// setActorState stores the state and updates the addressed actor
+func (vm *VM) setActorState(ctx context.Context, key address.Address, state runtime.CBORMarshaler) error {
+	stateCid, err := vm.store.Put(ctx, state)
+	if err != nil {
+		return err
+	}
+	a, found, err := vm.GetActor(key)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.Errorf("could not find actor %s to set state", key)
+	}
+	a.Head = stateCid
+	return vm.setActor(ctx, key, a)
+}
+
 // deleteActor remove the actor from the storage.
 //
 // This method will NOT return an error if the actor was not found.
@@ -162,13 +178,11 @@ func (vm *VM) normalizeAddress(addr address.Address) (address.Address, bool) {
 		panic(err)
 	}
 
-	idAddr, err := state.ResolveAddress(vm.store, addr)
-	if err == init_.ErrAddressNotFound {
-		return address.Undef, false
-	} else if err != nil {
+	idAddr, found, err := state.ResolveAddress(vm.store, addr)
+	if err != nil {
 		panic(err)
 	}
-	return idAddr, true
+	return idAddr, found
 }
 
 // ApplyMessage applies the message to the current state.
