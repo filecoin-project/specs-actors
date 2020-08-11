@@ -573,12 +573,14 @@ func TestDeadlines(t *testing.T) {
 		addThenMarkFaulty(t, store, dl)
 
 		// Try to reschedule two sectors, only the 7 (non faulty) should succeed.
-		err := dl.RescheduleSectorExpirations(store, sectorArr, 1, miner.PartitionSectorMap{
+		replaced, err := dl.RescheduleSectorExpirations(store, sectorArr, 1, miner.PartitionSectorMap{
 			1: bf(6, 7, 99), // 99 should be skipped, it doesn't exist.
 			5: bf(100),      // partition 5 doesn't exist.
 			2: bf(),         // empty bitfield should be fine.
 		}, sectorSize, quantSpec)
 		require.NoError(t, err)
+
+		assert.Len(t, replaced, 1)
 
 		exp, err := dl.PopExpiredSectors(store, 1, quantSpec)
 		require.NoError(t, err)

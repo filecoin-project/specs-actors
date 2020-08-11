@@ -713,8 +713,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	rt.State().Transaction(&st, func() {
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
-		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
+		replaced, err := st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
+		replacedBySectorNumber := asMapBySectorNumber(replaced)
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
@@ -737,7 +738,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
-			replacedAge, replacedDayReward := replacedSectorParameters(precommit, st, rt)
+			replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
 
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
@@ -790,18 +791,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVested))
 
 	return nil
-}
-
-func replacedSectorParameters(precommit *SectorPreCommitOnChainInfo, st State, rt Runtime) (abi.ChainEpoch, big.Int) {
-	if !precommit.Info.ReplaceCapacity {
-		return abi.ChainEpoch(0), big.Zero()
-	}
-	replaced, found, err := st.GetSector(adt.AsStore(rt), precommit.Info.ReplaceSectorNumber)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", precommit.Info.ReplaceSectorNumber)
-	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
-	}
-	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
 }
 
 type CheckSectorProvenParams struct {
@@ -2148,6 +2137,25 @@ func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi
 	periodStart := currEpoch - periodProgress + WPoStProvingPeriod
 	Assert(periodStart > currEpoch)
 	return periodStart
+}
+
+func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*SectorOnChainInfo {
+	m := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectors))
+	for _, s := range sectors {
+		m[s.SectorNumber] = s
+	}
+	return m
+}
+
+func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (abi.ChainEpoch, big.Int) {
+	if !precommit.Info.ReplaceCapacity {
+		return abi.ChainEpoch(0), big.Zero()
+	}
+	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
+	if !ok {
+		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
+	}
+	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
 }
 
 // Computes deadline information for a fault or recovery declaration.

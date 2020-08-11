@@ -327,43 +327,43 @@ func (p *Partition) RescheduleExpirations(
 	store adt.Store, sectors Sectors,
 	newExpiration abi.ChainEpoch, sectorNos bitfield.BitField,
 	ssize abi.SectorSize, quant QuantSpec,
-) (moved bitfield.BitField, err error) {
+) (moved bitfield.BitField, replaced []*SectorOnChainInfo, err error) {
 	// Ensure these sectors actually belong to this partition.
 	present, err := bitfield.IntersectBitField(sectorNos, p.Sectors)
 	if err != nil {
-		return bitfield.BitField{}, err
+		return bitfield.BitField{}, nil, err
 	}
 
 	// Filter out terminated sectors.
 	live, err := bitfield.SubtractBitField(present, p.Terminated)
 	if err != nil {
-		return bitfield.BitField{}, err
+		return bitfield.BitField{}, nil, err
 	}
 
 	// Filter out faulty sectors.
 	active, err := bitfield.SubtractBitField(live, p.Faults)
 	if err != nil {
-		return bitfield.BitField{}, err
+		return bitfield.BitField{}, nil, err
 	}
 
 	sectorInfos, err := sectors.Load(active)
 	if err != nil {
-		return bitfield.BitField{}, err
+		return bitfield.BitField{}, nil, err
 	}
 
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
-		return bitfield.BitField{}, xerrors.Errorf("failed to load sector expirations: %w", err)
+		return bitfield.BitField{}, nil, xerrors.Errorf("failed to load sector expirations: %w", err)
 	}
 	if err = expirations.RescheduleExpirations(newExpiration, sectorInfos, ssize); err != nil {
-		return bitfield.BitField{}, err
+		return bitfield.BitField{}, nil, err
 	}
 	p.ExpirationsEpochs, err = expirations.Root()
 	if err != nil {
-		return bitfield.BitField{}, err
+		return bitfield.BitField{}, nil, err
 	}
 
-	return active, nil
+	return active, sectorInfos, nil
 }
 
 // Replaces a number of "old" sectors with new ones.

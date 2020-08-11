@@ -446,16 +446,17 @@ func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint
 func (st *State) RescheduleSectorExpirations(
 	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
 	deadlineSectors DeadlineSectorMap,
-) error {
+) ([]*SectorOnChainInfo, error) {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sectors, err := LoadSectors(store, st.Sectors)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var allReplaced []*SectorOnChainInfo
 	if err = deadlineSectors.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
 		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch).NextNotElapsed()
 		newExpiration := dlInfo.Last()
@@ -465,9 +466,11 @@ func (st *State) RescheduleSectorExpirations(
 			return err
 		}
 
-		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, dlInfo.QuantSpec()); err != nil {
+		replaced, err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, dlInfo.QuantSpec())
+		if err != nil {
 			return err
 		}
+		allReplaced = append(allReplaced, replaced...)
 
 		if err := deadlines.UpdateDeadline(store, dlIdx, dl); err != nil {
 			return err
@@ -475,9 +478,9 @@ func (st *State) RescheduleSectorExpirations(
 
 		return nil
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	return st.SaveDeadlines(store, deadlines)
+	return allReplaced, st.SaveDeadlines(store, deadlines)
 }
 
 // Assign new sectors to deadlines.
