@@ -63,7 +63,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative penalty %v", params.Penalty)
 	}
 	if params.GasReward.LessThan(big.Zero()) {
-		rt.Abortf(exitcode.ErrIllegalArgument,  "negative gas reward %v", params.GasReward)
+		rt.Abortf(exitcode.ErrIllegalArgument, "negative gas reward %v", params.GasReward)
 	}
 	if priorBalance.LessThan(params.GasReward) {
 		rt.Abortf(exitcode.ErrIllegalState, "actor current balance %v insufficient to pay gas reward %v",
@@ -85,9 +85,10 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
 		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 		totalReward = big.Add(blockReward, params.GasReward)
-		if totalReward.GreaterThan(rt.CurrentBalance()) {
-			rt.Log(vmr.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", rt.CurrentBalance(), totalReward)
-			totalReward = rt.CurrentBalance()
+		currBalance := rt.CurrentBalance()
+		if totalReward.GreaterThan(currBalance) {
+			rt.Log(vmr.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
+			totalReward = currBalance
 
 			blockReward = big.Sub(totalReward, params.GasReward)
 			// Since we have already asserted the balance is greater than gas reward blockReward is >= 0

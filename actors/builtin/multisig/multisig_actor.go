@@ -192,7 +192,9 @@ func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
 }
 
 type TxnIDParams struct {
-	ID           TxnID
+	ID TxnID
+	// Optional hash of proposal to ensure an operation can only apply to a
+	// specific proposal.
 	ProposalHash []byte
 }
 

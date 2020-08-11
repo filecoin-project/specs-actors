@@ -237,16 +237,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.ThisEpochQAPowerSmoothed = new(smoothing.FilterEstimate)
 			if err := t.ThisEpochQAPowerSmoothed.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmoothed pointer: %w", err)
@@ -382,16 +380,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 
 			c, err := cbg.ReadCid(br)
 			if err != nil {
@@ -1066,16 +1062,14 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.QualityAdjPowerSmoothed = new(smoothing.FilterEstimate)
 			if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed pointer: %w", err)

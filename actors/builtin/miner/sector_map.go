@@ -13,7 +13,7 @@ import (
 type DeadlineSectorMap map[uint64]PartitionSectorMap
 
 // Maps partitions to sector bitfields.
-type PartitionSectorMap map[uint64]*bitfield.BitField
+type PartitionSectorMap map[uint64]bitfield.BitField
 
 // Check validates all bitfields and counts the number of partitions & sectors
 // contained within the map, and returns an error if they exceed the given
@@ -55,7 +55,7 @@ func (dm DeadlineSectorMap) Count() (partitions, sectors uint64, err error) {
 }
 
 // Add records the given sector bitfield at the given deadline/partition index.
-func (dm DeadlineSectorMap) Add(dlIdx, partIdx uint64, sectorNos *bitfield.BitField) error {
+func (dm DeadlineSectorMap) Add(dlIdx, partIdx uint64, sectorNos bitfield.BitField) error {
 	if dlIdx >= WPoStPeriodDeadlines {
 		return xerrors.Errorf("invalid deadline %d", dlIdx)
 	}
@@ -101,7 +101,7 @@ func (pm PartitionSectorMap) AddValues(partIdx uint64, sectorNos ...uint64) erro
 
 // Add records the given sector bitfield at the given partition index, merging
 // it with any existing bitfields if necessary.
-func (pm PartitionSectorMap) Add(partIdx uint64, sectorNos *bitfield.BitField) error {
+func (pm PartitionSectorMap) Add(partIdx uint64, sectorNos bitfield.BitField) error {
 	if oldSectorNos, ok := pm[partIdx]; ok {
 		var err error
 		sectorNos, err = bitfield.MergeBitFields(sectorNos, oldSectorNos)
@@ -141,7 +141,7 @@ func (pm PartitionSectorMap) Partitions() []uint64 {
 }
 
 // ForEach walks the partitions in the map, in order of increasing index.
-func (pm PartitionSectorMap) ForEach(cb func(partIdx uint64, sectorNos *bitfield.BitField) error) error {
+func (pm PartitionSectorMap) ForEach(cb func(partIdx uint64, sectorNos bitfield.BitField) error) error {
 	for _, partIdx := range pm.Partitions() {
 		if err := cb(partIdx, pm[partIdx]); err != nil {
 			return err

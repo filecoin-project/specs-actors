@@ -140,7 +140,7 @@ func TestDeadlines(t *testing.T) {
 		// Mark faulty.
 		faultyPower, err := dl.DeclareFaults(
 			store, sectorsArr(t, store, sectors), sectorSize, quantSpec, 9,
-			map[uint64]*abi.BitField{
+			map[uint64]bitfield.BitField{
 				0: bf(1),
 				1: bf(5, 6),
 			},
@@ -426,7 +426,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		// Declare sectors 1 & 6 recovered.
-		require.NoError(t, dl.DeclareFaultsRecovered(store, sectorArr, sectorSize, map[uint64]*abi.BitField{
+		require.NoError(t, dl.DeclareFaultsRecovered(store, sectorArr, sectorSize, map[uint64]bitfield.BitField{
 			0: bf(1),
 			1: bf(6),
 		}))
@@ -497,13 +497,13 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		// Declare sectors 1 & 6 recovered.
-		require.NoError(t, dl.DeclareFaultsRecovered(store, sectorArr, sectorSize, map[uint64]*abi.BitField{
+		require.NoError(t, dl.DeclareFaultsRecovered(store, sectorArr, sectorSize, map[uint64]bitfield.BitField{
 			0: bf(1),
 			1: bf(6),
 		}))
 
 		// Retract recovery for sector 1.
-		faultyPower, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 13, map[uint64]*abi.BitField{
+		faultyPower, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 13, map[uint64]bitfield.BitField{
 			0: bf(1),
 		})
 
@@ -617,12 +617,12 @@ type expectedDeadlineState struct {
 	partitionSize uint64
 	sectors       []*miner.SectorOnChainInfo
 
-	faults       *bitfield.BitField
-	recovering   *bitfield.BitField
-	terminations *bitfield.BitField
-	posts        *bitfield.BitField
+	faults       bitfield.BitField
+	recovering   bitfield.BitField
+	terminations bitfield.BitField
+	posts        bitfield.BitField
 
-	partitionSectors []*bitfield.BitField
+	partitionSectors []bitfield.BitField
 }
 
 //nolint:unused
@@ -656,28 +656,21 @@ func (s expectedDeadlineState) withPosts(posts ...uint64) expectedDeadlineState 
 }
 
 //nolint:unused
-func (s expectedDeadlineState) withPartitions(partitions ...*bitfield.BitField) expectedDeadlineState {
+func (s expectedDeadlineState) withPartitions(partitions ...bitfield.BitField) expectedDeadlineState {
 	s.partitionSectors = partitions
 	return s
 }
 
 // Assert that the deadline's state matches the expected state.
 func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.Deadline) {
-	orEmpty := func(bf *bitfield.BitField) *bitfield.BitField {
-		if bf == nil {
-			bf = bitfield.NewFromSet(nil)
-		}
-		return bf
-	}
-
 	_, faults, recoveries, terminations, partitions := checkDeadlineInvariants(
 		t, store, dl, s.quant, s.sectorSize, s.partitionSize, s.sectors,
 	)
 
-	assertBitfieldsEqual(t, orEmpty(s.faults), faults)
-	assertBitfieldsEqual(t, orEmpty(s.recovering), recoveries)
-	assertBitfieldsEqual(t, orEmpty(s.terminations), terminations)
-	assertBitfieldsEqual(t, orEmpty(s.posts), dl.PostSubmissions)
+	assertBitfieldsEqual(t, s.faults, faults)
+	assertBitfieldsEqual(t, s.recovering, recoveries)
+	assertBitfieldsEqual(t, s.terminations, terminations)
+	assertBitfieldsEqual(t, s.posts, dl.PostSubmissions)
 
 	require.Equal(t, len(s.partitionSectors), len(partitions), "unexpected number of partitions")
 
@@ -693,11 +686,11 @@ func checkDeadlineInvariants(
 	quant miner.QuantSpec, ssize abi.SectorSize, partitionSize uint64,
 	sectors []*miner.SectorOnChainInfo,
 ) (
-	allSectors *bitfield.BitField,
-	allFaults *bitfield.BitField,
-	allRecoveries *bitfield.BitField,
-	allTerminations *bitfield.BitField,
-	partitionSectors []*bitfield.BitField,
+	allSectors bitfield.BitField,
+	allFaults bitfield.BitField,
+	allRecoveries bitfield.BitField,
+	allTerminations bitfield.BitField,
+	partitionSectors []bitfield.BitField,
 ) {
 	partitions, err := dl.PartitionsArray(store)
 	require.NoError(t, err)
@@ -788,7 +781,7 @@ func checkDeadlineInvariants(
 		expirationEpochs, err := adt.AsArray(store, dl.ExpirationsEpochs)
 		require.NoError(t, err)
 		for epoch, partitions := range expectedDeadlineExpQueue {
-			var bf abi.BitField
+			var bf bitfield.BitField
 			found, err := expirationEpochs.Get(uint64(epoch), &bf)
 			require.NoError(t, err)
 			require.True(t, found, "expected to find partitions with expirations at epoch %d", epoch)

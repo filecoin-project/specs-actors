@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -15,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{140}
+var lengthBufState = []byte{141}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -59,6 +58,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 
 	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectors); err != nil {
 		return xerrors.Errorf("failed to write cid field t.PreCommittedSectors: %w", err)
+	}
+
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.PreCommittedSectorsExpiry); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PreCommittedSectorsExpiry: %w", err)
 	}
 
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -117,7 +122,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 12 {
+	if extra != 13 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -182,6 +187,18 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.PreCommittedSectors = c
+
+	}
+	// t.PreCommittedSectorsExpiry (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.PreCommittedSectorsExpiry: %w", err)
+		}
+
+		t.PreCommittedSectorsExpiry = c
 
 	}
 	// t.AllocatedSectors (cid.Cid) (struct)
@@ -263,20 +280,8 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.EarlyTerminations = new(bitfield.BitField)
-			if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.EarlyTerminations pointer: %w", err)
-			}
+		if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.EarlyTerminations: %w", err)
 		}
 
 	}
@@ -412,16 +417,14 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-		} else {
 			t.PendingWorkerKey = new(WorkerKeyChange)
 			if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.PendingWorkerKey pointer: %w", err)
@@ -733,20 +736,8 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.PostSubmissions = new(bitfield.BitField)
-			if err := t.PostSubmissions.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.PostSubmissions pointer: %w", err)
-			}
+		if err := t.PostSubmissions.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.PostSubmissions: %w", err)
 		}
 
 	}
@@ -754,20 +745,8 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.EarlyTerminations = new(bitfield.BitField)
-			if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.EarlyTerminations pointer: %w", err)
-			}
+		if err := t.EarlyTerminations.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.EarlyTerminations: %w", err)
 		}
 
 	}
@@ -895,20 +874,8 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Sectors = new(bitfield.BitField)
-			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Sectors pointer: %w", err)
-			}
+		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
 		}
 
 	}
@@ -916,20 +883,8 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Faults = new(bitfield.BitField)
-			if err := t.Faults.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Faults pointer: %w", err)
-			}
+		if err := t.Faults.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Faults: %w", err)
 		}
 
 	}
@@ -937,20 +892,8 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Recoveries = new(bitfield.BitField)
-			if err := t.Recoveries.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Recoveries pointer: %w", err)
-			}
+		if err := t.Recoveries.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Recoveries: %w", err)
 		}
 
 	}
@@ -958,20 +901,8 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Terminated = new(bitfield.BitField)
-			if err := t.Terminated.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Terminated pointer: %w", err)
-			}
+		if err := t.Terminated.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Terminated: %w", err)
 		}
 
 	}
@@ -1089,20 +1020,8 @@ func (t *ExpirationSet) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.OnTimeSectors = new(bitfield.BitField)
-			if err := t.OnTimeSectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.OnTimeSectors pointer: %w", err)
-			}
+		if err := t.OnTimeSectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.OnTimeSectors: %w", err)
 		}
 
 	}
@@ -1110,20 +1029,8 @@ func (t *ExpirationSet) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.EarlySectors = new(bitfield.BitField)
-			if err := t.EarlySectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.EarlySectors pointer: %w", err)
-			}
+		if err := t.EarlySectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.EarlySectors: %w", err)
 		}
 
 	}
@@ -2044,7 +1951,172 @@ func (t *WorkerKeyChange) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSubmitWindowedPoStParams = []byte{131}
+var lengthBufVestingFunds = []byte{129}
+
+func (t *VestingFunds) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufVestingFunds); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.Funds ([]miner.VestingFund) (slice)
+	if len(t.Funds) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.Funds was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.Funds))); err != nil {
+		return err
+	}
+	for _, v := range t.Funds {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *VestingFunds) UnmarshalCBOR(r io.Reader) error {
+	*t = VestingFunds{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Funds ([]miner.VestingFund) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.Funds: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.Funds = make([]VestingFund, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v VestingFund
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.Funds[i] = v
+	}
+
+	return nil
+}
+
+var lengthBufVestingFund = []byte{130}
+
+func (t *VestingFund) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufVestingFund); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.Epoch (abi.ChainEpoch) (int64)
+	if t.Epoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.Epoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.Epoch-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.Amount (big.Int) (struct)
+	if err := t.Amount.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *VestingFund) UnmarshalCBOR(r io.Reader) error {
+	*t = VestingFund{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Epoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.Epoch = abi.ChainEpoch(extraI)
+	}
+	// t.Amount (big.Int) (struct)
+
+	{
+
+		if err := t.Amount.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Amount: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufSubmitWindowedPoStParams = []byte{133}
 
 func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -2090,6 +2162,30 @@ func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
+
+	// t.ChainCommitEpoch (abi.ChainEpoch) (int64)
+	if t.ChainCommitEpoch >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ChainCommitEpoch)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ChainCommitEpoch-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.ChainCommitRand (abi.Randomness) (slice)
+	if len(t.ChainCommitRand) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.ChainCommitRand was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.ChainCommitRand))); err != nil {
+		return err
+	}
+
+	if _, err := w.Write(t.ChainCommitRand[:]); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2107,7 +2203,7 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2183,6 +2279,52 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		t.Proofs[i] = v
 	}
 
+	// t.ChainCommitEpoch (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.ChainCommitEpoch = abi.ChainEpoch(extraI)
+	}
+	// t.ChainCommitRand (abi.Randomness) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.ChainCommitRand: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+
+	if extra > 0 {
+		t.ChainCommitRand = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.ChainCommitRand[:]); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -3238,27 +3380,63 @@ func (t *CompactPartitionsParams) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Partitions = new(bitfield.BitField)
-			if err := t.Partitions.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Partitions pointer: %w", err)
-			}
+		if err := t.Partitions.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Partitions: %w", err)
 		}
 
 	}
 	return nil
 }
 
-var lengthBufCronEventPayload = []byte{130}
+var lengthBufCompactSectorNumbersParams = []byte{129}
+
+func (t *CompactSectorNumbersParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufCompactSectorNumbersParams); err != nil {
+		return err
+	}
+
+	// t.MaskSectorNumbers (bitfield.BitField) (struct)
+	if err := t.MaskSectorNumbers.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *CompactSectorNumbersParams) UnmarshalCBOR(r io.Reader) error {
+	*t = CompactSectorNumbersParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.MaskSectorNumbers (bitfield.BitField) (struct)
+
+	{
+
+		if err := t.MaskSectorNumbers.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.MaskSectorNumbers: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufCronEventPayload = []byte{129}
 
 func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -3281,11 +3459,6 @@ func (t *CronEventPayload) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.Sectors (bitfield.BitField) (struct)
-	if err := t.Sectors.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -3303,7 +3476,7 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -3331,27 +3504,6 @@ func (t *CronEventPayload) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.EventType = CronEventType(extraI)
-	}
-	// t.Sectors (bitfield.BitField) (struct)
-
-	{
-
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Sectors = new(bitfield.BitField)
-			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Sectors pointer: %w", err)
-			}
-		}
-
 	}
 	return nil
 }
@@ -3438,20 +3590,8 @@ func (t *FaultDeclaration) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Sectors = new(bitfield.BitField)
-			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Sectors pointer: %w", err)
-			}
+		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
 		}
 
 	}
@@ -3540,20 +3680,8 @@ func (t *RecoveryDeclaration) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Sectors = new(bitfield.BitField)
-			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Sectors pointer: %w", err)
-			}
+		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
 		}
 
 	}
@@ -3653,20 +3781,8 @@ func (t *ExpirationExtension) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Sectors = new(bitfield.BitField)
-			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Sectors pointer: %w", err)
-			}
+		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
 		}
 
 	}
@@ -3780,20 +3896,8 @@ func (t *TerminationDeclaration) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Sectors = new(bitfield.BitField)
-			if err := t.Sectors.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Sectors pointer: %w", err)
-			}
+		if err := t.Sectors.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Sectors: %w", err)
 		}
 
 	}
@@ -3862,20 +3966,8 @@ func (t *PoStPartition) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		pb, err := br.PeekByte()
-		if err != nil {
-			return err
-		}
-		if pb == cbg.CborNull[0] {
-			var nbuf [1]byte
-			if _, err := br.Read(nbuf[:]); err != nil {
-				return err
-			}
-		} else {
-			t.Skipped = new(bitfield.BitField)
-			if err := t.Skipped.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Skipped pointer: %w", err)
-			}
+		if err := t.Skipped.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Skipped: %w", err)
 		}
 
 	}

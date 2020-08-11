@@ -28,7 +28,7 @@ func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec) (Bitfield
 }
 
 // Adds values to the queue entry for an epoch.
-func (q BitfieldQueue) AddToQueue(rawEpoch abi.ChainEpoch, values *abi.BitField) error {
+func (q BitfieldQueue) AddToQueue(rawEpoch abi.ChainEpoch, values bitfield.BitField) error {
 	if isEmpty, err := values.IsEmpty(); err != nil {
 		return xerrors.Errorf("failed to decode early termination bitfield: %w", err)
 	} else if isEmpty {
@@ -36,8 +36,8 @@ func (q BitfieldQueue) AddToQueue(rawEpoch abi.ChainEpoch, values *abi.BitField)
 		return nil
 	}
 	epoch := q.quant.QuantizeUp(rawEpoch)
-	bf := abi.NewBitField()
-	if _, err := q.Array.Get(uint64(epoch), bf); err != nil {
+	var bf bitfield.BitField
+	if _, err := q.Array.Get(uint64(epoch), &bf); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
 	}
 
@@ -63,9 +63,9 @@ func (q BitfieldQueue) AddToQueueValues(epoch abi.ChainEpoch, values ...uint64) 
 // shifting other bits down and removing any newly empty entries.
 //
 // See the docs on BitField.Cut to better understand what it does.
-func (q BitfieldQueue) Cut(toCut *bitfield.BitField) error {
+func (q BitfieldQueue) Cut(toCut bitfield.BitField) error {
 	var epochsToRemove []uint64
-	if err := q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+	if err := q.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		bf, err := bitfield.CutBitField(bf, toCut)
 		if err != nil {
 			return err
@@ -111,12 +111,12 @@ func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) 
 
 // Removes and returns all values with keys less than or equal to until.
 // Modified return value indicates whether this structure has been changed by the call.
-func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values *abi.BitField, modified bool, err error) {
-	var poppedValues []*bitfield.BitField
+func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values bitfield.BitField, modified bool, err error) {
+	var poppedValues []bitfield.BitField
 	var poppedKeys []uint64
 
 	stopErr := fmt.Errorf("stop")
-	if err = q.ForEach(func(epoch abi.ChainEpoch, bf *bitfield.BitField) error {
+	if err = q.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		if epoch > until {
 			return stopErr
 		}
@@ -124,27 +124,27 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values *abi.BitField, mod
 		poppedValues = append(poppedValues, bf)
 		return err
 	}); err != nil && err != stopErr {
-		return nil, false, err
+		return bitfield.BitField{}, false, err
 	}
 
 	// Nothing expired.
 	if len(poppedKeys) == 0 {
-		return abi.NewBitField(), false, nil
+		return bitfield.New(), false, nil
 	}
 
 	if err = q.BatchDelete(poppedKeys); err != nil {
-		return nil, false, err
+		return bitfield.BitField{}, false, err
 	}
 	merged, err := bitfield.MultiMerge(poppedValues...)
 	if err != nil {
-		return nil, false, err
+		return bitfield.BitField{}, false, err
 	}
 
 	return merged, true, nil
 }
 
 // Iterates the queue.
-func (q BitfieldQueue) ForEach(cb func(epoch abi.ChainEpoch, bf *bitfield.BitField) error) error {
+func (q BitfieldQueue) ForEach(cb func(epoch abi.ChainEpoch, bf bitfield.BitField) error) error {
 	var bf bitfield.BitField
 	return q.Array.ForEach(&bf, func(i int64) error {
 		cpy, err := bf.Copy()

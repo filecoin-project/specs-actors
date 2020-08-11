@@ -11,10 +11,11 @@ import (
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
+	. "github.com/filecoin-project/specs-actors/actors/util"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -32,17 +33,23 @@ type State struct {
 	PreCommitDeposits abi.TokenAmount // Total funds locked as PreCommitDeposits
 	LockedFunds       abi.TokenAmount // Total rewards and added funds locked in vesting table
 
-	VestingFunds cid.Cid // Array, AMT[ChainEpoch]TokenAmount
+	VestingFunds cid.Cid // VestingFunds (Vesting Funds schedule for the miner).
 
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
+	// PreCommittedSectorsExpiry maintains the state required to expire PreCommittedSectors.
+	PreCommittedSectorsExpiry cid.Cid // BitFieldQueue (AMT[Epoch]*BitField)
+
 	// Allocated sector IDs. Sector IDs can never be reused once allocated.
 	AllocatedSectors cid.Cid // BitField
 
-	// Information for all proven and not-yet-expired sectors.
+	// Information for all proven and not-yet-garbage-collected sectors.
+	//
+	// Sectors are removed from this AMT when the partition to which the
+	// sector belongs is compacted.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
 
 	// The first epoch in this miner's current proving period. This is the first epoch in which a PoSt for a
@@ -65,7 +72,7 @@ type State struct {
 	Deadlines cid.Cid
 
 	// Deadlines with outstanding fees for early sector termination.
-	EarlyTerminations *bitfield.BitField
+	EarlyTerminations bitfield.BitField
 }
 
 type MinerInfo struct {
@@ -142,23 +149,26 @@ type SectorOnChainInfo struct {
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 }
 
-func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid) (*State, error) {
+func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
+	emptyVestingFundsCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
 
-		PreCommitDeposits:        abi.NewTokenAmount(0),
-		LockedFunds:              abi.NewTokenAmount(0),
-		VestingFunds:             emptyArrayCid,
+		PreCommitDeposits: abi.NewTokenAmount(0),
+		LockedFunds:       abi.NewTokenAmount(0),
+
+		VestingFunds: emptyVestingFundsCid,
+
 		InitialPledgeRequirement: abi.NewTokenAmount(0),
 
-		PreCommittedSectors: emptyMapCid,
-		AllocatedSectors:    emptyBitfieldCid,
-		Sectors:             emptyArrayCid,
-		ProvingPeriodStart:  periodStart,
-		CurrentDeadline:     0,
-		Deadlines:           emptyDeadlinesCid,
-
-		EarlyTerminations: abi.NewBitField(),
+		PreCommittedSectors:       emptyMapCid,
+		PreCommittedSectorsExpiry: emptyArrayCid,
+		AllocatedSectors:          emptyBitfieldCid,
+		Sectors:                   emptyArrayCid,
+		ProvingPeriodStart:        periodStart,
+		CurrentDeadline:           0,
+		Deadlines:                 emptyDeadlinesCid,
+		EarlyTerminations:         bitfield.New(),
 	}, nil
 }
 
@@ -219,8 +229,8 @@ func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber
 		return xc.ErrIllegalArgument.Wrapf("sector number out of range: %d", sectorNo)
 	}
 
-	allocatedSectors := new(bitfield.BitField)
-	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 	if allocated, err := allocatedSectors.IsSet(uint64(sectorNo)); err != nil {
@@ -238,7 +248,7 @@ func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber
 	return nil
 }
 
-func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField) error {
+func (st *State) MaskSectorNumbers(store adt.Store, sectorNos bitfield.BitField) error {
 	lastSectorNo, err := sectorNos.Last()
 	if err != nil {
 		return xc.ErrIllegalArgument.Wrapf("invalid mask bitfield: %w", err)
@@ -248,8 +258,8 @@ func (st *State) MaskSectorNumbers(store adt.Store, sectorNos *bitfield.BitField
 		return xc.ErrIllegalArgument.Wrapf("masked sector number %d exceeded max sector number", lastSectorNo)
 	}
 
-	allocatedSectors := new(bitfield.BitField)
-	if err := store.Get(store.Context(), st.AllocatedSectors, allocatedSectors); err != nil {
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 
@@ -376,7 +386,7 @@ func (st *State) GetSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorO
 	return sectors.Get(sectorNo)
 }
 
-func (st *State) DeleteSectors(store adt.Store, sectorNos *abi.BitField) error {
+func (st *State) DeleteSectors(store adt.Store, sectorNos bitfield.BitField) error {
 	sectors, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return err
@@ -494,15 +504,15 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	newPower := NewPowerPairZero()
-	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
-		if len(newPartitions) == 0 {
+	for dlIdx, deadlineSectors := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
+		if len(deadlineSectors) == 0 {
 			continue
 		}
 
 		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
+		deadlineNewPower, err := dl.AddSectors(store, partitionSize, deadlineSectors, sectorSize, quant)
 		if err != nil {
 			return NewPowerPairZero(), err
 		}
@@ -634,7 +644,7 @@ func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector a
 }
 
 // Loads sector info for a sequence of sectors.
-func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfos(store adt.Store, sectors bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	sectorsArr, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return nil, err
@@ -645,7 +655,7 @@ func (st *State) LoadSectorInfos(store adt.Store, sectors *abi.BitField) ([]*Sec
 // Loads info for a set of sectors to be proven.
 // If any of the sectors are declared faulty and not to be recovered, info for the first non-faulty sector is substituted instead.
 // If any of the sectors are declared recovered, they are returned from this method.
-func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults *abi.BitField) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expectedFaults bitfield.BitField) ([]*SectorOnChainInfo, error) {
 	nonFaults, err := bitfield.SubtractBitField(provenSectors, expectedFaults)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to diff bitfields: %w", err)
@@ -673,7 +683,7 @@ func (st *State) LoadSectorInfosForProof(store adt.Store, provenSectors, expecte
 }
 
 // Loads sector info for a sequence of sectors, substituting info for a stand-in sector for any that are faulty.
-func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors *abi.BitField, faults *abi.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
+func (st *State) LoadSectorInfosWithFaultMask(store adt.Store, sectors bitfield.BitField, faults bitfield.BitField, faultStandIn abi.SectorNumber) ([]*SectorOnChainInfo, error) {
 	sectorArr, err := LoadSectors(store, st.Sectors)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load sectors array: %w", err)
@@ -730,6 +740,26 @@ func (st *State) SaveDeadlines(store adt.Store, deadlines *Deadlines) error {
 	return nil
 }
 
+// LoadVestingFunds loads the vesting funds table from the store
+func (st *State) LoadVestingFunds(store adt.Store) (*VestingFunds, error) {
+	var funds VestingFunds
+	if err := store.Get(store.Context(), st.VestingFunds, &funds); err != nil {
+		return nil, xerrors.Errorf("failed to load vesting funds (%s): %w", st.VestingFunds, err)
+	}
+
+	return &funds, nil
+}
+
+// SaveVestingFunds saves the vesting table to the store
+func (st *State) SaveVestingFunds(store adt.Store, funds *VestingFunds) error {
+	c, err := store.Put(store.Context(), funds)
+	if err != nil {
+		return err
+	}
+	st.VestingFunds = c
+	return nil
+}
+
 //
 // Funds and vesting
 //
@@ -748,54 +778,30 @@ func (st *State) AddInitialPledgeRequirement(amount abi.TokenAmount) {
 	st.InitialPledgeRequirement = newTotal
 }
 
-func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) error {
+// AddLockedFunds first vests and unlocks the vested funds AND then locks the given funds in the vesting table.
+func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) (vested abi.TokenAmount, err error) {
 	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+
+	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
-		return err
+		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
 	}
 
-	// Quantization is aligned with when regular cron will be invoked, in the last epoch of deadlines.
-	vestBegin := currEpoch + spec.InitialDelay // Nothing unlocks here, this is just the start of the clock.
-	vestPeriod := big.NewInt(int64(spec.VestPeriod))
-	vestedSoFar := big.Zero()
-	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quantizeUp(e, spec.Quantization, st.ProvingPeriodStart)
-		elapsed := vestEpoch - vestBegin
+	// unlock vested funds first
+	amountUnlocked := vestingFunds.unlockVestedFunds(currEpoch)
+	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
+	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
 
-		targetVest := big.Zero() //nolint:ineffassign
-		if elapsed < spec.VestPeriod {
-			// Linear vesting, PARAM_FINISH
-			targetVest = big.Div(big.Mul(vestingSum, big.NewInt(int64(elapsed))), vestPeriod)
-		} else {
-			targetVest = vestingSum
-		}
-
-		vestThisTime := big.Sub(targetVest, vestedSoFar)
-		vestedSoFar = targetVest
-
-		// Load existing entry, else set a new one
-		key := EpochKey(vestEpoch)
-		lockedFundEntry := big.Zero()
-		_, err = vestingFunds.Get(key, &lockedFundEntry)
-		if err != nil {
-			return err
-		}
-
-		lockedFundEntry = big.Add(lockedFundEntry, vestThisTime)
-		err = vestingFunds.Set(key, &lockedFundEntry)
-		if err != nil {
-			return err
-		}
-	}
-
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return err
-	}
+	// add locked funds now
+	vestingFunds.addLockedFunds(currEpoch, vestingSum, st.ProvingPeriodStart, spec)
 	st.LockedFunds = big.Add(st.LockedFunds, vestingSum)
 
-	return nil
+	// save the updated vesting table state
+	if err := st.SaveVestingFunds(store, vestingFunds); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to save vesting funds: %w", err)
+	}
+
+	return amountUnlocked, nil
 }
 
 // PenalizeFundsInPriorityOrder first unlocks unvested funds from the vesting table.
@@ -824,52 +830,18 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 // The soonest-vesting entries are unlocked first.
 // Returns the amount actually unlocked.
 func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
-		return big.Zero(), err
+		return big.Zero(), xerrors.Errorf("failed tp load vesting funds: %w", err)
 	}
 
-	amountUnlocked := abi.NewTokenAmount(0)
-	lockedEntry := abi.NewTokenAmount(0)
-	var toDelete []uint64
-	var finished = fmt.Errorf("finished")
-
-	// Iterate vestingFunds are in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		if amountUnlocked.LessThan(target) {
-			if k >= int64(currEpoch) {
-				unlockAmount := big.Min(big.Sub(target, amountUnlocked), lockedEntry)
-				amountUnlocked = big.Add(amountUnlocked, unlockAmount)
-				lockedEntry = big.Sub(lockedEntry, unlockAmount)
-
-				if lockedEntry.IsZero() {
-					toDelete = append(toDelete, uint64(k))
-				} else {
-					if err = vestingFunds.Set(uint64(k), &lockedEntry); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		} else {
-			return finished
-		}
-	})
-
-	if err != nil && err != finished {
-		return big.Zero(), err
-	}
-
-	err = vestingFunds.BatchDelete(toDelete)
-	if err != nil {
-		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during slash: %v", err)
-	}
+	amountUnlocked := vestingFunds.unlockUnvestedFunds(currEpoch, target)
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds, err = vestingFunds.Root()
-	if err != nil {
-		return big.Zero(), err
+
+	if err := st.SaveVestingFunds(store, vestingFunds); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to save vesting funds: %w", err)
 	}
 
 	return amountUnlocked, nil
@@ -878,41 +850,18 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 // Unlocks all vesting funds that have vested before the provided epoch.
 // Returns the amount unlocked.
 func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
-		return big.Zero(), err
+		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
 	}
 
-	amountUnlocked := abi.NewTokenAmount(0)
-	lockedEntry := abi.NewTokenAmount(0)
-	var toDelete []uint64
-	var finished = fmt.Errorf("finished")
-
-	// Iterate vestingFunds  in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		if k < int64(currEpoch) {
-			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
-			toDelete = append(toDelete, uint64(k))
-		} else {
-			return finished // stop iterating
-		}
-		return nil
-	})
-
-	if err != nil && err != finished {
-		return big.Zero(), err
-	}
-
-	err = vestingFunds.BatchDelete(toDelete)
-	if err != nil {
-		return big.Zero(), errors.Wrapf(err, "failed to delete locked fund during vest: %v", err)
-	}
-
+	amountUnlocked := vestingFunds.unlockVestedFunds(currEpoch)
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	st.VestingFunds, err = vestingFunds.Root()
+
+	err = st.SaveVestingFunds(store, vestingFunds)
 	if err != nil {
-		return big.Zero(), err
+		return big.Zero(), xerrors.Errorf("failed to save vesing funds: %w", err)
 	}
 
 	return amountUnlocked, nil
@@ -920,29 +869,26 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 
 // CheckVestedFunds returns the amount of vested funds that have vested before the provided epoch.
 func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
-	vestingFunds, err := adt.AsArray(store, st.VestingFunds)
+	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
-		return big.Zero(), err
+		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
 	}
 
-	amountUnlocked := abi.NewTokenAmount(0)
-	lockedEntry := abi.NewTokenAmount(0)
-	var finished = fmt.Errorf("finished")
+	amountVested := abi.NewTokenAmount(0)
 
-	// Iterate vestingFunds  in order of release.
-	err = vestingFunds.ForEach(&lockedEntry, func(k int64) error {
-		if k < int64(currEpoch) {
-			amountUnlocked = big.Add(amountUnlocked, lockedEntry)
-		} else {
-			return finished // stop iterating
+	for i := range vestingFunds.Funds {
+		vf := vestingFunds.Funds[i]
+		epoch := vf.Epoch
+		amount := vf.Amount
+
+		if epoch >= currEpoch {
+			break
 		}
-		return nil
-	})
-	if err != nil && err != finished {
-		return big.Zero(), err
+
+		amountVested = big.Add(amountVested, amount)
 	}
 
-	return amountUnlocked, nil
+	return amountVested, nil
 }
 
 // Unclaimed funds that are not locked -- includes funds used to cover initial pledge requirement
@@ -970,16 +916,77 @@ func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
 	return available.GreaterThanEqual(st.InitialPledgeRequirement)
 }
 
+// pre-commit expiry
+func (st *State) QuantSpecEveryDeadline() QuantSpec {
+	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+}
+
+func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch, sectorNum abi.SectorNumber) error {
+	// Load BitField Queue for sector expiry
+	quant := st.QuantSpecEveryDeadline()
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+	if err != nil {
+		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
+	}
+
+	// add entry for this sector to the queue
+	if err := queue.AddToQueueValues(expireEpoch, uint64(sectorNum)); err != nil {
+		return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
+	}
+
+	st.PreCommittedSectorsExpiry, err = queue.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to save pre-commit sector queue: %w", err)
+	}
+
+	return nil
+}
+
+func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (depositToBurn abi.TokenAmount, err error) {
+	depositToBurn = abi.NewTokenAmount(0)
+
+	var precommitsToDelete []abi.SectorNumber
+	if err = sectors.ForEach(func(i uint64) error {
+		sectorNo := abi.SectorNumber(i)
+		sector, found, err := st.GetPrecommittedSector(store, sectorNo)
+		if err != nil {
+			return err
+		}
+		if !found {
+			// already committed/deleted
+			return nil
+		}
+
+		// mark it for deletion
+		precommitsToDelete = append(precommitsToDelete, sectorNo)
+
+		// increment deposit to burn
+		depositToBurn = big.Add(depositToBurn, sector.PreCommitDeposit)
+		return nil
+	}); err != nil {
+		return big.Zero(), xerrors.Errorf("failed to check pre-commit expiries: %w", err)
+	}
+
+	// Actually delete it.
+	if len(precommitsToDelete) > 0 {
+		if err := st.DeletePrecommittedSectors(store, precommitsToDelete...); err != nil {
+			return big.Zero(), fmt.Errorf("failed to delete pre-commits: %w", err)
+		}
+	}
+
+	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
+	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
+
+	// This deposit was locked separately to pledge collateral so there's no pledge change here.
+	return depositToBurn, nil
+}
+
 //
 // Misc helpers
 //
 
 func SectorKey(e abi.SectorNumber) adt.Keyer {
 	return adt.UIntKey(uint64(e))
-}
-
-func EpochKey(e abi.ChainEpoch) uint64 {
-	return uint64(e)
 }
 
 func init() {
