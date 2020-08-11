@@ -19,6 +19,7 @@ import (
 
 // genesis power in bytes = 750,000 GiB
 var InitialQAPowerEstimatePosition = big.Mul(big.NewInt(750_000), big.NewInt(1<<30))
+
 // max chain throughput in bytes per epoch = 120 ProveCommits / epoch = 3,840 GiB
 var InitialQAPowerEstimateVelocity = big.Mul(big.NewInt(3_840), big.NewInt(1<<30))
 
