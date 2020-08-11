@@ -477,7 +477,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "sector %v already committed", params.SectorNumber)
 		}
 
-		validateExpiration(rt, rt.CurrEpoch(), params.Expiration, params.SealProof)
+		// Require sector lifetime meets minimum by assuming activation happens at last epoch permitted for seal proof.
+		// This could make sector maximum lifetime validation more lenient if the maximum sector limit isn't hit first.
+		maxActivation := rt.CurrEpoch() + MaxSealDuration[params.SealProof]
+		validateExpiration(rt, maxActivation, params.Expiration, params.SealProof)
 
 		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
@@ -679,6 +682,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			// compute initial pledge
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
+
+			// This should have been caught in precommit, but don't let other sectors fail because of it.
+			if duration < MinSectorExpiration {
+				rt.Log(vmr.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
+				continue
+			}
+
 			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
 			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)

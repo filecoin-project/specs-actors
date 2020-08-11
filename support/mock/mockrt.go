@@ -1005,6 +1005,10 @@ func (rt *Runtime) ExpectLogsContain(substr string) {
 	rt.failTest("logs contain %d message(s) and do not contain \"%s\"", len(rt.logs), substr)
 }
 
+func (rt *Runtime) ClearLogs() {
+	rt.logs = []string{}
+}
+
 func (rt *Runtime) ExpectGasCharged(gas int64) {
 	if gas != rt.gasCharged {
 		rt.failTest("expected gas charged: %d, actual gas charged: %d", gas, rt.gasCharged)
