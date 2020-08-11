@@ -69,7 +69,7 @@ func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, er
 	// send 0 balance to the account so an ID address for it is created and then try to resolve
 	_, code := rt.Send(address, MethodSend, nil, abi.NewTokenAmount(0))
 	if !code.IsSuccess() {
-		return address, fmt.Errorf("failed to send zero balance to account %v, got code %v", address, code)
+		return address, code.Wrapf("failed to send zero balance to address %v", address)
 	}
 
 	// now try to resolve it to an ID address -> fail if not possible
