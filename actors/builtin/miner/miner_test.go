@@ -361,6 +361,19 @@ func TestCommitments(t *testing.T) {
 			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
 		})
 		rt.Reset()
+
+		// Try to precommit while in IP debt
+		st := getState(rt)
+		oldIPReqs := st.InitialPledgeRequirement
+		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+		})
+		// reset state back to normal
+		st.InitialPledgeRequirement = oldIPReqs
+		rt.ReplaceState(st)
+		rt.Reset()
 	})
 
 	t.Run("valid committed capacity upgrade", func(t *testing.T) {
@@ -1349,6 +1362,60 @@ func TestDeclareFaults(t *testing.T) {
 
 		advanceDeadline(rt, actor, &cronConfig{
 			ongoingFaultsPenalty: ongoingPenalty,
+		})
+	})
+}
+
+func TestDeclareRecoveries(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("recovery happy path", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		// advance to first proving period and submit so we'll have time to declare the fault next cycle
+		advanceAndSubmitPoSts(rt, actor, oneSector...)
+
+		// Declare the sector as faulted
+		actor.declareFaults(rt, oneSector...)
+
+		// Delcare recoveries updates state
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
+		require.NoError(t, err)
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+
+		dl := actor.getDeadline(rt, dlIdx)
+		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
+		require.NoError(t, err)
+		assert.Equal(t, p.Faults, p.Recoveries)
+	})
+
+	t.Run("recovery fails when in IP debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		// advance to first proving period and submit so we'll have time to declare the fault next cycle
+		advanceAndSubmitPoSts(rt, actor, oneSector...)
+
+		// Declare the sector as faulted
+		actor.declareFaults(rt, oneSector...)
+
+		// Get into IP debt
+		st := getState(rt)
+		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+
+		// Attempt to recover
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
+		require.NoError(t, err)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
 		})
 	})
 }
