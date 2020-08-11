@@ -1,4 +1,4 @@
-package scenarios
+package vm_test
 
 import (
 	"context"
@@ -18,7 +18,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-// VM holds the state and executes messages over the state.
+// VM is a simplified message execution framework for the purposes of testing inter-actor communication.
+// The VM maintains actor state and can be used to simulate message validation for a single block or tipset.
+// The VM does not track gas charges, provide working syscalls, validate message nonces and many other things
+// that a compliant VM needs to do.
 type VM struct {
 	ctx   context.Context
 	store adt.Store
@@ -26,7 +29,7 @@ type VM struct {
 	currentEpoch abi.ChainEpoch
 
 	actorImpls  ActorImplLookup
-	actorRoot   cid.Cid  // The last committed root.
+	stateRoot   cid.Cid  // The last committed root.
 	actors      *adt.Map // The current (not necessarily committed) root node.
 	actorsDirty bool
 
@@ -37,6 +40,7 @@ type VM struct {
 
 // VM types
 
+// Simplifed actor implementation that does not contain message nonce.
 type TestActor struct {
 	Head    cid.Cid
 	Code    cid.Cid
@@ -74,7 +78,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		actorImpls:  actorImpls,
 		store:       store,
 		actors:      actors,
-		actorRoot:   actorRoot,
+		stateRoot:   actorRoot,
 		actorsDirty: false,
 		emptyObject: emptyObject,
 	}
@@ -88,7 +92,7 @@ func (vm *VM) rollback(root cid.Cid) error {
 	}
 
 	// reset the root node
-	vm.actorRoot = root
+	vm.stateRoot = root
 	vm.actorsDirty = false
 	return nil
 }
@@ -142,16 +146,12 @@ func (vm *VM) deleteActor(ctx context.Context, key address.Address) error {
 }
 
 func (vm *VM) checkpoint() (cid.Cid, error) {
-	return vm.commit()
-}
-
-func (vm *VM) commit() (cid.Cid, error) {
 	// commit the vm state
 	root, err := vm.actors.Root()
 	if err != nil {
 		return cid.Undef, err
 	}
-	vm.actorRoot = root
+	vm.stateRoot = root
 	vm.actorsDirty = false
 
 	return root, nil

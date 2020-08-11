@@ -1,4 +1,4 @@
-package scenarios
+package vm_test
 
 import (
 	"bytes"

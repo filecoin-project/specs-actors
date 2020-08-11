@@ -1,10 +1,11 @@
-package scenarios_test
+package test_test
 
 import (
 	"context"
 	initactor "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	vm2 "github.com/filecoin-project/specs-actors/support/vm"
 	"github.com/stretchr/testify/require"
 	"testing"
 
@@ -13,15 +14,13 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/support/testing/scenarios"
-
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCreateMiner(t *testing.T) {
 	ctx := context.Background()
-	vm := scenarios.NewVMWithSingletons(ctx, t)
-	addrs := scenarios.CreateAccounts(ctx, t, vm, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
+	vm := vm2.NewVMWithSingletons(ctx, t)
+	addrs := vm2.CreateAccounts(ctx, t, vm, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
 
 	params := power.CreateMinerParams{
 		Owner:         addrs[0],

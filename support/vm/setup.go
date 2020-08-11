@@ -1,4 +1,4 @@
-package scenarios
+package vm_test
 
 import (
 	"context"
@@ -79,7 +79,7 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	rootVerifierState := &account.State{Address: rootVerifier.pubAddr}
 	initializeActor(ctx, t, vm, rootVerifierState, builtin.AccountActorCodeID, rootVerifier.idAddr, big.Zero())
 
-	_, err = vm.commit()
+	_, err = vm.checkpoint()
 	require.NoError(t, err)
 
 	return vm
