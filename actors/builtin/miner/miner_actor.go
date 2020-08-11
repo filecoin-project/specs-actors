@@ -2155,6 +2155,8 @@ func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
 	if !ok {
 		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
 	}
+	// The sector will actually be active for the period between activation and its next proving deadline,
+	// but this covers the period for which we will be looking to the old sector for termination fees.
 	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
 }
 
