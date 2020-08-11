@@ -355,7 +355,7 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// Seal randomness challenge too far in past 
+		// Seal randomness challenge too far in past
 		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxSealDuration[actor.sealProofType] - 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
@@ -2343,7 +2343,7 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 
 func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	param := &miner.ChangePeerIDParams{NewID: newPID}
-	rt.ExpectValidateCallerAddr(h.worker)
+	rt.ExpectValidateCallerAddr(h.worker, h.owner)
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 
 	rt.Call(h.a.ChangePeerID, param)
