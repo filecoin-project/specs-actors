@@ -167,6 +167,9 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
+		// Only the Owner is allowed to change the worker address.
+		// Allowing the worker to do this does not make sense because the owner would usually do it
+		// only if the worker keys are lost.
 		rt.ValidateImmediateCallerIs(info.Owner)
 
 		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
@@ -1343,6 +1346,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	rt.State().Transaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
+		// Only the owner is allowed to withdraw the balance as it belongs to/is controlled by the owner
+		// and not the worker.
 		rt.ValidateImmediateCallerIs(info.Owner)
 		// Ensure we don't have any pending terminations.
 		if count, err := st.EarlyTerminations.Count(); err != nil {

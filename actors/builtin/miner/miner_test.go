@@ -1988,6 +1988,42 @@ func TestCompactSectorNumbers(t *testing.T) {
 		}
 	})
 
+	t.Run("owner can also compact sectors", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+
+		rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
+		})
+		rt.Verify()
+	})
+
+	t.Run("fail if caller is neither owner nor worker", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		rAddr := tutil.NewIDAddr(t, 999)
+		rt.SetCaller(rAddr, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+				MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
+			})
+		})
+
+		rt.Verify()
+	})
+
 	t.Run("compacting no sector numbers aborts", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
