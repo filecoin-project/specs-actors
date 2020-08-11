@@ -1846,23 +1846,20 @@ func TestTerminateSectors(t *testing.T) {
 			Build(t)
 		actor.constructAndVerify(rt)
 
-		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
-		// correct fee calculation is used.
+		// Add some locked funds to ensure full termination fee appears as pledge change.
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
 
 		// Move the current epoch forward so that the first deadline is a stable candidate for both sectors
 		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
 
 		// Commit a sector to upgrade
-		// Use the max sector number to make sure everything works.
-		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
+		oldSector := actor.commitAndProveSector(rt, 1, defaultSectorExpiration, nil)
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
 
-		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
-		actor.epochReward = big.Div(actor.epochReward, big.NewInt(2))
-		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(actor.epochReward)
+		// advance clock so upgrade happens later
+		rt.SetEpoch(rt.Epoch() + 10_000)
 
 		challengeEpoch := rt.Epoch() - 1
 		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
@@ -1882,16 +1879,17 @@ func TestTerminateSectors(t *testing.T) {
 		assert.Equal(t, rt.Epoch()-oldSector.Activation, newSector.ReplacedSectorAge)
 
 		// advance clock a little and terminate new sector
-		rt.SetEpoch(rt.Epoch() + 100)
+		rt.SetEpoch(rt.Epoch() + 5_000)
 		sectorPower := miner.QAPowerForSector(actor.sectorSize, newSector)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
-		sectorAge := rt.Epoch() - newSector.Activation
+		newSectorAge := rt.Epoch() - newSector.Activation
+		oldSectorAge := newSector.Activation - oldSector.Activation
 		expectedFee := miner.PledgePenaltyForTermination(
 			newSector.ExpectedDayReward,
 			oldSector.ExpectedDayReward,
 			twentyDayReward,
-			sectorAge,
-			newSector.Activation-oldSector.Activation,
+			newSectorAge,
+			oldSectorAge,
 			actor.epochRewardSmooth,
 			actor.epochQAPowerSmooth,
 			sectorPower)
