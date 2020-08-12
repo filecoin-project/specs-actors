@@ -48,6 +48,7 @@ var _ abi.Invokee = Actor{}
 type MinerConstructorParams struct {
 	Owner         addr.Address
 	Worker        addr.Address
+	ControlAddrs  []addr.Address
 	SealProofType abi.RegisteredSealProof
 	Peer          abi.PeerID
 	Multiaddrs    []abi.Multiaddrs
