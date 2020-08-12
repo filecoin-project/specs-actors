@@ -85,9 +85,8 @@ type MinerInfo struct {
 	// The associated pubkey-type address is used to sign blocks and messages on behalf of this miner.
 	Worker addr.Address // Must be an ID-address.
 
-	// ControlAddresses are miner control addresses that are used to submit messages.
-	// They must ALL be ID addresses.
-	ControlAddresses []addr.Address
+	// Additional addresses that are permitted to submit messages controlling this actor (optional).
+	ControlAddresses []addr.Address // Must all be ID addresses.
 
 	PendingWorkerKey *WorkerKeyChange
 

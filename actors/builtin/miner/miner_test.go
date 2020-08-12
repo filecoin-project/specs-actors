@@ -171,15 +171,8 @@ func TestConstruction(t *testing.T) {
 
 	t.Run("fails if control address is not an account actor", func(t *testing.T) {
 		control1 := tutil.NewIDAddr(t, 501)
-		builder := mock.NewBuilder(context.Background(), receiver).
-			WithActorType(owner, builtin.AccountActorCodeID).
-			WithActorType(worker, builtin.AccountActorCodeID).
-			WithActorType(controlAddrs[0], builtin.AccountActorCodeID).
-			WithActorType(controlAddrs[1], builtin.AccountActorCodeID).
-			WithHasher(blake2b.Sum256).
-			WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
-
-		rt := builder.WithActorType(control1, builtin.MultisigActorCodeID).Build(t)
+		rt := builder.Build(t)
+		rt.SetAddressActorType(control1, builtin.PaymentChannelActorCodeID)
 
 		params := miner.ConstructorParams{
 			OwnerAddr:    owner,

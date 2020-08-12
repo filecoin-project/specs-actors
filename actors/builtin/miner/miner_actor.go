@@ -91,7 +91,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
 	}
 
-	owner := resolveOwnerAddress(rt, params.OwnerAddr)
+	owner := resolveControlAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 	controlAddrs := make([]addr.Address, 0, len(params.ControlAddrs))
 	for _, ca := range params.ControlAddrs {
@@ -208,8 +208,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		info.PeerId = params.NewID
 		err := st.SaveInfo(adt.AsStore(rt), info)
@@ -229,8 +228,7 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		info.Multiaddrs = params.NewMultiaddrs
 		err := st.SaveInfo(adt.AsStore(rt), info)
@@ -298,8 +296,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	rt.State().Transaction(&st, func() {
 		info = getMinerInfo(rt, &st)
 
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		// Validate that the miner didn't try to prove too many partitions at once.
 		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
@@ -464,8 +461,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		if params.SealProof != info.SealProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
@@ -840,8 +836,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -993,8 +988,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		info := getMinerInfo(rt, &st)
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1077,8 +1071,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	newFaultPowerTotal := NewPowerPairZero()
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1150,8 +1143,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1212,8 +1204,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		if !deadlineIsMutable(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
@@ -1276,8 +1267,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		err := st.MaskSectorNumbers(store, params.MaskSectorNumbers)
 
@@ -1301,8 +1291,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 	rt.State().Transaction(&st, func() {
 		var err error
 		info := getMinerInfo(rt, &st)
-		allowed := append(info.ControlAddresses, info.Owner, info.Worker, builtin.RewardActorAddr)
-		rt.ValidateImmediateCallerIs(allowed...)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker, builtin.RewardActorAddr)...)
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
 		// This ensures that the amountToLock is always locked up if the miner account
@@ -2006,7 +1995,7 @@ func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.
-func resolveOwnerAddress(rt Runtime, raw addr.Address) addr.Address {
+func resolveControlAddress(rt Runtime, raw addr.Address) addr.Address {
 	resolved, ok := rt.ResolveAddress(raw)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
@@ -2020,22 +2009,6 @@ func resolveOwnerAddress(rt Runtime, raw addr.Address) addr.Address {
 	if !builtin.IsPrincipal(ownerCode) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "owner actor type must be a principal, was %v", ownerCode)
 	}
-	return resolved
-}
-
-// Resolves a control address to an ID address and verifies that it is address of an account actor.
-func resolveControlAddress(rt Runtime, raw addr.Address) addr.Address {
-	resolved, err := builtin.ResolveToIDAddr(rt, raw)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve control address: %v", raw)
-
-	code, ok := rt.GetActorCodeCID(resolved)
-	if !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
-	}
-	if code != builtin.AccountActorCodeID {
-		rt.Abortf(exitcode.ErrIllegalArgument, "control actor type must be an account actor, was %v", code)
-	}
-
 	return resolved
 }
 
