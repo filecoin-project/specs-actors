@@ -342,7 +342,6 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 func (a Actor) processBatchProofVerifies(rt Runtime) {
 	var st State
 
-	var miners []address.Address
 	verifies := make(map[address.Address][]abi.SealVerifyInfo)
 
 	rt.State().Transaction(&st, func() {
@@ -356,8 +355,6 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 		err = mmap.ForAll(func(k string, arr *adt.Array) error {
 			a, err := address.NewFromBytes([]byte(k))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to parse address key")
-
-			miners = append(miners, a)
 
 			var infos []abi.SealVerifyInfo
 			var svi abi.SealVerifyInfo
@@ -378,13 +375,11 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	res, err := rt.Syscalls().BatchVerifySeals(verifies)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
 
-	for _, m := range miners {
+	for m, verifs := range verifies {
 		vres, ok := res[m]
 		if !ok {
 			rt.Abortf(exitcode.ErrNotFound, "batch verify seals syscall implemented incorrectly")
 		}
-
-		verifs := verifies[m]
 
 		seen := map[abi.SectorNumber]struct{}{}
 		var successful []abi.SectorNumber
