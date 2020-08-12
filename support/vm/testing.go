@@ -135,6 +135,11 @@ type objectExpectation struct {
 	val runtime.CBORMarshaler
 }
 
+func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount }
+func ExpectAddress(addr address.Address) *address.Address      { return &addr }
+func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(runtime.CBORBytes(b)) }
+func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
+
 // match by cbor encoding to avoid inconsistencies in internal representations of effectively equal objects
 func (oe objectExpectation) matches(obj interface{}) bool {
 	if oe.val == nil || obj == nil {
@@ -193,7 +198,7 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	if ei.SubInvocations != nil {
 		for i, invk := range invocation.SubInvocations {
 			subidentifier := fmt.Sprintf("%s%d:", identifier, i)
-			require.Len(t, ei.SubInvocations, i+1, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
+			require.Greater(t, len(ei.SubInvocations), i, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
 			ei.SubInvocations[i].matches(t, subidentifier, invk)
 		}
 		missingInvocations := len(ei.SubInvocations) - len(invocation.SubInvocations)
@@ -209,7 +214,18 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	if ei.Ret != nil {
 		assert.True(t, ei.Ret.matches(invocation.Ret), "%s unexpected return value (%v != %v)", identifier, ei.Ret, invocation.Ret)
 	}
+}
 
+func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
+	invocations := vm.Invocations()
+	var invocation *Invocation
+	for _, idx := range idxs {
+		require.Greater(t, len(invocations), idx)
+		invocation = invocations[idx]
+		invocations = invocation.SubInvocations
+	}
+	require.NotNil(t, invocation)
+	return invocation.Msg.params
 }
 
 //

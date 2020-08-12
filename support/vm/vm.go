@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
@@ -91,6 +90,29 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		actorsDirty: false,
 		emptyObject: emptyObject,
 	}
+}
+
+func (vm *VM) NewVMAtEpoch(epoch abi.ChainEpoch) (*VM, error) {
+	_, err := vm.checkpoint()
+	if err != nil {
+		return nil, err
+	}
+
+	actors, err := adt.AsMap(vm.store, vm.stateRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	return &VM{
+		ctx:          vm.ctx,
+		actorImpls:   vm.actorImpls,
+		store:        vm.store,
+		actors:       actors,
+		stateRoot:    vm.stateRoot,
+		actorsDirty:  false,
+		emptyObject:  vm.emptyObject,
+		currentEpoch: epoch,
+	}, nil
 }
 
 func (vm *VM) rollback(root cid.Cid) error {
@@ -215,18 +237,6 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		return nil, exitcode.SysErrSenderInvalid
 	}
 
-	if !fromActor.Code.Equals(builtin.AccountActorCodeID) {
-		// Execution error; sender is not an account.
-		return nil, exitcode.SysErrSenderInvalid
-	}
-
-	// Load sender account state to obtain stable pubkey address.
-	var senderState account.State
-	err = vm.store.Get(vm.ctx, fromActor.Head, &senderState)
-	if err != nil {
-		panic(err)
-	}
-
 	// checkpoint state
 	// Even if the message fails, the following accumulated changes will be applied:
 	// - CallSeqNumber increment
@@ -242,8 +252,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// 3. process the msg
 
 	topLevel := topLevelContext{
-		originatorStableAddress: senderState.Address,
-		newActorAddressCount:    0,
+		newActorAddressCount: 0,
 	}
 
 	// build internal msg
