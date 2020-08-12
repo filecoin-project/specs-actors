@@ -34,6 +34,9 @@ var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay
 // Maximum number of days of BR a terminated sector can be penalized
 const TerminationLifetimeCap = abi.ChainEpoch(70)
 
+// Number of whole block rewards covered by consensus fault penalty
+const ConsensusFaultFactor = 5
+
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
@@ -132,4 +135,11 @@ func VerifyPledgeRequirementsAndRepayDebts(rt Runtime, st *State) abi.TokenAmoun
 		rt.Abortf(exitcode.ErrInsufficientFunds, "unlocked balance does not cover pledge requirements")
 	}
 	return toBurn
+}
+
+func ConsensusFaultPenalty(thisEpochReward abi.TokenAmount) abi.TokenAmount {
+	return big.Div(
+		big.Mul(thisEpochReward, big.NewInt(ConsensusFaultFactor)),
+		big.NewInt(builtin.ExpectedLeadersPerEpoch),
+	)
 }
