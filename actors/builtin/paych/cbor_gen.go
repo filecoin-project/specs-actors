@@ -64,19 +64,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.LaneStates ([]*paych.LaneState) (slice)
-	if len(t.LaneStates) > cbg.MaxLength {
-		return xerrors.Errorf("Slice value in field t.LaneStates was too long")
+	// t.LaneStates (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.LaneStates); err != nil {
+		return xerrors.Errorf("failed to write cid field t.LaneStates: %w", err)
 	}
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.LaneStates))); err != nil {
-		return err
-	}
-	for _, v := range t.LaneStates {
-		if err := v.MarshalCBOR(w); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -175,39 +168,22 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		t.MinSettleHeight = abi.ChainEpoch(extraI)
 	}
-	// t.LaneStates ([]*paych.LaneState) (slice)
+	// t.LaneStates (cid.Cid) (struct)
 
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.MaxLength {
-		return fmt.Errorf("t.LaneStates: array too large (%d)", extra)
-	}
-
-	if maj != cbg.MajArray {
-		return fmt.Errorf("expected cbor array")
-	}
-
-	if extra > 0 {
-		t.LaneStates = make([]*LaneState, extra)
-	}
-
-	for i := 0; i < int(extra); i++ {
-
-		var v LaneState
-		if err := v.UnmarshalCBOR(br); err != nil {
-			return err
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.LaneStates: %w", err)
 		}
 
-		t.LaneStates[i] = &v
-	}
+		t.LaneStates = c
 
+	}
 	return nil
 }
 
-var lengthBufLaneState = []byte{131}
+var lengthBufLaneState = []byte{130}
 
 func (t *LaneState) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -219,12 +195,6 @@ func (t *LaneState) MarshalCBOR(w io.Writer) error {
 	}
 
 	scratch := make([]byte, 9)
-
-	// t.ID (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ID)); err != nil {
-		return err
-	}
 
 	// t.Redeemed (big.Int) (struct)
 	if err := t.Redeemed.MarshalCBOR(w); err != nil {
@@ -254,24 +224,10 @@ func (t *LaneState) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.ID (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ID = uint64(extra)
-
-	}
 	// t.Redeemed (big.Int) (struct)
 
 	{
