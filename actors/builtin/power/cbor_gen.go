@@ -890,12 +890,12 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 
 	scratch := make([]byte, 9)
 
-	// t.OwnerAddr (address.Address) (struct)
+	// t.Owner (address.Address) (struct)
 	if err := t.Owner.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.WorkerAddr (address.Address) (struct)
+	// t.Worker (address.Address) (struct)
 	if err := t.Worker.MarshalCBOR(w); err != nil {
 		return err
 	}
@@ -911,9 +911,9 @@ func (t *MinerConstructorParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.PeerId ([]uint8) (slice)
+	// t.Peer ([]uint8) (slice)
 	if len(t.Peer) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.PeerId was too long")
+		return xerrors.Errorf("Byte array in field t.Peer was too long")
 	}
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Peer))); err != nil {
@@ -966,21 +966,21 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.OwnerAddr (address.Address) (struct)
+	// t.Owner (address.Address) (struct)
 
 	{
 
 		if err := t.Owner.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.OwnerAddr: %w", err)
+			return xerrors.Errorf("unmarshaling t.Owner: %w", err)
 		}
 
 	}
-	// t.WorkerAddr (address.Address) (struct)
+	// t.Worker (address.Address) (struct)
 
 	{
 
 		if err := t.Worker.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.WorkerAddr: %w", err)
+			return xerrors.Errorf("unmarshaling t.Worker: %w", err)
 		}
 
 	}
@@ -1009,7 +1009,7 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 
 		t.SealProofType = abi.RegisteredSealProof(extraI)
 	}
-	// t.PeerId ([]uint8) (slice)
+	// t.Peer ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
@@ -1017,7 +1017,7 @@ func (t *MinerConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.PeerId: byte array too large (%d)", extra)
+		return fmt.Errorf("t.Peer: byte array too large (%d)", extra)
 	}
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
