@@ -374,7 +374,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
 		// Note: this is slightly sub-optimal, loading info for the recovering sectors again after they were already
 		// loaded above.
-		sectorInfos, err := st.LoadSectorInfosForProof(store, postResult.Sectors, postResult.IgnoredSectors)
+		sectorInfos, err := sectors.LoadForProof(postResult.Sectors, postResult.IgnoredSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		// Skip verification if all sectors are faults.
