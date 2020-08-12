@@ -164,36 +164,64 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 }
 
 type ChangeWorkerAddressParams struct {
-	NewWorker addr.Address
+	NewWorker       addr.Address
+	NewControlAddrs []addr.Address
 }
 
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
-	worker := resolveWorkerAddress(rt, params.NewWorker)
+
+	worker := addr.Undef
+	if params.NewWorker != addr.Undef {
+		worker = resolveWorkerAddress(rt, params.NewWorker)
+	}
+
+	controlAddrs := make([]addr.Address, 0, len(params.NewControlAddrs))
+	for _, ca := range params.NewControlAddrs {
+		resolved := resolveControlAddress(rt, ca)
+		controlAddrs = append(controlAddrs, resolved)
+	}
+
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		// Only the Owner is allowed to change the worker address.
-		// Allowing the worker to do this does not make sense because the owner would usually do it
-		// only if the worker keys are lost.
+		// Only the Owner is allowed to change the worker and control addresses.
 		rt.ValidateImmediateCallerIs(info.Owner)
 
-		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
-
-		// This may replace another pending key change.
-		info.PendingWorkerKey = &WorkerKeyChange{
-			NewWorker:   worker,
-			EffectiveAt: effectiveEpoch,
+		{
+			// save the new control addresses
+			if len(controlAddrs) != 0 {
+				info.ControlAddresses = controlAddrs
+			}
 		}
+
+		{
+			// save worker addr key change request
+			// This may replace another pending key change.
+			if worker != addr.Undef {
+				effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
+
+				info.PendingWorkerKey = &WorkerKeyChange{
+					NewWorker:   worker,
+					EffectiveAt: effectiveEpoch,
+				}
+			}
+		}
+
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 
-	cronPayload := CronEventPayload{
-		EventType: CronEventWorkerKeyChange,
+	// we only need to enroll the cron event for worker key change as we change the control
+	// addresses immediately
+	if worker != addr.Undef {
+		cronPayload := CronEventPayload{
+			EventType: CronEventWorkerKeyChange,
+		}
+		enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	}
-	enrollCronEvent(rt, effectiveEpoch, &cronPayload)
+
 	return nil
 }
 
