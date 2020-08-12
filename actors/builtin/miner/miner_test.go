@@ -1909,7 +1909,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		// set current epoch to effective epoch and ask to change the address
 		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
 
-		// assert control addresses are unchanged
+		// assert both worker and control addresses have changed
 		st := getState(rt)
 		info, err := st.GetInfo(adt.AsStore(rt))
 		require.NoError(t, err)
