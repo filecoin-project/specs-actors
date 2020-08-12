@@ -1840,7 +1840,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.SetEpoch(currentEpoch)
 
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
-		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, nil)
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
 
 		// no change if current epoch is less than effective epoch
 		rt.SetEpoch(effectiveEpoch - 1)
@@ -1880,7 +1880,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.SetAddressActorType(c1Id, builtin.AccountActorCodeID)
 		rt.SetAddressActorType(c2Id, builtin.AccountActorCodeID)
 
-		actor.changeWorkerAddress(rt, addr.Undef, abi.ChainEpoch(-1), []addr.Address{c1Id, c2NonId})
+		actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), []addr.Address{c1Id, c2NonId})
 
 		// assert there is no worker change request and worker key is unchanged
 		st := getState(rt)
@@ -1916,6 +1916,19 @@ func TestChangeWorkerAddress(t *testing.T) {
 		require.NotEmpty(t, info.ControlAddresses)
 		require.Equal(t, []addr.Address{c1, c2}, info.ControlAddresses)
 		require.Equal(t, newWorker, info.Worker)
+	})
+
+	t.Run("successfully clear all control addresses", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), nil)
+
+		// assert control addresses are cleared
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Empty(t, info.ControlAddresses)
 	})
 
 	t.Run("fails if unable to resolve control address", func(t *testing.T) {
@@ -2474,11 +2487,11 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
 
 	param := &miner.ChangeWorkerAddressParams{}
-	if len(newControlAddrs) != 0 {
-		param.NewControlAddrs = newControlAddrs
-	}
-	if newWorker != addr.Undef {
-		param.NewWorker = newWorker
+	param.NewControlAddrs = newControlAddrs
+	param.NewWorker = newWorker
+	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
+
+	if newWorker != h.worker {
 		cronPayload := miner.CronEventPayload{
 			EventType: miner.CronEventWorkerKeyChange,
 		}
@@ -2489,8 +2502,6 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 			EventEpoch: effectiveEpoch,
 			Payload:    payload.Bytes(),
 		}
-
-		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
 			cronEvt, big.Zero(), nil, exitcode.Ok)
@@ -2505,20 +2516,19 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	info, err := st.GetInfo(adt.AsStore(rt))
 	require.NoError(h.t, err)
 
-	if newWorker != addr.Undef {
+	if newWorker != h.worker {
 		require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
 		require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
 	}
 
-	if len(newControlAddrs) != 0 {
-		controlAddrs := make([]addr.Address, 0, len(newControlAddrs))
-		for _, ca := range newControlAddrs {
-			resolved, found := rt.GetIdAddr(ca)
-			require.True(h.t, found)
-			controlAddrs = append(controlAddrs, resolved)
-		}
-		require.Equal(h.t, controlAddrs, info.ControlAddresses)
+	var controlAddrs []addr.Address
+	for _, ca := range newControlAddrs {
+		resolved, found := rt.GetIdAddr(ca)
+		require.True(h.t, found)
+		controlAddrs = append(controlAddrs, resolved)
 	}
+	require.EqualValues(h.t, controlAddrs, info.ControlAddresses)
+
 }
 
 func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {

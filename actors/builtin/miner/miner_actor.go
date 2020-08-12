@@ -168,21 +168,22 @@ type ChangeWorkerAddressParams struct {
 	NewControlAddrs []addr.Address
 }
 
+// ChangeWorkerAddress will ALWAYS overwrite the existing control addresses with the control addresses passed in the params.
+// If a nil addresses slice is passed, the control addresses will be cleared.
+// A worker change will be scheduled if the worker passed in the params is different from the existing worker.
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
 
-	worker := addr.Undef
-	if params.NewWorker != addr.Undef {
-		worker = resolveWorkerAddress(rt, params.NewWorker)
-	}
+	worker := resolveWorkerAddress(rt, params.NewWorker)
 
-	controlAddrs := make([]addr.Address, 0, len(params.NewControlAddrs))
+	var controlAddrs []addr.Address
 	for _, ca := range params.NewControlAddrs {
 		resolved := resolveControlAddress(rt, ca)
 		controlAddrs = append(controlAddrs, resolved)
 	}
 
 	var st State
+	isWorkerChange := false
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
@@ -191,15 +192,14 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 
 		{
 			// save the new control addresses
-			if len(controlAddrs) != 0 {
-				info.ControlAddresses = controlAddrs
-			}
+			info.ControlAddresses = controlAddrs
 		}
 
 		{
 			// save worker addr key change request
 			// This may replace another pending key change.
-			if worker != addr.Undef {
+			if worker != info.Worker {
+				isWorkerChange = true
 				effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
 				info.PendingWorkerKey = &WorkerKeyChange{
@@ -215,7 +215,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 
 	// we only need to enroll the cron event for worker key change as we change the control
 	// addresses immediately
-	if worker != addr.Undef {
+	if isWorkerChange {
 		cronPayload := CronEventPayload{
 			EventType: CronEventWorkerKeyChange,
 		}
