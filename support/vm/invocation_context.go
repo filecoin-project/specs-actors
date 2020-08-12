@@ -30,7 +30,7 @@ var EmptyObjectCid cid.Cid
 type invocationContext struct {
 	rt                *VM
 	topLevel          *topLevelContext
-	msg               internalMessage // The message being processed
+	msg               InternalMessage // The message being processed
 	fromActor         *TestActor      // The immediate calling actor
 	toActor           *TestActor      // The actor to which message is addressed
 	emptyObject       cid.Cid
@@ -45,7 +45,7 @@ type topLevelContext struct {
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
 }
 
-func newInvocationContext(rt *VM, topLevel *topLevelContext, msg internalMessage, fromActor *TestActor, emptyObject cid.Cid) invocationContext {
+func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *TestActor, emptyObject cid.Cid) invocationContext {
 	// Note: the toActor and stateHandle are loaded during the `invoke()`
 	return invocationContext{
 		rt:                rt,
@@ -244,7 +244,7 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 	}
 	from := ic.msg.to
 	fromActor := ic.toActor
-	newMsg := internalMessage{
+	newMsg := InternalMessage{
 		from:   from,
 		to:     toAddr,
 		value:  value,
@@ -266,7 +266,7 @@ func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only have one instance of singleton actors.")
 	}
 
-	ic.rt.Log(runtime.DEBUG, "creating actor, friendly-name: %s, code: %s, addr: %s\n", builtin.ActorNameByCode(codeID), codeID, addr)
+	ic.rt.Log(runtime.DEBUG, "creating actor, friendly-name: %s, Exitcode: %s, addr: %s\n", builtin.ActorNameByCode(codeID), codeID, addr)
 
 	// Check existing address. If nothing there, create empty actor.
 	//
@@ -449,6 +449,8 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 		panic(err)
 	}
 
+	ic.rt.startInvocation(&ic.msg)
+
 	// Install handler for abort, which rolls back all state changes from this and any nested invocations.
 	// This is the only path by which a non-OK exit code may be returned.
 	defer func() {
@@ -460,6 +462,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 			case abort:
 				ic.rt.Log(runtime.WARN, "Abort during actor execution. errMsg: %v exitCode: %d sender: %v receiver; %v method: %d value %v",
 					r, r.code, ic.msg.from, ic.msg.to, ic.msg.method, ic.msg.value)
+				ic.rt.endInvocation(r.code, adt.Empty)
 				ret = returnWrapper{adt.Empty} // The Empty here should never be used, but slightly safer than zero value.
 				errcode = r.code
 				return
@@ -479,7 +482,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	// 5. create target state handle
 	// assert from address is an ID address.
 	if ic.msg.from.Protocol() != address.ID {
-		panic("bad code: sender address MUST be an ID address at invocation time")
+		panic("bad Exitcode: sender address MUST be an ID address at invocation time")
 	}
 
 	// 2. load target actor
@@ -501,6 +504,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 
 	// 4. if we are just sending funds, there is nothing else to do.
 	if ic.msg.method == builtin.MethodSend {
+		ic.rt.endInvocation(exitcode.Ok, adt.Empty)
 		return returnWrapper{adt.Empty}, exitcode.Ok
 	}
 
@@ -525,6 +529,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	ret = returnWrapper{inner: marsh}
 
 	// 3. success!
+	ic.rt.endInvocation(exitcode.Ok, marsh)
 	return ret, exitcode.Ok
 }
 
@@ -535,11 +540,11 @@ func (ic *invocationContext) dispatch(actor exported.BuiltinActor, method abi.Me
 	// get method entry
 	methodIdx := (uint64)(method)
 	if len(exports) < (int)(methodIdx) {
-		return nil, fmt.Errorf("method undefined. method: %d, code: %s", method, actor.Code())
+		return nil, fmt.Errorf("method undefined. method: %d, Exitcode: %s", method, actor.Code())
 	}
 	entry := exports[methodIdx]
 	if entry == nil {
-		return nil, fmt.Errorf("method undefined. method: %d, code: %s", method, actor.Code())
+		return nil, fmt.Errorf("method undefined. method: %d, Exitcode: %s", method, actor.Code())
 	}
 
 	ventry := reflect.ValueOf(entry)
@@ -574,7 +579,7 @@ func (ic *invocationContext) dispatch(actor exported.BuiltinActor, method abi.Me
 
 	// Note: we only support single objects being returned
 	if len(out) > 1 {
-		return nil, fmt.Errorf("actor method returned more than one object. method: %d, code: %s", method, actor.Code())
+		return nil, fmt.Errorf("actor method returned more than one object. method: %d, Exitcode: %s", method, actor.Code())
 	}
 
 	// method returns unit
@@ -641,7 +646,7 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, 
 		ic.CreateActor(builtin.AccountActorCodeID, targetIDAddr)
 
 		// call constructor on account
-		newMsg := internalMessage{
+		newMsg := InternalMessage{
 			from:   builtin.SystemActorAddr,
 			to:     targetIDAddr,
 			value:  big.Zero(),

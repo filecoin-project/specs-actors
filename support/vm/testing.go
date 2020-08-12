@@ -1,7 +1,9 @@
 package vm_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -16,6 +18,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
 	actor_testing "github.com/filecoin-project/specs-actors/support/testing"
@@ -23,11 +26,16 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/ipfs/go-cid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 var FIL = big.NewInt(1e18)
+
+//
+// Genesis like setup
+//
 
 // Creates a new VM and initializes all singleton actors plus a root verifier account.
 func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
@@ -123,6 +131,100 @@ func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance ab
 	}
 	return pubAddrs
 }
+
+//
+// Invocation expectations
+//
+
+func ExpectObject(v runtime.CBORMarshaler) *objectExpectation {
+	return &objectExpectation{v}
+}
+
+// distinguishes a non-expectation from an expectation of nil
+type objectExpectation struct {
+	val runtime.CBORMarshaler
+}
+
+// match by cbor encoding to avoid inconsistencies in internal representations of effectively equal objects
+func (oe objectExpectation) matches(obj interface{}) bool {
+	if oe.val == nil || obj == nil {
+		return oe.val == nil && obj == nil
+	}
+
+	paramBuf1 := new(bytes.Buffer)
+	oe.val.MarshalCBOR(paramBuf1) // nolint: errcheck
+	marshaller, ok := obj.(runtime.CBORMarshaler)
+	if !ok {
+		return false
+	}
+	paramBuf2 := new(bytes.Buffer)
+	if marshaller != nil {
+		marshaller.MarshalCBOR(paramBuf2) // nolint: errcheck
+	}
+	return bytes.Equal(paramBuf1.Bytes(), paramBuf2.Bytes())
+}
+
+var okExitCode = exitcode.Ok
+var ExpectOK = &okExitCode
+
+type ExpectInvocation struct {
+	To       address.Address
+	Method   abi.MethodNum
+	Exitcode exitcode.ExitCode
+
+	From           *address.Address
+	Value          *abi.TokenAmount
+	Params         *objectExpectation
+	Ret            *objectExpectation
+	SubInvocations []ExpectInvocation
+}
+
+func (ei ExpectInvocation) Matches(t *testing.T, invocations *Invocation) {
+	ei.matches(t, "", invocations)
+}
+
+func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *Invocation) {
+	identifier := fmt.Sprintf("%s[%s:%d]", breadcrumb, invocation.Msg.to, invocation.Msg.method)
+
+	// mismatch of to or method probably indicates skipped message or messages out of order. halt.
+	require.Equal(t, ei.To, invocation.Msg.to, "%s unexpected `to` address", identifier)
+	require.Equal(t, ei.Method, invocation.Msg.method, "%s unexpected method", identifier)
+
+	// other expectations are optional
+	if ei.From != nil {
+		assert.Equal(t, *ei.From, invocation.Msg.from, "%s unexpected from address", identifier)
+	}
+	if ei.Value != nil {
+		assert.Equal(t, *ei.Value, invocation.Msg.value, "%s unexpected value", identifier)
+	}
+	if ei.Params != nil {
+		assert.True(t, ei.Params.matches(invocation.Msg.params), "%s params aren't equal (%v != %v)", identifier, ei.Params.val, invocation.Msg.params)
+	}
+	if ei.SubInvocations != nil {
+		for i, invk := range invocation.SubInvocations {
+			subidentifier := fmt.Sprintf("%s%d:", identifier, i)
+			require.Len(t, ei.SubInvocations, i+1, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
+			ei.SubInvocations[i].matches(t, subidentifier, invk)
+		}
+		missingInvocations := len(ei.SubInvocations) - len(invocation.SubInvocations)
+		if missingInvocations > 0 {
+			missingIndex := len(invocation.SubInvocations)
+			missingExpect := ei.SubInvocations[missingIndex]
+			require.Fail(t, "%s%d: expected invocation [%s:%d]", identifier, missingIndex, missingExpect.To, missingExpect.From)
+		}
+	}
+
+	// expect results
+	assert.Equal(t, ei.Exitcode, invocation.Exitcode, "%s unexpected exitcode", identifier)
+	if ei.Ret != nil {
+		assert.True(t, ei.Ret.matches(invocation.Ret), "%s unexpected return value (%v != %v)", identifier, ei.Ret, invocation.Ret)
+	}
+
+}
+
+//
+//  internal stuff
+//
 
 func initializeActor(ctx context.Context, t *testing.T, vm *VM, state runtime.CBORMarshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
 	stateCID, err := vm.store.Put(ctx, state)

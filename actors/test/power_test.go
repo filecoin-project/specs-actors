@@ -2,10 +2,8 @@ package test_test
 
 import (
 	"context"
-	initactor "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	vm2 "github.com/filecoin-project/specs-actors/support/vm"
+	vm "github.com/filecoin-project/specs-actors/support/vm"
 	"github.com/stretchr/testify/require"
 	"testing"
 
@@ -19,8 +17,8 @@ import (
 
 func TestCreateMiner(t *testing.T) {
 	ctx := context.Background()
-	vm := vm2.NewVMWithSingletons(ctx, t)
-	addrs := vm2.CreateAccounts(ctx, t, vm, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
+	runtime := vm.NewVMWithSingletons(ctx, t)
+	addrs := vm.CreateAccounts(ctx, t, runtime, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
 
 	params := power.CreateMinerParams{
 		Owner:         addrs[0],
@@ -28,59 +26,43 @@ func TestCreateMiner(t *testing.T) {
 		SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := vm.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
+	ret, code := runtime.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
 	assert.Equal(t, exitcode.Ok, code)
 
-	createMinerRet, ok := ret.(*power.CreateMinerReturn)
+	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
 
-	// check that address has been added to init map
-	var initState initactor.State
-	err := vm.GetState(builtin.InitActorAddr, &initState)
-	require.NoError(t, err)
+	// all expectations implicitly expected to be Ok
+	vm.ExpectInvocation{
+		// Original send to storage power actor
+		To:     builtin.StoragePowerActorAddr,
+		Method: builtin.MethodsPower.CreateMiner,
+		Params: vm.ExpectObject(&params),
+		Ret:    vm.ExpectObject(ret),
+		SubInvocations: []vm.ExpectInvocation{{
 
-	idAddr, found, err := initState.ResolveAddress(vm.Store(), createMinerRet.RobustAddress)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, createMinerRet.IDAddress, idAddr)
+			// Storage power requests init actor construct a miner
+			To:     builtin.InitActorAddr,
+			Method: builtin.MethodsInit.Exec,
+			SubInvocations: []vm.ExpectInvocation{{
 
-	// check that the miner exists and has expected state
-	var minerState miner.State
-	err = vm.GetState(createMinerRet.IDAddress, &minerState)
-	require.NoError(t, err)
-	var minerInfo miner.MinerInfo
-	err = vm.Store().Get(ctx, minerState.Info, &minerInfo)
-	require.NoError(t, err)
+				// Miner constructor gets params from original call
+				To:     minerAddrs.IDAddress,
+				Method: builtin.MethodConstructor,
+				Params: vm.ExpectObject(&miner.ConstructorParams{
+					OwnerAddr:     params.Owner,
+					WorkerAddr:    params.Worker,
+					SealProofType: params.SealProofType,
+					PeerId:        params.Peer,
+				}),
+				SubInvocations: []vm.ExpectInvocation{{
 
-	ownerIdAddr, found, err := initState.ResolveAddress(vm.Store(), addrs[0])
-	require.NoError(t, err)
-	require.True(t, found)
-
-	assert.Equal(t, ownerIdAddr, minerInfo.Owner)
-	assert.Equal(t, ownerIdAddr, minerInfo.Worker)
-	assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, minerInfo.SealProofType)
-
-	// check that miner is registered in power actor
-	var powerState power.State
-	err = vm.GetState(builtin.StoragePowerActorAddr, &powerState)
-	require.NoError(t, err)
-
-	assert.Equal(t, int64(1), powerState.MinerCount)
-
-	// Check that miner has added itself to cron queue exactly once
-	// This is a call back to the power actor from its constructor
-	queue, err := adt.AsMultimap(vm.Store(), powerState.CronEventQueue)
-	require.NoError(t, err)
-
-	cronCount := uint64(0)
-	var ev power.CronEvent
-	err = queue.ForAll(func(k string, arr *adt.Array) error {
-		return arr.ForEach(&ev, func(i int64) error {
-			assert.Equal(t, createMinerRet.IDAddress, ev.MinerAddr)
-			cronCount++
-			return nil
-		})
-	})
-	require.NoError(t, err)
-	assert.Equal(t, uint64(1), cronCount)
+					// Miner calls back to power actor to enroll its cron event
+					To:             builtin.StoragePowerActorAddr,
+					Method:         builtin.MethodsPower.EnrollCronEvent,
+					SubInvocations: []vm.ExpectInvocation{},
+				}},
+			}},
+		}},
+	}.Matches(t, runtime.Invocations()[0])
 }

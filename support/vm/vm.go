@@ -35,7 +35,9 @@ type VM struct {
 
 	emptyObject cid.Cid
 
-	logs []string
+	logs            []string
+	invocationStack []*Invocation
+	invocations     []*Invocation
 }
 
 // VM types
@@ -49,12 +51,19 @@ type TestActor struct {
 
 type ActorImplLookup map[cid.Cid]exported.BuiltinActor
 
-type internalMessage struct {
+type InternalMessage struct {
 	from   address.Address
 	to     address.Address
 	value  abi.TokenAmount
 	method abi.MethodNum
 	params interface{}
+}
+
+type Invocation struct {
+	Msg            *InternalMessage
+	Exitcode       exitcode.ExitCode
+	Ret            runtime.CBORMarshaler
+	SubInvocations []*Invocation
 }
 
 // NewVM creates a new runtime for executing messages.
@@ -238,7 +247,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	}
 
 	// build internal msg
-	imsg := internalMessage{
+	imsg := InternalMessage{
 		from:   from,
 		to:     to,
 		value:  value,
@@ -334,9 +343,37 @@ func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amou
 func (vm *VM) getActorImpl(code cid.Cid) exported.BuiltinActor {
 	actorImpl, ok := vm.actorImpls[code]
 	if !ok {
-		vm.Abortf(exitcode.SysErrInvalidReceiver, "actor implementation not found for code %v", code)
+		vm.Abortf(exitcode.SysErrInvalidReceiver, "actor implementation not found for Exitcode %v", code)
 	}
 	return actorImpl
+}
+
+//
+// invocation tracking
+//
+
+func (vm *VM) startInvocation(msg *InternalMessage) {
+	invocation := Invocation{Msg: msg}
+	if len(vm.invocationStack) > 0 {
+		parent := vm.invocationStack[len(vm.invocationStack)-1]
+		parent.SubInvocations = append(parent.SubInvocations, &invocation)
+	} else {
+		vm.invocations = append(vm.invocations, &invocation)
+	}
+	vm.invocationStack = append(vm.invocationStack, &invocation)
+}
+
+func (vm *VM) endInvocation(code exitcode.ExitCode, ret runtime.CBORMarshaler) {
+	curIndex := len(vm.invocationStack) - 1
+	current := vm.invocationStack[curIndex]
+	current.Exitcode = code
+	current.Ret = ret
+
+	vm.invocationStack = vm.invocationStack[:curIndex]
+}
+
+func (vm *VM) Invocations() []*Invocation {
+	return vm.invocations
 }
 
 //
@@ -357,22 +394,22 @@ func (vm *VM) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interfac
 }
 
 //
-// implement runtime.MessageInfo for internalMessage
+// implement runtime.MessageInfo for InternalMessage
 //
 
-var _ runtime.Message = (*internalMessage)(nil)
+var _ runtime.Message = (*InternalMessage)(nil)
 
 // ValueReceived implements runtime.MessageInfo.
-func (msg internalMessage) ValueReceived() abi.TokenAmount {
+func (msg InternalMessage) ValueReceived() abi.TokenAmount {
 	return msg.value
 }
 
 // Caller implements runtime.MessageInfo.
-func (msg internalMessage) Caller() address.Address {
+func (msg InternalMessage) Caller() address.Address {
 	return msg.from
 }
 
 // Receiver implements runtime.MessageInfo.
-func (msg internalMessage) Receiver() address.Address {
+func (msg InternalMessage) Receiver() address.Address {
 	return msg.to
 }
