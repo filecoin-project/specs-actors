@@ -257,7 +257,13 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 			}
 		} else {
 			rescheduledEpochs = append(rescheduledEpochs, uint64(epoch))
-			rescheduledSectors = append(rescheduledSectors, es.OnTimeSectors, es.EarlySectors)
+			// sanity check to make sure we're not trying to re-schedule already faulty sectors.
+			if isEmpty, err := es.EarlySectors.IsEmpty(); err != nil {
+				return xerrors.Errorf("failed to determine if epoch had early expirations: %w", err)
+			} else if !isEmpty {
+				return xerrors.Errorf("attempted to re-schedule early expirations to an even earlier epoch")
+			}
+			rescheduledSectors = append(rescheduledSectors, es.OnTimeSectors)
 			rescheduledPower = rescheduledPower.Add(es.ActivePower)
 			rescheduledPower = rescheduledPower.Add(es.FaultyPower)
 		}
