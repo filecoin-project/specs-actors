@@ -470,6 +470,28 @@ func TestCommitments(t *testing.T) {
 		})
 	})
 
+	t.Run("precommit pays back fee debt", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		st := getState(rt)
+		st.FeeDebt = abi.NewTokenAmount(9999)
+		rt.ReplaceState(st)
+
+		actor.preCommitSectorWithFeeDebt(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), st.FeeDebt)
+		st = getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
+	})
+
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -571,6 +593,18 @@ func TestCommitments(t *testing.T) {
 		})
 		// reset state back to normal
 		st.InitialPledgeRequirement = oldIPReqs
+		rt.ReplaceState(st)
+		rt.Reset()
+
+		// Try to precommit while in fee debt with insufficient balance
+		st = getState(rt)
+		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+		})
+		// reset state back to normal
+		st.FeeDebt = big.Zero()
 		rt.ReplaceState(st)
 		rt.Reset()
 	})
@@ -2077,7 +2111,8 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// withdraw 1% of balance
-		actor.withdrawFunds(rt, big.Mul(big.NewInt(10), big.NewInt(1e18)))
+		onePercent := big.Mul(big.NewInt(10), big.NewInt(1e18))
+		actor.withdrawFunds(rt, onePercent, onePercent, big.Zero())
 	})
 
 	t.Run("fails if miner is currently undercollateralized", func(t *testing.T) {
@@ -2093,9 +2128,37 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.ReplaceState(st)
 
 		// withdraw 1% of balance
+		onePercent := big.Mul(big.NewInt(10), big.NewInt(1e18))
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.withdrawFunds(rt, big.Mul(big.NewInt(10), big.NewInt(1e18)))
+			actor.withdrawFunds(rt, onePercent, onePercent, big.Zero())
 		})
+	})
+
+	t.Run("fails if miner can't repay fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		st := getState(rt)
+		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+		onePercent := big.Mul(big.NewInt(10), big.NewInt(1e18))
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.withdrawFunds(rt, onePercent, onePercent, big.Zero())
+		})
+	})
+
+	t.Run("withdraw only what we can after fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		st := getState(rt)
+		feeDebt := abi.NewTokenAmount(9e18)
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+		
+		requested := rt.Balance()
+		expectedWithdraw := big.Sub(requested, feeDebt)
+		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
 	})
 }
 
@@ -2865,6 +2928,10 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
+	return h.preCommitSectorWithFeeDebt(rt, params, big.Zero())
+}
+
+func (h *actorHarness) preCommitSectorWithFeeDebt(rt *mock.Runtime, params *miner.SectorPreCommitInfo, feeDebtToRepay abi.TokenAmount) *miner.SectorPreCommitOnChainInfo {
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
@@ -2887,6 +2954,9 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 			VerifiedDealWeight: big.NewInt(int64(sectorSize / 2)),
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
+	}
+	if feeDebtToRepay.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, feeDebtToRepay, nil, exitcode.Ok)
 	}
 
 	rt.Call(h.a.PreCommitSector, params)
@@ -3486,15 +3556,19 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	rt.Verify()
 }
 
-func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amount abi.TokenAmount) {
+func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWithdrawn, expectedDebtRepaid abi.TokenAmount) {
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.owner)
 
-	rt.ExpectSend(h.owner, builtin.MethodSend, nil, amount, nil, exitcode.Ok)
-
+	rt.ExpectSend(h.owner, builtin.MethodSend, nil, amountWithdrawn, nil, exitcode.Ok)
+	if expectedDebtRepaid.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedDebtRepaid, nil, exitcode.Ok)
+	}
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
-		AmountRequested: amount,
+		AmountRequested: amountRequested,
 	})
+	
+
 	rt.Verify()
 }
 

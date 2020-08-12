@@ -506,14 +506,14 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	var err error
 	newlyVested := big.Zero()
-	debtToBurn := abi.NewTokenAmount(0)
+	feeDebtPenalty := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
 		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 
-		debtToBurn = verifyPledgeRequirementsAndRepayDebts(rt, &st)
-		unlockedBalance = big.Sub(unlockedBalance, debtToBurn)
+		feeDebtPenalty = verifyPledgeRequirementsAndRepayDebts(rt, &st)
+		unlockedBalance = big.Sub(unlockedBalance, feeDebtPenalty)
 
 		info := getMinerInfo(rt, &st)
 
@@ -592,8 +592,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
 	})
 
-	if debtToBurn.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, debtToBurn)
+	if feeDebtPenalty.GreaterThan(abi.NewTokenAmount(0)) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, feeDebtPenalty)
 		builtin.RequireSuccess(rt, code, "failed to burn debt")
 	}
 
@@ -625,9 +625,9 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
-	debtToBurn := abi.NewTokenAmount(0)
+	feeDebtPenalty := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
-		debtToBurn = verifyPledgeRequirementsAndRepayDebts(rt, &st)
+		feeDebtPenalty = verifyPledgeRequirementsAndRepayDebts(rt, &st)
 		var found bool
 		var err error
 		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
@@ -656,8 +656,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		RegisteredSealProof: precommit.Info.SealProof,
 	})
 
-	if debtToBurn.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, debtToBurn)
+	if feeDebtPenalty.GreaterThan(abi.NewTokenAmount(0)) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, feeDebtPenalty)
 		builtin.RequireSuccess(rt, code, "failed to burn debt")
 	}
 
@@ -1234,11 +1234,11 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 	store := adt.AsStore(rt)
 	var st State
-	debtToBurn := abi.NewTokenAmount(0)
+	feeDebtPenalty := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
-		debtToBurn = verifyPledgeRequirementsAndRepayDebts(rt, &st)
+		feeDebtPenalty = verifyPledgeRequirementsAndRepayDebts(rt, &st)
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -1271,8 +1271,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
 
-	if debtToBurn.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, debtToBurn)
+	if feeDebtPenalty.GreaterThan(abi.NewTokenAmount(0)) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, feeDebtPenalty)
 		builtin.RequireSuccess(rt, code, "failed to burn debt")
 	}
 
@@ -1470,7 +1470,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	}
 	var info *MinerInfo
 	newlyVested := big.Zero()
-	debtToBurn := big.Zero()
+	feeDebtPenalty := big.Zero()
 	unlockedBalance := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
@@ -1497,8 +1497,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
-		debtToBurn = verifyPledgeRequirementsAndRepayDebts(rt, &st)
-		unlockedBalance = big.Sub(unlockedBalance, debtToBurn)
+		feeDebtPenalty = verifyPledgeRequirementsAndRepayDebts(rt, &st)
+		unlockedBalance = big.Sub(unlockedBalance, feeDebtPenalty)
 	})
 
 	amountWithdrawn := big.Min(unlockedBalance, params.AmountRequested)
@@ -1510,8 +1510,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 	}
 
-	if debtToBurn.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, debtToBurn)
+	if feeDebtPenalty.GreaterThan(abi.NewTokenAmount(0)) {
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, feeDebtPenalty)
 		builtin.RequireSuccess(rt, code, "failed to burn debt")
 	}
 

@@ -733,7 +733,7 @@ func TestSectorNumberAllocation(t *testing.T) {
 	})
 }
 
-func TestPenalizationDebt(t *testing.T) {
+func TestPenalizationFundsInPriorityOrder(t *testing.T) {
 	harness := constructStateHarness(t, abi.ChainEpoch(0))
 
 	currentBalance := abi.NewTokenAmount(300)
