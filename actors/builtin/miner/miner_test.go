@@ -72,10 +72,10 @@ func TestConstruction(t *testing.T) {
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
 		params := miner.ConstructorParams{
-			OwnerAddr:     owner,
-			WorkerAddr:    worker,
+			Owner:         owner,
+			Worker:        worker,
 			SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
-			PeerId:        testPid,
+			Peer:          testPid,
 			Multiaddrs:    testMultiaddrs,
 		}
 
@@ -95,9 +95,9 @@ func TestConstruction(t *testing.T) {
 		rt.GetState(&st)
 		info, err := st.GetInfo(adt.AsStore(rt))
 		require.NoError(t, err)
-		assert.Equal(t, params.OwnerAddr, info.Owner)
-		assert.Equal(t, params.WorkerAddr, info.Worker)
-		assert.Equal(t, params.PeerId, info.PeerId)
+		assert.Equal(t, params.Owner, info.Owner)
+		assert.Equal(t, params.Worker, info.Worker)
+		assert.Equal(t, params.Peer, info.PeerId)
 		assert.Equal(t, params.Multiaddrs, info.Multiaddrs)
 		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, info.SealProofType)
 		assert.Equal(t, abi.SectorSize(1<<35), info.SectorSize)
@@ -367,7 +367,7 @@ func TestCommitments(t *testing.T) {
 		oldIPReqs := st.InitialPledgeRequirement
 		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
 		})
 		// reset state back to normal
@@ -1414,7 +1414,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		// Attempt to recover
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
 			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
 		})
 	})
@@ -2233,10 +2233,10 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 
 func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 	params := miner.ConstructorParams{
-		OwnerAddr:     h.owner,
-		WorkerAddr:    h.worker,
+		Owner:         h.owner,
+		Worker:        h.worker,
 		SealProofType: h.sealProofType,
-		PeerId:        testPid,
+		Peer:          testPid,
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)

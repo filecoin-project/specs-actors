@@ -1232,10 +1232,10 @@ func (h *spActorHarness) expectTotalPledgeEager(rt *mock.Runtime, expectedPledge
 
 func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof) []byte {
 	params := &power.MinerConstructorParams{
-		OwnerAddr:     owner,
-		WorkerAddr:    worker,
+		Owner:         owner,
+		Worker:        worker,
 		SealProofType: sealProofType,
-		PeerId:        peer,
+		Peer:          peer,
 		Multiaddrs:    multiaddrs,
 	}
 

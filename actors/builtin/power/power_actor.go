@@ -46,12 +46,14 @@ var _ abi.Invokee = Actor{}
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
 type MinerConstructorParams struct {
-	OwnerAddr     addr.Address
-	WorkerAddr    addr.Address
+	Owner         addr.Address
+	Worker        addr.Address
 	SealProofType abi.RegisteredSealProof
-	PeerId        abi.PeerID
+	Peer          abi.PeerID
 	Multiaddrs    []abi.Multiaddrs
 }
+
+type CreateMinerParams = MinerConstructorParams
 
 type SectorStorageWeightDesc struct {
 	SectorSize         abi.SectorSize
@@ -77,14 +79,6 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-type CreateMinerParams struct {
-	Owner         addr.Address
-	Worker        addr.Address
-	SealProofType abi.RegisteredSealProof
-	Peer          abi.PeerID
-	Multiaddrs    []abi.Multiaddrs
-}
-
 type CreateMinerReturn struct {
 	IDAddress     addr.Address // The canonical ID-based address for the actor.
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
@@ -93,16 +87,9 @@ type CreateMinerReturn struct {
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
-	ctorParams := MinerConstructorParams{
-		OwnerAddr:     params.Owner,
-		WorkerAddr:    params.Worker,
-		SealProofType: params.SealProofType,
-		PeerId:        params.Peer,
-		Multiaddrs:    params.Multiaddrs,
-	}
 	ctorParamBuf := new(bytes.Buffer)
-	err := ctorParams.MarshalCBOR(ctorParamBuf)
-	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to serialize miner constructor params %v", ctorParams)
+	err := params.MarshalCBOR(ctorParamBuf)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to serialize miner constructor params %v", params)
 
 	ret, code := rt.Send(
 		builtin.InitActorAddr,
