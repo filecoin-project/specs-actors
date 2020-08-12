@@ -99,17 +99,10 @@ func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance ab
 	err := vm.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
 
-	m, err := adt.AsMap(vm.store, initState.AddressMap)
-	require.NoError(t, err)
-
 	addrPairs := make([]addrPair, n)
 	for i := range addrPairs {
 		addr := actor_testing.NewBLSAddr(t, 93837778)
-		idAddr, err := address.NewIDAddress(uint64(initState.NextID))
-		require.NoError(t, err)
-		initState.NextID++
-
-		err = m.Put(adt.AddrKey(addr), cborAddrID(t, idAddr))
+		idAddr, err := initState.MapAddressToNewID(vm.store, addr)
 		require.NoError(t, err)
 
 		addrPairs[i] = addrPair{
@@ -117,9 +110,6 @@ func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance ab
 			idAddr:  idAddr,
 		}
 	}
-	initState.AddressMap, err = m.Root()
-	require.NoError(t, err)
-
 	err = vm.setActorState(ctx, builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
 
