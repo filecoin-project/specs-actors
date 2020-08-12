@@ -42,9 +42,9 @@ func (a Actor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValu
 }
 
 // Fetches the pubkey-type address from this actor.
-func (a Actor) PubkeyAddress(rt vmr.Runtime, _ *adt.EmptyValue) addr.Address {
+func (a Actor) PubkeyAddress(rt vmr.Runtime, _ *adt.EmptyValue) *addr.Address {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
-	return st.Address
+	return &st.Address
 }

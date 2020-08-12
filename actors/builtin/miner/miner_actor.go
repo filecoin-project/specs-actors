@@ -487,6 +487,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	var st State
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -588,21 +590,18 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Readonly(&st)
-
-	// Verify locked funds are are at least the sum of sector initial pledges.
-	// Note that this call does not actually compute recent vesting, so the reported locked funds may be
-	// slightly higher than the true amount (i.e. slightly in the miner's favour).
-	// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
-	// Vesting will be at most one proving period old if computed in the cron callback.
-	verifyPledgeMeetsInitialRequirements(rt, &st)
-
+	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
-	precommit, found, err := st.GetPrecommittedSector(store, sectorNo)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
-	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "no pre-committed sector %v", sectorNo)
-	}
+	rt.State().Transaction(&st, func() {
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+		var found bool
+		var err error
+		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
+		if !found {
+			rt.Abortf(exitcode.ErrNotFound, "no pre-committed sector %v", sectorNo)
+		}
+	})
 
 	msd, ok := MaxSealDuration[precommit.Info.SealProof]
 	if !ok {
@@ -1170,6 +1169,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	store := adt.AsStore(rt)
 	var st State
 	rt.State().Transaction(&st, func() {
+		verifyPledgeMeetsInitialRequirements(rt, &st)
+
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
@@ -1849,7 +1850,8 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 
 	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
-	err = rt.Message().Receiver().MarshalCBOR(&addrBuf)
+	receiver := rt.Message().Receiver()
+	err = receiver.MarshalCBOR(&addrBuf)
 	AssertNoError(err)
 	postRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
 
@@ -1907,7 +1909,8 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 	AssertNoError(err) // Runtime always provides ID-addresses
 
 	buf := new(bytes.Buffer)
-	err = rt.Message().Receiver().MarshalCBOR(buf)
+	receiver := rt.Message().Receiver()
+	err = receiver.MarshalCBOR(buf)
 	AssertNoError(err)
 
 	svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
@@ -2013,7 +2016,11 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 	return &pwr
 }
 
-// Verifies that the total locked balance exceeds the sum of sector initial pledges.
+// Verifies that the total unlocked balance exceeds the sum of sector initial pledges.
+// Note that this call does not compute recent vesting so reported unlocked balance
+// may be slightly lower than the true amount.
+// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
+// Vesting will be at most one proving period old if computed in the cron callback.
 func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 	if !st.MeetsInitialPledgeCondition(rt.CurrentBalance()) {
 		rt.Abortf(exitcode.ErrInsufficientFunds,
