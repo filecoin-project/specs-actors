@@ -362,6 +362,8 @@ func TestAddVerifiedClient(t *testing.T) {
 		allowance := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
 		p := &verifreg.AddVerifiedClientParams{tutil.NewIDAddr(t, 501), allowance}
 
+		rt.ExpectValidateCallerAny()
+
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.AddVerifiedClient, p)
 		})
