@@ -174,7 +174,7 @@ type ChangeWorkerAddressParams struct {
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
 
-	worker := resolveWorkerAddress(rt, params.NewWorker)
+	newWorker := resolveWorkerAddress(rt, params.NewWorker)
 
 	var controlAddrs []addr.Address
 	for _, ca := range params.NewControlAddrs {
@@ -187,7 +187,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		// Only the Owner is allowed to change the worker and control addresses.
+		// Only the Owner is allowed to change the newWorker and control addresses.
 		rt.ValidateImmediateCallerIs(info.Owner)
 
 		{
@@ -196,14 +196,14 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		}
 
 		{
-			// save worker addr key change request
+			// save newWorker addr key change request
 			// This may replace another pending key change.
-			if worker != info.Worker {
+			if newWorker != info.Worker {
 				isWorkerChange = true
 				effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
 
 				info.PendingWorkerKey = &WorkerKeyChange{
-					NewWorker:   worker,
+					NewWorker:   newWorker,
 					EffectiveAt: effectiveEpoch,
 				}
 			}
@@ -213,7 +213,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 
-	// we only need to enroll the cron event for worker key change as we change the control
+	// we only need to enroll the cron event for newWorker key change as we change the control
 	// addresses immediately
 	if isWorkerChange {
 		cronPayload := CronEventPayload{
