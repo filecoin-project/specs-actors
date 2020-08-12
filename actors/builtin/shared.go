@@ -38,19 +38,20 @@ func RequireNoErr(rt runtime.Runtime, err error, defaultExitCode exitcode.ExitCo
 	}
 }
 
-func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address) {
+func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address, controlAddrs []addr.Address) {
 	ret, code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0))
 	RequireSuccess(rt, code, "failed fetching control addresses")
 	var addrs MinerAddrs
 	autil.AssertNoError(ret.Into(&addrs))
 
-	return addrs.Owner, addrs.Worker
+	return addrs.Owner, addrs.Worker, addrs.ControlAddrs
 }
 
 // This type duplicates the Miner.ControlAddresses return type, to work around a circular dependency between actors.
 type MinerAddrs struct {
-	Owner  addr.Address
-	Worker addr.Address
+	Owner        addr.Address
+	Worker       addr.Address
+	ControlAddrs []addr.Address
 }
 
 type ConfirmSectorProofsParams struct {

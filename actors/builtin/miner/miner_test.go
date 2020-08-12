@@ -62,10 +62,15 @@ func TestConstruction(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
 	workerKey := tutil.NewBLSAddr(t, 0)
+
+	controlAddrs := []addr.Address{tutil.NewIDAddr(t, 999), tutil.NewIDAddr(t, 998)}
+
 	receiver := tutil.NewIDAddr(t, 1000)
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
+		WithActorType(controlAddrs[0], builtin.AccountActorCodeID).
+		WithActorType(controlAddrs[1], builtin.AccountActorCodeID).
 		WithHasher(blake2b.Sum256).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
@@ -74,6 +79,7 @@ func TestConstruction(t *testing.T) {
 		params := miner.ConstructorParams{
 			OwnerAddr:     owner,
 			WorkerAddr:    worker,
+			ControlAddrs:  controlAddrs,
 			SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
 			PeerId:        testPid,
 			Multiaddrs:    testMultiaddrs,
@@ -97,6 +103,7 @@ func TestConstruction(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, params.OwnerAddr, info.Owner)
 		assert.Equal(t, params.WorkerAddr, info.Worker)
+		assert.Equal(t, params.ControlAddrs, info.ControlAddresses)
 		assert.Equal(t, params.PeerId, info.PeerId)
 		assert.Equal(t, params.Multiaddrs, info.Multiaddrs)
 		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, info.SealProofType)
@@ -125,6 +132,62 @@ func TestConstruction(t *testing.T) {
 
 		assertEmptyBitfield(t, st.EarlyTerminations)
 	})
+
+	t.Run("control addresses are resolved during construction", func(t *testing.T) {
+		control1 := tutil.NewBLSAddr(t, 501)
+		control1Id := tutil.NewIDAddr(t, 555)
+
+		control2 := tutil.NewBLSAddr(t, 502)
+		control2Id := tutil.NewIDAddr(t, 655)
+
+		rt := builder.WithActorType(control1Id, builtin.AccountActorCodeID).
+			WithActorType(control2Id, builtin.AccountActorCodeID).Build(t)
+		rt.AddIDAddress(control1, control1Id)
+		rt.AddIDAddress(control2, control2Id)
+
+		params := miner.ConstructorParams{
+			OwnerAddr:    owner,
+			WorkerAddr:   worker,
+			ControlAddrs: []addr.Address{control1, control2},
+		}
+
+		provingPeriodStart := abi.ChainEpoch(658) // This is just set from running the code.
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
+			makeDeadlineCronEventParams(t, provingPeriodStart-1), big.Zero(), nil, exitcode.Ok)
+		ret := rt.Call(actor.Constructor, &params)
+
+		assert.Nil(t, ret)
+		rt.Verify()
+
+		var st miner.State
+		rt.GetState(&st)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		assert.Equal(t, control1Id, info.ControlAddresses[0])
+		assert.Equal(t, control2Id, info.ControlAddresses[1])
+	})
+
+	t.Run("fails if control address is not an account actor", func(t *testing.T) {
+		control1 := tutil.NewIDAddr(t, 501)
+		rt := builder.Build(t)
+		rt.SetAddressActorType(control1, builtin.PaymentChannelActorCodeID)
+
+		params := miner.ConstructorParams{
+			OwnerAddr:    owner,
+			WorkerAddr:   worker,
+			ControlAddrs: []addr.Address{control1},
+		}
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectSend(worker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &workerKey, exitcode.Ok)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+	})
 }
 
 // Tests for fetching and manipulating miner addresses.
@@ -136,9 +199,11 @@ func TestControlAddresses(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		o, w := actor.controlAddresses(rt)
+		o, w, control := actor.controlAddresses(rt)
 		assert.Equal(t, actor.owner, o)
 		assert.Equal(t, actor.worker, w)
+		assert.NotEmpty(t, control)
+		assert.Equal(t, actor.controlAddrs, control)
 	})
 
 }
@@ -824,7 +889,7 @@ func TestWindowPost(t *testing.T) {
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
@@ -1831,16 +1896,18 @@ func TestChangeWorkerAddress(t *testing.T) {
 		return rt, actor
 	}
 
-	t.Run("successfully change a worker address", func(t *testing.T) {
+	t.Run("successfully change ONLY the worker address", func(t *testing.T) {
 		rt, actor := setupFunc()
 		actor.constructAndVerify(rt)
+		originalControlAddrs := actor.controlAddrs
+
 		newWorker := tutil.NewIDAddr(t, 999)
 
 		currentEpoch := abi.ChainEpoch(5)
 		rt.SetEpoch(currentEpoch)
 
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
-		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch)
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
 
 		// no change if current epoch is less than effective epoch
 		rt.SetEpoch(effectiveEpoch - 1)
@@ -1858,6 +1925,90 @@ func TestChangeWorkerAddress(t *testing.T) {
 
 		// set current epoch to effective epoch and ask to change the address
 		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+
+		// assert control addresses are unchanged
+		st = getState(rt)
+		info, err = st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.NotEmpty(t, info.ControlAddresses)
+		require.Equal(t, originalControlAddrs, info.ControlAddresses)
+	})
+
+	t.Run("successfully resolve AND change ONLY control addresses", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		c1Id := tutil.NewIDAddr(t, 555)
+
+		c2Id := tutil.NewIDAddr(t, 556)
+		c2NonId := tutil.NewBLSAddr(t, 999)
+		rt.AddIDAddress(c2NonId, c2Id)
+
+		rt.SetAddressActorType(c1Id, builtin.AccountActorCodeID)
+		rt.SetAddressActorType(c2Id, builtin.AccountActorCodeID)
+
+		actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), []addr.Address{c1Id, c2NonId})
+
+		// assert there is no worker change request and worker key is unchanged
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, actor.worker, info.Worker)
+		require.Nil(t, info.PendingWorkerKey)
+	})
+
+	t.Run("successfully change both worker AND control addresses", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		c1 := tutil.NewIDAddr(t, 5001)
+		c2 := tutil.NewIDAddr(t, 5002)
+		rt.SetAddressActorType(c1, builtin.AccountActorCodeID)
+		rt.SetAddressActorType(c2, builtin.AccountActorCodeID)
+
+		currentEpoch := abi.ChainEpoch(5)
+		rt.SetEpoch(currentEpoch)
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, []addr.Address{c1, c2})
+
+		// set current epoch to effective epoch and ask to change the address
+		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+
+		// assert both worker and control addresses have changed
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.NotEmpty(t, info.ControlAddresses)
+		require.Equal(t, []addr.Address{c1, c2}, info.ControlAddresses)
+		require.Equal(t, newWorker, info.Worker)
+	})
+
+	t.Run("successfully clear all control addresses", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), nil)
+
+		// assert control addresses are cleared
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Empty(t, info.ControlAddresses)
+	})
+
+	t.Run("fails if unable to resolve control address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		c1 := tutil.NewBLSAddr(t, 501)
+
+		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
+		param := &miner.ChangeWorkerAddressParams{NewControlAddrs: []addr.Address{c1}}
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.a.ChangeWorkerAddress, param)
+		})
+		rt.Verify()
 	})
 
 	t.Run("fails if unable to resolve worker address", func(t *testing.T) {
@@ -1867,7 +2018,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
 
 		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
-		param := &miner.ChangeWorkerAddressParams{newWorker}
+		param := &miner.ChangeWorkerAddressParams{NewWorker: newWorker}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
@@ -1884,7 +2035,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &key, exitcode.Ok)
 
 		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
-		param := &miner.ChangeWorkerAddressParams{newWorker}
+		param := &miner.ChangeWorkerAddressParams{NewWorker: newWorker}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
@@ -1897,7 +2048,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		newWorker := tutil.NewIDAddr(t, 5001)
 
 		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
-		param := &miner.ChangeWorkerAddressParams{newWorker}
+		param := &miner.ChangeWorkerAddressParams{NewWorker: newWorker}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
@@ -1911,7 +2062,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.SetAddressActorType(newWorker, builtin.StorageMinerActorCodeID)
 
 		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
-		param := &miner.ChangeWorkerAddressParams{newWorker}
+		param := &miner.ChangeWorkerAddressParams{NewWorker: newWorker}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
@@ -1928,7 +2079,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &actor.key, exitcode.Ok)
 
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
-		param := &miner.ChangeWorkerAddressParams{newWorker}
+		param := &miner.ChangeWorkerAddressParams{NewWorker: newWorker}
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
@@ -2122,7 +2273,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 
 		targetSno := allSectors[0].SectorNumber
 		rt.SetCaller(actor.owner, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 
 		rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
 			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
@@ -2130,16 +2281,32 @@ func TestCompactSectorNumbers(t *testing.T) {
 		rt.Verify()
 	})
 
-	t.Run("fail if caller is neither owner nor worker", func(t *testing.T) {
+	t.Run("one of the control addresses can also compact sectors", func(t *testing.T) {
 		// Create a sector.
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		targetSno := allSectors[0].SectorNumber
-		rAddr := tutil.NewIDAddr(t, 999)
+		rt.SetCaller(actor.controlAddrs[0], builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+
+		rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
+			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
+		})
+		rt.Verify()
+	})
+
+	t.Run("fail if caller is not among caller worker or control addresses", func(t *testing.T) {
+		// Create a sector.
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		targetSno := allSectors[0].SectorNumber
+		rAddr := tutil.NewIDAddr(t, 1005)
 		rt.SetCaller(rAddr, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(actor.worker, actor.owner)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
@@ -2170,6 +2337,8 @@ type actorHarness struct {
 	worker   addr.Address
 	key      addr.Address
 
+	controlAddrs []addr.Address
+
 	sealProofType abi.RegisteredSealProof
 	postProofType abi.RegisteredPoStProof
 	sectorSize    abi.SectorSize
@@ -2190,6 +2359,9 @@ type actorHarness struct {
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
 	owner := tutil.NewIDAddr(t, 100)
 	worker := tutil.NewIDAddr(t, 101)
+
+	controlAddrs := []addr.Address{tutil.NewIDAddr(t, 999), tutil.NewIDAddr(t, 998), tutil.NewIDAddr(t, 997)}
+
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
 	rwd := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
@@ -2200,6 +2372,8 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		owner:    owner,
 		worker:   worker,
 		key:      workerKey,
+
+		controlAddrs: controlAddrs,
 
 		sealProofType: 0, // Initialized in setProofType
 		sectorSize:    0, // Initialized in setProofType
@@ -2235,6 +2409,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 	params := miner.ConstructorParams{
 		OwnerAddr:     h.owner,
 		WorkerAddr:    h.worker,
+		ControlAddrs:  h.controlAddrs,
 		SealProofType: h.sealProofType,
 		PeerId:        testPid,
 	}
@@ -2375,28 +2550,31 @@ func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
 // Actor method calls
 //
 
-func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch) {
+func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch, newControlAddrs []addr.Address) {
 	rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
 
-	param := &miner.ChangeWorkerAddressParams{newWorker}
+	param := &miner.ChangeWorkerAddressParams{}
+	param.NewControlAddrs = newControlAddrs
+	param.NewWorker = newWorker
+	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 
-	cronPayload := miner.CronEventPayload{
-		EventType: miner.CronEventWorkerKeyChange,
-	}
-	payload := new(bytes.Buffer)
-	err := cronPayload.MarshalCBOR(payload)
-	require.NoError(h.t, err)
-	cronEvt := &power.EnrollCronEventParams{
-		EventEpoch: effectiveEpoch,
-		Payload:    payload.Bytes(),
+	if newWorker != h.worker {
+		cronPayload := miner.CronEventPayload{
+			EventType: miner.CronEventWorkerKeyChange,
+		}
+		payload := new(bytes.Buffer)
+		err := cronPayload.MarshalCBOR(payload)
+		require.NoError(h.t, err)
+		cronEvt := &power.EnrollCronEventParams{
+			EventEpoch: effectiveEpoch,
+			Payload:    payload.Bytes(),
+		}
+
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
+			cronEvt, big.Zero(), nil, exitcode.Ok)
 	}
 
 	rt.ExpectValidateCallerAddr(h.owner)
-	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
-
-	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-		cronEvt, big.Zero(), nil, exitcode.Ok)
-
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeWorkerAddress, param)
 	rt.Verify()
@@ -2404,13 +2582,25 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	st := getState(rt)
 	info, err := st.GetInfo(adt.AsStore(rt))
 	require.NoError(h.t, err)
-	require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
-	require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+
+	if newWorker != h.worker {
+		require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
+		require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
+	}
+
+	var controlAddrs []addr.Address
+	for _, ca := range newControlAddrs {
+		resolved, found := rt.GetIdAddr(ca)
+		require.True(h.t, found)
+		controlAddrs = append(controlAddrs, resolved)
+	}
+	require.EqualValues(h.t, controlAddrs, info.ControlAddresses)
+
 }
 
 func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	param := &miner.ChangePeerIDParams{NewID: newPID}
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 
 	rt.Call(h.a.ChangePeerID, param)
@@ -2437,18 +2627,18 @@ func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi
 	require.EqualValues(h.t, newWorker, info.Worker)
 }
 
-func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address) {
+func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address, control []addr.Address) {
 	rt.ExpectValidateCallerAny()
 	ret := rt.Call(h.a.ControlAddresses, nil).(*miner.GetControlAddressesReturn)
 	require.NotNil(h.t, ret)
 	rt.Verify()
-	return ret.Owner, ret.Worker
+	return ret.Owner, ret.Worker, ret.ControlAddrs
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	{
 		expectQueryNetworkInfo(rt, h)
@@ -2632,7 +2822,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 
 func (h *actorHarness) compactSectorNumbers(rt *mock.Runtime, bf bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	rt.Call(h.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
 		MaskSectorNumbers: bf,
@@ -2680,7 +2870,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	commitEpoch := rt.Epoch() - 4
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
 
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	expectQueryNetworkInfo(rt, h)
 
@@ -2779,7 +2969,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 
 func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	ss, err := faultSectorInfos[0].SealProof.SectorSize()
 	require.NoError(h.t, err)
@@ -2810,7 +3000,7 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 
 func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	// Calculate params from faulted sector infos
 	params := &miner.DeclareFaultsRecoveredParams{Recoveries: []miner.RecoveryDeclaration{{
@@ -2825,7 +3015,7 @@ func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, p
 
 func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSectorExpirationParams) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	qaDelta := big.Zero()
 	for _, extension := range params.Extensions {
@@ -2859,7 +3049,7 @@ func (h *actorHarness) extendSectors(rt *mock.Runtime, params *miner.ExtendSecto
 
 func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitField, expectedFee abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	dealIDs := []abi.DealID{}
 	sectorInfos := []*miner.SectorOnChainInfo{}
@@ -2962,7 +3152,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 
 func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.worker, h.owner, builtin.RewardActorAddr)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker, builtin.RewardActorAddr)...)
 	// expect pledge update
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
@@ -3150,10 +3340,16 @@ func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.
 //
 
 func builderForHarness(actor *actorHarness) *mock.RuntimeBuilder {
-	return mock.NewBuilder(context.Background(), actor.receiver).
+	rb := mock.NewBuilder(context.Background(), actor.receiver).
 		WithActorType(actor.owner, builtin.AccountActorCodeID).
 		WithActorType(actor.worker, builtin.AccountActorCodeID).
 		WithHasher(fixedHasher(uint64(actor.periodOffset)))
+
+	for _, ca := range actor.controlAddrs {
+		rb = rb.WithActorType(ca, builtin.AccountActorCodeID)
+	}
+
+	return rb
 }
 
 func getState(rt *mock.Runtime) *miner.State {
