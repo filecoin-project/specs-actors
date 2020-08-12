@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -288,7 +289,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufMinerInfo = []byte{136}
+var lengthBufMinerInfo = []byte{137}
 
 func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -309,6 +310,20 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	// t.Worker (address.Address) (struct)
 	if err := t.Worker.MarshalCBOR(w); err != nil {
 		return err
+	}
+
+	// t.ControlAddresses ([]address.Address) (slice)
+	if len(t.ControlAddresses) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ControlAddresses was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.ControlAddresses))); err != nil {
+		return err
+	}
+	for _, v := range t.ControlAddresses {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	// t.PendingWorkerKey (miner.WorkerKeyChange) (struct)
@@ -391,7 +406,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 8 {
+	if extra != 9 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -413,6 +428,35 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.ControlAddresses ([]address.Address) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ControlAddresses: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.ControlAddresses = make([]address.Address, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v address.Address
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.ControlAddresses[i] = v
+	}
+
 	// t.PendingWorkerKey (miner.WorkerKeyChange) (struct)
 
 	{
@@ -2728,7 +2772,7 @@ func (t *ProveCommitSectorParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufChangeWorkerAddressParams = []byte{129}
+var lengthBufChangeWorkerAddressParams = []byte{130}
 
 func (t *ChangeWorkerAddressParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -2739,9 +2783,25 @@ func (t *ChangeWorkerAddressParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	scratch := make([]byte, 9)
+
 	// t.NewWorker (address.Address) (struct)
 	if err := t.NewWorker.MarshalCBOR(w); err != nil {
 		return err
+	}
+
+	// t.NewControlAddrs ([]address.Address) (slice)
+	if len(t.NewControlAddrs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.NewControlAddrs was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.NewControlAddrs))); err != nil {
+		return err
+	}
+	for _, v := range t.NewControlAddrs {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -2760,7 +2820,7 @@ func (t *ChangeWorkerAddressParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 1 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2773,6 +2833,35 @@ func (t *ChangeWorkerAddressParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.NewControlAddrs ([]address.Address) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.NewControlAddrs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.NewControlAddrs = make([]address.Address, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v address.Address
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.NewControlAddrs[i] = v
+	}
+
 	return nil
 }
 
@@ -3151,7 +3240,7 @@ func (t *ReportConsensusFaultParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufGetControlAddressesReturn = []byte{130}
+var lengthBufGetControlAddressesReturn = []byte{131}
 
 func (t *GetControlAddressesReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -3162,6 +3251,8 @@ func (t *GetControlAddressesReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	scratch := make([]byte, 9)
+
 	// t.Owner (address.Address) (struct)
 	if err := t.Owner.MarshalCBOR(w); err != nil {
 		return err
@@ -3170,6 +3261,20 @@ func (t *GetControlAddressesReturn) MarshalCBOR(w io.Writer) error {
 	// t.Worker (address.Address) (struct)
 	if err := t.Worker.MarshalCBOR(w); err != nil {
 		return err
+	}
+
+	// t.ControlAddrs ([]address.Address) (slice)
+	if len(t.ControlAddrs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ControlAddrs was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.ControlAddrs))); err != nil {
+		return err
+	}
+	for _, v := range t.ControlAddrs {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -3188,7 +3293,7 @@ func (t *GetControlAddressesReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -3210,6 +3315,35 @@ func (t *GetControlAddressesReturn) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.ControlAddrs ([]address.Address) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ControlAddrs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.ControlAddrs = make([]address.Address, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v address.Address
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.ControlAddrs[i] = v
+	}
+
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
@@ -13,7 +14,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufMinerAddrs = []byte{130}
+var lengthBufMinerAddrs = []byte{131}
 
 func (t *MinerAddrs) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -24,6 +25,8 @@ func (t *MinerAddrs) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	scratch := make([]byte, 9)
+
 	// t.Owner (address.Address) (struct)
 	if err := t.Owner.MarshalCBOR(w); err != nil {
 		return err
@@ -32,6 +35,20 @@ func (t *MinerAddrs) MarshalCBOR(w io.Writer) error {
 	// t.Worker (address.Address) (struct)
 	if err := t.Worker.MarshalCBOR(w); err != nil {
 		return err
+	}
+
+	// t.ControlAddrs ([]address.Address) (slice)
+	if len(t.ControlAddrs) > cbg.MaxLength {
+		return xerrors.Errorf("Slice value in field t.ControlAddrs was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.ControlAddrs))); err != nil {
+		return err
+	}
+	for _, v := range t.ControlAddrs {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -50,7 +67,7 @@ func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -72,6 +89,35 @@ func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	// t.ControlAddrs ([]address.Address) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("t.ControlAddrs: array too large (%d)", extra)
+	}
+
+	if maj != cbg.MajArray {
+		return fmt.Errorf("expected cbor array")
+	}
+
+	if extra > 0 {
+		t.ControlAddrs = make([]address.Address, extra)
+	}
+
+	for i := 0; i < int(extra); i++ {
+
+		var v address.Address
+		if err := v.UnmarshalCBOR(br); err != nil {
+			return err
+		}
+
+		t.ControlAddrs[i] = v
+	}
+
 	return nil
 }
 
