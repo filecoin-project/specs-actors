@@ -922,6 +922,8 @@ func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.
 		InitialPledge:         abi.NewTokenAmount(0),
 		ExpectedDayReward:     abi.NewTokenAmount(0),
 		ExpectedStoragePledge: abi.NewTokenAmount(0),
+		ReplacedSectorAge:     abi.ChainEpoch(0),
+		ReplacedDayReward:     big.Zero(),
 	}
 }
 

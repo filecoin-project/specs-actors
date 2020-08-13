@@ -988,13 +988,14 @@ func (dl *Deadline) RescheduleSectorExpirations(
 	store adt.Store, sectors Sectors,
 	expiration abi.ChainEpoch, partitionSectors PartitionSectorMap,
 	ssize abi.SectorSize, quant QuantSpec,
-) error {
+) ([]*SectorOnChainInfo, error) {
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var rescheduledPartitions []uint64 // track partitions with moved expirations.
+	var allReplaced []*SectorOnChainInfo
 	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos bitfield.BitField) error {
 		var partition Partition
 		if found, err := partitions.Get(partIdx, &partition); err != nil {
@@ -1006,16 +1007,15 @@ func (dl *Deadline) RescheduleSectorExpirations(
 			return nil
 		}
 
-		moved, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
+		replaced, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
 		if err != nil {
 			return xerrors.Errorf("failed to reschedule expirations in partition %d: %w", partIdx, err)
 		}
-		if empty, err := moved.IsEmpty(); err != nil {
-			return xerrors.Errorf("failed to parse bitfield of rescheduled expirations: %w", err)
-		} else if empty {
+		if len(replaced) == 0 {
 			// nothing moved.
 			return nil
 		}
+		allReplaced = append(allReplaced, replaced...)
 
 		rescheduledPartitions = append(rescheduledPartitions, partIdx)
 		if err = partitions.Set(partIdx, &partition); err != nil {
@@ -1023,19 +1023,19 @@ func (dl *Deadline) RescheduleSectorExpirations(
 		}
 		return nil
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(rescheduledPartitions) > 0 {
 		dl.Partitions, err = partitions.Root()
 		if err != nil {
-			return xerrors.Errorf("failed to save partitions: %w", err)
+			return nil, xerrors.Errorf("failed to save partitions: %w", err)
 		}
 		err := dl.AddExpirationPartitions(store, expiration, rescheduledPartitions, quant)
 		if err != nil {
-			return xerrors.Errorf("failed to reschedule partition expirations: %w", err)
+			return nil, xerrors.Errorf("failed to reschedule partition expirations: %w", err)
 		}
 	}
 
-	return nil
+	return allReplaced, nil
 }

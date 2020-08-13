@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/ipfs/go-cid"
+	address "github.com/filecoin-project/go-address"
+	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -1610,7 +1610,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{139}
+var lengthBufSectorOnChainInfo = []byte{141}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1706,6 +1706,22 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.ExpectedStoragePledge.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.ReplacedSectorAge (abi.ChainEpoch) (int64)
+	if t.ReplacedSectorAge >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplacedSectorAge)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ReplacedSectorAge-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.ReplacedDayReward (big.Int) (struct)
+	if err := t.ReplacedDayReward.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1723,7 +1739,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 11 {
+	if extra != 13 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1903,6 +1919,40 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ExpectedStoragePledge.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ExpectedStoragePledge: %w", err)
+		}
+
+	}
+	// t.ReplacedSectorAge (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.ReplacedSectorAge = abi.ChainEpoch(extraI)
+	}
+	// t.ReplacedDayReward (big.Int) (struct)
+
+	{
+
+		if err := t.ReplacedDayReward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ReplacedDayReward: %w", err)
 		}
 
 	}
