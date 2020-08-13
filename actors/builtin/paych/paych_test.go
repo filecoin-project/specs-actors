@@ -64,52 +64,72 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		actor.constructAndVerify(t, rt, payerNonId, payeeNonId)
 	})
 
+	nonAccountCodeID := builtin.MultisigActorCodeID
 	testCases := []struct {
-		desc               string
-		paymentChannelAddr addr.Address
-		callerCode         cid.Cid
-		newActorCode       cid.Cid
-		payerCode          cid.Cid
-		expExitCode        exitcode.ExitCode
+		desc        string
+		fromCode    cid.Cid
+		fromAddr    addr.Address
+		toCode      cid.Cid
+		toAddr      addr.Address
+		expExitCode exitcode.ExitCode
 	}{
 		{"fails if target (to) is not account actor",
-			paychAddr,
-			builtin.InitActorCodeID,
-			builtin.MultisigActorCodeID,
 			builtin.AccountActorCodeID,
+			payerAddr,
+			nonAccountCodeID,
+			payeeAddr,
 			exitcode.ErrForbidden,
 		}, {"fails if sender (from) is not account actor",
-			paychAddr,
-			builtin.InitActorCodeID,
-			builtin.MultisigActorCodeID,
+			nonAccountCodeID,
+			payerAddr,
 			builtin.AccountActorCodeID,
+			payeeAddr,
 			exitcode.ErrForbidden,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			builder := mock.NewBuilder(ctx, paychAddr).
-				WithCaller(callerAddr, tc.callerCode).
-				WithActorType(tc.paymentChannelAddr, tc.newActorCode).
-				WithActorType(payerAddr, tc.payerCode)
+				WithCaller(callerAddr, builtin.InitActorCodeID).
+				WithActorType(paychAddr, builtin.PaymentChannelActorCodeID).
+				WithActorType(payerAddr, tc.toCode).
+				WithActorType(payeeAddr, tc.fromCode)
 			rt := builder.Build(t)
 			rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 			rt.ExpectAbort(tc.expExitCode, func() {
-				rt.Call(actor.Constructor, &ConstructorParams{To: tc.paymentChannelAddr})
+				rt.Call(actor.Constructor, &ConstructorParams{To: tc.toAddr, From: tc.fromAddr})
 			})
 		})
 	}
 
-	t.Run("fails if addr is not resolvable to ID address", func(t *testing.T) {
-		rt := mock.NewBuilder(ctx, paychAddr).
-			WithCaller(callerAddr, builtin.InitActorCodeID).Build(t)
-
+	t.Run("fails if sender addr is not resolvable to ID address", func(t *testing.T) {
+		to := tutil.NewIDAddr(t, 101)
 		nonIdAddr := tutil.NewBLSAddr(t, 501)
+
+		rt := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(to, builtin.AccountActorCodeID).Build(t)
 
 		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
 		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			rt.Call(actor.Constructor, &ConstructorParams{To: nonIdAddr})
+			rt.Call(actor.Constructor, &ConstructorParams{From: nonIdAddr, To: to})
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if target addr is not resolvable to ID address", func(t *testing.T) {
+		from := tutil.NewIDAddr(t, 5555)
+		nonIdAddr := tutil.NewBLSAddr(t, 501)
+
+		rt := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(from, builtin.AccountActorCodeID).Build(t)
+
+		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{From: from, To: nonIdAddr})
 		})
 		rt.Verify()
 	})

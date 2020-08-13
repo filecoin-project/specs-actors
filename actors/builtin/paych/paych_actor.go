@@ -5,7 +5,6 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	"golang.org/x/xerrors"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -46,10 +45,10 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
 
 	// check that both parties are capable of signing vouchers
-	to, err, code := pca.resolveAccount(rt, params.To)
-	builtin.RequireNoErr(rt, err, code, "failed to resolve to address: %s", params.To)
-	from, err, code := pca.resolveAccount(rt, params.From)
-	builtin.RequireNoErr(rt, err, code, "failed to resolve from address: %s", params.From)
+	to, err := pca.resolveAccount(rt, params.To)
+	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to resolve to address: %s", params.To)
+	from, err := pca.resolveAccount(rt, params.From)
+	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to resolve from address: %s", params.From)
 
 	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
@@ -61,21 +60,22 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 }
 
 // Resolves an address to a canonical ID address and requires it to address an account actor.
-func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error, exitcode.ExitCode) {
+func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error) {
 	resolved, err := builtin.ResolveToIDAddr(rt, raw)
 	if err != nil {
-		return addr.Undef, xerrors.Errorf("failed to resolve address %v: %w", raw, err), exitcode.ErrIllegalState
+		return addr.Undef, exitcode.ErrIllegalState.Wrapf("failed to resolve address %v: %w", raw, err)
 	}
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef, xerrors.Errorf("no code for address %v", resolved), exitcode.ErrIllegalArgument
+		return addr.Undef, exitcode.ErrIllegalArgument.Wrapf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
-		return addr.Undef, xerrors.Errorf("actor %v must be an account (%v), was %v", raw,
-			builtin.AccountActorCodeID, codeCID), exitcode.ErrForbidden
+		return addr.Undef, exitcode.ErrForbidden.Wrapf("actor %v must be an account (%v), was %v", raw,
+			builtin.AccountActorCodeID, codeCID)
 	}
-	return resolved, nil, exitcode.Ok
+
+	return resolved, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
