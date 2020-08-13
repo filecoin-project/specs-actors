@@ -138,6 +138,10 @@ const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
+// Number of epochs after a consensus fault for which a miner is ineligible 
+// for permissioned actor methods and winning block elections.
+const ConsensusFaultIneligibilityDuration = ChainFinality
+
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
 // Sum of DealWeight and VerifiedDealWeight should be less than or equal to total SpaceTime of a sector.
 // Sectors full of VerifiedDeals will have a SectorQuality of VerifiedDealWeightMultiplier/QualityBaseMultiplier.

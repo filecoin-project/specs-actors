@@ -109,6 +109,8 @@ type MinerInfo struct {
 	// This is computed from the proof type and represented here redundantly.
 	WindowPoStPartitionSectors uint64
 
+	// The next epoch this miner is eligible for certain permissioned actor methods
+	// and winning block elections as a result of being reported for a consensus fault.
 	ConsensusFaultReported abi.ChainEpoch
 }
 

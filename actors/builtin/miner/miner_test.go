@@ -2403,30 +2403,6 @@ func TestReportConsensusFault(t *testing.T) {
 		actor.reportConsensusFault(rt, addr.TestAddress, params)
 	})
 
-	t.Run("Fault reporting fails when balance can't cover reward", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		precommitEpoch := abi.ChainEpoch(1)
-		rt.SetEpoch(precommitEpoch)
-		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
-		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
-		_ = sectorInfo
-
-		params := &miner.ReportConsensusFaultParams{
-			BlockHeader1:     nil,
-			BlockHeader2:     nil,
-			BlockHeaderExtra: nil,
-		}
-		// balance can't cover reward because we're putting it all in pre commit deposits
-		st := getState(rt)
-		st.PreCommitDeposits = big.Sub(rt.Balance(), st.LockedFunds)
-		rt.ReplaceState(st)
-
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient unlocked balance to pay reward", func() {
-			actor.reportConsensusFault(rt, addr.TestAddress, params)
-		})
-	})
-
 	t.Run("Report consensus fault updates consensus fault reported field", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -2449,7 +2425,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 		actor.reportConsensusFault(rt, addr.TestAddress, params)
 		endInfo := actor.getInfo(rt)
-		assert.Equal(t, reportEpoch, endInfo.ConsensusFaultReported)
+		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultReported)
 	})
 
 }
@@ -3443,10 +3419,6 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 		Type:   runtime.ConsensusFaultDoubleForkMining,
 	}, nil)
 
-	// slash reward
-	rwd := miner.RewardForConsensusSlashReport(1, rt.Balance())
-	rt.ExpectSend(from, builtin.MethodSend, nil, rwd, nil, exitcode.Ok)
-
 	currentReward := reward.ThisEpochRewardReturn{
 		ThisEpochReward:         h.epochReward,
 		ThisEpochBaselinePower:  h.baselinePower,
@@ -3454,9 +3426,14 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	}
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
 
-	// pay fault fee
 	penaltyTotal := miner.ConsensusFaultPenalty(h.epochReward)
-	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penaltyTotal, nil, exitcode.Ok)
+	// slash reward
+	rwd := miner.RewardForConsensusSlashReport(1, penaltyTotal)
+	rt.ExpectSend(from, builtin.MethodSend, nil, rwd, nil, exitcode.Ok)
+
+	// pay fault fee
+	toBurn := big.Sub(penaltyTotal, rwd)
+	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, toBurn, nil, exitcode.Ok)
 
 	rt.Call(h.a.ReportConsensusFault, params)
 	rt.Verify()

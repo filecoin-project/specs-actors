@@ -1428,32 +1428,33 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
 	}
 
-	// Reward reporter with a share of the miner's current balance.
-	var st State
-	rt.State().Readonly(&st)
-	unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-	slasherReward := RewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
-	if slasherReward.GreaterThan(unlockedBalance) {
-		rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient unlocked balance to pay reward")
-	}
-	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
-	builtin.RequireSuccess(rt, code, "failed to send reward")
-	unlockedBalance = big.Sub(unlockedBalance, slasherReward)
-
 	// Penalize miner consensus fault fee
+	// Give a portion of this to the reporter as reward
+	var st State
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochReward)
+	slasherReward := RewardForConsensusSlashReport(faultAge, faultPenalty)
 	pledgeDelta := big.Zero()
 	rt.State().Transaction(&st, func() {
+		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), faultPenalty, unlockedBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
 		faultPenalty = big.Add(penaltyFromVesting, penaltyFromBalance)
 		pledgeDelta = big.Add(pledgeDelta, penaltyFromVesting.Neg())
+
+		// clamp slasherReward at faultPenalty
+		slasherReward = big.Min(faultPenalty, slasherReward)
+		// reduce faultPenalty by slasherReward
+		faultPenalty = big.Sub(faultPenalty, slasherReward)
 		info := getMinerInfo(rt, &st)
-		info.ConsensusFaultReported = rt.CurrEpoch()
+		info.ConsensusFaultReported = rt.CurrEpoch() + ConsensusFaultIneligibilityDuration
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
 	})
+	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
+	if !code.IsSuccess() {
+		rt.Log(vmr.ERROR, "failed to send reward")
+	}
 	burnFunds(rt, faultPenalty)
 	notifyPledgeChanged(rt, pledgeDelta)
 

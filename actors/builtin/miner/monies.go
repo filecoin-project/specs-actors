@@ -34,7 +34,7 @@ var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay
 // Maximum number of days of BR a terminated sector can be penalized
 const TerminationLifetimeCap = abi.ChainEpoch(70)
 
-// Number of whole block rewards covered by consensus fault penalty
+// Number of whole per-winner rewards covered by consensus fault penalty
 const ConsensusFaultFactor = 5
 
 // This is the BR(t) value of the given sector for the current epoch.
