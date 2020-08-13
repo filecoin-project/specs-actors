@@ -1429,19 +1429,22 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	}
 
 	// Reward reporter with a share of the miner's current balance.
-	currBalance := rt.CurrentBalance()
-	slasherReward := RewardForConsensusSlashReport(faultAge, currBalance)
+	var st State
+	rt.State().Readonly(&st)
+	unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+	slasherReward := RewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
+	if slasherReward.GreaterThan(unlockedBalance) {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient unlocked balance to pay reward")
+	}
 	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
-	builtin.RequireSuccess(rt, code, "failed to reward reporter")
-	currBalance = big.Sub(currBalance, slasherReward)
+	builtin.RequireSuccess(rt, code, "failed to send reward")
+	unlockedBalance = big.Sub(unlockedBalance, slasherReward)
 
 	// Penalize miner consensus fault fee
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochReward)
 	pledgeDelta := big.Zero()
-	var st State
 	rt.State().Transaction(&st, func() {
-		unlockedBalance := st.GetUnlockedBalance(currBalance)
 		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), faultPenalty, unlockedBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
 		faultPenalty = big.Add(penaltyFromVesting, penaltyFromBalance)
