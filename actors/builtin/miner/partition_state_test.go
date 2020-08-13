@@ -3,6 +3,7 @@ package miner_test
 import (
 	"bytes"
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -234,17 +235,22 @@ func TestPartitions(t *testing.T) {
 		store, partition := setup(t)
 		sectorArr := sectorsArr(t, store, sectors)
 
-		// Mark sector 2 faulty, we should skip it when rescheudling
+		// Mark sector 2 faulty, we should skip it when rescheduling
 		faultSet := bf(2)
 		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// reschedule
-		moved, err := partition.RescheduleExpirations(store, sectorsArr(t, store, sectors), 18, bf(2, 4, 6), sectorSize, quantSpec)
+		replaced, err := partition.RescheduleExpirations(store, sectorsArr(t, store, sectors), 18, bf(2, 4, 6), sectorSize, quantSpec)
 		require.NoError(t, err)
 
-		// Make sure we moved the right ones.
-		assertBitfieldEquals(t, moved, 4, 6)
+		// Assert we returned the sector infos of the replaced sectors
+		assert.Len(t, replaced, 2)
+		sort.Slice(replaced, func(i, j int) bool {
+			return replaced[i].SectorNumber < replaced[j].SectorNumber
+		})
+		assert.Equal(t, abi.SectorNumber(4), replaced[0].SectorNumber)
+		assert.Equal(t, abi.SectorNumber(6), replaced[1].SectorNumber)
 
 		// We need to change the actual sector infos so our queue validation works.
 		rescheduled := rescheduleSectors(t, 18, sectors, bf(4, 6))

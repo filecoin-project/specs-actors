@@ -697,7 +697,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				uint64(precommit.Info.ReplaceSectorNumber),
 			)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to record sectors for replacement")
-
 		}
 	}
 
@@ -714,8 +713,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	rt.State().Transaction(&st, func() {
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
-		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
+		replaced, err := st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
+		replacedBySectorNumber := asMapBySectorNumber(replaced)
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
@@ -738,6 +738,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
+			replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
+
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
 				SealProof:             precommit.Info.SealProof,
@@ -750,6 +752,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				InitialPledge:         initialPledge,
 				ExpectedDayReward:     dayReward,
 				ExpectedStoragePledge: storagePledge,
+				ReplacedSectorAge:     replacedAge,
+				ReplacedDayReward:     replacedDayReward,
 			}
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
@@ -2135,6 +2139,27 @@ func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi
 	return periodStart
 }
 
+func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*SectorOnChainInfo {
+	m := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectors))
+	for _, s := range sectors {
+		m[s.SectorNumber] = s
+	}
+	return m
+}
+
+func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (abi.ChainEpoch, big.Int) {
+	if !precommit.Info.ReplaceCapacity {
+		return abi.ChainEpoch(0), big.Zero()
+	}
+	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
+	if !ok {
+		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
+	}
+	// The sector will actually be active for the period between activation and its next proving deadline,
+	// but this covers the period for which we will be looking to the old sector for termination fees.
+	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
+}
+
 // Computes deadline information for a fault or recovery declaration.
 // If the deadline has not yet elapsed, the declaration is taken as being for the current proving period.
 // If the deadline has elapsed, it's instead taken as being for the next proving period after the current epoch.
@@ -2172,7 +2197,7 @@ func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, rew
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.ExpectedDayReward, s.ExpectedStoragePledge, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
+		fee := PledgePenaltyForTermination(s.ExpectedDayReward, currEpoch-s.Activation, s.ExpectedStoragePledge, networkQAPowerEstimate, sectorPower, rewardEstimate, s.ReplacedDayReward, s.ReplacedSectorAge)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee
@@ -2225,6 +2250,13 @@ func max64(a, b uint64) uint64 {
 
 func minEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
+	if a > b {
 		return a
 	}
 	return b
