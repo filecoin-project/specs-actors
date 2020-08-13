@@ -774,6 +774,20 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 	return fromVesting, fromBalance, nil
 }
 
+// Repays the full miner actor fee debt.  Returns the amount that must be
+// repaid and an error if there are not sufficient funds to cover repayment.
+// Miner state repays from unlocked funds, potentially violating IP requirements
+// and bringing actor into IP debt.  FeeDebt should be  zero after calling.
+func (st *State) RepayDebt(currBalance abi.TokenAmount) (abi.TokenAmount, error) {
+	unlockedBalance := st.GetUnlockedBalance(currBalance)
+	if !st.CanRepayFeeDebt(unlockedBalance) {
+		return big.Zero(), xerrors.Errorf("unlocked balance can not repay fee debt (%v < %v)", unlockedBalance, st.FeeDebt)
+	}
+	debtToRepay := st.FeeDebt
+	st.FeeDebt = big.Zero()
+	return debtToRepay, nil
+}
+
 // Unlocks an amount of funds that have *not yet vested*, if possible.
 // The soonest-vesting entries are unlocked first.
 // Returns the amount actually unlocked.
@@ -863,6 +877,10 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
 	unlockedBalance := st.GetUnlockedBalance(balance)
 	return unlockedBalance.GreaterThanEqual(st.InitialPledgeRequirement)
+}
+
+func (st *State) CanRepayFeeDebt(unlockedBalance abi.TokenAmount) bool {
+	return unlockedBalance.GreaterThanEqual(st.FeeDebt)
 }
 
 // pre-commit expiry
