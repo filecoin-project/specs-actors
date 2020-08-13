@@ -107,7 +107,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 			// expect call to reward to update kpi
 			To:     builtin.RewardActorAddr,
 			Method: builtin.MethodsReward.UpdateNetworkKPI,
-			From:   vm.ExpectAddress(builtin.StoragePowerActorAddr),
+			From:   builtin.StoragePowerActorAddr,
 		}},
 	}.Matches(t, v.Invocations()[0])
 
@@ -129,7 +129,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 			// expect call back to miner that was set up in create miner
 			To:     minerAddrs.IDAddress,
 			Method: builtin.MethodsMiner.OnDeferredCronEvent,
-			From:   vm.ExpectAddress(builtin.StoragePowerActorAddr),
+			From:   builtin.StoragePowerActorAddr,
 			Value:  vm.ExpectAttoFil(big.Zero()),
 			Params: vm.ExpectBytes(cronConfig.Payload),
 		}, {
@@ -137,7 +137,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 			// expect call to reward to update kpi
 			To:     builtin.RewardActorAddr,
 			Method: builtin.MethodsReward.UpdateNetworkKPI,
-			From:   vm.ExpectAddress(builtin.StoragePowerActorAddr),
+			From:   builtin.StoragePowerActorAddr,
 		}},
 	}.Matches(t, v.Invocations()[0])
 }

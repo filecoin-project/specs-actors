@@ -127,14 +127,15 @@ func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance ab
 
 // ExpectInvocation is a pattern for a message invocation within the VM.
 // The To and Method fields must be supplied. Exitcode defaults to exitcode.Ok.
-// All other field are optional, where a nil value indicates that any value will match.
+// All other field are optional, where a nil or Undef value indicates that any value will match.
 // SubInvocations will be matched recursively.
 type ExpectInvocation struct {
-	To       address.Address
-	Method   abi.MethodNum
-	Exitcode exitcode.ExitCode
+	To     address.Address
+	Method abi.MethodNum
 
-	From           *address.Address
+	// optional
+	Exitcode       exitcode.ExitCode
+	From           address.Address
 	Value          *abi.TokenAmount
 	Params         *objectExpectation
 	Ret            *objectExpectation
@@ -153,8 +154,8 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	require.Equal(t, ei.Method, invocation.Msg.method, "%s unexpected method", identifier)
 
 	// other expectations are optional
-	if ei.From != nil {
-		assert.Equal(t, *ei.From, invocation.Msg.from, "%s unexpected from address", identifier)
+	if address.Undef != ei.From {
+		assert.Equal(t, ei.From, invocation.Msg.from, "%s unexpected from address", identifier)
 	}
 	if ei.Value != nil {
 		assert.Equal(t, *ei.Value, invocation.Msg.value, "%s unexpected value", identifier)
@@ -185,7 +186,6 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 
 // helpers to simplify pointer creation
 func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount }
-func ExpectAddress(addr address.Address) *address.Address      { return &addr }
 func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(runtime.CBORBytes(b)) }
 func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
 
