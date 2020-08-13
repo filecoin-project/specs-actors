@@ -1007,13 +1007,11 @@ func (dl *Deadline) RescheduleSectorExpirations(
 			return nil
 		}
 
-		moved, replaced, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
+		replaced, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
 		if err != nil {
 			return xerrors.Errorf("failed to reschedule expirations in partition %d: %w", partIdx, err)
 		}
-		if empty, err := moved.IsEmpty(); err != nil {
-			return xerrors.Errorf("failed to parse bitfield of rescheduled expirations: %w", err)
-		} else if empty {
+		if len(replaced) == 0 {
 			// nothing moved.
 			return nil
 		}

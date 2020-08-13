@@ -241,11 +241,8 @@ func TestPartitions(t *testing.T) {
 		require.NoError(t, err)
 
 		// reschedule
-		moved, replaced, err := partition.RescheduleExpirations(store, sectorsArr(t, store, sectors), 18, bf(2, 4, 6), sectorSize, quantSpec)
+		replaced, err := partition.RescheduleExpirations(store, sectorsArr(t, store, sectors), 18, bf(2, 4, 6), sectorSize, quantSpec)
 		require.NoError(t, err)
-
-		// Make sure we moved the right ones.
-		assertBitfieldEquals(t, moved, 4, 6)
 
 		// Assert we returned the sector infos of the replaced sectors
 		assert.Len(t, replaced, 2)
