@@ -212,7 +212,7 @@ func TestRemoveVerifier(t *testing.T) {
 		ac.removeVerifier(rt, va)
 	})
 
-	t.Run("add verifier with non ID address and then remove with it's ID address", func(t *testing.T) {
+	t.Run("add verifier with non ID address and then remove with its ID address", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 
 		verifierIdAddr := tutil.NewIDAddr(t, 501)
