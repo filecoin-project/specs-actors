@@ -2427,6 +2427,31 @@ func TestReportConsensusFault(t *testing.T) {
 		})
 	})
 
+	t.Run("Report consensus fault updates consensus fault reported field", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
+
+		startInfo := actor.getInfo(rt)
+		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultReported)
+		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
+		_ = sectorInfo
+
+		reportEpoch := abi.ChainEpoch(333)
+		rt.SetEpoch(reportEpoch)
+		params := &miner.ReportConsensusFaultParams{
+			BlockHeader1:     nil,
+			BlockHeader2:     nil,
+			BlockHeaderExtra: nil,
+		}
+
+		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		endInfo := actor.getInfo(rt)
+		assert.Equal(t, reportEpoch, endInfo.ConsensusFaultReported)
+	})
+
 }
 
 func TestAddLockedFund(t *testing.T) {
