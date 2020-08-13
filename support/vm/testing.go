@@ -28,7 +28,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 var FIL = big.NewInt(1e18)
@@ -57,11 +56,7 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 
 	initializeActor(ctx, t, vm, &system.State{}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
 
-	// Verified registry account needs to be instantiated and initialized in init actor prior to construction
-	// of verified registry actor.
-	rootVerifier := verifregRootAddresses(t)
-	addrTreeRoot := initAddressTree(t, vm, rootVerifier)
-	initState := initactor.ConstructState(addrTreeRoot, "scenarios")
+	initState := initactor.ConstructState(emptyMapCID, "scenarios")
 	initializeActor(ctx, t, vm, initState, builtin.InitActorCodeID, builtin.InitActorAddr, big.Zero())
 
 	rewardState := reward.ConstructState(abi.NewStoragePower(0))
@@ -76,15 +71,14 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	marketState := market.ConstructState(emptyMapCID, emptyArrayCID, emptyMultimapCID)
 	initializeActor(ctx, t, vm, marketState, builtin.StorageMarketActorCodeID, builtin.StorageMarketActorAddr, big.Zero())
 
-	vrState := verifreg.ConstructState(emptyMapCID, rootVerifier.idAddr)
+	// this will need to be replaced with the address of a multisig actor for the verified registry to be tested accurately
+	rootVerifier, err := address.NewIDAddress(80)
+	require.NoError(t, err)
+	vrState := verifreg.ConstructState(emptyMapCID, rootVerifier)
 	initializeActor(ctx, t, vm, vrState, builtin.VerifiedRegistryActorCodeID, builtin.VerifiedRegistryActorAddr, big.Zero())
 
 	// burnt funds
 	initializeActor(ctx, t, vm, &account.State{Address: builtin.BurntFundsActorAddr}, builtin.AccountActorCodeID, builtin.BurntFundsActorAddr, big.Zero())
-
-	// verified root
-	rootVerifierState := &account.State{Address: rootVerifier.pubAddr}
-	initializeActor(ctx, t, vm, rootVerifierState, builtin.AccountActorCodeID, rootVerifier.idAddr, big.Zero())
 
 	_, err = vm.checkpoint()
 	require.NoError(t, err)
@@ -251,30 +245,4 @@ func initializeActor(ctx context.Context, t *testing.T, vm *VM, state runtime.CB
 type addrPair struct {
 	pubAddr address.Address
 	idAddr  address.Address
-}
-
-func initAddressTree(t *testing.T, vm *VM, rootVerifier addrPair) cid.Cid {
-	m := adt.MakeEmptyMap(vm.store)
-	err := m.Put(adt.AddrKey(rootVerifier.pubAddr), cborAddrID(t, rootVerifier.idAddr))
-	require.NoError(t, err)
-
-	root, err := m.Root()
-	require.NoError(t, err)
-	return root
-}
-
-func cborAddrID(t *testing.T, idAddr address.Address) *cbg.CborInt {
-	id, err := address.IDFromAddress(idAddr)
-	require.NoError(t, err)
-	cbgId := cbg.CborInt(id)
-	return &cbgId
-}
-
-func verifregRootAddresses(t *testing.T) addrPair {
-	rootVerifierAddr, err := address.NewFromString("t3qfoulel6fy6gn3hjmbhpdpf6fs5aqjb5fkurhtwvgssizq4jey5nw4ptq5up6h7jk7frdvvobv52qzmgjinq")
-	require.NoError(t, err)
-
-	rootVerifierID, err := address.NewFromString("t080")
-	require.NoError(t, err)
-	return addrPair{pubAddr: rootVerifierAddr, idAddr: rootVerifierID}
 }
