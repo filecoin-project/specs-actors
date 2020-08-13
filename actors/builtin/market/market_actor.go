@@ -165,7 +165,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrIllegalArgument, "deal provider is not a StorageMinerActor")
 	}
 
-	_, worker := builtin.RequestMinerControlAddrs(rt, provider)
+	_, worker, _ := builtin.RequestMinerControlAddrs(rt, provider)
 	if worker != rt.Message().Caller() {
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
@@ -728,7 +728,7 @@ func escrowAddress(rt Runtime, address addr.Address) (nominal addr.Address, reci
 
 	if codeID.Equals(builtin.StorageMinerActorCodeID) {
 		// Storage miner actor entry; implied funds recipient is the associated owner address.
-		ownerAddr, workerAddr := builtin.RequestMinerControlAddrs(rt, nominal)
+		ownerAddr, workerAddr, _ := builtin.RequestMinerControlAddrs(rt, nominal)
 		return nominal, ownerAddr, []addr.Address{ownerAddr, workerAddr}
 	}
 

@@ -91,8 +91,13 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
 	}
 
-	owner := resolveOwnerAddress(rt, params.OwnerAddr)
+	owner := resolveControlAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
+	controlAddrs := make([]addr.Address, 0, len(params.ControlAddrs))
+	for _, ca := range params.ControlAddrs {
+		resolved := resolveControlAddress(rt, ca)
+		controlAddrs = append(controlAddrs, resolved)
+	}
 
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	if err != nil {
@@ -121,7 +126,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	periodStart := nextProvingPeriodStart(currEpoch, offset)
 	Assert(periodStart > currEpoch)
 
-	info, err := ConstructMinerInfo(owner, worker, params.PeerId, params.Multiaddrs, params.SealProofType)
+	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
 	infoCid := rt.Store().Put(info)
 
@@ -141,8 +146,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 /////////////
 
 type GetControlAddressesReturn struct {
-	Owner  addr.Address
-	Worker addr.Address
+	Owner        addr.Address
+	Worker       addr.Address
+	ControlAddrs []addr.Address
 }
 
 func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddressesReturn {
@@ -151,42 +157,71 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 	rt.State().Readonly(&st)
 	info := getMinerInfo(rt, &st)
 	return &GetControlAddressesReturn{
-		Owner:  info.Owner,
-		Worker: info.Worker,
+		Owner:        info.Owner,
+		Worker:       info.Worker,
+		ControlAddrs: info.ControlAddresses,
 	}
 }
 
 type ChangeWorkerAddressParams struct {
-	NewWorker addr.Address
+	NewWorker       addr.Address
+	NewControlAddrs []addr.Address
 }
 
+// ChangeWorkerAddress will ALWAYS overwrite the existing control addresses with the control addresses passed in the params.
+// If a nil addresses slice is passed, the control addresses will be cleared.
+// A worker change will be scheduled if the worker passed in the params is different from the existing worker.
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
-	worker := resolveWorkerAddress(rt, params.NewWorker)
+
+	newWorker := resolveWorkerAddress(rt, params.NewWorker)
+
+	var controlAddrs []addr.Address
+	for _, ca := range params.NewControlAddrs {
+		resolved := resolveControlAddress(rt, ca)
+		controlAddrs = append(controlAddrs, resolved)
+	}
+
 	var st State
+	isWorkerChange := false
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		// Only the Owner is allowed to change the worker address.
-		// Allowing the worker to do this does not make sense because the owner would usually do it
-		// only if the worker keys are lost.
+		// Only the Owner is allowed to change the newWorker and control addresses.
 		rt.ValidateImmediateCallerIs(info.Owner)
 
-		effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
-
-		// This may replace another pending key change.
-		info.PendingWorkerKey = &WorkerKeyChange{
-			NewWorker:   worker,
-			EffectiveAt: effectiveEpoch,
+		{
+			// save the new control addresses
+			info.ControlAddresses = controlAddrs
 		}
+
+		{
+			// save newWorker addr key change request
+			// This may replace another pending key change.
+			if newWorker != info.Worker {
+				isWorkerChange = true
+				effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
+
+				info.PendingWorkerKey = &WorkerKeyChange{
+					NewWorker:   newWorker,
+					EffectiveAt: effectiveEpoch,
+				}
+			}
+		}
+
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 
-	cronPayload := CronEventPayload{
-		EventType: CronEventWorkerKeyChange,
+	// we only need to enroll the cron event for newWorker key change as we change the control
+	// addresses immediately
+	if isWorkerChange {
+		cronPayload := CronEventPayload{
+			EventType: CronEventWorkerKeyChange,
+		}
+		enrollCronEvent(rt, effectiveEpoch, &cronPayload)
 	}
-	enrollCronEvent(rt, effectiveEpoch, &cronPayload)
+
 	return nil
 }
 
@@ -201,7 +236,8 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+
 		info.PeerId = params.NewID
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
@@ -219,7 +255,9 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+
 		info.Multiaddrs = params.NewMultiaddrs
 		err := st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
@@ -285,7 +323,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var info *MinerInfo
 	rt.State().Transaction(&st, func() {
 		info = getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		// Validate that the miner didn't try to prove too many partitions at once.
 		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
@@ -451,7 +490,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+
 		if params.SealProof != info.SealProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
 		}
@@ -656,7 +697,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				uint64(precommit.Info.ReplaceSectorNumber),
 			)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to record sectors for replacement")
-
 		}
 	}
 
@@ -673,8 +713,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	rt.State().Transaction(&st, func() {
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
-		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
+		replaced, err := st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
+		replacedBySectorNumber := asMapBySectorNumber(replaced)
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
 		for _, precommit := range preCommits {
@@ -697,6 +738,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
+			replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
+
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
 				SealProof:             precommit.Info.SealProof,
@@ -709,6 +752,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				InitialPledge:         initialPledge,
 				ExpectedDayReward:     dayReward,
 				ExpectedStoragePledge: storagePledge,
+				ReplacedSectorAge:     replacedAge,
+				ReplacedDayReward:     replacedDayReward,
 			}
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
@@ -821,7 +866,8 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -973,7 +1019,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1056,7 +1102,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	newFaultPowerTotal := NewPowerPairZero()
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1130,7 +1176,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		verifyPledgeMeetsInitialRequirements(rt, &st)
 
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1191,7 +1237,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		if !deadlineIsMutable(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
@@ -1254,7 +1300,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 		err := st.MaskSectorNumbers(store, params.MaskSectorNumbers)
 
@@ -1278,7 +1324,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 	rt.State().Transaction(&st, func() {
 		var err error
 		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(info.Worker, info.Owner, builtin.RewardActorAddr)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker, builtin.RewardActorAddr)...)
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
 		// This ensures that the amountToLock is always locked up if the miner account
@@ -1988,7 +2034,7 @@ func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.
-func resolveOwnerAddress(rt Runtime, raw addr.Address) addr.Address {
+func resolveControlAddress(rt Runtime, raw addr.Address) addr.Address {
 	resolved, ok := rt.ResolveAddress(raw)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
@@ -2093,6 +2139,27 @@ func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi
 	return periodStart
 }
 
+func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*SectorOnChainInfo {
+	m := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectors))
+	for _, s := range sectors {
+		m[s.SectorNumber] = s
+	}
+	return m
+}
+
+func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (abi.ChainEpoch, big.Int) {
+	if !precommit.Info.ReplaceCapacity {
+		return abi.ChainEpoch(0), big.Zero()
+	}
+	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
+	if !ok {
+		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
+	}
+	// The sector will actually be active for the period between activation and its next proving deadline,
+	// but this covers the period for which we will be looking to the old sector for termination fees.
+	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
+}
+
 // Computes deadline information for a fault or recovery declaration.
 // If the deadline has not yet elapsed, the declaration is taken as being for the current proving period.
 // If the deadline has elapsed, it's instead taken as being for the next proving period after the current epoch.
@@ -2130,7 +2197,7 @@ func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, rew
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.ExpectedDayReward, s.ExpectedStoragePledge, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
+		fee := PledgePenaltyForTermination(s.ExpectedDayReward, currEpoch-s.Activation, s.ExpectedStoragePledge, networkQAPowerEstimate, sectorPower, rewardEstimate, s.ReplacedDayReward, s.ReplacedSectorAge)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee
@@ -2183,6 +2250,13 @@ func max64(a, b uint64) uint64 {
 
 func minEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
+	if a > b {
 		return a
 	}
 	return b

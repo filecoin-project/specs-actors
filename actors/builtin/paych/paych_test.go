@@ -19,6 +19,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -219,11 +220,17 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				rt.Call(actor.UpdateChannelState, ucp)
 				var st State
 				rt.GetState(&st)
-				assert.Len(t, st.LaneStates, 1)
-				ls := st.LaneStates[0]
+				lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
+				assert.NoError(t, err)
+				assert.Equal(t, uint64(1), lstates.Length())
+
+				var ls LaneState
+				found, err := lstates.Get(sv.Lane, &ls)
+				assert.True(t, found)
+				assert.NoError(t, err)
+
 				assert.Equal(t, sv.Amount, ls.Redeemed)
 				assert.Equal(t, sv.Nonce, ls.Nonce)
-				assert.Equal(t, sv.Lane, ls.ID)
 			} else {
 				rt.ExpectAbort(tc.expExitCode, func() {
 					rt.Call(actor.UpdateChannelState, ucp)
@@ -236,6 +243,39 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 	}
 }
 
+func assertLaneStatesLength(t *testing.T, rt *mock.Runtime, rcid cid.Cid, l int) {
+	t.Helper()
+	arr, err := adt.AsArray(adt.AsStore(rt), rcid)
+	assert.NoError(t, err)
+	assert.Equal(t, arr.Length(), uint64(l))
+}
+
+func constructLaneStateAMT(t *testing.T, rt *mock.Runtime, lss []*LaneState) cid.Cid {
+	t.Helper()
+	arr := adt.MakeEmptyArray(adt.AsStore(rt))
+	for i, ls := range lss {
+		err := arr.Set(uint64(i), ls)
+		assert.NoError(t, err)
+	}
+
+	c, err := arr.Root()
+	assert.NoError(t, err)
+
+	return c
+}
+
+func getLaneState(t *testing.T, rt *mock.Runtime, rcid cid.Cid, lane uint64) *LaneState {
+	arr, err := adt.AsArray(adt.AsStore(rt), rcid)
+	assert.NoError(t, err)
+
+	var out LaneState
+	found, err := arr.Get(lane, &out)
+	assert.NoError(t, err)
+	assert.True(t, found)
+
+	return &out
+}
+
 func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 	ctx := context.Background()
 	newVoucherAmt := big.NewInt(9)
@@ -246,7 +286,6 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		rt.GetState(&st1)
 
 		expLs := LaneState{
-			ID:       0,
 			Redeemed: newVoucherAmt,
 			Nonce:    2,
 		}
@@ -268,7 +307,7 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 			ToSend:          newVoucherAmt,
 			SettlingAt:      st1.SettlingAt,
 			MinSettleHeight: st1.MinSettleHeight,
-			LaneStates:      []*LaneState{&expLs},
+			LaneStates:      constructLaneStateAMT(t, rt, []*LaneState{&expLs}),
 		}
 		verifyState(t, rt, 1, expState)
 	})
@@ -283,7 +322,8 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		ucp := &UpdateChannelStateParams{Sv: *sv}
 		ucp.Sv.Amount = newVoucherAmt
 		ucp.Sv.Lane = 1
-		lsToUpdate := st1.LaneStates[ucp.Sv.Lane]
+
+		lsToUpdate := getLaneState(t, rt, st1.LaneStates, ucp.Sv.Lane)
 		ucp.Sv.Nonce = lsToUpdate.Nonce + 1
 
 		// Sending to same lane updates the lane with "new" state
@@ -295,7 +335,7 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		rt.Verify()
 
 		rt.GetState(&st2)
-		lUpdated := st2.LaneStates[ucp.Sv.Lane]
+		lUpdated := getLaneState(t, rt, st2.LaneStates, ucp.Sv.Lane)
 
 		bDelta := big.Sub(ucp.Sv.Amount, lsToUpdate.Redeemed)
 		expToSend := big.Add(initialAmt, bDelta)
@@ -336,14 +376,16 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	rt.GetState(&st1)
 	rt.SetCaller(st1.From, builtin.AccountActorCodeID)
 
-	mergeTo := st1.LaneStates[0]
-	mergeFrom := st1.LaneStates[1]
+	mergeToID := uint64(0)
+	mergeTo := getLaneState(t, rt, st1.LaneStates, mergeToID)
+	mergeFromID := uint64(1)
+	mergeFrom := getLaneState(t, rt, st1.LaneStates, mergeFromID)
 
 	// Note sv.Amount = 4
-	sv.Lane = mergeTo.ID
+	sv.Lane = mergeToID
 	mergeNonce := mergeTo.Nonce + 10
 
-	merges := []Merge{{Lane: mergeFrom.ID, Nonce: mergeNonce}}
+	merges := []Merge{{Lane: mergeFromID, Nonce: mergeNonce}}
 	sv.Merges = merges
 
 	ucp := &UpdateChannelStateParams{Sv: *sv}
@@ -353,8 +395,8 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	require.Nil(t, ret)
 	rt.Verify()
 
-	expMergeTo := LaneState{ID: mergeTo.ID, Redeemed: sv.Amount, Nonce: sv.Nonce}
-	expMergeFrom := LaneState{ID: mergeFrom.ID, Redeemed: mergeFrom.Redeemed, Nonce: mergeNonce}
+	expMergeTo := LaneState{Redeemed: sv.Amount, Nonce: sv.Nonce}
+	expMergeFrom := LaneState{Redeemed: mergeFrom.Redeemed, Nonce: mergeNonce}
 
 	// calculate ToSend amount
 	redeemed := big.Add(mergeFrom.Redeemed, mergeTo.Redeemed)
@@ -364,7 +406,7 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	// last lane should be unchanged
 	expState := st1
 	expState.ToSend = expSendAmt
-	expState.LaneStates = []*LaneState{&expMergeTo, &expMergeFrom, st1.LaneStates[2]}
+	expState.LaneStates = constructLaneStateAMT(t, rt, []*LaneState{&expMergeTo, &expMergeFrom, getLaneState(t, rt, st1.LaneStates, 2)})
 	verifyState(t, rt, numLanes, expState)
 }
 
@@ -406,12 +448,12 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 
 			var st1 State
 			rt.GetState(&st1)
-			mergeTo := st1.LaneStates[0]
-			mergeFrom := st1.LaneStates[tc.lane]
+			mergeToID := uint64(0)
+			mergeFromID := uint64(tc.lane)
 
-			sv.Lane = mergeTo.ID
+			sv.Lane = mergeToID
 			sv.Nonce = tc.voucherNonce
-			merges := []Merge{{Lane: mergeFrom.ID, Nonce: tc.mergeNonce}}
+			merges := []Merge{{Lane: mergeFromID, Nonce: tc.mergeNonce}}
 			sv.Merges = merges
 			ucp := &UpdateChannelStateParams{Sv: *sv}
 
@@ -430,12 +472,12 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 
 		var st1 State
 		rt.GetState(&st1)
-		mergeTo := st1.LaneStates[0]
-		mergeFrom := LaneState{ID: 999, Nonce: 2}
+		mergeToID := uint64(0)
+		mergeFromID := uint64(999)
 
-		sv.Lane = mergeTo.ID
+		sv.Lane = mergeToID
 		sv.Nonce = 10
-		merges := []Merge{{Lane: mergeFrom.ID, Nonce: sv.Nonce}}
+		merges := []Merge{{Lane: mergeFromID, Nonce: sv.Nonce}}
 		sv.Merges = merges
 		ucp := &UpdateChannelStateParams{Sv: *sv}
 
@@ -448,12 +490,12 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		rt.Verify()
 	})
 
-	t.Run("Too many lanes, fails with: lane limit exceeded", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), LaneLimit)
+	t.Run("Lane ID over max fails", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
 
 		var st1 State
 		rt.GetState(&st1)
-		sv.Lane++
+		sv.Lane = MaxLane + 1
 		sv.Nonce++
 		sv.Amount = abi.NewTokenAmount(100)
 		ucp := &UpdateChannelStateParams{Sv: *sv}
@@ -826,7 +868,9 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
 	var st State
 	rt.GetState(&st)
-	expectedState := State{From: sender, To: receiver, ToSend: abi.NewTokenAmount(0)}
+	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	assert.NoError(t, err)
+	expectedState := State{From: sender, To: receiver, ToSend: abi.NewTokenAmount(0), LaneStates: emptyArrCid}
 	verifyState(t, rt, -1, expectedState)
 }
 
@@ -839,10 +883,12 @@ func verifyState(t *testing.T, rt *mock.Runtime, expLanes int, expectedState Sta
 	assert.Equal(t, expectedState.SettlingAt, st.SettlingAt)
 	assert.Equal(t, expectedState.ToSend, st.ToSend)
 	if expLanes >= 0 {
-		require.Len(t, st.LaneStates, expLanes)
+		assertLaneStatesLength(t, rt, st.LaneStates, expLanes)
 		assert.True(t, reflect.DeepEqual(expectedState.LaneStates, st.LaneStates))
 	} else {
-		assert.Len(t, st.LaneStates, 0)
+		ecid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+		assert.NoError(t, err)
+		assert.Equal(t, st.LaneStates, ecid)
 	}
 }
 

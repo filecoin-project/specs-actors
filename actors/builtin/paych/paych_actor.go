@@ -2,7 +2,7 @@ package paych
 
 import (
 	"bytes"
-	"sort"
+	"math"
 
 	addr "github.com/filecoin-project/go-address"
 
@@ -16,7 +16,7 @@ import (
 )
 
 // Maximum number of lanes in a channel.
-const LaneLimit = 256
+const MaxLane = math.MaxInt64
 
 const SettleDelay = builtin.EpochsInHour * 12
 
@@ -50,7 +50,10 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 	from, err := pca.resolveAccount(rt, params.From)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve from address: %s", params.From)
 
-	st := ConstructState(from, to)
+	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
+
+	st := ConstructState(from, to, emptyArrCid)
 	rt.State().Create(st)
 
 	return nil
@@ -192,25 +195,26 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 
 	rt.State().Transaction(&st, func() {
 		laneFound := true
-		// Find the voucher lane, create and insert it in sorted order if necessary.
-		laneIdx, ls := findLane(st.LaneStates, sv.Lane)
-		if ls == nil {
-			if len(st.LaneStates) >= LaneLimit {
-				rt.Abortf(exitcode.ErrIllegalArgument, "lane limit exceeded")
-			}
-			ls = &LaneState{
-				ID:       sv.Lane,
+
+		lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load lanes")
+
+		// Find the voucher lane, creating if necessary.
+		laneId := sv.Lane
+		laneState := findLane(rt, lstates, sv.Lane)
+
+		if laneState == nil {
+			laneState = &LaneState{
 				Redeemed: big.Zero(),
 				Nonce:    0,
 			}
-			st.LaneStates = append(st.LaneStates[:laneIdx], append([]*LaneState{ls}, st.LaneStates[laneIdx:]...)...)
 			laneFound = false
 		}
 
 		if laneFound {
-			if ls.Nonce >= sv.Nonce {
+			if laneState.Nonce >= sv.Nonce {
 				rt.Abortf(exitcode.ErrIllegalArgument, "voucher has an outdated nonce, existing nonce: %d, voucher nonce: %d, cannot redeem",
-					ls.Nonce, sv.Nonce)
+					laneState.Nonce, sv.Nonce)
 			}
 		}
 
@@ -222,25 +226,28 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 				rt.Abortf(exitcode.ErrIllegalArgument, "voucher cannot merge lanes into its own lane")
 			}
 
-			_, otherls := findLane(st.LaneStates, merge.Lane)
-			if otherls != nil {
-				if otherls.Nonce >= merge.Nonce {
-					rt.Abortf(exitcode.ErrIllegalArgument, "merged lane in voucher has outdated nonce, cannot redeem")
-				}
-
-				redeemedFromOthers = big.Add(redeemedFromOthers, otherls.Redeemed)
-				otherls.Nonce = merge.Nonce
-			} else {
+			otherls := findLane(rt, lstates, merge.Lane)
+			if otherls == nil {
 				rt.Abortf(exitcode.ErrIllegalArgument, "voucher specifies invalid merge lane %v", merge.Lane)
+				return // makes linters happy
 			}
+
+			if otherls.Nonce >= merge.Nonce {
+				rt.Abortf(exitcode.ErrIllegalArgument, "merged lane in voucher has outdated nonce, cannot redeem")
+			}
+
+			redeemedFromOthers = big.Add(redeemedFromOthers, otherls.Redeemed)
+			otherls.Nonce = merge.Nonce
+			err = lstates.Set(merge.Lane, otherls)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store lane %d", merge.Lane)
 		}
 
 		// 2. To prevent double counting, remove already redeemed amounts (from
 		// voucher or other lanes) from the voucher amount
-		ls.Nonce = sv.Nonce
-		balanceDelta := big.Sub(sv.Amount, big.Add(redeemedFromOthers, ls.Redeemed))
+		laneState.Nonce = sv.Nonce
+		balanceDelta := big.Sub(sv.Amount, big.Add(redeemedFromOthers, laneState.Redeemed))
 		// 3. set new redeemed value for merged-into lane
-		ls.Redeemed = sv.Amount
+		laneState.Redeemed = sv.Amount
 
 		newSendBalance := big.Add(st.ToSend, balanceDelta)
 
@@ -264,6 +271,12 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 				st.MinSettleHeight = sv.MinSettleHeight
 			}
 		}
+
+		err = lstates.Set(laneId, laneState)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to store lane", laneId)
+
+		st.LaneStates, err = lstates.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save lanes")
 	})
 	return nil
 }
@@ -322,13 +335,18 @@ func (t *SignedVoucher) SigningBytes() ([]byte, error) {
 }
 
 // Returns the insertion index for a lane ID, with the matching lane state if found, or nil.
-func findLane(lanes []*LaneState, ID uint64) (int, *LaneState) {
-	insertionIdx := sort.Search(len(lanes), func(i int) bool {
-		return lanes[i].ID >= ID
-	})
-	if insertionIdx == len(lanes) || lanes[insertionIdx].ID != uint64(insertionIdx) {
-		// Not found
-		return insertionIdx, nil
+func findLane(rt vmr.Runtime, ls *adt.Array, id uint64) *LaneState {
+	if id > MaxLane {
+		rt.Abortf(exitcode.ErrIllegalArgument, "maximum lane ID is 2^63-1")
 	}
-	return insertionIdx, lanes[insertionIdx]
+
+	var out LaneState
+	found, err := ls.Get(id, &out)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load lane %d", id)
+
+	if !found {
+		return nil
+	}
+
+	return &out
 }

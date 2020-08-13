@@ -85,6 +85,9 @@ type MinerInfo struct {
 	// The associated pubkey-type address is used to sign blocks and messages on behalf of this miner.
 	Worker addr.Address // Must be an ID-address.
 
+	// Additional addresses that are permitted to submit messages controlling this actor (optional).
+	ControlAddresses []addr.Address // Must all be ID addresses.
+
 	PendingWorkerKey *WorkerKeyChange
 
 	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
@@ -147,6 +150,8 @@ type SectorOnChainInfo struct {
 	InitialPledge         abi.TokenAmount // Pledge collected to commit this sector
 	ExpectedDayReward     abi.TokenAmount // Expected one day projection of reward for sector computed at activation time
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
+	ReplacedSectorAge     abi.ChainEpoch  // Age of sector this sector replaced or zero
+	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
 }
 
 func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
@@ -172,7 +177,8 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 	}, nil
 }
 
-func ConstructMinerInfo(owner addr.Address, worker addr.Address, pid []byte, multiAddrs [][]byte, sealProofType abi.RegisteredSealProof) (*MinerInfo, error) {
+func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []addr.Address, pid []byte,
+	multiAddrs [][]byte, sealProofType abi.RegisteredSealProof) (*MinerInfo, error) {
 
 	sectorSize, err := sealProofType.SectorSize()
 	if err != nil {
@@ -186,6 +192,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, pid []byte, mul
 	return &MinerInfo{
 		Owner:                      owner,
 		Worker:                     worker,
+		ControlAddresses:           controlAddrs,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,
@@ -439,16 +446,17 @@ func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint
 func (st *State) RescheduleSectorExpirations(
 	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
 	deadlineSectors DeadlineSectorMap,
-) error {
+) ([]*SectorOnChainInfo, error) {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sectors, err := LoadSectors(store, st.Sectors)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var allReplaced []*SectorOnChainInfo
 	if err = deadlineSectors.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
 		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch).NextNotElapsed()
 		newExpiration := dlInfo.Last()
@@ -458,9 +466,11 @@ func (st *State) RescheduleSectorExpirations(
 			return err
 		}
 
-		if err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, dlInfo.QuantSpec()); err != nil {
+		replaced, err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, dlInfo.QuantSpec())
+		if err != nil {
 			return err
 		}
+		allReplaced = append(allReplaced, replaced...)
 
 		if err := deadlines.UpdateDeadline(store, dlIdx, dl); err != nil {
 			return err
@@ -468,9 +478,9 @@ func (st *State) RescheduleSectorExpirations(
 
 		return nil
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	return st.SaveDeadlines(store, deadlines)
+	return allReplaced, st.SaveDeadlines(store, deadlines)
 }
 
 // Assign new sectors to deadlines.
