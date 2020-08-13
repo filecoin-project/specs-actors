@@ -432,7 +432,7 @@ func TestCommitments(t *testing.T) {
 		oldIPReqs := st.InitialPledgeRequirement
 		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
 		})
 		// reset state back to normal
@@ -1479,7 +1479,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		// Attempt to recover
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func () {
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
 			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
 		})
 	})
@@ -1918,15 +1918,129 @@ func TestWithdrawBalance(t *testing.T) {
 
 func TestChangePeerID(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
 
 	t.Run("successfully change peer id", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		newPID := tutil.MakePID("test-change-peer-id")
+		actor.changePeerID(rt, newPID)
+	})
+}
+
+func TestCompactPartitions(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("successfully compact partitions", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(200)
+		info := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
+
+		st := getState(rt)
+		dlIdx, partIdx1, err := st.FindSector(rt.AdtStore(), info[0].SectorNumber)
+		require.NoError(t, err)
+		_, partIdx2, err := st.FindSector(rt.AdtStore(), info[1].SectorNumber)
+		require.NoError(t, err)
+
+		// add partitions to state
+		partitions := bitfield.NewFromSet([]uint64{partIdx1, partIdx2})
+
+		actor.compactPartitions(rt, dlIdx, partitions)
+	})
+
+	t.Run("fails if deadline is equal to WPoStPeriodDeadlines", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.compactPartitions(rt, miner.WPoStPeriodDeadlines, bitfield.New())
+		})
+	})
+
+	t.Run("fails if deadline is not mutable", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		epoch := abi.ChainEpoch(200)
+		rt.SetEpoch(epoch)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 1, bitfield.New())
+		})
+	})
+
+	t.Run("fails if partition count is above limit", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// partition limit is 4 for the default construction
+		bf := bitfield.NewFromSet([]uint64{1, 2, 3, 4, 5})
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.compactPartitions(rt, 1, bf)
+		})
+	})
+}
+
+func TestCheckSectorProven(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	t.Run("successfully check sector is proven", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		sectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, [][]abi.DealID{{10}})
+
+		actor.checkSectorProven(rt, sectors[0].SectorNumber)
+	})
+
+	t.Run("fails is sector is not found", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
+			actor.checkSectorProven(rt, abi.SectorNumber(1))
+		})
+	})
+}
+
+func TestChangeMultiAddrs(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	t.Run("successfully change multiaddrs", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		builder := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero())
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		newPID := tutil.MakePID("test-change-peer-id")
-		actor.changePeerID(rt, newPID)
+
+		addr1 := abi.Multiaddrs([]byte("addr1"))
+		addr2 := abi.Multiaddrs([]byte("addr2"))
+
+		actor.changeMultiAddrs(rt, []abi.Multiaddrs{addr1, addr2})
+	})
+
+	t.Run("clear multiaddrs by passing in empty slice", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		actor.changeMultiAddrs(rt, nil)
 	})
 }
 
@@ -2644,6 +2758,30 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 
 }
 
+func (h *actorHarness) checkSectorProven(rt *mock.Runtime, sectorNum abi.SectorNumber) {
+	param := &miner.CheckSectorProvenParams{sectorNum}
+
+	rt.ExpectValidateCallerAny()
+
+	rt.Call(h.a.CheckSectorProven, param)
+	rt.Verify()
+}
+
+func (h *actorHarness) changeMultiAddrs(rt *mock.Runtime, newAddrs []abi.Multiaddrs) {
+	param := &miner.ChangeMultiaddrsParams{newAddrs}
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+
+	rt.Call(h.a.ChangeMultiaddrs, param)
+	rt.Verify()
+
+	// assert addrs has changed
+	st := getState(rt)
+	info, err := st.GetInfo(adt.AsStore(rt))
+	require.NoError(h.t, err)
+	require.EqualValues(h.t, newAddrs, info.Multiaddrs)
+}
+
 func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	param := &miner.ChangePeerIDParams{NewID: newPID}
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
@@ -3308,6 +3446,16 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amount abi.TokenAmount) {
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amount,
 	})
+	rt.Verify()
+}
+
+func (h *actorHarness) compactPartitions(rt *mock.Runtime, deadline uint64, partitions bitfield.BitField) {
+	param := miner.CompactPartitionsParams{deadline, partitions}
+
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+
+	rt.Call(h.a.CompactPartitions, &param)
 	rt.Verify()
 }
 
