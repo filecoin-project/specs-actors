@@ -62,10 +62,9 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	rootVerifier := verifregRootAddresses(t)
 	addrTreeRoot := initAddressTree(t, vm, rootVerifier)
 	initState := initactor.ConstructState(addrTreeRoot, "scenarios")
-	initState.NextID = abi.ActorID(builtin.FirstNonSingletonActorId)
 	initializeActor(ctx, t, vm, initState, builtin.InitActorCodeID, builtin.InitActorAddr, big.Zero())
 
-	rewardState := reward.ConstructState(big.Mul(big.NewInt(100), FIL))
+	rewardState := reward.ConstructState(abi.NewStoragePower(0))
 	initializeActor(ctx, t, vm, rewardState, builtin.RewardActorCodeID, builtin.RewardActorAddr, big.Max(big.NewInt(14e8), FIL))
 
 	cronState := cron.ConstructState(cron.BuiltInEntries())
@@ -94,14 +93,14 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 }
 
 // Creates n account actors in the VM with the given balance
-func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance abi.TokenAmount) []address.Address {
+func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance abi.TokenAmount, seed int64) []address.Address {
 	var initState initactor.State
 	err := vm.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
 
 	addrPairs := make([]addrPair, n)
 	for i := range addrPairs {
-		addr := actor_testing.NewBLSAddr(t, 93837778)
+		addr := actor_testing.NewBLSAddr(t, seed+int64(i))
 		idAddr, err := initState.MapAddressToNewID(vm.store, addr)
 		require.NoError(t, err)
 
@@ -126,42 +125,10 @@ func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance ab
 // Invocation expectations
 //
 
-func ExpectObject(v runtime.CBORMarshaler) *objectExpectation {
-	return &objectExpectation{v}
-}
-
-// distinguishes a non-expectation from an expectation of nil
-type objectExpectation struct {
-	val runtime.CBORMarshaler
-}
-
-func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount }
-func ExpectAddress(addr address.Address) *address.Address      { return &addr }
-func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(runtime.CBORBytes(b)) }
-func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
-
-// match by cbor encoding to avoid inconsistencies in internal representations of effectively equal objects
-func (oe objectExpectation) matches(obj interface{}) bool {
-	if oe.val == nil || obj == nil {
-		return oe.val == nil && obj == nil
-	}
-
-	paramBuf1 := new(bytes.Buffer)
-	oe.val.MarshalCBOR(paramBuf1) // nolint: errcheck
-	marshaller, ok := obj.(runtime.CBORMarshaler)
-	if !ok {
-		return false
-	}
-	paramBuf2 := new(bytes.Buffer)
-	if marshaller != nil {
-		marshaller.MarshalCBOR(paramBuf2) // nolint: errcheck
-	}
-	return bytes.Equal(paramBuf1.Bytes(), paramBuf2.Bytes())
-}
-
-var okExitCode = exitcode.Ok
-var ExpectOK = &okExitCode
-
+// ExpectInvocation is a pattern for a message invocation within the VM.
+// The To and Method fields must be supplied. Exitcode defaults to exitcode.Ok.
+// All other field are optional, where a nil value indicates that any value will match.
+// SubInvocations will be matched recursively.
 type ExpectInvocation struct {
 	To       address.Address
 	Method   abi.MethodNum
@@ -215,6 +182,43 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 		assert.True(t, ei.Ret.matches(invocation.Ret), "%s unexpected return value (%v != %v)", identifier, ei.Ret, invocation.Ret)
 	}
 }
+
+// helpers to simplify pointer creation
+func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount }
+func ExpectAddress(addr address.Address) *address.Address      { return &addr }
+func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(runtime.CBORBytes(b)) }
+func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
+
+func ExpectObject(v runtime.CBORMarshaler) *objectExpectation {
+	return &objectExpectation{v}
+}
+
+// distinguishes a non-expectation from an expectation of nil
+type objectExpectation struct {
+	val runtime.CBORMarshaler
+}
+
+// match by cbor encoding to avoid inconsistencies in internal representations of effectively equal objects
+func (oe objectExpectation) matches(obj interface{}) bool {
+	if oe.val == nil || obj == nil {
+		return oe.val == nil && obj == nil
+	}
+
+	paramBuf1 := new(bytes.Buffer)
+	oe.val.MarshalCBOR(paramBuf1) // nolint: errcheck
+	marshaller, ok := obj.(runtime.CBORMarshaler)
+	if !ok {
+		return false
+	}
+	paramBuf2 := new(bytes.Buffer)
+	if marshaller != nil {
+		marshaller.MarshalCBOR(paramBuf2) // nolint: errcheck
+	}
+	return bytes.Equal(paramBuf1.Bytes(), paramBuf2.Bytes())
+}
+
+var okExitCode = exitcode.Ok
+var ExpectOK = &okExitCode
 
 func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 	invocations := vm.Invocations()

@@ -92,7 +92,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 	}
 }
 
-func (vm *VM) NewVMAtEpoch(epoch abi.ChainEpoch) (*VM, error) {
+func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 	_, err := vm.checkpoint()
 	if err != nil {
 		return nil, err

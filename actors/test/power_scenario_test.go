@@ -20,7 +20,7 @@ import (
 func TestCreateMiner(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	params := power.CreateMinerParams{
 		Owner:         addrs[0],
@@ -72,7 +72,7 @@ func TestCreateMiner(t *testing.T) {
 func TestOnEpochTickEnd(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)))
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	// create a miner
 	params := power.CreateMinerParams{Owner: addrs[0], Worker: addrs[0], SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1, Peer: abi.PeerID("pid")}
@@ -91,7 +91,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.True(t, ok)
 
 	// create new vm at epoch 1 less than epoch requested by miner
-	v, err := v.NewVMAtEpoch(cronConfig.EventEpoch - 1)
+	v, err := v.WithEpoch(cronConfig.EventEpoch - 1)
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
@@ -112,7 +112,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	}.Matches(t, v.Invocations()[0])
 
 	// create new vm at cron epoch with existing state
-	v, err = v.NewVMAtEpoch(cronConfig.EventEpoch)
+	v, err = v.WithEpoch(cronConfig.EventEpoch)
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
