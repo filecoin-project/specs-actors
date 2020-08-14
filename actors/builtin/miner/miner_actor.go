@@ -290,9 +290,8 @@ type SubmitWindowedPoStParams struct {
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
-	// The epoch at which these proofs is being committed to a particular chain.
-	ChainCommitEpoch abi.ChainEpoch
-	// The ticket randomness on the chain at the ChainCommitEpoch on the chain this post is committed to
+	// The ticket randomness on the chain at the challenge epoch (WPoStChallengeLookback before the
+	// challenge window opens).
 	ChainCommitRand abi.Randomness
 }
 
@@ -304,16 +303,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
-	}
-	if params.ChainCommitEpoch >= currEpoch {
-		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d must be in the past", params.ChainCommitEpoch)
-	}
-	if params.ChainCommitEpoch < currEpoch-WPoStMaxChainCommitAge {
-		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must be after %d", params.ChainCommitEpoch, currEpoch-WPoStMaxChainCommitAge)
-	}
-	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
-	if !bytes.Equal(commRand, params.ChainCommitRand) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 	}
 
 	// Get the total power/reward. We need these to compute penalties.
@@ -362,6 +351,13 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		if params.Deadline != currDeadline.Index {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
 				params.Deadline, currEpoch, currDeadline.Index)
+		}
+
+		// Verify that the PoSt was committed to the chain at the challenge deadline
+		// (or at most WPoStChallengeLookback+WPoStChallengeWindow in the past).
+		commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, currDeadline.Challenge, nil)
+		if !bytes.Equal(commRand, params.ChainCommitRand) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 		}
 
 		sectors, err := LoadSectors(store, st.Sectors)
