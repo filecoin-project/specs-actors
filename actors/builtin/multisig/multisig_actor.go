@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -471,19 +472,26 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
+		// Technically, actors take _bytes_ as their method params. However,
+		// given that we pass them around as a cbor-able object, we need to
+		// ensure it correctly encodes to CBOR.
+		// See: https://github.com/filecoin-project/specs-actors/issues/972
+		params, err := vmr.CheckCBOR(txn.Params)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid transaction parameters")
+
 		var ret vmr.SendReturn
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
 		ret, code = rt.Send(
 			txn.To,
 			txn.Method,
-			vmr.CBORBytes(txn.Params),
+			params,
 			txn.Value,
 		)
 		applied = true
 
 		// Pass the return value through uninterpreted with the expectation that serializing into a CBORBytes never fails
 		// since it just copies the bytes.
-		err := ret.Into(&out)
+		err = ret.Into(&out)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to deserialize result")
 
 		// This could be rearranged to happen inside the first state transaction, before the send().

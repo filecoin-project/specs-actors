@@ -11,6 +11,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -474,14 +475,14 @@ func TestCron(t *testing.T) {
 		//  4 - block - has event
 
 		rt.SetEpoch(1)
-		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
-		actor.enrollCronEvent(rt, miner2, 4, []byte{0x2, 0x3})
+		actor.enrollCronEvent(rt, miner1, 2, cbg.CborBoolFalse)
+		actor.enrollCronEvent(rt, miner2, 4, cbg.CborBoolTrue)
 
 		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x2, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(cbg.CborBoolFalse), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(cbg.CborBoolTrue), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -507,12 +508,12 @@ func TestCron(t *testing.T) {
 		rt.Verify()
 
 		// enroll a cron task at epoch 2 (which is in the past)
-		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
+		actor.enrollCronEvent(rt, miner1, 2, cbg.CborBoolTrue)
 
 		// run cron again in the future
 		rt.SetEpoch(6)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(cbg.CborBoolTrue), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -549,8 +550,8 @@ func TestCron(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		rt.SetEpoch(1)
-		actor.enrollCronEvent(rt, miner1, 2, []byte{})
-		actor.enrollCronEvent(rt, miner2, 2, []byte{})
+		actor.enrollCronEvent(rt, miner1, 2, cbg.CborNull)
+		actor.enrollCronEvent(rt, miner2, 2, cbg.CborNull)
 
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
@@ -564,11 +565,11 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(2)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		// First send fails
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.ErrIllegalState)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(cbg.CborNull), big.Zero(), nil, exitcode.ErrIllegalState)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
 		// Subsequent one still invoked
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(cbg.CborNull), big.Zero(), nil, exitcode.Ok)
 		// Reward actor still invoked
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)

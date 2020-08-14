@@ -401,10 +401,19 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 	})
 	failedMinerCrons := make([]addr.Address, 0)
 	for _, event := range cronEvents {
+		// Technically, actors take _bytes_ as their method params. However,
+		// given that we pass them around as a cbor-able object, we need to
+		// ensure it correctly encodes to CBOR.
+		// See: https://github.com/filecoin-project/specs-actors/issues/972
+		params, err := vmr.CheckCBOR(event.CallbackPayload)
+		if err != nil {
+			rt.Log(vmr.WARN, "OnDeferredCronEvent failed for due to invalid callback payload: %s", err)
+			continue
+		}
 		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
-			vmr.CBORBytes(event.CallbackPayload),
+			params,
 			abi.NewTokenAmount(0),
 		)
 		// If a callback fails, this actor continues to invoke other callbacks

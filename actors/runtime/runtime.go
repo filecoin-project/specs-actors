@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
@@ -284,6 +285,13 @@ type CBORUnmarshaler interface {
 type CBORer interface {
 	CBORMarshaler
 	CBORUnmarshaler
+}
+
+func CheckCBOR(inp []byte) (CBORBytes, error) {
+	if err := cbg.ValidateCBOR(inp); err != nil {
+		return nil, err
+	}
+	return inp, nil
 }
 
 // Wraps already-serialized bytes as CBOR-marshalable.

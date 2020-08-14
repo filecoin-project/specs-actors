@@ -6,6 +6,7 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -55,7 +56,7 @@ func TestExec(t *testing.T) {
 		})
 	})
 
-	var fakeParams = runtime.CBORBytes([]byte{'D', 'E', 'A', 'D', 'B', 'E', 'E', 'F'})
+	var fakeParams = runtime.CBORBytes(cbg.CborNull)
 	var balance = abi.NewTokenAmount(100)
 
 	t.Run("happy path exec create 2 payment channels", func(t *testing.T) {

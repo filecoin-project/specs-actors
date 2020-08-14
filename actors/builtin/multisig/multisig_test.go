@@ -9,6 +9,7 @@ import (
 	"github.com/minio/blake2b-simd"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -197,7 +198,7 @@ func TestVesting(t *testing.T) {
 
 	const unlockDuration = 10
 	var multisigInitialBalance = abi.NewTokenAmount(100)
-	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
+	var fakeParams = runtime.CBORBytes(cbg.CborNull)
 
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
@@ -326,7 +327,7 @@ func TestPropose(t *testing.T) {
 
 	const noUnlockDuration = int64(0)
 	var sendValue = abi.NewTokenAmount(10)
-	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
+	var fakeParams = runtime.CBORBytes(cbg.CborNull)
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -445,7 +446,7 @@ func TestApprove(t *testing.T) {
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
 	var sendValue = abi.NewTokenAmount(10)
-	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
+	var fakeParams = runtime.CBORBytes(cbg.CborNull)
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).
@@ -815,7 +816,7 @@ func TestCancel(t *testing.T) {
 	const numApprovals = uint64(2)
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
-	var fakeParams = []byte{1, 2, 3, 4, 5}
+	var fakeParams = runtime.CBORBytes(cbg.CborNull)
 	var sendValue = abi.NewTokenAmount(10)
 	var signers = []addr.Address{anne, bob}
 

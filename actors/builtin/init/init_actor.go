@@ -57,6 +57,13 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 		rt.Abortf(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}
 
+	// Technically, actors take _bytes_ as their method params. However,
+	// given that we pass them around as a cbor-able object, we need to
+	// ensure it correctly encodes to CBOR.
+	// See: https://github.com/filecoin-project/specs-actors/issues/972
+	ctorParams, err := runtime.CheckCBOR(params.ConstructorParams)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "params must be valid CBOR")
+
 	// Compute a re-org-stable address.
 	// This address exists for use by messages coming from outside the system, in order to
 	// stably address the newly created actor even if a chain re-org causes it to end up with
@@ -77,7 +84,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.CreateActor(params.CodeCID, idAddr)
 
 	// Invoke constructor.
-	_, code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.Message().ValueReceived())
+	_, code := rt.Send(idAddr, builtin.MethodConstructor, ctorParams, rt.Message().ValueReceived())
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{idAddr, uniqueAddress}
