@@ -16,6 +16,8 @@ type State struct {
 	// for a public key that has not yet received a message on chain.
 	// If any signer address is a public-key address, it will be resolved to an ID address and persisted
 	// in this state when the address is used.
+	// TODO: consider limiting the number of signers
+	// https://github.com/filecoin-project/specs-actors/issues/897
 	Signers               []address.Address
 	NumApprovalsThreshold uint64
 	NextTxnID             TxnID

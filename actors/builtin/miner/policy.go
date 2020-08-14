@@ -10,7 +10,6 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	. "github.com/filecoin-project/specs-actors/actors/util"
-
 )
 
 // The period over which all a miner's active sectors will be challenged.
@@ -49,6 +48,20 @@ const AddressedPartitionsMax = 200
 
 // The maximum number of sector infos that may be required to be loaded in a single invocation.
 const AddressedSectorsMax = 10_000
+
+// Libp2p peer info limits.
+const (
+	// MaxPeerIDLength is the maximum length allowed for any on-chain peer ID. Most
+	// Peer IDs should be less than 50 bytes.
+	MaxPeerIDLength = 128
+
+	// MaxMultiaddrData is the maximum amount of data that can be stored in
+	// multiaddrs.
+	MaxMultiaddrData = 1024
+)
+
+// Maximum bytes in a single prove-commit proof.
+const MaxProveCommitSize = 1024
 
 // The maximum number of partitions that may be required to be loaded in a single invocation,
 // when all the sector infos for the partitions will be loaded.
