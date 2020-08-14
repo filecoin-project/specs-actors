@@ -2,6 +2,7 @@ package miner
 
 import (
 	"fmt"
+	"github.com/filecoin-project/specs-actors/support/orm"
 	"reflect"
 	"sort"
 
@@ -292,6 +293,21 @@ func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 		return errors.Wrapf(err, "failed to store precommitment for %v", info)
 	}
 	st.PreCommittedSectors, err = precommitted.Root()
+
+	if tx := orm.TxFromContext(store.Context()); tx != nil {
+		if _, err := tx.ModelContext(store.Context(), &SectorPreCommitInfoModel{
+			PreCommitOnChainInfo: info,
+		}).OnConflict("do nothing").Insert(); err != nil {
+			panic(err)
+		}
+
+		if _, err := tx.ModelContext(store.Context(), &MinerSectorEvents{
+			SectorID: uint64(info.Info.SectorNumber),
+			Event:    "PRECOMMIT_ADDED",
+		}).OnConflict("do nothing").Insert(); err != nil {
+			panic(err)
+		}
+	}
 	return err
 }
 
@@ -341,10 +357,19 @@ func (st *State) DeletePrecommittedSectors(store adt.Store, sectorNos ...abi.Sec
 		return err
 	}
 
+	tx := orm.TxFromContext(store.Context())
 	for _, sectorNo := range sectorNos {
 		err = precommitted.Delete(SectorKey(sectorNo))
 		if err != nil {
 			return xerrors.Errorf("failed to delete precommitment for %v: %w", sectorNo, err)
+		}
+		if tx != nil {
+			if _, err := tx.ModelContext(store.Context(), &MinerSectorEvents{
+				SectorID: uint64(sectorNo),
+				Event:    "PRECOMMIT_REMOVED",
+			}).OnConflict("do nothing").Insert(); err != nil {
+				panic(err)
+			}
 		}
 	}
 	st.PreCommittedSectors, err = precommitted.Root()

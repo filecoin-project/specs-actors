@@ -1,7 +1,9 @@
 package miner
 
 import (
+	"context"
 	"errors"
+	"github.com/filecoin-project/specs-actors/support/orm"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/ipfs/go-cid"
@@ -216,6 +218,22 @@ func (p *Partition) DeclareFaults(
 			return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to remove recoveries: %w", err)
 		}
 	}
+
+	if tx := orm.TxFromContext(store.Context()); tx != nil {
+		all, err := newFaults.All(32 << 20)
+		if err != nil {
+			panic(err)
+		}
+		for _, s := range all {
+			if _, err := tx.ModelContext(store.Context(), &MinerSectorEvents{
+				SectorID: s,
+				Event:    "SECTOR_FAULTED",
+			}).OnConflict("do nothing").Insert(); err != nil {
+				panic(err)
+			}
+		}
+	}
+
 	return newFaults, newFaultyPower, nil
 }
 
@@ -253,6 +271,16 @@ func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.Se
 	}
 	p.Recoveries = bitfield.New()
 
+	if tx := orm.TxFromContext(store.Context()); tx != nil {
+		for _, s := range recoveredSectors {
+			if _, err := tx.ModelContext(store.Context(), &MinerSectorEvents{
+				SectorID: uint64(s.SectorNumber),
+				Event:    "SECTOR_RECOVERED",
+			}).OnConflict("do nothing").Insert(); err != nil {
+				panic(err)
+			}
+		}
+	}
 	// No change to live power.
 	p.FaultyPower = p.FaultyPower.Sub(power)
 	p.RecoveringPower = p.RecoveringPower.Sub(power)
@@ -261,7 +289,7 @@ func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.Se
 }
 
 // Declares sectors as recovering. Non-faulty and already recovering sectors will be skipped.
-func (p *Partition) DeclareFaultsRecovered(sectors Sectors, ssize abi.SectorSize, sectorNos bitfield.BitField) (err error) {
+func (p *Partition) DeclareFaultsRecovered(ctx context.Context, sectors Sectors, ssize abi.SectorSize, sectorNos bitfield.BitField) (err error) {
 	// Check that the declared sectors are actually assigned to the partition.
 	err = validatePartitionContainsSectors(p, sectorNos)
 	if err != nil {
@@ -293,6 +321,20 @@ func (p *Partition) DeclareFaultsRecovered(sectors Sectors, ssize abi.SectorSize
 	p.RecoveringPower = p.RecoveringPower.Add(power)
 	// No change to faults, or terminations.
 	// No change to faulty power.
+	if tx := orm.TxFromContext(ctx); tx != nil {
+		all, err := recoveries.All(32 << 20)
+		if err != nil {
+			panic(err)
+		}
+		for _, s := range all {
+			if _, err := tx.ModelContext(ctx, &MinerSectorEvents{
+				SectorID: s,
+				Event:    "SECTOR_RECOVERING",
+			}).OnConflict("do nothing").Insert(); err != nil {
+				panic(err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -542,6 +584,34 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 	err = p.recordEarlyTermination(store, until, popped.EarlySectors)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to record early terminations: %w", err)
+	}
+
+	if tx := orm.TxFromContext(store.Context()); tx != nil {
+		allEarly, err := popped.EarlySectors.All(32 << 20)
+		if err != nil {
+			panic(err)
+		}
+		for _, s := range allEarly {
+			if _, err := tx.ModelContext(store.Context(), &MinerSectorEvents{
+				SectorID: s,
+				Event:    "SECTOR_TERMINATED",
+			}).OnConflict("do nothing").Insert(); err != nil {
+				panic(err)
+			}
+		}
+		allOnTime, err := popped.OnTimeSectors.All(32 << 20)
+		if err != nil {
+			panic(err)
+		}
+		for _, s := range allOnTime {
+			if _, err := tx.ModelContext(store.Context(), &MinerSectorEvents{
+				SectorID: s,
+				Event:    "SECTOR_EXPIRED",
+			}).OnConflict("do nothing").Insert(); err != nil {
+				panic(err)
+			}
+		}
+
 	}
 
 	return popped, nil

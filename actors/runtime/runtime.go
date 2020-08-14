@@ -136,6 +136,9 @@ type Runtime interface {
 	// should not be used by actor code directly.
 	Context() context.Context
 
+	WithValue(key string, value interface{})
+	GetValue(key string) interface{}
+
 	// Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
 	StartSpan(name string) TraceSpan
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/filecoin-project/specs-actors/support/orm"
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
@@ -138,6 +139,21 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	enrollCronEvent(rt, periodStart-1, &CronEventPayload{
 		EventType: CronEventProvingDeadline,
 	})
+
+	if tx := orm.TxFromContext(rt.Context()); tx != nil {
+		psr := orm.CIDFromContext(rt.Context())
+		if _, err := tx.Model(&MinerActor{
+			MinerID:         rt.Message().Receiver().String(),
+			ParentStateRoot: psr.String(),
+			OwnerID:         owner.String(),
+			WorkerID:        worker.String(),
+			PeerID:          orm.AbiPeerIDAsString(params.PeerId),
+			SectorSize:      orm.SectorSizeString(params.SealProofType),
+		}).OnConflict("do nothing").Insert(); err != nil {
+			rt.Log(vmr.ERROR, "Failed to exec statement: %s", err.Error())
+			return nil
+		}
+	}
 	return nil
 }
 
@@ -547,13 +563,14 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		st.AddPreCommitDeposit(depositReq)
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 
-		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
+		oci := &SectorPreCommitOnChainInfo{
 			Info:               *params,
 			PreCommitDeposit:   depositReq,
 			PreCommitEpoch:     rt.CurrEpoch(),
 			DealWeight:         dealWeight.DealWeight,
 			VerifiedDealWeight: dealWeight.VerifiedDealWeight,
-		}); err != nil {
+		}
+		if err := st.PutPrecommittedSector(store, oci); err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to write pre-committed sector %v: %v", params.SectorNumber, err)
 		}
 		// add precommit expiry to the queue
@@ -751,6 +768,24 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				InitialPledge:         initialPledge,
 				ExpectedDayReward:     dayReward,
 				ExpectedStoragePledge: storagePledge,
+			}
+			if tx := orm.TxFromContext(rt.Context()); tx != nil {
+				if _, err := tx.ModelContext(rt.Context(), &SectorInfo{
+					Message:    rt.Message(),
+					SectorInfo: &newSectorInfo,
+				}).OnConflict("do nothing").Insert(); err != nil {
+					rt.Log(vmr.ERROR, "Failed to insert sector info: %s", err.Error())
+				}
+				eventStr := "COMMIT_CAPACITY_ADDED"
+				if len(newSectorInfo.DealIDs) > 0 {
+					eventStr = "SECTOR_ADDED"
+				}
+				if _, err := tx.ModelContext(rt.Context(), &MinerSectorEvents{
+					SectorID: uint64(precommit.Info.SectorNumber),
+					Event:    eventStr,
+				}).Insert(); err != nil {
+					rt.Log(vmr.ERROR, "Failed to insert sector event")
+				}
 			}
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)

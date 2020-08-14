@@ -732,7 +732,7 @@ func (dl *Deadline) DeclareFaultsRecovered(
 			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
 		}
 
-		if err = partition.DeclareFaultsRecovered(sectors, ssize, sectorNos); err != nil {
+		if err = partition.DeclareFaultsRecovered(store.Context(), sectors, ssize, sectorNos); err != nil {
 			return xc.ErrIllegalState.Wrapf("failed to add recoveries: %w", err)
 		}
 
