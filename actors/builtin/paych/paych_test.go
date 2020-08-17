@@ -11,13 +11,13 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	. "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
@@ -549,13 +549,13 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 
 func TestActor_UpdateChannelStateExtra(t *testing.T) {
 	mnum := builtin.MethodsPaych.UpdateChannelState
-	fakeParams := runtime.CBORBytes([]byte{1, 2, 3, 4})
-	expSendParams := &PaymentVerifyParams{fakeParams, nil}
+	fakeParams := cbg.CborBoolTrue
+	expSendParams := &cbg.Deferred{Raw: fakeParams}
 	otherAddr := tutil.NewIDAddr(t, 104)
 	ex := &ModVerifyParams{
 		Actor:  otherAddr,
 		Method: mnum,
-		Data:   fakeParams,
+		Params: fakeParams,
 	}
 
 	t.Run("Succeeds if extra call succeeds", func(t *testing.T) {
@@ -660,7 +660,6 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		ucp := &UpdateChannelStateParams{
 			Sv:     *sv,
 			Secret: []byte("Profesr"),
-			Proof:  nil,
 		}
 		ucp.Sv.SecretPreimage = []byte("ProfesrXXXXXXXXXXXXXXXXXXXXXXXXX")
 		rt.ExpectValidateCallerAddr(st.From, st.To)
@@ -676,7 +675,6 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		ucp := &UpdateChannelStateParams{
 			Sv:     *sv,
 			Secret: []byte("Profesr"),
-			Proof:  nil,
 		}
 		ucp.Sv.SecretPreimage = append([]byte("Magneto"), make([]byte, 25)...)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
