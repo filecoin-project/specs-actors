@@ -243,5 +243,5 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 func ConsensusFaultActive(info *MinerInfo, currEpoch abi.ChainEpoch) bool {
 	// For penalization period to last for exactly finality epochs
 	// consensus faults are active until currEpoch exceeds ConsensusFaultElapsed
-	return currEpoch > info.ConsensusFaultElapsed
+	return currEpoch <= info.ConsensusFaultElapsed
 }

@@ -2,13 +2,9 @@ package miner
 
 import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
-
-const ElectionPledgeRequirementFactor = 5
 
 func MinerEligibleForElection(store adt.Store, mSt *State, rSt *reward.State, minerActorBalance abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
 	// IP requirements are met.  This includes zero fee debt
@@ -26,13 +22,7 @@ func MinerEligibleForElection(store adt.Store, mSt *State, rSt *reward.State, mi
 	}
 
 	// IP requirement exceeds minimum for election
-	electionRequirement := big.Div(
-		big.Mul(
-			big.NewInt(ElectionPledgeRequirementFactor),
-			rSt.ThisEpochReward,
-		),
-		big.NewInt(builtin.ExpectedLeadersPerEpoch),
-	)
+	electionRequirement := ConsensusFaultPenalty(rSt.ThisEpochReward)
 	if mSt.InitialPledgeRequirement.LessThan(electionRequirement) {
 		return false, nil
 	}
