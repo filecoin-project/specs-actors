@@ -120,6 +120,7 @@ type AddVerifiedClientParams struct {
 }
 
 func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
+	// The caller will be verified by checking the verifiers table below.
 	rt.ValidateImmediateCallerAcceptAny()
 
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
@@ -229,6 +230,9 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue 
 		if newVcCap.LessThan(MinVerifiedDealSize) {
 			// Delete entry if remaining DataCap is less than MinVerifiedDealSize.
 			// Will be restored later if the deal did not get activated with a ProvenSector.
+			//
+			// NOTE: Technically, client could lose up to MinVerifiedDealSize worth of DataCap.
+			// See: https://github.com/filecoin-project/specs-actors/issues/727
 			err = verifiedClients.Delete(AddrKey(client))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", client)
 		} else {

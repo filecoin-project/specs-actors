@@ -2,7 +2,6 @@ package paych
 
 import (
 	"bytes"
-	"math"
 
 	addr "github.com/filecoin-project/go-address"
 
@@ -14,11 +13,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
-
-// Maximum number of lanes in a channel.
-const MaxLane = math.MaxInt64
-
-const SettleDelay = builtin.EpochsInHour * 12
 
 type Actor struct{}
 
@@ -146,6 +140,10 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 
 	if sv.Signature == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher has no signature")
+	}
+
+	if len(params.Secret) > MaxSecretSize {
+		rt.Abortf(exitcode.ErrIllegalArgument, "secret must be at most 256 bytes long")
 	}
 
 	vb, err := sv.SigningBytes()
