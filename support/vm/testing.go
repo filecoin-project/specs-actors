@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -68,7 +69,7 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	powerState := power.ConstructState(emptyMapCID, emptyMultimapCID)
 	initializeActor(ctx, t, vm, powerState, builtin.StoragePowerActorCodeID, builtin.StoragePowerActorAddr, big.Zero())
 
-	marketState := market.ConstructState(emptyMapCID, emptyArrayCID, emptyMultimapCID)
+	marketState := market.ConstructState(emptyArrayCID, emptyMapCID, emptyMultimapCID)
 	initializeActor(ctx, t, vm, marketState, builtin.StorageMarketActorCodeID, builtin.StorageMarketActorAddr, big.Zero())
 
 	// this will need to be replaced with the address of a multisig actor for the verified registry to be tested accurately
@@ -160,7 +161,7 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	if ei.SubInvocations != nil {
 		for i, invk := range invocation.SubInvocations {
 			subidentifier := fmt.Sprintf("%s%d:", identifier, i)
-			require.Greater(t, len(ei.SubInvocations), i, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
+			require.True(t, len(ei.SubInvocations) > i, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
 			ei.SubInvocations[i].matches(t, subidentifier, invk)
 		}
 		missingInvocations := len(ei.SubInvocations) - len(invocation.SubInvocations)
@@ -224,6 +225,45 @@ func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 	}
 	require.NotNil(t, invocation)
 	return invocation.Msg.params
+}
+
+//
+// Advancing Time while updating state
+//
+
+type advanceDeadlinePredicate func(dlInfo *miner.DeadlineInfo) bool
+
+func AdvanceByMinerDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *miner.DeadlineInfo) {
+	var minerState miner.State
+	err := v.GetState(minerIDAddr, &minerState)
+	require.NoError(t, err)
+
+	dlInfo := minerState.DeadlineInfo(v.GetEpoch())
+	for predicate(dlInfo) {
+		v, err = v.WithEpoch(dlInfo.Last())
+		require.NoError(t, err)
+
+		_, code := v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		require.Equal(t, exitcode.Ok, code)
+
+		err = v.GetState(minerIDAddr, &minerState)
+		require.NoError(t, err)
+
+		dlInfo = minerState.DeadlineInfo(v.GetEpoch())
+	}
+	return v, dlInfo
+}
+
+func AdvanceTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
+	return AdvanceByMinerDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+		return dlInfo.Close < e
+	})
+}
+
+func AdvanceTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *miner.DeadlineInfo) {
+	return AdvanceByMinerDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+		return dlInfo.Index != i
+	})
 }
 
 //
