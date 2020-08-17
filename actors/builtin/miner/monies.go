@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -110,4 +111,25 @@ func InitialPledgeForPower(qaPower abi.StoragePower, baselinePower abi.StoragePo
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
 	return big.Add(ipBase, additionalIP)
+}
+
+// Repays all fee debt and then verifies that the miner has amount needed to cover
+// the pledge requirement after burning all fee debt.  If not aborts.
+// Returns an amount that must be burnt by the actor.
+// Note that this call does not compute recent vesting so reported unlocked balance
+// may be slightly lower than the true amount. Computing vesting here would be
+// almost always redundant since vesting is quantized to ~daily units.  Vesting
+// will be at most one proving period old if computed in the cron callback.
+func VerifyPledgeRequirementsAndRepayDebts(rt Runtime, st *State) abi.TokenAmount {
+	currBalance := rt.CurrentBalance()
+	toBurn, err := st.RepayDebt(currBalance)
+	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "unlocked balance can not repay fee debt")
+
+	// IP requirements must be checked against balance after we account for fee debt repayment.
+	// The toBurn fee debt repayment will be burned so subtract from working value for current balance.
+	currBalance = big.Sub(currBalance, toBurn)
+	if !st.MeetsInitialPledgeCondition(currBalance) {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "unlocked balance does not cover pledge requirements")
+	}
+	return toBurn
 }

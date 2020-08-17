@@ -818,7 +818,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.submitPoRepForBulkVerify(rt, miner1, info)
 
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: {*info}}
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
@@ -831,7 +831,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number, info3.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
@@ -845,7 +845,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 
 		// duplicates will be sent to the batch verify call
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info1, *info2}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: {*info1, *info1, *info2}}
 
 		// however, duplicates will not be sent to the miner as confirmed
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number}}}
@@ -879,10 +879,10 @@ func TestCronBatchProofVerifies(t *testing.T) {
 			{miner4, []abi.SectorNumber{info7.Number, info8.Number}},
 			{miner2, []abi.SectorNumber{info3.Number, info4.Number}}}
 
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2},
-			miner2: []abi.SealVerifyInfo{*info3, *info4},
-			miner3: []abi.SealVerifyInfo{*info5, *info6},
-			miner4: []abi.SealVerifyInfo{*info7, *info8}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: {*info1, *info2},
+			miner2: {*info3, *info4},
+			miner3: {*info5, *info6},
+			miner4: {*info7, *info8}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
 	})
@@ -899,10 +899,10 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 
 		res := map[addr.Address][]bool{
-			miner1: []bool{true, false, true},
+			miner1: {true, false, true},
 		}
 
 		// send will only be for the first and third sector as the middle sector will fail verification
@@ -933,7 +933,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: []abi.SealVerifyInfo{*info1, *info2, *info3}}
+		infos := map[addr.Address][]abi.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 
 		rt.ExpectBatchVerifySeals(infos, batchVerifyDefaultOutput(infos), fmt.Errorf("fail"))
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)

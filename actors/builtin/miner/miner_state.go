@@ -35,6 +35,8 @@ type State struct {
 
 	VestingFunds cid.Cid // VestingFunds (Vesting Funds schedule for the miner).
 
+	FeeDebt abi.TokenAmount // Absolute value of debt this miner owes from unpaid fees
+
 	InitialPledgeRequirement abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
@@ -161,6 +163,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 
 		PreCommitDeposits: abi.NewTokenAmount(0),
 		LockedFunds:       abi.NewTokenAmount(0),
+		FeeDebt:           abi.NewTokenAmount(0),
 
 		VestingFunds: emptyVestingFundsCid,
 
@@ -748,8 +751,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 // If the target is not yet hit it deducts funds from the (new) available balance.
 // Returns the amount unlocked from the vesting table and the amount taken from current balance.
 // If the penalty exceeds the total amount available in the vesting table and unlocked funds
-// the penalty is reduced to match.  This must be fixed when handling bankrupcy:
-// https://github.com/filecoin-project/specs-actors/issues/627
+// the remainder is tracked in the fee debt field to be paid down later.
 func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, target, unlockedBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
 	fromVesting, err = st.UnlockUnvestedFunds(store, currEpoch, target)
 	if err != nil {
@@ -761,9 +763,29 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 
 	// unlocked funds were just deducted from available, so track that
 	remaining := big.Sub(target, fromVesting)
-
 	fromBalance = big.Min(unlockedBalance, remaining)
+
+	// track unpaid fee in fee debt field
+	remaining = big.Sub(remaining, fromBalance)
+	if remaining.GreaterThan(big.Zero()) {
+		st.FeeDebt = big.Add(st.FeeDebt, remaining)
+	}
+
 	return fromVesting, fromBalance, nil
+}
+
+// Repays the full miner actor fee debt.  Returns the amount that must be
+// burnt and an error if there are not sufficient funds to cover repayment.
+// Miner state repays from unlocked funds, potentially violating IP requirements
+// and bringing actor into IP debt.  FeeDebt should be zero after calling.
+func (st *State) RepayDebt(currBalance abi.TokenAmount) (abi.TokenAmount, error) {
+	unlockedBalance := st.GetUnlockedBalance(currBalance)
+	if !st.CanRepayFeeDebt(unlockedBalance) {
+		return big.Zero(), xc.ErrInsufficientFunds.Wrapf("unlocked balance can not repay fee debt (%v < %v)", unlockedBalance, st.FeeDebt)
+	}
+	debtToRepay := st.FeeDebt
+	st.FeeDebt = big.Zero()
+	return debtToRepay, nil
 }
 
 // Unlocks an amount of funds that have *not yet vested*, if possible.
@@ -832,28 +854,37 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 }
 
 // Unclaimed funds that are not locked -- includes funds used to cover initial pledge requirement
+// does not account for pledge requirements or fee debt.  Always greater than or equal to zero
 func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
 	unlockedBalance := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits)
 	Assert(unlockedBalance.GreaterThanEqual(big.Zero()))
 	return unlockedBalance
 }
 
-// Unclaimed funds.  Actor balance - (locked funds, precommit deposit, ip requirement)
+// Unclaimed funds.  Actor balance - (locked funds, precommit deposit, ip requirement, fee debt)
 // Can go negative if the miner is in IP debt
 func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	availableBalance := st.GetUnlockedBalance(actorBalance)
-	return big.Sub(availableBalance, st.InitialPledgeRequirement)
+	unlockedBalance := st.GetUnlockedBalance(actorBalance)
+	return big.Subtract(unlockedBalance, st.InitialPledgeRequirement, st.FeeDebt)
 }
 
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	Assert(st.FeeDebt.GreaterThanEqual(big.Zero()))
 	Assert(balance.GreaterThanEqual(big.Sum(st.PreCommitDeposits, st.LockedFunds)))
 }
 
 func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
-	available := st.GetUnlockedBalance(balance)
-	return available.GreaterThanEqual(st.InitialPledgeRequirement)
+	if st.FeeDebt.GreaterThan(big.Zero()) {
+		return false
+	}
+	unlockedBalance := st.GetUnlockedBalance(balance)
+	return unlockedBalance.GreaterThanEqual(st.InitialPledgeRequirement)
+}
+
+func (st *State) CanRepayFeeDebt(unlockedBalance abi.TokenAmount) bool {
+	return unlockedBalance.GreaterThanEqual(st.FeeDebt)
 }
 
 // pre-commit expiry

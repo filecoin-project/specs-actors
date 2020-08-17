@@ -37,6 +37,7 @@ var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
 var bigBalance = big.Mul(big.NewInt(1000000), big.NewInt(1e18))
+var onePercentBigBalance = big.Div(bigBalance, big.NewInt(100))
 
 // an expriration 1 greater than min expiration
 const defaultSectorExpiration = 190
@@ -470,6 +471,28 @@ func TestCommitments(t *testing.T) {
 		})
 	})
 
+	t.Run("precommit pays back fee debt", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		st := getState(rt)
+		st.FeeDebt = abi.NewTokenAmount(9999)
+		rt.ReplaceState(st)
+
+		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+		st = getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
+	})
+
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -571,6 +594,18 @@ func TestCommitments(t *testing.T) {
 		})
 		// reset state back to normal
 		st.InitialPledgeRequirement = oldIPReqs
+		rt.ReplaceState(st)
+		rt.Reset()
+
+		// Try to precommit while in fee debt with insufficient balance
+		st = getState(rt)
+		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+		})
+		// reset state back to normal
+		st.FeeDebt = big.Zero()
 		rt.ReplaceState(st)
 		rt.Reset()
 	})
@@ -1062,7 +1097,7 @@ func TestWindowPost(t *testing.T) {
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)), big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		dlinfo := actor.deadline(rt)
@@ -1238,7 +1273,7 @@ func TestWindowPost(t *testing.T) {
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)))
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)), big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		dlinfo := actor.deadline(rt)
@@ -1446,7 +1481,7 @@ func TestDeadlineCron(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{})
 		dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 
-		actor.declareRecoveries(rt, dlIdx, pIdx, sectorInfoAsBitfield(allSectors[1:]))
+		actor.declareRecoveries(rt, dlIdx, pIdx, sectorInfoAsBitfield(allSectors[1:]), big.Zero())
 
 		// Skip to end of proving period for sectors, cron detects all sectors as faulty
 		for dlinfo.Index != dlIdx {
@@ -1582,11 +1617,11 @@ func TestDeclareRecoveries(t *testing.T) {
 		// Declare the sector as faulted
 		actor.declareFaults(rt, oneSector...)
 
-		// Delcare recoveries updates state
+		// Declare recoveries updates state
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
-		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
 
 		dl := actor.getDeadline(rt, dlIdx)
 		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
@@ -1614,9 +1649,60 @@ func TestDeclareRecoveries(t *testing.T) {
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
-			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)))
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
 		})
 	})
+
+	t.Run("recovery must pay back fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		// advance to first proving period and submit so we'll have time to declare the fault next cycle
+		advanceAndSubmitPoSts(rt, actor, oneSector...)
+
+		// Fault will take miner into fee debt
+		rt.SetBalance(big.Zero())
+
+		actor.declareFaults(rt, oneSector...)
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
+		require.NoError(t, err)
+
+		// Skip to end of proving period.
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Can't pay during this deadline so miner goes into fee debt
+		ongoingPwr := miner.PowerForSectors(actor.sectorSize, oneSector)
+		ff := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA)
+		advanceDeadline(rt, actor, &cronConfig{
+			ongoingFaultsPenalty: big.Zero(), // fee is instead added to debt
+		})
+
+		st = getState(rt)
+		assert.Equal(t, ff, st.FeeDebt)
+
+		// Recovery fails when it can't pay back fee debt
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
+		})
+
+		// Recovery pays back fee debt and IP requirements and succeeds
+		funds := big.Add(ff, st.InitialPledgeRequirement)
+		rt.SetBalance(funds) // this is how we send funds along with recovery message using mock rt
+		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), ff)
+
+		dl := actor.getDeadline(rt, dlIdx)
+		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
+		require.NoError(t, err)
+		assert.Equal(t, p.Faults, p.Recoveries)
+		st = getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
+	})
+
 }
 
 func TestExtendSectorExpiration(t *testing.T) {
@@ -2028,7 +2114,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// withdraw 1% of balance
-		actor.withdrawFunds(rt, big.Mul(big.NewInt(10), big.NewInt(1e18)))
+		actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 	})
 
 	t.Run("fails if miner is currently undercollateralized", func(t *testing.T) {
@@ -2045,8 +2131,34 @@ func TestWithdrawBalance(t *testing.T) {
 
 		// withdraw 1% of balance
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.withdrawFunds(rt, big.Mul(big.NewInt(10), big.NewInt(1e18)))
+			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 		})
+	})
+
+	t.Run("fails if miner can't repay fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		st := getState(rt)
+		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		rt.ReplaceState(st)
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
+		})
+	})
+
+	t.Run("withdraw only what we can after fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		st := getState(rt)
+		feeDebt := big.Sub(bigBalance, onePercentBigBalance)
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+		
+		requested := rt.Balance()
+		expectedWithdraw := big.Sub(requested, feeDebt)
+		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
 	})
 }
 
@@ -2839,6 +2951,10 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
+	st := getState(rt)
+	if st.FeeDebt.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, st.FeeDebt, nil, exitcode.Ok)
+	}
 
 	rt.Call(h.a.PreCommitSector, params)
 	rt.Verify()
@@ -3178,9 +3294,13 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	rt.Verify()
 }
 
-func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField) {
+func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField, expectedDebtRepaid abi.TokenAmount) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+
+	if expectedDebtRepaid.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedDebtRepaid, nil, exitcode.Ok)
+	}
 
 	// Calculate params from faulted sector infos
 	params := &miner.DeclareFaultsRecoveredParams{Recoveries: []miner.RecoveryDeclaration{{
@@ -3433,15 +3553,19 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	rt.Verify()
 }
 
-func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amount abi.TokenAmount) {
+func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWithdrawn, expectedDebtRepaid abi.TokenAmount) {
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.owner)
 
-	rt.ExpectSend(h.owner, builtin.MethodSend, nil, amount, nil, exitcode.Ok)
-
+	rt.ExpectSend(h.owner, builtin.MethodSend, nil, amountWithdrawn, nil, exitcode.Ok)
+	if expectedDebtRepaid.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedDebtRepaid, nil, exitcode.Ok)
+	}
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
-		AmountRequested: amount,
+		AmountRequested: amountRequested,
 	})
+	
+
 	rt.Verify()
 }
 

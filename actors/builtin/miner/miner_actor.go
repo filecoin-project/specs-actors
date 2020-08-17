@@ -504,9 +504,17 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 	store := adt.AsStore(rt)
 	var st State
+	var err error
 	newlyVested := big.Zero()
+	feeToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
-		verifyPledgeMeetsInitialRequirements(rt, &st)
+		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+		// available balance already accounts for fee debt so it is correct to call
+		// this before VerifyPledgeRequirementsAndRepayDebts. We would have to
+		// subtract fee debt explicitly if we called this after.
+		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 
 		info := getMinerInfo(rt, &st)
 
@@ -521,7 +529,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
 		}
 
-		err := st.AllocateSectorNumber(store, params.SectorNumber)
+		err = st.AllocateSectorNumber(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
 
 		// The following two checks shouldn't be necessary, but it can't
@@ -549,11 +557,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			depositMinimum = replaceSector.InitialPledge
 		}
 
-		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
 		duration := params.Expiration - rt.CurrEpoch()
-
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
 		depositReq := big.Max(
 			PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight),
@@ -589,6 +593,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
 	})
 
+	burnFunds(rt, feeToBurn)
+
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
 	return nil
@@ -617,8 +623,9 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
+	feeToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
-		verifyPledgeMeetsInitialRequirements(rt, &st)
+		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 		var found bool
 		var err error
 		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
@@ -646,6 +653,8 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		SectorNumber:        precommit.Info.SectorNumber,
 		RegisteredSealProof: precommit.Info.SealProof,
 	})
+
+	burnFunds(rt, feeToBurn)
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -1220,8 +1229,11 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 	store := adt.AsStore(rt)
 	var st State
+	feeToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
-		verifyPledgeMeetsInitialRequirements(rt, &st)
+		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
+		// and repay fee debt now.
+		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -1253,6 +1265,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		err = st.SaveDeadlines(store, deadlines)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
+
+	burnFunds(rt, feeToBurn)
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
 	return nil
@@ -1448,6 +1462,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	}
 	var info *MinerInfo
 	newlyVested := big.Zero()
+	feeToBurn := big.Zero()
+	availableBalance := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
@@ -1469,18 +1485,26 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
+		// available balance already accounts for fee debt so it is correct to call
+		// this before VerifyPledgeRequirementsAndRepayDebts. We would have to
+		// subtract fee debt explicitly if we called this after.
+		availableBalance = st.GetAvailableBalance(rt.CurrentBalance())
 
-		// Verify InitialPledgeRequirement does not exceed unlocked funds
-		verifyPledgeMeetsInitialRequirements(rt, &st)
+		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
+		// and repay fee debt now.
+		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 	})
 
-	currBalance := rt.CurrentBalance()
-	amountWithdrawn := big.Min(st.GetAvailableBalance(currBalance), params.AmountRequested)
+	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
 	Assert(amountWithdrawn.GreaterThanEqual(big.Zero()))
-	Assert(amountWithdrawn.LessThanEqual(currBalance))
+	Assert(amountWithdrawn.LessThanEqual(availableBalance))
 
-	_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn)
-	builtin.RequireSuccess(rt, code, "failed to withdraw balance")
+	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
+		_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn)
+		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
+	}
+
+	burnFunds(rt, feeToBurn)
 
 	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -2070,19 +2094,6 @@ func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
 	err := pwret.Into(&pwr)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
 	return &pwr
-}
-
-// Verifies that the total unlocked balance exceeds the sum of sector initial pledges.
-// Note that this call does not compute recent vesting so reported unlocked balance
-// may be slightly lower than the true amount.
-// Computing vesting here would be almost always redundant since vesting is quantized to ~daily units.
-// Vesting will be at most one proving period old if computed in the cron callback.
-func verifyPledgeMeetsInitialRequirements(rt Runtime, st *State) {
-	if !st.MeetsInitialPledgeCondition(rt.CurrentBalance()) {
-		rt.Abortf(exitcode.ErrInsufficientFunds,
-			"unlocked balance does not cover pledge requirements (%v < %v)",
-			st.GetUnlockedBalance(rt.CurrentBalance()), st.InitialPledgeRequirement)
-	}
 }
 
 // Resolves an address to an ID address and verifies that it is address of an account or multisig actor.
