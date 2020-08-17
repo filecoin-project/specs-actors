@@ -10,6 +10,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
 	"github.com/stretchr/testify/assert"
@@ -616,6 +617,119 @@ func TestPartitions(t *testing.T) {
 			sectorNos, bf(), bf(), bf(),
 		)
 
+	})
+}
+
+func TestRecordSkippedFaults(t *testing.T) {
+	sectors := []*miner.SectorOnChainInfo{
+		testSector(2, 1, 50, 60, 1000),
+		testSector(3, 2, 51, 61, 1001),
+		testSector(7, 3, 52, 62, 1002),
+		testSector(8, 4, 53, 63, 1003),
+		testSector(11, 5, 54, 64, 1004),
+		testSector(13, 6, 55, 65, 1005),
+	}
+	sectorSize := abi.SectorSize(32 << 30)
+
+	quantSpec := miner.NewQuantSpec(4, 1)
+	exp := abi.ChainEpoch(100)
+
+	setup := func(t *testing.T) (adt.Store, *miner.Partition) {
+		store := ipld.NewADTStore(context.Background())
+		partition := emptyPartition(t, store)
+
+		power, err := partition.AddSectors(store, sectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		expectedPower := miner.PowerForSectors(sectorSize, sectors)
+		assert.True(t, expectedPower.Equals(power))
+
+		return store, partition
+	}
+
+	t.Run("fail if ALL declared sectors are NOT in the partition", func(t *testing.T) {
+		store, partition := setup(t)
+		sectorArr := sectorsArr(t, store, sectors)
+
+		skipped := bitfield.NewFromSet([]uint64{1, 100})
+
+		n, r, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
+		require.Error(t, err)
+		require.EqualValues(t, exitcode.ErrIllegalArgument, exitcode.Unwrap(err, exitcode.Ok))
+		require.EqualValues(t, miner.NewPowerPairZero(), n)
+		require.EqualValues(t, miner.NewPowerPairZero(), r)
+	})
+
+	t.Run("already faulty and terminated sectors are ignored", func(t *testing.T) {
+		store, partition := setup(t)
+		sectorArr := sectorsArr(t, store, sectors)
+
+		// terminate 1 AND 2
+		terminations := bf(1, 2)
+		terminationEpoch := abi.ChainEpoch(3)
+		_, err := partition.TerminateSectors(store, sectorArr, terminationEpoch, terminations, sectorSize, quantSpec)
+		require.NoError(t, err)
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(), bf(), terminations)
+
+		// declare 4 & 5 as faulty
+		faultSet := bf(4, 5)
+		_, _, err = partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		require.NoError(t, err)
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), faultSet, bf(), terminations)
+
+		// record skipped faults such that some of them are already faulty/terminated
+		skipped := bitfield.NewFromSet([]uint64{1, 2, 3, 4, 5})
+		newFaultPower, rectractedPower, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
+		require.NoError(t, err)
+		require.EqualValues(t, miner.NewPowerPairZero(), rectractedPower)
+		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(3)))
+		require.EqualValues(t, expectedFaultyPower, newFaultPower)
+
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(3, 4, 5), bf(), bf(1, 2))
+	})
+
+	t.Run("recoveries are retracted without being marked as new faulty power", func(t *testing.T) {
+		store, partition := setup(t)
+		sectorArr := sectorsArr(t, store, sectors)
+
+		// make 4, 5 and 6 faulty
+		faultSet := bf(4, 5, 6)
+		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		require.NoError(t, err)
+
+		// add 4 and 5 as recoveries
+		recoverSet := bf(4, 5)
+		err = partition.DeclareFaultsRecovered(sectorArr, sectorSize, recoverSet)
+		require.NoError(t, err)
+
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(4, 5, 6), bf(4, 5), bf())
+
+		// record skipped faults such that some of them have been marked as recovered
+		skipped := bitfield.NewFromSet([]uint64{1, 4, 5})
+		newFaultPower, recoveryPower, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
+		require.NoError(t, err)
+
+		// only 1 is marked for fault power as 4 & 5 are recovering
+		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1)))
+		require.EqualValues(t, expectedFaultyPower, newFaultPower)
+
+		// 4 & 5 are marked for recovery power
+		expectedRecoveryPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(4, 5)))
+		require.EqualValues(t, expectedRecoveryPower, recoveryPower)
+
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(1, 4, 5, 6), bf(), bf())
+	})
+
+	t.Run("successful when skipped fault set is empty", func(t *testing.T) {
+		store, partition := setup(t)
+		sectorArr := sectorsArr(t, store, sectors)
+
+		newFaultPower, recoveryPower, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, bf())
+		require.NoError(t, err)
+		require.EqualValues(t, miner.NewPowerPairZero(), newFaultPower)
+		require.EqualValues(t, miner.NewPowerPairZero(), recoveryPower)
+
+		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(), bf(), bf())
 	})
 }
 
