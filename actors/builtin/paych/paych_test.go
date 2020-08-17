@@ -46,6 +46,24 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 	})
 
+	t.Run("creates a payment channel actor after resolving non-ID addresses to ID addresses", func(t *testing.T) {
+		payerAddr := tutil.NewIDAddr(t, 101)
+		payerNonId := tutil.NewBLSAddr(t, 102)
+
+		payeeAddr := tutil.NewIDAddr(t, 103)
+		payeeNonId := tutil.NewBLSAddr(t, 104)
+
+		builder := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID).
+			WithActorType(payeeAddr, builtin.AccountActorCodeID)
+		rt := builder.Build(t)
+		rt.AddIDAddress(payerNonId, payerAddr)
+		rt.AddIDAddress(payeeNonId, payeeAddr)
+
+		actor.constructAndVerify(t, rt, payerNonId, payeeNonId)
+	})
+
 	nonAccountCodeID := builtin.MultisigActorCodeID
 	testCases := []struct {
 		desc        string
@@ -67,18 +85,6 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			builtin.AccountActorCodeID,
 			payeeAddr,
 			exitcode.ErrForbidden,
-		}, {"fails if target cannot be resolved",
-			builtin.AccountActorCodeID,
-			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
-			builtin.AccountActorCodeID,
-			payeeAddr,
-			exitcode.ErrNotFound,
-		}, {"fails if sender cannot be resolved",
-			builtin.AccountActorCodeID,
-			payerAddr,
-			builtin.AccountActorCodeID,
-			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
-			exitcode.ErrNotFound,
 		},
 	}
 	for _, tc := range testCases {
@@ -96,13 +102,45 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		})
 	}
 
+	t.Run("fails if sender addr is not resolvable to ID address", func(t *testing.T) {
+		to := tutil.NewIDAddr(t, 101)
+		nonIdAddr := tutil.NewBLSAddr(t, 501)
+
+		rt := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(to, builtin.AccountActorCodeID).Build(t)
+
+		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{From: nonIdAddr, To: to})
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if target addr is not resolvable to ID address", func(t *testing.T) {
+		from := tutil.NewIDAddr(t, 5555)
+		nonIdAddr := tutil.NewBLSAddr(t, 501)
+
+		rt := mock.NewBuilder(ctx, paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(from, builtin.AccountActorCodeID).Build(t)
+
+		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{From: from, To: nonIdAddr})
+		})
+		rt.Verify()
+	})
+
 	t.Run("fails if actor does not exist with: no code for address", func(t *testing.T) {
 		builder := mock.NewBuilder(ctx, paychAddr).
 			WithCaller(callerAddr, builtin.InitActorCodeID).
 			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
 		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.Constructor, &ConstructorParams{To: paychAddr})
 		})
 	})
@@ -862,7 +900,14 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 	ret := rt.Call(h.Actor.Constructor, params)
 	assert.Nil(h.t, ret)
 	rt.Verify()
-	verifyInitialState(t, rt, sender, receiver)
+
+	senderId, ok := rt.GetIdAddr(sender)
+	require.True(h.t, ok)
+
+	receiverId, ok := rt.GetIdAddr(receiver)
+	require.True(h.t, ok)
+
+	verifyInitialState(t, rt, senderId, receiverId)
 }
 
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
