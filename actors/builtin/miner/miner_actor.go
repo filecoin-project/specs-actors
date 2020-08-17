@@ -1320,6 +1320,11 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		if !removedPower.Equals(newPower) {
 			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, newPower)
 		}
+		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
 	return nil
 }

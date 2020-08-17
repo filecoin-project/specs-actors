@@ -2072,10 +2072,24 @@ func TestCompactPartitions(t *testing.T) {
 		WithBalance(bigBalance, big.Zero())
 
 	assertSectorExists := func(store adt.Store, st *miner.State, sectorNum abi.SectorNumber, expectPart uint64, expectDeadline uint64) {
+		_, found, err := st.GetSector(store, sectorNum)
+		require.NoError(t, err)
+		require.True(t, found)
+
 		deadline, pid, err := st.FindSector(store, sectorNum)
 		require.NoError(t, err)
 		require.EqualValues(t, expectPart, pid)
 		require.EqualValues(t, expectDeadline, deadline)
+	}
+
+	assertSectorNotFound := func(store adt.Store, st *miner.State, sectorNum abi.SectorNumber) {
+		_, found, err := st.GetSector(store, sectorNum)
+		require.NoError(t, err)
+		require.False(t, found)
+
+		_, _, err = st.FindSector(store, sectorNum)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "not due at any deadline")
 	}
 
 	t.Run("compacting a partition with both live and dead sectors removes the dead sectors but retains the live sectors", func(t *testing.T) {
@@ -2117,7 +2131,7 @@ func TestCompactPartitions(t *testing.T) {
 		assertSectorExists(rt.AdtStore(), st, sector4, partId, deadlineId)
 
 		// TODO Why is this working ?
-		assertSectorExists(rt.AdtStore(), st, sector1, partId, deadlineId)
+		assertSectorNotFound(rt.AdtStore(), st, sector1)
 	})
 
 	t.Run("fail to compact partitions with faults", func(T *testing.T) {
