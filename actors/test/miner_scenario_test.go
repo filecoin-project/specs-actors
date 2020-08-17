@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"github.com/filecoin-project/go-bitfield"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -14,6 +13,7 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 	vm "github.com/filecoin-project/specs-actors/support/vm"
 
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/stretchr/testify/require"
 )
 
