@@ -210,10 +210,8 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
 		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
-		delta := rt.CurrEpoch() - st.LastProcessedCronEpoch
-		st.updateSmoothedEstimate(delta)
-
-		st.LastProcessedCronEpoch = rt.CurrEpoch()
+		// we can now assume delta is one since cron is invoked on every epoch.
+		st.updateSmoothedEstimate(abi.ChainEpoch(1))
 	})
 
 	// update network KPI in RewardActor

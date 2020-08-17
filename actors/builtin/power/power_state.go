@@ -19,6 +19,7 @@ import (
 
 // genesis power in bytes = 750,000 GiB
 var InitialQAPowerEstimatePosition = big.Mul(big.NewInt(750_000), big.NewInt(1<<30))
+
 // max chain throughput in bytes per epoch = 120 ProveCommits / epoch = 3,840 GiB
 var InitialQAPowerEstimateVelocity = big.Mul(big.NewInt(3_840), big.NewInt(1<<30))
 
@@ -48,9 +49,6 @@ type State struct {
 	// First epoch in which a cron task may be stored.
 	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
 	FirstCronEpoch abi.ChainEpoch
-
-	// Last epoch power cron tick has been processed.
-	LastProcessedCronEpoch abi.ChainEpoch
 
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
@@ -85,7 +83,6 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
 		ThisEpochQAPowerSmoothed:  smoothing.NewEstimate(InitialQAPowerEstimatePosition, InitialQAPowerEstimateVelocity),
 		FirstCronEpoch:            0,
-		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
 		CronEventQueue:            emptyMMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,
