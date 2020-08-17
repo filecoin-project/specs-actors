@@ -108,6 +108,10 @@ type MinerInfo struct {
 	// The number of sectors in each Window PoSt partition (proof).
 	// This is computed from the proof type and represented here redundantly.
 	WindowPoStPartitionSectors uint64
+
+	// The next epoch this miner is eligible for certain permissioned actor methods
+	// and winning block elections as a result of being reported for a consensus fault.
+	ConsensusFaultElapsed abi.ChainEpoch
 }
 
 type WorkerKeyChange struct {
@@ -202,6 +206,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
+		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
 	}, nil
 }
 

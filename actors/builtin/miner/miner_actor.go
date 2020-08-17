@@ -1428,25 +1428,42 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
 	}
 
-	// Reward reporter with a share of the miner's current balance.
-	slasherReward := RewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
-	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
-	builtin.RequireSuccess(rt, code, "failed to reward reporter")
-
+	// Penalize miner consensus fault fee
+	// Give a portion of this to the reporter as reward
 	var st State
-	rt.State().Readonly(&st)
+	rewardStats := requestCurrentEpochBlockReward(rt)
+	// The policy amounts we should burn and send to reporter
+	// These may differ from actual funds send when miner goes into fee debt
+	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochReward)
+	slasherReward := RewardForConsensusSlashReport(faultAge, faultPenalty)
+	pledgeDelta := big.Zero()
 
-	// Notify power actor with lock-up total being removed.
-	_, code = rt.Send(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.OnConsensusFault,
-		&st.LockedFunds,
-		abi.NewTokenAmount(0),
-	)
-	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
+	// The amounts actually sent to burnt funds and reporter
+	burnAmount := big.Zero()
+	rewardAmount := big.Zero()
+	rt.State().Transaction(&st, func() {
+		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), faultPenalty, unlockedBalance)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
+		// Burn the amount actually payable. Any difference in this and faultPenalty recorded as FeeDebt
+		burnAmount = big.Add(penaltyFromVesting, penaltyFromBalance)
+		pledgeDelta = big.Add(pledgeDelta, penaltyFromVesting.Neg())
 
-	// close deals and burn funds
-	terminateMiner(rt)
+		// clamp reward at funds burnt
+		rewardAmount = big.Min(burnAmount, slasherReward)
+		// reduce burnAmount by rewardAmount
+		burnAmount = big.Sub(burnAmount, rewardAmount)
+		info := getMinerInfo(rt, &st)
+		info.ConsensusFaultElapsed = rt.CurrEpoch() + ConsensusFaultIneligibilityDuration
+		err = st.SaveInfo(adt.AsStore(rt), info)
+		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
+	})
+	_, code := rt.Send(reporter, builtin.MethodSend, nil, rewardAmount)
+	if !code.IsSuccess() {
+		rt.Log(vmr.ERROR, "failed to send reward")
+	}
+	burnFunds(rt, burnAmount)
+	notifyPledgeChanged(rt, pledgeDelta)
 
 	return nil
 }
@@ -1897,20 +1914,6 @@ func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealI
 	}
 }
 
-func requestTerminateAllDeals(rt Runtime, st *State) { //nolint:deadcode,unused
-	// TODO: red flag this is an ~unbounded computation.
-	// Transform into an idempotent partial computation that can be progressed on each invocation.
-	// https://github.com/filecoin-project/specs-actors/issues/675
-	dealIds := []abi.DealID{}
-	if err := st.ForEachSector(adt.AsStore(rt), func(sector *SectorOnChainInfo) {
-		dealIds = append(dealIds, sector.DealIDs...)
-	}); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to traverse sectors for termination: %v", err)
-	}
-
-	requestTerminateDeals(rt, rt.CurrEpoch(), dealIds)
-}
-
 func scheduleEarlyTerminationWork(rt Runtime) {
 	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
 		EventType: CronEventProcessEarlyTerminations,
@@ -2009,17 +2012,6 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *abi.SealVerifyInfo {
 		SealedCID:             params.SealedCID,
 		UnsealedCID:           commD,
 	}
-}
-
-// Closes down this miner by erasing its power, terminating all its deals and burning its funds
-func terminateMiner(rt Runtime) {
-	var st State
-	rt.State().Readonly(&st)
-
-	requestTerminateAllDeals(rt, &st)
-
-	// Delete the actor and burn all remaining funds
-	rt.DeleteActor(builtin.BurntFundsActorAddr)
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.

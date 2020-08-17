@@ -2385,7 +2385,7 @@ func TestReportConsensusFault(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("Report consensus fault terminates deals when multiple sectors have multiple deals", func(t *testing.T) {
+	t.Run("Report consensus fault pays reward and charges fee", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
@@ -2400,44 +2400,32 @@ func TestReportConsensusFault(t *testing.T) {
 			BlockHeaderExtra: nil,
 		}
 
-		// miner should send a single call to terminate the deals for all its sectors
-		allDeals := []abi.DealID{}
-		for _, ids := range dealIDs {
-			allDeals = append(allDeals, ids...)
-		}
-		actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
+		actor.reportConsensusFault(rt, addr.TestAddress, params)
 	})
 
-	t.Run("miner batches termination requests when number of deals exceeds limit", func(t *testing.T) {
+	t.Run("Report consensus fault updates consensus fault reported field", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
+		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
 
-		numSectors := 40
-		dealsPerSector := 256
-		dealIDs := make([][]abi.DealID, numSectors)
-		for i := 0; i < numSectors; i++ {
-			dealIDs[i] = make([]abi.DealID, dealsPerSector)
-			for j := 0; j < dealsPerSector; j++ {
-				dealIDs[i][j] = abi.DealID(dealsPerSector*i + j)
-			}
-		}
-		sectorInfo := actor.commitAndProveSectors(rt, numSectors, defaultSectorExpiration, dealIDs)
+		startInfo := actor.getInfo(rt)
+		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultElapsed)
+		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
 		_ = sectorInfo
 
+		reportEpoch := abi.ChainEpoch(333)
+		rt.SetEpoch(reportEpoch)
 		params := &miner.ReportConsensusFaultParams{
 			BlockHeader1:     nil,
 			BlockHeader2:     nil,
 			BlockHeaderExtra: nil,
 		}
 
-		// report consensus fault will assert deal termination is split into multiple requests
-		allDeals := []abi.DealID{}
-		for _, ids := range dealIDs {
-			allDeals = append(allDeals, ids...)
-		}
-		actor.reportConsensusFault(rt, addr.TestAddress, params, allDeals)
+		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		endInfo := actor.getInfo(rt)
+		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
 
 }
@@ -3421,7 +3409,7 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitFi
 	rt.Verify()
 }
 
-func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, params *miner.ReportConsensusFaultParams, dealIDs []abi.DealID) {
+func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, params *miner.ReportConsensusFaultParams) {
 	rt.SetCaller(from, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
@@ -3431,29 +3419,21 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 		Type:   runtime.ConsensusFaultDoubleForkMining,
 	}, nil)
 
+	currentReward := reward.ThisEpochRewardReturn{
+		ThisEpochReward:         h.epochReward,
+		ThisEpochBaselinePower:  h.baselinePower,
+		ThisEpochRewardSmoothed: h.epochRewardSmooth,
+	}
+	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
+
+	penaltyTotal := miner.ConsensusFaultPenalty(h.epochReward)
 	// slash reward
-	rwd := miner.RewardForConsensusSlashReport(1, rt.Balance())
+	rwd := miner.RewardForConsensusSlashReport(1, penaltyTotal)
 	rt.ExpectSend(from, builtin.MethodSend, nil, rwd, nil, exitcode.Ok)
 
-	// power termination
-	lockedFunds := getState(rt).LockedFunds
-	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.OnConsensusFault, &lockedFunds, abi.NewTokenAmount(0), nil, exitcode.Ok)
-
-	// expect sends to be batched into a limited number of deals
-	for len(dealIDs) > 0 {
-		size := len(dealIDs)
-		if size > cbg.MaxLength {
-			size = cbg.MaxLength
-		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{
-			Epoch:   rt.Epoch(),
-			DealIDs: dealIDs[:size],
-		}, abi.NewTokenAmount(0), nil, exitcode.Ok)
-		dealIDs = dealIDs[size:]
-	}
-
-	// expect actor to be deleted
-	rt.ExpectDeleteActor(builtin.BurntFundsActorAddr)
+	// pay fault fee
+	toBurn := big.Sub(penaltyTotal, rwd)
+	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, toBurn, nil, exitcode.Ok)
 
 	rt.Call(h.a.ReportConsensusFault, params)
 	rt.Verify()
