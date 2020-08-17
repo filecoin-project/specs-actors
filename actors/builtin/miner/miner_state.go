@@ -106,6 +106,9 @@ type MinerInfo struct {
 	// The number of sectors in each Window PoSt partition (proof).
 	// This is computed from the proof type and represented here redundantly.
 	WindowPoStPartitionSectors uint64
+
+	// The maximum number of partitions allowed per Post deadline.
+	MaxPartitionsPerDeadline uint64
 }
 
 type WorkerKeyChange struct {
@@ -189,6 +192,9 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 	if err != nil {
 		return nil, err
 	}
+
+	maxPartitions := ((uint64(abi.OneEib) / uint64(sectorSize)) / partitionSectors) / WPoStPeriodDeadlines
+
 	return &MinerInfo{
 		Owner:                      owner,
 		Worker:                     worker,
@@ -199,6 +205,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
+		MaxPartitionsPerDeadline:   maxPartitions,
 	}, nil
 }
 
@@ -488,6 +495,7 @@ func (st *State) AssignSectorsToDeadlines(
 	store adt.Store,
 	currentEpoch abi.ChainEpoch,
 	sectors []*SectorOnChainInfo,
+	maxPartitionsPerDeadline uint64,
 	partitionSize uint64,
 	sectorSize abi.SectorSize,
 ) (PowerPair, error) {
@@ -514,7 +522,13 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	newPower := NewPowerPairZero()
-	for dlIdx, deadlineSectors := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
+
+	deadlineToSectors, err := assignDeadlines(maxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
+	}
+
+	for dlIdx, deadlineSectors := range deadlineToSectors {
 		if len(deadlineSectors) == 0 {
 			continue
 		}

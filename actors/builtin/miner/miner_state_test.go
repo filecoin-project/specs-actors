@@ -626,6 +626,8 @@ func TestSectorAssignment(t *testing.T) {
 	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
 	require.NoError(t, err)
 
+	maxPartitionsPerDeadline := ((uint64(abi.OneEib) / uint64(sectorSize)) / partitionSectors) / miner.WPoStPeriodDeadlines
+
 	openDeadlines := miner.WPoStPeriodDeadlines - 2
 
 	partitionsPerDeadline := uint64(3)
@@ -646,7 +648,8 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, partitionSectors, sectorSize)
+		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, maxPartitionsPerDeadline,
+			partitionSectors, sectorSize)
 		require.NoError(t, err)
 		require.True(t, newPower.Equals(miner.PowerForSectors(sectorSize, sectorInfos)))
 

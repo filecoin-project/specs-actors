@@ -798,7 +798,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
 
-		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
+		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.MaxPartitionsPerDeadline, info.WindowPoStPartitionSectors, info.SectorSize)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state

@@ -2,13 +2,16 @@ package miner
 
 import (
 	"container/heap"
+
+	"golang.org/x/xerrors"
 )
 
 // Helper types for deadline assignment.
 type deadlineAssignmentInfo struct {
-	index        int
-	liveSectors  uint64
-	totalSectors uint64
+	index                int
+	liveSectors          uint64
+	totalSectors         uint64
+	maxPartitionsReached bool
 }
 
 func (dai *deadlineAssignmentInfo) partitionsAfterAssignment(partitionSize uint64) uint64 {
@@ -34,6 +37,7 @@ func (dai *deadlineAssignmentInfo) isFullNow(partitionSize uint64) bool {
 }
 
 type deadlineAssignmentHeap struct {
+	maxPartitions uint64
 	partitionSize uint64
 	deadlines     []*deadlineAssignmentInfo
 }
@@ -49,6 +53,13 @@ func (dah *deadlineAssignmentHeap) Swap(i, j int) {
 func (dah *deadlineAssignmentHeap) Less(i, j int) bool {
 	a, b := dah.deadlines[i], dah.deadlines[j]
 
+	// If one of the deadlines has already reached it's limit for the maximum number of partitions and
+	// the other hasn't, we directly pick the deadline that hasn't reached it's limit.
+	if a.maxPartitionsReached != b.maxPartitionsReached {
+		return !a.maxPartitionsReached
+	}
+
+	// Otherwise:-
 	// When assigning partitions to deadlines, we're trying to optimize the
 	// following:
 	//
@@ -159,12 +170,14 @@ func (dah *deadlineAssignmentHeap) Pop() interface{} {
 // Assigns partitions to deadlines, first filling partial partitions, then
 // adding new partitions to deadlines with the fewest live sectors.
 func assignDeadlines(
+	maxPartitions uint64,
 	partitionSize uint64,
 	deadlines *[WPoStPeriodDeadlines]*Deadline,
 	sectors []*SectorOnChainInfo,
-) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo) {
+) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo, err error) {
 	// Build a heap
 	dlHeap := deadlineAssignmentHeap{
+		maxPartitions: maxPartitions,
 		partitionSize: partitionSize,
 		deadlines:     make([]*deadlineAssignmentInfo, 0, len(deadlines)),
 	}
@@ -185,12 +198,22 @@ func assignDeadlines(
 	for _, sector := range sectors {
 		info := dlHeap.deadlines[0]
 
+		if info.maxPartitionsReached {
+			return changes, xerrors.Errorf("maxPartitions limit %d reached for all deadlines", maxPartitions)
+		}
+
 		changes[info.index] = append(changes[info.index], sector)
 		info.liveSectors++
 		info.totalSectors++
 
+		nPartitions := info.totalSectors / partitionSize
+		if nPartitions == maxPartitions {
+			info.maxPartitionsReached = true
+		}
+
 		// Update heap.
 		heap.Fix(&dlHeap, 0)
 	}
-	return changes
+
+	return changes, nil
 }
