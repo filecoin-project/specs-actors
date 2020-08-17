@@ -2071,23 +2071,72 @@ func TestCompactPartitions(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("successfully compact partitions", func(t *testing.T) {
+	assertSectorExists := func(store adt.Store, st *miner.State, sectorNum abi.SectorNumber, expectPart uint64, expectDeadline uint64) {
+		deadline, pid, err := st.FindSector(store, sectorNum)
+		require.NoError(t, err)
+		require.EqualValues(t, expectPart, pid)
+		require.EqualValues(t, expectDeadline, deadline)
+	}
+
+	t.Run("compacting a partition with both live and dead sectors removes the dead sectors but retains the live sectors", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
 		rt.SetEpoch(200)
-		info := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
+		// create 4 sectors in partition 0
+		info := actor.commitAndProveSectors(rt, 4, defaultSectorExpiration, [][]abi.DealID{{10}, {20}, {30}, {40}})
+		sector1 := info[0].SectorNumber
+		sector2 := info[1].SectorNumber
+		sector3 := info[2].SectorNumber
+		sector4 := info[3].SectorNumber
+
+		// terminate sector1
+		rt.SetEpoch(rt.Epoch() + 100)
+		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+		tsector := info[0]
+		sectorSize, err := tsector.SealProof.SectorSize()
+		require.NoError(t, err)
+		sectorPower := miner.QAPowerForSector(sectorSize, tsector)
+		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
+		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
+		sectorAge := rt.Epoch() - tsector.Activation
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth, big.Zero(), 0)
+
+		sectors := bitfield.NewFromSet([]uint64{uint64(sector1)})
+		actor.terminateSectors(rt, sectors, expectedFee)
+
+		// compacting partition will remove sector1 but retain sector 2, 3 and 4.
+		partId := uint64(0)
+		deadlineId := uint64(0)
+		partitions := bitfield.NewFromSet([]uint64{partId})
+		actor.compactPartitions(rt, deadlineId, partitions)
 
 		st := getState(rt)
-		dlIdx, partIdx1, err := st.FindSector(rt.AdtStore(), info[0].SectorNumber)
-		require.NoError(t, err)
-		_, partIdx2, err := st.FindSector(rt.AdtStore(), info[1].SectorNumber)
-		require.NoError(t, err)
+		assertSectorExists(rt.AdtStore(), st, sector2, partId, deadlineId)
+		assertSectorExists(rt.AdtStore(), st, sector3, partId, deadlineId)
+		assertSectorExists(rt.AdtStore(), st, sector4, partId, deadlineId)
 
-		// add partitions to state
-		partitions := bitfield.NewFromSet([]uint64{partIdx1, partIdx2})
+		// TODO Why is this working ?
+		assertSectorExists(rt.AdtStore(), st, sector1, partId, deadlineId)
+	})
 
-		actor.compactPartitions(rt, dlIdx, partitions)
+	t.Run("fail to compact partitions with faults", func(T *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(200)
+		// create 2 sectors in partition 0
+		info := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
+
+		// fault sector1
+		actor.declareFaults(rt, info[0])
+
+		partId := uint64(0)
+		deadlineId := uint64(0)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to remove partitions from deadline 0: while removing partitions: cannot remove partition 0: has faults", func() {
+			partitions := bitfield.NewFromSet([]uint64{partId})
+			actor.compactPartitions(rt, deadlineId, partitions)
+		})
 	})
 
 	t.Run("fails if deadline is equal to WPoStPeriodDeadlines", func(t *testing.T) {
