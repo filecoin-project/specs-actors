@@ -111,7 +111,7 @@ type MinerInfo struct {
 
 	// The next epoch this miner is eligible for certain permissioned actor methods
 	// and winning block elections as a result of being reported for a consensus fault.
-	ConsensusFaultReported abi.ChainEpoch
+	ConsensusFaultElapsed abi.ChainEpoch
 }
 
 type WorkerKeyChange struct {
@@ -206,7 +206,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
-		ConsensusFaultReported:     abi.ChainEpoch(-1),
+		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
 	}, nil
 }
 

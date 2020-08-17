@@ -403,13 +403,13 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ConsensusFaultReported (abi.ChainEpoch) (int64)
-	if t.ConsensusFaultReported >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ConsensusFaultReported)); err != nil {
+	// t.ConsensusFaultElapsed (abi.ChainEpoch) (int64)
+	if t.ConsensusFaultElapsed >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ConsensusFaultElapsed)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ConsensusFaultReported-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ConsensusFaultElapsed-1)); err != nil {
 			return err
 		}
 	}
@@ -621,7 +621,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		t.WindowPoStPartitionSectors = uint64(extra)
 
 	}
-	// t.ConsensusFaultReported (abi.ChainEpoch) (int64)
+	// t.ConsensusFaultElapsed (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -644,7 +644,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.ConsensusFaultReported = abi.ChainEpoch(extraI)
+		t.ConsensusFaultElapsed = abi.ChainEpoch(extraI)
 	}
 	return nil
 }

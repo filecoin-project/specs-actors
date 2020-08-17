@@ -2411,7 +2411,7 @@ func TestReportConsensusFault(t *testing.T) {
 		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
 
 		startInfo := actor.getInfo(rt)
-		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultReported)
+		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultElapsed)
 		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
 		_ = sectorInfo
 
@@ -2425,7 +2425,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 		actor.reportConsensusFault(rt, addr.TestAddress, params)
 		endInfo := actor.getInfo(rt)
-		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultReported)
+		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
 
 }

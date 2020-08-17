@@ -1432,30 +1432,37 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	// Give a portion of this to the reporter as reward
 	var st State
 	rewardStats := requestCurrentEpochBlockReward(rt)
+	// The policy amounts we should burn and send to reporter
+	// These may differ from actual funds send when miner goes into fee debt
 	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochReward)
 	slasherReward := RewardForConsensusSlashReport(faultAge, faultPenalty)
 	pledgeDelta := big.Zero()
+
+	// The amounts actually sent to burnt funds and reporter
+	burnAmount := big.Zero()
+	rewardAmount := big.Zero()
 	rt.State().Transaction(&st, func() {
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), faultPenalty, unlockedBalance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
-		faultPenalty = big.Add(penaltyFromVesting, penaltyFromBalance)
+		// Burn the amount actually payable. Any difference in this and faultPenalty recorded as FeeDebt
+		burnAmount = big.Add(penaltyFromVesting, penaltyFromBalance)
 		pledgeDelta = big.Add(pledgeDelta, penaltyFromVesting.Neg())
 
-		// clamp slasherReward at faultPenalty
-		slasherReward = big.Min(faultPenalty, slasherReward)
-		// reduce faultPenalty by slasherReward
-		faultPenalty = big.Sub(faultPenalty, slasherReward)
+		// clamp reward at funds burnt
+		rewardAmount = big.Min(burnAmount, slasherReward)
+		// reduce burnAmount by rewardAmount
+		burnAmount = big.Sub(burnAmount, rewardAmount)
 		info := getMinerInfo(rt, &st)
-		info.ConsensusFaultReported = rt.CurrEpoch() + ConsensusFaultIneligibilityDuration
+		info.ConsensusFaultElapsed = rt.CurrEpoch() + ConsensusFaultIneligibilityDuration
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
 	})
-	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
+	_, code := rt.Send(reporter, builtin.MethodSend, nil, rewardAmount)
 	if !code.IsSuccess() {
 		rt.Log(vmr.ERROR, "failed to send reward")
 	}
-	burnFunds(rt, faultPenalty)
+	burnFunds(rt, burnAmount)
 	notifyPledgeChanged(rt, pledgeDelta)
 
 	return nil
