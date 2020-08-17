@@ -775,13 +775,13 @@ func (st *State) PenalizeFundsInPriorityOrder(store adt.Store, currEpoch abi.Cha
 }
 
 // Repays the full miner actor fee debt.  Returns the amount that must be
-// repaid and an error if there are not sufficient funds to cover repayment.
+// burnt and an error if there are not sufficient funds to cover repayment.
 // Miner state repays from unlocked funds, potentially violating IP requirements
-// and bringing actor into IP debt.  FeeDebt should be  zero after calling.
+// and bringing actor into IP debt.  FeeDebt should be zero after calling.
 func (st *State) RepayDebt(currBalance abi.TokenAmount) (abi.TokenAmount, error) {
 	unlockedBalance := st.GetUnlockedBalance(currBalance)
 	if !st.CanRepayFeeDebt(unlockedBalance) {
-		return big.Zero(), xerrors.Errorf("unlocked balance can not repay fee debt (%v < %v)", unlockedBalance, st.FeeDebt)
+		return big.Zero(), xc.ErrInsufficientFunds.Wrapf("unlocked balance can not repay fee debt (%v < %v)", unlockedBalance, st.FeeDebt)
 	}
 	debtToRepay := st.FeeDebt
 	st.FeeDebt = big.Zero()
@@ -871,10 +871,14 @@ func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmou
 func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
 	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	Assert(st.FeeDebt.GreaterThanEqual(big.Zero()))
 	Assert(balance.GreaterThanEqual(big.Sum(st.PreCommitDeposits, st.LockedFunds)))
 }
 
 func (st *State) MeetsInitialPledgeCondition(balance abi.TokenAmount) bool {
+	if st.FeeDebt.GreaterThan(big.Zero()) {
+		return false
+	}
 	unlockedBalance := st.GetUnlockedBalance(balance)
 	return unlockedBalance.GreaterThanEqual(st.InitialPledgeRequirement)
 }

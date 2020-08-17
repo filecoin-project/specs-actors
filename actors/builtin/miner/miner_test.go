@@ -37,6 +37,7 @@ var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
 var bigBalance = big.Mul(big.NewInt(1000000), big.NewInt(1e18))
+var onePercentBigBalance = big.Div(bigBalance, big.NewInt(100))
 
 // an expriration 1 greater than min expiration
 const defaultSectorExpiration = 190
@@ -487,7 +488,7 @@ func TestCommitments(t *testing.T) {
 		st.FeeDebt = abi.NewTokenAmount(9999)
 		rt.ReplaceState(st)
 
-		actor.preCommitSectorWithFeeDebt(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), st.FeeDebt)
+		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
 	})
@@ -1691,13 +1692,15 @@ func TestDeclareRecoveries(t *testing.T) {
 
 		// Recovery pays back fee debt and IP requirements and succeeds
 		funds := big.Add(ff, st.InitialPledgeRequirement)
-		rt.SetBalance(big.Add(rt.Balance(), funds)) // this is how we send funds along with recovery message using mock rt
+		rt.SetBalance(funds) // this is how we send funds along with recovery message using mock rt
 		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), ff)
 
 		dl := actor.getDeadline(rt, dlIdx)
 		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
 		require.NoError(t, err)
 		assert.Equal(t, p.Faults, p.Recoveries)
+		st = getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
 	})
 
 }
@@ -2111,8 +2114,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// withdraw 1% of balance
-		onePercent := big.Mul(big.NewInt(10), big.NewInt(1e18))
-		actor.withdrawFunds(rt, onePercent, onePercent, big.Zero())
+		actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 	})
 
 	t.Run("fails if miner is currently undercollateralized", func(t *testing.T) {
@@ -2128,9 +2130,8 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.ReplaceState(st)
 
 		// withdraw 1% of balance
-		onePercent := big.Mul(big.NewInt(10), big.NewInt(1e18))
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.withdrawFunds(rt, onePercent, onePercent, big.Zero())
+			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 		})
 	})
 
@@ -2141,9 +2142,8 @@ func TestWithdrawBalance(t *testing.T) {
 		st := getState(rt)
 		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
-		onePercent := big.Mul(big.NewInt(10), big.NewInt(1e18))
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
-			actor.withdrawFunds(rt, onePercent, onePercent, big.Zero())
+			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 		})
 	})
 
@@ -2152,7 +2152,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		st := getState(rt)
-		feeDebt := abi.NewTokenAmount(9e18)
+		feeDebt := big.Sub(bigBalance, onePercentBigBalance)
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
 		
@@ -2928,10 +2928,6 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
-	return h.preCommitSectorWithFeeDebt(rt, params, big.Zero())
-}
-
-func (h *actorHarness) preCommitSectorWithFeeDebt(rt *mock.Runtime, params *miner.SectorPreCommitInfo, feeDebtToRepay abi.TokenAmount) *miner.SectorPreCommitOnChainInfo {
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
@@ -2955,8 +2951,9 @@ func (h *actorHarness) preCommitSectorWithFeeDebt(rt *mock.Runtime, params *mine
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
-	if feeDebtToRepay.GreaterThan(big.Zero()) {
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, feeDebtToRepay, nil, exitcode.Ok)
+	st := getState(rt)
+	if st.FeeDebt.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, st.FeeDebt, nil, exitcode.Ok)
 	}
 
 	rt.Call(h.a.PreCommitSector, params)
