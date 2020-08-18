@@ -631,6 +631,22 @@ func TestCommitments(t *testing.T) {
 		st.FeeDebt = big.Zero()
 		rt.ReplaceState(st)
 		rt.Reset()
+
+		// Try to precommit with an active consensus fault
+		st = getState(rt)
+		params := &miner.ReportConsensusFaultParams{
+			BlockHeader1:     nil,
+			BlockHeader2:     nil,
+			BlockHeaderExtra: nil,
+		}
+
+		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "precommit not allowed during active consensus fault", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+		})
+		// reset state back to normal
+		rt.ReplaceState(st)
+		rt.Reset()
 	})
 
 	t.Run("valid committed capacity upgrade", func(t *testing.T) {
@@ -1741,6 +1757,34 @@ func TestDeclareRecoveries(t *testing.T) {
 		assert.Equal(t, big.Zero(), st.FeeDebt)
 	})
 
+	t.Run("recovery fails during active consensus fault", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		// consensus fault
+		params := &miner.ReportConsensusFaultParams{
+			BlockHeader1:     nil,
+			BlockHeader2:     nil,
+			BlockHeaderExtra: nil,
+		}
+
+		actor.reportConsensusFault(rt, addr.TestAddress, params)
+
+		// advance to first proving period and submit so we'll have time to declare the fault next cycle
+		advanceAndSubmitPoSts(rt, actor, oneSector...)
+
+		// Declare the sector as faulted
+		actor.declareFaults(rt, oneSector...)
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
+		require.NoError(t, err)
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "recovery not allowed during active consensus fault", func() {
+			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
+		})
+	})
+
 }
 
 func TestExtendSectorExpiration(t *testing.T) {
@@ -2179,6 +2223,30 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 		})
+	})
+
+	t.Run("fails if miner has an active consensus fault", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		currEpoch := abi.ChainEpoch(500_000)
+		rt.SetEpoch(currEpoch)
+
+		// st := getState(rt)
+		// info := st.GetInfo(rt.AdtStore())
+		// info.ConsensusFaultElapsed = currEpoch + abi.ChainEpoch(1)
+		// st.SaveInfo(rt.AdtStore, info)
+		params := &miner.ReportConsensusFaultParams{
+			BlockHeader1:     nil,
+			BlockHeader2:     nil,
+			BlockHeaderExtra: nil,
+		}
+
+		actor.reportConsensusFault(rt, addr.TestAddress, params)
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
+		})
+
 	})
 
 	t.Run("fails if miner can't repay fee debt", func(t *testing.T) {
