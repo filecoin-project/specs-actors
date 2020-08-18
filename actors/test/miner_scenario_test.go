@@ -219,6 +219,55 @@ func TestCommitPoStFlow(t *testing.T) {
 		}.Matches(t, tv.Invocations()[0])
 	})
 
+	t.Run("skip sector", func(t *testing.T) {
+		tv, err := v.WithEpoch(v.GetEpoch())
+		require.NoError(t, err)
+
+		// Submit PoSt
+		submitParams := miner.SubmitWindowedPoStParams{
+			Deadline: dlIdx,
+			Partitions: []miner.PoStPartition{{
+				Index:   pIdx,
+				Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+			}},
+			Proofs: []abi.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitEpoch: tv.GetEpoch() - 1,
+			ChainCommitRand:  []byte("not really random"),
+		}
+		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		require.Equal(t, exitcode.Ok, code)
+
+		sectorSize, err := sector.SealProof.SectorSize()
+		require.NoError(t, err)
+		sectorPower := miner.PowerForSector(sectorSize, sector)
+		updatePowerParams := &power.UpdateClaimedPowerParams{
+			RawByteDelta:         sectorPower.Raw.Neg(),
+			QualityAdjustedDelta: sectorPower.QA.Neg(),
+		}
+
+		vm.ExpectInvocation{
+			// Original send to storage power actor
+			To:     minerAddrs.IDAddress,
+			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
+			Params: vm.ExpectObject(&submitParams),
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+
+				// This call to the power actor indicates power has been removed for the sector
+				{
+					To:     builtin.StoragePowerActorAddr,
+					Method: builtin.MethodsPower.UpdateClaimedPower,
+					Params: vm.ExpectObject(updatePowerParams),
+				},
+				// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
+				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+			},
+		}.Matches(t, tv.Invocations()[0])
+	})
+
 	t.Run("missed first PoSt deadline", func(t *testing.T) {
 		// move to proving period end
 		tv, err := v.WithEpoch(dlInfo.Last())
