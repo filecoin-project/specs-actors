@@ -208,6 +208,29 @@ func TestConstruction(t *testing.T) {
 		})
 	})
 
+	t.Run("fails if control addresses exceeds maximum length", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		controlAddrs := make([]addr.Address, 0, miner.MaxControlAddresses+1)
+		for i := 0; i <= miner.MaxControlAddresses; i++ {
+			controlAddrs = append(controlAddrs, tutil.NewIDAddr(t, uint64(i)))
+		}
+
+		params := miner.ConstructorParams{
+			OwnerAddr:     owner,
+			WorkerAddr:    worker,
+			SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
+			PeerId:        testPid,
+			ControlAddrs:  controlAddrs,
+		}
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "control addresses length", func() {
+			rt.Call(actor.Constructor, &params)
+		})
+	})
+
 	t.Run("test construct with large multiaddr", func(t *testing.T) {
 		rt := builder.Build(t)
 		maddrs := make([]abi.Multiaddrs, 100)
@@ -2155,7 +2178,7 @@ func TestWithdrawBalance(t *testing.T) {
 		feeDebt := big.Sub(bigBalance, onePercentBigBalance)
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
-		
+
 		requested := rt.Balance()
 		expectedWithdraw := big.Sub(requested, feeDebt)
 		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
@@ -2466,6 +2489,20 @@ func TestChangeWorkerAddress(t *testing.T) {
 		require.Empty(t, info.ControlAddresses)
 	})
 
+	t.Run("fails if control addresses length exceeds maximum limit", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		controlAddrs := make([]addr.Address, 0, miner.MaxControlAddresses+1)
+		for i := 0; i <= miner.MaxControlAddresses; i++ {
+			controlAddrs = append(controlAddrs, tutil.NewIDAddr(t, uint64(i)))
+		}
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "control addresses length", func() {
+			actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), controlAddrs)
+		})
+	})
+
 	t.Run("fails if unable to resolve control address", func(t *testing.T) {
 		rt, actor := setupFunc()
 		actor.constructAndVerify(rt)
@@ -2601,7 +2638,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 		actor.reportConsensusFault(rt, addr.TestAddress, params)
 		endInfo := actor.getInfo(rt)
-		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
 
 }
@@ -3744,7 +3781,6 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWi
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amountRequested,
 	})
-	
 
 	rt.Verify()
 }
