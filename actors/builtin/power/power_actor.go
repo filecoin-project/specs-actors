@@ -7,12 +7,10 @@ import (
 	addr "github.com/filecoin-project/go-address"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -35,9 +33,8 @@ func (a Actor) Exports() []interface{} {
 		4:                         a.EnrollCronEvent,
 		5:                         a.OnEpochTickEnd,
 		6:                         a.UpdatePledgeTotal,
-		7:                         a.OnConsensusFault,
-		8:                         a.SubmitPoRepForBulkVerify,
-		9:                         a.CurrentTotalPower,
+		7:                         a.SubmitPoRepForBulkVerify,
+		8:                         a.CurrentTotalPower,
 	}
 }
 
@@ -232,40 +229,6 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *adt.
 	rt.State().Transaction(&st, func() {
 		st.addPledgeTotal(*pledgeDelta)
 	})
-	return nil
-}
-
-func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.EmptyValue {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Message().Caller()
-
-	var st State
-	rt.State().Transaction(&st, func() {
-		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
-
-		claim, powerOk, err := getClaim(claims, minerAddr)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to read claimed power for fault")
-		if !powerOk {
-			rt.Abortf(exitcode.ErrNotFound, "miner %v not registered (already slashed?)", minerAddr)
-		}
-		Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
-		Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-		err = st.addToClaim(claims, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not add to claim for %s after loading existing claim for this address", minerAddr)
-
-		st.addPledgeTotal(pledgeAmount.Neg())
-
-		// delete miner actor claims
-		err = claims.Delete(AddrKey(minerAddr))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove miner %v", minerAddr)
-
-		st.MinerCount -= 1
-
-		st.Claims, err = claims.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
-	})
-
 	return nil
 }
 
