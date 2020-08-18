@@ -6,6 +6,7 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -214,6 +215,24 @@ func TestAwardBlockReward(t *testing.T) {
 	})
 }
 
+func TestThisEpochReward(t *testing.T) {
+	t.Run("successfully fetch reward for this epoch", func(t *testing.T) {
+		actor := rewardHarness{reward.Actor{}, t}
+		builder := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
+			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+		rt := builder.Build(t)
+		power := abi.NewStoragePower(1 << 50)
+		actor.constructAndVerify(rt, &power)
+
+		resp := actor.thisEpochReward(rt)
+		st := getState(rt)
+
+		require.EqualValues(t, st.ThisEpochReward, resp.ThisEpochReward)
+		require.EqualValues(t, st.ThisEpochBaselinePower, resp.ThisEpochBaselinePower)
+		require.EqualValues(t, st.ThisEpochRewardSmoothed, resp.ThisEpochRewardSmoothed)
+	})
+}
+
 func TestSuccessiveKPIUpdates(t *testing.T) {
 	actor := rewardHarness{reward.Actor{}, t}
 	builder := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
@@ -267,6 +286,17 @@ func (h *rewardHarness) awardBlockReward(rt *mock.Runtime, miner address.Address
 		WinCount:  winCount,
 	})
 	rt.Verify()
+}
+
+func (h *rewardHarness) thisEpochReward(rt *mock.Runtime) *reward.ThisEpochRewardReturn {
+	rt.ExpectValidateCallerAny()
+
+	ret := rt.Call(h.ThisEpochReward, nil)
+	rt.Verify()
+
+	resp, ok := ret.(*reward.ThisEpochRewardReturn)
+	require.True(h.t, ok)
+	return resp
 }
 
 func getState(rt *mock.Runtime) *reward.State {
