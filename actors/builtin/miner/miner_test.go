@@ -2130,7 +2130,6 @@ func TestCompactPartitions(t *testing.T) {
 		assertSectorExists(rt.AdtStore(), st, sector3, partId, deadlineId)
 		assertSectorExists(rt.AdtStore(), st, sector4, partId, deadlineId)
 
-		// TODO Why is this working ?
 		assertSectorNotFound(rt.AdtStore(), st, sector1)
 	})
 
