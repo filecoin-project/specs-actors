@@ -145,7 +145,7 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	identifier := fmt.Sprintf("%s[%s:%d]", breadcrumb, invocation.Msg.to, invocation.Msg.method)
 
 	// mismatch of to or method probably indicates skipped message or messages out of order. halt.
-	require.Equal(t, ei.To, invocation.Msg.to, "%s unexpected `to` address", identifier)
+	require.Equal(t, ei.To, invocation.Msg.to, "%s unexpected 'to' address", identifier)
 	require.Equal(t, ei.Method, invocation.Msg.method, "%s unexpected method", identifier)
 
 	// other expectations are optional
@@ -256,7 +256,7 @@ func AdvanceByMinerDeadline(t *testing.T, v *VM, minerIDAddr address.Address, pr
 
 func AdvanceTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
 	return AdvanceByMinerDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
-		return dlInfo.Close < e
+		return dlInfo.Close <= e
 	})
 }
 

@@ -44,7 +44,10 @@ func TestCommitPoStFlow(t *testing.T) {
 	v, err := v.WithEpoch(200)
 	require.NoError(t, err)
 
+	//
 	// precommit sector
+	//
+
 	preCommitParams := miner.SectorPreCommitInfo{
 		SealProof:     sealProof,
 		SectorNumber:  sectorNumber,
@@ -70,7 +73,46 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.MaxSealDuration[sealProof]
-	v, _ = vm.AdvanceTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	v, dlInfo := vm.AdvanceTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+
+	//
+	// overdue precommit
+	//
+
+	t.Run("missed prove commit results in precommit expiry", func(t *testing.T) {
+		// advanced one more deadline so precommit is late
+		tv, _ := v.WithEpoch(dlInfo.Close)
+		require.NoError(t, err)
+
+		// run cron which should expire precommit
+		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		require.Equal(t, exitcode.Ok, code)
+
+		vm.ExpectInvocation{
+			// Original send to storage power actor
+			To:     builtin.CronActorAddr,
+			Method: builtin.MethodsCron.EpochTick,
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
+						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+
+						// The call to burnt funds indicates the overdue precommit has been penalized
+						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+					}},
+					//{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid},
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
+				}},
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
+			},
+		}.Matches(t, tv.Invocations()[0])
+	})
+
+	//
+	// prove and verify
+	//
 
 	// Prove commit sector after max seal duration
 	v, err = v.WithEpoch(proveTime)
@@ -102,11 +144,8 @@ func TestCommitPoStFlow(t *testing.T) {
 		Method: builtin.MethodsCron.EpochTick,
 		SubInvocations: []vm.ExpectInvocation{
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
-				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
-				}},
+				// expect confirm sector proofs valid because we prove committed,
+				// but not an on deferred cron event because this is not a deadline boundary
 				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid, SubInvocations: []vm.ExpectInvocation{
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
@@ -120,6 +159,10 @@ func TestCommitPoStFlow(t *testing.T) {
 		},
 	}.Matches(t, v.Invocations()[1])
 
+	//
+	// Submit PoSt
+	//
+
 	// advance time to next proving period
 	var minerState miner.State
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
@@ -127,34 +170,72 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	dlIdx, pIdx, err := minerState.FindSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
-	v, dlInfo := vm.AdvanceTillIndex(t, v, minerAddrs.IDAddress, dlIdx)
+	v, dlInfo = vm.AdvanceTillIndex(t, v, minerAddrs.IDAddress, dlIdx)
 	v, err = v.WithEpoch(dlInfo.Open)
 	require.NoError(t, err)
 
-	// Submit PoSt
-	submitParams := miner.SubmitWindowedPoStParams{
-		Deadline: dlIdx,
-		Partitions: []miner.PoStPartition{{
-			Index:   pIdx,
-			Skipped: bitfield.New(),
-		}},
-		Proofs: []abi.PoStProof{{
-			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		}},
-		ChainCommitEpoch: v.GetEpoch() - 1,
-		ChainCommitRand:  []byte("not really random"),
-	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-	require.Equal(t, exitcode.Ok, code)
+	t.Run("submit PoSt succeeds", func(t *testing.T) {
+		tv, err := v.WithEpoch(v.GetEpoch())
+		require.NoError(t, err)
 
-	vm.ExpectInvocation{
-		// Original send to storage power actor
-		To:     minerAddrs.IDAddress,
-		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
-		Params: vm.ExpectObject(&submitParams),
-		SubInvocations: []vm.ExpectInvocation{
-			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-		},
-	}.Matches(t, v.Invocations()[0])
+		// Submit PoSt
+		submitParams := miner.SubmitWindowedPoStParams{
+			Deadline: dlIdx,
+			Partitions: []miner.PoStPartition{{
+				Index:   pIdx,
+				Skipped: bitfield.New(),
+			}},
+			Proofs: []abi.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitEpoch: tv.GetEpoch() - 1,
+			ChainCommitRand:  []byte("not really random"),
+		}
+		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		require.Equal(t, exitcode.Ok, code)
+
+		vm.ExpectInvocation{
+			// Original send to storage power actor
+			To:     minerAddrs.IDAddress,
+			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
+			Params: vm.ExpectObject(&submitParams),
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+			},
+		}.Matches(t, tv.Invocations()[0])
+	})
+
+	t.Run("missed first PoSt deadline", func(t *testing.T) {
+		// move to proving period end
+		tv, err := v.WithEpoch(dlInfo.Last())
+		require.NoError(t, err)
+
+		// Run cron to detect missing PoSt
+		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		require.Equal(t, exitcode.Ok, code)
+
+		vm.ExpectInvocation{
+			// Original send to storage power actor
+			To:     builtin.CronActorAddr,
+			Method: builtin.MethodsCron.EpochTick,
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
+						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+
+						// This call to the power actor indicates power has been removed for the sector
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+						// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
+						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+					}},
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
+				}},
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
+			},
+		}.Matches(t, tv.Invocations()[0])
+	})
 }
