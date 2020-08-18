@@ -20,6 +20,11 @@ var PreCommitDepositProjectionPeriod = abi.ChainEpoch(PreCommitDepositFactor) * 
 var InitialPledgeFactor = 20 // PARAM_SPEC PARAM_FINISH
 var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builtin.EpochsInDay
 
+// Cap on initial pledge requirement for sectors.
+// The target is 1 FIL (10**18 attoFIL) per 32GiB.
+// This does not divide evenly, so the result is fractionally smaller.
+var InitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32 << 30))
+
 // Multiplier of share of circulating money supply for consensus pledge required to commit a sector.
 // This pledge is lost if a sector is terminated before its full committed lifetime.
 var InitialPledgeLockTarget = builtin.BigFrac{
@@ -137,7 +142,9 @@ func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstima
 	additionalIPDenom := big.Mul(lockTargetDenom, pledgeShareDenom)
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
-	return big.Add(ipBase, additionalIP)
+	nominalPledge := big.Add(ipBase, additionalIP)
+	spaceRacePledgeCap := big.Mul(InitialPledgeMaxPerByte, qaPower)
+	return big.Min(nominalPledge, spaceRacePledgeCap)
 }
 
 // Repays all fee debt and then verifies that the miner has amount needed to cover

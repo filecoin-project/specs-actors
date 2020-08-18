@@ -788,6 +788,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			pwr := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
+			// The storage pledge is recorded for use in computing the penalty if this sector is terminated
+			// before its declared expiration.
+			// It's not capped to 1 FIL, so can exceed the actual initial pledge requirement.
 			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
 			initialPledge := InitialPledgeForPower(pwr, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
