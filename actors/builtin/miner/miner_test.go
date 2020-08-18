@@ -623,6 +623,10 @@ func TestCommitments(t *testing.T) {
 		// Commit a sector to upgrade
 		// Use the max sector number to make sure everything works.
 		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
+
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, oldSector)
+
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
@@ -696,7 +700,7 @@ func TestCommitments(t *testing.T) {
 		// Fail to submit PoSt. This means that both sectors will be detected faulty.
 		// Expect the old sector to be marked as terminated.
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
-		lostPower := actor.powerPairForSectors(bothSectors).Neg()
+		lostPower := actor.powerPairForSectors(bothSectors[1:]).Neg() // new sector not active yet.
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
 		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
@@ -1449,15 +1453,23 @@ func TestDeadlineCron(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		allSectors := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
-		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
+		activeSectors := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, activeSectors...)
+		activePower := miner.PowerForSectors(actor.sectorSize, activeSectors)
+
+		unprovenSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		unprovenPower := miner.PowerForSectors(actor.sectorSize, unprovenSectors)
+
+		totalPower := unprovenPower.Add(activePower)
+		allSectors := append(activeSectors, unprovenSectors...)
 
 		// add lots of funds so penalties come from vesting funds
-		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
+		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
 		actor.addLockedFunds(rt, initialLocked)
 
 		st := getState(rt)
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), activeSectors[0].SectorNumber)
 		require.NoError(t, err)
 
 		// advance to next deadline where we expect the first sectors to appear
@@ -1468,15 +1480,15 @@ func TestDeadlineCron(t *testing.T) {
 
 		// Skip to end of the deadline, cron detects and penalizes sectors as faulty
 		undeclaredFee := actor.undeclaredFaultPenalty(allSectors)
-		pwrDelta := pwr.Neg()
+		activePowerDelta := activePower.Neg()
 		advanceDeadline(rt, actor, &cronConfig{
-			detectedFaultsPowerDelta: &pwrDelta,
+			detectedFaultsPowerDelta: &activePowerDelta,
 			detectedFaultsPenalty:    undeclaredFee,
 		})
 
 		// expect faulty power to be added to state
 		deadline := actor.getDeadline(rt, dlIdx)
-		assert.True(t, pwr.Equals(deadline.FaultyPower))
+		assert.True(t, totalPower.Equals(deadline.FaultyPower))
 
 		// advance 3 deadlines
 		advanceDeadline(rt, actor, &cronConfig{})
@@ -1507,7 +1519,7 @@ func TestDeadlineCron(t *testing.T) {
 
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
-		assert.True(t, pwr.Equals(deadline.FaultyPower))
+		assert.True(t, totalPower.Equals(deadline.FaultyPower))
 		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantSpecForDeadline(dlIdx), actor.sectorSize, uint64(4), allSectors)
 	})
 
@@ -1521,6 +1533,9 @@ func TestDeadlineCron(t *testing.T) {
 
 		// create enough sectors that one will be in a different partition
 		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, allSectors...)
 
 		// add lots of funds so we can pay penalties without going into debt
 		st := getState(rt)

@@ -631,30 +631,38 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 
 // Marks all non-faulty sectors in the partition as faulty and clears recoveries, updating power memos appropriately.
 // All sectors' expirations are rescheduled to the fault expiration, as "early" (if not expiring earlier)
-// Returns the power of the newly faulty and failed recovery sectors.
-func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainEpoch, quant QuantSpec) (newFaultPower, failedRecoveryPower PowerPair, err error) {
+// Returns the power delta, power that should be penalized, and newly faulty power.
+func (p *Partition) RecordMissedPost(
+	store adt.Store, faultExpiration abi.ChainEpoch, quant QuantSpec,
+) (powerDelta, penalizedPower, newFaultyPower PowerPair, err error) {
 	// Collapse tail of queue into the last entry, and mark all power faulty.
 	// Load expiration queue
 	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
 	if err = queue.RescheduleAllAsFaults(faultExpiration); err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to reschedule all as faults: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to reschedule all as faults: %w", err)
 	}
 	// Save expiration queue
 	if p.ExpirationsEpochs, err = queue.Root(); err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), err
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), err
 	}
 
-	// Compute faulty power for penalization. New faulty power is the total power minus already faulty.
-	newFaultPower = p.LivePower.Sub(p.FaultyPower)
-	failedRecoveryPower = p.RecoveringPower
+	// Compute power changes.
+
+	// New faulty power is the total power minus already faulty.
+	newFaultyPower = p.LivePower.Sub(p.FaultyPower)
+	// Penalized power is the newly faulty power, plus the failed recovery power.
+	penalizedPower = p.RecoveringPower.Add(newFaultyPower)
+	// The power delta is -(newFaultyPower-unproven), because unproven power
+	// was never activated in the first place.
+	powerDelta = newFaultyPower.Sub(p.UnprovenPower).Neg()
 
 	// Update partition metadata
 	allFaults, err := p.LiveSectors()
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), err
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), err
 	}
 	p.Faults = allFaults
 	p.Recoveries = bitfield.New()
@@ -663,7 +671,7 @@ func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainE
 	p.RecoveringPower = NewPowerPairZero()
 	p.UnprovenPower = NewPowerPairZero()
 
-	return newFaultPower, failedRecoveryPower, nil
+	return powerDelta, penalizedPower, newFaultyPower, nil
 }
 
 func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {

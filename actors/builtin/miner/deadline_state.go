@@ -11,7 +11,6 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -767,17 +766,17 @@ func (dl *Deadline) DeclareFaultsRecovered(
 }
 
 // ProcessDeadlineEnd processes all PoSt submissions, marking unproven sectors as
-// faulty and clearing failed recoveries. It returns any new faulty power and
-// failed recovery power.
+// faulty and clearing failed recoveries. It returns the power delta, and any
+// power that should be penalized.
 func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
-	newFaultyPower, failedRecoveryPower PowerPair, err error,
+	powerDelta, penalizedPower PowerPair, err error,
 ) {
-	newFaultyPower = NewPowerPairZero()
-	failedRecoveryPower = NewPowerPairZero()
+	powerDelta = NewPowerPairZero()
+	penalizedPower = NewPowerPairZero()
 
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
-		return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+		return powerDelta, penalizedPower, xerrors.Errorf("failed to load partitions: %w", err)
 	}
 
 	detectedAny := false
@@ -785,7 +784,7 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	for partIdx := uint64(0); partIdx < partitions.Length(); partIdx++ {
 		proven, err := dl.PostSubmissions.IsSet(partIdx)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to check submission for partition %d: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to check submission for partition %d: %w", partIdx, err)
 		}
 		if proven {
 			continue
@@ -794,10 +793,10 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 		var partition Partition
 		found, err := partitions.Get(partIdx, &partition)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
 		}
 		if !found {
-			return newFaultyPower, failedRecoveryPower, exitcode.ErrIllegalState.Wrapf("no partition %d", partIdx)
+			return powerDelta, penalizedPower, xerrors.Errorf("no partition %d", partIdx)
 		}
 
 		// If we have no recovering power/sectors, and all power is faulty, skip
@@ -809,46 +808,46 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 		// Ok, we actually need to process this partition. Make sure we save the partition state back.
 		detectedAny = true
 
-		partFaultyPower, partFailedRecoveryPower, err := partition.RecordMissedPost(store, faultExpirationEpoch, quant)
+		partPowerDelta, partPenalizedPower, partNewFaultyPower, err := partition.RecordMissedPost(store, faultExpirationEpoch, quant)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to record missed PoSt for partition %v: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to record missed PoSt for partition %v: %w", partIdx, err)
 		}
 
 		// We marked some sectors faulty, we need to record the new
 		// expiration. We don't want to do this if we're just penalizing
 		// the miner for failing to recover power.
-		if !partFaultyPower.IsZero() {
+		if !partNewFaultyPower.IsZero() {
 			rescheduledPartitions = append(rescheduledPartitions, partIdx)
 		}
 
 		// Save new partition state.
 		err = partitions.Set(partIdx, &partition)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to update partition %v: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to update partition %v: %w", partIdx, err)
 		}
 
-		newFaultyPower = newFaultyPower.Add(partFaultyPower)
-		failedRecoveryPower = failedRecoveryPower.Add(partFailedRecoveryPower)
+		dl.FaultyPower = dl.FaultyPower.Add(partNewFaultyPower)
+
+		powerDelta = powerDelta.Add(partPowerDelta)
+		penalizedPower = penalizedPower.Add(partPenalizedPower)
 	}
 
 	// Save modified deadline state.
 	if detectedAny {
 		dl.Partitions, err = partitions.Root()
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to store partitions: %w", err)
+			return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to store partitions: %w", err)
 		}
 	}
 
 	err = dl.AddExpirationPartitions(store, faultExpirationEpoch, rescheduledPartitions, quant)
 	if err != nil {
-		return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to update deadline expiration queue: %w", err)
+		return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to update deadline expiration queue: %w", err)
 	}
-
-	dl.FaultyPower = dl.FaultyPower.Add(newFaultyPower)
 
 	// Reset PoSt submissions.
 	dl.PostSubmissions = bitfield.New()
-	return newFaultyPower, failedRecoveryPower, nil
+	return powerDelta, penalizedPower, nil
 }
 
 type PoStResult struct {

@@ -1710,18 +1710,16 @@ func handleProvingDeadline(rt Runtime) {
 		{
 			// Detect and penalize missing proofs.
 			faultExpiration := dlInfo.Last() + FaultMaxAge
-			penalizePowerTotal := big.Zero()
 
-			newFaultyPower, failedRecoveryPower, err := deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
+			partPowerDelta, penalizedPower, err := deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process end of deadline %d", dlInfo.Index)
 
-			powerDelta = powerDelta.Sub(newFaultyPower)
-			penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultyPower.QA, failedRecoveryPower.QA)
+			powerDelta = powerDelta.Add(partPowerDelta)
 
 			// Unlock sector penalty for all undeclared faults.
-			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal)
+			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizedPower.QA)
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
-			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal))
+			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizedPower.QA))
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance)
