@@ -71,6 +71,15 @@ func TestCommitPoStFlow(t *testing.T) {
 			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.VerifyDealsForActivation}},
 	}.Matches(t, v.Invocations()[0])
 
+	// find information about precommited sector
+	var minerState miner.State
+	err = v.GetState(minerAddrs.IDAddress, &minerState)
+	require.NoError(t, err)
+
+	precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+
 	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.MaxSealDuration[sealProof]
 	v, dlInfo := vm.AdvanceTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
@@ -99,7 +108,7 @@ func TestCommitPoStFlow(t *testing.T) {
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 
 						// The call to burnt funds indicates the overdue precommit has been penalized
-						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(precommit.PreCommitDeposit)},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
 					}},
 					//{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid},
@@ -163,13 +172,17 @@ func TestCommitPoStFlow(t *testing.T) {
 	// Submit PoSt
 	//
 
-	// advance time to next proving period
-	var minerState miner.State
+	// find information about committed sector
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
 	require.NoError(t, err)
 
 	dlIdx, pIdx, err := minerState.FindSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
+	sector, found, err := minerState.GetSector(v.Store(), sectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	// advance time to next proving period
 	v, dlInfo = vm.AdvanceTillIndex(t, v, minerAddrs.IDAddress, dlIdx)
 	v, err = v.WithEpoch(dlInfo.Open)
 	require.NoError(t, err)
@@ -215,6 +228,14 @@ func TestCommitPoStFlow(t *testing.T) {
 		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 		require.Equal(t, exitcode.Ok, code)
 
+		sectorSize, err := sector.SealProof.SectorSize()
+		require.NoError(t, err)
+		sectorPower := miner.PowerForSector(sectorSize, sector)
+		updatePowerParams := &power.UpdateClaimedPowerParams{
+			RawByteDelta:         sectorPower.Raw.Neg(),
+			QualityAdjustedDelta: sectorPower.QA.Neg(),
+		}
+
 		vm.ExpectInvocation{
 			// Original send to storage power actor
 			To:     builtin.CronActorAddr,
@@ -226,7 +247,11 @@ func TestCommitPoStFlow(t *testing.T) {
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 
 						// This call to the power actor indicates power has been removed for the sector
-						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+						{
+							To:     builtin.StoragePowerActorAddr,
+							Method: builtin.MethodsPower.UpdateClaimedPower,
+							Params: vm.ExpectObject(updatePowerParams),
+						},
 						// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
 						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 
