@@ -239,3 +239,9 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.denominator)
 	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, maxReporterShareNum), maxReporterShareDen))
 }
+
+func ConsensusFaultActive(info *MinerInfo, currEpoch abi.ChainEpoch) bool {
+	// For penalization period to last for exactly finality epochs
+	// consensus faults are active until currEpoch exceeds ConsensusFaultElapsed
+	return currEpoch <= info.ConsensusFaultElapsed
+}

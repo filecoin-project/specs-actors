@@ -957,6 +957,30 @@ func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (de
 	return depositToBurn, nil
 }
 
+func MinerEligibleForElection(store adt.Store, mSt *State, thisEpochReward abi.TokenAmount, minerActorBalance abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
+	// IP requirements are met.  This includes zero fee debt
+	if !mSt.MeetsInitialPledgeCondition(minerActorBalance) {
+		return false, nil
+	}
+
+	// No active consensus faults
+	mInfo, err := mSt.GetInfo(store)
+	if err != nil {
+		return false, err
+	}
+	if ConsensusFaultActive(mInfo, currEpoch) {
+		return false, nil
+	}
+
+	// IP requirement is sufficient to cover fee for a consensus fault
+	electionRequirement := ConsensusFaultPenalty(thisEpochReward)
+	if mSt.InitialPledgeRequirement.LessThan(electionRequirement) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 //
 // Misc helpers
 //
