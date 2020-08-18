@@ -240,7 +240,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
 
 		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
-		expectedDeposit := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
+		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
 		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -461,7 +461,7 @@ func TestCommitments(t *testing.T) {
 		assert.True(t, upgrade.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams.ReplaceSectorNumber, upgrade.Info.ReplaceSectorNumber)
 		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade.PreCommitDeposit)
+		assert.True(t, upgrade.PreCommitDeposit.GreaterThanEqual(oldSector.InitialPledge))
 
 		// Old sector is unchanged
 		oldSectorAgain := actor.getSector(rt, oldSector.SectorNumber)
@@ -1793,7 +1793,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		// alter initial pledge requirement to simulate undercollateralization
 		st := getState(rt)
-		st.InitialPledgeRequirement = big.Mul(big.NewInt(300000), st.InitialPledgeRequirement)
+		st.InitialPledgeRequirement = big.Mul(big.NewInt(1e7), st.InitialPledgeRequirement)
 		rt.ReplaceState(st)
 
 		// withdraw 1% of balance

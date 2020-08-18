@@ -20,6 +20,10 @@ var PreCommitDepositProjectionPeriod = abi.ChainEpoch(PreCommitDepositFactor) * 
 var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builtin.EpochsInDay
 var LockTargetFactorNum = big.NewInt(3)
 var LockTargetFactorDenom = big.NewInt(10)
+// Cap on initial pledge requirement for sectors during the Space Race network.
+// The target is 1 FIL (10**18 attoFIL) per 32GiB.
+// This does not divide evenly, so the result is fractionally smaller.
+var SpaceRaceInitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32 << 30))
 
 // FF = BR(t, DeclaredFaultProjectionPeriod)
 // projection period of 2.14 days:  2880 * 2.14 = 6163.2.  Rounded to nearest epoch 6163
@@ -96,5 +100,7 @@ func InitialPledgeForPower(qaPower abi.StoragePower, baselinePower abi.StoragePo
 	additionalIPDenom := big.Mul(lockTargetDenom, pledgeShareDenom)
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
-	return big.Add(ipBase, additionalIP)
+	nominalPledge := big.Add(ipBase, additionalIP)
+	spaceRacePledgeCap := big.Mul(SpaceRaceInitialPledgeMaxPerByte, qaPower)
+	return big.Min(nominalPledge, spaceRacePledgeCap)
 }
