@@ -2155,7 +2155,7 @@ func TestWithdrawBalance(t *testing.T) {
 		feeDebt := big.Sub(bigBalance, onePercentBigBalance)
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
-		
+
 		requested := rt.Balance()
 		expectedWithdraw := big.Sub(requested, feeDebt)
 		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
@@ -2601,7 +2601,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 		actor.reportConsensusFault(rt, addr.TestAddress, params)
 		endInfo := actor.getInfo(rt)
-		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
 
 }
@@ -2635,11 +2635,11 @@ func TestAddLockedFund(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
 
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.PledgeVestingSpec.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)
@@ -3744,7 +3744,6 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWi
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amountRequested,
 	})
-	
 
 	rt.Verify()
 }

@@ -138,7 +138,7 @@ const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
-// Number of epochs after a consensus fault for which a miner is ineligible 
+// Number of epochs after a consensus fault for which a miner is ineligible
 // for permissioned actor methods and winning block elections.
 const ConsensusFaultIneligibilityDuration = ChainFinality
 
@@ -201,13 +201,6 @@ type VestSpec struct {
 	VestPeriod   abi.ChainEpoch // Period over which the total should vest, after the initial delay.
 	StepDuration abi.ChainEpoch // Duration between successive incremental vests (independent of vesting period).
 	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
-}
-
-var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),   // PARAM_FINISH
-	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
 }
 
 var RewardVestingSpec = VestSpec{
