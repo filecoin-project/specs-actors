@@ -111,7 +111,7 @@ type MinerInfo struct {
 
 	// The maximum number of partitions allowed per Post deadline.
 	MaxPartitionsPerDeadline uint64
-  
+
 	// The next epoch this miner is eligible for certain permissioned actor methods
 	// and winning block elections as a result of being reported for a consensus fault.
 	ConsensusFaultElapsed abi.ChainEpoch
@@ -200,8 +200,6 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		return nil, err
 	}
 
-	maxPartitions := ((uint64(abi.OneEib) / uint64(sectorSize)) / partitionSectors) / WPoStPeriodDeadlines
-
 	return &MinerInfo{
 		Owner:                      owner,
 		Worker:                     worker,
@@ -212,7 +210,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
-		MaxPartitionsPerDeadline:   maxPartitions,
+		MaxPartitionsPerDeadline:   MaxPartitionsPerDeadline,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
 	}, nil
 }

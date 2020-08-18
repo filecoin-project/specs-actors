@@ -35,8 +35,6 @@ const MaxSectorNumber = math.MaxInt64
 // }
 type SectorSize uint64
 
-const OneEib = SectorSize(1152921504606846976)
-
 // Formats the size as a decimal string.
 func (s SectorSize) String() string {
 	return strconv.FormatUint(uint64(s), 10)

@@ -24,6 +24,10 @@ const WPoStPeriodDeadlines = uint64(48)
 // WPoStMaxChainCommitAge is the maximum distance back that a valid Window PoSt must commit to the current chain.
 var WPoStMaxChainCommitAge = WPoStChallengeWindow
 
+// MaxPartitionsPerDeadline is the maximum number of partitions that will be assigned to a deadline.
+// The current value allows upto 1 Eib storage for a miner.
+const MaxPartitionsPerDeadline = 300
+
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
 	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {
@@ -138,7 +142,7 @@ const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
-// Number of epochs after a consensus fault for which a miner is ineligible 
+// Number of epochs after a consensus fault for which a miner is ineligible
 // for permissioned actor methods and winning block elections.
 const ConsensusFaultIneligibilityDuration = ChainFinality
 
