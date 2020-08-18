@@ -42,12 +42,17 @@ func TestConstruction(t *testing.T) {
 
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
+		startEpoch := abi.ChainEpoch(100)
+		unlockDuration := abi.ChainEpoch(200)
+
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anne, bob, charlie},
 			NumApprovalsThreshold: 2,
-			UnlockDuration:        0,
+			UnlockDuration:        unlockDuration,
+			StartEpoch:            startEpoch,
 		}
 
+		rt.SetReceived(abi.NewTokenAmount(100))
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		ret := rt.Call(actor.Constructor, &params)
 		assert.Nil(t, ret)
@@ -57,9 +62,9 @@ func TestConstruction(t *testing.T) {
 		rt.GetState(&st)
 		assert.Equal(t, params.Signers, st.Signers)
 		assert.Equal(t, params.NumApprovalsThreshold, st.NumApprovalsThreshold)
-		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
-		assert.Equal(t, abi.ChainEpoch(0), st.UnlockDuration)
-		assert.Equal(t, abi.ChainEpoch(0), st.StartEpoch)
+		assert.Equal(t, abi.NewTokenAmount(100), st.InitialBalance)
+		assert.Equal(t, unlockDuration, st.UnlockDuration)
+		assert.Equal(t, startEpoch, st.StartEpoch)
 		txns, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
 		assert.NoError(t, err)
 		keys, err := txns.CollectKeys()
@@ -93,6 +98,7 @@ func TestConstruction(t *testing.T) {
 			Signers:               []addr.Address{anne, bob, charlie},
 			NumApprovalsThreshold: 3,
 			UnlockDuration:        100,
+			StartEpoch:            1234,
 		}
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		ret := rt.Call(actor.Constructor, &params)
@@ -188,6 +194,7 @@ func TestConstruction(t *testing.T) {
 
 func TestVesting(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -209,7 +216,7 @@ func TestVesting(t *testing.T) {
 	t.Run("happy path full vesting", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, 2, unlockDuration, []addr.Address{anne, bob, charlie}...)
+		actor.constructAndVerify(rt, 2, unlockDuration, startEpoch, []addr.Address{anne, bob, charlie}...)
 
 		// anne proposes that darlene receives `multisgiInitialBalance` FIL.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -238,7 +245,7 @@ func TestVesting(t *testing.T) {
 	t.Run("partial vesting propose to send half the actor balance when the epoch is hald the unlock duration", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, 2, 10, []addr.Address{anne, bob, charlie}...)
+		actor.constructAndVerify(rt, 2, 10, startEpoch, []addr.Address{anne, bob, charlie}...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.SetReceived(big.Zero())
@@ -266,7 +273,7 @@ func TestVesting(t *testing.T) {
 	t.Run("propose and autoapprove transaction above locked amount fails", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, 1, unlockDuration, []addr.Address{anne, bob, charlie}...)
+		actor.constructAndVerify(rt, 1, unlockDuration, startEpoch, []addr.Address{anne, bob, charlie}...)
 
 		rt.SetReceived(big.Zero())
 		// this propose will fail since it would send more than the required locked balance and num approvals == 1
@@ -289,7 +296,7 @@ func TestVesting(t *testing.T) {
 	t.Run("fail to vest more than locked amount", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, 2, unlockDuration, []addr.Address{anne, bob, charlie}...)
+		actor.constructAndVerify(rt, 2, unlockDuration, startEpoch, []addr.Address{anne, bob, charlie}...)
 
 		rt.SetReceived(big.Zero())
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -318,6 +325,7 @@ func TestVesting(t *testing.T) {
 
 func TestPropose(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -335,7 +343,7 @@ func TestPropose(t *testing.T) {
 		const numApprovals = uint64(2)
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		actor.proposeOK(rt, chuck, sendValue, builtin.MethodSend, fakeParams, nil)
@@ -355,7 +363,7 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.ExpectSend(chuck, builtin.MethodSend, fakeParams, sendValue, nil, 0)
 
@@ -373,7 +381,7 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		proposeRet := miner.GetControlAddressesReturn{
 			Owner:  tutil.NewIDAddr(t, 1),
@@ -398,7 +406,7 @@ func TestPropose(t *testing.T) {
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
 		const numApprovals = uint64(1)
 		rt := builder.WithBalance(abi.NewTokenAmount(0), abi.NewTokenAmount(0)).Build(t)
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -418,7 +426,7 @@ func TestPropose(t *testing.T) {
 
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(richard, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -434,6 +442,7 @@ func TestPropose(t *testing.T) {
 
 func TestApprove(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	receiver := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -455,7 +464,7 @@ func TestApprove(t *testing.T) {
 	t.Run("simple propose and approval", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -494,7 +503,7 @@ func TestApprove(t *testing.T) {
 
 		rt := builder.WithBalance(abi.NewTokenAmount(20), abi.NewTokenAmount(0)).Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -526,10 +535,94 @@ func TestApprove(t *testing.T) {
 		actor.assertTransactions(rt)
 	})
 
+	t.Run("approval works if enough funds have been unlocked for the transaction", func(t *testing.T) {
+		rt := builder.Build(t)
+		unlockDuration := int64(20)
+		startEpoch := abi.ChainEpoch(10)
+		sendValue := abi.NewTokenAmount(20)
+
+		rt.SetReceived(sendValue)
+		actor.constructAndVerify(rt, numApprovals, unlockDuration, startEpoch, signers...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		rt.Verify()
+
+		actor.assertTransactions(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		rt.SetEpoch(startEpoch + 20)
+		rt.SetBalance(sendValue)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
+
+		// as the (current epoch - startepoch) = 20 is  equal to unlock duration, all initial funds must have been vested and available to spend
+		actor.approveOK(rt, txnID, proposalHash, nil)
+	})
+
+	t.Run("fail approval if current balance is less than the transaction value", func(t *testing.T) {
+		rt := builder.Build(t)
+		numApprovals := uint64(1)
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
+
+		rt.SetBalance(big.Sub(sendValue, big.NewInt(1)))
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: current balance 9 less than amount to spend 10", func() {
+			actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		})
+		rt.Verify()
+	})
+
+	t.Run("fail approval if enough unlocked balance not available", func(t *testing.T) {
+		rt := builder.Build(t)
+		unlockDuration := int64(20)
+		startEpoch := abi.ChainEpoch(10)
+		sendValue := abi.NewTokenAmount(20)
+
+		rt.SetReceived(sendValue)
+		actor.constructAndVerify(rt, numApprovals, unlockDuration, startEpoch, signers...)
+
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		proposalHash := actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+		rt.Verify()
+
+		actor.assertTransactions(rt, multisig.Transaction{
+			To:       chuck,
+			Value:    sendValue,
+			Method:   fakeMethod,
+			Params:   fakeParams,
+			Approved: []addr.Address{anne},
+		})
+
+		rt.SetEpoch(startEpoch + 5)
+		rt.SetBalance(sendValue)
+		rt.SetCaller(bob, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+
+		// expected locked amount at epoch=startEpoch + 5 would be 15.
+		// however, remaining funds if this transactions is approved would be 0.
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: actor balance if spent 0 would be less than required locked amount 15",
+			func() {
+				actor.approveOK(rt, txnID, proposalHash, nil)
+			})
+		rt.Verify()
+	})
+
 	t.Run("fail approval with bad proposal hash", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -564,7 +657,7 @@ func TestApprove(t *testing.T) {
 	t.Run("accept approval with no proposal hash", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -593,7 +686,7 @@ func TestApprove(t *testing.T) {
 		const numApprovals = uint64(2)
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -628,7 +721,7 @@ func TestApprove(t *testing.T) {
 		const dneTxnID = int64(1)
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -665,7 +758,7 @@ func TestApprove(t *testing.T) {
 		richard := tutil.NewIDAddr(t, 105)
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
@@ -700,7 +793,7 @@ func TestApprove(t *testing.T) {
 		rt := builder.Build(t)
 		const newThreshold = 1
 		signers := []addr.Address{anne, bob}
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -730,7 +823,7 @@ func TestApprove(t *testing.T) {
 		const numApprovals = 3
 		const newThreshold = 2
 		signers := []addr.Address{anne, bob, chuck}
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -765,7 +858,7 @@ func TestApprove(t *testing.T) {
 		rt := builder.Build(t)
 		const newThreshold = 1
 		signers := []addr.Address{anne, bob}
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -804,6 +897,7 @@ func TestApprove(t *testing.T) {
 
 func TestCancel(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	richard := tutil.NewIDAddr(t, 104)
 	receiver := tutil.NewIDAddr(t, 100)
@@ -826,7 +920,7 @@ func TestCancel(t *testing.T) {
 	t.Run("simple propose and cancel", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -855,7 +949,7 @@ func TestCancel(t *testing.T) {
 	t.Run("fail cancel with bad proposal hash", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -882,7 +976,7 @@ func TestCancel(t *testing.T) {
 	t.Run("signer fails to cancel transaction from another signer", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -918,7 +1012,7 @@ func TestCancel(t *testing.T) {
 	t.Run("fail to cancel transaction when not signer", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -955,7 +1049,7 @@ func TestCancel(t *testing.T) {
 		rt := builder.Build(t)
 		const dneTxnID = int64(1)
 
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction ID: 0
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -993,7 +1087,7 @@ func TestCancel(t *testing.T) {
 		signers := []addr.Address{anne, bob, chuck}
 
 		txnId := int64(0)
-		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, signers...)
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
 		// anne proposes a transaction ID: 0
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
@@ -1063,6 +1157,7 @@ type addSignerTestCase struct {
 
 func TestAddSigner(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -1149,7 +1244,7 @@ func TestAddSigner(t *testing.T) {
 				rt.AddIDAddress(src, target)
 			}
 
-			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
+			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, startEpoch, tc.initialSigners...)
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
@@ -1186,6 +1281,7 @@ type removeSignerTestCase struct {
 
 func TestRemoveSigner(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -1319,7 +1415,7 @@ func TestRemoveSigner(t *testing.T) {
 			rt := builder.Build(t)
 			rt.AddIDAddress(anneNonID, anne)
 
-			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
+			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, startEpoch, tc.initialSigners...)
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
@@ -1350,6 +1446,7 @@ type swapTestCase struct {
 
 func TestSwapSigners(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -1444,7 +1541,7 @@ func TestSwapSigners(t *testing.T) {
 			rt := builder.Build(t)
 			rt.AddIDAddress(bobNonId, bob)
 
-			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, tc.initialSigner...)
+			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, tc.initialSigner...)
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
@@ -1472,6 +1569,7 @@ type thresholdTestCase struct {
 
 func TestChangeThreshold(t *testing.T) {
 	actor := msActorHarness{multisig.Actor{}, t}
+	startEpoch := abi.ChainEpoch(0)
 
 	multisigWalletAdd := tutil.NewIDAddr(t, 100)
 	anne := tutil.NewIDAddr(t, 101)
@@ -1515,7 +1613,7 @@ func TestChangeThreshold(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			rt := builder.Build(t)
 
-			actor.constructAndVerify(rt, tc.initialThreshold, noUnlockDuration, initialSigner...)
+			actor.constructAndVerify(rt, tc.initialThreshold, noUnlockDuration, startEpoch, initialSigner...)
 
 			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
@@ -1543,11 +1641,12 @@ type msActorHarness struct {
 	t testing.TB
 }
 
-func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh uint64, unlockDuration int64, signers ...addr.Address) {
+func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh uint64, unlockDuration int64, startEpoch abi.ChainEpoch, signers ...addr.Address) {
 	constructParams := multisig.ConstructorParams{
 		Signers:               signers,
 		NumApprovalsThreshold: numApprovalsThresh,
 		UnlockDuration:        abi.ChainEpoch(unlockDuration),
+		StartEpoch:            startEpoch,
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
