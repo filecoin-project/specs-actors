@@ -1067,7 +1067,6 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit a duplicate proof for the same partition, which should be ignored.
 		// The skipped fault declared here has no effect.
-		commitEpoch := rt.Epoch() - 1
 		commitRand := abi.Randomness("chaincommitment")
 		params := miner.SubmitWindowedPoStParams{
 			Deadline: dlIdx,
@@ -1075,14 +1074,13 @@ func TestWindowPost(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bf(uint64(sector.SectorNumber)),
 			}},
-			Proofs:           makePoStProofs(actor.postProofType),
-			ChainCommitEpoch: commitEpoch,
-			ChainCommitRand:  commitRand,
+			Proofs:          makePoStProofs(actor.postProofType),
+			ChainCommitRand: commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
-		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
 
@@ -2672,11 +2670,11 @@ func TestAddLockedFund(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
 
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.PledgeVestingSpec.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)
@@ -3388,8 +3386,7 @@ type poStConfig struct {
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
-	commitEpoch := rt.Epoch() - 4
-	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, deadline.Challenge, nil, commitRand)
 
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
@@ -3477,11 +3474,10 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 
 	params := miner.SubmitWindowedPoStParams{
-		Deadline:         deadline.Index,
-		Partitions:       partitions,
-		Proofs:           proofs,
-		ChainCommitEpoch: commitEpoch,
-		ChainCommitRand:  commitRand,
+		Deadline:        deadline.Index,
+		Partitions:      partitions,
+		Proofs:          proofs,
+		ChainCommitRand: commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)
