@@ -626,9 +626,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
-	feeToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
-		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 		var found bool
 		var err error
 		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
@@ -656,8 +654,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		SectorNumber:        precommit.Info.SectorNumber,
 		RegisteredSealProof: precommit.Info.SealProof,
 	})
-
-	burnFunds(rt, feeToBurn)
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
