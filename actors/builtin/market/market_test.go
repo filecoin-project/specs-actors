@@ -2448,6 +2448,18 @@ func TestVerifyDealsForActivation(t *testing.T) {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
+
+	t.Run("fail when the same deal ID is passed multiple times", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
+
+		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId, dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "multiple times", func() {
+			rt.Call(actor.VerifyDealsForActivation, param)
+		})
+	})
 }
 
 type marketActorTestHarness struct {
