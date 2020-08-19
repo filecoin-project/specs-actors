@@ -867,11 +867,11 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
 
 		// Invalid deals (market ActivateDeals aborts)
-		verifyDealsExit := make(map[abi.SectorNumber]exitcode.ExitCode)
-		verifyDealsExit[precommit.SectorNumber] = exitcode.ErrIllegalArgument
+		invalidSectors := make(map[abi.SectorNumber]struct{})
+		invalidSectors[precommit.SectorNumber] = struct{}{}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
-				verifyDealsExit: verifyDealsExit,
+				invalidSectors: invalidSectors,
 			})
 		})
 		rt.Reset()
@@ -1403,8 +1403,8 @@ func TestProveCommit(t *testing.T) {
 		actor.proveCommitSector(rt, precommitB, precommitEpoch, makeProveCommit(sectorNoB))
 
 		conf := proveCommitConf{
-			verifyDealsExit: map[abi.SectorNumber]exitcode.ExitCode{
-				sectorNoA: exitcode.ErrIllegalArgument,
+			invalidSectors: map[abi.SectorNumber]struct{}{
+				sectorNoA: {},
 			},
 		}
 		actor.confirmSectorProofsValid(rt, conf, precommitA, precommitB)
@@ -3152,7 +3152,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 // Options for proveCommitSector behaviour.
 // Default zero values should let everything be ok.
 type proveCommitConf struct {
-	verifyDealsExit map[abi.SectorNumber]exitcode.ExitCode
+	invalidSectors map[abi.SectorNumber]struct{}
 }
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitInfo, precommitEpoch abi.ChainEpoch,
@@ -3209,20 +3209,28 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	// Prepare for and receive call to ConfirmSectorProofsValid.
 	var validPrecommits []*miner.SectorPreCommitInfo
 	var allSectorNumbers []abi.SectorNumber
+
+	// request for activating deals
+	activateReq := &market.ActivateDealsParam{}
+	activateResp := &market.ActivateDealsReturn{}
+
 	for _, precommit := range precommits {
 		allSectorNumbers = append(allSectorNumbers, precommit.SectorNumber)
 
-		vdParams := market.ActivateDealsParam{
+		activateReq.Requests = append(activateReq.Requests, market.ActivateSectorRequest{
+			SectorNumber: precommit.SectorNumber,
 			DealIDs:      precommit.DealIDs,
 			SectorExpiry: precommit.Expiration,
-		}
-		exit, found := conf.verifyDealsExit[precommit.SectorNumber]
+		})
+
+		_, found := conf.invalidSectors[precommit.SectorNumber]
 		if !found {
-			exit = exitcode.Ok
 			validPrecommits = append(validPrecommits, precommit)
+			activateResp.ActivatedSectors = append(activateResp.ActivatedSectors, precommit.SectorNumber)
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
 	}
+
+	rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, activateReq, big.Zero(), activateResp, exitcode.Ok)
 
 	// expected pledge is the sum of initial pledges
 	if len(validPrecommits) > 0 {

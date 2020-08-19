@@ -711,23 +711,36 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	replaceSectors := make(DeadlineSectorMap)
 	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
+	sectorIdToPrecommit := make(map[abi.SectorNumber]*SectorPreCommitOnChainInfo, len(precommittedSectors))
+
+	// request for activating deals
+	activateReq := &market.ActivateDealsParam{}
+
 	for _, precommit := range precommittedSectors {
-		// Check (and activate) storage deals associated to sector. Abort if checks failed.
-		// TODO: we should batch these calls...
-		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDealsParam{},
-			abi.NewTokenAmount(0),
-		)
+		activateReq.Requests = append(activateReq.Requests, market.ActivateSectorRequest{
+			SectorNumber: precommit.Info.SectorNumber,
+			DealIDs:      precommit.Info.DealIDs,
+			SectorExpiry: precommit.Info.Expiration,
+		})
 
-		if code != exitcode.Ok {
-			rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
-			continue
-		}
+		sectorIdToPrecommit[precommit.Info.SectorNumber] = precommit
+	}
 
-		preCommits = append(preCommits, precommit)
+	ret, code := rt.Send(
+		builtin.StorageMarketActorAddr,
+		builtin.MethodsMarket.ActivateDeals,
+		activateReq,
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to activate deals")
+
+	activateResp := &market.ActivateDealsReturn{}
+	err = ret.Into(activateResp)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unmarshal deal activation response")
+
+	for _, sector := range activateResp.ActivatedSectors {
+		precommit, ok := sectorIdToPrecommit[sector]
+		builtin.RequireParam(rt, ok, "failed to get precommit for sector %v", sector)
 
 		if precommit.Info.ReplaceCapacity {
 			err := replaceSectors.AddValues(
@@ -737,6 +750,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to record sectors for replacement")
 		}
+
+		preCommits = append(preCommits, precommit)
 	}
 
 	// When all prove commits have failed abort early

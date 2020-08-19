@@ -278,9 +278,11 @@ func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActiva
 
 	var st State
 	rt.State().Readonly(&st)
-	store := adt.AsStore(rt)
 
-	dealWeight, verifiedWeight, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
+	msm, err := st.mutator(adt.AsStore(rt)).withDealProposals(ReadOnlyPermission).build()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state")
+
+	dealWeight, verifiedWeight, err := ValidateDealsForActivation(msm.dealProposals, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
 	return &VerifyDealsForActivationReturn{
@@ -311,7 +313,6 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParam) *ActivateDe
 	currEpoch := rt.CurrEpoch()
 
 	var st State
-	store := adt.AsStore(rt)
 
 	activatedSectors := make([]abi.SectorNumber, 0, len(params.Requests))
 
@@ -322,63 +323,13 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParam) *ActivateDe
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for _, req := range params.Requests {
-			_, _, err := ValidateDealsForActivation(&st, store, req.DealIDs, minerAddr, req.SectorExpiry, currEpoch)
+			_, _, err := ValidateDealsForActivation(msm.dealProposals, req.DealIDs, minerAddr, req.SectorExpiry, currEpoch)
 			if err != nil {
-				rt.Log(vmr.ERROR, "failed to validate deals for activation, sector number: %v, err: %w", req.SectorNumber, err)
+				rt.Log(vmr.ERROR, "failed to validate deals for activation, sector number: %v, err: %s", req.SectorNumber, err)
 				continue
 			}
 
-			success := true
-			for _, dealID := range req.DealIDs {
-				// This construction could be replaced with a single "update deal state" state method, possibly batched
-				// over all deal ids at once.
-				_, found, err := msm.dealStates.Get(dealID)
-				if err != nil {
-					rt.Log(vmr.ERROR, "failed to get deal state for activation, dealId: %d, sector number: %v, "+
-						"err: %w", dealID, req.SectorNumber, err)
-					success = false
-					break
-				}
-
-				if found {
-					rt.Log(vmr.ERROR, "deal %d for sector %v already included in another sector", dealID, req.SectorNumber)
-					success = false
-					break
-				}
-
-				proposal, err := getDealProposal(msm.dealProposals, dealID)
-				if err != nil {
-					rt.Log(vmr.ERROR, "failed to get deal proposal for activation, dealId: %d, sector number: %v, err: %w", dealID,
-						req.SectorNumber, err)
-					success = false
-					break
-				}
-
-				propc, err := proposal.Cid()
-				if err != nil {
-					rt.Log(vmr.ERROR, "failed to calculate proposal CID for activation, dealId: %d, sector number: %v, err: %w", dealID,
-						req.SectorNumber, err)
-					success = false
-					break
-				}
-
-				has, err := msm.pendingDeals.Get(adt.CidKey(propc), nil)
-				if err != nil {
-					rt.Log(vmr.ERROR, "failed to get pending proposal for activation, dealId: %d, sector number: %v, err: %w", dealID,
-						req.SectorNumber, err)
-					success = false
-					break
-				}
-
-				if !has {
-					rt.Log(vmr.ERROR, "tried to activate deal that was not in pending state, dealId: %d, sector number: %v, err: %w", dealID,
-						req.SectorNumber, err)
-					success = false
-					break
-				}
-			}
-
-			if success {
+			if canSectorActivate(rt, msm, &req) {
 				for _, dealID := range req.DealIDs {
 					err := msm.dealStates.Set(dealID, &DealState{
 						SectorStartEpoch: currEpoch,
@@ -386,8 +337,8 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParam) *ActivateDe
 						SlashEpoch:       epochUndefined,
 					})
 
-					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state for activation, dealId: %d, sector number: %v, err: %w",
-						dealID, req.SectorNumber, err)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state for activation, dealId: %d, sector number: %v",
+						dealID, req.SectorNumber)
 				}
 
 				activatedSectors = append(activatedSectors, req.SectorNumber)
@@ -662,13 +613,8 @@ func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, propos
 
 // Validates a collection of deal dealProposals for activation, and returns their combined weight,
 // split into regular deal weight and verified deal weight.
-func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address,
+func ValidateDealsForActivation(proposals *DealArray, dealIDs []abi.DealID, minerAddr addr.Address,
 	sectorExpiry, currEpoch abi.ChainEpoch) (big.Int, big.Int, error) {
-
-	proposals, err := AsDealProposalArray(store, st.Proposals)
-	if err != nil {
-		return big.Int{}, big.Int{}, xerrors.Errorf("failed to load dealProposals: %w", err)
-	}
 
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
@@ -698,6 +644,44 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 ////////////////////////////////////////////////////////////////////////////////
 // Checks
 ////////////////////////////////////////////////////////////////////////////////
+
+func canSectorActivate(rt vmr.Runtime, msm *marketStateMutation, req *ActivateSectorRequest) bool {
+	success := true
+	for _, dealID := range req.DealIDs {
+		// This construction could be replaced with a single "update deal state" state method, possibly batched
+		// over all deal ids at once.
+		_, found, err := msm.dealStates.Get(dealID)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal state for activation, dealId: %d, sector number: %v", dealID, req.SectorNumber)
+		if found {
+			rt.Log(vmr.ERROR, "deal %d for sector %v already included in another sector", dealID, req.SectorNumber)
+			success = false
+			break
+		}
+
+		proposal, err := getDealProposal(msm.dealProposals, dealID)
+		if err != nil {
+			rt.Log(vmr.ERROR, "failed to get deal proposal for activation, dealId: %d, sector number: %v, err: %s", dealID,
+				req.SectorNumber, err)
+			success = false
+			break
+		}
+
+		propc, err := proposal.Cid()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate proposal CID for activation, dealId: %d, sector number: %v", dealID, req.SectorNumber)
+
+		has, err := msm.pendingDeals.Get(adt.CidKey(propc), nil)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get pending proposal for activation, dealId: %d, sector number: %v", dealID, req.SectorNumber)
+
+		if !has {
+			rt.Log(vmr.ERROR, "tried to activate deal that was not in pending state, dealId: %d, sector number: %v, err: %s", dealID,
+				req.SectorNumber, err)
+			success = false
+			break
+		}
+	}
+
+	return success
+}
 
 func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sectorExpiration, currEpoch abi.ChainEpoch) error {
 	if proposal.Provider != minerAddr {
