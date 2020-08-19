@@ -17,6 +17,7 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 // Balance of Miner Actor should be greater than or equal to
@@ -797,6 +798,11 @@ func (st *State) RepayDebt(currBalance abi.TokenAmount) (abi.TokenAmount, error)
 // The soonest-vesting entries are unlocked first.
 // Returns the amount actually unlocked.
 func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, target abi.TokenAmount) (abi.TokenAmount, error) {
+	// Nothing to unlock, don't bother loading any state.
+	if target.IsZero() || st.LockedFunds.IsZero() {
+		return big.Zero(), nil
+	}
+
 	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
 		return big.Zero(), xerrors.Errorf("failed tp load vesting funds: %w", err)
@@ -817,6 +823,11 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 // Unlocks all vesting funds that have vested before the provided epoch.
 // Returns the amount unlocked.
 func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+	// Short-circuit to avoid loading vesting funds if we don't have any.
+	if st.LockedFunds.IsZero() {
+		return big.Zero(), nil
+	}
+
 	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
 		return big.Zero(), xerrors.Errorf("failed to load vesting funds: %w", err)
@@ -918,8 +929,31 @@ func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch,
 	return nil
 }
 
-func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (depositToBurn abi.TokenAmount, err error) {
+func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (depositToBurn abi.TokenAmount, err error) {
 	depositToBurn = abi.NewTokenAmount(0)
+
+	// If we don't have any deposit, we don't have any pre-commits.
+	if !st.PreCommitDeposits.IsZero() {
+		return depositToBurn, nil
+	}
+
+	// expire pre-committed sectors
+	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
+	if err != nil {
+		return depositToBurn, xerrors.Errorf("failed to load sector expiry queue: %w", err)
+	}
+
+	sectors, modified, err := expiryQ.PopUntil(currEpoch)
+	if err != nil {
+		return depositToBurn, xerrors.Errorf("failed to pop expired sectors: %w", err)
+	}
+
+	if modified {
+		st.PreCommittedSectorsExpiry, err = expiryQ.Root()
+		if err != nil {
+			return depositToBurn, xerrors.Errorf("failed to save expiry queue: %w", err)
+		}
+	}
 
 	var precommitsToDelete []abi.SectorNumber
 	if err = sectors.ForEach(func(i uint64) error {
@@ -955,6 +989,140 @@ func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (de
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
 	return depositToBurn, nil
+}
+
+// AdvanceDeadline advances the deadline. It:
+// - Processes expired sectors.
+// - Handles missed proofs.
+// - Computes fines.
+func (st *State) AdvanceDeadline(
+	store adt.Store, currEpoch abi.ChainEpoch,
+	rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate,
+) (penalty, pledgeDelta abi.TokenAmount, powerDelta PowerPair, err error) {
+
+	penalty = abi.NewTokenAmount(0)
+	pledgeDelta = abi.NewTokenAmount(0)
+	powerDelta = NewPowerPairZero()
+
+	undeclaredFaultyPower := NewPowerPairZero()
+	totalFaultyPower := NewPowerPairZero()
+
+	// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
+	// exactly the final epoch of the deadline; it may be slightly later (i.e. in the subsequent deadline/period).
+	// Further, this method is invoked once *before* the first proving period starts, after the actor is first
+	// constructed; this is detected by !dlInfo.PeriodStarted().
+	// Use dlInfo.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
+
+	dlInfo := st.DeadlineInfo(currEpoch)
+	// Period not started? Nothing to do.
+	if !dlInfo.PeriodStarted() {
+		return penalty, pledgeDelta, powerDelta, nil
+	}
+
+	// Advance to the next deadline (in case we short-circuit below).
+	st.CurrentDeadline = (st.CurrentDeadline + 1) % WPoStPeriodDeadlines
+	if st.CurrentDeadline == 0 {
+		st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
+	}
+
+	// No sectors, nothing to do.
+	if st.InitialPledgeRequirement.IsZero() {
+		return penalty, pledgeDelta, powerDelta, nil
+	}
+
+	deadlines, err := st.LoadDeadlines(store)
+	if err != nil {
+		return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to load deadlines: %w", err)
+	}
+	deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
+	if err != nil {
+		return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to load deadline %d: %w", dlInfo.Index, err)
+	}
+
+	// No live sectors in this deadline, nothing to do.
+	if deadline.LiveSectors == 0 {
+		return penalty, pledgeDelta, powerDelta, nil
+	}
+
+	quant := dlInfo.QuantSpec()
+	{
+		// Detect and penalize missing proofs.
+		faultExpiration := dlInfo.Last() + FaultMaxAge
+
+		powerDelta, undeclaredFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
+		if err != nil {
+			return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
+		}
+		totalFaultyPower = deadline.FaultyPower
+	}
+	{
+		// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
+		expired, err := deadline.PopExpiredSectors(store, dlInfo.Last(), quant)
+		if err != nil {
+			return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to load expired sectors: %w", err)
+		}
+
+		// Release pledge requirements for the sectors expiring on-time.
+		// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
+		// when the early termination is processed.
+		pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
+		st.AddInitialPledgeRequirement(expired.OnTimePledge.Neg())
+
+		// Record reduction in power of the amount of expiring active power.
+		// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
+		powerDelta = powerDelta.Sub(expired.ActivePower)
+
+		// Record deadlines with early terminations. While this
+		// bitfield is non-empty, the miner is locked until they
+		// pay the fee.
+		noEarlyTerminations, err := expired.EarlySectors.IsEmpty()
+		if err != nil {
+			return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to count early terminations: %w", err)
+		}
+		if !noEarlyTerminations {
+			st.EarlyTerminations.Set(dlInfo.Index)
+		}
+
+		// The termination fee is paid later, in early-termination queue processing.
+		// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
+		// https://github.com/filecoin-project/specs-actors/issues/674
+
+		// The deals are not terminated yet, that is left for processing of the early termination queue.
+	}
+
+	// Save new deadline state.
+	err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
+	if err != nil {
+		return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to update deadline %d: %w", dlInfo.Index, err)
+	}
+
+	err = st.SaveDeadlines(store, deadlines)
+	if err != nil {
+		return penalty, pledgeDelta, powerDelta, xerrors.Errorf("failed to save deadlines: %w", err)
+	}
+
+	// Compute penalties all together.
+	// Be very careful when changing these as any changes can affect
+	// rounding.
+	undeclaredPenalty := PledgePenaltyForUndeclaredFault(
+		rewardEstimate,
+		networkQAPowerEstimate,
+		undeclaredFaultyPower.QA,
+	)
+	ongoingPenalty := PledgePenaltyForDeclaredFault(
+		rewardEstimate,
+		networkQAPowerEstimate,
+		totalFaultyPower.QA,
+	)
+	// Compute the overlap so we can avoid double-charging undeclared faulty
+	// power as declared faulty power.
+	overlapPenalty := PledgePenaltyForDeclaredFault(
+		rewardEstimate,
+		networkQAPowerEstimate,
+		undeclaredFaultyPower.QA,
+	)
+	penalty = big.Sum(undeclaredPenalty, ongoingPenalty, overlapPenalty.Neg())
+	return penalty, pledgeDelta, powerDelta, nil
 }
 
 func MinerEligibleForElection(store adt.Store, mSt *State, thisEpochReward abi.TokenAmount, minerActorBalance abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
