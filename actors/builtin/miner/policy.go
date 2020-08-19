@@ -63,6 +63,9 @@ const (
 // Maximum bytes in a single prove-commit proof.
 const MaxProveCommitSize = 1024
 
+// Maximum number of control addresses
+const MaxControlAddresses = 10
+
 // The maximum number of partitions that may be required to be loaded in a single invocation,
 // when all the sector infos for the partitions will be loaded.
 func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
@@ -138,7 +141,7 @@ const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
 
-// Number of epochs after a consensus fault for which a miner is ineligible 
+// Number of epochs after a consensus fault for which a miner is ineligible
 // for permissioned actor methods and winning block elections.
 const ConsensusFaultIneligibilityDuration = ChainFinality
 

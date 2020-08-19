@@ -86,6 +86,7 @@ type ConstructorParams = power.MinerConstructorParams
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
+	checkControlAddresses(rt, params.ControlAddrs)
 	checkPeerInfo(rt, params.PeerId, params.Multiaddrs)
 
 	_, ok := SupportedProofTypes[params.SealProofType]
@@ -174,6 +175,8 @@ type ChangeWorkerAddressParams struct {
 // If a nil addresses slice is passed, the control addresses will be cleared.
 // A worker change will be scheduled if the worker passed in the params is different from the existing worker.
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
+	checkControlAddresses(rt, params.NewControlAddrs)
+
 	var effectiveEpoch abi.ChainEpoch
 
 	newWorker := resolveWorkerAddress(rt, params.NewWorker)
@@ -2316,6 +2319,12 @@ func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
 		return a
 	}
 	return b
+}
+
+func checkControlAddresses(rt Runtime, controlAddrs []addr.Address) {
+	if len(controlAddrs) > MaxControlAddresses {
+		rt.Abortf(exitcode.ErrIllegalArgument, "control addresses length %d exceeds max control addresses length %d", len(controlAddrs), MaxControlAddresses)
+	}
 }
 
 func checkPeerInfo(rt Runtime, peerID abi.PeerID, multiaddrs []abi.Multiaddrs) {
