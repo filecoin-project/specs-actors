@@ -617,9 +617,17 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 		return big.Int{}, big.Int{}, xerrors.Errorf("failed to load dealProposals: %w", err)
 	}
 
+	seenDealIDs := make(map[abi.DealID]struct{}, len(dealIDs))
+
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
+		// Make sure we don't double-count deals.
+		if _, seen := seenDealIDs[dealID]; seen {
+			return big.Int{}, big.Int{}, exitcode.ErrIllegalArgument.Wrapf("deal ID %d present multiple times", dealID)
+		}
+		seenDealIDs[dealID] = struct{}{}
+
 		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
 			return big.Int{}, big.Int{}, xerrors.Errorf("failed to load deal %d: %w", dealID, err)
