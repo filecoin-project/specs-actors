@@ -17,6 +17,12 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+<<<<<<< HEAD
+=======
+	"github.com/ipfs/go-cid"
+	"github.com/filecoin-project/go-hamt-ipld"
+	"github.com/pkg/errors"
+>>>>>>> WIP
 )
 
 // VM is a simplified message execution framework for the purposes of testing inter-actor communication.
