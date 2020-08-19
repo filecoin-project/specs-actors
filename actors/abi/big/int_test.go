@@ -198,7 +198,7 @@ func TestCBOR(t *testing.T) {
 			NewInt(1e18),
 			Lsh(NewInt(1), 80),
 		}
-		for _, n :=  range ints {
+		for _, n := range ints {
 			var b bytes.Buffer
 			assert.NoError(t, n.MarshalCBOR(&b))
 			var out Int
@@ -208,7 +208,7 @@ func TestCBOR(t *testing.T) {
 	})
 
 	t.Run("fails to marshal too large", func(t *testing.T) {
-		giant := Lsh(NewInt(1), 8 * (BigIntMaxSerializedLen - 1))
+		giant := Lsh(NewInt(1), 8*(BigIntMaxSerializedLen-1))
 		var b bytes.Buffer
 		assert.Error(t, giant.MarshalCBOR(&b))
 	})

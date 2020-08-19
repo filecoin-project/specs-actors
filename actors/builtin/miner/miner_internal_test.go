@@ -8,7 +8,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"	
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -112,17 +112,17 @@ func TestFaultFeeInvariants(t *testing.T) {
 	})
 
 	// constant filter estimate cumsum ratio is just multiplication and division
-	// test that internal precision of BR calculation does not cost accuracy 
+	// test that internal precision of BR calculation does not cost accuracy
 	// compared to simple multiplication in this case.
 	t.Run("br looks right in plausible (sectorPower, networkPower, reward) range", func(t *testing.T) {
 		// between 10 and 100 FIL is reasonable for near-mid future
 		tensOfFIL := big.Mul(abi.NewTokenAmount(1e18), big.NewInt(50))
 		rewardEstimate := smoothing.TestingConstantEstimate(tensOfFIL)
 		smallPower := big.NewInt(32 << 30) // 32 GiB
-		hugePower := big.NewInt(1 << 60) // 1 EiB
+		hugePower := big.NewInt(1 << 60)   // 1 EiB
 		epochsPerDay := big.NewInt(builtin.EpochsInDay)
 		smallPowerBRNum := big.Mul(big.Mul(smallPower, epochsPerDay), tensOfFIL)
-		hugePowerBRNum := big.Mul(big.Mul(hugePower, epochsPerDay), tensOfFIL)		
+		hugePowerBRNum := big.Mul(big.Mul(hugePower, epochsPerDay), tensOfFIL)
 
 		// QAPower = Space * AverageQuality
 		// 10s of EiBs -- lower range
@@ -132,7 +132,7 @@ func TestFaultFeeInvariants(t *testing.T) {
 		brSmallLow := ExpectedRewardForPower(rewardEstimate, lowPowerEstimate, smallPower, builtin.EpochsInDay)
 		brHugeLow := ExpectedRewardForPower(rewardEstimate, lowPowerEstimate, hugePower, builtin.EpochsInDay)
 		assert.Equal(t, big.Div(smallPowerBRNum, tensOfEiBs), brSmallLow)
-		assert.Equal(t, big.Div(hugePowerBRNum, tensOfEiBs), brHugeLow)		
+		assert.Equal(t, big.Div(hugePowerBRNum, tensOfEiBs), brHugeLow)
 
 		// 100s of EiBs
 		// 1.2e18 * 100 bytes * 5 quality ~ 6e20
@@ -141,16 +141,16 @@ func TestFaultFeeInvariants(t *testing.T) {
 		brSmallMid := ExpectedRewardForPower(rewardEstimate, midPowerEstimate, smallPower, builtin.EpochsInDay)
 		brHugeMid := ExpectedRewardForPower(rewardEstimate, midPowerEstimate, hugePower, builtin.EpochsInDay)
 		assert.Equal(t, big.Div(smallPowerBRNum, hundredsOfEiBs), brSmallMid)
-		assert.Equal(t, big.Div(hugePowerBRNum, hundredsOfEiBs), brHugeMid)		
-		
-		// 1000s of EiBs -- upper range 
+		assert.Equal(t, big.Div(hugePowerBRNum, hundredsOfEiBs), brHugeMid)
+
+		// 1000s of EiBs -- upper range
 		// 1.2e18 * 1000 bytes * 10 quality = 1.2e22 ~ 2e22
 		thousandsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(2e4))
 		upperPowerEstimate := smoothing.TestingConstantEstimate(thousandsOfEiBs)
 		brSmallUpper := ExpectedRewardForPower(rewardEstimate, upperPowerEstimate, smallPower, builtin.EpochsInDay)
 		brHugeUpper := ExpectedRewardForPower(rewardEstimate, upperPowerEstimate, hugePower, builtin.EpochsInDay)
 		assert.Equal(t, big.Div(smallPowerBRNum, thousandsOfEiBs), brSmallUpper)
-		assert.Equal(t, big.Div(hugePowerBRNum, thousandsOfEiBs), brHugeUpper)			
+		assert.Equal(t, big.Div(hugePowerBRNum, thousandsOfEiBs), brHugeUpper)
 	})
 
 	t.Run("Declared and Undeclared fault penalties are linear over sectorQAPower term", func(t *testing.T) {

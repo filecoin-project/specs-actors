@@ -2243,7 +2243,7 @@ func TestMarketActorDeals(t *testing.T) {
 	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20000000))
 
 	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
-	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{market.ClientDealProposal{Proposal: dealProposal}}}
+	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{{Proposal: dealProposal}}}
 
 	// First attempt at publishing the deal should work
 	{

@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -33,6 +34,9 @@ var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay
 // Maximum number of days of BR a terminated sector can be penalized
 const TerminationLifetimeCap = abi.ChainEpoch(70)
 
+// Number of whole per-winner rewards covered by consensus fault penalty
+const ConsensusFaultFactor = 5
+
 // This is the BR(t) value of the given sector for the current epoch.
 // It is the expected reward this sector would pay out over a one day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
@@ -42,8 +46,9 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.Fi
 		return rewardEstimate.Estimate()
 	}
 	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkQAPowerEstimate)
-	br := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
-	return big.Rsh(br, math.Precision)
+	br128 := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
+	br := big.Rsh(br128, math.Precision)
+	return big.Max(br, big.Zero()) // negative BR is clamped at 0
 }
 
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
@@ -110,4 +115,32 @@ func InitialPledgeForPower(qaPower abi.StoragePower, baselinePower abi.StoragePo
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
 	return big.Add(ipBase, additionalIP)
+}
+
+// Repays all fee debt and then verifies that the miner has amount needed to cover
+// the pledge requirement after burning all fee debt.  If not aborts.
+// Returns an amount that must be burnt by the actor.
+// Note that this call does not compute recent vesting so reported unlocked balance
+// may be slightly lower than the true amount. Computing vesting here would be
+// almost always redundant since vesting is quantized to ~daily units.  Vesting
+// will be at most one proving period old if computed in the cron callback.
+func VerifyPledgeRequirementsAndRepayDebts(rt Runtime, st *State) abi.TokenAmount {
+	currBalance := rt.CurrentBalance()
+	toBurn, err := st.RepayDebt(currBalance)
+	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "unlocked balance can not repay fee debt")
+
+	// IP requirements must be checked against balance after we account for fee debt repayment.
+	// The toBurn fee debt repayment will be burned so subtract from working value for current balance.
+	currBalance = big.Sub(currBalance, toBurn)
+	if !st.MeetsInitialPledgeCondition(currBalance) {
+		rt.Abortf(exitcode.ErrInsufficientFunds, "unlocked balance does not cover pledge requirements")
+	}
+	return toBurn
+}
+
+func ConsensusFaultPenalty(thisEpochReward abi.TokenAmount) abi.TokenAmount {
+	return big.Div(
+		big.Mul(thisEpochReward, big.NewInt(ConsensusFaultFactor)),
+		big.NewInt(builtin.ExpectedLeadersPerEpoch),
+	)
 }
