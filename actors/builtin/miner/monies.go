@@ -46,8 +46,9 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.Fi
 		return rewardEstimate.Estimate()
 	}
 	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkQAPowerEstimate)
-	br := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
-	return big.Rsh(br, math.Precision)
+	br128 := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
+	br := big.Rsh(br128, math.Precision)
+	return big.Max(br, big.Zero()) // negative BR is clamped at 0
 }
 
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because

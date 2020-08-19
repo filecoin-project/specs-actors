@@ -208,6 +208,29 @@ func TestConstruction(t *testing.T) {
 		})
 	})
 
+	t.Run("fails if control addresses exceeds maximum length", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		controlAddrs := make([]addr.Address, 0, miner.MaxControlAddresses+1)
+		for i := 0; i <= miner.MaxControlAddresses; i++ {
+			controlAddrs = append(controlAddrs, tutil.NewIDAddr(t, uint64(i)))
+		}
+
+		params := miner.ConstructorParams{
+			OwnerAddr:     owner,
+			WorkerAddr:    worker,
+			SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
+			PeerId:        testPid,
+			ControlAddrs:  controlAddrs,
+		}
+
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "control addresses length", func() {
+			rt.Call(actor.Constructor, &params)
+		})
+	})
+
 	t.Run("test construct with large multiaddr", func(t *testing.T) {
 		rt := builder.Build(t)
 		maddrs := make([]abi.Multiaddrs, 100)
@@ -1044,7 +1067,6 @@ func TestWindowPost(t *testing.T) {
 
 		// Submit a duplicate proof for the same partition, which should be ignored.
 		// The skipped fault declared here has no effect.
-		commitEpoch := rt.Epoch() - 1
 		commitRand := abi.Randomness("chaincommitment")
 		params := miner.SubmitWindowedPoStParams{
 			Deadline: dlIdx,
@@ -1052,14 +1074,13 @@ func TestWindowPost(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bf(uint64(sector.SectorNumber)),
 			}},
-			Proofs:           makePoStProofs(actor.postProofType),
-			ChainCommitEpoch: commitEpoch,
-			ChainCommitRand:  commitRand,
+			Proofs:          makePoStProofs(actor.postProofType),
+			ChainCommitRand: commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
-		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
 		rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		rt.Verify()
 
@@ -2466,6 +2487,20 @@ func TestChangeWorkerAddress(t *testing.T) {
 		require.Empty(t, info.ControlAddresses)
 	})
 
+	t.Run("fails if control addresses length exceeds maximum limit", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		controlAddrs := make([]addr.Address, 0, miner.MaxControlAddresses+1)
+		for i := 0; i <= miner.MaxControlAddresses; i++ {
+			controlAddrs = append(controlAddrs, tutil.NewIDAddr(t, uint64(i)))
+		}
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "control addresses length", func() {
+			actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), controlAddrs)
+		})
+	})
+
 	t.Run("fails if unable to resolve control address", func(t *testing.T) {
 		rt, actor := setupFunc()
 		actor.constructAndVerify(rt)
@@ -3351,8 +3386,7 @@ type poStConfig struct {
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
-	commitEpoch := rt.Epoch() - 4
-	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, commitEpoch, nil, commitRand)
+	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, deadline.Challenge, nil, commitRand)
 
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
@@ -3440,11 +3474,10 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 
 	params := miner.SubmitWindowedPoStParams{
-		Deadline:         deadline.Index,
-		Partitions:       partitions,
-		Proofs:           proofs,
-		ChainCommitEpoch: commitEpoch,
-		ChainCommitRand:  commitRand,
+		Deadline:        deadline.Index,
+		Partitions:      partitions,
+		Proofs:          proofs,
+		ChainCommitRand: commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)
