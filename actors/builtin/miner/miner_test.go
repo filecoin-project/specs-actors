@@ -2670,11 +2670,11 @@ func TestAddLockedFund(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
 
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.PledgeVestingSpec.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)

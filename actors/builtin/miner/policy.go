@@ -203,13 +203,6 @@ type VestSpec struct {
 	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
 }
 
-var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),   // PARAM_FINISH
-	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
-}
-
 var RewardVestingSpec = VestSpec{
 	InitialDelay: abi.ChainEpoch(20 * builtin.EpochsInDay),  // PARAM_FINISH
 	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
