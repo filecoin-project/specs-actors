@@ -86,6 +86,7 @@ type ConstructorParams = power.MinerConstructorParams
 func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
+	checkControlAddresses(rt, params.ControlAddrs)
 	checkPeerInfo(rt, params.PeerId, params.Multiaddrs)
 
 	_, ok := SupportedProofTypes[params.SealProofType]
@@ -174,6 +175,8 @@ type ChangeWorkerAddressParams struct {
 // If a nil addresses slice is passed, the control addresses will be cleared.
 // A worker change will be scheduled if the worker passed in the params is different from the existing worker.
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
+	checkControlAddresses(rt, params.NewControlAddrs)
+
 	var effectiveEpoch abi.ChainEpoch
 
 	newWorker := resolveWorkerAddress(rt, params.NewWorker)
@@ -287,9 +290,8 @@ type SubmitWindowedPoStParams struct {
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
-	// The epoch at which these proofs is being committed to a particular chain.
-	ChainCommitEpoch abi.ChainEpoch
-	// The ticket randomness on the chain at the ChainCommitEpoch on the chain this post is committed to
+	// The ticket randomness on the chain at the challenge epoch (WPoStChallengeLookback before the
+	// challenge window opens).
 	ChainCommitRand abi.Randomness
 }
 
@@ -301,16 +303,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
-	}
-	if params.ChainCommitEpoch >= currEpoch {
-		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d must be in the past", params.ChainCommitEpoch)
-	}
-	if params.ChainCommitEpoch < currEpoch-WPoStMaxChainCommitAge {
-		rt.Abortf(exitcode.ErrIllegalArgument, "PoSt chain commitment %d too far in the past, must be after %d", params.ChainCommitEpoch, currEpoch-WPoStMaxChainCommitAge)
-	}
-	commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
-	if !bytes.Equal(commRand, params.ChainCommitRand) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 	}
 
 	// Get the total power/reward. We need these to compute penalties.
@@ -359,6 +351,13 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		if params.Deadline != currDeadline.Index {
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
 				params.Deadline, currEpoch, currDeadline.Index)
+		}
+
+		// Verify that the PoSt was committed to the chain at the challenge deadline
+		// (or at most WPoStChallengeLookback+WPoStChallengeWindow in the past).
+		commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, currDeadline.Challenge, nil)
+		if !bytes.Equal(commRand, params.ChainCommitRand) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 		}
 
 		sectors, err := LoadSectors(store, st.Sectors)
@@ -623,9 +622,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
-	feeToBurn := abi.NewTokenAmount(0)
 	rt.State().Transaction(&st, func() {
-		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 		var found bool
 		var err error
 		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
@@ -653,8 +650,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		SectorNumber:        precommit.Info.SectorNumber,
 		RegisteredSealProof: precommit.Info.SealProof,
 	})
-
-	burnFunds(rt, feeToBurn)
 
 	_, code := rt.Send(
 		builtin.StoragePowerActorAddr,
@@ -1334,6 +1329,11 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		if !removedPower.Equals(newPower) {
 			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, newPower)
 		}
+		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
+
+		err = st.SaveDeadlines(store, deadlines)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
 	return nil
 }
@@ -2315,6 +2315,12 @@ func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
 		return a
 	}
 	return b
+}
+
+func checkControlAddresses(rt Runtime, controlAddrs []addr.Address) {
+	if len(controlAddrs) > MaxControlAddresses {
+		rt.Abortf(exitcode.ErrIllegalArgument, "control addresses length %d exceeds max control addresses length %d", len(controlAddrs), MaxControlAddresses)
+	}
 }
 
 func checkPeerInfo(rt Runtime, peerID abi.PeerID, multiaddrs []abi.Multiaddrs) {

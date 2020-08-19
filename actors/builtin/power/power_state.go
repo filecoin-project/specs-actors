@@ -50,9 +50,6 @@ type State struct {
 	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
 	FirstCronEpoch abi.ChainEpoch
 
-	// Last epoch power cron tick has been processed.
-	LastProcessedCronEpoch abi.ChainEpoch
-
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
@@ -86,7 +83,6 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
 		ThisEpochQAPowerSmoothed:  smoothing.NewEstimate(InitialQAPowerEstimatePosition, InitialQAPowerEstimateVelocity),
 		FirstCronEpoch:            0,
-		LastProcessedCronEpoch:    abi.ChainEpoch(-1),
 		CronEventQueue:            emptyMMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,

@@ -139,3 +139,15 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		assert.Equal(t, expectedFee, fee)
 	})
 }
+
+func TestNegativeBRClamp(t *testing.T) {
+	epochTargetReward := abi.NewTokenAmount(1 << 50)
+	qaSectorPower := abi.NewStoragePower(1 << 36)
+	networkQAPower := abi.NewStoragePower(1 << 10)
+	powerRateOfChange := abi.NewStoragePower(1 << 10).Neg()
+	rewardEstimate := smoothing.NewEstimate(epochTargetReward, big.Zero())
+	powerEstimate := smoothing.NewEstimate(networkQAPower, powerRateOfChange)
+
+	fourBR := miner.ExpectedRewardForPower(rewardEstimate, powerEstimate, qaSectorPower, abi.ChainEpoch(4))
+	assert.Equal(t, big.Zero(), fourBR)
+}
