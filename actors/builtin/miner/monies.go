@@ -126,17 +126,11 @@ func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstima
 // may be slightly lower than the true amount. Computing vesting here would be
 // almost always redundant since vesting is quantized to ~daily units.  Vesting
 // will be at most one proving period old if computed in the cron callback.
-func VerifyPledgeRequirementsAndRepayDebts(rt Runtime, st *State) abi.TokenAmount {
+func RepayDebtsOrAbort(rt Runtime, st *State) abi.TokenAmount {
 	currBalance := rt.CurrentBalance()
-	toBurn, err := st.RepayDebt(currBalance)
+	toBurn, err := st.repayDebts(currBalance)
 	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "unlocked balance can not repay fee debt")
 
-	// IP requirements must be checked against balance after we account for fee debt repayment.
-	// The toBurn fee debt repayment will be burned so subtract from working value for current balance.
-	currBalance = big.Sub(currBalance, toBurn)
-	if !st.MeetsInitialPledgeCondition(currBalance) {
-		rt.Abortf(exitcode.ErrInsufficientFunds, "unlocked balance does not cover pledge requirements")
-	}
 	return toBurn
 }
 

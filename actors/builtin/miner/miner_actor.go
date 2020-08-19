@@ -425,8 +425,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
-		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		vestingPenaltyTotal, balancePenaltyTotal, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, totalPenaltyTarget, unlockedBalance)
+		err = st.ApplyPenalty(totalPenaltyTarget)
+		builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
+
+		// Pay penalty
+		vestingPenaltyTotal, balancePenaltyTotal, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
 		penaltyTotal = big.Add(vestingPenaltyTotal, balancePenaltyTotal)
 		pledgeDelta = big.Sub(pledgeDelta, vestingPenaltyTotal)
@@ -507,10 +510,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		// available balance already accounts for fee debt so it is correct to call
-		// this before VerifyPledgeRequirementsAndRepayDebts. We would have to
+		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
 		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
-		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
+		feeToBurn = RepayDebtsOrAbort(rt, &st)
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -590,6 +593,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	})
 
 	burnFunds(rt, feeToBurn)
+	rt.State().Readonly(&st)
+	st.AssertBalanceInvariants(rt.CurrentBalance())
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
@@ -818,7 +823,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, availableBalance)
 		}
 
-		st.AddInitialPledgeRequirement(totalPledge)
+		st.AddInitialPledge(totalPledge)
 		st.AssertBalanceInvariants(rt.CurrentBalance())
 	})
 
@@ -1227,7 +1232,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	rt.State().Transaction(&st, func() {
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
-		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
+		feeToBurn = RepayDebtsOrAbort(rt, &st)
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -1264,6 +1269,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	})
 
 	burnFunds(rt, feeToBurn)
+	rt.State().Readonly(&st)
+	st.AssertBalanceInvariants(rt.CurrentBalance())
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
 	return nil
@@ -1425,7 +1432,8 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	}
 
 	// Elapsed since the fault (i.e. since the higher of the two blocks)
-	faultAge := rt.CurrEpoch() - fault.Epoch
+	currEpoch := rt.CurrEpoch()
+	faultAge := currEpoch - fault.Epoch
 	if faultAge <= 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
 	}
@@ -1444,10 +1452,13 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	burnAmount := big.Zero()
 	rewardAmount := big.Zero()
 	rt.State().Transaction(&st, func() {
-		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), faultPenalty, unlockedBalance)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
-		// Burn the amount actually payable. Any difference in this and faultPenalty recorded as FeeDebt
+		err := st.ApplyPenalty(faultPenalty)
+		builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
+
+		// Pay penalty
+		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(adt.AsStore(rt), currEpoch, rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay fees")
+		// Burn the amount actually payable. Any difference in this and faultPenalty already recorded as FeeDebt
 		burnAmount = big.Add(penaltyFromVesting, penaltyFromBalance)
 		pledgeDelta = big.Add(pledgeDelta, penaltyFromVesting.Neg())
 
@@ -1506,13 +1517,13 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
 		// available balance already accounts for fee debt so it is correct to call
-		// this before VerifyPledgeRequirementsAndRepayDebts. We would have to
+		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
 		availableBalance = st.GetAvailableBalance(rt.CurrentBalance())
 
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
-		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
+		feeToBurn = RepayDebtsOrAbort(rt, &st)
 	})
 
 	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
@@ -1612,17 +1623,19 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process terminations")
 
-		// Unlock funds for penalties.
-		// TODO: handle bankrupt miner: https://github.com/filecoin-project/specs-actors/issues/627
-		// We're intentionally reducing the penalty paid to what we have.
-		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, rt.CurrEpoch(), penalty, unlockedBalance)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock unvested funds")
-		penalty = big.Add(penaltyFromVesting, penaltyFromBalance)
+		// Pay penalty
+		err = st.ApplyPenalty(penalty)
+		builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
 
 		// Remove pledge requirement.
-		st.AddInitialPledgeRequirement(totalInitialPledge.Neg())
-		pledgeDelta = big.Add(totalInitialPledge, penaltyFromVesting).Neg()
+		st.AddInitialPledge(totalInitialPledge.Neg())
+		pledgeDelta = big.Sub(pledgeDelta, totalInitialPledge)
+
+		// Use unlocked pledge to pay down outstanding fee debt
+		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, rt.CurrEpoch(), rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay penalty")
+		penalty = big.Add(penaltyFromVesting, penaltyFromBalance)
+		pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
 	})
 
 	// We didn't do anything, abort.
@@ -1673,7 +1686,9 @@ func handleProvingDeadline(rt Runtime) {
 		{
 			depositToBurn, err := st.ExpirePreCommits(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
-			penaltyTotal = big.Add(penaltyTotal, depositToBurn)
+
+			err = st.ApplyPenalty(depositToBurn)
+			builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
 		}
 
 		// Record whether or not we _had_ early terminations in the queue before this method.
@@ -1702,10 +1717,12 @@ func handleProvingDeadline(rt Runtime) {
 
 			penaltyTarget := big.Add(declaredPenalty, undeclaredPenalty)
 			if !penaltyTarget.IsZero() {
-				unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-				penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
+				err = st.ApplyPenalty(penaltyTarget)
+				builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
+
+				penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-				penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
+				penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
 				pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 			}
 		}

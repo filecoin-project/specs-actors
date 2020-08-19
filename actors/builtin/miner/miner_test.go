@@ -423,7 +423,7 @@ func TestCommitments(t *testing.T) {
 			onChainPrecommit.VerifiedDealWeight)
 		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth,
 			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
-		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledge)
 
 		// expect new onchain sector
 		sector := actor.getSector(rt, sectorNo)
@@ -440,7 +440,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, expectedInitialPledge, sector.InitialPledge)
 
 		// expect locked initial pledge of sector to be the same as pledge requirement
-		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
+		assert.Equal(t, expectedInitialPledge, st.InitialPledge)
 
 		// expect sector to be assigned a deadline/partition
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sectorNo)
@@ -607,21 +607,8 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// Try to precommit while in IP debt
-		st := getState(rt)
-		oldIPReqs := st.InitialPledgeRequirement
-		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
-		rt.ReplaceState(st)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
-		})
-		// reset state back to normal
-		st.InitialPledgeRequirement = oldIPReqs
-		rt.ReplaceState(st)
-		rt.Reset()
-
 		// Try to precommit while in fee debt with insufficient balance
-		st = getState(rt)
+		st := getState(rt)
 		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
@@ -689,7 +676,7 @@ func TestCommitments(t *testing.T) {
 		// Deposit and pledge as expected
 		st = getState(rt)
 		assert.Equal(t, st.PreCommitDeposits, upgrade.PreCommitDeposit)
-		assert.Equal(t, st.InitialPledgeRequirement, oldSector.InitialPledge)
+		assert.Equal(t, st.InitialPledge, oldSector.InitialPledge)
 
 		// Prove new sector
 		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -699,7 +686,7 @@ func TestCommitments(t *testing.T) {
 		// Both sectors have pledge
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
-		assert.Equal(t, st.InitialPledgeRequirement, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
+		assert.Equal(t, st.InitialPledge, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
 
 		// Both sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -766,7 +753,7 @@ func TestCommitments(t *testing.T) {
 		}, dQueue)
 
 		// Old sector gone from pledge requirement and deposit
-		assert.Equal(t, st.InitialPledgeRequirement, newSector.InitialPledge)
+		assert.Equal(t, st.InitialPledge, newSector.InitialPledge)
 		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})
 
@@ -927,7 +914,7 @@ func TestCommitments(t *testing.T) {
 		// Deposit and pledge as expected
 		st = getState(rt)
 		assert.Equal(t, st.PreCommitDeposits, big.Add(upgrade1.PreCommitDeposit, upgrade2.PreCommitDeposit))
-		assert.Equal(t, st.InitialPledgeRequirement, oldSector.InitialPledge)
+		assert.Equal(t, st.InitialPledge, oldSector.InitialPledge)
 
 		// Prove new sectors
 		rt.SetEpoch(upgrade1.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -945,7 +932,7 @@ func TestCommitments(t *testing.T) {
 		// All three sectors have pledge.
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
-		assert.Equal(t, st.InitialPledgeRequirement, big.Sum(
+		assert.Equal(t, st.InitialPledge, big.Sum(
 			oldSector.InitialPledge, newSector1.InitialPledge, newSector2.InitialPledge,
 		))
 
@@ -1026,7 +1013,7 @@ func TestCommitments(t *testing.T) {
 		}, dQueue)
 
 		// Old sector gone from pledge requirement and deposit
-		assert.Equal(t, st.InitialPledgeRequirement, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
+		assert.Equal(t, st.InitialPledge, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
 		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})
 
@@ -1089,7 +1076,7 @@ func TestCommitments(t *testing.T) {
 		//require.NoError(t, err)
 		//assert.Equal(t, []uint64{uint64(sectorNo)}, newSectors)
 		// Verify pledge lock-up
-		assert.True(t, st.InitialPledgeRequirement.GreaterThan(big.Zero()))
+		assert.True(t, st.InitialPledge.GreaterThan(big.Zero()))
 		rt.Reset()
 
 		// Duplicate proof (sector no-longer pre-committed)
@@ -1646,6 +1633,90 @@ func TestDeadlineCron(t *testing.T) {
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
 	})
 
+	t.Run("sector expires", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		sectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, sectors...)
+		activePower := miner.PowerForSectors(actor.sectorSize, sectors)
+
+		st := getState(rt)
+		initialPledge := st.InitialPledge
+		expiration := sectors[0].Expiration
+
+		// setup state to simulate moving forward all the way to expiry
+		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
+		require.NoError(t, err)
+		expirationPeriod := (expiration / miner.WPoStProvingPeriod + 1)*miner.WPoStProvingPeriod
+		st.ProvingPeriodStart = expirationPeriod
+		st.CurrentDeadline = dlIdx
+		rt.ReplaceState(st)
+
+		// Advance to expiration epoch and expect expiration during cron
+		rt.SetEpoch(expiration)	
+		powerDelta := activePower.Neg()
+		// because we skip forward in state and don't post we incur SP
+		expectedFee := actor.undeclaredFaultPenalty(sectors) 
+		// Add lots of funds so expectedFee is taken from locked funds
+		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
+		actor.addLockedFunds(rt, initialLocked)
+
+		advanceDeadline(rt, actor, &cronConfig{
+			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
+			expiredSectorsPowerDelta: &powerDelta,
+			expiredSectorsPledgeDelta: initialPledge.Neg(),
+			detectedFaultsPenalty: expectedFee,
+		})
+	})
+
+	t.Run("sector expires and repays fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		sectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, sectors...)
+		activePower := miner.PowerForSectors(actor.sectorSize, sectors)
+
+		st := getState(rt)
+		initialPledge := st.InitialPledge
+		expiration := sectors[0].Expiration
+
+		// setup state to simulate moving forward all the way to expiry
+		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
+		require.NoError(t, err)
+		expirationPeriod := (expiration / miner.WPoStProvingPeriod + 1)*miner.WPoStProvingPeriod
+		st.ProvingPeriodStart = expirationPeriod
+		st.CurrentDeadline = dlIdx
+
+		// introduce lots of fee debt
+		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+
+		// Advance to expiration epoch and expect expiration during cron
+		rt.SetEpoch(expiration)	
+		powerDelta := activePower.Neg()
+
+		// because we skip forward in state and don't post we incur SP
+		expectedFee := actor.undeclaredFaultPenalty(sectors) 
+		// Add lots of funds to locked funds so expectedFee is taken from locked funds
+		actor.addLockedFunds(rt, expectedFee)
+
+		// Miner balance = LF + IP. expectedFee covered by LF, debt repayment covered by IP
+		rt.SetBalance(big.Add(expectedFee, st.InitialPledge)) 
+
+		advanceDeadline(rt, actor, &cronConfig{
+			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
+			expiredSectorsPowerDelta: &powerDelta,
+			expiredSectorsPledgeDelta: initialPledge.Neg(),
+			detectedFaultsPenalty: expectedFee,
+			repaidFeeDebt: initialPledge, // We repay unlocked IP as fees
+		})
+	})
+
 	t.Run("detects and penalizes faults", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -1841,30 +1912,6 @@ func TestDeclareRecoveries(t *testing.T) {
 		assert.Equal(t, p.Faults, p.Recoveries)
 	})
 
-	t.Run("recovery fails when in IP debt", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
-
-		// advance to first proving period and submit so we'll have time to declare the fault next cycle
-		advanceAndSubmitPoSts(rt, actor, oneSector...)
-
-		// Declare the sector as faulted
-		actor.declareFaults(rt, oneSector...)
-
-		// Get into IP debt
-		st := getState(rt)
-		st.InitialPledgeRequirement = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
-		rt.ReplaceState(st)
-
-		// Attempt to recover
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
-		require.NoError(t, err)
-		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "does not cover pledge requirements", func() {
-			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
-		})
-	})
-
 	t.Run("recovery must pay back fee debt", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -1873,11 +1920,12 @@ func TestDeclareRecoveries(t *testing.T) {
 		advanceAndSubmitPoSts(rt, actor, oneSector...)
 
 		// Fault will take miner into fee debt
-		rt.SetBalance(big.Zero())
+		st := getState(rt)
+		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
 
 		actor.declareFaults(rt, oneSector...)
 
-		st := getState(rt)
+		st = getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oneSector[0].SectorNumber)
 		require.NoError(t, err)
 
@@ -1903,7 +1951,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		})
 
 		// Recovery pays back fee debt and IP requirements and succeeds
-		funds := big.Add(ff, st.InitialPledgeRequirement)
+		funds := big.Add(ff, st.InitialPledge)
 		rt.SetBalance(funds) // this is how we send funds along with recovery message using mock rt
 		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), ff)
 
@@ -2285,7 +2333,7 @@ func TestTerminateSectors(t *testing.T) {
 			assert.Equal(t, big.Sub(initialLockedFunds, expectedFee), st.LockedFunds)
 
 			// expect pledge requirement to have been decremented
-			assert.Equal(t, big.Zero(), st.InitialPledgeRequirement)
+			assert.Equal(t, big.Zero(), st.InitialPledge)
 		}
 	})
 
@@ -2357,24 +2405,6 @@ func TestWithdrawBalance(t *testing.T) {
 
 		// withdraw 1% of balance
 		actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
-	})
-
-	t.Run("fails if miner is currently undercollateralized", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-
-		// prove one sector to establish collateral and locked funds
-		actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
-
-		// alter initial pledge requirement to simulate undercollateralization
-		st := getState(rt)
-		st.InitialPledgeRequirement = big.Mul(big.NewInt(300000), st.InitialPledgeRequirement)
-		rt.ReplaceState(st)
-
-		// withdraw 1% of balance
-		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
-		})
 	})
 
 	t.Run("fails if miner can't repay fee debt", func(t *testing.T) {
@@ -2918,7 +2948,7 @@ func TestAddLockedFund(t *testing.T) {
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
 		balance := rt.Balance()
-		st.InitialPledgeRequirement = big.Mul(big.NewInt(2), balance) // ip req twice total balance
+		st.FeeDebt = big.Mul(big.NewInt(2), balance) // FeeDebt twice total balance
 		availableBefore := st.GetAvailableBalance(balance)
 		assert.True(t, availableBefore.LessThan(big.Zero()))
 		rt.ReplaceState(st)
@@ -2932,23 +2962,9 @@ func TestAddLockedFund(t *testing.T) {
 		st = getState(rt)
 		// no funds used to pay off ip debt
 		assert.Equal(t, availableBefore, st.GetAvailableBalance(newBalance))
-		assert.False(t, st.MeetsInitialPledgeCondition(newBalance))
+		assert.False(t, st.MeetsInitialPledgeCondition())
 		// all funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
-	})
-
-	t.Run("unvested funds will recollateralize a miner", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		st := getState(rt)
-
-		balance := rt.Balance()
-		st.InitialPledgeRequirement = balance
-		underCollateralizedBalance := big.Div(balance, big.NewInt(2)) // ip req twice total balance
-		assert.False(t, st.MeetsInitialPledgeCondition(underCollateralizedBalance))
-
-		st.InitialPledgeRequirement = balance
-		assert.True(t, st.MeetsInitialPledgeCondition(balance))
 	})
 
 }
@@ -3924,6 +3940,7 @@ type cronConfig struct {
 	expiredSectorsPowerDelta  *miner.PowerPair
 	expiredSectorsPledgeDelta abi.TokenAmount
 	ongoingFaultsPenalty      abi.TokenAmount
+	repaidFeeDebt             abi.TokenAmount
 }
 
 func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
@@ -3969,9 +3986,18 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	if !config.ongoingFaultsPenalty.Nil() && !config.ongoingFaultsPenalty.IsZero() {
 		penaltyTotal = big.Add(penaltyTotal, config.ongoingFaultsPenalty)
 	}
+	if !config.repaidFeeDebt.Nil() && !config.repaidFeeDebt.IsZero() {
+		penaltyTotal = big.Add(penaltyTotal, config.repaidFeeDebt)
+	}
 	if !penaltyTotal.IsZero() {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penaltyTotal, nil, exitcode.Ok)
-		pledgeDelta = big.Sub(pledgeDelta, penaltyTotal)
+		// TODO this forces tests to take funds from locked funds instead of balance.
+		// We should make other cases possible by pushing complexity to the config
+		penaltyFromUnlocked := penaltyTotal
+		if  !config.repaidFeeDebt.Nil() && !config.repaidFeeDebt.IsZero() {
+			penaltyFromUnlocked = big.Sub(penaltyFromUnlocked, config.repaidFeeDebt)
+		}
+		pledgeDelta = big.Sub(pledgeDelta, penaltyFromUnlocked)
 	}
 
 	if !config.expiredSectorsPledgeDelta.Nil() && !config.expiredSectorsPledgeDelta.IsZero() {
