@@ -2155,7 +2155,7 @@ func TestWithdrawBalance(t *testing.T) {
 		feeDebt := big.Sub(bigBalance, onePercentBigBalance)
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
-		
+
 		requested := rt.Balance()
 		expectedWithdraw := big.Sub(requested, feeDebt)
 		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
@@ -2601,7 +2601,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 		actor.reportConsensusFault(rt, addr.TestAddress, params)
 		endInfo := actor.getInfo(rt)
-		assert.Equal(t, reportEpoch + miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
 
 }
@@ -3212,7 +3212,7 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	for _, precommit := range precommits {
 		allSectorNumbers = append(allSectorNumbers, precommit.SectorNumber)
 
-		vdParams := market.ActivateDealsParams{
+		vdParams := market.ActivateDealsParam{
 			DealIDs:      precommit.DealIDs,
 			SectorExpiry: precommit.Expiration,
 		}
@@ -3744,7 +3744,6 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWi
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amountRequested,
 	})
-	
 
 	rt.Verify()
 }

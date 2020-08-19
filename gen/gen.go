@@ -150,13 +150,15 @@ func main() {
 		// method params
 		market.WithdrawBalanceParams{},
 		market.PublishStorageDealsParams{},
-		market.ActivateDealsParams{},
+		market.ActivateDealsParam{},
+		market.ActivateSectorRequest{},
 		market.VerifyDealsForActivationParams{},
 		market.VerifyDealsForActivationReturn{},
 		market.ComputeDataCommitmentParams{},
 		market.OnMinerSectorsTerminateParams{},
 		// method returns
 		market.PublishStorageDealsReturn{},
+		market.ActivateDealsReturn{},
 		// other types
 		market.DealProposal{},
 		market.ClientDealProposal{},

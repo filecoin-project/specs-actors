@@ -1008,7 +1008,7 @@ func TestActivateDealFailures(t *testing.T) {
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.AccountActorCodeID)
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
-				rt.Call(actor.ActivateDeals, &market.ActivateDealsParams{})
+				rt.Call(actor.ActivateDeals, &market.ActivateDealsParam{})
 			})
 
 			rt.Verify()
@@ -2751,12 +2751,16 @@ func (h *marketActorTestHarness) activateDeals(rt *mock.Runtime, sectorExpiry ab
 	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
-	params := &market.ActivateDealsParams{DealIDs: dealIDs, SectorExpiry: sectorExpiry}
+	num := abi.SectorNumber(42)
+	req := market.ActivateSectorRequest{SectorNumber: num, DealIDs: dealIDs, SectorExpiry: sectorExpiry}
+	params := &market.ActivateDealsParam{Requests: []market.ActivateSectorRequest{req}}
 
 	ret := rt.Call(h.ActivateDeals, params)
 	rt.Verify()
 
-	require.Nil(h.t, ret)
+	resp := ret.(*market.ActivateDealsReturn)
+	require.NotNil(h.t, resp)
+	require.EqualValues(h.t, []abi.SectorNumber{num}, resp.ActivatedSectors)
 
 	for _, d := range dealIDs {
 		s := h.getDealState(rt, d)
@@ -3004,8 +3008,10 @@ func mkPublishStorageParams(proposals ...market.DealProposal) *market.PublishSto
 	return m
 }
 
-func mkActivateDealParams(sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *market.ActivateDealsParams {
-	return &market.ActivateDealsParams{SectorExpiry: sectorExpiry, DealIDs: dealIds}
+func mkActivateDealParams(sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *market.ActivateDealsParam {
+	sectorNum := abi.SectorNumber(42)
+	req := market.ActivateSectorRequest{SectorNumber: sectorNum, DealIDs: dealIds, SectorExpiry: sectorExpiry}
+	return &market.ActivateDealsParam{Requests: []market.ActivateSectorRequest{req}}
 }
 
 func mkTerminateDealParams(epoch abi.ChainEpoch, dealIds ...abi.DealID) *market.OnMinerSectorsTerminateParams {
