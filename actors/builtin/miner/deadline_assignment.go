@@ -8,10 +8,9 @@ import (
 
 // Helper types for deadline assignment.
 type deadlineAssignmentInfo struct {
-	index                int
-	liveSectors          uint64
-	totalSectors         uint64
-	maxPartitionsReached bool
+	index        int
+	liveSectors  uint64
+	totalSectors uint64
 }
 
 func (dai *deadlineAssignmentInfo) partitionsAfterAssignment(partitionSize uint64) uint64 {
@@ -36,6 +35,10 @@ func (dai *deadlineAssignmentInfo) isFullNow(partitionSize uint64) bool {
 	return (dai.totalSectors % partitionSize) == 0
 }
 
+func (dai *deadlineAssignmentInfo) maxPartitionsReached(partitionSize, maxPartitions uint64) bool {
+	return dai.totalSectors >= partitionSize*maxPartitions
+}
+
 type deadlineAssignmentHeap struct {
 	maxPartitions uint64
 	partitionSize uint64
@@ -55,8 +58,10 @@ func (dah *deadlineAssignmentHeap) Less(i, j int) bool {
 
 	// If one of the deadlines has already reached it's limit for the maximum number of partitions and
 	// the other hasn't, we directly pick the deadline that hasn't reached it's limit.
-	if a.maxPartitionsReached != b.maxPartitionsReached {
-		return !a.maxPartitionsReached
+	aMaxPartitionsreached := a.maxPartitionsReached(dah.partitionSize, dah.maxPartitions)
+	bMaxPartitionsReached := b.maxPartitionsReached(dah.partitionSize, dah.maxPartitions)
+	if aMaxPartitionsreached != bMaxPartitionsReached {
+		return !aMaxPartitionsreached
 	}
 
 	// Otherwise:-
@@ -198,18 +203,13 @@ func assignDeadlines(
 	for _, sector := range sectors {
 		info := dlHeap.deadlines[0]
 
-		if info.maxPartitionsReached {
+		if info.maxPartitionsReached(partitionSize, maxPartitions) {
 			return changes, xerrors.Errorf("maxPartitions limit %d reached for all deadlines", maxPartitions)
 		}
 
 		changes[info.index] = append(changes[info.index], sector)
 		info.liveSectors++
 		info.totalSectors++
-
-		nPartitions := info.totalSectors / partitionSize
-		if nPartitions == maxPartitions {
-			info.maxPartitionsReached = true
-		}
 
 		// Update heap.
 		heap.Fix(&dlHeap, 0)

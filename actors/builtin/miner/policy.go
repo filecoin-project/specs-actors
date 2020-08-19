@@ -24,10 +24,6 @@ const WPoStPeriodDeadlines = uint64(48)
 // WPoStMaxChainCommitAge is the maximum distance back that a valid Window PoSt must commit to the current chain.
 var WPoStMaxChainCommitAge = WPoStChallengeWindow
 
-// MaxPartitionsPerDeadline is the maximum number of partitions that will be assigned to a deadline.
-// The current value allows upto 1 Eib storage for a miner.
-const MaxPartitionsPerDeadline = 300
-
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
 	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {

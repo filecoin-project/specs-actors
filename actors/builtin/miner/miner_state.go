@@ -210,7 +210,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
-		MaxPartitionsPerDeadline:   MaxPartitionsPerDeadline,
+		MaxPartitionsPerDeadline:   abi.MaxPartitionsPerDeadline,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
 	}, nil
 }
