@@ -581,7 +581,7 @@ func TestCommitments(t *testing.T) {
 
 		// Expires before min duration + max seal duration
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
-			expiration := rt.Epoch() + miner.MinSectorExpiration + miner.MaxSealDuration[actor.sealProofType] - 1
+			expiration := rt.Epoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[actor.sealProofType] - 1
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
 		})
 		rt.Reset()
@@ -601,7 +601,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Seal randomness challenge too far in past
-		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxSealDuration[actor.sealProofType] - 1
+		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxProveCommitDuration[actor.sealProofType] - 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
 		})
@@ -877,7 +877,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Too late.
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[precommit.SealProof] + 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[precommit.SealProof] + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{})
 		})
@@ -1395,7 +1395,7 @@ func TestProveCommit(t *testing.T) {
 		rt.SetBalance(big.Add(st.PreCommitDeposits, st.LockedFunds))
 		info := actor.getInfo(rt)
 
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[info.SealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 		})
@@ -1424,7 +1424,7 @@ func TestProveCommit(t *testing.T) {
 
 		// handle both prove commits in the same epoch
 		info := actor.getInfo(rt)
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[info.SealProofType] - 1)
 
 		actor.proveCommitSector(rt, precommitA, precommitEpoch, makeProveCommit(sectorNoA))
 		actor.proveCommitSector(rt, precommitB, precommitEpoch, makeProveCommit(sectorNoB))
