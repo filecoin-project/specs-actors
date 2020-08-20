@@ -393,7 +393,7 @@ func (t *ConstructorParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufUpdateChannelStateParams = []byte{131}
+var lengthBufUpdateChannelStateParams = []byte{130}
 
 func (t *UpdateChannelStateParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -423,19 +423,6 @@ func (t *UpdateChannelStateParams) MarshalCBOR(w io.Writer) error {
 	if _, err := w.Write(t.Secret[:]); err != nil {
 		return err
 	}
-
-	// t.Proof ([]uint8) (slice)
-	if len(t.Proof) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Proof was too long")
-	}
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Proof))); err != nil {
-		return err
-	}
-
-	if _, err := w.Write(t.Proof[:]); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -453,7 +440,7 @@ func (t *UpdateChannelStateParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -485,27 +472,6 @@ func (t *UpdateChannelStateParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if _, err := io.ReadFull(br, t.Secret[:]); err != nil {
-		return err
-	}
-	// t.Proof ([]uint8) (slice)
-
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Proof: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-
-	if extra > 0 {
-		t.Proof = make([]uint8, extra)
-	}
-
-	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -872,16 +838,16 @@ func (t *ModVerifyParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Data ([]uint8) (slice)
-	if len(t.Data) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Data was too long")
+	// t.Params ([]uint8) (slice)
+	if len(t.Params) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.Params was too long")
 	}
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Data))); err != nil {
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Params))); err != nil {
 		return err
 	}
 
-	if _, err := w.Write(t.Data[:]); err != nil {
+	if _, err := w.Write(t.Params[:]); err != nil {
 		return err
 	}
 	return nil
@@ -928,7 +894,7 @@ func (t *ModVerifyParams) UnmarshalCBOR(r io.Reader) error {
 		t.Method = abi.MethodNum(extra)
 
 	}
-	// t.Data ([]uint8) (slice)
+	// t.Params ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
@@ -936,121 +902,17 @@ func (t *ModVerifyParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Data: byte array too large (%d)", extra)
+		return fmt.Errorf("t.Params: byte array too large (%d)", extra)
 	}
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
 
 	if extra > 0 {
-		t.Data = make([]uint8, extra)
+		t.Params = make([]uint8, extra)
 	}
 
-	if _, err := io.ReadFull(br, t.Data[:]); err != nil {
-		return err
-	}
-	return nil
-}
-
-var lengthBufPaymentVerifyParams = []byte{130}
-
-func (t *PaymentVerifyParams) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write(lengthBufPaymentVerifyParams); err != nil {
-		return err
-	}
-
-	scratch := make([]byte, 9)
-
-	// t.Extra ([]uint8) (slice)
-	if len(t.Extra) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Extra was too long")
-	}
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Extra))); err != nil {
-		return err
-	}
-
-	if _, err := w.Write(t.Extra[:]); err != nil {
-		return err
-	}
-
-	// t.Proof ([]uint8) (slice)
-	if len(t.Proof) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Proof was too long")
-	}
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Proof))); err != nil {
-		return err
-	}
-
-	if _, err := w.Write(t.Proof[:]); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *PaymentVerifyParams) UnmarshalCBOR(r io.Reader) error {
-	*t = PaymentVerifyParams{}
-
-	br := cbg.GetPeeker(r)
-	scratch := make([]byte, 8)
-
-	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Extra ([]uint8) (slice)
-
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Extra: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-
-	if extra > 0 {
-		t.Extra = make([]uint8, extra)
-	}
-
-	if _, err := io.ReadFull(br, t.Extra[:]); err != nil {
-		return err
-	}
-	// t.Proof ([]uint8) (slice)
-
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Proof: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
-
-	if extra > 0 {
-		t.Proof = make([]uint8, extra)
-	}
-
-	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
+	if _, err := io.ReadFull(br, t.Params[:]); err != nil {
 		return err
 	}
 	return nil

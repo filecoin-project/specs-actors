@@ -2243,7 +2243,7 @@ func TestMarketActorDeals(t *testing.T) {
 	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20000000))
 
 	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
-	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{market.ClientDealProposal{Proposal: dealProposal}}}
+	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{{Proposal: dealProposal}}}
 
 	// First attempt at publishing the deal should work
 	{
@@ -2445,6 +2445,18 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.VerifyDealsForActivation, param)
+		})
+	})
+
+	t.Run("fail when the same deal ID is passed multiple times", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
+
+		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId, dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "multiple times", func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})

@@ -21,9 +21,6 @@ var WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(48)
 
-// WPoStMaxChainCommitAge is the maximum distance back that a valid Window PoSt must commit to the current chain.
-var WPoStMaxChainCommitAge = WPoStChallengeWindow
-
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
 	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {
@@ -63,6 +60,9 @@ const (
 // Maximum bytes in a single prove-commit proof.
 const MaxProveCommitSize = 1024
 
+// Maximum number of control addresses
+const MaxControlAddresses = 10
+
 // The maximum number of partitions that may be required to be loaded in a single invocation,
 // when all the sector infos for the partitions will be loaded.
 func loadPartitionsSectorsMax(partitionSectorCount uint64) uint64 {
@@ -88,15 +88,18 @@ var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
 }
 
-// Maximum duration to allow for the sealing process for seal algorithms.
+// Maximum delay to allow between precommit and provecommit
 // Dependent on algorithm and sector size
-var MaxSealDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
+var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg32GiBV1:  abi.ChainEpoch(10000), // PARAM_FINISH
 	abi.RegisteredSealProof_StackedDrg2KiBV1:   abi.ChainEpoch(10000),
 	abi.RegisteredSealProof_StackedDrg8MiBV1:   abi.ChainEpoch(10000),
 	abi.RegisteredSealProof_StackedDrg512MiBV1: abi.ChainEpoch(10000),
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  abi.ChainEpoch(10000),
 }
+
+// Maximum delay between challenge and precommit
+var MaxPreCommitRandomnessLookback = abi.ChainEpoch(10000)
 
 // Number of epochs between publishing the precommit and when the challenge for interactive PoRep is drawn
 // used to ensure it is not predictable by miner.
@@ -137,6 +140,10 @@ const MaxSectorExpirationExtension = 540 * builtin.EpochsInDay
 // The maximum number of deals is the sector size divided by this number (2^27)
 // which limits 32GiB sectors to 256 deals and 64GiB sectors to 512
 const DealLimitDenominator = 134217728
+
+// Number of epochs after a consensus fault for which a miner is ineligible
+// for permissioned actor methods and winning block elections.
+const ConsensusFaultIneligibilityDuration = ChainFinality
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
 // Sum of DealWeight and VerifiedDealWeight should be less than or equal to total SpaceTime of a sector.
@@ -199,13 +206,6 @@ type VestSpec struct {
 	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
 }
 
-var PledgeVestingSpec = VestSpec{
-	InitialDelay: abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),   // PARAM_FINISH
-	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
-}
-
 var RewardVestingSpec = VestSpec{
 	InitialDelay: abi.ChainEpoch(20 * builtin.EpochsInDay),  // PARAM_FINISH
 	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
@@ -234,4 +234,10 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	num := big.Mul(big.Mul(slasherShareNumerator, consensusFaultReporterInitialShare.numerator), collateral)
 	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.denominator)
 	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, maxReporterShareNum), maxReporterShareDen))
+}
+
+func ConsensusFaultActive(info *MinerInfo, currEpoch abi.ChainEpoch) bool {
+	// For penalization period to last for exactly finality epochs
+	// consensus faults are active until currEpoch exceeds ConsensusFaultElapsed
+	return currEpoch <= info.ConsensusFaultElapsed
 }
