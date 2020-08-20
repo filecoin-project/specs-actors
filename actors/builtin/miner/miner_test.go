@@ -877,7 +877,7 @@ func TestCommitments(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
 		actor.preCommitSector(rt, precommit)
 
 		// Sector pre-commitment missing.
@@ -1425,11 +1425,11 @@ func TestProveCommit(t *testing.T) {
 		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
-		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
+		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{1})
 		actor.preCommitSector(rt, precommitA)
 		sectorNoA := actor.nextSectorNo
 		actor.nextSectorNo++
-		precommitB := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
+		precommitB := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{2})
 		actor.preCommitSector(rt, precommitB)
 		sectorNoB := actor.nextSectorNo
 
@@ -3323,7 +3323,10 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 			exit = exitcode.Ok
 			validPrecommits = append(validPrecommits, precommit)
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
+
+		if len(precommit.DealIDs) > 0 {
+			rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
+		}
 	}
 
 	// expected pledge is the sum of initial pledges
