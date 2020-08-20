@@ -210,7 +210,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
-		MaxPartitionsPerDeadline:   abi.MaxPartitionsPerDeadline,
+		MaxPartitionsPerDeadline:   MaxPartitionsPerDeadline,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
 	}, nil
 }
@@ -527,15 +527,13 @@ func (st *State) AssignSectorsToDeadlines(
 		return NewPowerPairZero(), err
 	}
 
-	newPower := NewPowerPairZero()
+	activatedPower := NewPowerPairZero()
 	deadlineToSectors, err := assignDeadlines(maxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}
 
 	for dlIdx, deadlineSectors := range deadlineToSectors {
-    	activatedPower := NewPowerPairZero()
-
 		if len(deadlineSectors) == 0 {
 			continue
 		}

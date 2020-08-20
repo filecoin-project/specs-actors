@@ -22,10 +22,6 @@ func (s SectorNumber) String() string {
 // Raising this would require modifying our AMT implementation.
 const MaxSectorNumber = math.MaxInt64
 
-// MaxPartitionsPerDeadline is the maximum number of partitions that will be assigned to a deadline.
-// The current value allows upto 1 Eib storage for a miner.
-const MaxPartitionsPerDeadline = 300
-
 // SectorSize indicates one of a set of possible sizes in the network.
 // Ideally, SectorSize would be an enum
 // type SectorSize enum {
