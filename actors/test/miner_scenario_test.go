@@ -65,7 +65,6 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	// assert successful precommit invocation
 	vm.ExpectInvocation{
-		// Original send to storage power actor
 		To:     minerAddrs.IDAddress,
 		Method: builtin.MethodsMiner.PreCommitSector,
 		Params: vm.ExpectObject(&preCommitParams),
@@ -105,7 +104,6 @@ func TestCommitPoStFlow(t *testing.T) {
 		require.Equal(t, exitcode.Ok, code)
 
 		vm.ExpectInvocation{
-			// Original send to storage power actor
 			To:     builtin.CronActorAddr,
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
@@ -152,7 +150,6 @@ func TestCommitPoStFlow(t *testing.T) {
 	require.Equal(t, exitcode.Ok, code)
 
 	vm.ExpectInvocation{
-		// Original send to storage power actor
 		To:     minerAddrs.IDAddress,
 		Method: builtin.MethodsMiner.ProveCommitSector,
 		Params: vm.ExpectObject(&proveCommitParams),
@@ -167,7 +164,6 @@ func TestCommitPoStFlow(t *testing.T) {
 	require.Equal(t, exitcode.Ok, code)
 
 	vm.ExpectInvocation{
-		// Original send to storage power actor
 		To:     builtin.CronActorAddr,
 		Method: builtin.MethodsCron.EpochTick,
 		SubInvocations: []vm.ExpectInvocation{
@@ -237,7 +233,6 @@ func TestCommitPoStFlow(t *testing.T) {
 		require.Equal(t, exitcode.Ok, code)
 
 		vm.ExpectInvocation{
-			// Original send to storage power actor
 			To:     minerAddrs.IDAddress,
 			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 			Params: vm.ExpectObject(&submitParams),
@@ -284,7 +279,6 @@ func TestCommitPoStFlow(t *testing.T) {
 		}
 
 		vm.ExpectInvocation{
-			// Original send to storage power actor
 			To:     minerAddrs.IDAddress,
 			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 			Params: vm.ExpectObject(&submitParams),
@@ -326,7 +320,6 @@ func TestCommitPoStFlow(t *testing.T) {
 		}
 
 		vm.ExpectInvocation{
-			// Original send to storage power actor
 			To:     builtin.CronActorAddr,
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
