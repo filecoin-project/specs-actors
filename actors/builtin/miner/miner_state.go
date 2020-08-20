@@ -528,13 +528,14 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	newPower := NewPowerPairZero()
-
 	deadlineToSectors, err := assignDeadlines(maxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}
 
 	for dlIdx, deadlineSectors := range deadlineToSectors {
+    	activatedPower := NewPowerPairZero()
+
 		if len(deadlineSectors) == 0 {
 			continue
 		}
@@ -542,12 +543,12 @@ func (st *State) AssignSectorsToDeadlines(
 		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineNewPower, err := dl.AddSectors(store, partitionSize, deadlineSectors, sectorSize, quant)
+		deadlineActivatedPower, err := dl.AddSectors(store, partitionSize, false, deadlineSectors, sectorSize, quant)
 		if err != nil {
 			return NewPowerPairZero(), err
 		}
 
-		newPower = newPower.Add(deadlineNewPower)
+		activatedPower = activatedPower.Add(deadlineActivatedPower)
 
 		err = deadlines.UpdateDeadline(store, uint64(dlIdx), dl)
 		if err != nil {
@@ -559,7 +560,7 @@ func (st *State) AssignSectorsToDeadlines(
 	if err != nil {
 		return NewPowerPairZero(), err
 	}
-	return newPower, nil
+	return activatedPower, nil
 }
 
 // Pops up to max early terminated sectors from all deadlines.
@@ -967,6 +968,30 @@ func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (de
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
 	return depositToBurn, nil
+}
+
+func MinerEligibleForElection(store adt.Store, mSt *State, thisEpochReward abi.TokenAmount, minerActorBalance abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
+	// IP requirements are met.  This includes zero fee debt
+	if !mSt.MeetsInitialPledgeCondition(minerActorBalance) {
+		return false, nil
+	}
+
+	// No active consensus faults
+	mInfo, err := mSt.GetInfo(store)
+	if err != nil {
+		return false, err
+	}
+	if ConsensusFaultActive(mInfo, currEpoch) {
+		return false, nil
+	}
+
+	// IP requirement is sufficient to cover fee for a consensus fault
+	electionRequirement := ConsensusFaultPenalty(thisEpochReward)
+	if mSt.InitialPledgeRequirement.LessThan(electionRequirement) {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 //

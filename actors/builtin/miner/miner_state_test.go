@@ -646,10 +646,13 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
+
 		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, abi.MaxPartitionsPerDeadline,
 			partitionSectors, sectorSize)
+
+		sectorArr := sectorsArr(t, harness.store, sectorInfos)
 		require.NoError(t, err)
-		require.True(t, newPower.Equals(miner.PowerForSectors(sectorSize, sectorInfos)))
+		require.True(t, newPower.IsZero())
 
 		dls, err := harness.s.LoadDeadlines(harness.store)
 		require.NoError(t, err)
@@ -663,17 +666,43 @@ func TestSectorAssignment(t *testing.T) {
 			}
 
 			var partitions []bitfield.BitField
+			var postPartitions []miner.PoStPartition
 			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
 				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
-				bf := seq(t, start, partitionSectors)
-				partitions = append(partitions, bf)
+				partBf := seq(t, start, partitionSectors)
+				partitions = append(partitions, partBf)
+				postPartitions = append(postPartitions, miner.PoStPartition{
+					Index:   i,
+					Skipped: bf(),
+				})
 			}
+			allSectorBf, err := bitfield.MultiMerge(partitions...)
+			require.NoError(t, err)
+			allSectorNos, err := allSectorBf.All(uint64(noSectors))
+			require.NoError(t, err)
+
 			dlState.withQuantSpec(quantSpec).
+				withUnproven(allSectorNos...).
 				withPartitions(partitions...).
 				assert(t, harness.store, dl)
 
+			// Now make sure proving activates power.
+
+			result, err := dl.RecordProvenSectors(harness.store, sectorArr, sectorSize, quantSpec, 0, postPartitions)
+			require.NoError(t, err)
+
+			expectedPowerDelta := miner.PowerForSectors(sectorSize, selectSectors(t, sectorInfos, allSectorBf))
+
+			assertBitfieldsEqual(t, allSectorBf, result.Sectors)
+			assertBitfieldEmpty(t, result.IgnoredSectors)
+			assert.True(t, result.NewFaultyPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.PowerDelta.Equals(expectedPowerDelta))
+			assert.True(t, result.RecoveredPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
 			return nil
 		}))
+
+		// Now prove and activate/check power.
 	})
 }
 
@@ -752,6 +781,95 @@ func TestPenalizationFundsInPriorityOrder(t *testing.T) {
 
 	expectedDebt = big.Add(expectedDebt, fee)
 	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
+}
+
+func TestMinerEligibleForElection(t *testing.T) {
+	tenFIL := big.Mul(big.NewInt(1e18), big.NewInt(10))
+	thisEpochReward := tenFIL
+	periodOffset := abi.ChainEpoch(1808)
+	actor := newHarness(t, periodOffset)
+
+	builder := builderForHarness(actor)
+
+	t.Run("miner eligible", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := adt.AsStore(rt)
+		mSt := getState(rt)
+		mSt.InitialPledgeRequirement = miner.ConsensusFaultPenalty(thisEpochReward)
+		minerBalance := big.Add(mSt.InitialPledgeRequirement, tenFIL)
+		currEpoch := abi.ChainEpoch(100000)
+
+		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, minerBalance, currEpoch)
+		require.NoError(t, err)
+		assert.True(t, eligible)
+	})
+
+	t.Run("active consensus fault", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		mSt := getState(rt)
+		info, err := mSt.GetInfo(store)
+		require.NoError(t, err)
+		info.ConsensusFaultElapsed = abi.ChainEpoch(55)
+		err = mSt.SaveInfo(store, info)
+		require.NoError(t, err)
+
+		mSt.InitialPledgeRequirement = miner.ConsensusFaultPenalty(thisEpochReward)
+		minerBalance := big.Add(mSt.InitialPledgeRequirement, tenFIL)
+		currEpoch := abi.ChainEpoch(33) // 33 less than 55 so consensus fault still active
+
+		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, minerBalance, currEpoch)
+		require.NoError(t, err)
+		assert.False(t, eligible)
+	})
+
+	t.Run("fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		mSt := getState(rt)
+		mSt.FeeDebt = abi.NewTokenAmount(1000)
+
+		mSt.InitialPledgeRequirement = miner.ConsensusFaultPenalty(thisEpochReward)
+		minerBalance := big.Add(mSt.InitialPledgeRequirement, tenFIL)
+		currEpoch := abi.ChainEpoch(100000)
+
+		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, minerBalance, currEpoch)
+		require.NoError(t, err)
+		assert.False(t, eligible)
+	})
+
+	t.Run("ip debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		mSt := getState(rt)
+
+		mSt.InitialPledgeRequirement = miner.ConsensusFaultPenalty(thisEpochReward)
+		minerBalance := big.Sub(mSt.InitialPledgeRequirement, abi.NewTokenAmount(1))
+		currEpoch := abi.ChainEpoch(100000)
+
+		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, minerBalance, currEpoch)
+		require.NoError(t, err)
+		assert.False(t, eligible)
+	})
+
+	t.Run("ip requirement below consensus fault penalty", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		mSt := getState(rt)
+
+		mSt.InitialPledgeRequirement = big.Sub(miner.ConsensusFaultPenalty(thisEpochReward), abi.NewTokenAmount(1))
+		minerBalance := big.Add(mSt.InitialPledgeRequirement, tenFIL)
+		currEpoch := abi.ChainEpoch(100000)
+
+		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, minerBalance, currEpoch)
+		require.NoError(t, err)
+		assert.False(t, eligible)
+	})
 }
 
 type stateHarness struct {

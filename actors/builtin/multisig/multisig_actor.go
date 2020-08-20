@@ -68,6 +68,7 @@ type ConstructorParams struct {
 	Signers               []addr.Address
 	NumApprovalsThreshold uint64
 	UnlockDuration        abi.ChainEpoch
+	StartEpoch            abi.ChainEpoch
 }
 
 func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
@@ -117,7 +118,7 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 	if params.UnlockDuration != 0 {
 		st.InitialBalance = rt.Message().ValueReceived()
 		st.UnlockDuration = params.UnlockDuration
-		st.StartEpoch = rt.CurrEpoch()
+		st.StartEpoch = params.StartEpoch
 	}
 
 	rt.State().Create(&st)

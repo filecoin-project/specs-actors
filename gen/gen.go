@@ -119,7 +119,6 @@ func main() {
 		paych.UpdateChannelStateParams{},
 		paych.SignedVoucher{},
 		paych.ModVerifyParams{},
-		paych.PaymentVerifyParams{},
 	); err != nil {
 		panic(err)
 	}

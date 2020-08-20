@@ -9,6 +9,7 @@ import (
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -79,7 +80,6 @@ func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address
 type UpdateChannelStateParams struct {
 	Sv     SignedVoucher
 	Secret []byte
-	Proof  []byte
 }
 
 // A voucher is sent by `From` to `To` off-chain in order to enable
@@ -94,7 +94,7 @@ type SignedVoucher struct {
 	TimeLockMax abi.ChainEpoch
 	// (optional) The SecretPreImage is used by `To` to validate
 	SecretPreimage []byte
-	// (optional) Extra can be specified by `From` to add a verification method to the voucher
+	// (optional) Extra can be specified by `From` to add a verification method to the voucher.
 	Extra *ModVerifyParams
 	// Specifies which lane the Voucher merges into (will be created if does not exist)
 	Lane uint64
@@ -114,14 +114,12 @@ type SignedVoucher struct {
 
 // Modular Verification method
 type ModVerifyParams struct {
-	Actor  addr.Address
+	// Actor on which to invoke the method.
+	Actor addr.Address
+	// Method to invoke.
 	Method abi.MethodNum
-	Data   []byte
-}
-
-type PaymentVerifyParams struct {
-	Extra []byte
-	Proof []byte
+	// Pre-serialized method parameters.
+	Params []byte
 }
 
 func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
@@ -181,10 +179,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 		_, code := rt.Send(
 			sv.Extra.Actor,
 			sv.Extra.Method,
-			&PaymentVerifyParams{
-				sv.Extra.Data,
-				params.Proof,
-			},
+			runtime.CBORBytes(sv.Extra.Params),
 			abi.NewTokenAmount(0),
 		)
 		builtin.RequireSuccess(rt, code, "spend voucher verification failed")
