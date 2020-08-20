@@ -14,8 +14,13 @@ import (
 )
 
 type Partition struct {
-	// Sector numbers in this partition, including faulty and terminated sectors.
+	// Sector numbers in this partition, including faulty, unproven, and terminated sectors.
 	Sectors bitfield.BitField
+	// Unproven sectors in this partition. This bitfield will be cleared on
+	// a successful window post (or at the end of the partition's next
+	// deadline). At that time, any still unproven sectors will be added to
+	// the faulty sector bitfield.
+	Unproven bitfield.BitField
 	// Subset of sectors detected/declared faulty and not yet recovered (excl. from PoSt).
 	// Faults ∩ Terminated = ∅
 	Faults bitfield.BitField
@@ -34,8 +39,10 @@ type Partition struct {
 	// Not quantized.
 	EarlyTerminated cid.Cid // AMT[ChainEpoch]BitField
 
-	// Power of not-yet-terminated sectors (incl faulty).
+	// Power of not-yet-terminated sectors (incl faulty & unproven).
 	LivePower PowerPair
+	// Power of yet-to-be-proved sectors (never faulty).
+	UnprovenPower PowerPair
 	// Power of currently-faulty sectors. FaultyPower <= LivePower.
 	FaultyPower PowerPair
 	// Power of expected-to-recover sectors. RecoveringPower <= FaultyPower.
@@ -52,12 +59,14 @@ type PowerPair struct {
 func ConstructPartition(emptyArray cid.Cid) *Partition {
 	return &Partition{
 		Sectors:           bitfield.New(),
+		Unproven:          bitfield.New(),
 		Faults:            bitfield.New(),
 		Recoveries:        bitfield.New(),
 		Terminated:        bitfield.New(),
 		ExpirationsEpochs: emptyArray,
 		EarlyTerminated:   emptyArray,
 		LivePower:         NewPowerPairZero(),
+		UnprovenPower:     NewPowerPairZero(),
 		FaultyPower:       NewPowerPairZero(),
 		RecoveringPower:   NewPowerPairZero(),
 	}
@@ -73,13 +82,17 @@ func (p *Partition) LiveSectors() (bitfield.BitField, error) {
 
 }
 
-// Active sectors are those that are neither terminated nor faulty, i.e. actively contributing power.
+// Active sectors are those that are neither terminated nor faulty nor unproven, i.e. actively contributing power.
 func (p *Partition) ActiveSectors() (bitfield.BitField, error) {
 	live, err := p.LiveSectors()
 	if err != nil {
 		return bitfield.BitField{}, err
 	}
-	active, err := bitfield.SubtractBitField(live, p.Faults)
+	nonFaulty, err := bitfield.SubtractBitField(live, p.Faults)
+	if err != nil {
+		return bitfield.BitField{}, xerrors.Errorf("failed to compute active sectors: %w", err)
+	}
+	active, err := bitfield.SubtractBitField(nonFaulty, p.Unproven)
 	if err != nil {
 		return bitfield.BitField{}, xerrors.Errorf("failed to compute active sectors: %w", err)
 	}
@@ -88,13 +101,16 @@ func (p *Partition) ActiveSectors() (bitfield.BitField, error) {
 
 // Active power is power of non-faulty sectors.
 func (p *Partition) ActivePower() PowerPair {
-	return p.LivePower.Sub(p.FaultyPower)
+	return p.LivePower.Sub(p.FaultyPower).Sub(p.UnprovenPower)
 }
 
 // AddSectors adds new sectors to the partition.
 // The sectors are "live", neither faulty, recovering, nor terminated.
+// If proven is true, the sectors are assumed to have already been proven.
 // Each new sector's expiration is scheduled shortly after its target expiration epoch.
-func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
+func (p *Partition) AddSectors(
+	store adt.Store, proven bool, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant QuantSpec,
+) (powerDelta PowerPair, err error) {
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
@@ -118,6 +134,14 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 		return NewPowerPairZero(), xerrors.Errorf("failed to record new sector numbers: %w", err)
 	}
 	p.LivePower = p.LivePower.Add(power)
+	if !proven {
+		p.UnprovenPower = p.UnprovenPower.Add(power)
+		if p.Unproven, err = bitfield.MergeBitFields(p.Unproven, snos); err != nil {
+			return NewPowerPairZero(), xerrors.Errorf("failed to update unproven sectors bitfield: %w", err)
+		}
+		// Only return the power if proven. Otherwise, it'll "go live" on the next window PoSt.
+		return NewPowerPairZero(), nil
+	}
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
 	return power, nil
@@ -127,34 +151,54 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 func (p *Partition) addFaults(
 	store adt.Store, sectorNos bitfield.BitField, sectors []*SectorOnChainInfo, faultExpiration abi.ChainEpoch,
 	ssize abi.SectorSize, quant QuantSpec,
-) (PowerPair, error) {
+) (powerDelta, newFaultyPower PowerPair, err error) {
 	// Load expiration queue
 	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
 
 	// Reschedule faults
-	power, err := queue.RescheduleAsFaults(faultExpiration, sectors, ssize)
+	newFaultyPower, err = queue.RescheduleAsFaults(faultExpiration, sectors, ssize)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to add faults to partition queue: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to add faults to partition queue: %w", err)
 	}
 
 	// Save expiration queue
 	if p.ExpirationsEpochs, err = queue.Root(); err != nil {
-		return NewPowerPairZero(), err
+		return NewPowerPairZero(), NewPowerPairZero(), err
 	}
 
 	// Update partition metadata
 	if p.Faults, err = bitfield.MergeBitFields(p.Faults, sectorNos); err != nil {
-		return NewPowerPairZero(), err
+		return NewPowerPairZero(), NewPowerPairZero(), err
 	}
+
 	// The sectors must not have been previously faulty or recovering.
 	// No change to recoveries or terminations.
+	p.FaultyPower = p.FaultyPower.Add(newFaultyPower)
 
-	p.FaultyPower = p.FaultyPower.Add(power)
+	// Once marked faulty, sectors are moved out of the unproven set.
+	unproven, err := bitfield.IntersectBitField(sectorNos, p.Unproven)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to intersect faulty sector IDs with unproven sector IDs: %w", err)
+	}
+	p.Unproven, err = bitfield.SubtractBitField(p.Unproven, unproven)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to subtract faulty sectors from unproven sector IDs: %w", err)
+	}
+
+	powerDelta = newFaultyPower.Neg()
+	if unprovenInfos, err := selectSectors(sectors, unproven); err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to select unproven sectors: %w", err)
+	} else if len(unprovenInfos) > 0 {
+		lostUnprovenPower := PowerForSectors(ssize, unprovenInfos)
+		p.UnprovenPower = p.UnprovenPower.Sub(lostUnprovenPower)
+		powerDelta = powerDelta.Add(lostUnprovenPower)
+	}
+
 	// No change to live or recovering power.
-	return power, nil
+	return powerDelta, newFaultyPower, nil
 }
 
 // Declares a set of sectors faulty. Already faulty sectors are ignored,
@@ -168,55 +212,56 @@ func (p *Partition) addFaults(
 func (p *Partition) DeclareFaults(
 	store adt.Store, sectors Sectors, sectorNos bitfield.BitField, faultExpirationEpoch abi.ChainEpoch,
 	ssize abi.SectorSize, quant QuantSpec,
-) (newFaults bitfield.BitField, newFaultyPower PowerPair, err error) {
+) (newFaults bitfield.BitField, powerDelta, newFaultyPower PowerPair, err error) {
 	err = validatePartitionContainsSectors(p, sectorNos)
 	if err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed fault declaration: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed fault declaration: %w", err)
 	}
 
 	// Split declarations into declarations of new faults, and retraction of declared recoveries.
 	retractedRecoveries, err := bitfield.IntersectBitField(p.Recoveries, sectorNos)
 	if err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to intersect sectors with recoveries: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to intersect sectors with recoveries: %w", err)
 	}
 
 	newFaults, err = bitfield.SubtractBitField(sectorNos, retractedRecoveries)
 	if err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to subtract recoveries from sectors: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to subtract recoveries from sectors: %w", err)
 	}
 
 	// Ignore any terminated sectors and previously declared or detected faults
 	newFaults, err = bitfield.SubtractBitField(newFaults, p.Terminated)
 	if err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to subtract terminations from faults: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to subtract terminations from faults: %w", err)
 	}
 	newFaults, err = bitfield.SubtractBitField(newFaults, p.Faults)
 	if err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to subtract existing faults from faults: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to subtract existing faults from faults: %w", err)
 	}
 
 	// Add new faults to state.
 	newFaultyPower = NewPowerPairZero()
+	powerDelta = NewPowerPairZero()
 	if newFaultSectors, err := sectors.Load(newFaults); err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to load fault sectors: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load fault sectors: %w", err)
 	} else if len(newFaultSectors) > 0 {
-		newFaultyPower, err = p.addFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, ssize, quant)
+		powerDelta, newFaultyPower, err = p.addFaults(store, newFaults, newFaultSectors, faultExpirationEpoch, ssize, quant)
 		if err != nil {
-			return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to add faults: %w", err)
+			return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to add faults: %w", err)
 		}
 	}
 
 	// Remove faulty recoveries from state.
 	if retractedRecoverySectors, err := sectors.Load(retractedRecoveries); err != nil {
-		return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to load recovery sectors: %w", err)
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load recovery sectors: %w", err)
 	} else if len(retractedRecoverySectors) > 0 {
 		retractedRecoveryPower := PowerForSectors(ssize, retractedRecoverySectors)
 		err = p.removeRecoveries(retractedRecoveries, retractedRecoveryPower)
 		if err != nil {
-			return bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to remove recoveries: %w", err)
+			return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to remove recoveries: %w", err)
 		}
 	}
-	return newFaults, newFaultyPower, nil
+	return newFaults, powerDelta, newFaultyPower, nil
 }
 
 // Removes sector numbers from faults and thus from recoveries.
@@ -254,10 +299,19 @@ func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.Se
 	p.Recoveries = bitfield.New()
 
 	// No change to live power.
+	// No change to unproven sectors.
 	p.FaultyPower = p.FaultyPower.Sub(power)
 	p.RecoveringPower = p.RecoveringPower.Sub(power)
 
 	return power, err
+}
+
+// Activates unproven sectors, returning the activated power.
+func (p *Partition) ActivateUnproven() PowerPair {
+	newPower := p.UnprovenPower
+	p.UnprovenPower = NewPowerPairZero()
+	p.Unproven = bitfield.New()
+	return newPower
 }
 
 // Declares sectors as recovering. Non-faulty and already recovering sectors will be skipped.
@@ -293,6 +347,7 @@ func (p *Partition) DeclareFaultsRecovered(sectors Sectors, ssize abi.SectorSize
 	p.RecoveringPower = p.RecoveringPower.Add(power)
 	// No change to faults, or terminations.
 	// No change to faulty power.
+	// No change to unproven power/sectors.
 	return nil
 }
 
@@ -312,6 +367,7 @@ func (p *Partition) removeRecoveries(sectorNos bitfield.BitField, power PowerPai
 	p.RecoveringPower = p.RecoveringPower.Sub(power)
 	// No change to faults, or terminations.
 	// No change to faulty power.
+	// No change to unproven or unproven power.
 	return nil
 }
 
@@ -367,7 +423,7 @@ func (p *Partition) RescheduleExpirations(
 }
 
 // Replaces a number of "old" sectors with new ones.
-// The old sectors must not be faulty or terminated.
+// The old sectors must not be faulty, terminated, or unproven.
 // If the same sector is both removed and added, this permits rescheduling *with a change in power*,
 // unlike RescheduleExpirations.
 // Returns the delta to power and pledge requirement.
@@ -468,6 +524,11 @@ func (p *Partition) TerminateSectors(
 		return nil, xerrors.Errorf("failed to record early sector termination: %w", err)
 	}
 
+	unprovenNos, err := bitfield.IntersectBitField(removedSectors, p.Unproven)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to determine unproven sectors: %w", err)
+	}
+
 	// Update partition metadata.
 	if p.Faults, err = bitfield.SubtractBitField(p.Faults, removedSectors); err != nil {
 		return nil, xerrors.Errorf("failed to remove terminated sectors from faults: %w", err)
@@ -478,18 +539,39 @@ func (p *Partition) TerminateSectors(
 	if p.Terminated, err = bitfield.MergeBitFields(p.Terminated, removedSectors); err != nil {
 		return nil, xerrors.Errorf("failed to add terminated sectors: %w", err)
 	}
+	if p.Unproven, err = bitfield.SubtractBitField(p.Unproven, unprovenNos); err != nil {
+		return nil, xerrors.Errorf("failed to remove unproven sectors: %w", err)
+	}
 
 	p.LivePower = p.LivePower.Sub(removed.ActivePower).Sub(removed.FaultyPower)
 	p.FaultyPower = p.FaultyPower.Sub(removed.FaultyPower)
 	p.RecoveringPower = p.RecoveringPower.Sub(removedRecovering)
+	if unprovenInfos, err := selectSectors(sectorInfos, unprovenNos); err != nil {
+		return nil, xerrors.Errorf("failed to select unproven sectors: %w", err)
+	} else {
+		removedUnprovenPower := PowerForSectors(ssize, unprovenInfos)
+		p.UnprovenPower = p.UnprovenPower.Sub(removedUnprovenPower)
+		removed.ActivePower = removed.ActivePower.Sub(removedUnprovenPower)
+	}
 
 	return removed, nil
 }
 
 // PopExpiredSectors traverses the expiration queue up to and including some epoch, and marks all expiring
 // sectors as terminated.
+//
+// This cannot be called while there are unproven sectors.
+//
 // Returns the expired sector aggregates.
 func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*ExpirationSet, error) {
+	// This is a sanity check to make sure we handle proofs _before_
+	// handling sector expirations.
+	if noUnproven, err := p.Unproven.IsEmpty(); err != nil {
+		return nil, xerrors.Errorf("failed to determine if partition has unproven sectors: %w", err)
+	} else if !noUnproven {
+		return nil, xerrors.Errorf("cannot pop expired sectors from a partition with unproven sectors: %w", err)
+	}
+
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load expiration queue: %w", err)
@@ -549,37 +631,47 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 
 // Marks all non-faulty sectors in the partition as faulty and clears recoveries, updating power memos appropriately.
 // All sectors' expirations are rescheduled to the fault expiration, as "early" (if not expiring earlier)
-// Returns the power of the newly faulty and failed recovery sectors.
-func (p *Partition) RecordMissedPost(store adt.Store, faultExpiration abi.ChainEpoch, quant QuantSpec) (newFaultPower, failedRecoveryPower PowerPair, err error) {
+// Returns the power delta, power that should be penalized, and newly faulty power.
+func (p *Partition) RecordMissedPost(
+	store adt.Store, faultExpiration abi.ChainEpoch, quant QuantSpec,
+) (powerDelta, penalizedPower, newFaultyPower PowerPair, err error) {
 	// Collapse tail of queue into the last entry, and mark all power faulty.
 	// Load expiration queue
 	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to load partition queue: %w", err)
 	}
 	if err = queue.RescheduleAllAsFaults(faultExpiration); err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to reschedule all as faults: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to reschedule all as faults: %w", err)
 	}
 	// Save expiration queue
 	if p.ExpirationsEpochs, err = queue.Root(); err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), err
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), err
 	}
 
-	// Compute faulty power for penalization. New faulty power is the total power minus already faulty.
-	newFaultPower = p.LivePower.Sub(p.FaultyPower)
-	failedRecoveryPower = p.RecoveringPower
+	// Compute power changes.
+
+	// New faulty power is the total power minus already faulty.
+	newFaultyPower = p.LivePower.Sub(p.FaultyPower)
+	// Penalized power is the newly faulty power, plus the failed recovery power.
+	penalizedPower = p.RecoveringPower.Add(newFaultyPower)
+	// The power delta is -(newFaultyPower-unproven), because unproven power
+	// was never activated in the first place.
+	powerDelta = newFaultyPower.Sub(p.UnprovenPower).Neg()
 
 	// Update partition metadata
 	allFaults, err := p.LiveSectors()
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), err
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), err
 	}
 	p.Faults = allFaults
 	p.Recoveries = bitfield.New()
+	p.Unproven = bitfield.New()
 	p.FaultyPower = p.LivePower
 	p.RecoveringPower = NewPowerPairZero()
+	p.UnprovenPower = NewPowerPairZero()
 
-	return newFaultPower, failedRecoveryPower, nil
+	return powerDelta, penalizedPower, newFaultyPower, nil
 }
 
 func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {
@@ -669,61 +761,61 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 // - Skipped faults that are already declared (but not delcared recovered) are ignored.
 func (p *Partition) RecordSkippedFaults(
 	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch, skipped bitfield.BitField,
-) (newFaultPower, retractedRecoveryPower PowerPair, err error) {
+) (powerDelta, newFaultPower, retractedRecoveryPower PowerPair, err error) {
 	empty, err := skipped.IsEmpty()
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed to check if skipped sectors is empty: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed to check if skipped sectors is empty: %w", err)
 	}
 	if empty {
-		return NewPowerPairZero(), NewPowerPairZero(), nil
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), nil
 	}
 
 	// Check that the declared sectors are actually in the partition.
 	contains, err := abi.BitFieldContainsAll(p.Sectors, skipped)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if skipped faults are in partition: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if skipped faults are in partition: %w", err)
 	} else if !contains {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("skipped faults contains sectors outside partition")
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("skipped faults contains sectors outside partition")
 	}
 
 	// Find all skipped faults that have been labeled recovered
 	retractedRecoveries, err := bitfield.IntersectBitField(p.Recoveries, skipped)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
 	}
 	retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
 	}
 	retractedRecoveryPower = PowerForSectors(ssize, retractedRecoverySectors)
 
 	// Ignore skipped faults that are already faults or terminated.
 	newFaults, err := bitfield.SubtractBitField(skipped, p.Terminated)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract terminations from skipped: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract terminations from skipped: %w", err)
 	}
 	newFaults, err = bitfield.SubtractBitField(newFaults, p.Faults)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract existing faults from skipped: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract existing faults from skipped: %w", err)
 	}
 	newFaultSectors, err := sectors.Load(newFaults)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
 	}
 
 	// Record new faults
-	newFaultPower, err = p.addFaults(store, newFaults, newFaultSectors, faultExpiration, ssize, quant)
+	powerDelta, newFaultPower, err = p.addFaults(store, newFaults, newFaultSectors, faultExpiration, ssize, quant)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to add skipped faults: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to add skipped faults: %w", err)
 	}
 
 	// Remove faulty recoveries
 	err = p.removeRecoveries(retractedRecoveries, retractedRecoveryPower)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
 	}
 
-	return newFaultPower, retractedRecoveryPower, nil
+	return powerDelta, newFaultPower, retractedRecoveryPower, nil
 }
 
 //

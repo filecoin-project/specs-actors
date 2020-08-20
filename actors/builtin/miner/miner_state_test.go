@@ -646,9 +646,11 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
+		sectorArr := sectorsArr(t, harness.store, sectorInfos)
+
 		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, partitionSectors, sectorSize)
 		require.NoError(t, err)
-		require.True(t, newPower.Equals(miner.PowerForSectors(sectorSize, sectorInfos)))
+		require.True(t, newPower.IsZero())
 
 		dls, err := harness.s.LoadDeadlines(harness.store)
 		require.NoError(t, err)
@@ -662,17 +664,43 @@ func TestSectorAssignment(t *testing.T) {
 			}
 
 			var partitions []bitfield.BitField
+			var postPartitions []miner.PoStPartition
 			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
 				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
-				bf := seq(t, start, partitionSectors)
-				partitions = append(partitions, bf)
+				partBf := seq(t, start, partitionSectors)
+				partitions = append(partitions, partBf)
+				postPartitions = append(postPartitions, miner.PoStPartition{
+					Index:   i,
+					Skipped: bf(),
+				})
 			}
+			allSectorBf, err := bitfield.MultiMerge(partitions...)
+			require.NoError(t, err)
+			allSectorNos, err := allSectorBf.All(uint64(noSectors))
+			require.NoError(t, err)
+
 			dlState.withQuantSpec(quantSpec).
+				withUnproven(allSectorNos...).
 				withPartitions(partitions...).
 				assert(t, harness.store, dl)
 
+			// Now make sure proving activates power.
+
+			result, err := dl.RecordProvenSectors(harness.store, sectorArr, sectorSize, quantSpec, 0, postPartitions)
+			require.NoError(t, err)
+
+			expectedPowerDelta := miner.PowerForSectors(sectorSize, selectSectors(t, sectorInfos, allSectorBf))
+
+			assertBitfieldsEqual(t, allSectorBf, result.Sectors)
+			assertBitfieldEmpty(t, result.IgnoredSectors)
+			assert.True(t, result.NewFaultyPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.PowerDelta.Equals(expectedPowerDelta))
+			assert.True(t, result.RecoveredPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
 			return nil
 		}))
+
+		// Now prove and activate/check power.
 	})
 }
 

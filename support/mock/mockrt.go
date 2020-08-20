@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	goruntime "runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -15,6 +16,8 @@ import (
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -328,10 +331,23 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params run
 	exp := rt.expectSends[0]
 
 	if !exp.Equal(toAddr, methodNum, params, value) {
+		toName := "unknown"
+		toMeth := "unknown"
+		expToName := "unknown"
+		expToMeth := "unknown"
+		if code, ok := rt.GetActorCodeCID(toAddr); ok && builtin.IsBuiltinActor(code) {
+			toName = builtin.ActorNameByCode(code)
+			toMeth = getMethodName(code, methodNum)
+		}
+		if code, ok := rt.GetActorCodeCID(exp.to); ok && builtin.IsBuiltinActor(code) {
+			expToName = builtin.ActorNameByCode(code)
+			expToMeth = getMethodName(code, exp.method)
+		}
+
 		rt.failTestNow("unexpected send\n"+
-			"          to: %s method: %d value: %v params: %v\n"+
-			"Expected  to: %s method: %d value: %v params: %v",
-			toAddr, methodNum, value, params, exp.to, exp.method, exp.value, exp.params)
+			"          to: %s (%s) method: %d (%s) value: %v params: %v\n"+
+			"Expected  to: %s (%s) method: %d (%s) value: %v params: %v",
+			toAddr, toName, methodNum, toMeth, value, params, exp.to, expToName, exp.method, expToMeth, exp.value, exp.params)
 	}
 
 	if value.GreaterThan(rt.balance) {
@@ -1096,4 +1112,25 @@ func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
 	}
 	err = o.UnmarshalCBOR(&b)
 	return err
+}
+
+func getMethodName(code cid.Cid, num abi.MethodNum) string {
+	for _, actor := range exported.BuiltinActors() {
+		if actor.Code().Equals(code) {
+			exports := actor.Exports()
+			if len(exports) <= int(num) {
+				return "<invalid>"
+			}
+			meth := exports[num]
+			if meth == nil {
+				return "<invalid>"
+			}
+			name := goruntime.FuncForPC(reflect.ValueOf(meth).Pointer()).Name()
+			name = strings.TrimSuffix(name, "-fm")
+			lastDot := strings.LastIndexByte(name, '.')
+			name = name[lastDot+1:]
+			return name
+		}
+	}
+	return "<unknown actor>"
 }
