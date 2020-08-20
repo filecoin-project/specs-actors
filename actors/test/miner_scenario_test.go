@@ -58,7 +58,7 @@ func TestCommitPoStFlow(t *testing.T) {
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
 		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxSealDuration[sealProof] + 100,
+		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
 	}
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 	require.Equal(t, exitcode.Ok, code)
@@ -87,7 +87,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	require.True(t, found)
 
 	// advance time to max seal duration
-	proveTime := v.GetEpoch() + miner.MaxSealDuration[sealProof]
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
 	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
@@ -174,7 +174,6 @@ func TestCommitPoStFlow(t *testing.T) {
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ActivateDeals},
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
 				}},
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
@@ -188,9 +187,9 @@ func TestCommitPoStFlow(t *testing.T) {
 	assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
 	assert.Equal(t, big.Zero(), balances.PreCommitDeposit)
 
-	// bytes and collateral are reflected in power actor
+	// power is unproven so network stats are unchanged
 	networkStats := vm.GetNetworkStats(t, v)
-	assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
+	assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 
 	//
@@ -226,11 +225,16 @@ func TestCommitPoStFlow(t *testing.T) {
 			Proofs: []abi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
-			ChainCommitEpoch: tv.GetEpoch() - 1,
-			ChainCommitRand:  []byte("not really random"),
+			ChainCommitRand: []byte("not really random"),
 		}
 		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		require.Equal(t, exitcode.Ok, code)
+
+		sectorPower := miner.PowerForSector(sectorSize, sector)
+		updatePowerParams := &power.UpdateClaimedPowerParams{
+			RawByteDelta:         sectorPower.Raw,
+			QualityAdjustedDelta: sectorPower.QA,
+		}
 
 		vm.ExpectInvocation{
 			To:     minerAddrs.IDAddress,
@@ -239,15 +243,21 @@ func TestCommitPoStFlow(t *testing.T) {
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+				// This call to the power actor indicates power has been added for the sector
+				{
+					To:     builtin.StoragePowerActorAddr,
+					Method: builtin.MethodsPower.UpdateClaimedPower,
+					Params: vm.ExpectObject(updatePowerParams),
+				},
 			},
 		}.Matches(t, tv.Invocations()[0])
 
 		// miner still has initial pledge
-		balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+		balances = vm.GetMinerBalances(t, tv, minerAddrs.IDAddress)
 		assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
 
 		// committed bytes are added (miner would have gained power if minimum requirement were met)
-		networkStats := vm.GetNetworkStats(t, v)
+		networkStats := vm.GetNetworkStats(t, tv)
 		assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
 		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 	})
@@ -266,17 +276,10 @@ func TestCommitPoStFlow(t *testing.T) {
 			Proofs: []abi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
-			ChainCommitEpoch: tv.GetEpoch() - 1,
-			ChainCommitRand:  []byte("not really random"),
+			ChainCommitRand: []byte("not really random"),
 		}
 		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		require.Equal(t, exitcode.Ok, code)
-
-		sectorPower := miner.PowerForSector(sectorSize, sector)
-		updatePowerParams := &power.UpdateClaimedPowerParams{
-			RawByteDelta:         sectorPower.Raw.Neg(),
-			QualityAdjustedDelta: sectorPower.QA.Neg(),
-		}
 
 		vm.ExpectInvocation{
 			To:     minerAddrs.IDAddress,
@@ -285,13 +288,6 @@ func TestCommitPoStFlow(t *testing.T) {
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-
-				// This call to the power actor indicates power has been removed for the sector
-				{
-					To:     builtin.StoragePowerActorAddr,
-					Method: builtin.MethodsPower.UpdateClaimedPower,
-					Params: vm.ExpectObject(updatePowerParams),
-				},
 				// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
 				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 			},
@@ -300,6 +296,11 @@ func TestCommitPoStFlow(t *testing.T) {
 		// miner still has initial pledge
 		balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 		assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
+
+		// network power is unchanged
+		networkStats := vm.GetNetworkStats(t, tv)
+		assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
+		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 	})
 
 	t.Run("missed first PoSt deadline", func(t *testing.T) {
@@ -311,14 +312,6 @@ func TestCommitPoStFlow(t *testing.T) {
 		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 		require.Equal(t, exitcode.Ok, code)
 
-		sectorSize, err := sector.SealProof.SectorSize()
-		require.NoError(t, err)
-		sectorPower := miner.PowerForSector(sectorSize, sector)
-		updatePowerParams := &power.UpdateClaimedPowerParams{
-			RawByteDelta:         sectorPower.Raw.Neg(),
-			QualityAdjustedDelta: sectorPower.QA.Neg(),
-		}
-
 		vm.ExpectInvocation{
 			To:     builtin.CronActorAddr,
 			Method: builtin.MethodsCron.EpochTick,
@@ -328,12 +321,6 @@ func TestCommitPoStFlow(t *testing.T) {
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 
-						// This call to the power actor indicates power has been removed for the sector
-						{
-							To:     builtin.StoragePowerActorAddr,
-							Method: builtin.MethodsPower.UpdateClaimedPower,
-							Params: vm.ExpectObject(updatePowerParams),
-						},
 						// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
 						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 
@@ -344,5 +331,10 @@ func TestCommitPoStFlow(t *testing.T) {
 				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
 			},
 		}.Matches(t, tv.Invocations()[0])
+
+		// network power is unchanged
+		networkStats := vm.GetNetworkStats(t, tv)
+		assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
+		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 	})
 }
