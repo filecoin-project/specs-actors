@@ -1490,10 +1490,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		// Only the owner is allowed to withdraw the balance as it belongs to/is controlled by the owner
 		// and not the worker.
 		rt.ValidateImmediateCallerIs(info.Owner)
-		// No withdraw during consensus fault period
-		if ConsensusFaultActive(info, rt.CurrEpoch()) {
-			rt.Abortf(exitcode.ErrForbidden, "withdrawal not allowed during active consensus fault")
-		}
+
 		// Ensure we don't have any pending terminations.
 		if count, err := st.EarlyTerminations.Count(); err != nil {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")

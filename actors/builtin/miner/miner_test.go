@@ -634,13 +634,8 @@ func TestCommitments(t *testing.T) {
 
 		// Try to precommit with an active consensus fault
 		st = getState(rt)
-		params := &miner.ReportConsensusFaultParams{
-			BlockHeader1:     nil,
-			BlockHeader2:     nil,
-			BlockHeaderExtra: nil,
-		}
 
-		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		actor.reportConsensusFault(rt, addr.TestAddress)
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "precommit not allowed during active consensus fault", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
 		})
@@ -1763,13 +1758,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// consensus fault
-		params := &miner.ReportConsensusFaultParams{
-			BlockHeader1:     nil,
-			BlockHeader2:     nil,
-			BlockHeaderExtra: nil,
-		}
-
-		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		actor.reportConsensusFault(rt, addr.TestAddress)
 
 		// advance to first proving period and submit so we'll have time to declare the fault next cycle
 		advanceAndSubmitPoSts(rt, actor, oneSector...)
@@ -2223,30 +2212,6 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 		})
-	})
-
-	t.Run("fails if miner has an active consensus fault", func(t *testing.T) {
-		rt := builder.Build(t)
-		actor.constructAndVerify(rt)
-		currEpoch := abi.ChainEpoch(500_000)
-		rt.SetEpoch(currEpoch)
-
-		// st := getState(rt)
-		// info := st.GetInfo(rt.AdtStore())
-		// info.ConsensusFaultElapsed = currEpoch + abi.ChainEpoch(1)
-		// st.SaveInfo(rt.AdtStore, info)
-		params := &miner.ReportConsensusFaultParams{
-			BlockHeader1:     nil,
-			BlockHeader2:     nil,
-			BlockHeaderExtra: nil,
-		}
-
-		actor.reportConsensusFault(rt, addr.TestAddress, params)
-
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
-		})
-
 	})
 
 	t.Run("fails if miner can't repay fee debt", func(t *testing.T) {
@@ -2718,13 +2683,7 @@ func TestReportConsensusFault(t *testing.T) {
 		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
 		_ = sectorInfo
 
-		params := &miner.ReportConsensusFaultParams{
-			BlockHeader1:     nil,
-			BlockHeader2:     nil,
-			BlockHeaderExtra: nil,
-		}
-
-		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		actor.reportConsensusFault(rt, addr.TestAddress)
 	})
 
 	t.Run("Report consensus fault updates consensus fault reported field", func(t *testing.T) {
@@ -2741,13 +2700,8 @@ func TestReportConsensusFault(t *testing.T) {
 
 		reportEpoch := abi.ChainEpoch(333)
 		rt.SetEpoch(reportEpoch)
-		params := &miner.ReportConsensusFaultParams{
-			BlockHeader1:     nil,
-			BlockHeader2:     nil,
-			BlockHeaderExtra: nil,
-		}
 
-		actor.reportConsensusFault(rt, addr.TestAddress, params)
+		actor.reportConsensusFault(rt, addr.TestAddress)
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
@@ -3747,9 +3701,14 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitFi
 	rt.Verify()
 }
 
-func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, params *miner.ReportConsensusFaultParams) {
+func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address) {
 	rt.SetCaller(from, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+	params := &miner.ReportConsensusFaultParams{
+		BlockHeader1:     nil,
+		BlockHeader2:     nil,
+		BlockHeaderExtra: nil,
+	}
 
 	rt.ExpectVerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, &runtime.ConsensusFault{
 		Target: h.receiver,
