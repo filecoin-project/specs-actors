@@ -242,6 +242,8 @@ func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *miner.Deadli
 	return minerState.DeadlineInfo(v.GetEpoch())
 }
 
+// AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
+// miner state upu-to-date by running a cron at the end of each deadline period.
 func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *miner.DeadlineInfo) {
 	dlInfo := MinerDLInfo(t, v, minerIDAddr)
 	var err error
@@ -257,12 +259,16 @@ func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predica
 	return v, dlInfo
 }
 
+// Advances by deadline until e is contained within the deadline period represented by the returned deadline info.
+// The VM returned will be set to the last deadline close, not at e.
 func AdvanceByDeadlineTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
 	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
 		return dlInfo.Close <= e
 	})
 }
 
+// Advances by deadline until the deadline index matches the given index.
+// The vm returned will be set to the close epoch of the previous deadline.
 func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *miner.DeadlineInfo) {
 	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
 		return dlInfo.Index != i
