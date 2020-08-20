@@ -421,7 +421,7 @@ func TestCommitments(t *testing.T) {
 
 		qaPower = miner.QAPowerForWeight(sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight,
 			onChainPrecommit.VerifiedDealWeight)
-		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth,
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth,
 			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
@@ -3340,8 +3340,8 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 				qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, duration, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
 				expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
-				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge,
-					h.epochRewardSmooth, h.epochQAPowerSmooth, rt.TotalFilCircSupply())
+				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.epochRewardSmooth,
+					h.epochQAPowerSmooth, rt.TotalFilCircSupply())
 				expectPledge = big.Add(expectPledge, pledge)
 			}
 		}

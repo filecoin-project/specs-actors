@@ -9,11 +9,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
-// IP = IPBase(precommit time) + AdditionalIP(precommit time)
-// IPBase(t) = BR(t, InitialPledgeProjectionPeriod)
-// AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
-// LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
-// PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
 // PARAM_FINISH
 var PreCommitDepositFactor = 20
 var InitialPledgeFactor = 20
@@ -38,7 +33,7 @@ const TerminationLifetimeCap = abi.ChainEpoch(70)
 const ConsensusFaultFactor = 5
 
 // This is the BR(t) value of the given sector for the current epoch.
-// It is the expected reward this sector would pay out over a one day period.
+// It is the expected reward this sector would pay out over a t-day period.
 // BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
 func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
 	networkQAPowerSmoothed := networkQAPowerEstimate.Estimate()
@@ -92,23 +87,30 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 				big.NewInt(builtin.EpochsInDay)))) // (epochs*AttoFIL/day -> AttoFIL)
 }
 
-// Computes the PreCommit Deposit given sector qa weight and current network conditions.
-// PreCommit Deposit = 20 * BR(t)
+// Computes the PreCommit deposit given sector qa weight and current network conditions.
+// PreCommit Deposit = BR(PreCommitDepositProjectionPeriod)
 func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, PreCommitDepositProjectionPeriod)
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
-// total power, total pledge commitment, epoch block reward, and circulating token supply.
-// In plain language, the pledge requirement is a multiple of the block reward expected to be earned by the
-// newly-committed power, holding the per-epoch block reward constant (though in reality it will change over time).
-func InitialPledgeForPower(qaPower abi.StoragePower, baselinePower abi.StoragePower, networkTotalPledge abi.TokenAmount, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, networkCirculatingSupplySmoothed abi.TokenAmount) abi.TokenAmount {
-	networkQAPower := networkQAPowerEstimate.Estimate()
+// network total and baseline power, per-epoch  reward, and circulating token supply.
+// The pledge comprises two parts:
+// - storage pledge, aka IP base: a multiple of the reward expected to be earned by newly-committed power
+// - pledge share, aka additional IP: a pro-rata fraction of the circulating money supply
+//
+// IP = IPBase(t) + AdditionalIP(t)
+// IPBase(t) = BR(t, InitialPledgeProjectionPeriod)
+// AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
+// LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
+// PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
+func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, circulatingSupply abi.TokenAmount) abi.TokenAmount {
 	ipBase := ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaPower, InitialPledgeProjectionPeriod)
 
-	lockTargetNum := big.Mul(LockTargetFactorNum, networkCirculatingSupplySmoothed)
+	lockTargetNum := big.Mul(LockTargetFactorNum, circulatingSupply)
 	lockTargetDenom := LockTargetFactorDenom
 	pledgeShareNum := qaPower
+	networkQAPower := networkQAPowerEstimate.Estimate()
 	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
 	additionalIPNum := big.Mul(lockTargetNum, pledgeShareNum)
 	additionalIPDenom := big.Mul(lockTargetDenom, pledgeShareDenom)
