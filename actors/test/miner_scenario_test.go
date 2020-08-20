@@ -14,6 +14,7 @@ import (
 	vm "github.com/filecoin-project/specs-actors/support/vm"
 
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,8 +24,6 @@ func TestCommitPoStFlow(t *testing.T) {
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
-	sectorNumber := abi.SectorNumber(100)
-	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
 
 	// create miner
@@ -47,6 +46,11 @@ func TestCommitPoStFlow(t *testing.T) {
 	//
 	// precommit sector
 	//
+
+	sectorNumber := abi.SectorNumber(100)
+	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
+	sectorSize, err := sealProof.SectorSize()
+	require.NoError(t, err)
 
 	preCommitParams := miner.SectorPreCommitInfo{
 		SealProof:     sealProof,
@@ -71,6 +75,9 @@ func TestCommitPoStFlow(t *testing.T) {
 			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.VerifyDealsForActivation}},
 	}.Matches(t, v.Invocations()[0])
 
+	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
+
 	// find information about precommited sector
 	var minerState miner.State
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
@@ -82,7 +89,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.MaxSealDuration[sealProof]
-	v, dlInfo := vm.AdvanceTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
 	// overdue precommit
@@ -90,7 +97,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	t.Run("missed prove commit results in precommit expiry", func(t *testing.T) {
 		// advanced one more deadline so precommit is late
-		tv, _ := v.WithEpoch(dlInfo.Close)
+		tv, err := v.WithEpoch(dlInfo.Close)
 		require.NoError(t, err)
 
 		// run cron which should expire precommit
@@ -117,6 +124,18 @@ func TestCommitPoStFlow(t *testing.T) {
 				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
 			},
 		}.Matches(t, tv.Invocations()[0])
+
+		// precommit deposit has been reset
+		balances := vm.GetMinerBalances(t, tv, minerAddrs.IDAddress)
+		assert.Equal(t, big.Zero(), balances.InitialPledge)
+		assert.Equal(t, big.Zero(), balances.PreCommitDeposit)
+
+		// no power is added
+		networkStats := vm.GetNetworkStats(t, tv)
+		assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
+		assert.Equal(t, big.Zero(), networkStats.TotalPledgeCollateral)
+		assert.Equal(t, big.Zero(), networkStats.TotalRawBytePower)
+		assert.Equal(t, big.Zero(), networkStats.TotalQualityAdjPower)
 	})
 
 	//
@@ -168,6 +187,16 @@ func TestCommitPoStFlow(t *testing.T) {
 		},
 	}.Matches(t, v.Invocations()[1])
 
+	// precommit deposit is released, ipr is added
+	balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
+	assert.Equal(t, big.Zero(), balances.PreCommitDeposit)
+
+	// bytes and collateral are reflected in power actor
+	networkStats := vm.GetNetworkStats(t, v)
+	assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
+	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
+
 	//
 	// Submit PoSt
 	//
@@ -183,7 +212,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	require.True(t, found)
 
 	// advance time to next proving period
-	v, dlInfo = vm.AdvanceTillIndex(t, v, minerAddrs.IDAddress, dlIdx)
+	v, dlInfo = vm.AdvanceByDeadlineTillIndex(t, v, minerAddrs.IDAddress, dlIdx)
 	v, err = v.WithEpoch(dlInfo.Open)
 	require.NoError(t, err)
 
@@ -217,6 +246,15 @@ func TestCommitPoStFlow(t *testing.T) {
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			},
 		}.Matches(t, tv.Invocations()[0])
+
+		// miner still has initial pledge
+		balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+		assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
+
+		// committed bytes are added (miner would have gained power if minimum requirement were met)
+		networkStats := vm.GetNetworkStats(t, v)
+		assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
+		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 	})
 
 	t.Run("skip sector", func(t *testing.T) {
@@ -239,8 +277,6 @@ func TestCommitPoStFlow(t *testing.T) {
 		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		require.Equal(t, exitcode.Ok, code)
 
-		sectorSize, err := sector.SealProof.SectorSize()
-		require.NoError(t, err)
 		sectorPower := miner.PowerForSector(sectorSize, sector)
 		updatePowerParams := &power.UpdateClaimedPowerParams{
 			RawByteDelta:         sectorPower.Raw.Neg(),
@@ -266,6 +302,10 @@ func TestCommitPoStFlow(t *testing.T) {
 				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 			},
 		}.Matches(t, tv.Invocations()[0])
+
+		// miner still has initial pledge
+		balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+		assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
 	})
 
 	t.Run("missed first PoSt deadline", func(t *testing.T) {

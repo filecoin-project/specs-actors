@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"testing"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -233,12 +234,17 @@ func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 
 type advanceDeadlinePredicate func(dlInfo *miner.DeadlineInfo) bool
 
-func AdvanceByMinerDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *miner.DeadlineInfo) {
+func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *miner.DeadlineInfo {
 	var minerState miner.State
 	err := v.GetState(minerIDAddr, &minerState)
 	require.NoError(t, err)
 
-	dlInfo := minerState.DeadlineInfo(v.GetEpoch())
+	return minerState.DeadlineInfo(v.GetEpoch())
+}
+
+func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *miner.DeadlineInfo) {
+	dlInfo := MinerDLInfo(t, v, minerIDAddr)
+	var err error
 	for predicate(dlInfo) {
 		v, err = v.WithEpoch(dlInfo.Last())
 		require.NoError(t, err)
@@ -246,24 +252,94 @@ func AdvanceByMinerDeadline(t *testing.T, v *VM, minerIDAddr address.Address, pr
 		_, code := v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 		require.Equal(t, exitcode.Ok, code)
 
-		err = v.GetState(minerIDAddr, &minerState)
-		require.NoError(t, err)
-
-		dlInfo = minerState.DeadlineInfo(v.GetEpoch())
+		dlInfo = MinerDLInfo(t, v, minerIDAddr)
 	}
 	return v, dlInfo
 }
 
-func AdvanceTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
-	return AdvanceByMinerDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+func AdvanceByDeadlineTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
 		return dlInfo.Close <= e
 	})
 }
 
-func AdvanceTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *miner.DeadlineInfo) {
-	return AdvanceByMinerDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *miner.DeadlineInfo) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
 		return dlInfo.Index != i
 	})
+}
+
+//
+// state abstraction
+//
+
+type MinerBalances struct {
+	AvailableBalance abi.TokenAmount
+	VestingBalance   abi.TokenAmount
+	InitialPledge    abi.TokenAmount
+	PreCommitDeposit abi.TokenAmount
+}
+
+func GetMinerBalances(t *testing.T, vm *VM, minerIdAddr address.Address) MinerBalances {
+	var state miner.State
+	a, found, err := vm.GetActor(minerIdAddr)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	err = vm.GetState(minerIdAddr, &state)
+	require.NoError(t, err)
+
+	return MinerBalances{
+		AvailableBalance: big.Subtract(a.Balance, state.PreCommitDeposits, state.InitialPledgeRequirement, state.InitialPledgeRequirement, state.FeeDebt),
+		PreCommitDeposit: state.PreCommitDeposits,
+		VestingBalance:   state.LockedFunds,
+		InitialPledge:    state.InitialPledgeRequirement,
+	}
+}
+
+type NetworkStats struct {
+	power.State
+	TotalRawBytePower         abi.StoragePower
+	TotalBytesCommitted       abi.StoragePower
+	TotalQualityAdjPower      abi.StoragePower
+	TotalQABytesCommitted     abi.StoragePower
+	TotalPledgeCollateral     abi.TokenAmount
+	ThisEpochRawBytePower     abi.StoragePower
+	ThisEpochQualityAdjPower  abi.StoragePower
+	ThisEpochPledgeCollateral abi.TokenAmount
+	MinerCount                int64
+	MinerAboveMinPowerCount   int64
+	ThisEpochReward           abi.TokenAmount
+	ThisEpochRewardSmoothed   *smoothing.FilterEstimate
+	ThisEpochBaselinePower    abi.StoragePower
+	TotalMined                abi.TokenAmount
+}
+
+func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
+	var powerState power.State
+	err := vm.GetState(builtin.StoragePowerActorAddr, &powerState)
+	require.NoError(t, err)
+
+	var rewardState reward.State
+	err = vm.GetState(builtin.RewardActorAddr, &rewardState)
+	require.NoError(t, err)
+
+	return NetworkStats{
+		TotalRawBytePower:         powerState.TotalRawBytePower,
+		TotalBytesCommitted:       powerState.TotalBytesCommitted,
+		TotalQualityAdjPower:      powerState.TotalQualityAdjPower,
+		TotalQABytesCommitted:     powerState.TotalQABytesCommitted,
+		TotalPledgeCollateral:     powerState.TotalPledgeCollateral,
+		ThisEpochRawBytePower:     powerState.ThisEpochRawBytePower,
+		ThisEpochQualityAdjPower:  powerState.ThisEpochQualityAdjPower,
+		ThisEpochPledgeCollateral: powerState.ThisEpochPledgeCollateral,
+		MinerCount:                powerState.MinerCount,
+		MinerAboveMinPowerCount:   powerState.MinerAboveMinPowerCount,
+		ThisEpochReward:           rewardState.ThisEpochReward,
+		ThisEpochRewardSmoothed:   rewardState.ThisEpochRewardSmoothed,
+		ThisEpochBaselinePower:    rewardState.ThisEpochBaselinePower,
+		TotalMined:                rewardState.TotalMined,
+	}
 }
 
 //
