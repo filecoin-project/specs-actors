@@ -707,6 +707,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
 	for _, precommit := range precommittedSectors {
+		if len(precommit.Info.DealIDs) == 0 {
+			continue
+		}
+
 		// Check (and activate) storage deals associated to sector. Abort if checks failed.
 		// TODO: we should batch these calls...
 		// https://github.com/filecoin-project/specs-actors/issues/474

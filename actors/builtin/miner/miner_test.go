@@ -383,7 +383,7 @@ func TestCommitments(t *testing.T) {
 		// Use the max sector number to make sure everything works.
 		sectorNo := abi.SectorNumber(abi.MaxSectorNumber)
 		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
 		actor.preCommitSector(rt, precommit)
 
 		// assert precommit exists and meets expectations
@@ -490,7 +490,7 @@ func TestCommitments(t *testing.T) {
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, []abi.DealID{1}))
 		})
 	})
 
@@ -511,7 +511,7 @@ func TestCommitments(t *testing.T) {
 		st.FeeDebt = abi.NewTokenAmount(9999)
 		rt.ReplaceState(st)
 
-		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, []abi.DealID{1}))
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
 	})
@@ -527,7 +527,7 @@ func TestCommitments(t *testing.T) {
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
 
-		oldSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
+		oldSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, [][]abi.DealID{{1}})[0]
 
 		// Good commitment.
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
@@ -656,7 +656,7 @@ func TestCommitments(t *testing.T) {
 
 		// Commit a sector to upgrade
 		// Use the max sector number to make sure everything works.
-		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
+		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, []abi.DealID{100})
 
 		// advance cron to activate power.
 		advanceAndSubmitPoSts(rt, actor, oldSector)
@@ -877,7 +877,7 @@ func TestCommitments(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
 		actor.preCommitSector(rt, precommit)
 
 		// Sector pre-commitment missing.
@@ -945,7 +945,7 @@ func TestCommitments(t *testing.T) {
 		deadline := actor.deadline(rt)
 
 		sectorNo := abi.SectorNumber(100)
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
 		actor.preCommitSector(rt, precommit)
 
 		// precommit at correct epoch
@@ -3312,6 +3312,10 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	var validPrecommits []*miner.SectorPreCommitInfo
 	var allSectorNumbers []abi.SectorNumber
 	for _, precommit := range precommits {
+		if len(precommit.DealIDs) == 0 {
+			continue
+		}
+
 		allSectorNumbers = append(allSectorNumbers, precommit.SectorNumber)
 
 		vdParams := market.ActivateDealsParams{
