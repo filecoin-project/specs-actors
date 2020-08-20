@@ -10,7 +10,6 @@ require (
 	github.com/gopherjs/gopherjs v0.0.0-20190812055157-5d271430af9f // indirect
 	github.com/ipfs/go-block-format v0.0.2
 	github.com/ipfs/go-cid v0.0.7
-	github.com/ipfs/go-hamt-ipld v0.1.1
 	github.com/ipfs/go-ipld-cbor v0.0.4
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
 	github.com/minio/sha256-simd v0.1.1
@@ -23,5 +22,6 @@ require (
 	github.com/warpfork/go-wish v0.0.0-20190328234359-8b3e70f8e830 // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20200812213548-958ddffe352c
 	github.com/xorcare/golden v0.6.0
+	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )
