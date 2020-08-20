@@ -513,8 +513,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		feeToBurn = VerifyPledgeRequirementsAndRepayDebts(rt, &st)
 
 		info := getMinerInfo(rt, &st)
-
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+
+		if ConsensusFaultActive(info, rt.CurrEpoch()) {
+			rt.Abortf(exitcode.ErrForbidden, "precommit not allowed during active consensus fault")
+		}
 
 		if params.SealProof != info.SealProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
@@ -1229,6 +1232,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+		if ConsensusFaultActive(info, rt.CurrEpoch()) {
+			rt.Abortf(exitcode.ErrForbidden, "recovery not allowed during active consensus fault")
+		}
 
 		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
@@ -1484,6 +1490,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 		// Only the owner is allowed to withdraw the balance as it belongs to/is controlled by the owner
 		// and not the worker.
 		rt.ValidateImmediateCallerIs(info.Owner)
+
 		// Ensure we don't have any pending terminations.
 		if count, err := st.EarlyTerminations.Count(); err != nil {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
