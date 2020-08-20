@@ -1683,16 +1683,25 @@ func handleProvingDeadline(rt Runtime) {
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		{
-			penalty, pledgeDelta, powerDelta, err := st.AdvanceDeadline(
+			result, err := st.AdvanceDeadline(
 				store, currEpoch,
-				epochReward.ThisEpochRewardSmoothed,
-				pwrTotal.QualityAdjPowerSmoothed,
 			)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to advance deadline")
 
-			penaltyTarget = big.Add(penaltyTarget, penalty)
-			powerDeltaTotal = powerDeltaTotal.Add(powerDelta)
-			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, pledgeDelta)
+			undeclaredPenalty := PledgePenaltyForUndeclaredFault(
+				epochReward.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed,
+				result.UndeclaredFaultyPower.QA,
+			)
+			declaredPenalty := PledgePenaltyForDeclaredFault(
+				epochReward.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed,
+				result.DeclaredFaultyPower.QA,
+			)
+
+			penaltyTarget = big.Sum(penaltyTarget, declaredPenalty, undeclaredPenalty)
+			powerDeltaTotal = powerDeltaTotal.Add(result.PowerDelta)
+			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, result.PledgeDelta)
 		}
 
 		if !penaltyTarget.IsZero() {
