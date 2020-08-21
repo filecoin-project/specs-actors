@@ -22,8 +22,8 @@ const (
 	// Indicates failure to find a method in an actor.
 	SysErrInvalidMethod = ExitCode(3)
 
-	// Indicates non-decodeable or syntactically invalid parameters for a method.
-	SysErrInvalidParameters = ExitCode(4)
+	// Unused.
+	SysErrReserved1 = ExitCode(4)
 
 	// Indicates that the receiver of a message is not valid (and cannot be implicitly created).
 	SysErrInvalidReceiver = ExitCode(5)
@@ -48,13 +48,12 @@ const (
 	// Indicates an invalid argument passed to a runtime method.
 	SysErrorIllegalArgument = ExitCode(10)
 
-	// Indicates  an object failed to de/serialize for storage.
-	SysErrSerialization = ExitCode(11)
-
-	SysErrorReserved3 = ExitCode(12)
-	SysErrorReserved4 = ExitCode(13)
-	SysErrorReserved5 = ExitCode(14)
-	SysErrorReserved6 = ExitCode(15)
+	// Unused
+	SysErrReserved2 = ExitCode(11)
+	SysErrReserved3 = ExitCode(12)
+	SysErrReserved4 = ExitCode(13)
+	SysErrReserved5 = ExitCode(14)
+	SysErrReserved6 = ExitCode(15)
 )
 
 // The initial range of exit codes is reserved for system errors.
@@ -66,16 +65,16 @@ var names = map[ExitCode]string{
 	SysErrSenderInvalid:      "SysErrSenderInvalid",
 	SysErrSenderStateInvalid: "SysErrSenderStateInvalid",
 	SysErrInvalidMethod:      "SysErrInvalidMethod",
-	SysErrInvalidParameters:  "SysErrInvalidParameters",
+	SysErrReserved1:          "SysErrReserved1",
 	SysErrInvalidReceiver:    "SysErrInvalidReceiver",
 	SysErrInsufficientFunds:  "SysErrInsufficientFunds",
 	SysErrOutOfGas:           "SysErrOutOfGas",
 	SysErrForbidden:          "SysErrForbidden",
 	SysErrorIllegalActor:     "SysErrorIllegalActor",
 	SysErrorIllegalArgument:  "SysErrorIllegalArgument",
-	SysErrSerialization:      "SysErrSerialization",
-	SysErrorReserved3:        "SysErrorReserved3",
-	SysErrorReserved4:        "SysErrorReserved4",
-	SysErrorReserved5:        "SysErrorReserved5",
-	SysErrorReserved6:        "SysErrorReserved6",
+	SysErrReserved2:          "SysErrReserved2",
+	SysErrReserved3:          "SysErrReserved3",
+	SysErrReserved4:          "SysErrReserved4",
+	SysErrReserved5:          "SysErrReserved5",
+	SysErrReserved6:          "SysErrReserved6",
 }
