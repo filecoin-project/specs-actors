@@ -109,9 +109,6 @@ type MinerInfo struct {
 	// This is computed from the proof type and represented here redundantly.
 	WindowPoStPartitionSectors uint64
 
-	// The maximum number of partitions allowed per Post deadline.
-	MaxPartitionsPerDeadline uint64
-
 	// The next epoch this miner is eligible for certain permissioned actor methods
 	// and winning block elections as a result of being reported for a consensus fault.
 	ConsensusFaultElapsed abi.ChainEpoch
@@ -210,7 +207,6 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SealProofType:              sealProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
-		MaxPartitionsPerDeadline:   MaxPartitionsPerDeadline,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
 	}, nil
 }
@@ -501,7 +497,6 @@ func (st *State) AssignSectorsToDeadlines(
 	store adt.Store,
 	currentEpoch abi.ChainEpoch,
 	sectors []*SectorOnChainInfo,
-	maxPartitionsPerDeadline uint64,
 	partitionSize uint64,
 	sectorSize abi.SectorSize,
 ) (PowerPair, error) {
@@ -528,7 +523,7 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	activatedPower := NewPowerPairZero()
-	deadlineToSectors, err := assignDeadlines(maxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
+	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}

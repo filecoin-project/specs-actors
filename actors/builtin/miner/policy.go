@@ -46,7 +46,7 @@ const SectorsMax = 32 << 20 // PARAM_FINISH
 // The maximum number of partitions that may be required to be loaded in a single invocation.
 // This limits the number of simultaneous fault, recovery, or sector-extension declarations.
 // We set this to same as MaxPartitionsPerDeadline so we can process that many partitions every deadline.
-const AddressedPartitionsMax = 3000
+const AddressedPartitionsMax = MaxPartitionsPerDeadline
 
 // The maximum number of sector infos that may be required to be loaded in a single invocation.
 const AddressedSectorsMax = 10_000

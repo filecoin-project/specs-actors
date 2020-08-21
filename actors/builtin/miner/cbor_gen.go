@@ -303,7 +303,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufMinerInfo = []byte{139}
+var lengthBufMinerInfo = []byte{138}
 
 func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -403,12 +403,6 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.MaxPartitionsPerDeadline (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.MaxPartitionsPerDeadline)); err != nil {
-		return err
-	}
-
 	// t.ConsensusFaultElapsed (abi.ChainEpoch) (int64)
 	if t.ConsensusFaultElapsed >= 0 {
 		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ConsensusFaultElapsed)); err != nil {
@@ -436,7 +430,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 11 {
+	if extra != 10 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -625,20 +619,6 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
 		t.WindowPoStPartitionSectors = uint64(extra)
-
-	}
-	// t.MaxPartitionsPerDeadline (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.MaxPartitionsPerDeadline = uint64(extra)
 
 	}
 	// t.ConsensusFaultElapsed (abi.ChainEpoch) (int64)

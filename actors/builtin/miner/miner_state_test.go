@@ -646,7 +646,7 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, miner.MaxPartitionsPerDeadline,
+		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos,
 			partitionSectors, sectorSize)
 
 		sectorArr := sectorsArr(t, harness.store, sectorInfos)
