@@ -707,22 +707,24 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
 	for _, precommit := range precommittedSectors {
-		// Check (and activate) storage deals associated to sector. Abort if checks failed.
-		// TODO: we should batch these calls...
-		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDealsParams{
-				DealIDs:      precommit.Info.DealIDs,
-				SectorExpiry: precommit.Info.Expiration,
-			},
-			abi.NewTokenAmount(0),
-		)
+		if len(precommit.Info.DealIDs) > 0 {
+			// Check (and activate) storage deals associated to sector. Abort if checks failed.
+			// TODO: we should batch these calls...
+			// https://github.com/filecoin-project/specs-actors/issues/474
+			_, code := rt.Send(
+				builtin.StorageMarketActorAddr,
+				builtin.MethodsMarket.ActivateDeals,
+				&market.ActivateDealsParams{
+					DealIDs:      precommit.Info.DealIDs,
+					SectorExpiry: precommit.Info.Expiration,
+				},
+				abi.NewTokenAmount(0),
+			)
 
-		if code != exitcode.Ok {
-			rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
-			continue
+			if code != exitcode.Ok {
+				rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
+				continue
+			}
 		}
 
 		preCommits = append(preCommits, precommit)
@@ -770,8 +772,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
 			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
 
-			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
-				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
+			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
@@ -1437,7 +1439,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	// The policy amounts we should burn and send to reporter
 	// These may differ from actual funds send when miner goes into fee debt
-	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochReward)
+	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochRewardSmoothed.Estimate())
 	slasherReward := RewardForConsensusSlashReport(faultAge, faultPenalty)
 	pledgeDelta := big.Zero()
 

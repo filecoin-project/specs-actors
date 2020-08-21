@@ -344,7 +344,7 @@ func (t *AwardBlockRewardParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufThisEpochRewardReturn = []byte{131}
+var lengthBufThisEpochRewardReturn = []byte{130}
 
 func (t *ThisEpochRewardReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -352,11 +352,6 @@ func (t *ThisEpochRewardReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	if _, err := w.Write(lengthBufThisEpochRewardReturn); err != nil {
-		return err
-	}
-
-	// t.ThisEpochReward (big.Int) (struct)
-	if err := t.ThisEpochReward.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -386,19 +381,10 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 2 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.ThisEpochReward (big.Int) (struct)
-
-	{
-
-		if err := t.ThisEpochReward.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.ThisEpochReward: %w", err)
-		}
-
-	}
 	// t.ThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
