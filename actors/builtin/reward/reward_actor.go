@@ -126,7 +126,6 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 type ThisEpochRewardReturn struct {
-	ThisEpochReward         abi.TokenAmount
 	ThisEpochRewardSmoothed *smoothing.FilterEstimate
 	ThisEpochBaselinePower  abi.StoragePower
 }
@@ -140,9 +139,8 @@ func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *ThisEpochRewa
 	var st State
 	rt.State().Readonly(&st)
 	return &ThisEpochRewardReturn{
-		ThisEpochReward:         st.ThisEpochReward,
-		ThisEpochBaselinePower:  st.ThisEpochBaselinePower,
 		ThisEpochRewardSmoothed: st.ThisEpochRewardSmoothed,
+		ThisEpochBaselinePower:  st.ThisEpochBaselinePower,
 	}
 }
 
