@@ -772,8 +772,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
 			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
 
-			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
-				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
+			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
