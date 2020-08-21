@@ -14,17 +14,19 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	initactor "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/support/ipld"
 	actor_testing "github.com/filecoin-project/specs-actors/support/testing"
 
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,7 +70,7 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	powerState := power.ConstructState(emptyMapCID, emptyMultimapCID)
 	initializeActor(ctx, t, vm, powerState, builtin.StoragePowerActorCodeID, builtin.StoragePowerActorAddr, big.Zero())
 
-	marketState := market.ConstructState(emptyMapCID, emptyArrayCID, emptyMultimapCID)
+	marketState := market.ConstructState(emptyArrayCID, emptyMapCID, emptyMultimapCID)
 	initializeActor(ctx, t, vm, marketState, builtin.StorageMarketActorCodeID, builtin.StorageMarketActorAddr, big.Zero())
 
 	// this will need to be replaced with the address of a multisig actor for the verified registry to be tested accurately
@@ -144,7 +146,7 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	identifier := fmt.Sprintf("%s[%s:%d]", breadcrumb, invocation.Msg.to, invocation.Msg.method)
 
 	// mismatch of to or method probably indicates skipped message or messages out of order. halt.
-	require.Equal(t, ei.To, invocation.Msg.to, "%s unexpected `to` address", identifier)
+	require.Equal(t, ei.To, invocation.Msg.to, "%s unexpected 'to' address", identifier)
 	require.Equal(t, ei.Method, invocation.Msg.method, "%s unexpected method", identifier)
 
 	// other expectations are optional
@@ -160,7 +162,7 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	if ei.SubInvocations != nil {
 		for i, invk := range invocation.SubInvocations {
 			subidentifier := fmt.Sprintf("%s%d:", identifier, i)
-			require.Greater(t, len(ei.SubInvocations), i, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
+			require.True(t, len(ei.SubInvocations) > i, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
 			ei.SubInvocations[i].matches(t, subidentifier, invk)
 		}
 		missingInvocations := len(ei.SubInvocations) - len(invocation.SubInvocations)
@@ -224,6 +226,126 @@ func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 	}
 	require.NotNil(t, invocation)
 	return invocation.Msg.params
+}
+
+//
+// Advancing Time while updating state
+//
+
+type advanceDeadlinePredicate func(dlInfo *miner.DeadlineInfo) bool
+
+func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *miner.DeadlineInfo {
+	var minerState miner.State
+	err := v.GetState(minerIDAddr, &minerState)
+	require.NoError(t, err)
+
+	return minerState.DeadlineInfo(v.GetEpoch())
+}
+
+// AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
+// miner state upu-to-date by running a cron at the end of each deadline period.
+func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *miner.DeadlineInfo) {
+	dlInfo := MinerDLInfo(t, v, minerIDAddr)
+	var err error
+	for predicate(dlInfo) {
+		v, err = v.WithEpoch(dlInfo.Last())
+		require.NoError(t, err)
+
+		_, code := v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		require.Equal(t, exitcode.Ok, code)
+
+		dlInfo = MinerDLInfo(t, v, minerIDAddr)
+	}
+	return v, dlInfo
+}
+
+// Advances by deadline until e is contained within the deadline period represented by the returned deadline info.
+// The VM returned will be set to the last deadline close, not at e.
+func AdvanceByDeadlineTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+		return dlInfo.Close <= e
+	})
+}
+
+// Advances by deadline until the deadline index matches the given index.
+// The vm returned will be set to the close epoch of the previous deadline.
+func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *miner.DeadlineInfo) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+		return dlInfo.Index != i
+	})
+}
+
+//
+// state abstraction
+//
+
+type MinerBalances struct {
+	AvailableBalance abi.TokenAmount
+	VestingBalance   abi.TokenAmount
+	InitialPledge    abi.TokenAmount
+	PreCommitDeposit abi.TokenAmount
+}
+
+func GetMinerBalances(t *testing.T, vm *VM, minerIdAddr address.Address) MinerBalances {
+	var state miner.State
+	a, found, err := vm.GetActor(minerIdAddr)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	err = vm.GetState(minerIdAddr, &state)
+	require.NoError(t, err)
+
+	return MinerBalances{
+		AvailableBalance: big.Subtract(a.Balance, state.PreCommitDeposits, state.InitialPledgeRequirement, state.InitialPledgeRequirement, state.FeeDebt),
+		PreCommitDeposit: state.PreCommitDeposits,
+		VestingBalance:   state.LockedFunds,
+		InitialPledge:    state.InitialPledgeRequirement,
+	}
+}
+
+type NetworkStats struct {
+	power.State
+	TotalRawBytePower         abi.StoragePower
+	TotalBytesCommitted       abi.StoragePower
+	TotalQualityAdjPower      abi.StoragePower
+	TotalQABytesCommitted     abi.StoragePower
+	TotalPledgeCollateral     abi.TokenAmount
+	ThisEpochRawBytePower     abi.StoragePower
+	ThisEpochQualityAdjPower  abi.StoragePower
+	ThisEpochPledgeCollateral abi.TokenAmount
+	MinerCount                int64
+	MinerAboveMinPowerCount   int64
+	ThisEpochReward           abi.TokenAmount
+	ThisEpochRewardSmoothed   *smoothing.FilterEstimate
+	ThisEpochBaselinePower    abi.StoragePower
+	TotalMined                abi.TokenAmount
+}
+
+func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
+	var powerState power.State
+	err := vm.GetState(builtin.StoragePowerActorAddr, &powerState)
+	require.NoError(t, err)
+
+	var rewardState reward.State
+	err = vm.GetState(builtin.RewardActorAddr, &rewardState)
+	require.NoError(t, err)
+
+	return NetworkStats{
+		TotalRawBytePower:         powerState.TotalRawBytePower,
+		TotalBytesCommitted:       powerState.TotalBytesCommitted,
+		TotalQualityAdjPower:      powerState.TotalQualityAdjPower,
+		TotalQABytesCommitted:     powerState.TotalQABytesCommitted,
+		TotalPledgeCollateral:     powerState.TotalPledgeCollateral,
+		ThisEpochRawBytePower:     powerState.ThisEpochRawBytePower,
+		ThisEpochQualityAdjPower:  powerState.ThisEpochQualityAdjPower,
+		ThisEpochPledgeCollateral: powerState.ThisEpochPledgeCollateral,
+		MinerCount:                powerState.MinerCount,
+		MinerAboveMinPowerCount:   powerState.MinerAboveMinPowerCount,
+		ThisEpochReward:           rewardState.ThisEpochReward,
+		ThisEpochRewardSmoothed:   rewardState.ThisEpochRewardSmoothed,
+		ThisEpochBaselinePower:    rewardState.ThisEpochBaselinePower,
+		TotalMined:                rewardState.TotalMined,
+	}
 }
 
 //
