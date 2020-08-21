@@ -986,9 +986,9 @@ func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (de
 }
 
 type AdvanceDeadlineResult struct {
-	PledgeDelta                                abi.TokenAmount
-	PowerDelta                                 PowerPair
-	UndeclaredFaultyPower, DeclaredFaultyPower PowerPair
+	PledgeDelta                           abi.TokenAmount
+	PowerDelta                            PowerPair
+	DetectedFaultyPower, TotalFaultyPower PowerPair
 }
 
 // AdvanceDeadline advances the deadline. It:
@@ -999,23 +999,24 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	pledgeDelta := abi.NewTokenAmount(0)
 	powerDelta := NewPowerPairZero()
 
-	undeclaredFaultyPower := NewPowerPairZero()
-	declaredFaultyPower := NewPowerPairZero()
+	detectedFaultyPower := NewPowerPairZero()
+	totalFaultyPower := NewPowerPairZero()
 
-	// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
-	// exactly the final epoch of the deadline; it may be slightly later (i.e. in the subsequent deadline/period).
-	// Further, this method is invoked once *before* the first proving period starts, after the actor is first
-	// constructed; this is detected by !dlInfo.PeriodStarted().
-	// Use dlInfo.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
-
+	// Note: Use dlInfo.Last() rather than rt.CurrEpoch unless certain
+	// of the desired semantics. In the past, this method would sometimes be
+	// invoked late due to skipped blocks. This is no longer the case, but
+	// we still use dlInfo.Last().
 	dlInfo := st.DeadlineInfo(currEpoch)
-	// Period not started? Nothing to do.
+
+	// This method is invoked once *before* the first proving period starts,
+	// after the actor is first constructed; this is detected by
+	// !dlInfo.PeriodStarted().
 	if !dlInfo.PeriodStarted() {
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,
-			undeclaredFaultyPower,
-			declaredFaultyPower,
+			detectedFaultyPower,
+			totalFaultyPower,
 		}, nil
 	}
 
@@ -1039,8 +1040,8 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,
-			undeclaredFaultyPower,
-			declaredFaultyPower,
+			detectedFaultyPower,
+			totalFaultyPower,
 		}, nil
 	}
 
@@ -1049,11 +1050,11 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		// Detect and penalize missing proofs.
 		faultExpiration := dlInfo.Last() + FaultMaxAge
 
-		powerDelta, undeclaredFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
+		powerDelta, detectedFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
-		declaredFaultyPower = deadline.FaultyPower.Sub(undeclaredFaultyPower)
+		totalFaultyPower = deadline.FaultyPower
 	}
 	{
 		// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
@@ -1107,8 +1108,8 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	return &AdvanceDeadlineResult{
 		pledgeDelta,
 		powerDelta,
-		undeclaredFaultyPower,
-		declaredFaultyPower,
+		detectedFaultyPower,
+		totalFaultyPower,
 	}, nil
 }
 

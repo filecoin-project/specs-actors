@@ -1661,8 +1661,6 @@ func handleProvingDeadline(rt Runtime) {
 
 	var st State
 	rt.State().Transaction(&st, func() {
-		penaltyTarget := abi.NewTokenAmount(0)
-
 		{
 			// Vest locked funds.
 			// This happens first so that any subsequent penalties are taken
@@ -1675,7 +1673,7 @@ func handleProvingDeadline(rt Runtime) {
 		{
 			depositToBurn, err := st.ExpirePreCommits(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
-			penaltyTarget = big.Add(penaltyTarget, depositToBurn)
+			penaltyTotal = big.Add(penaltyTotal, depositToBurn)
 		}
 
 		// Record whether or not we _had_ early terminations in the queue before this method.
@@ -1683,33 +1681,33 @@ func handleProvingDeadline(rt Runtime) {
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		{
-			result, err := st.AdvanceDeadline(
-				store, currEpoch,
-			)
+			result, err := st.AdvanceDeadline(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to advance deadline")
 
+			// Charge detected faults as undeclared.
 			undeclaredPenalty := PledgePenaltyForUndeclaredFault(
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
-				result.UndeclaredFaultyPower.QA,
+				result.DetectedFaultyPower.QA,
 			)
+			// Charge the rest as declared.
 			declaredPenalty := PledgePenaltyForDeclaredFault(
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
-				result.DeclaredFaultyPower.QA,
+				big.Sub(result.TotalFaultyPower.QA, result.DetectedFaultyPower.QA),
 			)
 
-			penaltyTarget = big.Sum(penaltyTarget, declaredPenalty, undeclaredPenalty)
 			powerDeltaTotal = powerDeltaTotal.Add(result.PowerDelta)
 			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, result.PledgeDelta)
-		}
 
-		if !penaltyTarget.IsZero() {
-			unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
-			pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
+			penaltyTarget := big.Add(declaredPenalty, undeclaredPenalty)
+			if !penaltyTarget.IsZero() {
+				unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+				penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
+				penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
+				pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
+			}
 		}
 	})
 

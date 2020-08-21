@@ -1704,8 +1704,8 @@ func TestDeadlineCron(t *testing.T) {
 		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA)
 
 		// Un-recovered faults are charged as ongoing faults
-		declaredPwr := miner.PowerForSectors(actor.sectorSize, allSectors[:1])
-		declaredPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, declaredPwr.QA)
+		ongoingPwr := miner.PowerForSectors(actor.sectorSize, allSectors[:1])
+		declaredPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA)
 
 		advanceDeadline(rt, actor, &cronConfig{
 			undeclaredFaultsPenalty: retractedPenalty,
