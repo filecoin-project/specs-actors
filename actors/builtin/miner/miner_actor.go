@@ -775,6 +775,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
 				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
+			if !validatePreCommitSectorParams(rt, precommit.Info.SectorNumber, power, dayReward, storagePledge, initialPledge) {
+				continue
+			}
+
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
 			replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
@@ -1560,6 +1564,37 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 ////////////////////////////////////////////////////////////////////////////////
 // Utility functions & helpers
 ////////////////////////////////////////////////////////////////////////////////
+
+func validatePreCommitSectorParams(rt Runtime, sectorNum abi.SectorNumber, power abi.StoragePower, dayReward abi.TokenAmount,
+	storagePledge abi.TokenAmount, initialPledge abi.TokenAmount) (valid bool) {
+
+	if power.IsZero() {
+		rt.Log(vmr.WARN, "power is zero for sector %v", sectorNum)
+		return false
+	}
+
+	if dayReward.IsZero() {
+		rt.Log(vmr.WARN, "day reward is zero for sector %v", sectorNum)
+		return false
+	}
+
+	if storagePledge.IsZero() {
+		rt.Log(vmr.WARN, "storage Pledge is zero for sector %v", sectorNum)
+		return false
+	}
+
+	if initialPledge.IsZero() {
+		rt.Log(vmr.WARN, "initial pledge is zero for sector %v", sectorNum)
+		return false
+	}
+
+	if storagePledge.LessThanEqual(dayReward) {
+		rt.Log(vmr.WARN, "storage pledge must be greater than day reward for sector %v", sectorNum)
+		return false
+	}
+
+	return true
+}
 
 func processEarlyTerminations(rt Runtime) (more bool) {
 	store := adt.AsStore(rt)
