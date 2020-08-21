@@ -548,9 +548,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
-			// NOTE: we don't validate that the replacement sector
-			// lives at the target deadline/partition. If it
-			// doesn't, sealing may still succeed but replacement will fail.
 			replaceSector := validateReplaceSector(rt, &st, store, params)
 			// Note the replaced sector's initial pledge as a lower bound for the new sector's deposit
 			depositMinimum = replaceSector.InitialPledge
