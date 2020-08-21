@@ -197,7 +197,7 @@ func TestConstruction(t *testing.T) {
 			OwnerAddr:     owner,
 			WorkerAddr:    worker,
 			SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
-			PeerId:        abi.PeerID(pid[:]),
+			PeerId:        pid[:],
 			Multiaddrs:    testMultiaddrs,
 		}
 
@@ -255,8 +255,8 @@ func TestConstruction(t *testing.T) {
 	t.Run("test construct with empty multiaddr", func(t *testing.T) {
 		rt := builder.Build(t)
 		maddrs := []abi.Multiaddrs{
-			[]byte{},
-			[]byte{1},
+			{},
+			{1},
 		}
 		params := miner.ConstructorParams{
 			OwnerAddr:     owner,
@@ -421,7 +421,7 @@ func TestCommitments(t *testing.T) {
 
 		qaPower = miner.QAPowerForWeight(sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight,
 			onChainPrecommit.VerifiedDealWeight)
-		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.networkPledge, actor.epochRewardSmooth,
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth,
 			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, st.InitialPledgeRequirement)
 
@@ -666,8 +666,7 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 
 		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
-		actor.epochReward = big.Div(actor.epochReward, big.NewInt(2))
-		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(actor.epochReward)
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(2)))
 
 		challengeEpoch := rt.Epoch() - 1
 		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
@@ -887,8 +886,7 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 
 		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
-		actor.epochReward = big.Div(actor.epochReward, big.NewInt(2))
-		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(actor.epochReward)
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(2)))
 
 		challengeEpoch := rt.Epoch() - 1
 
@@ -1044,7 +1042,7 @@ func TestCommitments(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
 		actor.preCommitSector(rt, precommit)
 
 		// Sector pre-commitment missing.
@@ -1200,7 +1198,7 @@ func TestWindowPost(t *testing.T) {
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
-		power := miner.PowerForSector(actor.sectorSize, sector)
+		pwr := miner.PowerForSector(actor.sectorSize, sector)
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
@@ -1217,7 +1215,7 @@ func TestWindowPost(t *testing.T) {
 			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, &poStConfig{
-			expectedPowerDelta: power,
+			expectedPowerDelta: pwr,
 			expectedPenalty:    big.Zero(),
 		})
 
@@ -1234,7 +1232,7 @@ func TestWindowPost(t *testing.T) {
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
-		power := miner.PowerForSector(actor.sectorSize, sector)
+		pwr := miner.PowerForSector(actor.sectorSize, sector)
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
@@ -1251,7 +1249,7 @@ func TestWindowPost(t *testing.T) {
 			{Index: pIdx, Skipped: bitfield.New()},
 		}
 		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, &poStConfig{
-			expectedPowerDelta: power,
+			expectedPowerDelta: pwr,
 			expectedPenalty:    big.Zero(),
 		})
 
@@ -1592,11 +1590,11 @@ func TestProveCommit(t *testing.T) {
 		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
-		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
+		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{1})
 		actor.preCommitSector(rt, precommitA)
 		sectorNoA := actor.nextSectorNo
 		actor.nextSectorNo++
-		precommitB := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
+		precommitB := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{2})
 		actor.preCommitSector(rt, precommitB)
 		sectorNoB := actor.nextSectorNo
 
@@ -3071,7 +3069,6 @@ type actorHarness struct {
 	periodOffset  abi.ChainEpoch
 	nextSectorNo  abi.SectorNumber
 
-	epochReward     abi.TokenAmount
 	networkPledge   abi.TokenAmount
 	networkRawPower abi.StoragePower
 	networkQAPower  abi.StoragePower
@@ -3106,7 +3103,6 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		periodOffset:  provingPeriodOffset,
 		nextSectorNo:  100,
 
-		epochReward:     rwd,
 		networkPledge:   big.Mul(rwd, big.NewIntUnsigned(1000)),
 		networkRawPower: pwr,
 		networkQAPower:  pwr,
@@ -3490,7 +3486,10 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 			exit = exitcode.Ok
 			validPrecommits = append(validPrecommits, precommit)
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
+
+		if len(precommit.DealIDs) > 0 {
+			rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
+		}
 	}
 
 	// expected pledge is the sum of initial pledges
@@ -3507,8 +3506,8 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 				qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, duration, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
 				expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
-				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.networkPledge,
-					h.epochRewardSmooth, h.epochQAPowerSmooth, rt.TotalFilCircSupply())
+				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.epochRewardSmooth,
+					h.epochQAPowerSmooth, rt.TotalFilCircSupply())
 				expectPledge = big.Add(expectPledge, pledge)
 			}
 		}
@@ -3884,13 +3883,12 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address)
 	}, nil)
 
 	currentReward := reward.ThisEpochRewardReturn{
-		ThisEpochReward:         h.epochReward,
 		ThisEpochBaselinePower:  h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
 	}
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
 
-	penaltyTotal := miner.ConsensusFaultPenalty(h.epochReward)
+	penaltyTotal := miner.ConsensusFaultPenalty(h.epochRewardSmooth.Estimate())
 	// slash reward
 	rwd := miner.RewardForConsensusSlashReport(1, penaltyTotal)
 	rt.ExpectSend(from, builtin.MethodSend, nil, rwd, nil, exitcode.Ok)
@@ -3935,7 +3933,6 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 	// Preamble
 	rwd := reward.ThisEpochRewardReturn{
-		ThisEpochReward:         h.epochReward,
 		ThisEpochBaselinePower:  h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
 	}
@@ -4321,7 +4318,6 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *actorHarness) {
 		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 	}
 	currentReward := reward.ThisEpochRewardReturn{
-		ThisEpochReward:         h.epochReward,
 		ThisEpochBaselinePower:  h.baselinePower,
 		ThisEpochRewardSmoothed: h.epochRewardSmooth,
 	}

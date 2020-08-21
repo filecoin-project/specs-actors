@@ -443,14 +443,14 @@ func (rt *Runtime) checkArgument(predicate bool, msg string, args ...interface{}
 func (rt *Runtime) get(c cid.Cid) ([]byte, bool) {
 	prefix := c.Prefix()
 	if prefix.Codec != cid.DagCBOR {
-		rt.Abortf(exitcode.SysErrSerialization, "tried to fetch a non-cbor object: %s", c)
+		rt.Abortf(exitcode.ErrSerialization, "tried to fetch a non-cbor object: %s", c)
 	}
 
 	var data []byte
 	if prefix.MhType == mh.IDENTITY {
 		decoded, err := mh.Decode(c.Hash())
 		if err != nil {
-			rt.Abortf(exitcode.SysErrSerialization, "failed to parse identity cid %s: %s", c, err)
+			rt.Abortf(exitcode.ErrSerialization, "failed to parse identity cid %s: %s", c, err)
 		}
 		data = decoded.Digest
 	} else if stored, found := rt.store[c]; found {
@@ -474,7 +474,7 @@ func (rt *Runtime) Get(c cid.Cid, o runtime.CBORUnmarshaler) bool {
 	if found {
 		err := o.UnmarshalCBOR(bytes.NewReader(data))
 		if err != nil {
-			rt.Abortf(exitcode.SysErrSerialization, err.Error())
+			rt.Abortf(exitcode.ErrSerialization, err.Error())
 		}
 	}
 
@@ -486,12 +486,12 @@ func (rt *Runtime) Put(o runtime.CBORMarshaler) cid.Cid {
 	r := bytes.Buffer{}
 	err := o.MarshalCBOR(&r)
 	if err != nil {
-		rt.Abortf(exitcode.SysErrSerialization, err.Error())
+		rt.Abortf(exitcode.ErrSerialization, err.Error())
 	}
 	data := r.Bytes()
 	key, err := abi.CidBuilder.Sum(data)
 	if err != nil {
-		rt.Abortf(exitcode.SysErrSerialization, err.Error())
+		rt.Abortf(exitcode.ErrSerialization, err.Error())
 	}
 	rt.put(key, data)
 	return key

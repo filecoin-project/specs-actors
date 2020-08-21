@@ -227,7 +227,6 @@ func TestThisEpochReward(t *testing.T) {
 		resp := actor.thisEpochReward(rt)
 		st := getState(rt)
 
-		require.EqualValues(t, st.ThisEpochReward, resp.ThisEpochReward)
 		require.EqualValues(t, st.ThisEpochBaselinePower, resp.ThisEpochBaselinePower)
 		require.EqualValues(t, st.ThisEpochRewardSmoothed, resp.ThisEpochRewardSmoothed)
 	})
