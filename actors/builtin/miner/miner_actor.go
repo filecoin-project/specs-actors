@@ -707,22 +707,24 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
 	for _, precommit := range precommittedSectors {
-		// Check (and activate) storage deals associated to sector. Abort if checks failed.
-		// TODO: we should batch these calls...
-		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDealsParams{
-				DealIDs:      precommit.Info.DealIDs,
-				SectorExpiry: precommit.Info.Expiration,
-			},
-			abi.NewTokenAmount(0),
-		)
+		if len(precommit.Info.DealIDs) > 0 {
+			// Check (and activate) storage deals associated to sector. Abort if checks failed.
+			// TODO: we should batch these calls...
+			// https://github.com/filecoin-project/specs-actors/issues/474
+			_, code := rt.Send(
+				builtin.StorageMarketActorAddr,
+				builtin.MethodsMarket.ActivateDeals,
+				&market.ActivateDealsParams{
+					DealIDs:      precommit.Info.DealIDs,
+					SectorExpiry: precommit.Info.Expiration,
+				},
+				abi.NewTokenAmount(0),
+			)
 
-		if code != exitcode.Ok {
-			rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
-			continue
+			if code != exitcode.Ok {
+				rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
+				continue
+			}
 		}
 
 		preCommits = append(preCommits, precommit)
