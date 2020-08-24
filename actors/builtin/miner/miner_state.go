@@ -1000,7 +1000,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	powerDelta := NewPowerPairZero()
 
 	detectedFaultyPower := NewPowerPairZero()
-	totalFaultyPower := NewPowerPairZero()
 
 	// Note: Use dlInfo.Last() rather than rt.CurrEpoch unless certain
 	// of the desired semantics. In the past, this method would sometimes be
@@ -1016,7 +1015,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 			pledgeDelta,
 			powerDelta,
 			detectedFaultyPower,
-			totalFaultyPower,
+			NewPowerPairZero(),
 		}, nil
 	}
 
@@ -1041,7 +1040,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 			pledgeDelta,
 			powerDelta,
 			detectedFaultyPower,
-			totalFaultyPower,
+			deadline.FaultyPower,
 		}, nil
 	}
 
@@ -1054,7 +1053,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		if err != nil {
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
-		totalFaultyPower = deadline.FaultyPower
 	}
 	{
 		// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
@@ -1083,12 +1081,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		if !noEarlyTerminations {
 			st.EarlyTerminations.Set(dlInfo.Index)
 		}
-
-		// The termination fee is paid later, in early-termination queue processing.
-		// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
-		// https://github.com/filecoin-project/specs-actors/issues/674
-
-		// The deals are not terminated yet, that is left for processing of the early termination queue.
 	}
 
 	// Save new deadline state.
@@ -1109,7 +1101,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		pledgeDelta,
 		powerDelta,
 		detectedFaultyPower,
-		totalFaultyPower,
+		deadline.FaultyPower,
 	}, nil
 }
 
