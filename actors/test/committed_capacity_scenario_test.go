@@ -282,6 +282,24 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, combinedPower.QA, minerPower.QA)
 	assert.Equal(t, combinedPower.Raw, networkStats.TotalBytesCommitted)
 	assert.Equal(t, combinedPower.QA, networkStats.TotalQABytesCommitted)
+
+	// advance to proving period of old sector
+	dlInfo, _, v = vm.AdvanceTillProvingPeriod(t, v, minerAddrs.IDAddress, ccSectorNumber)
+
+	// proving period cron removes sector reducing the miner's power to that of the new sector
+	v, err = v.WithEpoch(dlInfo.Last())
+	require.NoError(t, err)
+	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	require.Equal(t, exitcode.Ok, code)
+
+	// power is removed
+	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
+	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
+	networkStats = vm.GetNetworkStats(t, v)
+	assert.Equal(t, ccSectorPower.Raw, minerPower.Raw)
+	assert.Equal(t, ccSectorPower.QA, minerPower.QA)
+	assert.Equal(t, ccSectorPower.Raw, networkStats.TotalBytesCommitted)
+	assert.Equal(t, ccSectorPower.QA, networkStats.TotalQABytesCommitted)
 }
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
