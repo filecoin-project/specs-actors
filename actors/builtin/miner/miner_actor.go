@@ -1716,15 +1716,14 @@ func handleProvingDeadline(rt Runtime) {
 			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, result.PledgeDelta)
 
 			penaltyTarget := big.Add(declaredPenalty, undeclaredPenalty)
-			if !penaltyTarget.IsZero() {
-				err = st.ApplyPenalty(penaltyTarget)
-				builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
 
-				penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-				penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
-				pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
-			}
+			err = st.ApplyPenalty(penaltyTarget)
+			builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to apply penalty")
+
+			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
+			penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
+			pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 		}
 	})
 
