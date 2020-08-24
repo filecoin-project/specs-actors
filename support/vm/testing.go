@@ -355,6 +355,32 @@ func GetMinerBalances(t *testing.T, vm *VM, minerIdAddr address.Address) MinerBa
 	}
 }
 
+func PowerForMinerSector(t *testing.T, vm *VM, minerIdAddr address.Address, sectorNumber abi.SectorNumber) miner.PowerPair {
+	var state miner.State
+	err := vm.GetState(minerIdAddr, &state)
+	require.NoError(t, err)
+
+	sector, found, err := state.GetSector(vm.store, sectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	sectorSize, err := sector.SealProof.SectorSize()
+	require.NoError(t, err)
+	return miner.PowerForSector(sectorSize, sector)
+}
+
+func MinerPower(t *testing.T, vm *VM, minerIdAddr address.Address) miner.PowerPair {
+	var state power.State
+	err := vm.GetState(builtin.StoragePowerActorAddr, &state)
+	require.NoError(t, err)
+
+	claim, found, err := state.GetClaim(vm.store, minerIdAddr)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	return miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
+}
+
 type NetworkStats struct {
 	power.State
 	TotalRawBytePower         abi.StoragePower

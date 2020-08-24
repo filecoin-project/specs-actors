@@ -32,8 +32,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
-	sectorSize, err := sealProof.SectorSize()
-	require.NoError(t, err)
 
 	// create miner
 	params := power.CreateMinerParams{
@@ -49,7 +47,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	require.True(t, ok)
 
 	// advance vm so we can have seal randomness epoch in the past
-	v, err = v.WithEpoch(200)
+	v, err := v.WithEpoch(200)
 	require.NoError(t, err)
 
 	//
@@ -99,17 +97,21 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		}},
 		ChainCommitRand: []byte("not really random"),
 	}
+
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 	require.Equal(t, exitcode.Ok, code)
 
-	// miner still has initial pledge
-	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
-	assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
-
-	// committed bytes are added (miner would have gained power if minimum requirement were met)
+	// check power table
+	sectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, sectorNumber)
+	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
 	networkStats := vm.GetNetworkStats(t, v)
-	assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
-	assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalQABytesCommitted)
+	assert.Equal(t, sectorPower.Raw, minerPower.Raw)
+	assert.Equal(t, sectorPower.QA, minerPower.Raw)
+	assert.Equal(t, sectorPower.Raw, networkStats.TotalBytesCommitted)
+	assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
+	// miner does not meet consensus minimum so actual power is not added
+	assert.Equal(t, big.Zero(), networkStats.TotalRawBytePower)
+	assert.Equal(t, big.Zero(), networkStats.TotalQualityAdjPower)
 
 	//
 	// publish verified and unverified deals
@@ -233,6 +235,14 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		},
 	}.Matches(t, v.LastInvocation())
 
+	// miner still has power for old sector
+	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
+	networkStats = vm.GetNetworkStats(t, v)
+	assert.Equal(t, sectorPower.Raw, minerPower.Raw)
+	assert.Equal(t, sectorPower.QA, minerPower.Raw)
+	assert.Equal(t, sectorPower.Raw, networkStats.TotalBytesCommitted)
+	assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
+
 	// advance to proving period and submit post
 	dlInfo, pIdx, v = vm.AdvanceTillProvingPeriod(t, v, minerAddrs.IDAddress, ccSectorNumber)
 
@@ -261,6 +271,17 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
 		},
 	}.Matches(t, v.LastInvocation())
+
+	// power is upgraded for new sector
+	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
+	ccSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	combinedPower := ccSectorPower.Add(sectorPower)
+	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
+	networkStats = vm.GetNetworkStats(t, v)
+	assert.Equal(t, combinedPower.Raw, minerPower.Raw)
+	assert.Equal(t, combinedPower.QA, minerPower.QA)
+	assert.Equal(t, combinedPower.Raw, networkStats.TotalBytesCommitted)
+	assert.Equal(t, combinedPower.QA, networkStats.TotalQABytesCommitted)
 }
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
