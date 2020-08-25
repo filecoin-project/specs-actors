@@ -646,9 +646,10 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		sectorArr := sectorsArr(t, harness.store, sectorInfos)
+		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos,
+			partitionSectors, sectorSize)
 
-		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, partitionSectors, sectorSize)
+		sectorArr := sectorsArr(t, harness.store, sectorInfos)
 		require.NoError(t, err)
 		require.True(t, newPower.IsZero())
 

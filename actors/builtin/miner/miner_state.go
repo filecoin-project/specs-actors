@@ -196,6 +196,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 	if err != nil {
 		return nil, err
 	}
+
 	return &MinerInfo{
 		Owner:                      owner,
 		Worker:                     worker,
@@ -522,7 +523,12 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	activatedPower := NewPowerPairZero()
-	for dlIdx, deadlineSectors := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
+	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
+	if err != nil {
+		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
+	}
+
+	for dlIdx, deadlineSectors := range deadlineToSectors {
 		if len(deadlineSectors) == 0 {
 			continue
 		}

@@ -21,6 +21,12 @@ var WPoStChallengeWindow = abi.ChainEpoch(30 * 60 / builtin.EpochDurationSeconds
 // The number of non-overlapping PoSt deadlines in each proving period.
 const WPoStPeriodDeadlines = uint64(48)
 
+// MaxPartitionsPerDeadline is the maximum number of partitions that will be assigned to a deadline.
+// For a minimum storage of upto 1Eib, we need 300 partitions per deadline.
+// 48 * 32GiB * 2349 * 300 = 1.00808144 EiB
+// So, to support upto 10Eib storage, we set this to 3000.
+const MaxPartitionsPerDeadline = 3000
+
 func init() {
 	// Check that the challenge windows divide the proving period evenly.
 	if WPoStProvingPeriod%WPoStChallengeWindow != 0 {
@@ -39,9 +45,8 @@ const SectorsMax = 32 << 20 // PARAM_FINISH
 
 // The maximum number of partitions that may be required to be loaded in a single invocation.
 // This limits the number of simultaneous fault, recovery, or sector-extension declarations.
-// With 48 deadlines (half-hour), 200 partitions per declaration permits loading a full EiB of 32GiB
-// sectors with 1 message per epoch within a single half-hour deadline. A miner can of course submit more messages.
-const AddressedPartitionsMax = 200
+// We set this to same as MaxPartitionsPerDeadline so we can process that many partitions every deadline.
+const AddressedPartitionsMax = MaxPartitionsPerDeadline
 
 // The maximum number of sector infos that may be required to be loaded in a single invocation.
 const AddressedSectorsMax = 10_000
