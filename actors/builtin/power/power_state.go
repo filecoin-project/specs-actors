@@ -143,6 +143,14 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 	return nil
 }
 
+func (st *State) GetClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
+	claims, err := adt.AsMap(s, st.Claims)
+	if err != nil {
+		return nil, false, xerrors.Errorf("failed to load claims: %w", err)
+	}
+	return getClaim(claims, a)
+}
+
 func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
 	oldClaim, ok, err := getClaim(claims, miner)
 	if err != nil {

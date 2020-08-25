@@ -188,7 +188,7 @@ func (vm *VM) checkpoint() (cid.Cid, error) {
 	return root, nil
 }
 
-func (vm *VM) normalizeAddress(addr address.Address) (address.Address, bool) {
+func (vm *VM) NormalizeAddress(addr address.Address) (address.Address, bool) {
 	// short-circuit if the address is already an ID address
 	if addr.Protocol() == address.ID {
 		return addr, true
@@ -224,7 +224,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 
 	// load actor from global state
 	var ok bool
-	if from, ok = vm.normalizeAddress(from); !ok {
+	if from, ok = vm.NormalizeAddress(from); !ok {
 		return nil, exitcode.SysErrSenderInvalid
 	}
 
@@ -388,6 +388,10 @@ func (vm *VM) endInvocation(code exitcode.ExitCode, ret runtime.CBORMarshaler) {
 
 func (vm *VM) Invocations() []*Invocation {
 	return vm.invocations
+}
+
+func (vm *VM) LastInvocation() *Invocation {
+	return vm.invocations[len(vm.invocations)-1]
 }
 
 //

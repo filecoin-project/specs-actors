@@ -204,7 +204,7 @@ func (ic *invocationContext) Abortf(errExitCode exitcode.ExitCode, msg string, a
 }
 
 func (ic *invocationContext) ResolveAddress(address address.Address) (address.Address, bool) {
-	return ic.rt.normalizeAddress(address)
+	return ic.rt.NormalizeAddress(address)
 }
 
 func (ic *invocationContext) NewActorAddress() address.Address {
