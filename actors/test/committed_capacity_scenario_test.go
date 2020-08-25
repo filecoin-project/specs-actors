@@ -342,5 +342,11 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 		})
 	}
 
+	vm.ExpectInvocation{
+		To:             builtin.StorageMarketActorAddr,
+		Method:         builtin.MethodsMarket.PublishStorageDeals,
+		SubInvocations: expectedPublishSubinvocations,
+	}.Matches(t, v.LastInvocation())
+
 	return ret.(*market.PublishStorageDealsReturn)
 }
