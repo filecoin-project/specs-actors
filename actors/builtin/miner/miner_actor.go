@@ -552,19 +552,13 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "sector %v already committed", params.SectorNumber)
 		}
 
-		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
-			replaceSector := validateReplaceSector(rt, &st, store, params)
-			// Note the replaced sector's initial pledge as a lower bound for the new sector's deposit
-			depositMinimum = replaceSector.InitialPledge
+			validateReplaceSector(rt, &st, store, params)
 		}
 
 		duration := params.Expiration - rt.CurrEpoch()
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
-		depositReq := big.Max(
-			PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight),
-			depositMinimum,
-		)
+		depositReq := PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight)
 		if availableBalance.LessThan(depositReq) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
@@ -780,8 +774,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
+			initialPledge, replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, initialPledge, replacedBySectorNumber)
 			totalPledge = big.Add(totalPledge, initialPledge)
-			replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
 
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
@@ -1785,7 +1779,7 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 }
 
-func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) *SectorOnChainInfo {
+func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) {
 	replaceSector, found, err := st.GetSector(store, params.ReplaceSectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
 	if !found {
@@ -1806,8 +1800,6 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 
 	err = st.CheckSectorHealth(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector %v", params.ReplaceSectorNumber)
-
-	return replaceSector
 }
 
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
@@ -2143,9 +2135,11 @@ func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*Sec
 	return m
 }
 
-func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (abi.ChainEpoch, big.Int) {
+func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, initialPledge abi.TokenAmount,
+	replacedByNum map[abi.SectorNumber]*SectorOnChainInfo,
+) (abi.TokenAmount, abi.ChainEpoch, big.Int) {
 	if !precommit.Info.ReplaceCapacity {
-		return abi.ChainEpoch(0), big.Zero()
+		return initialPledge, abi.ChainEpoch(0), big.Zero()
 	}
 	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
 	if !ok {
@@ -2153,7 +2147,9 @@ func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
 	}
 	// The sector will actually be active for the period between activation and its next proving deadline,
 	// but this covers the period for which we will be looking to the old sector for termination fees.
-	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
+	return big.Max(initialPledge, replaced.InitialPledge),
+		maxEpoch(0, rt.CurrEpoch()-replaced.Activation),
+		replaced.ExpectedDayReward
 }
 
 // Computes deadline information for a fault or recovery declaration.

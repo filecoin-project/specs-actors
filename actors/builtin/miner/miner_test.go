@@ -666,8 +666,6 @@ func TestCommitments(t *testing.T) {
 		// Check new pre-commit in state
 		assert.True(t, upgrade.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams.ReplaceSectorNumber, upgrade.Info.ReplaceSectorNumber)
-		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade.PreCommitDeposit)
 
 		// Old sector is unchanged
 		oldSectorAgain := actor.getSector(rt, oldSector.SectorNumber)
@@ -687,6 +685,9 @@ func TestCommitments(t *testing.T) {
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, st.InitialPledge, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
+
+		// new sector pledge is max of computed pledge and pledge from old sector
+		assert.Equal(t, oldSector.InitialPledge, newSector.InitialPledge)
 
 		// Both sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -889,8 +890,6 @@ func TestCommitments(t *testing.T) {
 		// Check new pre-commit in state
 		assert.True(t, upgrade1.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams1.ReplaceSectorNumber, upgrade1.Info.ReplaceSectorNumber)
-		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade1.PreCommitDeposit)
 
 		// Upgrade 2
 
@@ -904,8 +903,6 @@ func TestCommitments(t *testing.T) {
 		// Check new pre-commit in state
 		assert.True(t, upgrade2.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams2.ReplaceSectorNumber, upgrade2.Info.ReplaceSectorNumber)
-		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade2.PreCommitDeposit)
 
 		// Old sector is unchanged
 		oldSectorAgain := actor.getSector(rt, oldSector.SectorNumber)
@@ -1649,25 +1646,25 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration / miner.WPoStProvingPeriod + 1)*miner.WPoStProvingPeriod
+		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
 		rt.ReplaceState(st)
 
 		// Advance to expiration epoch and expect expiration during cron
-		rt.SetEpoch(expiration)	
+		rt.SetEpoch(expiration)
 		powerDelta := activePower.Neg()
 		// because we skip forward in state and don't post we incur SP
-		expectedFee := actor.undeclaredFaultPenalty(sectors) 
+		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds so expectedFee is taken from locked funds
 		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
 		actor.addLockedFunds(rt, initialLocked)
 
 		advanceDeadline(rt, actor, &cronConfig{
-			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
-			expiredSectorsPowerDelta: &powerDelta,
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+			expiredSectorsPowerDelta:  &powerDelta,
 			expiredSectorsPledgeDelta: initialPledge.Neg(),
-			detectedFaultsPenalty: expectedFee,
+			detectedFaultsPenalty:     expectedFee,
 		})
 	})
 
@@ -1687,7 +1684,7 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration / miner.WPoStProvingPeriod + 1)*miner.WPoStProvingPeriod
+		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
 
@@ -1697,23 +1694,23 @@ func TestDeadlineCron(t *testing.T) {
 		rt.ReplaceState(st)
 
 		// Advance to expiration epoch and expect expiration during cron
-		rt.SetEpoch(expiration)	
+		rt.SetEpoch(expiration)
 		powerDelta := activePower.Neg()
 
 		// because we skip forward in state and don't post we incur SP
-		expectedFee := actor.undeclaredFaultPenalty(sectors) 
+		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds to locked funds so expectedFee is taken from locked funds
 		actor.addLockedFunds(rt, expectedFee)
 
 		// Miner balance = LF + IP. expectedFee covered by LF, debt repayment covered by IP
-		rt.SetBalance(big.Add(expectedFee, st.InitialPledge)) 
+		rt.SetBalance(big.Add(expectedFee, st.InitialPledge))
 
 		advanceDeadline(rt, actor, &cronConfig{
-			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
-			expiredSectorsPowerDelta: &powerDelta,
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+			expiredSectorsPowerDelta:  &powerDelta,
 			expiredSectorsPledgeDelta: initialPledge.Neg(),
-			detectedFaultsPenalty: expectedFee,
-			repaidFeeDebt: initialPledge, // We repay unlocked IP as fees
+			detectedFaultsPenalty:     expectedFee,
+			repaidFeeDebt:             initialPledge, // We repay unlocked IP as fees
 		})
 	})
 
@@ -3522,6 +3519,13 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
 				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.epochRewardSmooth,
 					h.epochQAPowerSmooth, rt.TotalFilCircSupply())
+
+				// if cc upgrade, pledge is max of new and replaced pledges
+				if precommitOnChain.Info.ReplaceCapacity {
+					replaced := h.getSector(rt, precommitOnChain.Info.ReplaceSectorNumber)
+					pledge = big.Max(pledge, replaced.InitialPledge)
+				}
+
 				expectPledge = big.Add(expectPledge, pledge)
 			}
 		}
@@ -3994,7 +3998,7 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 		// TODO this forces tests to take funds from locked funds instead of balance.
 		// We should make other cases possible by pushing complexity to the config
 		penaltyFromUnlocked := penaltyTotal
-		if  !config.repaidFeeDebt.Nil() && !config.repaidFeeDebt.IsZero() {
+		if !config.repaidFeeDebt.Nil() && !config.repaidFeeDebt.IsZero() {
 			penaltyFromUnlocked = big.Sub(penaltyFromUnlocked, config.repaidFeeDebt)
 		}
 		pledgeDelta = big.Sub(pledgeDelta, penaltyFromUnlocked)
