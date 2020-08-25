@@ -196,7 +196,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	//
 
 	// advance to proving period
-	dlInfo, pIdx, v := vm.AdvanceTillProvingPeriod(t, v, minerAddrs.IDAddress, sectorNumber)
+	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
 	require.NoError(t, err)
 

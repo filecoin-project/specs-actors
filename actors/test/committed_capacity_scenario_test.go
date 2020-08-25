@@ -80,7 +80,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	require.Equal(t, exitcode.Ok, code)
 
 	// advance to proving period and submit post
-	dlInfo, pIdx, v := vm.AdvanceTillProvingPeriod(t, v, minerAddrs.IDAddress, sectorNumber)
+	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
 
 	submitParams := miner.SubmitWindowedPoStParams{
 		Deadline: dlInfo.Index,
@@ -240,7 +240,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
 
 	// advance to proving period and submit post
-	dlInfo, pIdx, v = vm.AdvanceTillProvingPeriod(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
 
 	submitParams = miner.SubmitWindowedPoStParams{
 		Deadline: dlInfo.Index,
@@ -280,7 +280,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, combinedPower.QA, networkStats.TotalQABytesCommitted)
 
 	// advance to proving period of old sector
-	dlInfo, _, v = vm.AdvanceTillProvingPeriod(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	dlInfo, _, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
 
 	// proving period cron removes sector reducing the miner's power to that of the new sector
 	v, err = v.WithEpoch(dlInfo.Last())
