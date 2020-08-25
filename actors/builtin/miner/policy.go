@@ -48,6 +48,9 @@ func init() {
 // We set this to same as MaxPartitionsPerDeadline so we can process that many partitions every deadline.
 const AddressedPartitionsMax = MaxPartitionsPerDeadline
 
+// Maximum number of unique "declarations" in batch operations.
+const DeclarationsMax = AddressedPartitionsMax
+
 // The maximum number of sector infos that can be loaded in a single invocation.
 // This limits the amount of state to be read in a single message execution.
 const AddressedSectorsMax = 10_000 // PARAM_SPEC
@@ -207,7 +210,7 @@ var consensusFaultReporterInitialShare = builtin.BigFrac{
 
 // Per-epoch growth rate of the consensus fault reporter reward.
 var consensusFaultReporterShareGrowthRate = builtin.BigFrac{
-	Numerator:   big.NewInt(101251), 	// PARAM_FINISH PARAM_SPEC
+	Numerator:   big.NewInt(101251), // PARAM_FINISH PARAM_SPEC
 	Denominator: big.NewInt(100000),
 }
 
