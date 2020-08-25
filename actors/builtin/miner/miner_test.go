@@ -2962,7 +2962,7 @@ func TestAddLockedFund(t *testing.T) {
 		st = getState(rt)
 		// no funds used to pay off ip debt
 		assert.Equal(t, availableBefore, st.GetAvailableBalance(newBalance))
-		assert.False(t, st.MeetsInitialPledgeCondition())
+		assert.False(t, st.IsDebtFree())
 		// all funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
 	})

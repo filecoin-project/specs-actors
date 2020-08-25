@@ -129,7 +129,7 @@ func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstima
 func RepayDebtsOrAbort(rt Runtime, st *State) abi.TokenAmount {
 	currBalance := rt.CurrentBalance()
 	toBurn, err := st.repayDebts(currBalance)
-	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "unlocked balance can not repay fee debt")
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "unlocked balance can not repay fee debt")
 
 	return toBurn
 }

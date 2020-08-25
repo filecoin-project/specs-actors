@@ -761,7 +761,7 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 // ApplyPenalty adds the provided penalty to fee debt.
 func (st *State) ApplyPenalty(penalty abi.TokenAmount) error {
 	if penalty.LessThan(big.Zero()) {
-		return xc.ErrForbidden.Wrapf("applying negative penalty %v not allowed", penalty)
+		return xerrors.Errorf("applying negative penalty %v not allowed", penalty)
 	}
 	st.FeeDebt = big.Add(st.FeeDebt, penalty)
 	return nil
@@ -797,7 +797,7 @@ func (st *State) RepayPartialDebtInPriorityOrder(store adt.Store, currEpoch abi.
 // and bringing actor into IP debt.  FeeDebt should be zero after calling.
 func (st *State) repayDebts(currBalance abi.TokenAmount) (abi.TokenAmount, error) {
 	unlockedBalance := st.GetUnlockedBalance(currBalance)
-	if !unlockedBalance.GreaterThanEqual(st.FeeDebt) {
+	if unlockedBalance.LessThan(st.FeeDebt) {
 		return big.Zero(), xc.ErrInsufficientFunds.Wrapf("unlocked balance can not repay fee debt (%v < %v)", unlockedBalance, st.FeeDebt)
 	}
 	debtToRepay := st.FeeDebt
@@ -903,7 +903,7 @@ func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
 	Assert(balance.GreaterThanEqual(big.Sum(st.PreCommitDeposits, st.LockedFunds, st.InitialPledge)))
 }
 
-func (st *State) MeetsInitialPledgeCondition() bool {
+func (st *State) IsDebtFree() bool {
 	return st.FeeDebt.LessThanEqual(big.Zero())
 }
 
@@ -1112,7 +1112,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 
 func MinerEligibleForElection(store adt.Store, mSt *State, thisEpochReward abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
 	// IP requirements are met.  This includes zero fee debt
-	if !mSt.MeetsInitialPledgeCondition() {
+	if !mSt.IsDebtFree() {
 		return false, nil
 	}
 
