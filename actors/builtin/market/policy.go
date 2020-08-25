@@ -6,30 +6,30 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
-// PARAM_SPEC
-// The number of blocks between payouts for deals
-const DealUpdatesInterval = builtin.EpochsInDay
+// The number of epochs between payment and other state processing for deals.
+const DealUpdatesInterval = builtin.EpochsInDay // PARAM_SPEC
 
-// PARAM_SPEC
 // The percentage of normalized cirulating
 // supply that must be covered by provider collateral in a deal
-var ProvCollateralPercentSupplyNum = big.NewInt(5)
-var ProvCollateralPercentSupplyDenom = big.NewInt(100)
+var ProviderCollateralSupplyTarget = builtin.BigFrac{
+	Numerator: big.NewInt(5), // PARAM_SPEC
+	Denominator: big.NewInt(100),
+}
+//var ProvCollateralPercentSupplyNum = big.NewInt(5)
+//var ProvCollateralPercentSupplyDenom = big.NewInt(100)
 
-// PARAM_SPEC
-// Minimum Deal Duration
-var DealMinDuration = abi.ChainEpoch(180 * builtin.EpochsInDay)
+// Minimum deal duration.
+var DealMinDuration = abi.ChainEpoch(180 * builtin.EpochsInDay) // PARAM_SPEC
 
-// PARAM_SPEC
-// Maximum Deal Duration
-var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay)
+// Maximum deal duration
+var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_SPEC
 
 // Bounds (inclusive) on deal duration
-func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
+func dealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
 	return DealMinDuration, DealMaxDuration // PARAM_FINISH
 }
 
-func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
+func dealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
 	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
 }
 
@@ -38,8 +38,8 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	// normalizedCirculatingSupply = FILCirculatingSupply * dealPowerShare
 	// dealPowerShare = dealQAPower / max(BaselinePower(t), NetworkQAPower(t), dealQAPower)
 
-	lockTargetNum := big.Mul(ProvCollateralPercentSupplyNum, networkCirculatingSupply)
-	lockTargetDenom := ProvCollateralPercentSupplyDenom
+	lockTargetNum := big.Mul(ProviderCollateralSupplyTarget.Numerator, networkCirculatingSupply)
+	lockTargetDenom := ProviderCollateralSupplyTarget.Denominator
 
 	qaPower := dealQAPower(pieceSize, verified)
 	powerShareNum := qaPower
@@ -51,7 +51,7 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	return minCollateral, abi.TotalFilecoin // PARAM_FINISH
 }
 
-func DealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
+func DealClientCollateralBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
 	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
 }
 

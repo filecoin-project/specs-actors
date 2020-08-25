@@ -21,9 +21,9 @@ var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builti
 
 // Multiplier of share of circulating money supply for consensus pledge required to commit a sector.
 // This pledge is lost if a sector is terminated before its full committed lifetime.
-var InitialPledgeLockTarget = BigFrac{
-	numerator:   big.NewInt(3), // PARAM_SPEC PARAM_FINISH
-	denominator: big.NewInt(10),
+var InitialPledgeLockTarget = builtin.BigFrac{
+	Numerator:   big.NewInt(3), // PARAM_SPEC PARAM_FINISH
+	Denominator: big.NewInt(10),
 }
 
 // Projection period of expected daily sector block reward penalised when a fault is declared "on time".
@@ -35,23 +35,23 @@ var DeclaredFaultFactorNum = 214 // PARAM_SPEC
 var DeclaredFaultFactorDenom = 100
 var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNum) / DeclaredFaultFactorDenom)
 
-// PARAM_SPEC
-// Amount of fee for faults that have not been declared on time.
-// Motivation: This fee is higher than FF for two reasons:
-// (1) it guarantees that a miner is incentivized to declare a fault early
-// (2) A miner stores less than (1-spacegap) of a sector, does not not declare it as faulty and hopes to get challenged on the stored parts. SP guarantees that on expectation this strategy would not earn positive rewards.
+// Projection period of expected daily sector block reward penalised when a fault is not declared in advance.
+// This fee is higher than the declared fault fee for two reasons:
+// (1) it incentivizes a miner to declare a fault early;
+// (2) when a miner stores less than (1-spacegap) of a sector, does not not declare it as faulty,
+//     and hopes to be challenged on the stored parts, it means the miner would not be expected to earn positive rewards.
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
-var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay
+var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay // PARAM_SPEC
 
-// Maximum number of days of BR a terminated sector can be penalized
+// Maximum number of lifetime days penalized when a sector is terminated.
 const TerminationLifetimeCap = abi.ChainEpoch(70)
 
-// Number of whole per-winner rewards covered by consensus fault penalty
+// Multiplier of whole per-winner rewards for a consensus fault penalty.
 const ConsensusFaultFactor = 5
 
-// This is the BR(t) value of the given sector for the current epoch.
-// It is the expected reward this sector would pay out over a t-day period.
-// BR(t) = CurrEpochReward(t) * SectorQualityAdjustedPower * EpochsInDay / TotalNetworkQualityAdjustedPower(t)
+// The projected block reward a sector would earn over some period.
+// Also known as "BR(t)".
+// BR(t) = ProjectedReward(t) * SectorQualityAdjustedPower / TotalNetworkQualityAdjustedPower
 func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
 	networkQAPowerSmoothed := networkQAPowerEstimate.Estimate()
 	if networkQAPowerSmoothed.IsZero() {
@@ -63,15 +63,16 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.Fi
 	return big.Max(br, big.Zero()) // negative BR is clamped at 0
 }
 
-// This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
-// it has been previously detected by the network.
-// FF(t) = DeclaredFaultFactor * BR(t)
+// The penalty for a sector declared faulty or continuing faulty for another proving period.
+// It is a projection of the expected reward earned by the sector.
+// Also known as "FF(t)"
 func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, DeclaredFaultProjectionPeriod)
 }
 
-// This is the SP(t) penalty for a newly faulty sector that has not been declared.
-// SP(t) = UndeclaredFaultFactor * BR(t)
+// The penalty for a newly faulty sector that was been declared in advance.
+// It is a projection of the expected reward earned by the sector.
+// Also known as "SP(t)"
 func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, UndeclaredFaultProjectionPeriod)
 }
@@ -114,7 +115,7 @@ func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate *smoothing.
 // network total and baseline power, per-epoch  reward, and circulating token supply.
 // The pledge comprises two parts:
 // - storage pledge, aka IP base: a multiple of the reward expected to be earned by newly-committed power
-// - pledge share, aka additional IP: a pro-rata fraction of the circulating money supply
+// - consensus pledge, aka additional IP: a pro-rata fraction of the circulating money supply
 //
 // IP = IPBase(t) + AdditionalIP(t)
 // IPBase(t) = BR(t, InitialPledgeProjectionPeriod)
@@ -124,8 +125,8 @@ func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate *smoothing.
 func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, circulatingSupply abi.TokenAmount) abi.TokenAmount {
 	ipBase := ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaPower, InitialPledgeProjectionPeriod)
 
-	lockTargetNum := big.Mul(InitialPledgeLockTarget.numerator, circulatingSupply)
-	lockTargetDenom := InitialPledgeLockTarget.denominator
+	lockTargetNum := big.Mul(InitialPledgeLockTarget.Numerator, circulatingSupply)
+	lockTargetDenom := InitialPledgeLockTarget.Denominator
 	pledgeShareNum := qaPower
 	networkQAPower := networkQAPowerEstimate.Estimate()
 	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
