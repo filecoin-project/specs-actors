@@ -1,4 +1,4 @@
-package test
+package test_test
 
 import (
 	"context"
@@ -195,20 +195,14 @@ func TestCommitPoStFlow(t *testing.T) {
 	// Submit PoSt
 	//
 
-	// find information about committed sector
+	// advance to proving period
+	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
 	require.NoError(t, err)
 
-	dlIdx, pIdx, err := minerState.FindSector(v.Store(), sectorNumber)
-	require.NoError(t, err)
 	sector, found, err := minerState.GetSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
 	require.True(t, found)
-
-	// advance time to next proving period
-	v, dlInfo = vm.AdvanceByDeadlineTillIndex(t, v, minerAddrs.IDAddress, dlIdx)
-	v, err = v.WithEpoch(dlInfo.Open)
-	require.NoError(t, err)
 
 	t.Run("submit PoSt succeeds", func(t *testing.T) {
 		tv, err := v.WithEpoch(v.GetEpoch())
@@ -216,7 +210,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 		// Submit PoSt
 		submitParams := miner.SubmitWindowedPoStParams{
-			Deadline: dlIdx,
+			Deadline: dlInfo.Index,
 			Partitions: []miner.PoStPartition{{
 				Index:   pIdx,
 				Skipped: bitfield.New(),
@@ -267,7 +261,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 		// Submit PoSt
 		submitParams := miner.SubmitWindowedPoStParams{
-			Deadline: dlIdx,
+			Deadline: dlInfo.Index,
 			Partitions: []miner.PoStPartition{{
 				Index:   pIdx,
 				Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),

@@ -33,6 +33,15 @@ import (
 )
 
 var FIL = big.NewInt(1e18)
+var VerifregRoot address.Address
+
+func init() {
+	var err error
+	VerifregRoot, err = address.NewIDAddress(80)
+	if err != nil {
+		panic("could not create id address 80")
+	}
+}
 
 //
 // Genesis like setup
@@ -74,9 +83,8 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	initializeActor(ctx, t, vm, marketState, builtin.StorageMarketActorCodeID, builtin.StorageMarketActorAddr, big.Zero())
 
 	// this will need to be replaced with the address of a multisig actor for the verified registry to be tested accurately
-	rootVerifier, err := address.NewIDAddress(80)
-	require.NoError(t, err)
-	vrState := verifreg.ConstructState(emptyMapCID, rootVerifier)
+	initializeActor(ctx, t, vm, &account.State{Address: VerifregRoot}, builtin.AccountActorCodeID, VerifregRoot, big.Zero())
+	vrState := verifreg.ConstructState(emptyMapCID, VerifregRoot)
 	initializeActor(ctx, t, vm, vrState, builtin.VerifiedRegistryActorCodeID, builtin.VerifiedRegistryActorAddr, big.Zero())
 
 	// burnt funds
@@ -162,14 +170,18 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	if ei.SubInvocations != nil {
 		for i, invk := range invocation.SubInvocations {
 			subidentifier := fmt.Sprintf("%s%d:", identifier, i)
-			require.True(t, len(ei.SubInvocations) > i, "%s unexpected subinvocation [%s:%d]", subidentifier, invk.Msg.to, invk.Msg.method)
+			// attempt match only if methods match
+			require.True(t, len(ei.SubInvocations) > i && ei.SubInvocations[i].To == invk.Msg.to && ei.SubInvocations[i].Method == invk.Msg.method,
+				"%s unexpected subinvocation [%s:%d]\nexpected:\n%s\nactual:\n%s",
+				subidentifier, invk.Msg.to, invk.Msg.method, ei.listSubinvocations(), listInvocations(invocation.SubInvocations))
 			ei.SubInvocations[i].matches(t, subidentifier, invk)
 		}
 		missingInvocations := len(ei.SubInvocations) - len(invocation.SubInvocations)
 		if missingInvocations > 0 {
 			missingIndex := len(invocation.SubInvocations)
 			missingExpect := ei.SubInvocations[missingIndex]
-			require.Fail(t, "%s%d: expected invocation [%s:%d]", identifier, missingIndex, missingExpect.To, missingExpect.From)
+			require.Failf(t, "missing expected invocations", "%s%d: expected invocation [%s:%d]\nexpected:\n%s\nactual:\n%s",
+				identifier, missingIndex, missingExpect.To, missingExpect.Method, ei.listSubinvocations(), listInvocations(invocation.SubInvocations))
 		}
 	}
 
@@ -178,6 +190,28 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 	if ei.Ret != nil {
 		assert.True(t, ei.Ret.matches(invocation.Ret), "%s unexpected return value (%v != %v)", identifier, ei.Ret, invocation.Ret)
 	}
+}
+
+func (ei ExpectInvocation) listSubinvocations() string {
+	if len(ei.SubInvocations) == 0 {
+		return "[no invocations]\n"
+	}
+	list := ""
+	for i, si := range ei.SubInvocations {
+		list = fmt.Sprintf("%s%2d: [%s:%d]\n", list, i, si.To, si.Method)
+	}
+	return list
+}
+
+func listInvocations(invocations []*Invocation) string {
+	if len(invocations) == 0 {
+		return "[no invocations]\n"
+	}
+	list := ""
+	for i, si := range invocations {
+		list = fmt.Sprintf("%s%2d: [%s:%d]\n", list, i, si.Msg.to, si.Msg.method)
+	}
+	return list
 }
 
 // helpers to simplify pointer creation
@@ -275,6 +309,24 @@ func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address
 	})
 }
 
+// Advance to the epoch when the sector is due to be proven.
+// Returns the deadline info for proving deadline for sector, partition index of sector, and a VM at the opening of
+// the deadline (ready for SubmitWindowedPoSt).
+func AdvanceTillProvingDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (*miner.DeadlineInfo, uint64, *VM) {
+	var minerState miner.State
+	err := v.GetState(minerIDAddress, &minerState)
+	require.NoError(t, err)
+
+	dlIdx, pIdx, err := minerState.FindSector(v.Store(), sectorNumber)
+	require.NoError(t, err)
+
+	// advance time to next proving period
+	v, dlInfo := AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlIdx)
+	v, err = v.WithEpoch(dlInfo.Open)
+	require.NoError(t, err)
+	return dlInfo, pIdx, v
+}
+
 //
 // state abstraction
 //
@@ -301,6 +353,32 @@ func GetMinerBalances(t *testing.T, vm *VM, minerIdAddr address.Address) MinerBa
 		VestingBalance:   state.LockedFunds,
 		InitialPledge:    state.InitialPledge,
 	}
+}
+
+func PowerForMinerSector(t *testing.T, vm *VM, minerIdAddr address.Address, sectorNumber abi.SectorNumber) miner.PowerPair {
+	var state miner.State
+	err := vm.GetState(minerIdAddr, &state)
+	require.NoError(t, err)
+
+	sector, found, err := state.GetSector(vm.store, sectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	sectorSize, err := sector.SealProof.SectorSize()
+	require.NoError(t, err)
+	return miner.PowerForSector(sectorSize, sector)
+}
+
+func MinerPower(t *testing.T, vm *VM, minerIdAddr address.Address) miner.PowerPair {
+	var state power.State
+	err := vm.GetState(builtin.StoragePowerActorAddr, &state)
+	require.NoError(t, err)
+
+	claim, found, err := state.GetClaim(vm.store, minerIdAddr)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	return miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
 }
 
 type NetworkStats struct {
