@@ -296,10 +296,10 @@ func GetMinerBalances(t *testing.T, vm *VM, minerIdAddr address.Address) MinerBa
 	require.NoError(t, err)
 
 	return MinerBalances{
-		AvailableBalance: big.Subtract(a.Balance, state.PreCommitDeposits, state.InitialPledgeRequirement, state.InitialPledgeRequirement, state.FeeDebt),
+		AvailableBalance: big.Subtract(a.Balance, state.PreCommitDeposits, state.InitialPledge, state.LockedFunds, state.FeeDebt),
 		PreCommitDeposit: state.PreCommitDeposits,
 		VestingBalance:   state.LockedFunds,
-		InitialPledge:    state.InitialPledgeRequirement,
+		InitialPledge:    state.InitialPledge,
 	}
 }
 

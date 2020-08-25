@@ -55,8 +55,8 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.InitialPledgeRequirement (big.Int) (struct)
-	if err := t.InitialPledgeRequirement.MarshalCBOR(w); err != nil {
+	// t.InitialPledge (big.Int) (struct)
+	if err := t.InitialPledge.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -183,12 +183,12 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.InitialPledgeRequirement (big.Int) (struct)
+	// t.InitialPledge (big.Int) (struct)
 
 	{
 
-		if err := t.InitialPledgeRequirement.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.InitialPledgeRequirement: %w", err)
+		if err := t.InitialPledge.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.InitialPledge: %w", err)
 		}
 
 	}
