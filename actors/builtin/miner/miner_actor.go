@@ -548,9 +548,6 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
-			// NOTE: we don't validate that the replacement sector
-			// lives at the target deadline/partition. If it
-			// doesn't, sealing may still succeed but replacement will fail.
 			replaceSector := validateReplaceSector(rt, &st, store, params)
 			// Note the replaced sector's initial pledge as a lower bound for the new sector's deposit
 			depositMinimum = replaceSector.InitialPledge
@@ -707,22 +704,24 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Pre-commits for new sectors.
 	var preCommits []*SectorPreCommitOnChainInfo
 	for _, precommit := range precommittedSectors {
-		// Check (and activate) storage deals associated to sector. Abort if checks failed.
-		// TODO: we should batch these calls...
-		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.ActivateDeals,
-			&market.ActivateDealsParams{
-				DealIDs:      precommit.Info.DealIDs,
-				SectorExpiry: precommit.Info.Expiration,
-			},
-			abi.NewTokenAmount(0),
-		)
+		if len(precommit.Info.DealIDs) > 0 {
+			// Check (and activate) storage deals associated to sector. Abort if checks failed.
+			// TODO: we should batch these calls...
+			// https://github.com/filecoin-project/specs-actors/issues/474
+			_, code := rt.Send(
+				builtin.StorageMarketActorAddr,
+				builtin.MethodsMarket.ActivateDeals,
+				&market.ActivateDealsParams{
+					DealIDs:      precommit.Info.DealIDs,
+					SectorExpiry: precommit.Info.Expiration,
+				},
+				abi.NewTokenAmount(0),
+			)
 
-		if code != exitcode.Ok {
-			rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
-			continue
+			if code != exitcode.Ok {
+				rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
+				continue
+			}
 		}
 
 		preCommits = append(preCommits, precommit)
@@ -770,8 +769,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
 			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
 
-			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, pwrTotal.PledgeCollateral,
-				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
+			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
 			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
 			totalPledge = big.Add(totalPledge, initialPledge)
@@ -1437,7 +1436,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	// The policy amounts we should burn and send to reporter
 	// These may differ from actual funds send when miner goes into fee debt
-	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochReward)
+	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochRewardSmoothed.Estimate())
 	slasherReward := RewardForConsensusSlashReport(faultAge, faultPenalty)
 	pledgeDelta := big.Zero()
 
@@ -1656,36 +1655,23 @@ func handleProvingDeadline(rt Runtime) {
 
 	hadEarlyTerminations := false
 
-	powerDelta := PowerPair{big.Zero(), big.Zero()}
+	powerDeltaTotal := NewPowerPairZero()
 	penaltyTotal := abi.NewTokenAmount(0)
-	pledgeDelta := abi.NewTokenAmount(0)
+	pledgeDeltaTotal := abi.NewTokenAmount(0)
 
 	var st State
 	rt.State().Transaction(&st, func() {
-		var err error
 		{
 			// Vest locked funds.
 			// This happens first so that any subsequent penalties are taken
 			// from locked vesting funds before funds free this epoch.
 			newlyVested, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
-			pledgeDelta = big.Add(pledgeDelta, newlyVested.Neg())
+			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, newlyVested.Neg())
 		}
 
 		{
-			// expire pre-committed sectors
-			expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector expiry queue")
-
-			bf, modified, err := expiryQ.PopUntil(currEpoch)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop expired sectors")
-
-			if modified {
-				st.PreCommittedSectorsExpiry, err = expiryQ.Root()
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save expiry queue")
-			}
-
-			depositToBurn, err := st.checkPrecommitExpiry(store, bf)
+			depositToBurn, err := st.ExpirePreCommits(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
 			penaltyTotal = big.Add(penaltyTotal, depositToBurn)
 		}
@@ -1694,103 +1680,41 @@ func handleProvingDeadline(rt Runtime) {
 		// That way, don't re-schedule a cron callback if one is already scheduled.
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
-		// Note: because the cron actor is not invoked on epochs with empty tipsets, the current epoch is not necessarily
-		// exactly the final epoch of the deadline; it may be slightly later (i.e. in the subsequent deadline/period).
-		// Further, this method is invoked once *before* the first proving period starts, after the actor is first
-		// constructed; this is detected by !dlInfo.PeriodStarted().
-		// Use dlInfo.PeriodEnd() rather than rt.CurrEpoch unless certain of the desired semantics.
-		dlInfo := st.DeadlineInfo(currEpoch)
-		if !dlInfo.PeriodStarted() {
-			return // Skip checking faults on the first, incomplete period.
-		}
-		deadlines, err := st.LoadDeadlines(store)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-		deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
-		quant := dlInfo.QuantSpec()
-		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-
 		{
-			// Detect and penalize missing proofs.
-			faultExpiration := dlInfo.Last() + FaultMaxAge
+			result, err := st.AdvanceDeadline(store, currEpoch)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to advance deadline")
 
-			partPowerDelta, penalizedPower, err := deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process end of deadline %d", dlInfo.Index)
+			// Charge detected faults as undeclared.
+			undeclaredPenalty := PledgePenaltyForUndeclaredFault(
+				epochReward.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed,
+				result.DetectedFaultyPower.QA,
+			)
+			// Charge the rest as declared.
+			declaredPenalty := PledgePenaltyForDeclaredFault(
+				epochReward.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed,
+				big.Sub(result.TotalFaultyPower.QA, result.DetectedFaultyPower.QA),
+			)
 
-			powerDelta = powerDelta.Add(partPowerDelta)
+			powerDeltaTotal = powerDeltaTotal.Add(result.PowerDelta)
+			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, result.PledgeDelta)
 
-			// Unlock sector penalty for all undeclared faults.
-			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizedPower.QA)
-			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
-			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizedPower.QA))
-			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance)
-			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
-			pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
-
-		}
-		{
-			// Record faulty power for penalisation of ongoing faults, before popping expirations.
-			// This includes any power that was just faulted from missing a PoSt.
-			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, deadline.FaultyPower.QA)
-			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance) //nolint:ineffassign
-			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
-			pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
-		}
-		{
-			// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
-			expired, err := deadline.PopExpiredSectors(store, dlInfo.Last(), quant)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load expired sectors")
-
-			// Release pledge requirements for the sectors expiring on-time.
-			// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
-			// when the early termination is processed.
-			pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
-			st.AddInitialPledgeRequirement(expired.OnTimePledge.Neg())
-
-			// Record reduction in power of the amount of expiring active power.
-			// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
-			powerDelta = powerDelta.Sub(expired.ActivePower)
-
-			// Record deadlines with early terminations. While this
-			// bitfield is non-empty, the miner is locked until they
-			// pay the fee.
-			noEarlyTerminations, err := expired.EarlySectors.IsEmpty()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
-			if !noEarlyTerminations {
-				st.EarlyTerminations.Set(dlInfo.Index)
-			}
-
-			// The termination fee is paid later, in early-termination queue processing.
-			// We could charge at least the undeclared fault fee here, which is a lower bound on the penalty.
-			// https://github.com/filecoin-project/specs-actors/issues/674
-
-			// The deals are not terminated yet, that is left for processing of the early termination queue.
-		}
-
-		// Save new deadline state.
-		err = deadlines.UpdateDeadline(store, dlInfo.Index, deadline)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", dlInfo.Index)
-
-		err = st.SaveDeadlines(store, deadlines)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
-
-		// Increment current deadline, and proving period if necessary.
-		if dlInfo.PeriodStarted() {
-			st.CurrentDeadline = (st.CurrentDeadline + 1) % WPoStPeriodDeadlines
-			if st.CurrentDeadline == 0 {
-				st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
+			penaltyTarget := big.Add(declaredPenalty, undeclaredPenalty)
+			if !penaltyTarget.IsZero() {
+				unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+				penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
+				penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
+				pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 			}
 		}
 	})
 
 	// Remove power for new faults, and burn penalties.
-	requestUpdatePower(rt, powerDelta)
+	requestUpdatePower(rt, powerDeltaTotal)
 	burnFunds(rt, penaltyTotal)
-	notifyPledgeChanged(rt, pledgeDelta)
+	notifyPledgeChanged(rt, pledgeDeltaTotal)
 
 	// Schedule cron callback for next deadline's last epoch.
 	newDlInfo := st.DeadlineInfo(currEpoch)

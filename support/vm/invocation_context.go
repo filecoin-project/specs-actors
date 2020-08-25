@@ -156,7 +156,7 @@ func (ic *invocationContext) CurrEpoch() abi.ChainEpoch {
 }
 
 func (ic *invocationContext) CurrentBalance() abi.TokenAmount {
-	return ic.fromActor.Balance
+	return ic.toActor.Balance
 }
 
 func (ic *invocationContext) GetActorCodeCID(a address.Address) (cid.Cid, bool) {

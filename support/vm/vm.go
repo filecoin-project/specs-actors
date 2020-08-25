@@ -298,6 +298,11 @@ func (vm *VM) Store() adt.Store {
 	return vm.store
 }
 
+// Get the chain epoch for this vm
+func (vm *VM) GetEpoch() abi.ChainEpoch {
+	return vm.currentEpoch
+}
+
 // transfer debits money from one account and credits it to another.
 // avoid calling this method with a zero amount else it will perform unnecessary actor loading.
 //

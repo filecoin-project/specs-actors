@@ -96,7 +96,6 @@ func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower)
 	currRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.EffectiveBaselinePower, st.CumsumRealized, st.CumsumBaseline)
 
 	st.ThisEpochReward = computeReward(st.Epoch, prevRewardTheta, currRewardTheta)
-
 }
 
 func (st *State) updateSmoothedEstimates(delta abi.ChainEpoch) {
