@@ -409,6 +409,22 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		require.EqualValues(t, mul(powerUnit, 4), st.TotalRawBytePower)
 	})
 
+	t.Run("claimed power is externally available", func(t *testing.T) {
+		// Setup four miners above threshold
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		st := getState(rt)
+
+		claim, found, err := st.GetClaim(rt.AdtStore(), miner1)
+		require.NoError(t, err)
+		require.True(t, found)
+
+		assert.Equal(t, powerUnit, claim.RawBytePower)
+		assert.Equal(t, powerUnit, claim.QualityAdjPower)
+	})
 }
 
 func TestCron(t *testing.T) {
