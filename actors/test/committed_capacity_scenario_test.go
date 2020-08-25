@@ -46,10 +46,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
 
-	// advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(200)
-	require.NoError(t, err)
-
 	//
 	// Precommit, prove and PoSt empty sector (more fully tested in TestCommitPoStFlow)
 	//
@@ -71,7 +67,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	// Prove commit sector after max seal duration
-	v, err = v.WithEpoch(proveTime)
+	v, err := v.WithEpoch(proveTime)
 	require.NoError(t, err)
 	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
