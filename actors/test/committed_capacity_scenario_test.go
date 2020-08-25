@@ -57,7 +57,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
 		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
+		Expiration:    v.GetEpoch() + 200*builtin.EpochsInDay,
 	}
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 	require.Equal(t, exitcode.Ok, code)
