@@ -490,7 +490,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	ic.toActor, ic.msg.to = ic.resolveTarget(ic.msg.to)
 
 	// 3. transfer funds carried by the msg
-	if !ic.msg.value.Nil() && !ic.msg.value.IsZero() {
+	if !ic.msg.value.NilOrZero() {
 		if ic.msg.value.LessThan(big.Zero()) {
 			ic.Abortf(exitcode.SysErrForbidden, "attempt to transfer negative value %s from %s to %s",
 				ic.msg.value, ic.msg.from, ic.msg.to)

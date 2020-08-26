@@ -1968,6 +1968,13 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 }
 
 func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
+	if len(dealIDs) == 0 {
+		return market.VerifyDealsForActivationReturn{
+			DealWeight:         big.Zero(),
+			VerifiedDealWeight: big.Zero(),
+		}
+	}
+
 	var dealWeights market.VerifyDealsForActivationReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
@@ -1982,7 +1989,6 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 	AssertNoError(ret.Into(&dealWeights))
 	return dealWeights
-
 }
 
 func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
