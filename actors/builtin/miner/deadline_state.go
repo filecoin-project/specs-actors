@@ -915,7 +915,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 		// Process new faults and accumulate new faulty power.
 		// This updates the faults in partition state ahead of calculating the sectors to include for proof.
-		newPowerDelta, newFaultPower, retractedRecoveryPower, err := partition.RecordSkippedFaults(
+		newPowerDelta, newFaultPower, retractedRecoveryPower, hasNewFaults, err := partition.RecordSkippedFaults(
 			store, sectors, ssize, quant, faultExpiration, post.Skipped,
 		)
 		if err != nil {
@@ -924,7 +924,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 		// If we have new faulty power, we've added some faults. We need
 		// to record the new expiration in the deadline.
-		if !newFaultPower.IsZero() {
+		if hasNewFaults {
 			rescheduledPartitions = append(rescheduledPartitions, post.Index)
 		}
 
