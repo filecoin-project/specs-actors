@@ -294,9 +294,14 @@ type ActivateDealsParams struct {
 	SectorExpiry abi.ChainEpoch
 }
 
+type ActivateDealsReturn struct {
+	DealWeight         abi.DealWeight
+	VerifiedDealWeight abi.DealWeight
+}
+
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // update the market's internal state accordingly.
-func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.EmptyValue {
+func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *ActivateDealsReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 	currEpoch := rt.CurrEpoch()
@@ -304,9 +309,12 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 	var st State
 	store := adt.AsStore(rt)
 
+	ret := &ActivateDealsReturn{}
+
 	// Update deal dealStates.
 	rt.State().Transaction(&st, func() {
-		_, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
+		var err error
+		ret.DealWeight, ret.VerifiedDealWeight, err = ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
@@ -347,7 +355,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 	})
 
-	return nil
+	return ret
 }
 
 type ComputeDataCommitmentParams struct {

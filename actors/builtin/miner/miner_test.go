@@ -437,9 +437,9 @@ func TestCommitments(t *testing.T) {
 		sector := actor.getSector(rt, sectorNo)
 		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
 
-		// expect deal weights to be transfered to on chain info
-		assert.Equal(t, onChainPrecommit.DealWeight, sector.DealWeight)
-		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, sector.VerifiedDealWeight)
+		// expect deal weights to be recomputed
+		assert.Equal(t, actor.dealWeight, sector.DealWeight)
+		assert.Equal(t, actor.verifiedDealWeight, sector.VerifiedDealWeight)
 
 		// expect activation epoch to be current epoch
 		assert.Equal(t, rt.Epoch(), sector.Activation)
@@ -3098,6 +3098,11 @@ type actorHarness struct {
 
 	epochRewardSmooth  *smoothing.FilterEstimate
 	epochQAPowerSmooth *smoothing.FilterEstimate
+
+	precommitDealWeight         abi.DealWeight
+	precommitVerifiedDealWeight abi.DealWeight
+	dealWeight                  abi.DealWeight
+	verifiedDealWeight          abi.DealWeight
 }
 
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
@@ -3132,6 +3137,11 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 
 		epochRewardSmooth:  smoothing.TestingConstantEstimate(rwd),
 		epochQAPowerSmooth: smoothing.TestingConstantEstimate(pwr),
+
+		precommitDealWeight:         big.NewInt(1 << 29),
+		precommitVerifiedDealWeight: big.NewInt(1 << 28),
+		dealWeight:                  big.NewInt(1<<29 - 1),
+		verifiedDealWeight:          big.NewInt(1<<28 - 1),
 	}
 	h.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	return h

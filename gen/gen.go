@@ -150,6 +150,7 @@ func main() {
 		market.WithdrawBalanceParams{},
 		market.PublishStorageDealsParams{},
 		market.ActivateDealsParams{},
+		market.ActivateDealsReturn{},
 		market.VerifyDealsForActivationParams{},
 		market.VerifyDealsForActivationReturn{},
 		market.ComputeDataCommitmentParams{},

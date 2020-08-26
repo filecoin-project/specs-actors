@@ -957,8 +957,15 @@ func TestActivateDeals(t *testing.T) {
 		dealId5 := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch+1, startEpoch)
 
 		// provider1 activates deal 1 and deal2 but that does not activate deal3 to deal5
-		actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId1, dealId2)
+		dealWeights := actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId1, dealId2)
 		actor.assertDealsNotActivated(rt, currentEpoch, dealId3, dealId4, dealId5)
+
+		// expect weight to be sum of deal1 and deal2
+		d1 := actor.getDealProposal(rt, dealId1)
+		d2 := actor.getDealProposal(rt, dealId2)
+		expectedDealWeight := big.Add(market.DealWeight(d1), market.DealWeight(d2))
+		assert.Equal(t, expectedDealWeight, dealWeights.DealWeight)
+		assert.Equal(t, big.Zero(), dealWeights.VerifiedDealWeight)
 
 		// provider3 activates deal5 but that does not activate deal3 or deal4
 		actor.activateDeals(rt, sectorExpiry, provider2, currentEpoch, dealId5)
@@ -2759,7 +2766,9 @@ func (h *marketActorTestHarness) assertDealsNotActivated(rt *mock.Runtime, epoch
 	}
 }
 
-func (h *marketActorTestHarness) activateDeals(rt *mock.Runtime, sectorExpiry abi.ChainEpoch, provider address.Address, currentEpoch abi.ChainEpoch, dealIDs ...abi.DealID) {
+func (h *marketActorTestHarness) activateDeals(rt *mock.Runtime, sectorExpiry abi.ChainEpoch,
+	provider address.Address, currentEpoch abi.ChainEpoch, dealIDs ...abi.DealID,
+) *market.ActivateDealsReturn {
 	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
@@ -2768,12 +2777,14 @@ func (h *marketActorTestHarness) activateDeals(rt *mock.Runtime, sectorExpiry ab
 	ret := rt.Call(h.ActivateDeals, params)
 	rt.Verify()
 
-	require.Nil(h.t, ret)
+	adr, ok := ret.(*market.ActivateDealsReturn)
+	require.True(h.t, ok)
 
 	for _, d := range dealIDs {
 		s := h.getDealState(rt, d)
 		require.EqualValues(h.t, currentEpoch, s.SectorStartEpoch)
 	}
+	return adr
 }
 
 func (h *marketActorTestHarness) getDealProposal(rt *mock.Runtime, dealID abi.DealID) *market.DealProposal {

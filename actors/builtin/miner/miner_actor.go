@@ -703,13 +703,14 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
 	replaceSectors := make(DeadlineSectorMap)
 	// Pre-commits for new sectors.
+	dealWeights := make([]market.ActivateDealsReturn, len(precommittedSectors))
 	var preCommits []*SectorPreCommitOnChainInfo
-	for _, precommit := range precommittedSectors {
+	for i, precommit := range precommittedSectors {
 		if len(precommit.Info.DealIDs) > 0 {
 			// Check (and activate) storage deals associated to sector. Abort if checks failed.
 			// TODO: we should batch these calls...
 			// https://github.com/filecoin-project/specs-actors/issues/474
-			_, code := rt.Send(
+			ret, code := rt.Send(
 				builtin.StorageMarketActorAddr,
 				builtin.MethodsMarket.ActivateDeals,
 				&market.ActivateDealsParams{
@@ -718,11 +719,15 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				},
 				abi.NewTokenAmount(0),
 			)
+			AssertNoError(ret.Into(&dealWeights[i]))
 
 			if code != exitcode.Ok {
 				rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
 				continue
 			}
+		} else {
+			dealWeights[i].DealWeight = big.Zero()
+			dealWeights[i].VerifiedDealWeight = big.Zero()
 		}
 
 		preCommits = append(preCommits, precommit)
@@ -755,7 +760,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		replacedBySectorNumber := asMapBySectorNumber(replaced)
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
-		for _, precommit := range preCommits {
+		for i, precommit := range preCommits {
 			// compute initial pledge
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
@@ -784,8 +789,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				DealIDs:               precommit.Info.DealIDs,
 				Expiration:            precommit.Info.Expiration,
 				Activation:            activation,
-				DealWeight:            precommit.DealWeight,
-				VerifiedDealWeight:    precommit.VerifiedDealWeight,
+				DealWeight:            dealWeights[i].DealWeight,
+				VerifiedDealWeight:    dealWeights[i].VerifiedDealWeight,
 				InitialPledge:         initialPledge,
 				ExpectedDayReward:     dayReward,
 				ExpectedStoragePledge: storagePledge,
