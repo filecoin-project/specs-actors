@@ -2691,33 +2691,59 @@ func TestChangeWorkerAddress(t *testing.T) {
 
 		newWorker := tutil.NewIDAddr(t, 999)
 
-		currentEpoch := abi.ChainEpoch(5)
+		// set epoch to something close to next deadline so first cron will be before effective date
+		currentEpoch := abi.ChainEpoch(2970)
 		rt.SetEpoch(currentEpoch)
 
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
 		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
 
 		// no change if current epoch is less than effective epoch
-		rt.SetEpoch(effectiveEpoch - 1)
-		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-		rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-		rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
-			EventType: miner.CronEventWorkerKeyChange,
-		})
-		rt.Verify()
+		actor.advancePastDeadlineEndWithCron(rt)
+
 		st := getState(rt)
 		info, err := st.GetInfo(adt.AsStore(rt))
 		require.NoError(t, err)
 		require.NotNil(t, info.PendingWorkerKey)
 		require.EqualValues(t, actor.worker, info.Worker)
 
-		// set current epoch to effective epoch and ask to change the address
-		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+		// set current epoch to effective epoch and run deadline cron
+		rt.SetEpoch(effectiveEpoch)
+		actor.advancePastDeadlineEndWithCron(rt)
 
 		// assert control addresses are unchanged
 		st = getState(rt)
 		info, err = st.GetInfo(adt.AsStore(rt))
 		require.NoError(t, err)
+		require.NotEmpty(t, info.ControlAddresses)
+		require.Equal(t, originalControlAddrs, info.ControlAddresses)
+	})
+
+	t.Run("owner can cancel worker address change", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		originalControlAddrs := actor.controlAddrs
+
+		newWorker := tutil.NewIDAddr(t, 999)
+
+		currentEpoch := abi.ChainEpoch(5)
+		rt.SetEpoch(currentEpoch)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
+
+		// now reset to old worker
+		actor.changeWorkerAddress(rt, actor.worker, effectiveEpoch, originalControlAddrs)
+
+		// set current epoch to effective epoch and run deadline cron
+		rt.SetEpoch(effectiveEpoch)
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		// assert worker and control addresses are unchanged
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, actor.worker, info.Worker)
 		require.NotEmpty(t, info.ControlAddresses)
 		require.Equal(t, originalControlAddrs, info.ControlAddresses)
 	})
@@ -2761,8 +2787,9 @@ func TestChangeWorkerAddress(t *testing.T) {
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
 		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, []addr.Address{c1, c2})
 
-		// set current epoch to effective epoch and ask to change the address
-		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+		// set current epoch the run deadline cron
+		rt.SetEpoch(effectiveEpoch)
+		actor.advancePastDeadlineEndWithCron(rt)
 
 		// assert both worker and control addresses have changed
 		st := getState(rt)
@@ -2886,6 +2913,67 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+	})
+}
+
+func TestConfirmUpdateWorkerKey(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	newWorker := tutil.NewIDAddr(t, 999)
+	currentEpoch := abi.ChainEpoch(5)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("successfully changes the worker address", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetEpoch(currentEpoch)
+		actor.constructAndVerify(rt)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, actor.controlAddrs)
+
+		// confirm at effective epoch
+		rt.SetEpoch(effectiveEpoch)
+		actor.confirmUpdateWorkerKey(rt)
+
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, info.Worker, newWorker)
+		require.Nil(t, info.PendingWorkerKey)
+	})
+
+	t.Run("does nothing before the effective date", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetEpoch(currentEpoch)
+		actor.constructAndVerify(rt)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, actor.controlAddrs)
+
+		// confirm right before the effective epoch
+		rt.SetEpoch(effectiveEpoch - 1)
+		actor.confirmUpdateWorkerKey(rt)
+
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, actor.worker, info.Worker)
+		require.NotNil(t, info.PendingWorkerKey)
+	})
+
+	t.Run("does nothing when no update is set", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetEpoch(currentEpoch)
+		actor.constructAndVerify(rt)
+
+		actor.confirmUpdateWorkerKey(rt)
+
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, actor.worker, info.Worker)
+		require.Nil(t, info.PendingWorkerKey)
 	})
 }
 
@@ -3321,22 +3409,6 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	param.NewWorker = newWorker
 	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 
-	if newWorker != h.worker {
-		cronPayload := miner.CronEventPayload{
-			EventType: miner.CronEventWorkerKeyChange,
-		}
-		payload := new(bytes.Buffer)
-		err := cronPayload.MarshalCBOR(payload)
-		require.NoError(h.t, err)
-		cronEvt := &power.EnrollCronEventParams{
-			EventEpoch: effectiveEpoch,
-			Payload:    payload.Bytes(),
-		}
-
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-			cronEvt, big.Zero(), nil, exitcode.Ok)
-	}
-
 	rt.ExpectValidateCallerAddr(h.owner)
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeWorkerAddress, param)
@@ -3359,6 +3431,13 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	}
 	require.EqualValues(h.t, controlAddrs, info.ControlAddresses)
 
+}
+
+func (h *actorHarness) confirmUpdateWorkerKey(rt *mock.Runtime) {
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	rt.Call(h.a.ConfirmUpdateWorkerKey, nil)
+	rt.Verify()
 }
 
 func (h *actorHarness) checkSectorProven(rt *mock.Runtime, sectorNum abi.SectorNumber) {
@@ -3396,22 +3475,6 @@ func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	info, err := st.GetInfo(adt.AsStore(rt))
 	require.NoError(h.t, err)
 	require.EqualValues(h.t, newPID, info.PeerId)
-}
-
-func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
-	rt.SetEpoch(effectiveEpoch)
-	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
-		EventType: miner.CronEventWorkerKeyChange,
-	})
-	rt.Verify()
-
-	st := getState(rt)
-	info, err := st.GetInfo(adt.AsStore(rt))
-	require.NoError(h.t, err)
-	require.Nil(h.t, info.PendingWorkerKey)
-	require.EqualValues(h.t, newWorker, info.Worker)
 }
 
 func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address, control []addr.Address) {
@@ -3658,6 +3721,17 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	deadline := st.DeadlineInfo(rt.Epoch())
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+	h.onDeadlineCron(rt, &cronConfig{
+		expectedEnrollment: nextCron,
+	})
+	rt.SetEpoch(deadline.NextPeriodStart())
+}
+
+func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
+	st := getState(rt)
+	deadline := st.DeadlineInfo(rt.Epoch())
+	rt.SetEpoch(deadline.PeriodEnd())
+	nextCron := deadline.Last() + miner.WPoStChallengeWindow
 	h.onDeadlineCron(rt, &cronConfig{
 		expectedEnrollment: nextCron,
 	})
