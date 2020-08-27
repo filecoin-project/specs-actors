@@ -762,7 +762,7 @@ func TestRecordSkippedFaults(t *testing.T) {
 
 		skipped := bitfield.NewFromSet([]uint64{1, 100})
 
-		powerDelta, newFaulty, retractedRecovery, err := partition.RecordSkippedFaults(
+		powerDelta, newFaulty, retractedRecovery, newFaults, err := partition.RecordSkippedFaults(
 			store, sectorArr, sectorSize, quantSpec, exp, skipped,
 		)
 		require.Error(t, err)
@@ -770,6 +770,7 @@ func TestRecordSkippedFaults(t *testing.T) {
 		require.EqualValues(t, miner.NewPowerPairZero(), newFaulty)
 		require.EqualValues(t, miner.NewPowerPairZero(), retractedRecovery)
 		require.EqualValues(t, miner.NewPowerPairZero(), powerDelta)
+		require.False(t, newFaults)
 	})
 
 	t.Run("already faulty and terminated sectors are ignored", func(t *testing.T) {
@@ -791,12 +792,13 @@ func TestRecordSkippedFaults(t *testing.T) {
 
 		// record skipped faults such that some of them are already faulty/terminated
 		skipped := bitfield.NewFromSet([]uint64{1, 2, 3, 4, 5})
-		powerDelta, newFaultPower, retractedPower, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
+		powerDelta, newFaultPower, retractedPower, newFaults, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
 		require.NoError(t, err)
 		require.EqualValues(t, miner.NewPowerPairZero(), retractedPower)
 		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(3)))
 		require.EqualValues(t, expectedFaultyPower, newFaultPower)
 		require.EqualValues(t, powerDelta, newFaultPower.Neg())
+		require.True(t, newFaults)
 
 		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(3, 4, 5), bf(), bf(1, 2), bf())
 	})
@@ -819,8 +821,9 @@ func TestRecordSkippedFaults(t *testing.T) {
 
 		// record skipped faults such that some of them have been marked as recovered
 		skipped := bitfield.NewFromSet([]uint64{1, 4, 5})
-		powerDelta, newFaultPower, recoveryPower, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
+		powerDelta, newFaultPower, recoveryPower, newFaults, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, skipped)
 		require.NoError(t, err)
+		require.True(t, newFaults)
 
 		// only 1 is marked for fault power as 4 & 5 are recovering
 		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(1)))
@@ -838,11 +841,12 @@ func TestRecordSkippedFaults(t *testing.T) {
 		store, partition := setup(t)
 		sectorArr := sectorsArr(t, store, sectors)
 
-		powerDelta, newFaultPower, recoveryPower, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, bf())
+		powerDelta, newFaultPower, recoveryPower, newFaults, err := partition.RecordSkippedFaults(store, sectorArr, sectorSize, quantSpec, exp, bf())
 		require.NoError(t, err)
 		require.EqualValues(t, miner.NewPowerPairZero(), newFaultPower)
 		require.EqualValues(t, miner.NewPowerPairZero(), recoveryPower)
 		require.EqualValues(t, miner.NewPowerPairZero(), powerDelta)
+		require.False(t, newFaults)
 
 		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(), bf(), bf(), bf())
 	})
