@@ -40,7 +40,7 @@ type State struct {
 	InitialPledge abi.TokenAmount // Sum of initial pledge requirements of all active sectors
 
 	// Sectors that have been pre-committed but not yet proven.
-	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
+	PreCommittedSectors cid.Cid // Map, AMT[SectorNumber]SectorPreCommitOnChainInfo
 
 	// PreCommittedSectorsExpiry maintains the state required to expire PreCommittedSectors.
 	PreCommittedSectorsExpiry cid.Cid // BitFieldQueue (AMT[Epoch]*BitField)
