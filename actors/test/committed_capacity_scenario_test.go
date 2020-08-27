@@ -270,6 +270,14 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, sectorPower.Raw, networkStats.TotalBytesCommitted)
 	assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
 
+	// Assert that old sector and new sector have the same deadline.
+	// This is not generally true, but the current deadline assigment will always put these together when
+	// no other sectors have been assigned in-between. The following tests assume this fact, and must be
+	// modified if this no longer holds.
+	oldDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+	newDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	require.Equal(t, oldDlIdx, newDlIdx)
+
 	t.Run("miner misses first PoSt of replacement sector", func(t *testing.T) {
 		// advance to proving period end of new sector
 		dlInfo, _, tv := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -300,7 +308,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			},
 		}.Matches(t, tv.LastInvocation())
 
-		// miner's power is removed for old sector (and not added for new)
+		// miner's power is removed for old sector because it faulted and not added for the new sector.
 		minerPower = vm.MinerPower(t, tv, minerAddrs.IDAddress)
 		networkStats = vm.GetNetworkStats(t, tv)
 		assert.Equal(t, big.Zero(), minerPower.Raw)
@@ -388,9 +396,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, combinedPower.QA, minerPower.QA)
 	assert.Equal(t, combinedPower.Raw, networkStats.TotalBytesCommitted)
 	assert.Equal(t, combinedPower.QA, networkStats.TotalQABytesCommitted)
-
-	// advance to proving period of old sector
-	dlInfo, _, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
 
 	// proving period cron removes sector reducing the miner's power to that of the new sector
 	v, err = v.WithEpoch(dlInfo.Last())
