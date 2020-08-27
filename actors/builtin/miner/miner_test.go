@@ -879,7 +879,6 @@ func TestCommitments(t *testing.T) {
 		challengeEpoch := rt.Epoch() - 1
 
 		// Upgrade 1
-
 		upgradeParams1 := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
 		upgradeParams1.ReplaceCapacity = true
 		upgradeParams1.ReplaceSectorDeadline = dlIdx
@@ -892,7 +891,6 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, upgradeParams1.ReplaceSectorNumber, upgrade1.Info.ReplaceSectorNumber)
 
 		// Upgrade 2
-
 		upgradeParams2 := actor.makePreCommit(201, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
 		upgradeParams2.ReplaceCapacity = true
 		upgradeParams2.ReplaceSectorDeadline = dlIdx
@@ -926,12 +924,15 @@ func TestCommitments(t *testing.T) {
 		newSector1 := actor.getSector(rt, upgrade1.Info.SectorNumber)
 		newSector2 := actor.getSector(rt, upgrade2.Info.SectorNumber)
 
-		// All three sectors have pledge.
+		// All three sectors pre-commit deposits are released, and have pledge committed.
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, st.InitialPledge, big.Sum(
 			oldSector.InitialPledge, newSector1.InitialPledge, newSector2.InitialPledge,
 		))
+		// Both new sectors' pledge are at least the old sector's pledge
+		assert.Equal(t, oldSector.InitialPledge, newSector1.InitialPledge)
+		assert.Equal(t, oldSector.InitialPledge, newSector2.InitialPledge)
 
 		// All three sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -1009,7 +1010,7 @@ func TestCommitments(t *testing.T) {
 			faultExpiration: {uint64(0)},
 		}, dQueue)
 
-		// Old sector gone from pledge requirement and deposit
+		// Old sector gone from pledge
 		assert.Equal(t, st.InitialPledge, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
 		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})

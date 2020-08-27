@@ -744,7 +744,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 	var newPower PowerPair
 	totalPledge := big.Zero()
-	totalPrecommitDeposit := big.Zero()
+	depositToUnlock := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
@@ -766,16 +766,16 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				continue
 			}
 
-			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
-			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
-			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
-
-			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
+			pwr := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
+			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
+			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
+			initialPledge := InitialPledgeForPower(pwr, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
-			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
-			initialPledge, replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, initialPledge, replacedBySectorNumber)
-			totalPledge = big.Add(totalPledge, initialPledge)
+			// Lower-bound the pledge by that of the sector being replaced.
+			// Record the replaced age and reward rate for termination fee calculations.
+			replacedPledge, replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
+			initialPledge = big.Max(initialPledge, replacedPledge)
 
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
@@ -792,8 +792,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				ReplacedSectorAge:     replacedAge,
 				ReplacedDayReward:     replacedDayReward,
 			}
+
+			depositToUnlock = big.Add(depositToUnlock, precommit.PreCommitDeposit)
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
+			totalPledge = big.Add(totalPledge, initialPledge)
 		}
 
 		err = st.PutSectors(store, newSectors...)
@@ -812,7 +815,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(totalPrecommitDeposit.Neg())
+		st.AddPreCommitDeposit(depositToUnlock.Neg())
 
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 		if unlockedBalance.LessThan(totalPledge) {
@@ -2135,11 +2138,10 @@ func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*Sec
 	return m
 }
 
-func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, initialPledge abi.TokenAmount,
-	replacedByNum map[abi.SectorNumber]*SectorOnChainInfo,
-) (abi.TokenAmount, abi.ChainEpoch, big.Int) {
+func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
+	replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (pledge abi.TokenAmount, age abi.ChainEpoch, dayReward big.Int) {
 	if !precommit.Info.ReplaceCapacity {
-		return initialPledge, abi.ChainEpoch(0), big.Zero()
+		return big.Zero(), abi.ChainEpoch(0), big.Zero()
 	}
 	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
 	if !ok {
@@ -2147,7 +2149,7 @@ func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
 	}
 	// The sector will actually be active for the period between activation and its next proving deadline,
 	// but this covers the period for which we will be looking to the old sector for termination fees.
-	return big.Max(initialPledge, replaced.InitialPledge),
+	return replaced.InitialPledge,
 		maxEpoch(0, rt.CurrEpoch()-replaced.Activation),
 		replaced.ExpectedDayReward
 }
