@@ -19,20 +19,22 @@ func TestDeadlineAssignment(t *testing.T) {
 
 	type testCase struct {
 		sectors   uint64
+		offset    uint64
 		deadlines [WPoStPeriodDeadlines]*deadline
 	}
 
 	testCases := []testCase{{
 		// Even assignment and striping.
 		sectors: 10,
+		offset:  1,
 		deadlines: [WPoStPeriodDeadlines]*deadline{
-			0: {
+			1: {
 				expectSectors: []uint64{
 					0, 1, 2, 3,
 					8, 9,
 				},
 			},
-			1: {
+			2: {
 				expectSectors: []uint64{
 					4, 5, 6, 7,
 				},
@@ -54,12 +56,13 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// Assign to deadline with least number of live partitions.
 		sectors: 1,
+		offset:  6,
 		deadlines: [WPoStPeriodDeadlines]*deadline{
-			0: {
+			6: {
 				// 2 live partitions. +1 would add another.
 				liveSectors: 8,
 			},
-			1: {
+			7: {
 				// 2 live partitions. +1 wouldn't add another.
 				// 1 dead partition.
 				liveSectors:   7,
@@ -152,7 +155,7 @@ func TestDeadlineAssignment(t *testing.T) {
 		for i := range sectors {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
-		assignment, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		assignment, err := assignDeadlines(tc.offset, maxPartitions, partitionSize, &deadlines, sectors)
 		require.NoError(t, err)
 		for i, sectors := range assignment {
 			dl := tc.deadlines[i]
@@ -192,7 +195,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
 
-		_, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		_, err := assignDeadlines(0, maxPartitions, partitionSize, &deadlines, sectors)
 		require.Error(t, err)
 	})
 
@@ -212,7 +215,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
 
-		deadlineToSectors, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		deadlineToSectors, err := assignDeadlines(0, maxPartitions, partitionSize, &deadlines, sectors)
 		require.NoError(t, err)
 
 		for _, sectors := range deadlineToSectors {
@@ -236,7 +239,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
 
-		_, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		_, err := assignDeadlines(0, maxPartitions, partitionSize, &deadlines, sectors)
 		require.Error(t, err)
 	})
 }

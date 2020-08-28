@@ -496,6 +496,7 @@ func (st *State) RescheduleSectorExpirations(
 func (st *State) AssignSectorsToDeadlines(
 	store adt.Store,
 	currentEpoch abi.ChainEpoch,
+	randomness uint64,
 	sectors []*SectorOnChainInfo,
 	partitionSize uint64,
 	sectorSize abi.SectorSize,
@@ -523,7 +524,7 @@ func (st *State) AssignSectorsToDeadlines(
 	}
 
 	activatedPower := NewPowerPairZero()
-	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
+	deadlineToSectors, err := assignDeadlines(randomness, MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}

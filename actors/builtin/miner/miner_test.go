@@ -3526,6 +3526,10 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 
 	// expected pledge is the sum of initial pledges
 	if len(validPrecommits) > 0 {
+		randBuf := bytes.NewBuffer(nil)
+		require.NoError(h.t, h.receiver.MarshalCBOR(randBuf))
+		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, rt.Epoch(), randBuf.Bytes(), make([]byte, 32))
+
 		expectPledge := big.Zero()
 
 		expectQAPower := big.Zero()

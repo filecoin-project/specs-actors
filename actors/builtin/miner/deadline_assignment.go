@@ -40,6 +40,7 @@ func (dai *deadlineAssignmentInfo) maxPartitionsReached(partitionSize, maxPartit
 }
 
 type deadlineAssignmentHeap struct {
+	offset        uint64
 	maxPartitions uint64
 	partitionSize uint64
 	deadlines     []*deadlineAssignmentInfo
@@ -155,10 +156,8 @@ func (dah *deadlineAssignmentHeap) Less(i, j int) bool {
 		return a.liveSectors < b.liveSectors
 	}
 
-	// Finally, fallback on the deadline index.
-	// TODO: Randomize by index instead of simply sorting.
-	// https://github.com/filecoin-project/specs-actors/issues/432
-	return a.index < b.index
+	// Finally, fallback on the deadline index, starting at an offset.
+	return (uint64(a.index)-dah.offset)%WPoStPeriodDeadlines < (uint64(b.index)-dah.offset)%WPoStPeriodDeadlines
 }
 
 func (dah *deadlineAssignmentHeap) Push(x interface{}) {
@@ -175,6 +174,7 @@ func (dah *deadlineAssignmentHeap) Pop() interface{} {
 // Assigns partitions to deadlines, first filling partial partitions, then
 // adding new partitions to deadlines with the fewest live sectors.
 func assignDeadlines(
+	offset uint64,
 	maxPartitions uint64,
 	partitionSize uint64,
 	deadlines *[WPoStPeriodDeadlines]*Deadline,
@@ -182,6 +182,7 @@ func assignDeadlines(
 ) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo, err error) {
 	// Build a heap
 	dlHeap := deadlineAssignmentHeap{
+		offset:        offset,
 		maxPartitions: maxPartitions,
 		partitionSize: partitionSize,
 		deadlines:     make([]*deadlineAssignmentInfo, 0, len(deadlines)),

@@ -742,6 +742,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		rt.Abortf(exitcode.ErrIllegalArgument, "all prove commits failed to validate")
 	}
 
+	buf := new(bytes.Buffer)
+	receiver := rt.Message().Receiver()
+	err = receiver.MarshalCBOR(buf)
+	assignmentRandomness := binary.BigEndian.Uint64(rt.GetRandomnessFromBeacon(
+		crypto.DomainSeparationTag_WindowedPoStDeadlineAssignment, rt.CurrEpoch(), buf.Bytes(),
+	))
+
 	var newPower PowerPair
 	totalPledge := big.Zero()
 	depositToUnlock := big.Zero()
@@ -804,8 +811,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
-
-		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
+		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), assignmentRandomness, newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Add sector and pledge lock-up to miner state
