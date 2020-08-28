@@ -255,7 +255,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	smallPowerUnit := big.NewInt(1_000_000)
 	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.CosensusMinerMinPower has changed requiring update to this test")
 	// Subtests implicitly rely on ConsensusMinerMinMiners = 3
-	require.Equal(t, 3, power.ConsensusMinerMinMiners)
+	require.Equal(t, 4, power.ConsensusMinerMinMiners, "power.ConsensusMinerMinMiners has changed requiring update to this test")
 
 	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
@@ -321,27 +321,26 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		actor.updateClaimedPower(rt, miner1, div(smallPowerUnit, 2), smallPowerUnit)
 		actor.updateClaimedPower(rt, miner2, div(smallPowerUnit, 2), smallPowerUnit)
-		actor.updateClaimedPower(rt, miner3, div(smallPowerUnit, 2), smallPowerUnit)
 
+		actor.updateClaimedPower(rt, miner3, div(powerUnit, 2), powerUnit)
 		actor.updateClaimedPower(rt, miner4, div(powerUnit, 2), powerUnit)
 		actor.updateClaimedPower(rt, miner5, div(powerUnit, 2), powerUnit)
 
 		// Below threshold small miner power is counted
-		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 3), mul(powerUnit, 2))
+		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 2), mul(powerUnit, 3))
 		actor.expectTotalPowerEager(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 
-		// Above threshold (power.ConsensusMinerMinMiners = 3) small miner power is ignored
+		// Above threshold (power.ConsensusMinerMinMiners = 4) small miner power is ignored
 		delta := big.Sub(powerUnit, smallPowerUnit)
-		actor.updateClaimedPower(rt, miner3, div(delta, 2), delta)
-		expectedTotalAbove := mul(powerUnit, 3)
+		actor.updateClaimedPower(rt, miner2, div(delta, 2), delta)
+		expectedTotalAbove := mul(powerUnit, 4)
 		actor.expectTotalPowerEager(rt, div(expectedTotalAbove, 2), expectedTotalAbove)
 
 		st := getState(rt)
-		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
+		assert.Equal(t, int64(4), st.MinerAboveMinPowerCount)
 
-		// Less than 3 miners above threshold again small miner power is counted again
-
-		actor.updateClaimedPower(rt, miner3, div(delta.Neg(), 2), delta.Neg())
+		// Less than 4 miners above threshold again small miner power is counted again
+		actor.updateClaimedPower(rt, miner4, div(delta.Neg(), 2), delta.Neg())
 		actor.expectTotalPowerEager(rt, div(expectedTotalBelow, 2), expectedTotalBelow)
 	})
 
@@ -354,19 +353,21 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner2)
 		actor.createMinerBasic(rt, owner, owner, miner3)
 		actor.createMinerBasic(rt, owner, owner, miner4)
+		actor.createMinerBasic(rt, owner, owner, miner5)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)		
 
-		expectedTotal := mul(powerUnit, 4)
+		expectedTotal := mul(powerUnit, 5)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
 		// miner4 dips just below threshold
 		actor.updateClaimedPower(rt, miner4, smallPowerUnit.Neg(), smallPowerUnit.Neg())
 
-		expectedTotal = mul(powerUnit, 3)
+		expectedTotal = mul(powerUnit, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 	})
 
@@ -377,6 +378,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
 
 		actor.updateClaimedPower(rt, miner1, powerUnit, big.Zero())
 		actor.updateClaimedPower(rt, miner2, powerUnit, big.Zero())
@@ -410,7 +412,6 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	})
 
 	t.Run("claimed power is externally available", func(t *testing.T) {
-		// Setup four miners above threshold
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 

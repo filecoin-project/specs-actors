@@ -2225,6 +2225,12 @@ func PowerForSectors(ssize abi.SectorSize, sectors []*SectorOnChainInfo) PowerPa
 	}
 }
 
+func ConsensusFaultActive(info *MinerInfo, currEpoch abi.ChainEpoch) bool {
+	// For penalization period to last for exactly finality epochs
+	// consensus faults are active until currEpoch exceeds ConsensusFaultElapsed
+	return currEpoch <= info.ConsensusFaultElapsed
+}
+
 func getMinerInfo(rt Runtime, st *State) *MinerInfo {
 	info, err := st.GetInfo(adt.AsStore(rt))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not read miner info")

@@ -183,6 +183,11 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 	return info.WindowPoStProof, nil
 }
 
+// The maximum duration a sector sealed with this proof may exist between activation and expiration.
+// This ensures that SDR is secure in the cost model for Window PoSt and in the time model for Winning PoSt
+// This is based on estimation of hardware latency improvement and hardware and software cost reduction.
+const SectorMaximumLifetimeSDR = ChainEpoch(1_262_277 * 5)
+
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
 func (p RegisteredSealProof) SectorMaximumLifetime() (ChainEpoch, error) {
 	info, ok := SealProofInfos[p]
@@ -231,6 +236,8 @@ func (p RegisteredPoStProof) WindowPoStPartitionSectors() (uint64, error) {
 	}
 	return sp.WindowPoStPartitionSectors()
 }
+
+
 
 ///
 /// Sealing

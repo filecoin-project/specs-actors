@@ -2177,7 +2177,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 				require.NoError(t, err)
 				var partition miner.Partition
 				require.NoError(t, partitions.ForEach(&partition, func(partIdx int64) error {
-					oldSectorNos, err := partition.Sectors.All(miner.SectorsMax)
+					oldSectorNos, err := partition.Sectors.All(miner.AddressedSectorsMax)
 					require.NoError(t, err)
 
 					// filter out even-numbered sectors.
@@ -3263,7 +3263,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
-		expanded, err := bf.All(miner.SectorsMax)
+		expanded, err := bf.All(miner.AddressedSectorsMax)
 		require.NoError(h.t, err)
 		expirations[epoch] = expanded
 		return nil
