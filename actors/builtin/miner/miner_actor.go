@@ -529,9 +529,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
 		}
 
-		maxDealLimit := dealPerSectorLimit(info.SectorSize)
-		if uint64(len(params.DealIDs)) > maxDealLimit {
-			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
+		dealCountMax := SectorDealsMax(info.SectorSize)
+		if uint64(len(params.DealIDs)) > dealCountMax {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), dealCountMax)
 		}
 
 		err = st.AllocateSectorNumber(store, params.SectorNumber)
@@ -1970,6 +1970,13 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 }
 
 func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
+	if len(dealIDs) == 0 {
+		return market.VerifyDealsForActivationReturn{
+			DealWeight:         big.Zero(),
+			VerifiedDealWeight: big.Zero(),
+		}
+	}
+
 	var dealWeights market.VerifyDealsForActivationReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
@@ -1984,7 +1991,6 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 	AssertNoError(ret.Into(&dealWeights))
 	return dealWeights
-
 }
 
 func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
