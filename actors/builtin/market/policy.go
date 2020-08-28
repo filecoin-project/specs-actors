@@ -12,11 +12,9 @@ const DealUpdatesInterval = builtin.EpochsInDay // PARAM_SPEC
 // The percentage of normalized cirulating
 // supply that must be covered by provider collateral in a deal
 var ProviderCollateralSupplyTarget = builtin.BigFrac{
-	Numerator: big.NewInt(5), // PARAM_SPEC
+	Numerator:   big.NewInt(5), // PARAM_SPEC
 	Denominator: big.NewInt(100),
 }
-//var ProvCollateralPercentSupplyNum = big.NewInt(5)
-//var ProvCollateralPercentSupplyDenom = big.NewInt(100)
 
 // Minimum deal duration.
 var DealMinDuration = abi.ChainEpoch(180 * builtin.EpochsInDay) // PARAM_SPEC
