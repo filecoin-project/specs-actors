@@ -155,7 +155,7 @@ const ConsensusFaultIneligibilityDuration = ChainFinality
 // Sectors full of VerifiedDeals will have a SectorQuality of VerifiedDealWeightMultiplier/QualityBaseMultiplier.
 // Sectors full of Deals will have a SectorQuality of DealWeightMultiplier/QualityBaseMultiplier.
 // Sectors with neither will have a SectorQuality of QualityBaseMultiplier/QualityBaseMultiplier.
-// SectorQuality of a sector is a weighted average of multipliers based on their propotions.
+// SectorQuality of a sector is a weighted average of multipliers based on their proportions.
 func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.SectorQuality {
 	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
 	totalDealSpaceTime := big.Add(dealWeight, verifiedWeight)
@@ -183,7 +183,7 @@ func QAPowerForSector(size abi.SectorSize, sector *SectorOnChainInfo) abi.Storag
 }
 
 // Determine maximum number of deal miner's sector can hold
-func dealPerSectorLimit(size abi.SectorSize) uint64 {
+func SectorDealsMax(size abi.SectorSize) uint64 {
 	return max64(256, uint64(size/DealLimitDenominator))
 }
 

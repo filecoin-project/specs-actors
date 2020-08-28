@@ -529,9 +529,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
 		}
 
-		maxDealLimit := dealPerSectorLimit(info.SectorSize)
-		if uint64(len(params.DealIDs)) > maxDealLimit {
-			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
+		dealCountMax := SectorDealsMax(info.SectorSize)
+		if uint64(len(params.DealIDs)) > dealCountMax {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), dealCountMax)
 		}
 
 		err = st.AllocateSectorNumber(store, params.SectorNumber)
