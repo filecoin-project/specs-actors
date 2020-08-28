@@ -38,7 +38,7 @@ var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * Declar
 // Projection period of expected daily sector block reward penalised when a fault is not declared in advance.
 // This fee is higher than the declared fault fee for two reasons:
 // (1) it incentivizes a miner to declare a fault early;
-// (2) when a miner stores less than (1-spacegap) of a sector, does not not declare it as faulty,
+// (2) when a miner stores less than (1-spacegap) of a sector, does not declare it as faulty,
 //     and hopes to be challenged on the stored parts, it means the miner would not be expected to earn positive rewards.
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
 var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay // PARAM_SPEC
@@ -51,7 +51,9 @@ const ConsensusFaultFactor = 5
 
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
-// BR(t) = ProjectedReward(t) * SectorQualityAdjustedPower / TotalNetworkQualityAdjustedPower
+// BR(t) = ProjectedRewardFraction(t) * SectorQualityAdjustedPower
+// ProjectedRewardFraction(t) is the sum of estimated reward over estimated total power
+// over all epochs in the projection period [t t+projectionDuration]
 func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
 	networkQAPowerSmoothed := networkQAPowerEstimate.Estimate()
 	if networkQAPowerSmoothed.IsZero() {
