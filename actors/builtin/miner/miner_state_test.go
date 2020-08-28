@@ -1111,7 +1111,7 @@ func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAdd
 	claims, err := adt.AsMap(adt.AsStore(rt), pSt.Claims)
 	require.NoError(t, err)
 
-	claim := &power.Claim{pow, pow}
+	claim := &power.Claim{RawBytePower: pow, QualityAdjPower: pow}
 
 	err = claims.Put(adt.AddrKey(mAddr), claim)
 	require.NoError(t, err)
