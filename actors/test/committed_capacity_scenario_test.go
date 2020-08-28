@@ -153,12 +153,12 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	//
 
 	// precommit capacity upgrade sector with deals
-	ccSectorNumber := abi.SectorNumber(101)
-	ccSealedCid := tutil.MakeCID("101", &miner.SealedCIDPrefix)
+	upgradeSectorNumber := abi.SectorNumber(101)
+	upgradeSealedCid := tutil.MakeCID("101", &miner.SealedCIDPrefix)
 	preCommitParams = miner.SectorPreCommitInfo{
 		SealProof:              sealProof,
-		SectorNumber:           ccSectorNumber,
-		SealedCID:              ccSealedCid,
+		SectorNumber:           upgradeSectorNumber,
+		SealedCID:              upgradeSealedCid,
 		SealRandEpoch:          v.GetEpoch() - 1,
 		DealIDs:                dealIDs,
 		Expiration:             v.GetEpoch() + 220*builtin.EpochsInDay,
@@ -225,7 +225,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
 	proveCommitParams = miner.ProveCommitSectorParams{
-		SectorNumber: ccSectorNumber,
+		SectorNumber: upgradeSectorNumber,
 	}
 	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 	require.Equal(t, exitcode.Ok, code)
@@ -275,7 +275,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	// no other sectors have been assigned in-between. The following tests assume this fact, and must be
 	// modified if this no longer holds.
 	oldDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
-	newDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	newDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
 	require.Equal(t, oldDlIdx, newDlIdx)
 
 	t.Run("miner misses first PoSt of replacement sector", func(t *testing.T) {
@@ -318,7 +318,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	})
 
 	// advance to proving period and submit post
-	dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
 
 	t.Run("miner skips replacing sector in first PoSt", func(t *testing.T) {
 		tv, err := v.WithEpoch(v.GetEpoch()) // create vm copy
@@ -329,7 +329,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			Partitions: []miner.PoStPartition{{
 				Index: pIdx,
 				// skip cc upgrade
-				Skipped: bitfield.NewFromSet([]uint64{uint64(ccSectorNumber)}),
+				Skipped: bitfield.NewFromSet([]uint64{uint64(upgradeSectorNumber)}),
 			}},
 			Proofs: []abi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
@@ -388,8 +388,8 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 
 	// power is upgraded for new sector
 	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
-	ccSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, ccSectorNumber)
-	combinedPower := ccSectorPower.Add(sectorPower)
+	upgradeSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+	combinedPower := upgradeSectorPower.Add(sectorPower)
 	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
 	networkStats = vm.GetNetworkStats(t, v)
 	assert.Equal(t, combinedPower.Raw, minerPower.Raw)
@@ -407,10 +407,10 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
 	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
 	networkStats = vm.GetNetworkStats(t, v)
-	assert.Equal(t, ccSectorPower.Raw, minerPower.Raw)
-	assert.Equal(t, ccSectorPower.QA, minerPower.QA)
-	assert.Equal(t, ccSectorPower.Raw, networkStats.TotalBytesCommitted)
-	assert.Equal(t, ccSectorPower.QA, networkStats.TotalQABytesCommitted)
+	assert.Equal(t, upgradeSectorPower.Raw, minerPower.Raw)
+	assert.Equal(t, upgradeSectorPower.QA, minerPower.QA)
+	assert.Equal(t, upgradeSectorPower.Raw, networkStats.TotalBytesCommitted)
+	assert.Equal(t, upgradeSectorPower.QA, networkStats.TotalQABytesCommitted)
 }
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
