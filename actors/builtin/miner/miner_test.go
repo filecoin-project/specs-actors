@@ -2719,35 +2719,6 @@ func TestChangeWorkerAddress(t *testing.T) {
 		require.Equal(t, originalControlAddrs, info.ControlAddresses)
 	})
 
-	t.Run("owner can cancel worker address change", func(t *testing.T) {
-		rt, actor := setupFunc()
-		actor.constructAndVerify(rt)
-		originalControlAddrs := actor.controlAddrs
-
-		newWorker := tutil.NewIDAddr(t, 999)
-
-		currentEpoch := abi.ChainEpoch(5)
-		rt.SetEpoch(currentEpoch)
-
-		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
-		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
-
-		// now reset to old worker
-		actor.changeWorkerAddress(rt, actor.worker, effectiveEpoch, originalControlAddrs)
-
-		// set current epoch to effective epoch and run deadline cron
-		rt.SetEpoch(effectiveEpoch)
-		actor.advancePastDeadlineEndWithCron(rt)
-
-		// assert worker and control addresses are unchanged
-		st := getState(rt)
-		info, err := st.GetInfo(adt.AsStore(rt))
-		require.NoError(t, err)
-		require.Equal(t, actor.worker, info.Worker)
-		require.NotEmpty(t, info.ControlAddresses)
-		require.Equal(t, originalControlAddrs, info.ControlAddresses)
-	})
-
 	t.Run("successfully resolve AND change ONLY control addresses", func(t *testing.T) {
 		rt, actor := setupFunc()
 		actor.constructAndVerify(rt)

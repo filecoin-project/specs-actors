@@ -31,7 +31,7 @@ type Runtime = vmr.Runtime
 type CronEventType int64
 
 const (
-	CronEventProvingDeadline CronEventType = iota
+	CronEventProvingDeadline CronEventType = iota + 1
 	CronEventProcessEarlyTerminations
 )
 
@@ -202,9 +202,6 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 				NewWorker:   newWorker,
 				EffectiveAt: rt.CurrEpoch() + WorkerKeyChangeDelay,
 			}
-		} else {
-			// Allow owner to cancel existing update by supplying existing worker address
-			info.PendingWorkerKey = nil
 		}
 
 		err := st.SaveInfo(adt.AsStore(rt), info)
