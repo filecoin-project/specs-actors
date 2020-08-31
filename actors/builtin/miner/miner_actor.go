@@ -196,8 +196,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		info.ControlAddresses = controlAddrs
 
 		// save newWorker addr key change request
-		// This may replace another pending key change.
-		if newWorker != info.Worker {
+		if newWorker != info.Worker && info.PendingWorkerKey == nil {
 			info.PendingWorkerKey = &WorkerKeyChange{
 				NewWorker:   newWorker,
 				EffectiveAt: rt.CurrEpoch() + WorkerKeyChangeDelay,

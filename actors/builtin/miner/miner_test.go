@@ -2698,25 +2698,65 @@ func TestChangeWorkerAddress(t *testing.T) {
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
 		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
 
+		// assert change has been made in state
+		info := actor.getInfo(rt)
+		assert.Equal(t, info.PendingWorkerKey.NewWorker, newWorker)
+		assert.Equal(t, info.PendingWorkerKey.EffectiveAt, effectiveEpoch)
+
 		// no change if current epoch is less than effective epoch
 		actor.advancePastDeadlineEndWithCron(rt)
 
-		st := getState(rt)
-		info, err := st.GetInfo(adt.AsStore(rt))
-		require.NoError(t, err)
+		info = actor.getInfo(rt)
 		require.NotNil(t, info.PendingWorkerKey)
 		require.EqualValues(t, actor.worker, info.Worker)
 
-		// set current epoch to effective epoch and run deadline cron
-		rt.SetEpoch(effectiveEpoch)
+		// move to deadline containing effectiveEpoch
+		advanceToEpochWithCron(rt, actor, effectiveEpoch)
+
+		// run cron to enact worker change
 		actor.advancePastDeadlineEndWithCron(rt)
 
+		// assert address has changed
+		info = actor.getInfo(rt)
+		assert.Equal(t, newWorker, info.Worker)
+
 		// assert control addresses are unchanged
-		st = getState(rt)
-		info, err = st.GetInfo(adt.AsStore(rt))
-		require.NoError(t, err)
 		require.NotEmpty(t, info.ControlAddresses)
 		require.Equal(t, originalControlAddrs, info.ControlAddresses)
+	})
+
+	t.Run("change cannot be overridden", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		originalControlAddrs := actor.controlAddrs
+
+		newWorker1 := tutil.NewIDAddr(t, 999)
+		newWorker2 := tutil.NewIDAddr(t, 1023)
+
+		// set epoch to something close to next deadline so first cron will be before effective date
+		currentEpoch := abi.ChainEpoch(2970)
+		rt.SetEpoch(currentEpoch)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker1, effectiveEpoch, originalControlAddrs)
+
+		// no change if current epoch is less than effective epoch
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		// attempt to change address again
+		actor.changeWorkerAddress(rt, newWorker2, rt.Epoch()+miner.WorkerKeyChangeDelay, originalControlAddrs)
+
+		// assert change has not been modified
+		info := actor.getInfo(rt)
+		assert.Equal(t, info.PendingWorkerKey.NewWorker, newWorker1)
+		assert.Equal(t, info.PendingWorkerKey.EffectiveAt, effectiveEpoch)
+
+		advanceToEpochWithCron(rt, actor, effectiveEpoch)
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		// assert original change is effected
+		info = actor.getInfo(rt)
+		assert.Equal(t, newWorker1, info.Worker)
 	})
 
 	t.Run("successfully resolve AND change ONLY control addresses", func(t *testing.T) {
@@ -3389,11 +3429,6 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	info, err := st.GetInfo(adt.AsStore(rt))
 	require.NoError(h.t, err)
 
-	if newWorker != h.worker {
-		require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
-		require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
-	}
-
 	var controlAddrs []addr.Address
 	for _, ca := range newControlAddrs {
 		resolved, found := rt.GetIdAddr(ca)
@@ -3699,8 +3734,7 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 }
 
 func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
-	st := getState(rt)
-	deadline := st.DeadlineInfo(rt.Epoch())
+	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.Last() + miner.WPoStChallengeWindow
 	h.onDeadlineCron(rt, &cronConfig{
