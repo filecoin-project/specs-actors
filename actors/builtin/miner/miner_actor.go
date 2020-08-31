@@ -534,6 +534,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), dealCountMax)
 		}
 
+		if dealWeight.DealSpace > info.SectorSize {
+			rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
+		}
+
 		err = st.AllocateSectorNumber(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
 
@@ -703,14 +707,13 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// Committed-capacity sectors licensed for early removal by new sectors being proven.
 	replaceSectors := make(DeadlineSectorMap)
 	// Pre-commits for new sectors.
-	dealWeights := make([]market.ActivateDealsReturn, len(precommittedSectors))
 	var preCommits []*SectorPreCommitOnChainInfo
-	for i, precommit := range precommittedSectors {
+	for _, precommit := range precommittedSectors {
 		if len(precommit.Info.DealIDs) > 0 {
 			// Check (and activate) storage deals associated to sector. Abort if checks failed.
 			// TODO: we should batch these calls...
 			// https://github.com/filecoin-project/specs-actors/issues/474
-			ret, code := rt.Send(
+			_, code := rt.Send(
 				builtin.StorageMarketActorAddr,
 				builtin.MethodsMarket.ActivateDeals,
 				&market.ActivateDealsParams{
@@ -719,15 +722,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				},
 				abi.NewTokenAmount(0),
 			)
-			AssertNoError(ret.Into(&dealWeights[i]))
 
 			if code != exitcode.Ok {
 				rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
 				continue
 			}
-		} else {
-			dealWeights[i].DealWeight = big.Zero()
-			dealWeights[i].VerifiedDealWeight = big.Zero()
 		}
 
 		preCommits = append(preCommits, precommit)
@@ -760,7 +759,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		replacedBySectorNumber := asMapBySectorNumber(replaced)
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(preCommits))
-		for i, precommit := range preCommits {
+		for _, precommit := range preCommits {
 			// compute initial pledge
 			activation := rt.CurrEpoch()
 			duration := precommit.Info.Expiration - activation
@@ -770,6 +769,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				rt.Log(vmr.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
 				continue
 			}
+
+			// Ensure total deal space does not exceed sector size.
 
 			pwr := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
@@ -789,8 +790,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				DealIDs:               precommit.Info.DealIDs,
 				Expiration:            precommit.Info.Expiration,
 				Activation:            activation,
-				DealWeight:            dealWeights[i].DealWeight,
-				VerifiedDealWeight:    dealWeights[i].VerifiedDealWeight,
+				DealWeight:            precommit.DealWeight,
+				VerifiedDealWeight:    precommit.VerifiedDealWeight,
 				InitialPledge:         initialPledge,
 				ExpectedDayReward:     dayReward,
 				ExpectedStoragePledge: storagePledge,
@@ -1982,23 +1983,18 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 	}
 
 	var dealWeights market.VerifyDealsForActivationReturn
-	if len(dealIDs) > 0 {
-		ret, code := rt.Send(
-			builtin.StorageMarketActorAddr,
-			builtin.MethodsMarket.VerifyDealsForActivation,
-			&market.VerifyDealsForActivationParams{
-				DealIDs:      dealIDs,
-				SectorStart:  sectorStart,
-				SectorExpiry: sectorExpiry,
-			},
-			abi.NewTokenAmount(0),
-		)
-		builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-		AssertNoError(ret.Into(&dealWeights))
-	} else {
-		dealWeights.DealWeight = big.Zero()
-		dealWeights.VerifiedDealWeight = big.Zero()
-	}
+	ret, code := rt.Send(
+		builtin.StorageMarketActorAddr,
+		builtin.MethodsMarket.VerifyDealsForActivation,
+		&market.VerifyDealsForActivationParams{
+			DealIDs:      dealIDs,
+			SectorStart:  sectorStart,
+			SectorExpiry: sectorExpiry,
+		},
+		abi.NewTokenAmount(0),
+	)
+	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
+	AssertNoError(ret.Into(&dealWeights))
 	return dealWeights
 }
 

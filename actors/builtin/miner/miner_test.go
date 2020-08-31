@@ -437,9 +437,9 @@ func TestCommitments(t *testing.T) {
 		sector := actor.getSector(rt, sectorNo)
 		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
 
-		// expect deal weights to be recomputed
-		assert.Equal(t, actor.dealWeight, sector.DealWeight)
-		assert.Equal(t, actor.verifiedDealWeight, sector.VerifiedDealWeight)
+		// expect deal weights to be transferred to on chain info
+		assert.Equal(t, onChainPrecommit.DealWeight, sector.DealWeight)
+		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
 		// expect activation epoch to be current epoch
 		assert.Equal(t, rt.Epoch(), sector.Activation)
@@ -499,6 +499,26 @@ func TestCommitments(t *testing.T) {
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
+		})
+	})
+
+	t.Run("deal space exceeds sector space", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "deals too large to fit in sector", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, []abi.DealID{1}), preCommitConf{
+				dealSpace: actor.sectorSize + 1,
+			})
 		})
 	})
 
@@ -3098,11 +3118,6 @@ type actorHarness struct {
 
 	epochRewardSmooth  *smoothing.FilterEstimate
 	epochQAPowerSmooth *smoothing.FilterEstimate
-
-	precommitDealWeight         abi.DealWeight
-	precommitVerifiedDealWeight abi.DealWeight
-	dealWeight                  abi.DealWeight
-	verifiedDealWeight          abi.DealWeight
 }
 
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {
@@ -3137,11 +3152,6 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 
 		epochRewardSmooth:  smoothing.TestingConstantEstimate(rwd),
 		epochQAPowerSmooth: smoothing.TestingConstantEstimate(pwr),
-
-		precommitDealWeight:         big.NewInt(1 << 29),
-		precommitVerifiedDealWeight: big.NewInt(1 << 28),
-		dealWeight:                  big.NewInt(1<<29 - 1),
-		verifiedDealWeight:          big.NewInt(1<<28 - 1),
 	}
 	h.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	return h
@@ -3417,6 +3427,7 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 type preCommitConf struct {
 	dealWeight         abi.DealWeight
 	verifiedDealWeight abi.DealWeight
+	dealSpace          abi.SectorSize
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo, conf preCommitConf) *miner.SectorPreCommitOnChainInfo {
@@ -3437,6 +3448,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		vdReturn := market.VerifyDealsForActivationReturn{
 			DealWeight:         conf.dealWeight,
 			VerifiedDealWeight: conf.verifiedDealWeight,
+			DealSpace:          conf.dealSpace,
 		}
 		if vdReturn.DealWeight.Nil() {
 			vdReturn.DealWeight = big.Zero()
