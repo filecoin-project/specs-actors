@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
@@ -14,9 +15,11 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
+	"github.com/filecoin-project/specs-actors/support/mock"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
 
@@ -797,18 +800,20 @@ func TestMinerEligibleForElection(t *testing.T) {
 	thisEpochReward := tenFIL
 	periodOffset := abi.ChainEpoch(1808)
 	actor := newHarness(t, periodOffset)
-
 	builder := builderForHarness(actor)
+
+	// Construct valid power state
 
 	t.Run("miner eligible", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		pSt := constructEligibilePowerState(t, actor.receiver, rt)
 		store := adt.AsStore(rt)
 		mSt := getState(rt)
 		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
 		currEpoch := abi.ChainEpoch(100000)
 
-		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, currEpoch)
+		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
 		require.NoError(t, err)
 		assert.True(t, eligible)
 	})
@@ -816,8 +821,9 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("active consensus fault", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		store := rt.AdtStore()
 		mSt := getState(rt)
+		pSt := constructEligibilePowerState(t, actor.receiver, rt)
+		store := adt.AsStore(rt)
 		info, err := mSt.GetInfo(store)
 		require.NoError(t, err)
 		info.ConsensusFaultElapsed = abi.ChainEpoch(55)
@@ -827,7 +833,7 @@ func TestMinerEligibleForElection(t *testing.T) {
 		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
 		currEpoch := abi.ChainEpoch(33) // 33 less than 55 so consensus fault still active
 
-		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, currEpoch)
+		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -835,6 +841,7 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("fee debt", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		pSt := constructEligibilePowerState(t, actor.receiver, rt)
 		store := rt.AdtStore()
 		mSt := getState(rt)
 		mSt.FeeDebt = abi.NewTokenAmount(1000)
@@ -842,7 +849,7 @@ func TestMinerEligibleForElection(t *testing.T) {
 		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
 		currEpoch := abi.ChainEpoch(100000)
 
-		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, currEpoch)
+		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -850,13 +857,28 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("ip requirement below consensus fault penalty", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		pSt := constructEligibilePowerState(t, actor.receiver, rt)
 		store := rt.AdtStore()
 		mSt := getState(rt)
 
 		mSt.InitialPledge = big.Sub(miner.ConsensusFaultPenalty(thisEpochReward), abi.NewTokenAmount(1))
 		currEpoch := abi.ChainEpoch(100000)
 
-		eligible, err := miner.MinerEligibleForElection(store, mSt, thisEpochReward, currEpoch)
+		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
+		require.NoError(t, err)
+		assert.False(t, eligible)
+	})
+
+	t.Run("power does not meet minimum", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		pSt := constructPowerStateWithPowerAtAddr(t, big.Zero(), actor.receiver, rt)
+		store := adt.AsStore(rt)
+		mSt := getState(rt)
+		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
+		currEpoch := abi.ChainEpoch(100000)
+
+		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -1066,4 +1088,38 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 		DealIDs:       nil,
 		Expiration:    sectorExpiration,
 	}
+}
+
+func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.Runtime) *power.State {
+	pSt := constructPowerStateWithPowerAtAddr(t, power.ConsensusMinerMinPower, mAddr, rt)
+
+	// Ensure that this the mAddr passes min power check
+	ok, err := pSt.MinerNominalPowerMeetsConsensusMinimum(adt.AsStore(rt), mAddr)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	return pSt
+}
+
+func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAddr address.Address, rt *mock.Runtime) *power.State {
+	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
+	require.NoError(t, err)
+	emptyMMap, err := adt.MakeEmptyMultimap(adt.AsStore(rt)).Root()
+	require.NoError(t, err)
+	pSt := power.ConstructState(emptyMap, emptyMMap)
+
+	claims, err := adt.AsMap(adt.AsStore(rt), pSt.Claims)
+	require.NoError(t, err)
+
+	claim := &power.Claim{RawBytePower: pow, QualityAdjPower: pow}
+
+	err = claims.Put(adt.AddrKey(mAddr), claim)
+	require.NoError(t, err)
+
+	pSt.MinerCount += 1
+
+	pSt.Claims, err = claims.Root()
+	require.NoError(t, err)
+
+	return pSt
 }

@@ -11,6 +11,7 @@ import (
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
+	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
@@ -1110,7 +1111,16 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	}, nil
 }
 
-func MinerEligibleForElection(store adt.Store, mSt *State, thisEpochReward abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
+func MinerEligibleForElection(store adt.Store, mAddr addr.Address, mSt *State, pSt *power.State, thisEpochReward abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
+	// Minimum power requirements
+	powerOK, err := pSt.MinerNominalPowerMeetsConsensusMinimum(store, mAddr)
+	if err != nil {
+		return false, err
+	}
+	if !powerOK {
+		return false, nil
+	}
+
 	// IP requirements are met.  This includes zero fee debt
 	if !mSt.IsDebtFree() {
 		return false, nil
