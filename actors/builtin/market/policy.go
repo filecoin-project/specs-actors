@@ -22,6 +22,9 @@ var DealMinDuration = abi.ChainEpoch(180 * builtin.EpochsInDay) // PARAM_SPEC
 // Maximum deal duration
 var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_SPEC
 
+// DealMaxLabelSize is the maximum size of a deal label.
+const DealMaxLabelSize = 256
+
 // Bounds (inclusive) on deal duration
 func dealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
 	return DealMinDuration, DealMaxDuration // PARAM_FINISH
