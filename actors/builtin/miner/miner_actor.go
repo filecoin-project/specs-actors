@@ -534,6 +534,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), dealCountMax)
 		}
 
+		// Ensure total deal space does not exceed sector size.
+		if dealWeight.DealSpace > uint64(info.SectorSize) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
+		}
+
 		err = st.AllocateSectorNumber(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
 

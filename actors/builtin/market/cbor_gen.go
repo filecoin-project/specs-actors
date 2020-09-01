@@ -670,7 +670,7 @@ func (t *VerifyDealsForActivationParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufVerifyDealsForActivationReturn = []byte{130}
+var lengthBufVerifyDealsForActivationReturn = []byte{131}
 
 func (t *VerifyDealsForActivationReturn) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -681,6 +681,8 @@ func (t *VerifyDealsForActivationReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
+	scratch := make([]byte, 9)
+
 	// t.DealWeight (big.Int) (struct)
 	if err := t.DealWeight.MarshalCBOR(w); err != nil {
 		return err
@@ -690,6 +692,13 @@ func (t *VerifyDealsForActivationReturn) MarshalCBOR(w io.Writer) error {
 	if err := t.VerifiedDealWeight.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.DealSpace (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.DealSpace)); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -707,7 +716,7 @@ func (t *VerifyDealsForActivationReturn) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -727,6 +736,20 @@ func (t *VerifyDealsForActivationReturn) UnmarshalCBOR(r io.Reader) error {
 		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
 		}
+
+	}
+	// t.DealSpace (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.DealSpace = uint64(extra)
 
 	}
 	return nil

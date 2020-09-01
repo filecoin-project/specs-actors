@@ -437,7 +437,7 @@ func TestCommitments(t *testing.T) {
 		sector := actor.getSector(rt, sectorNo)
 		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
 
-		// expect deal weights to be transfered to on chain info
+		// expect deal weights to be transferred to on chain info
 		assert.Equal(t, onChainPrecommit.DealWeight, sector.DealWeight)
 		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
@@ -499,6 +499,26 @@ func TestCommitments(t *testing.T) {
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
+		})
+	})
+
+	t.Run("deal space exceeds sector space", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "deals too large to fit in sector", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, []abi.DealID{1}), preCommitConf{
+				dealSpace: actor.sectorSize + 1,
+			})
 		})
 	})
 
@@ -3407,6 +3427,7 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 type preCommitConf struct {
 	dealWeight         abi.DealWeight
 	verifiedDealWeight abi.DealWeight
+	dealSpace          abi.SectorSize
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo, conf preCommitConf) *miner.SectorPreCommitOnChainInfo {
@@ -3427,6 +3448,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		vdReturn := market.VerifyDealsForActivationReturn{
 			DealWeight:         conf.dealWeight,
 			VerifiedDealWeight: conf.verifiedDealWeight,
+			DealSpace:          uint64(conf.dealSpace),
 		}
 		if vdReturn.DealWeight.Nil() {
 			vdReturn.DealWeight = big.Zero()
