@@ -77,8 +77,9 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	if !ok {
 		rt.Abortf(exitcode.ErrNotFound, "failed to resolve given owner address")
 	}
+	_ = minerAddr
 
-	penalty := abi.NewTokenAmount(0)
+	penalty := params.Penalty
 	totalReward := big.Zero()
 	var st State
 	rt.State().Transaction(&st, func() {
@@ -97,29 +98,20 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		st.TotalMined = big.Add(st.TotalMined, blockReward)
 	})
 
-	// Cap the penalty at the total reward value.
-	penalty = big.Min(params.Penalty, totalReward)
-
-	// Reduce the payable reward by the penalty.
-	rewardPayable := big.Sub(totalReward, penalty)
-
-	AssertMsg(big.Add(rewardPayable, penalty).LessThanEqual(priorBalance),
-		"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
+	AssertMsg(totalReward.LessThanEqual(priorBalance), "reward %v exceeds balance %v", totalReward, priorBalance)
 
 	// if this fails, we can assume the miner is responsible and avoid failing here.
-	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
+	rewardParams := builtin.ApplyRewardParams{
+		Reward:  &totalReward,
+		Penalty: &penalty,
+	}
+	_, code := rt.Send(minerAddr, builtin.MethodsMiner.ApplyRewards, &rewardParams, totalReward)
 	if !code.IsSuccess() {
-		rt.Log(vmr.ERROR, "failed to send AddLockedFund call to the miner actor with funds: %v, code: %v", rewardPayable, code)
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, rewardPayable)
+		rt.Log(vmr.ERROR, "failed to send ApplyRewards call to the miner actor with funds: %v, code: %v", totalReward, code)
+		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalReward)
 		if !code.IsSuccess() {
 			rt.Log(vmr.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
 		}
-	}
-
-	// Burn the penalty amount.
-	if penalty.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
-		builtin.RequireSuccess(rt, code, "failed to send penalty to burnt funds actor")
 	}
 
 	return nil

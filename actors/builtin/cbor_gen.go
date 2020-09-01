@@ -8,6 +8,7 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -201,5 +202,87 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 		t.Sectors[i] = abi.SectorNumber(val)
 	}
 
+	return nil
+}
+
+var lengthBufApplyRewardParams = []byte{130}
+
+func (t *ApplyRewardParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufApplyRewardParams); err != nil {
+		return err
+	}
+
+	// t.Reward (big.Int) (struct)
+	if err := t.Reward.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Penalty (big.Int) (struct)
+	if err := t.Penalty.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *ApplyRewardParams) UnmarshalCBOR(r io.Reader) error {
+	*t = ApplyRewardParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Reward (big.Int) (struct)
+
+	{
+
+		b, err := br.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+			t.Reward = new(big.Int)
+			if err := t.Reward.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.Reward pointer: %w", err)
+			}
+		}
+
+	}
+	// t.Penalty (big.Int) (struct)
+
+	{
+
+		b, err := br.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+			t.Penalty = new(big.Int)
+			if err := t.Penalty.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.Penalty pointer: %w", err)
+			}
+		}
+
+	}
 	return nil
 }

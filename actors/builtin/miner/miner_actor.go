@@ -1412,23 +1412,17 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 // Pledge Collateral //
 ///////////////////////
 
-type ApplyRewardParams struct {
-	reward  *abi.TokenAmount
-	penalty *abi.TokenAmount
-}
-
 // Locks up some amount of the miner's unlocked balance (including funds received alongside the invoking message).
-func (a Actor) ApplyRewards(rt Runtime, params *ApplyRewardParams) *adt.EmptyValue {
-	if params.reward.Sign() < 0 {
+func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.EmptyValue {
+	if params.Reward.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
-	if params.penalty.Sign() < 0 {
+	if params.Penalty.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot penalize a negative amount of funds")
 	}
 
 	var st State
 	pledgeDeltaTotal := big.Zero()
-	toBurn := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
 		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
@@ -1436,25 +1430,19 @@ func (a Actor) ApplyRewards(rt Runtime, params *ApplyRewardParams) *adt.EmptyVal
 		// This ensures the miner has sufficient funds to lock up amountToLock.
 		// This should always be true if reward actor sends reward funds with the message.
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		if unlockedBalance.LessThan(*params.reward) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *params.reward)
+		if unlockedBalance.LessThan(*params.Reward) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *params.Reward)
 		}
 
-		newlyVested, err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *params.reward, &RewardVestingSpec)
+		newlyVested, err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *params.Reward, &RewardVestingSpec)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, newlyVested)
-		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, *params.reward)
+		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, *params.Reward)
 
-		err = st.ApplyPenalty(*params.penalty)
+		err = st.ApplyPenalty(*params.Penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-
-		fromVesting, fromBalance, err := st.RepayPartialDebtInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), rt.CurrentBalance())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay fee")
-		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, fromVesting)
-		toBurn = fromBalance
 	})
 
-	burnFunds(rt, toBurn)
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 
 	return nil
