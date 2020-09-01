@@ -1393,8 +1393,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
-		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker, builtin.RewardActorAddr)...)
+		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
 		// This ensures that the amountToLock is always locked up if the miner account

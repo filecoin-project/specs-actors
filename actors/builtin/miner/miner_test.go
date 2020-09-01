@@ -3941,8 +3941,8 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address)
 }
 
 func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
-	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker, builtin.RewardActorAddr)...)
+	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
 	// expect pledge update
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
