@@ -31,8 +31,7 @@ type Runtime = vmr.Runtime
 type CronEventType int64
 
 const (
-	CronEventWorkerKeyChange CronEventType = iota
-	CronEventProvingDeadline
+	CronEventProvingDeadline CronEventType = iota + 1
 	CronEventProcessEarlyTerminations
 )
 
@@ -70,6 +69,7 @@ func (a Actor) Exports() []interface{} {
 		18:                        a.ChangeMultiaddrs,
 		19:                        a.CompactPartitions,
 		20:                        a.CompactSectorNumbers,
+		21:                        a.ConfirmUpdateWorkerKey,
 	}
 }
 
@@ -177,8 +177,6 @@ type ChangeWorkerAddressParams struct {
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	checkControlAddresses(rt, params.NewControlAddrs)
 
-	var effectiveEpoch abi.ChainEpoch
-
 	newWorker := resolveWorkerAddress(rt, params.NewWorker)
 
 	var controlAddrs []addr.Address
@@ -188,29 +186,20 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	}
 
 	var st State
-	isWorkerChange := false
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		// Only the Owner is allowed to change the newWorker and control addresses.
 		rt.ValidateImmediateCallerIs(info.Owner)
 
-		{
-			// save the new control addresses
-			info.ControlAddresses = controlAddrs
-		}
+		// save the new control addresses
+		info.ControlAddresses = controlAddrs
 
-		{
-			// save newWorker addr key change request
-			// This may replace another pending key change.
-			if newWorker != info.Worker {
-				isWorkerChange = true
-				effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
-
-				info.PendingWorkerKey = &WorkerKeyChange{
-					NewWorker:   newWorker,
-					EffectiveAt: effectiveEpoch,
-				}
+		// save newWorker addr key change request
+		if newWorker != info.Worker && info.PendingWorkerKey == nil {
+			info.PendingWorkerKey = &WorkerKeyChange{
+				NewWorker:   newWorker,
+				EffectiveAt: rt.CurrEpoch() + WorkerKeyChangeDelay,
 			}
 		}
 
@@ -218,14 +207,20 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 
-	// we only need to enroll the cron event for newWorker key change as we change the control
-	// addresses immediately
-	if isWorkerChange {
-		cronPayload := CronEventPayload{
-			EventType: CronEventWorkerKeyChange,
-		}
-		enrollCronEvent(rt, effectiveEpoch, &cronPayload)
-	}
+	return nil
+}
+
+// Triggers a worker address change if a change has been requested and its effective epoch has arrived.
+func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+	var st State
+	rt.State().Transaction(&st, func() {
+		info := getMinerInfo(rt, &st)
+
+		// Only the Owner is allowed to change the newWorker.
+		rt.ValidateImmediateCallerIs(info.Owner)
+
+		processPendingWorker(info, rt, &st)
+	})
 
 	return nil
 }
@@ -1560,8 +1555,6 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	switch payload.EventType {
 	case CronEventProvingDeadline:
 		handleProvingDeadline(rt)
-	case CronEventWorkerKeyChange:
-		commitWorkerKeyChange(rt)
 	case CronEventProcessEarlyTerminations:
 		if processEarlyTerminations(rt) {
 			scheduleEarlyTerminationWork(rt)
@@ -1687,6 +1680,12 @@ func handleProvingDeadline(rt Runtime) {
 			newlyVested, err := st.UnlockVestedFunds(store, rt.CurrEpoch())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, newlyVested.Neg())
+		}
+
+		{
+			// Process pending worker change if any
+			info := getMinerInfo(rt, &st)
+			processPendingWorker(info, rt, &st)
 		}
 
 		{
@@ -1997,24 +1996,6 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 	return dealWeights
 }
 
-func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
-	var st State
-	rt.State().Transaction(&st, func() {
-		info := getMinerInfo(rt, &st)
-		// A previously scheduled key change could have been replaced with a new key change request
-		// scheduled in the future. This case should be treated as a no-op.
-		if info.PendingWorkerKey == nil || info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
-			return
-		}
-
-		info.Worker = info.PendingWorkerKey.NewWorker
-		info.PendingWorkerKey = nil
-		err := st.SaveInfo(adt.AsStore(rt), info)
-		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
-	})
-	return nil
-}
-
 // Requests the current epoch target block reward from the reward actor.
 // return value includes reward, smoothed estimate of reward, and baseline power
 func requestCurrentEpochBlockReward(rt Runtime) reward.ThisEpochRewardReturn {
@@ -2164,6 +2145,19 @@ func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
 	return replaced.InitialPledge,
 		maxEpoch(0, rt.CurrEpoch()-replaced.Activation),
 		replaced.ExpectedDayReward
+}
+
+// Update worker address with pending worker key if exists and delay has passed
+func processPendingWorker(info *MinerInfo, rt Runtime, st *State) {
+	if info.PendingWorkerKey == nil || rt.CurrEpoch() < info.PendingWorkerKey.EffectiveAt {
+		return
+	}
+
+	info.Worker = info.PendingWorkerKey.NewWorker
+	info.PendingWorkerKey = nil
+
+	err := st.SaveInfo(adt.AsStore(rt), info)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 }
 
 // Computes deadline information for a fault or recovery declaration.
