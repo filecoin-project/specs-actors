@@ -267,7 +267,7 @@ type VerifyDealsForActivationParams struct {
 type VerifyDealsForActivationReturn struct {
 	DealWeight         abi.DealWeight
 	VerifiedDealWeight abi.DealWeight
-	DealSpace          abi.SectorSize
+	DealSpace          uint64
 }
 
 // Verify that a given set of storage deals is valid for a sector currently being PreCommitted
@@ -613,7 +613,7 @@ func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, propos
 // split into regular deal weight and verified deal weight.
 func ValidateDealsForActivation(
 	st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address, sectorExpiry, currEpoch abi.ChainEpoch,
-) (big.Int, big.Int, abi.SectorSize, error) {
+) (big.Int, big.Int, uint64, error) {
 
 	proposals, err := AsDealProposalArray(store, st.Proposals)
 	if err != nil {
@@ -622,7 +622,7 @@ func ValidateDealsForActivation(
 
 	seenDealIDs := make(map[abi.DealID]struct{}, len(dealIDs))
 
-	totalDealSpace := abi.SectorSize(0)
+	totalDealSpace := uint64(0)
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
@@ -644,7 +644,7 @@ func ValidateDealsForActivation(
 		}
 
 		// Compute deal weight
-		totalDealSpace += abi.SectorSize(proposal.PieceSize)
+		totalDealSpace += uint64(proposal.PieceSize)
 		dealSpaceTime := DealWeight(proposal)
 		if proposal.VerifiedDeal {
 			totalVerifiedSpaceTime = big.Add(totalVerifiedSpaceTime, dealSpaceTime)

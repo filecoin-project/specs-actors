@@ -535,7 +535,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		}
 
 		// Ensure total deal space does not exceed sector size.
-		if dealWeight.DealSpace > info.SectorSize {
+		if dealWeight.DealSpace > uint64(info.SectorSize) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
 		}
 

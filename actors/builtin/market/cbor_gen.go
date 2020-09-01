@@ -693,7 +693,7 @@ func (t *VerifyDealsForActivationReturn) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.DealSpace (abi.SectorSize) (uint64)
+	// t.DealSpace (uint64) (uint64)
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.DealSpace)); err != nil {
 		return err
@@ -738,7 +738,7 @@ func (t *VerifyDealsForActivationReturn) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.DealSpace (abi.SectorSize) (uint64)
+	// t.DealSpace (uint64) (uint64)
 
 	{
 
@@ -749,7 +749,7 @@ func (t *VerifyDealsForActivationReturn) UnmarshalCBOR(r io.Reader) error {
 		if maj != cbg.MajUnsignedInt {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
-		t.DealSpace = abi.SectorSize(extra)
+		t.DealSpace = uint64(extra)
 
 	}
 	return nil

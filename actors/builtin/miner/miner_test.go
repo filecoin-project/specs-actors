@@ -3448,7 +3448,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		vdReturn := market.VerifyDealsForActivationReturn{
 			DealWeight:         conf.dealWeight,
 			VerifiedDealWeight: conf.verifiedDealWeight,
-			DealSpace:          conf.dealSpace,
+			DealSpace:          uint64(conf.dealSpace),
 		}
 		if vdReturn.DealWeight.Nil() {
 			vdReturn.DealWeight = big.Zero()
