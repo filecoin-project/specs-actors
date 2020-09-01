@@ -130,15 +130,34 @@ func TestConstruction(t *testing.T) {
 
 	})
 
-	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
+	t.Run("fail to construct multisig actor with more than max signers", func(t *testing.T) {
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
-			Signers:               []addr.Address{anne, bob, charlie},
-			NumApprovalsThreshold: 4,
+			Signers:               []addr.Address{},
+			NumApprovalsThreshold: 1,
 			UnlockDuration:        1,
 		}
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.Constructor, &params)
+		})
+		rt.Verify()
+
+	})
+
+	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
+		rt := builder.Build(t)
+		signers := make([]addr.Address, multisig.SignersMax+1)
+		for i := range signers {
+			signers[i] = tutil.NewIDAddr(t, uint64(101+i))
+		}
+		params := multisig.ConstructorParams{
+			Signers:               signers,
+			NumApprovalsThreshold: 4,
+			UnlockDuration:        1,
+		}
+		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "cannot add more than 256 signers", func() {
 			rt.Call(actor.Constructor, &params)
 		})
 		rt.Verify()
