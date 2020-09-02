@@ -2,16 +2,16 @@ package test_test
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"testing"
-
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	vm "github.com/filecoin-project/specs-actors/support/vm"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	vm "github.com/filecoin-project/specs-actors/support/vm"
 )
 
 func TestMarketWithdraw(t *testing.T) {
