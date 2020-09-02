@@ -195,8 +195,8 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
-	a.processDeferredCronEvents(rt)
 	a.processBatchProofVerifies(rt)
+	a.processDeferredCronEvents(rt)
 
 	var st State
 	rt.State().Transaction(&st, func() {
