@@ -373,6 +373,52 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 	})
 
+	t.Run("consensus minimum power depends on proof type", func(t *testing.T) {
+		// Setup four miners above threshold
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// create 4 miners that meet minimum
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
+
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
+
+		actor.expectMinersAboveMinPower(rt, 4)
+		expectedTotal := mul(powerUnit, 4)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+
+		// miner 5 uses 64GiB sectors and has a higher minimum
+		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
+			nil, abi.RegisteredSealProof_StackedDrg64GiBV1, big.Zero())
+
+		power64Unit, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+		assert.True(t, power64Unit.GreaterThan(powerUnit))
+
+		// below limit actors power is not added
+		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
+		actor.expectMinersAboveMinPower(rt, 4)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+
+		// just below limit
+		delta := big.Subtract(power64Unit, powerUnit, big.NewInt(1))
+		actor.updateClaimedPower(rt, miner5, delta, delta)
+		actor.expectMinersAboveMinPower(rt, 4)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+
+		// at limit power is added
+		actor.updateClaimedPower(rt, miner5, big.NewInt(1), big.NewInt(1))
+		actor.expectMinersAboveMinPower(rt, 5)
+		newExpectedTotal := big.Add(expectedTotal, power64Unit)
+		actor.expectTotalPowerEager(rt, newExpectedTotal, newExpectedTotal)
+	})
+
 	t.Run("threshold only depends on qa power, not raw byte", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -1079,6 +1125,11 @@ func (h *spActorHarness) expectTotalPowerEager(rt *mock.Runtime, expectedRaw, ex
 	rawBytePower, qualityAdjPower := power.CurrentTotalPower(st)
 	assert.Equal(h.t, expectedRaw, rawBytePower)
 	assert.Equal(h.t, expectedQA, qualityAdjPower)
+}
+
+func (h *spActorHarness) expectMinersAboveMinPower(rt *mock.Runtime, count int64) {
+	st := getState(rt)
+	assert.Equal(h.t, count, st.MinerAboveMinPowerCount)
 }
 
 func (h *spActorHarness) expectTotalPledgeEager(rt *mock.Runtime, expectedPledge abi.TokenAmount) {
