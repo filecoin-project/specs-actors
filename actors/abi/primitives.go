@@ -61,6 +61,9 @@ func NewTokenAmount(t int64) TokenAmount {
 // Randomness is a string of random bytes
 type Randomness []byte
 
+// RandomnessLength is the length of the randomness slice.
+const RandomnessLength = 32
+
 // Multiaddrs is a byte array representing a Libp2p MultiAddress
 type Multiaddrs = []byte
 
