@@ -127,7 +127,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	offset, err := assignProvingPeriodOffset(rt.Message().Receiver(), currEpoch, rt.Syscalls().HashBlake2b)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period offset")
 	periodStart := currentProvingPeriodStart(currEpoch, offset)
-	deadlineIndex := uint64((currEpoch - periodStart) / WPoStChallengeWindow)
+	deadlineIndex := currentDeadlineIndex(currEpoch, periodStart)
 	Assert(deadlineIndex < WPoStPeriodDeadlines)
 
 	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
@@ -2150,6 +2150,12 @@ func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) 
 	periodStart := currEpoch - periodProgress
 	Assert(periodStart <= currEpoch)
 	return periodStart
+}
+
+// Computes the deadline index for the current epoch for a given period start.
+// currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
+func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
+	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 
 func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*SectorOnChainInfo {
