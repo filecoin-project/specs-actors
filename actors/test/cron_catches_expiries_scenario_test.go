@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var fakeChainRandomness = []byte("not really random")
+
 func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
@@ -36,7 +38,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := v.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
+	ret, code := v.ApplyMessage(worker, builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 	require.Equal(t, exitcode.Ok, code)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
@@ -55,7 +57,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	require.Equal(t, exitcode.Ok, code)
 
 	// advance time to max seal duration
-	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	// Prove commit sector after max seal duration
@@ -83,7 +85,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		Proofs: []abi.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
-		ChainCommitRand: []byte("not really random"),
+		ChainCommitRand: fakeChainRandomness,
 	}
 
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
@@ -121,7 +123,8 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 	require.Equal(t, exitcode.Ok, code)
 
-	// advance time to end of original sector's first proving deadline after minimum prove time has past
+	// Advance to beginning of the valid prove-commit window, then advance to proving deadline of original sector.
+	// This should allow us to prove commit the upgrade on the last epoch of the original sector's proving period.
 	proveTime = v.GetEpoch() + miner.PreCommitChallengeDelay + 1
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 	dlInfo, _, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
