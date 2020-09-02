@@ -398,6 +398,48 @@ func TestDeadlines(t *testing.T) {
 			).assert(t, store, dl)
 	})
 
+	t.Run("fails to terminate missing sector", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		addThenMarkFaulty(t, store, dl, false) // 1, 5, 6 faulty
+
+		sectorArr := sectorsArr(t, store, sectors)
+		_, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
+			0: bf(6),
+		}, sectorSize, quantSpec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "can only terminate live sectors")
+	})
+
+	t.Run("fails to terminate missing partition", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		addThenMarkFaulty(t, store, dl, false) // 1, 5, 6 faulty
+
+		sectorArr := sectorsArr(t, store, sectors)
+		_, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
+			4: bf(6),
+		}, sectorSize, quantSpec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to find partition 4")
+	})
+
+	t.Run("fails to terminate already terminated sector", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		addThenTerminate(t, store, dl, false) // terminates 1, 3, & 6
+
+		sectorArr := sectorsArr(t, store, sectors)
+		_, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
+			0: bf(1, 2),
+		}, sectorSize, quantSpec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "can only terminate live sectors")
+	})
+
 	t.Run("faulty sectors expire", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 
@@ -659,6 +701,27 @@ func TestDeadlines(t *testing.T) {
 			).assert(t, store, dl)
 	})
 
+	t.Run("post missing partition", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+
+		dl := emptyDeadline(t, store)
+		addSectors(t, store, dl, true)
+
+		// add an inactive sector
+		unprovenPowerDelta, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+		require.True(t, unprovenPowerDelta.IsZero())
+
+		sectorArr := sectorsArr(t, store, allSectors)
+
+		_, err = dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+			{Index: 0, Skipped: bf()},
+			{Index: 3, Skipped: bf()},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such partition")
+	})
+
 	t.Run("retract recoveries", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)
@@ -771,6 +834,39 @@ func TestDeadlines(t *testing.T) {
 		assert.True(t, exp.ActivePower.Equals(miner.PowerForSector(sectorSize, sector7)))
 		assert.True(t, exp.FaultyPower.IsZero())
 		assert.True(t, exp.OnTimePledge.Equals(sector7.InitialPledge))
+	})
+
+	t.Run("cannot declare faults in missing partitions", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		addSectors(t, store, dl, true)
+		sectorArr := sectorsArr(t, store, allSectors)
+
+		// Declare sectors 1 & 6 faulty.
+		_, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 17, map[uint64]bitfield.BitField{
+			0: bf(1),
+			4: bf(6),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such partition 4")
+	})
+
+	t.Run("cannot declare faults recovered in missing partitions", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+		dl := emptyDeadline(t, store)
+
+		// Marks sectors 1 (partition 0), 5 & 6 (partition 1) as faulty.
+		addThenMarkFaulty(t, store, dl, true)
+		sectorArr := sectorsArr(t, store, allSectors)
+
+		// Declare sectors 1 & 6 faulty.
+		err := dl.DeclareFaultsRecovered(store, sectorArr, sectorSize, map[uint64]bitfield.BitField{
+			0: bf(1),
+			4: bf(6),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such partition 4")
 	})
 }
 
