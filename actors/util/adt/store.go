@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
 
 // Store defines an interface required to back the ADTs in this package.
