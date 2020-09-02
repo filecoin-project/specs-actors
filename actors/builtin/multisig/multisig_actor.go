@@ -78,6 +78,10 @@ func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Empty
 		rt.Abortf(exitcode.ErrIllegalArgument, "must have at least one signer")
 	}
 
+	if len(params.Signers) > SignersMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "cannot add more than %d signers", SignersMax)
+	}
+
 	// resolve signer addresses and do not allow duplicate signers
 	resolvedSigners := make([]addr.Address, 0, len(params.Signers))
 	deDupSigners := make(map[addr.Address]struct{}, len(params.Signers))
@@ -293,6 +297,10 @@ func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValu
 
 	var st State
 	rt.State().Transaction(&st, func() {
+		if len(st.Signers) >= SignersMax {
+			rt.Abortf(exitcode.ErrForbidden, "cannot add more than %d signers", SignersMax)
+		}
+
 		isSigner := isSigner(resolvedNewSigner, st.Signers)
 		if isSigner {
 			rt.Abortf(exitcode.ErrForbidden, "%s is already a signer", resolvedNewSigner)

@@ -679,6 +679,10 @@ func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkQAP
 
 	proposal := deal.Proposal
 
+	if len(proposal.Label) > DealMaxLabelSize {
+		rt.Abortf(exitcode.ErrIllegalArgument, "deal label can be at most %d bytes, is %d", DealMaxLabelSize, len(proposal.Label))
+	}
+
 	if err := proposal.PieceSize.Validate(); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proposal piece size is invalid: %v", err)
 	}
