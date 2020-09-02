@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
+	cbg "github.com/whyrusleeping/cbor-gen"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -22,8 +25,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
-	"github.com/ipfs/go-cid"
-	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -2,14 +2,16 @@ package puppet_test
 
 import (
 	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/puppet"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
-	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestSend(t *testing.T) {

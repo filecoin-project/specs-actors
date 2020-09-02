@@ -2,10 +2,11 @@ package verifreg
 
 import (
 	addr "github.com/filecoin-project/go-address"
+	cid "github.com/ipfs/go-cid"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
-	cid "github.com/ipfs/go-cid"
 )
 
 // DataCap is an integer number of bytes.

@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/specs-actors/actors/crypto"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"

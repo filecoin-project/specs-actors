@@ -6,11 +6,12 @@ import (
 	gbig "math/big"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/xorcare/golden"
+
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
-	"github.com/stretchr/testify/assert"
-	"github.com/xorcare/golden"
 )
 
 func q128ToF(x big.Int) float64 {

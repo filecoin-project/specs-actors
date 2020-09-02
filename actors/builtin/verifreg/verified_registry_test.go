@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/stretchr/testify/require"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -13,7 +15,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
-	"github.com/stretchr/testify/require"
 )
 
 func TestExports(t *testing.T) {

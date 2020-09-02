@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 
-	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
