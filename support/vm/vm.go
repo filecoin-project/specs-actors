@@ -131,8 +131,12 @@ func (vm *VM) rollback(root cid.Cid) error {
 }
 
 func (vm *VM) GetActor(a address.Address) (*TestActor, bool, error) {
+	na, found := vm.NormalizeAddress(a)
+	if !found {
+		return nil, false, nil
+	}
 	var act TestActor
-	found, err := vm.actors.Get(adt.AddrKey(a), &act)
+	found, err := vm.actors.Get(adt.AddrKey(na), &act)
 	return &act, found, err
 }
 
