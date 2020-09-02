@@ -31,8 +31,7 @@ type Runtime = vmr.Runtime
 type CronEventType int64
 
 const (
-	CronEventWorkerKeyChange CronEventType = iota
-	CronEventProvingDeadline
+	CronEventProvingDeadline CronEventType = iota + 1
 	CronEventProcessEarlyTerminations
 )
 
@@ -70,6 +69,7 @@ func (a Actor) Exports() []interface{} {
 		18:                        a.ChangeMultiaddrs,
 		19:                        a.CompactPartitions,
 		20:                        a.CompactSectorNumbers,
+		21:                        a.ConfirmUpdateWorkerKey,
 	}
 }
 
@@ -177,8 +177,6 @@ type ChangeWorkerAddressParams struct {
 func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
 	checkControlAddresses(rt, params.NewControlAddrs)
 
-	var effectiveEpoch abi.ChainEpoch
-
 	newWorker := resolveWorkerAddress(rt, params.NewWorker)
 
 	var controlAddrs []addr.Address
@@ -188,29 +186,20 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 	}
 
 	var st State
-	isWorkerChange := false
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		// Only the Owner is allowed to change the newWorker and control addresses.
 		rt.ValidateImmediateCallerIs(info.Owner)
 
-		{
-			// save the new control addresses
-			info.ControlAddresses = controlAddrs
-		}
+		// save the new control addresses
+		info.ControlAddresses = controlAddrs
 
-		{
-			// save newWorker addr key change request
-			// This may replace another pending key change.
-			if newWorker != info.Worker {
-				isWorkerChange = true
-				effectiveEpoch = rt.CurrEpoch() + WorkerKeyChangeDelay
-
-				info.PendingWorkerKey = &WorkerKeyChange{
-					NewWorker:   newWorker,
-					EffectiveAt: effectiveEpoch,
-				}
+		// save newWorker addr key change request
+		if newWorker != info.Worker && info.PendingWorkerKey == nil {
+			info.PendingWorkerKey = &WorkerKeyChange{
+				NewWorker:   newWorker,
+				EffectiveAt: rt.CurrEpoch() + WorkerKeyChangeDelay,
 			}
 		}
 
@@ -218,14 +207,20 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 
-	// we only need to enroll the cron event for newWorker key change as we change the control
-	// addresses immediately
-	if isWorkerChange {
-		cronPayload := CronEventPayload{
-			EventType: CronEventWorkerKeyChange,
-		}
-		enrollCronEvent(rt, effectiveEpoch, &cronPayload)
-	}
+	return nil
+}
+
+// Triggers a worker address change if a change has been requested and its effective epoch has arrived.
+func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+	var st State
+	rt.State().Transaction(&st, func() {
+		info := getMinerInfo(rt, &st)
+
+		// Only the Owner is allowed to change the newWorker.
+		rt.ValidateImmediateCallerIs(info.Owner)
+
+		processPendingWorker(info, rt, &st)
+	})
 
 	return nil
 }
@@ -535,9 +530,14 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
 		}
 
-		maxDealLimit := dealPerSectorLimit(info.SectorSize)
-		if uint64(len(params.DealIDs)) > maxDealLimit {
-			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), maxDealLimit)
+		dealCountMax := SectorDealsMax(info.SectorSize)
+		if uint64(len(params.DealIDs)) > dealCountMax {
+			rt.Abortf(exitcode.ErrIllegalArgument, "too many deals for sector %d > %d", len(params.DealIDs), dealCountMax)
+		}
+
+		// Ensure total deal space does not exceed sector size.
+		if dealWeight.DealSpace > uint64(info.SectorSize) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
 		}
 
 		err = st.AllocateSectorNumber(store, params.SectorNumber)
@@ -558,19 +558,13 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "sector %v already committed", params.SectorNumber)
 		}
 
-		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
-			replaceSector := validateReplaceSector(rt, &st, store, params)
-			// Note the replaced sector's initial pledge as a lower bound for the new sector's deposit
-			depositMinimum = replaceSector.InitialPledge
+			validateReplaceSector(rt, &st, store, params)
 		}
 
 		duration := params.Expiration - rt.CurrEpoch()
 		sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
-		depositReq := big.Max(
-			PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight),
-			depositMinimum,
-		)
+		depositReq := PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight)
 		if availableBalance.LessThan(depositReq) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
@@ -756,7 +750,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 	var newPower PowerPair
 	totalPledge := big.Zero()
-	totalPrecommitDeposit := big.Zero()
+	depositToUnlock := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
@@ -778,16 +772,16 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				continue
 			}
 
-			power := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
-			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, builtin.EpochsInDay)
-			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, power, InitialPledgeProjectionPeriod)
-
-			initialPledge := InitialPledgeForPower(power, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
+			pwr := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
+			dayReward := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
+			storagePledge := ExpectedRewardForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
+			initialPledge := InitialPledgeForPower(pwr, rewardStats.ThisEpochBaselinePower, rewardStats.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed, circulatingSupply)
 
-			totalPrecommitDeposit = big.Add(totalPrecommitDeposit, precommit.PreCommitDeposit)
-			totalPledge = big.Add(totalPledge, initialPledge)
-			replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
+			// Lower-bound the pledge by that of the sector being replaced.
+			// Record the replaced age and reward rate for termination fee calculations.
+			replacedPledge, replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
+			initialPledge = big.Max(initialPledge, replacedPledge)
 
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
@@ -804,8 +798,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				ReplacedSectorAge:     replacedAge,
 				ReplacedDayReward:     replacedDayReward,
 			}
+
+			depositToUnlock = big.Add(depositToUnlock, precommit.PreCommitDeposit)
 			newSectors = append(newSectors, &newSectorInfo)
 			newSectorNos = append(newSectorNos, newSectorInfo.SectorNumber)
+			totalPledge = big.Add(totalPledge, initialPledge)
 		}
 
 		err = st.PutSectors(store, newSectors...)
@@ -824,7 +821,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(totalPrecommitDeposit.Neg())
+		st.AddPreCommitDeposit(depositToUnlock.Neg())
 
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 		if unlockedBalance.LessThan(totalPledge) {
@@ -1402,8 +1399,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
-		info := getMinerInfo(rt, &st)
-		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker, builtin.RewardActorAddr)...)
+		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
 
 		// This may lock up unlocked balance that was covering InitialPledgeRequirements
 		// This ensures that the amountToLock is always locked up if the miner account
@@ -1565,8 +1561,6 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 	switch payload.EventType {
 	case CronEventProvingDeadline:
 		handleProvingDeadline(rt)
-	case CronEventWorkerKeyChange:
-		commitWorkerKeyChange(rt)
 	case CronEventProcessEarlyTerminations:
 		if processEarlyTerminations(rt) {
 			scheduleEarlyTerminationWork(rt)
@@ -1695,6 +1689,12 @@ func handleProvingDeadline(rt Runtime) {
 		}
 
 		{
+			// Process pending worker change if any
+			info := getMinerInfo(rt, &st)
+			processPendingWorker(info, rt, &st)
+		}
+
+		{
 			depositToBurn, err := st.ExpirePreCommits(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
 
@@ -1785,13 +1785,15 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 
 	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
-	if expiration-activation > sealProof.SectorMaximumLifetime() {
+	maxLifetime, err := sealProof.SectorMaximumLifetime()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "unrecognized seal proof type %d", sealProof)
+	if expiration-activation > maxLifetime {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",
-			expiration, expiration-activation, sealProof.SectorMaximumLifetime(), activation)
+			expiration, expiration-activation, maxLifetime, activation)
 	}
 }
 
-func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) *SectorOnChainInfo {
+func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) {
 	replaceSector, found, err := st.GetSector(store, params.ReplaceSectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
 	if !found {
@@ -1812,8 +1814,6 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *Secto
 
 	err = st.CheckSectorHealth(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector %v", params.ReplaceSectorNumber)
-
-	return replaceSector
 }
 
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
@@ -1979,6 +1979,13 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 }
 
 func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
+	if len(dealIDs) == 0 {
+		return market.VerifyDealsForActivationReturn{
+			DealWeight:         big.Zero(),
+			VerifiedDealWeight: big.Zero(),
+		}
+	}
+
 	var dealWeights market.VerifyDealsForActivationReturn
 	ret, code := rt.Send(
 		builtin.StorageMarketActorAddr,
@@ -1993,25 +2000,6 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
 	AssertNoError(ret.Into(&dealWeights))
 	return dealWeights
-
-}
-
-func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
-	var st State
-	rt.State().Transaction(&st, func() {
-		info := getMinerInfo(rt, &st)
-		// A previously scheduled key change could have been replaced with a new key change request
-		// scheduled in the future. This case should be treated as a no-op.
-		if info.PendingWorkerKey == nil || info.PendingWorkerKey.EffectiveAt > rt.CurrEpoch() {
-			return
-		}
-
-		info.Worker = info.PendingWorkerKey.NewWorker
-		info.PendingWorkerKey = nil
-		err := st.SaveInfo(adt.AsStore(rt), info)
-		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
-	})
-	return nil
 }
 
 // Requests the current epoch target block reward from the reward actor.
@@ -2149,9 +2137,10 @@ func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*Sec
 	return m
 }
 
-func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo, replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (abi.ChainEpoch, big.Int) {
+func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
+	replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (pledge abi.TokenAmount, age abi.ChainEpoch, dayReward big.Int) {
 	if !precommit.Info.ReplaceCapacity {
-		return abi.ChainEpoch(0), big.Zero()
+		return big.Zero(), abi.ChainEpoch(0), big.Zero()
 	}
 	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
 	if !ok {
@@ -2159,7 +2148,22 @@ func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
 	}
 	// The sector will actually be active for the period between activation and its next proving deadline,
 	// but this covers the period for which we will be looking to the old sector for termination fees.
-	return maxEpoch(0, rt.CurrEpoch()-replaced.Activation), replaced.ExpectedDayReward
+	return replaced.InitialPledge,
+		maxEpoch(0, rt.CurrEpoch()-replaced.Activation),
+		replaced.ExpectedDayReward
+}
+
+// Update worker address with pending worker key if exists and delay has passed
+func processPendingWorker(info *MinerInfo, rt Runtime, st *State) {
+	if info.PendingWorkerKey == nil || rt.CurrEpoch() < info.PendingWorkerKey.EffectiveAt {
+		return
+	}
+
+	info.Worker = info.PendingWorkerKey.NewWorker
+	info.PendingWorkerKey = nil
+
+	err := st.SaveInfo(adt.AsStore(rt), info)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 }
 
 // Computes deadline information for a fault or recovery declaration.
@@ -2223,6 +2227,12 @@ func PowerForSectors(ssize abi.SectorSize, sectors []*SectorOnChainInfo) PowerPa
 		Raw: big.Mul(big.NewIntUnsigned(uint64(ssize)), big.NewIntUnsigned(uint64(len(sectors)))),
 		QA:  qa,
 	}
+}
+
+func ConsensusFaultActive(info *MinerInfo, currEpoch abi.ChainEpoch) bool {
+	// For penalization period to last for exactly finality epochs
+	// consensus faults are active until currEpoch exceeds ConsensusFaultElapsed
+	return currEpoch <= info.ConsensusFaultElapsed
 }
 
 func getMinerInfo(rt Runtime, st *State) *MinerInfo {

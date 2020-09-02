@@ -128,6 +128,11 @@ type ExpirationQueue struct {
 	quant QuantSpec
 }
 
+// An internal limit on the cardinality of a bitfield in a queue entry.
+// This must be at least large enough to support the maximum number of sectors in a partition.
+// It would be a bit better to derive this number from an enumeration over all partition sizes.
+const entrySectorsMax = 10_000
+
 // Loads a queue root.
 // Epochs provided to subsequent method calls will be quantized upwards to quanta mod offsetSeed before being
 // written to/read from queue entries.
@@ -314,11 +319,11 @@ func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 	var sectorsRescheduled []*SectorOnChainInfo
 	recoveredPower := NewPowerPairZero()
 	if err := q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {
-		onTimeSectors, err := es.OnTimeSectors.AllMap(SectorsMax)
+		onTimeSectors, err := es.OnTimeSectors.AllMap(entrySectorsMax)
 		if err != nil {
 			return false, false, err
 		}
-		earlySectors, err := es.EarlySectors.AllMap(SectorsMax)
+		earlySectors, err := es.EarlySectors.AllMap(entrySectorsMax)
 		if err != nil {
 			return false, false, err
 		}
@@ -391,11 +396,11 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults bitf
 	for _, s := range sectors {
 		remaining[s.SectorNumber] = struct{}{}
 	}
-	faultsMap, err := faults.AllMap(SectorsMax)
+	faultsMap, err := faults.AllMap(AddressedSectorsMax)
 	if err != nil {
 		return nil, NewPowerPairZero(), xerrors.Errorf("failed to expand faults: %w", err)
 	}
-	recoveringMap, err := recovering.AllMap(SectorsMax)
+	recoveringMap, err := recovering.AllMap(AddressedSectorsMax)
 	if err != nil {
 		return nil, NewPowerPairZero(), xerrors.Errorf("failed to expand recoveries: %w", err)
 	}
@@ -431,11 +436,11 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults bitf
 	// queue is quantized, we should be able to stop traversing the queue
 	// after 14 entries.
 	if err = q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {
-		onTimeSectors, err := es.OnTimeSectors.AllMap(SectorsMax)
+		onTimeSectors, err := es.OnTimeSectors.AllMap(entrySectorsMax)
 		if err != nil {
 			return false, false, err
 		}
-		earlySectors, err := es.EarlySectors.AllMap(SectorsMax)
+		earlySectors, err := es.EarlySectors.AllMap(entrySectorsMax)
 		if err != nil {
 			return false, false, err
 		}

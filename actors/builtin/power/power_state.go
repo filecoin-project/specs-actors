@@ -121,7 +121,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	// If fewer than ConsensusMinerMinMiners over threshold miner can win a block with non-zero power
-	return minerNominalPower.GreaterThanEqual(abi.NewStoragePower(0)), nil
+	return minerNominalPower.GreaterThan(abi.NewStoragePower(0)), nil
 }
 
 // Parameters may be negative to subtract.

@@ -36,7 +36,7 @@ var testPid abi.PeerID
 var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
-var bigBalance = big.Mul(big.NewInt(1000000), big.NewInt(1e18))
+var bigBalance = big.Mul(big.NewInt(1_000_000), big.NewInt(1e18))
 var onePercentBigBalance = big.Div(bigBalance, big.NewInt(100))
 
 // an expriration 1 greater than min expiration
@@ -382,23 +382,29 @@ func TestCommitments(t *testing.T) {
 		// Make a good commitment for the proof to target.
 		// Use the max sector number to make sure everything works.
 		sectorNo := abi.SectorNumber(abi.MaxSectorNumber)
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
 		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
-		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
-		actor.preCommitSector(rt, precommit)
+		// Fill the sector with verified deals
+		sectorWeight := big.Mul(big.NewInt(int64(actor.sectorSize)), big.NewInt(int64(expiration-proveCommitEpoch)))
+		dealWeight := big.Zero()
+		verifiedDealWeight := sectorWeight
+
+		// Pre-commit with a deal in order to exercise non-zero deal weights.
+		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
+		actor.preCommitSector(rt, precommit, preCommitConf{
+			dealWeight:         dealWeight,
+			verifiedDealWeight: verifiedDealWeight,
+		})
 
 		// assert precommit exists and meets expectations
 		onChainPrecommit := actor.getPreCommit(rt, sectorNo)
 
-		// expect precommit deposit to be initial pledge calculated at precommit time
-		sectorSize, err := precommit.SealProof.SectorSize()
-		require.NoError(t, err)
+		// deal weights must be set in precommit onchain info
+		assert.Equal(t, dealWeight, onChainPrecommit.DealWeight)
+		assert.Equal(t, verifiedDealWeight, onChainPrecommit.VerifiedDealWeight)
 
-		// deal weights mocked by actor harness for market actor must be set in precommit onchain info
-		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.DealWeight)
-		assert.Equal(t, big.NewInt(int64(sectorSize/2)), onChainPrecommit.VerifiedDealWeight)
-
-		qaPower := miner.QAPowerForWeight(sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
-		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, qaPower)
+		pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommit.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
+		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
 		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -406,7 +412,7 @@ func TestCommitments(t *testing.T) {
 		assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
 
 		// run prove commit logic
-		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
+		rt.SetEpoch(proveCommitEpoch)
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 		actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{})
 
@@ -419,17 +425,19 @@ func TestCommitments(t *testing.T) {
 		// expect deposit to have been transferred to initial pledges
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 
-		qaPower = miner.QAPowerForWeight(sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight,
-			onChainPrecommit.VerifiedDealWeight)
+		// The sector is exactly full with verified deals, so expect fully verified power.
+		expectedPower := big.Mul(big.NewInt(int64(actor.sectorSize)), big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier))
+		qaPower := miner.QAPowerForWeight(actor.sectorSize, precommit.Expiration-rt.Epoch(), onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
+		assert.Equal(t, expectedPower, qaPower)
 		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth,
 			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, st.InitialPledge)
 
 		// expect new onchain sector
 		sector := actor.getSector(rt, sectorNo)
-		sectorPower := miner.PowerForSector(sectorSize, sector)
+		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
 
-		// expect deal weights to be transfered to on chain info
+		// expect deal weights to be transferred to on chain info
 		assert.Equal(t, onChainPrecommit.DealWeight, sector.DealWeight)
 		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
@@ -490,7 +498,27 @@ func TestCommitments(t *testing.T) {
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
+		})
+	})
+
+	t.Run("deal space exceeds sector space", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
+		challengeEpoch := precommitEpoch - 1
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "deals too large to fit in sector", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, []abi.DealID{1}), preCommitConf{
+				dealSpace: actor.sectorSize + 1,
+			})
 		})
 	})
 
@@ -511,7 +539,7 @@ func TestCommitments(t *testing.T) {
 		st.FeeDebt = abi.NewTokenAmount(9999)
 		rt.ReplaceState(st)
 
-		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
 	})
@@ -531,17 +559,17 @@ func TestCommitments(t *testing.T) {
 
 		// Good commitment.
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
-		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
 
 		// Duplicate pre-commit sector ID
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already been allocated", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		rt.Reset()
 
 		// Sector ID already committed
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already been allocated", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(oldSector.SectorNumber, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(oldSector.SectorNumber, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		rt.Reset()
 
@@ -549,7 +577,7 @@ func TestCommitments(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sealed CID had wrong prefix", func() {
 			pc := actor.makePreCommit(102, challengeEpoch, deadline.PeriodEnd(), nil)
 			pc.SealedCID = tutil.MakeCID("Random Data", nil)
-			actor.preCommitSector(rt, pc)
+			actor.preCommitSector(rt, pc, preCommitConf{})
 		})
 		rt.Reset()
 
@@ -557,32 +585,32 @@ func TestCommitments(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "unsupported seal proof type", func() {
 			pc := actor.makePreCommit(102, challengeEpoch, deadline.PeriodEnd(), nil)
 			pc.SealProof = abi.RegisteredSealProof_StackedDrg8MiBV1
-			actor.preCommitSector(rt, pc)
+			actor.preCommitSector(rt, pc, preCommitConf{})
 		})
 		rt.Reset()
 
 		// Expires at current epoch
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must be after activation", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, rt.Epoch(), nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, rt.Epoch(), nil), preCommitConf{})
 		})
 		rt.Reset()
 
 		// Expires before current epoch
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must be after activation", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, rt.Epoch()-1, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, rt.Epoch()-1, nil), preCommitConf{})
 		})
 		rt.Reset()
 
 		// Expires too early
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration-20*builtin.EpochsInDay, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration-20*builtin.EpochsInDay, nil), preCommitConf{})
 		})
 		rt.Reset()
 
 		// Expires before min duration + max seal duration
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
 			expiration := rt.Epoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[actor.sealProofType] - 1
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		rt.Reset()
 
@@ -590,20 +618,20 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid expiration", func() {
 			expiration := deadline.PeriodEnd() + miner.WPoStProvingPeriod*(miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod+1)
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		rt.Reset()
 
 		// Sector ID out of range
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "out of range", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(abi.MaxSectorNumber+1, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(abi.MaxSectorNumber+1, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		rt.Reset()
 
 		// Seal randomness challenge too far in past
 		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxProveCommitDuration[actor.sealProofType] - 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil), preCommitConf{})
 		})
 		rt.Reset()
 
@@ -612,7 +640,7 @@ func TestCommitments(t *testing.T) {
 		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		// reset state back to normal
 		st.FeeDebt = big.Zero()
@@ -624,7 +652,7 @@ func TestCommitments(t *testing.T) {
 
 		actor.reportConsensusFault(rt, addr.TestAddress)
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "precommit not allowed during active consensus fault", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil))
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{})
 		})
 		// reset state back to normal
 		rt.ReplaceState(st)
@@ -653,7 +681,8 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 
 		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
-		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(2)))
+		// It has to be reduced quite a lot to overcome the new sector having more power due to verified deal weight.
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(20)))
 
 		challengeEpoch := rt.Epoch() - 1
 		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
@@ -661,13 +690,11 @@ func TestCommitments(t *testing.T) {
 		upgradeParams.ReplaceSectorDeadline = dlIdx
 		upgradeParams.ReplaceSectorPartition = partIdx
 		upgradeParams.ReplaceSectorNumber = oldSector.SectorNumber
-		upgrade := actor.preCommitSector(rt, upgradeParams)
+		upgrade := actor.preCommitSector(rt, upgradeParams, preCommitConf{})
 
 		// Check new pre-commit in state
 		assert.True(t, upgrade.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams.ReplaceSectorNumber, upgrade.Info.ReplaceSectorNumber)
-		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade.PreCommitDeposit)
 
 		// Old sector is unchanged
 		oldSectorAgain := actor.getSector(rt, oldSector.SectorNumber)
@@ -683,10 +710,12 @@ func TestCommitments(t *testing.T) {
 		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
 			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
 
-		// Both sectors have pledge
+		// Both sectors' deposits are returned, and pledge is committed
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, st.InitialPledge, big.Add(oldSector.InitialPledge, newSector.InitialPledge))
+		// new sector pledge is max of computed pledge and pledge from old sector
+		assert.Equal(t, oldSector.InitialPledge, newSector.InitialPledge)
 
 		// Both sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -782,7 +811,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			params.DealIDs = nil
 			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.preCommitSector(rt, &params)
+				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.Reset()
 		}
@@ -790,7 +819,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			params.ReplaceSectorNumber = oldSectors[1].SectorNumber
 			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.preCommitSector(rt, &params)
+				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.Reset()
 		}
@@ -798,7 +827,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			params.ReplaceSectorNumber = 999
 			rt.ExpectAbort(exitcode.ErrNotFound, func() {
-				actor.preCommitSector(rt, &params)
+				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.Reset()
 		}
@@ -806,7 +835,7 @@ func TestCommitments(t *testing.T) {
 			params := *upgradeParams
 			params.Expiration = params.Expiration - miner.WPoStProvingPeriod
 			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.preCommitSector(rt, &params)
+				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.Reset()
 		}
@@ -840,14 +869,14 @@ func TestCommitments(t *testing.T) {
 
 			rt.ReplaceState(st)
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
-				actor.preCommitSector(rt, &params)
+				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.ReplaceState(&prevState)
 			rt.Reset()
 		}
 
 		// Demonstrate that the params are otherwise ok
-		actor.preCommitSector(rt, upgradeParams)
+		actor.preCommitSector(rt, upgradeParams, preCommitConf{})
 		rt.Verify()
 	})
 
@@ -873,39 +902,33 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 
 		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
-		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(2)))
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(20)))
 
 		challengeEpoch := rt.Epoch() - 1
 
 		// Upgrade 1
-
 		upgradeParams1 := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
 		upgradeParams1.ReplaceCapacity = true
 		upgradeParams1.ReplaceSectorDeadline = dlIdx
 		upgradeParams1.ReplaceSectorPartition = partIdx
 		upgradeParams1.ReplaceSectorNumber = oldSector.SectorNumber
-		upgrade1 := actor.preCommitSector(rt, upgradeParams1)
+		upgrade1 := actor.preCommitSector(rt, upgradeParams1, preCommitConf{})
 
 		// Check new pre-commit in state
 		assert.True(t, upgrade1.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams1.ReplaceSectorNumber, upgrade1.Info.ReplaceSectorNumber)
-		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade1.PreCommitDeposit)
 
 		// Upgrade 2
-
 		upgradeParams2 := actor.makePreCommit(201, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
 		upgradeParams2.ReplaceCapacity = true
 		upgradeParams2.ReplaceSectorDeadline = dlIdx
 		upgradeParams2.ReplaceSectorPartition = partIdx
 		upgradeParams2.ReplaceSectorNumber = oldSector.SectorNumber
-		upgrade2 := actor.preCommitSector(rt, upgradeParams2)
+		upgrade2 := actor.preCommitSector(rt, upgradeParams2, preCommitConf{})
 
 		// Check new pre-commit in state
 		assert.True(t, upgrade2.Info.ReplaceCapacity)
 		assert.Equal(t, upgradeParams2.ReplaceSectorNumber, upgrade2.Info.ReplaceSectorNumber)
-		// Require new sector's pledge to be at least that of the old sector.
-		assert.Equal(t, oldSector.InitialPledge, upgrade2.PreCommitDeposit)
 
 		// Old sector is unchanged
 		oldSectorAgain := actor.getSector(rt, oldSector.SectorNumber)
@@ -929,12 +952,15 @@ func TestCommitments(t *testing.T) {
 		newSector1 := actor.getSector(rt, upgrade1.Info.SectorNumber)
 		newSector2 := actor.getSector(rt, upgrade2.Info.SectorNumber)
 
-		// All three sectors have pledge.
+		// All three sectors pre-commit deposits are released, and have pledge committed.
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
 		assert.Equal(t, st.InitialPledge, big.Sum(
 			oldSector.InitialPledge, newSector1.InitialPledge, newSector2.InitialPledge,
 		))
+		// Both new sectors' pledge are at least the old sector's pledge
+		assert.Equal(t, oldSector.InitialPledge, newSector1.InitialPledge)
+		assert.Equal(t, oldSector.InitialPledge, newSector2.InitialPledge)
 
 		// All three sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -1012,7 +1038,7 @@ func TestCommitments(t *testing.T) {
 			faultExpiration: {uint64(0)},
 		}, dQueue)
 
-		// Old sector gone from pledge requirement and deposit
+		// Old sector gone from pledge
 		assert.Equal(t, st.InitialPledge, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
 		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})
@@ -1030,7 +1056,7 @@ func TestCommitments(t *testing.T) {
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
 		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
-		actor.preCommitSector(rt, precommit)
+		actor.preCommitSector(rt, precommit, preCommitConf{})
 
 		// Sector pre-commitment missing.
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -1057,8 +1083,9 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
 
 		// Invalid deals (market ActivateDeals aborts)
-		verifyDealsExit := make(map[abi.SectorNumber]exitcode.ExitCode)
-		verifyDealsExit[precommit.SectorNumber] = exitcode.ErrIllegalArgument
+		verifyDealsExit := map[abi.SectorNumber]exitcode.ExitCode{
+			precommit.SectorNumber: exitcode.ErrIllegalArgument,
+		}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{
 				verifyDealsExit: verifyDealsExit,
@@ -1098,7 +1125,7 @@ func TestCommitments(t *testing.T) {
 
 		sectorNo := abi.SectorNumber(100)
 		precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
-		actor.preCommitSector(rt, precommit)
+		actor.preCommitSector(rt, precommit, preCommitConf{})
 
 		// precommit at correct epoch
 		rt.SetEpoch(rt.Epoch() + miner.PreCommitChallengeDelay + 1)
@@ -1159,13 +1186,13 @@ func TestCommitments(t *testing.T) {
 			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit+1))
 			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
-				actor.preCommitSector(rt, precommit)
+				actor.preCommitSector(rt, precommit, preCommitConf{})
 			})
 
 			// sector at or below limit succeeds
 			rt, actor, _ = setup(proof)
 			precommit = actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit))
-			actor.preCommitSector(rt, precommit)
+			actor.preCommitSector(rt, precommit, preCommitConf{})
 		}
 
 	})
@@ -1549,7 +1576,7 @@ func TestProveCommit(t *testing.T) {
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		precommit := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
-		actor.preCommitSector(rt, precommit)
+		actor.preCommitSector(rt, precommit, preCommitConf{})
 
 		// alter balance to simulate dipping into it for fees
 
@@ -1578,11 +1605,11 @@ func TestProveCommit(t *testing.T) {
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		precommitA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{1})
-		actor.preCommitSector(rt, precommitA)
+		actor.preCommitSector(rt, precommitA, preCommitConf{})
 		sectorNoA := actor.nextSectorNo
 		actor.nextSectorNo++
 		precommitB := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{2})
-		actor.preCommitSector(rt, precommitB)
+		actor.preCommitSector(rt, precommitB, preCommitConf{})
 		sectorNoB := actor.nextSectorNo
 
 		// handle both prove commits in the same epoch
@@ -1649,25 +1676,25 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration / miner.WPoStProvingPeriod + 1)*miner.WPoStProvingPeriod
+		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
 		rt.ReplaceState(st)
 
 		// Advance to expiration epoch and expect expiration during cron
-		rt.SetEpoch(expiration)	
+		rt.SetEpoch(expiration)
 		powerDelta := activePower.Neg()
 		// because we skip forward in state and don't post we incur SP
-		expectedFee := actor.undeclaredFaultPenalty(sectors) 
+		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds so expectedFee is taken from locked funds
 		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
 		actor.addLockedFunds(rt, initialLocked)
 
 		advanceDeadline(rt, actor, &cronConfig{
-			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
-			expiredSectorsPowerDelta: &powerDelta,
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+			expiredSectorsPowerDelta:  &powerDelta,
 			expiredSectorsPledgeDelta: initialPledge.Neg(),
-			detectedFaultsPenalty: expectedFee,
+			detectedFaultsPenalty:     expectedFee,
 		})
 	})
 
@@ -1687,7 +1714,7 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration / miner.WPoStProvingPeriod + 1)*miner.WPoStProvingPeriod
+		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
 
@@ -1697,23 +1724,23 @@ func TestDeadlineCron(t *testing.T) {
 		rt.ReplaceState(st)
 
 		// Advance to expiration epoch and expect expiration during cron
-		rt.SetEpoch(expiration)	
+		rt.SetEpoch(expiration)
 		powerDelta := activePower.Neg()
 
 		// because we skip forward in state and don't post we incur SP
-		expectedFee := actor.undeclaredFaultPenalty(sectors) 
+		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds to locked funds so expectedFee is taken from locked funds
 		actor.addLockedFunds(rt, expectedFee)
 
 		// Miner balance = LF + IP. expectedFee covered by LF, debt repayment covered by IP
-		rt.SetBalance(big.Add(expectedFee, st.InitialPledge)) 
+		rt.SetBalance(big.Add(expectedFee, st.InitialPledge))
 
 		advanceDeadline(rt, actor, &cronConfig{
-			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
-			expiredSectorsPowerDelta: &powerDelta,
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+			expiredSectorsPowerDelta:  &powerDelta,
 			expiredSectorsPledgeDelta: initialPledge.Neg(),
-			detectedFaultsPenalty: expectedFee,
-			repaidFeeDebt: initialPledge, // We repay unlocked IP as fees
+			detectedFaultsPenalty:     expectedFee,
+			repaidFeeDebt:             initialPledge, // We repay unlocked IP as fees
 		})
 	})
 
@@ -2062,7 +2089,8 @@ func TestExtendSectorExpiration(t *testing.T) {
 		// and prove it once to activate it.
 		advanceAndSubmitPoSts(rt, actor, sector)
 
-		maxLifetime := sector.SealProof.SectorMaximumLifetime()
+		maxLifetime, err := sector.SealProof.SectorMaximumLifetime()
+		require.NoError(t, err)
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
@@ -2169,7 +2197,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 				require.NoError(t, err)
 				var partition miner.Partition
 				require.NoError(t, partitions.ForEach(&partition, func(partIdx int64) error {
-					oldSectorNos, err := partition.Sectors.All(miner.SectorsMax)
+					oldSectorNos, err := partition.Sectors.All(miner.AddressedSectorsMax)
 					require.NoError(t, err)
 
 					// filter out even-numbered sectors.
@@ -2366,7 +2394,7 @@ func TestTerminateSectors(t *testing.T) {
 		upgradeParams.ReplaceSectorDeadline = dlIdx
 		upgradeParams.ReplaceSectorPartition = partIdx
 		upgradeParams.ReplaceSectorNumber = oldSector.SectorNumber
-		upgrade := actor.preCommitSector(rt, upgradeParams)
+		upgrade := actor.preCommitSector(rt, upgradeParams, preCommitConf{})
 
 		// Prove new sector
 		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
@@ -2663,35 +2691,72 @@ func TestChangeWorkerAddress(t *testing.T) {
 
 		newWorker := tutil.NewIDAddr(t, 999)
 
-		currentEpoch := abi.ChainEpoch(5)
+		// set epoch to something close to next deadline so first cron will be before effective date
+		currentEpoch := abi.ChainEpoch(2970)
 		rt.SetEpoch(currentEpoch)
 
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
 		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, originalControlAddrs)
 
+		// assert change has been made in state
+		info := actor.getInfo(rt)
+		assert.Equal(t, info.PendingWorkerKey.NewWorker, newWorker)
+		assert.Equal(t, info.PendingWorkerKey.EffectiveAt, effectiveEpoch)
+
 		// no change if current epoch is less than effective epoch
-		rt.SetEpoch(effectiveEpoch - 1)
-		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-		rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-		rt.Call(actor.a.OnDeferredCronEvent, &miner.CronEventPayload{
-			EventType: miner.CronEventWorkerKeyChange,
-		})
-		rt.Verify()
-		st := getState(rt)
-		info, err := st.GetInfo(adt.AsStore(rt))
-		require.NoError(t, err)
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		info = actor.getInfo(rt)
 		require.NotNil(t, info.PendingWorkerKey)
 		require.EqualValues(t, actor.worker, info.Worker)
 
-		// set current epoch to effective epoch and ask to change the address
-		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+		// move to deadline containing effectiveEpoch
+		advanceToEpochWithCron(rt, actor, effectiveEpoch)
+
+		// run cron to enact worker change
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		// assert address has changed
+		info = actor.getInfo(rt)
+		assert.Equal(t, newWorker, info.Worker)
 
 		// assert control addresses are unchanged
-		st = getState(rt)
-		info, err = st.GetInfo(adt.AsStore(rt))
-		require.NoError(t, err)
 		require.NotEmpty(t, info.ControlAddresses)
 		require.Equal(t, originalControlAddrs, info.ControlAddresses)
+	})
+
+	t.Run("change cannot be overridden", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+		originalControlAddrs := actor.controlAddrs
+
+		newWorker1 := tutil.NewIDAddr(t, 999)
+		newWorker2 := tutil.NewIDAddr(t, 1023)
+
+		// set epoch to something close to next deadline so first cron will be before effective date
+		currentEpoch := abi.ChainEpoch(2970)
+		rt.SetEpoch(currentEpoch)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker1, effectiveEpoch, originalControlAddrs)
+
+		// no change if current epoch is less than effective epoch
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		// attempt to change address again
+		actor.changeWorkerAddress(rt, newWorker2, rt.Epoch()+miner.WorkerKeyChangeDelay, originalControlAddrs)
+
+		// assert change has not been modified
+		info := actor.getInfo(rt)
+		assert.Equal(t, info.PendingWorkerKey.NewWorker, newWorker1)
+		assert.Equal(t, info.PendingWorkerKey.EffectiveAt, effectiveEpoch)
+
+		advanceToEpochWithCron(rt, actor, effectiveEpoch)
+		actor.advancePastDeadlineEndWithCron(rt)
+
+		// assert original change is effected
+		info = actor.getInfo(rt)
+		assert.Equal(t, newWorker1, info.Worker)
 	})
 
 	t.Run("successfully resolve AND change ONLY control addresses", func(t *testing.T) {
@@ -2733,8 +2798,9 @@ func TestChangeWorkerAddress(t *testing.T) {
 		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
 		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, []addr.Address{c1, c2})
 
-		// set current epoch to effective epoch and ask to change the address
-		actor.cronWorkerAddrChange(rt, effectiveEpoch, newWorker)
+		// set current epoch the run deadline cron
+		rt.SetEpoch(effectiveEpoch)
+		actor.advancePastDeadlineEndWithCron(rt)
 
 		// assert both worker and control addresses have changed
 		st := getState(rt)
@@ -2858,6 +2924,67 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+	})
+}
+
+func TestConfirmUpdateWorkerKey(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	newWorker := tutil.NewIDAddr(t, 999)
+	currentEpoch := abi.ChainEpoch(5)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("successfully changes the worker address", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetEpoch(currentEpoch)
+		actor.constructAndVerify(rt)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, actor.controlAddrs)
+
+		// confirm at effective epoch
+		rt.SetEpoch(effectiveEpoch)
+		actor.confirmUpdateWorkerKey(rt)
+
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, info.Worker, newWorker)
+		require.Nil(t, info.PendingWorkerKey)
+	})
+
+	t.Run("does nothing before the effective date", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetEpoch(currentEpoch)
+		actor.constructAndVerify(rt)
+
+		effectiveEpoch := currentEpoch + miner.WorkerKeyChangeDelay
+		actor.changeWorkerAddress(rt, newWorker, effectiveEpoch, actor.controlAddrs)
+
+		// confirm right before the effective epoch
+		rt.SetEpoch(effectiveEpoch - 1)
+		actor.confirmUpdateWorkerKey(rt)
+
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, actor.worker, info.Worker)
+		require.NotNil(t, info.PendingWorkerKey)
+	})
+
+	t.Run("does nothing when no update is set", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetEpoch(currentEpoch)
+		actor.constructAndVerify(rt)
+
+		actor.confirmUpdateWorkerKey(rt)
+
+		st := getState(rt)
+		info, err := st.GetInfo(adt.AsStore(rt))
+		require.NoError(t, err)
+		require.Equal(t, actor.worker, info.Worker)
+		require.Nil(t, info.PendingWorkerKey)
 	})
 }
 
@@ -2992,13 +3119,13 @@ func TestCompactSectorNumbers(t *testing.T) {
 		{
 			precommit := actor.makePreCommit(targetSno+1, precommitEpoch-1, expiration, nil)
 			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.preCommitSector(rt, precommit)
+				actor.preCommitSector(rt, precommit, preCommitConf{})
 			})
 		}
 
 		{
 			precommit := actor.makePreCommit(targetSno+2, precommitEpoch-1, expiration, nil)
-			actor.preCommitSector(rt, precommit)
+			actor.preCommitSector(rt, precommit, preCommitConf{})
 		}
 	})
 
@@ -3100,7 +3227,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 
 	workerKey := tutil.NewBLSAddr(t, 0)
 	receiver := tutil.NewIDAddr(t, 1000)
-	rwd := big.Mul(big.NewIntUnsigned(100), big.NewIntUnsigned(1e18))
+	rwd := big.Mul(big.NewIntUnsigned(10), big.NewIntUnsigned(1e18))
 	pwr := abi.NewStoragePower(1 << 50)
 	h := &actorHarness{
 		t:        t,
@@ -3255,7 +3382,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
-		expanded, err := bf.All(miner.SectorsMax)
+		expanded, err := bf.All(miner.AddressedSectorsMax)
 		require.NoError(h.t, err)
 		expirations[epoch] = expanded
 		return nil
@@ -3293,22 +3420,6 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	param.NewWorker = newWorker
 	rt.ExpectSend(newWorker, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
 
-	if newWorker != h.worker {
-		cronPayload := miner.CronEventPayload{
-			EventType: miner.CronEventWorkerKeyChange,
-		}
-		payload := new(bytes.Buffer)
-		err := cronPayload.MarshalCBOR(payload)
-		require.NoError(h.t, err)
-		cronEvt := &power.EnrollCronEventParams{
-			EventEpoch: effectiveEpoch,
-			Payload:    payload.Bytes(),
-		}
-
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent,
-			cronEvt, big.Zero(), nil, exitcode.Ok)
-	}
-
 	rt.ExpectValidateCallerAddr(h.owner)
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeWorkerAddress, param)
@@ -3318,11 +3429,6 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	info, err := st.GetInfo(adt.AsStore(rt))
 	require.NoError(h.t, err)
 
-	if newWorker != h.worker {
-		require.EqualValues(h.t, effectiveEpoch, info.PendingWorkerKey.EffectiveAt)
-		require.EqualValues(h.t, newWorker, info.PendingWorkerKey.NewWorker)
-	}
-
 	var controlAddrs []addr.Address
 	for _, ca := range newControlAddrs {
 		resolved, found := rt.GetIdAddr(ca)
@@ -3331,6 +3437,13 @@ func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Addr
 	}
 	require.EqualValues(h.t, controlAddrs, info.ControlAddresses)
 
+}
+
+func (h *actorHarness) confirmUpdateWorkerKey(rt *mock.Runtime) {
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	rt.Call(h.a.ConfirmUpdateWorkerKey, nil)
+	rt.Verify()
 }
 
 func (h *actorHarness) checkSectorProven(rt *mock.Runtime, sectorNum abi.SectorNumber) {
@@ -3370,22 +3483,6 @@ func (h *actorHarness) changePeerID(rt *mock.Runtime, newPID abi.PeerID) {
 	require.EqualValues(h.t, newPID, info.PeerId)
 }
 
-func (h *actorHarness) cronWorkerAddrChange(rt *mock.Runtime, effectiveEpoch abi.ChainEpoch, newWorker addr.Address) {
-	rt.SetEpoch(effectiveEpoch)
-	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
-		EventType: miner.CronEventWorkerKeyChange,
-	})
-	rt.Verify()
-
-	st := getState(rt)
-	info, err := st.GetInfo(adt.AsStore(rt))
-	require.NoError(h.t, err)
-	require.Nil(h.t, info.PendingWorkerKey)
-	require.EqualValues(h.t, newWorker, info.Worker)
-}
-
 func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Address, control []addr.Address) {
 	rt.ExpectValidateCallerAny()
 	ret := rt.Call(h.a.ControlAddresses, nil).(*miner.GetControlAddressesReturn)
@@ -3394,18 +3491,23 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 	return ret.Owner, ret.Worker, ret.ControlAddrs
 }
 
-func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo) *miner.SectorPreCommitOnChainInfo {
+// Options for preCommitSector behaviour.
+// Default zero values should let everything be ok.
+type preCommitConf struct {
+	dealWeight         abi.DealWeight
+	verifiedDealWeight abi.DealWeight
+	dealSpace          abi.SectorSize
+}
 
+func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPreCommitInfo, conf preCommitConf) *miner.SectorPreCommitOnChainInfo {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
 	{
 		expectQueryNetworkInfo(rt, h)
 	}
-	{
-		sectorSize, err := params.SealProof.SectorSize()
-		require.NoError(h.t, err)
-
+	if len(params.DealIDs) > 0 {
+		// If there are any deal IDs, allocate half the weight to non-verified and half to verified.
 		vdParams := market.VerifyDealsForActivationParams{
 			DealIDs:      params.DealIDs,
 			SectorStart:  rt.Epoch(),
@@ -3413,8 +3515,15 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		}
 
 		vdReturn := market.VerifyDealsForActivationReturn{
-			DealWeight:         big.NewInt(int64(sectorSize / 2)),
-			VerifiedDealWeight: big.NewInt(int64(sectorSize / 2)),
+			DealWeight:         conf.dealWeight,
+			VerifiedDealWeight: conf.verifiedDealWeight,
+			DealSpace:          uint64(conf.dealSpace),
+		}
+		if vdReturn.DealWeight.Nil() {
+			vdReturn.DealWeight = big.Zero()
+		}
+		if vdReturn.VerifiedDealWeight.Nil() {
+			vdReturn.VerifiedDealWeight = big.Zero()
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
@@ -3490,18 +3599,18 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	var allSectorNumbers []abi.SectorNumber
 	for _, precommit := range precommits {
 		allSectorNumbers = append(allSectorNumbers, precommit.SectorNumber)
-
-		vdParams := market.ActivateDealsParams{
-			DealIDs:      precommit.DealIDs,
-			SectorExpiry: precommit.Expiration,
-		}
-		exit, found := conf.verifyDealsExit[precommit.SectorNumber]
-		if !found {
-			exit = exitcode.Ok
-			validPrecommits = append(validPrecommits, precommit)
-		}
-
+		validPrecommits = append(validPrecommits, precommit)
 		if len(precommit.DealIDs) > 0 {
+			vdParams := market.ActivateDealsParams{
+				DealIDs:      precommit.DealIDs,
+				SectorExpiry: precommit.Expiration,
+			}
+			exit, found := conf.verifyDealsExit[precommit.SectorNumber]
+			if found {
+				validPrecommits = validPrecommits[:len(validPrecommits)-1] // pop
+			} else {
+				exit = exitcode.Ok
+			}
 			rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ActivateDeals, &vdParams, big.Zero(), nil, exit)
 		}
 	}
@@ -3522,6 +3631,13 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
 				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.epochRewardSmooth,
 					h.epochQAPowerSmooth, rt.TotalFilCircSupply())
+
+				// if cc upgrade, pledge is max of new and replaced pledges
+				if precommitOnChain.Info.ReplaceCapacity {
+					replaced := h.getSector(rt, precommitOnChain.Info.ReplaceSectorNumber)
+					pledge = big.Max(pledge, replaced.InitialPledge)
+				}
+
 				expectPledge = big.Add(expectPledge, pledge)
 			}
 		}
@@ -3563,7 +3679,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 			sectorDealIDs = dealIDs[i]
 		}
 		precommit := h.makePreCommit(sectorNo, precommitEpoch-1, expiration, sectorDealIDs)
-		h.preCommitSector(rt, precommit)
+		h.preCommitSector(rt, precommit, preCommitConf{})
 		precommits[i] = precommit
 		h.nextSectorNo++
 	}
@@ -3596,7 +3712,7 @@ func (h *actorHarness) commitAndProveSector(rt *mock.Runtime, sectorNo abi.Secto
 
 	// Precommit
 	precommit := h.makePreCommit(sectorNo, precommitEpoch-1, expiration, dealIDs)
-	h.preCommitSector(rt, precommit)
+	h.preCommitSector(rt, precommit, preCommitConf{})
 
 	advanceToEpochWithCron(rt, h, precommitEpoch+miner.PreCommitChallengeDelay+1)
 
@@ -3611,6 +3727,16 @@ func (h *actorHarness) advancePastProvingPeriodWithCron(rt *mock.Runtime) {
 	deadline := st.DeadlineInfo(rt.Epoch())
 	rt.SetEpoch(deadline.PeriodEnd())
 	nextCron := deadline.NextPeriodStart() + miner.WPoStProvingPeriod - 1
+	h.onDeadlineCron(rt, &cronConfig{
+		expectedEnrollment: nextCron,
+	})
+	rt.SetEpoch(deadline.NextPeriodStart())
+}
+
+func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
+	deadline := h.deadline(rt)
+	rt.SetEpoch(deadline.PeriodEnd())
+	nextCron := deadline.Last() + miner.WPoStChallengeWindow
 	h.onDeadlineCron(rt, &cronConfig{
 		expectedEnrollment: nextCron,
 	})
@@ -3916,8 +4042,8 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address)
 }
 
 func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
-	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker, builtin.RewardActorAddr)...)
+	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
+	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
 	// expect pledge update
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
@@ -3980,13 +4106,13 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 	penaltyTotal := big.Zero()
 	pledgeDelta := big.Zero()
-	if !config.detectedFaultsPenalty.Nil() && !config.detectedFaultsPenalty.IsZero() {
+	if !config.detectedFaultsPenalty.NilOrZero() {
 		penaltyTotal = big.Add(penaltyTotal, config.detectedFaultsPenalty)
 	}
-	if !config.ongoingFaultsPenalty.Nil() && !config.ongoingFaultsPenalty.IsZero() {
+	if !config.ongoingFaultsPenalty.NilOrZero() {
 		penaltyTotal = big.Add(penaltyTotal, config.ongoingFaultsPenalty)
 	}
-	if !config.repaidFeeDebt.Nil() && !config.repaidFeeDebt.IsZero() {
+	if !config.repaidFeeDebt.NilOrZero() {
 		penaltyTotal = big.Add(penaltyTotal, config.repaidFeeDebt)
 	}
 	if !penaltyTotal.IsZero() {
@@ -3994,13 +4120,13 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 		// TODO this forces tests to take funds from locked funds instead of balance.
 		// We should make other cases possible by pushing complexity to the config
 		penaltyFromUnlocked := penaltyTotal
-		if  !config.repaidFeeDebt.Nil() && !config.repaidFeeDebt.IsZero() {
+		if !config.repaidFeeDebt.NilOrZero() {
 			penaltyFromUnlocked = big.Sub(penaltyFromUnlocked, config.repaidFeeDebt)
 		}
 		pledgeDelta = big.Sub(pledgeDelta, penaltyFromUnlocked)
 	}
 
-	if !config.expiredSectorsPledgeDelta.Nil() && !config.expiredSectorsPledgeDelta.IsZero() {
+	if !config.expiredSectorsPledgeDelta.NilOrZero() {
 		pledgeDelta = big.Add(pledgeDelta, config.expiredSectorsPledgeDelta)
 	}
 	if !pledgeDelta.IsZero() {

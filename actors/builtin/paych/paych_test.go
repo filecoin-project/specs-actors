@@ -750,6 +750,27 @@ func TestActor_Settle(t *testing.T) {
 		rt.GetState(&newSt)
 		assert.Equal(t, ucp.Sv.MinSettleHeight, newSt.SettlingAt)
 	})
+
+	t.Run("Voucher invalid after settling", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt.SetEpoch(ep)
+		var st State
+		rt.GetState(&st)
+
+		rt.SetCaller(st.From, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.Call(actor.Settle, nil)
+
+		rt.GetState(&st)
+		rt.SetEpoch(st.SettlingAt + 40)
+		ucp := &UpdateChannelStateParams{Sv: *sv}
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.ExpectVerifySignature(*ucp.Sv.Signature, actor.payee, voucherBytes(t, &ucp.Sv), nil)
+		rt.ExpectAbort(ErrChannelStateUpdateAfterSettled, func() {
+			rt.Call(actor.UpdateChannelState, ucp)
+		})
+
+	})
 }
 
 func TestActor_Collect(t *testing.T) {

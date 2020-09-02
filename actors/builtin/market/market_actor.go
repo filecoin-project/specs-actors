@@ -267,6 +267,7 @@ type VerifyDealsForActivationParams struct {
 type VerifyDealsForActivationReturn struct {
 	DealWeight         abi.DealWeight
 	VerifiedDealWeight abi.DealWeight
+	DealSpace          uint64
 }
 
 // Verify that a given set of storage deals is valid for a sector currently being PreCommitted
@@ -280,12 +281,13 @@ func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActiva
 	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
 
-	dealWeight, verifiedWeight, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
+	dealWeight, verifiedWeight, dealSpace, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
 	return &VerifyDealsForActivationReturn{
 		DealWeight:         dealWeight,
 		VerifiedDealWeight: verifiedWeight,
+		DealSpace:          dealSpace,
 	}
 }
 
@@ -306,7 +308,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 
 	// Update deal dealStates.
 	rt.State().Transaction(&st, func() {
-		_, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
+		_, _, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
@@ -609,37 +611,40 @@ func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, propos
 
 // Validates a collection of deal dealProposals for activation, and returns their combined weight,
 // split into regular deal weight and verified deal weight.
-func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address,
-	sectorExpiry, currEpoch abi.ChainEpoch) (big.Int, big.Int, error) {
+func ValidateDealsForActivation(
+	st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address, sectorExpiry, currEpoch abi.ChainEpoch,
+) (big.Int, big.Int, uint64, error) {
 
 	proposals, err := AsDealProposalArray(store, st.Proposals)
 	if err != nil {
-		return big.Int{}, big.Int{}, xerrors.Errorf("failed to load dealProposals: %w", err)
+		return big.Int{}, big.Int{}, 0, xerrors.Errorf("failed to load dealProposals: %w", err)
 	}
 
 	seenDealIDs := make(map[abi.DealID]struct{}, len(dealIDs))
 
+	totalDealSpace := uint64(0)
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
 		// Make sure we don't double-count deals.
 		if _, seen := seenDealIDs[dealID]; seen {
-			return big.Int{}, big.Int{}, exitcode.ErrIllegalArgument.Wrapf("deal ID %d present multiple times", dealID)
+			return big.Int{}, big.Int{}, 0, exitcode.ErrIllegalArgument.Wrapf("deal ID %d present multiple times", dealID)
 		}
 		seenDealIDs[dealID] = struct{}{}
 
 		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
-			return big.Int{}, big.Int{}, xerrors.Errorf("failed to load deal %d: %w", dealID, err)
+			return big.Int{}, big.Int{}, 0, xerrors.Errorf("failed to load deal %d: %w", dealID, err)
 		}
 		if !found {
-			return big.Int{}, big.Int{}, exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
+			return big.Int{}, big.Int{}, 0, exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
 		}
 		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
-			return big.Int{}, big.Int{}, xerrors.Errorf("cannot activate deal %d: %w", dealID, err)
+			return big.Int{}, big.Int{}, 0, xerrors.Errorf("cannot activate deal %d: %w", dealID, err)
 		}
 
 		// Compute deal weight
+		totalDealSpace += uint64(proposal.PieceSize)
 		dealSpaceTime := DealWeight(proposal)
 		if proposal.VerifiedDeal {
 			totalVerifiedSpaceTime = big.Add(totalVerifiedSpaceTime, dealSpaceTime)
@@ -647,7 +652,7 @@ func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID
 			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
 		}
 	}
-	return totalDealSpaceTime, totalVerifiedSpaceTime, nil
+	return totalDealSpaceTime, totalVerifiedSpaceTime, totalDealSpace, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

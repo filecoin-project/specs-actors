@@ -153,12 +153,12 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	//
 
 	// precommit capacity upgrade sector with deals
-	ccSectorNumber := abi.SectorNumber(101)
-	ccSealedCid := tutil.MakeCID("101", &miner.SealedCIDPrefix)
+	upgradeSectorNumber := abi.SectorNumber(101)
+	upgradeSealedCid := tutil.MakeCID("101", &miner.SealedCIDPrefix)
 	preCommitParams = miner.SectorPreCommitInfo{
 		SealProof:              sealProof,
-		SectorNumber:           ccSectorNumber,
-		SealedCID:              ccSealedCid,
+		SectorNumber:           upgradeSectorNumber,
+		SealedCID:              upgradeSealedCid,
 		SealRandEpoch:          v.GetEpoch() - 1,
 		DealIDs:                dealIDs,
 		Expiration:             v.GetEpoch() + 220*builtin.EpochsInDay,
@@ -167,8 +167,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		ReplaceSectorPartition: pIdx,
 		ReplaceSectorNumber:    sectorNumber,
 	}
-
-	// prove commit, verify and PoSt
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 	require.Equal(t, exitcode.Ok, code)
 
@@ -186,6 +184,39 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		},
 	}.Matches(t, v.LastInvocation())
 
+	t.Run("verified registry bytes are restored when verified deals are not proven", func(t *testing.T) {
+		tv, err := v.WithEpoch(dealStart + market.DealUpdatesInterval)
+		require.NoError(t, err)
+
+		// run cron and check for deal expiry in market actor
+		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		require.Equal(t, exitcode.Ok, code)
+
+		vm.ExpectInvocation{
+			To:     builtin.CronActorAddr,
+			Method: builtin.MethodsCron.EpochTick,
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
+						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+						// pre-commit deposit is burnt
+						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+					}},
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
+				}},
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick, SubInvocations: []vm.ExpectInvocation{
+					// notify verified registry that used bytes are released
+					{To: builtin.VerifiedRegistryActorAddr, Method: builtin.MethodsVerifiedRegistry.RestoreBytes},
+					{To: builtin.VerifiedRegistryActorAddr, Method: builtin.MethodsVerifiedRegistry.RestoreBytes},
+					// slash funds
+					{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+				}},
+			},
+		}.Matches(t, tv.LastInvocation())
+	})
+
 	// advance time to min seal duration
 	proveTime = v.GetEpoch() + miner.PreCommitChallengeDelay + 1
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
@@ -194,7 +225,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
 	proveCommitParams = miner.ProveCommitSectorParams{
-		SectorNumber: ccSectorNumber,
+		SectorNumber: upgradeSectorNumber,
 	}
 	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 	require.Equal(t, exitcode.Ok, code)
@@ -239,8 +270,95 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, sectorPower.Raw, networkStats.TotalBytesCommitted)
 	assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
 
+	// Assert that old sector and new sector have the same deadline.
+	// This is not generally true, but the current deadline assigment will always put these together when
+	// no other sectors have been assigned in-between. The following tests assume this fact, and must be
+	// modified if this no longer holds.
+	oldDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+	newDlIdx, _ := vm.SectorDeadline(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+	require.Equal(t, oldDlIdx, newDlIdx)
+
+	t.Run("miner misses first PoSt of replacement sector", func(t *testing.T) {
+		// advance to proving period end of new sector
+		dlInfo, _, tv := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+		tv, err = tv.WithEpoch(dlInfo.Last())
+		require.NoError(t, err)
+
+		// run cron to penalize missing PoSt
+		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		require.Equal(t, exitcode.Ok, code)
+
+		vm.ExpectInvocation{
+			To:     builtin.CronActorAddr,
+			Method: builtin.MethodsCron.EpochTick,
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
+						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+						// power is removed for old sector and pledge is burnt
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+					}},
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
+				}},
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick, SubInvocations: []vm.ExpectInvocation{}},
+			},
+		}.Matches(t, tv.LastInvocation())
+
+		// miner's power is removed for old sector because it faulted and not added for the new sector.
+		minerPower = vm.MinerPower(t, tv, minerAddrs.IDAddress)
+		networkStats = vm.GetNetworkStats(t, tv)
+		assert.Equal(t, big.Zero(), minerPower.Raw)
+		assert.Equal(t, big.Zero(), minerPower.Raw)
+		assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
+		assert.Equal(t, big.Zero(), networkStats.TotalQABytesCommitted)
+	})
+
 	// advance to proving period and submit post
-	dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
+	dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+
+	t.Run("miner skips replacing sector in first PoSt", func(t *testing.T) {
+		tv, err := v.WithEpoch(v.GetEpoch()) // create vm copy
+		require.NoError(t, err)
+
+		submitParams = miner.SubmitWindowedPoStParams{
+			Deadline: dlInfo.Index,
+			Partitions: []miner.PoStPartition{{
+				Index: pIdx,
+				// skip cc upgrade
+				Skipped: bitfield.NewFromSet([]uint64{uint64(upgradeSectorNumber)}),
+			}},
+			Proofs: []abi.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitRand: []byte("not really random"),
+		}
+		_, code = tv.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		require.Equal(t, exitcode.Ok, code)
+
+		vm.ExpectInvocation{
+			To:     minerAddrs.IDAddress,
+			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
+			Params: vm.ExpectObject(&submitParams),
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+				// Skipped sector is penalized as undeclared fault
+				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+			},
+		}.Matches(t, tv.LastInvocation())
+
+		// old sector power remains (until its proving deadline)
+		minerPower = vm.MinerPower(t, tv, minerAddrs.IDAddress)
+		networkStats = vm.GetNetworkStats(t, tv)
+		assert.Equal(t, sectorPower.Raw, minerPower.Raw)
+		assert.Equal(t, sectorPower.QA, minerPower.Raw)
+		assert.Equal(t, sectorPower.Raw, networkStats.TotalBytesCommitted)
+		assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
+	})
 
 	submitParams = miner.SubmitWindowedPoStParams{
 		Deadline: dlInfo.Index,
@@ -253,7 +371,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		}},
 		ChainCommitRand: []byte("not really random"),
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 	require.Equal(t, exitcode.Ok, code)
 
 	vm.ExpectInvocation{
@@ -270,17 +388,14 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 
 	// power is upgraded for new sector
 	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
-	ccSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, ccSectorNumber)
-	combinedPower := ccSectorPower.Add(sectorPower)
+	upgradeSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+	combinedPower := upgradeSectorPower.Add(sectorPower)
 	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
 	networkStats = vm.GetNetworkStats(t, v)
 	assert.Equal(t, combinedPower.Raw, minerPower.Raw)
 	assert.Equal(t, combinedPower.QA, minerPower.QA)
 	assert.Equal(t, combinedPower.Raw, networkStats.TotalBytesCommitted)
 	assert.Equal(t, combinedPower.QA, networkStats.TotalQABytesCommitted)
-
-	// advance to proving period of old sector
-	dlInfo, _, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, ccSectorNumber)
 
 	// proving period cron removes sector reducing the miner's power to that of the new sector
 	v, err = v.WithEpoch(dlInfo.Last())
@@ -292,10 +407,10 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
 	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
 	networkStats = vm.GetNetworkStats(t, v)
-	assert.Equal(t, ccSectorPower.Raw, minerPower.Raw)
-	assert.Equal(t, ccSectorPower.QA, minerPower.QA)
-	assert.Equal(t, ccSectorPower.Raw, networkStats.TotalBytesCommitted)
-	assert.Equal(t, ccSectorPower.QA, networkStats.TotalQABytesCommitted)
+	assert.Equal(t, upgradeSectorPower.Raw, minerPower.Raw)
+	assert.Equal(t, upgradeSectorPower.QA, minerPower.QA)
+	assert.Equal(t, upgradeSectorPower.Raw, networkStats.TotalBytesCommitted)
+	assert.Equal(t, upgradeSectorPower.QA, networkStats.TotalQABytesCommitted)
 }
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,

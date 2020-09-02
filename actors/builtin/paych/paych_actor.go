@@ -15,6 +15,10 @@ import (
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
+const (
+	ErrChannelStateUpdateAfterSettled = exitcode.FirstActorSpecificExitCode + iota
+)
+
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
@@ -138,6 +142,10 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 
 	if sv.Signature == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher has no signature")
+	}
+
+	if st.SettlingAt != 0 && rt.CurrEpoch() >= st.SettlingAt {
+		rt.Abortf(ErrChannelStateUpdateAfterSettled, "no vouchers can be processed after SettlingAt epoch")
 	}
 
 	if len(params.Secret) > MaxSecretSize {

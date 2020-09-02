@@ -66,10 +66,8 @@ func NewStoragePower(n int64) StoragePower {
 	return big.NewInt(n)
 }
 
-type RegisteredProof = int64
-
-// This ordering, defines mappings to UInt in a way which MUST never change.
-type RegisteredSealProof RegisteredProof
+// These enumerations must match the proofs library and never change.
+type RegisteredSealProof int64
 
 const (
 	RegisteredSealProof_StackedDrg2KiBV1   = RegisteredSealProof(0)
@@ -79,7 +77,7 @@ const (
 	RegisteredSealProof_StackedDrg64GiBV1  = RegisteredSealProof(4)
 )
 
-type RegisteredPoStProof RegisteredProof
+type RegisteredPoStProof int64
 
 const (
 	RegisteredPoStProof_StackedDrgWinning2KiBV1   = RegisteredPoStProof(0)
@@ -94,42 +92,134 @@ const (
 	RegisteredPoStProof_StackedDrgWindow64GiBV1   = RegisteredPoStProof(9)
 )
 
-func (p RegisteredPoStProof) RegisteredSealProof() (RegisteredSealProof, error) {
-	switch p {
-	case RegisteredPoStProof_StackedDrgWinning2KiBV1, RegisteredPoStProof_StackedDrgWindow2KiBV1:
-		return RegisteredSealProof_StackedDrg2KiBV1, nil
-	case RegisteredPoStProof_StackedDrgWinning8MiBV1, RegisteredPoStProof_StackedDrgWindow8MiBV1:
-		return RegisteredSealProof_StackedDrg8MiBV1, nil
-	case RegisteredPoStProof_StackedDrgWinning512MiBV1, RegisteredPoStProof_StackedDrgWindow512MiBV1:
-		return RegisteredSealProof_StackedDrg512MiBV1, nil
-	case RegisteredPoStProof_StackedDrgWinning32GiBV1, RegisteredPoStProof_StackedDrgWindow32GiBV1:
-		return RegisteredSealProof_StackedDrg32GiBV1, nil
-	case RegisteredPoStProof_StackedDrgWinning64GiBV1, RegisteredPoStProof_StackedDrgWindow64GiBV1:
-		return RegisteredSealProof_StackedDrg64GiBV1, nil
-	default:
-		return 0, errors.Errorf("unsupported PoSt proof type: %v", p)
-	}
+// Metadata about a seal proof type.
+type SealProofInfo struct {
+	SectorSize                 SectorSize
+	WindowPoStPartitionSectors uint64
+	WinningPoStProof           RegisteredPoStProof
+	WindowPoStProof            RegisteredPoStProof
+	SectorMaxLifetime          ChainEpoch
+}
+
+// For all Stacked DRG sectors, the max is 5 years
+const epochsPerYear = 1_051_200
+const fiveYears = ChainEpoch(5 * epochsPerYear)
+
+// Partition sizes must match those used by the proofs library.
+// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
+var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
+	RegisteredSealProof_StackedDrg2KiBV1: {
+		SectorSize:                 2 << 10,
+		WindowPoStPartitionSectors: 2,
+		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning2KiBV1,
+		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow2KiBV1,
+		SectorMaxLifetime:          fiveYears,
+	},
+	RegisteredSealProof_StackedDrg8MiBV1: {
+		SectorSize:                 8 << 20,
+		WindowPoStPartitionSectors: 2,
+		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning8MiBV1,
+		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow8MiBV1,
+		SectorMaxLifetime:          fiveYears,
+	},
+	RegisteredSealProof_StackedDrg512MiBV1: {
+		SectorSize:                 512 << 20,
+		WindowPoStPartitionSectors: 2,
+		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning512MiBV1,
+		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow512MiBV1,
+		SectorMaxLifetime:          fiveYears,
+	},
+	RegisteredSealProof_StackedDrg32GiBV1: {
+		SectorSize:                 32 << 30,
+		WindowPoStPartitionSectors: 2349,
+		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning32GiBV1,
+		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		SectorMaxLifetime:          fiveYears,
+	},
+	RegisteredSealProof_StackedDrg64GiBV1: {
+		SectorSize:                 64 << 30,
+		WindowPoStPartitionSectors: 2300,
+		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning64GiBV1,
+		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow64GiBV1,
+		SectorMaxLifetime:          fiveYears,
+	},
 }
 
 func (p RegisteredSealProof) SectorSize() (SectorSize, error) {
-	switch p {
-	case RegisteredSealProof_StackedDrg2KiBV1:
-		return 2 << 10, nil
-	case RegisteredSealProof_StackedDrg8MiBV1:
-		return 8 << 20, nil
-	case RegisteredSealProof_StackedDrg512MiBV1:
-		return 512 << 20, nil
-	case RegisteredSealProof_StackedDrg32GiBV1:
-		return 32 << 30, nil
-	case RegisteredSealProof_StackedDrg64GiBV1:
-		return 2 * (32 << 30), nil
-	default:
+	info, ok := SealProofInfos[p]
+	if !ok {
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
+	return info.SectorSize, nil
+}
+
+// Returns the partition size, in sectors, associated with a proof type.
+// The partition size is the number of sectors proved in a single PoSt proof.
+func (p RegisteredSealProof) WindowPoStPartitionSectors() (uint64, error) {
+	info, ok := SealProofInfos[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.WindowPoStPartitionSectors, nil
+}
+
+// RegisteredWinningPoStProof produces the PoSt-specific RegisteredProof corresponding
+// to the receiving RegisteredProof.
+func (p RegisteredSealProof) RegisteredWinningPoStProof() (RegisteredPoStProof, error) {
+	info, ok := SealProofInfos[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.WinningPoStProof, nil
+}
+
+// RegisteredWindowPoStProof produces the PoSt-specific RegisteredProof corresponding
+// to the receiving RegisteredProof.
+func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, error) {
+	info, ok := SealProofInfos[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.WindowPoStProof, nil
+}
+
+// The maximum duration a sector sealed with this proof may exist between activation and expiration.
+// This ensures that SDR is secure in the cost model for Window PoSt and in the time model for Winning PoSt
+// This is based on estimation of hardware latency improvement and hardware and software cost reduction.
+const SectorMaximumLifetimeSDR = ChainEpoch(1_262_277 * 5)
+
+// SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
+func (p RegisteredSealProof) SectorMaximumLifetime() (ChainEpoch, error) {
+	info, ok := SealProofInfos[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.SectorMaxLifetime, nil
+}
+
+var PoStSealProofTypes = map[RegisteredPoStProof]RegisteredSealProof{
+	RegisteredPoStProof_StackedDrgWinning2KiBV1:   RegisteredSealProof_StackedDrg2KiBV1,
+	RegisteredPoStProof_StackedDrgWindow2KiBV1:    RegisteredSealProof_StackedDrg2KiBV1,
+	RegisteredPoStProof_StackedDrgWinning8MiBV1:   RegisteredSealProof_StackedDrg8MiBV1,
+	RegisteredPoStProof_StackedDrgWindow8MiBV1:    RegisteredSealProof_StackedDrg8MiBV1,
+	RegisteredPoStProof_StackedDrgWinning512MiBV1: RegisteredSealProof_StackedDrg512MiBV1,
+	RegisteredPoStProof_StackedDrgWindow512MiBV1:  RegisteredSealProof_StackedDrg512MiBV1,
+	RegisteredPoStProof_StackedDrgWinning32GiBV1:  RegisteredSealProof_StackedDrg32GiBV1,
+	RegisteredPoStProof_StackedDrgWindow32GiBV1:   RegisteredSealProof_StackedDrg32GiBV1,
+	RegisteredPoStProof_StackedDrgWinning64GiBV1:  RegisteredSealProof_StackedDrg64GiBV1,
+	RegisteredPoStProof_StackedDrgWindow64GiBV1:   RegisteredSealProof_StackedDrg64GiBV1,
+}
+
+// Maps PoSt proof types back to seal proof types.
+func (p RegisteredPoStProof) RegisteredSealProof() (RegisteredSealProof, error) {
+	sp, ok := PoStSealProofTypes[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported PoSt proof type: %v", p)
+	}
+	return sp, nil
 }
 
 func (p RegisteredPoStProof) SectorSize() (SectorSize, error) {
-	// Resolve to seal proof and then compute size from that.
 	sp, err := p.RegisteredSealProof()
 	if err != nil {
 		return 0, err
@@ -139,29 +229,7 @@ func (p RegisteredPoStProof) SectorSize() (SectorSize, error) {
 
 // Returns the partition size, in sectors, associated with a proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
-func (p RegisteredSealProof) WindowPoStPartitionSectors() (uint64, error) {
-	// These numbers must match those used by the proofs library.
-	// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
-	switch p {
-	case RegisteredSealProof_StackedDrg64GiBV1:
-		return 2300, nil
-	case RegisteredSealProof_StackedDrg32GiBV1:
-		return 2349, nil
-	case RegisteredSealProof_StackedDrg2KiBV1:
-		return 2, nil
-	case RegisteredSealProof_StackedDrg8MiBV1:
-		return 2, nil
-	case RegisteredSealProof_StackedDrg512MiBV1:
-		return 2, nil
-	default:
-		return 0, errors.Errorf("unsupported proof type: %v", p)
-	}
-}
-
-// Returns the partition size, in sectors, associated with a proof type.
-// The partition size is the number of sectors proved in a single PoSt proof.
 func (p RegisteredPoStProof) WindowPoStPartitionSectors() (uint64, error) {
-	// Resolve to seal proof and then compute size from that.
 	sp, err := p.RegisteredSealProof()
 	if err != nil {
 		return 0, err
@@ -169,51 +237,7 @@ func (p RegisteredPoStProof) WindowPoStPartitionSectors() (uint64, error) {
 	return sp.WindowPoStPartitionSectors()
 }
 
-// RegisteredWinningPoStProof produces the PoSt-specific RegisteredProof corresponding
-// to the receiving RegisteredProof.
-func (p RegisteredSealProof) RegisteredWinningPoStProof() (RegisteredPoStProof, error) {
-	switch p {
-	case RegisteredSealProof_StackedDrg64GiBV1:
-		return RegisteredPoStProof_StackedDrgWinning64GiBV1, nil
-	case RegisteredSealProof_StackedDrg32GiBV1:
-		return RegisteredPoStProof_StackedDrgWinning32GiBV1, nil
-	case RegisteredSealProof_StackedDrg2KiBV1:
-		return RegisteredPoStProof_StackedDrgWinning2KiBV1, nil
-	case RegisteredSealProof_StackedDrg8MiBV1:
-		return RegisteredPoStProof_StackedDrgWinning8MiBV1, nil
-	case RegisteredSealProof_StackedDrg512MiBV1:
-		return RegisteredPoStProof_StackedDrgWinning512MiBV1, nil
-	default:
-		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
-	}
-}
 
-// RegisteredWindowPoStProof produces the PoSt-specific RegisteredProof corresponding
-// to the receiving RegisteredProof.
-func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, error) {
-	switch p {
-	case RegisteredSealProof_StackedDrg64GiBV1:
-		return RegisteredPoStProof_StackedDrgWindow64GiBV1, nil
-	case RegisteredSealProof_StackedDrg32GiBV1:
-		return RegisteredPoStProof_StackedDrgWindow32GiBV1, nil
-	case RegisteredSealProof_StackedDrg2KiBV1:
-		return RegisteredPoStProof_StackedDrgWindow2KiBV1, nil
-	case RegisteredSealProof_StackedDrg8MiBV1:
-		return RegisteredPoStProof_StackedDrgWindow8MiBV1, nil
-	case RegisteredSealProof_StackedDrg512MiBV1:
-		return RegisteredPoStProof_StackedDrgWindow512MiBV1, nil
-	default:
-		return 0, errors.Errorf("unsupported mapping from %+v to PoSt-specific RegisteredProof", p)
-	}
-}
-
-// SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
-func (p RegisteredSealProof) SectorMaximumLifetime() ChainEpoch {
-	// For all Stacked DRG sectors, the max is 5 years
-	epochsPerYear := 1_262_277
-	fiveYears := 5 * epochsPerYear
-	return ChainEpoch(fiveYears)
-}
 
 ///
 /// Sealing

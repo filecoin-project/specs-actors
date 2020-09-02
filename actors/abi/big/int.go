@@ -340,3 +340,7 @@ func (bi *Int) IsZero() bool {
 func (bi *Int) Nil() bool {
 	return bi.Int == nil
 }
+
+func (bi *Int) NilOrZero() bool {
+	return bi.Int == nil || bi.Int.Sign() == 0
+}

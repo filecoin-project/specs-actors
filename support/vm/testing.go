@@ -313,18 +313,24 @@ func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address
 // Returns the deadline info for proving deadline for sector, partition index of sector, and a VM at the opening of
 // the deadline (ready for SubmitWindowedPoSt).
 func AdvanceTillProvingDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (*miner.DeadlineInfo, uint64, *VM) {
+	dlIdx, pIdx := SectorDeadline(t, v, minerIDAddress, sectorNumber)
+
+	// advance time to next proving period
+	v, dlInfo := AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlIdx)
+	v, err := v.WithEpoch(dlInfo.Open)
+	require.NoError(t, err)
+	return dlInfo, pIdx, v
+}
+
+// find the proving deadline and partition index of a miner's sector
+func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (uint64, uint64) {
 	var minerState miner.State
 	err := v.GetState(minerIDAddress, &minerState)
 	require.NoError(t, err)
 
 	dlIdx, pIdx, err := minerState.FindSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
-
-	// advance time to next proving period
-	v, dlInfo := AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlIdx)
-	v, err = v.WithEpoch(dlInfo.Open)
-	require.NoError(t, err)
-	return dlInfo, pIdx, v
+	return dlIdx, pIdx
 }
 
 //

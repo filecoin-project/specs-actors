@@ -761,61 +761,61 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 // - Skipped faults that are already declared (but not delcared recovered) are ignored.
 func (p *Partition) RecordSkippedFaults(
 	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch, skipped bitfield.BitField,
-) (powerDelta, newFaultPower, retractedRecoveryPower PowerPair, err error) {
+) (powerDelta, newFaultPower, retractedRecoveryPower PowerPair, hasNewFaults bool, err error) {
 	empty, err := skipped.IsEmpty()
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("failed to check if skipped sectors is empty: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xc.ErrIllegalArgument.Wrapf("failed to check if skipped sectors is empty: %w", err)
 	}
 	if empty {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), nil
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, nil
 	}
 
 	// Check that the declared sectors are actually in the partition.
 	contains, err := abi.BitFieldContainsAll(p.Sectors, skipped)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if skipped faults are in partition: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to check if skipped faults are in partition: %w", err)
 	} else if !contains {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalArgument.Wrapf("skipped faults contains sectors outside partition")
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xc.ErrIllegalArgument.Wrapf("skipped faults contains sectors outside partition")
 	}
 
 	// Find all skipped faults that have been labeled recovered
 	retractedRecoveries, err := bitfield.IntersectBitField(p.Recoveries, skipped)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to intersect sectors with recoveries: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to intersect sectors with recoveries: %w", err)
 	}
 	retractedRecoverySectors, err := sectors.Load(retractedRecoveries)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to load sectors: %w", err)
 	}
 	retractedRecoveryPower = PowerForSectors(ssize, retractedRecoverySectors)
 
 	// Ignore skipped faults that are already faults or terminated.
 	newFaults, err := bitfield.SubtractBitField(skipped, p.Terminated)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract terminations from skipped: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to subtract terminations from skipped: %w", err)
 	}
 	newFaults, err = bitfield.SubtractBitField(newFaults, p.Faults)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to subtract existing faults from skipped: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to subtract existing faults from skipped: %w", err)
 	}
 	newFaultSectors, err := sectors.Load(newFaults)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to load sectors: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to load sectors: %w", err)
 	}
 
 	// Record new faults
 	powerDelta, newFaultPower, err = p.addFaults(store, newFaults, newFaultSectors, faultExpiration, ssize, quant)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to add skipped faults: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to add skipped faults: %w", err)
 	}
 
 	// Remove faulty recoveries
 	err = p.removeRecoveries(retractedRecoveries, retractedRecoveryPower)
 	if err != nil {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to remove recoveries: %w", err)
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to remove recoveries: %w", err)
 	}
 
-	return powerDelta, newFaultPower, retractedRecoveryPower, nil
+	return powerDelta, newFaultPower, retractedRecoveryPower, len(newFaultSectors) > 0, nil
 }
 
 //
