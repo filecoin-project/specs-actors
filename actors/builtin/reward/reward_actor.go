@@ -77,7 +77,6 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	if !ok {
 		rt.Abortf(exitcode.ErrNotFound, "failed to resolve given owner address")
 	}
-	_ = minerAddr
 
 	penalty := params.Penalty
 	totalReward := big.Zero()
@@ -102,8 +101,8 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 
 	// if this fails, we can assume the miner is responsible and avoid failing here.
 	rewardParams := builtin.ApplyRewardParams{
-		Reward:  &totalReward,
-		Penalty: &penalty,
+		Reward:  totalReward,
+		Penalty: penalty,
 	}
 	_, code := rt.Send(minerAddr, builtin.MethodsMiner.ApplyRewards, &rewardParams, totalReward)
 	if !code.IsSuccess() {

@@ -8,7 +8,6 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -250,18 +249,8 @@ func (t *ApplyRewardParams) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		b, err := br.ReadByte()
-		if err != nil {
-			return err
-		}
-		if b != cbg.CborNull[0] {
-			if err := br.UnreadByte(); err != nil {
-				return err
-			}
-			t.Reward = new(big.Int)
-			if err := t.Reward.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Reward pointer: %w", err)
-			}
+		if err := t.Reward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Reward: %w", err)
 		}
 
 	}
@@ -269,18 +258,8 @@ func (t *ApplyRewardParams) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		b, err := br.ReadByte()
-		if err != nil {
-			return err
-		}
-		if b != cbg.CborNull[0] {
-			if err := br.UnreadByte(); err != nil {
-				return err
-			}
-			t.Penalty = new(big.Int)
-			if err := t.Penalty.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.Penalty pointer: %w", err)
-			}
+		if err := t.Penalty.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Penalty: %w", err)
 		}
 
 	}

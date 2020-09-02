@@ -1432,16 +1432,16 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.
 		// This ensures the miner has sufficient funds to lock up amountToLock.
 		// This should always be true if reward actor sends reward funds with the message.
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
-		if unlockedBalance.LessThan(*params.Reward) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *params.Reward)
+		if unlockedBalance.LessThan(params.Reward) {
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, params.Reward)
 		}
 
-		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), *params.Reward, &RewardVestingSpec)
+		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), params.Reward, &RewardVestingSpec)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, newlyVested)
-		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, *params.Reward)
+		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, params.Reward)
 
-		err = st.ApplyPenalty(*params.Penalty)
+		err = st.ApplyPenalty(params.Penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, rt.CurrEpoch(), rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to repay penalty")

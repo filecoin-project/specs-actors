@@ -3129,7 +3129,7 @@ func TestApplyRewards(t *testing.T) {
 		expectBurnt := big.Mul(big.NewInt(2), amt)
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectBurnt, nil, exitcode.Ok)
 
-		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: &reward, Penalty: &penalty})
+		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: reward, Penalty: penalty})
 		rt.Verify()
 
 		st = getState(rt)
@@ -3178,7 +3178,7 @@ func TestApplyRewards(t *testing.T) {
 		expectBurnt := st.FeeDebt
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectBurnt, nil, exitcode.Ok)
 
-		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: &reward, Penalty: &penalty})
+		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: reward, Penalty: penalty})
 		rt.Verify()
 
 		// Set balance to deduct fee
@@ -4166,7 +4166,7 @@ func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmou
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty, nil, exitcode.Ok)
 	}
 
-	rt.Call(h.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: &amt, Penalty: &penalty})
+	rt.Call(h.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: amt, Penalty: penalty})
 	rt.Verify()
 }
 
