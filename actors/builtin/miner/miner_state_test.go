@@ -1091,7 +1091,10 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 }
 
 func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.Runtime) *power.State {
-	pSt := constructPowerStateWithPowerAtAddr(t, power.ConsensusMinerMinPower, mAddr, rt)
+	minPower, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	require.NoError(t, err)
+
+	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, rt)
 
 	// Ensure that this the mAddr passes min power check
 	ok, err := pSt.MinerNominalPowerMeetsConsensusMinimum(adt.AsStore(rt), mAddr)
@@ -1111,7 +1114,7 @@ func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAdd
 	claims, err := adt.AsMap(adt.AsStore(rt), pSt.Claims)
 	require.NoError(t, err)
 
-	claim := &power.Claim{RawBytePower: pow, QualityAdjPower: pow}
+	claim := &power.Claim{SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1, RawBytePower: pow, QualityAdjPower: pow}
 
 	err = claims.Put(adt.AddrKey(mAddr), claim)
 	require.NoError(t, err)

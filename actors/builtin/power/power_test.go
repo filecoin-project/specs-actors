@@ -66,7 +66,7 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
+		assert.Equal(t, power.Claim{abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.CronEventQueue)
 	})
@@ -245,7 +245,9 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	miner5 := tutil.NewIDAddr(t, 115)
 
 	// These tests use the min power for consensus to check the accounting above and below that value.
-	powerUnit := power.ConsensusMinerMinPower
+	powerUnit, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	require.NoError(t, err)
+
 	mul := func(a big.Int, b int64) big.Int {
 		return big.Mul(a, big.NewInt(b))
 	}
@@ -253,7 +255,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		return big.Div(a, big.NewInt(b))
 	}
 	smallPowerUnit := big.NewInt(1_000_000)
-	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.CosensusMinerMinPower has changed requiring update to this test")
+	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.ConsensusMinerMinPower has changed requiring update to this test")
 	// Subtests implicitly rely on ConsensusMinerMinMiners = 3
 	require.Equal(t, 4, power.ConsensusMinerMinMiners, "power.ConsensusMinerMinMiners has changed requiring update to this test")
 
@@ -359,7 +361,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
-		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)		
+		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
 
 		expectedTotal := mul(powerUnit, 5)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
@@ -452,7 +454,9 @@ func TestCron(t *testing.T) {
 	})
 
 	t.Run("test amount sent to reward actor and state change", func(t *testing.T) {
-		powerUnit := power.ConsensusMinerMinPower
+		powerUnit, err := abi.RegisteredSealProof_StackedDrg2KiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+
 		miner3 := tutil.NewIDAddr(t, 103)
 		miner4 := tutil.NewIDAddr(t, 104)
 
@@ -572,7 +576,9 @@ func TestCron(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 
-		rawPow := power.ConsensusMinerMinPower
+		rawPow, err := abi.RegisteredSealProof_StackedDrg2KiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+
 		qaPow := rawPow
 		actor.updateClaimedPower(rt, miner1, rawPow, qaPow)
 		actor.expectTotalPowerEager(rt, rawPow, qaPow)
@@ -997,7 +1003,7 @@ func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner
 	label := strconv.Itoa(h.minerSeq)
 	actrAddr := tutil.NewActorAddr(h.t, label)
 	h.minerSeq += 1
-	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero())
+	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg32GiBV1, big.Zero())
 }
 
 func (h *spActorHarness) updateClaimedPower(rt *mock.Runtime, miner addr.Address, rawDelta, qaDelta abi.StoragePower) {

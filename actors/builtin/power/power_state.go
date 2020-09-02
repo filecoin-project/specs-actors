@@ -57,6 +57,9 @@ type State struct {
 }
 
 type Claim struct {
+	// Miner's proof type used to determine minimum miner size
+	SealProofType abi.RegisteredSealProof
+
 	// Sum of raw byte power for a miner's sectors.
 	RawBytePower abi.StoragePower
 
@@ -109,9 +112,13 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	minerNominalPower := claim.QualityAdjPower
+	minerMinPower, err := claim.SealProofType.ConsensusMinerMinPower()
+	if err != nil {
+		return false, errors.Wrap(err, "could not get miner min power from proof type")
+	}
 
 	// if miner is larger than min power requirement, we're set
-	if minerNominalPower.GreaterThanEqual(ConsensusMinerMinPower) {
+	if minerNominalPower.GreaterThanEqual(minerMinPower) {
 		return true, nil
 	}
 
@@ -165,12 +172,18 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 	st.TotalBytesCommitted = big.Add(st.TotalBytesCommitted, power)
 
 	newClaim := Claim{
+		SealProofType:   oldClaim.SealProofType,
 		RawBytePower:    big.Add(oldClaim.RawBytePower, power),
 		QualityAdjPower: big.Add(oldClaim.QualityAdjPower, qapower),
 	}
 
-	prevBelow := oldClaim.QualityAdjPower.LessThan(ConsensusMinerMinPower)
-	stillBelow := newClaim.QualityAdjPower.LessThan(ConsensusMinerMinPower)
+	minPower, err := oldClaim.SealProofType.ConsensusMinerMinPower()
+	if err != nil {
+		return fmt.Errorf("could not get consensus miner min power: %w", err)
+	}
+
+	prevBelow := oldClaim.QualityAdjPower.LessThan(minPower)
+	stillBelow := newClaim.QualityAdjPower.LessThan(minPower)
 
 	if prevBelow && !stillBelow {
 		// just passed min miner size

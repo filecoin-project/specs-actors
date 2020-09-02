@@ -121,7 +121,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
-		err = setClaim(claims, addresses.IDAddress, &Claim{abi.NewStoragePower(0), abi.NewStoragePower(0)})
+		err = setClaim(claims, addresses.IDAddress, &Claim{params.SealProofType, abi.NewStoragePower(0), abi.NewStoragePower(0)})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner")
 
 		st.MinerCount += 1
