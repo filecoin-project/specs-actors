@@ -36,6 +36,7 @@ type invocationContext struct {
 	emptyObject       cid.Cid
 	isCallerValidated bool
 	allowSideEffects  bool
+	callerValidated   bool
 }
 
 // Context for a top-level invocation sequence
@@ -179,9 +180,13 @@ func (ic *invocationContext) GetRandomnessFromTickets(_ crypto.DomainSeparationT
 }
 
 func (ic *invocationContext) ValidateImmediateCallerAcceptAny() {
+	ic.assertf(!ic.callerValidated, "caller has been double validated")
+	ic.callerValidated = true
 }
 
 func (ic *invocationContext) ValidateImmediateCallerIs(addrs ...address.Address) {
+	ic.assertf(!ic.callerValidated, "caller has been double validated")
+	ic.callerValidated = true
 	for _, addr := range addrs {
 		if ic.msg.from == addr {
 			return
@@ -191,6 +196,8 @@ func (ic *invocationContext) ValidateImmediateCallerIs(addrs ...address.Address)
 }
 
 func (ic *invocationContext) ValidateImmediateCallerType(types ...cid.Cid) {
+	ic.assertf(!ic.callerValidated, "caller has been double validated")
+	ic.callerValidated = true
 	for _, t := range types {
 		if t.Equals(ic.fromActor.Code) {
 			return
@@ -201,6 +208,12 @@ func (ic *invocationContext) ValidateImmediateCallerType(types ...cid.Cid) {
 
 func (ic *invocationContext) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
 	ic.rt.Abortf(errExitCode, msg, args...)
+}
+
+func (ic *invocationContext) assertf(condition bool, msg string, args ...interface{}) {
+	if !condition {
+		panic(fmt.Errorf(msg, args...))
+	}
 }
 
 func (ic *invocationContext) ResolveAddress(address address.Address) (address.Address, bool) {

@@ -74,8 +74,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	if params.Amount.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
-	// withdrawal can ONLY be done by a signing party.
-	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
 	nominal, recipient, approvedCallers := escrowAddress(rt, params.ProviderOrClientAddress)
 	// for providers -> only corresponding owner or worker can withdraw
