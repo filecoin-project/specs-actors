@@ -41,7 +41,7 @@ type State struct {
 	// This value is recomputed every non-null epoch and used in the next non-null epoch.
 	ThisEpochReward abi.TokenAmount
 	// Smoothed ThisEpochReward
-	ThisEpochRewardSmoothed *smoothing.FilterEstimate
+	ThisEpochRewardSmoothed smoothing.FilterEstimate
 
 	// The baseline power the network is targeting at st.Epoch
 	ThisEpochBaselinePower abi.StoragePower

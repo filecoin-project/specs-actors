@@ -8,7 +8,6 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	smoothing "github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -227,18 +226,8 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		b, err := br.ReadByte()
-		if err != nil {
-			return err
-		}
-		if b != cbg.CborNull[0] {
-			if err := br.UnreadByte(); err != nil {
-				return err
-			}
-			t.ThisEpochQAPowerSmoothed = new(smoothing.FilterEstimate)
-			if err := t.ThisEpochQAPowerSmoothed.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmoothed pointer: %w", err)
-			}
+		if err := t.ThisEpochQAPowerSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochQAPowerSmoothed: %w", err)
 		}
 
 	}
@@ -1027,18 +1016,8 @@ func (t *CurrentTotalPowerReturn) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		b, err := br.ReadByte()
-		if err != nil {
-			return err
-		}
-		if b != cbg.CborNull[0] {
-			if err := br.UnreadByte(); err != nil {
-				return err
-			}
-			t.QualityAdjPowerSmoothed = new(smoothing.FilterEstimate)
-			if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed pointer: %w", err)
-			}
+		if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed: %w", err)
 		}
 
 	}

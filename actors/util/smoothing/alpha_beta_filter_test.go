@@ -42,7 +42,7 @@ func TestCumSumRatioProjection(t *testing.T) {
 	})
 
 	// Q.128 cumsum of ratio using the trapezoid rule
-	iterativeCumSumOfRatio := func(num, denom *smoothing.FilterEstimate, t0, delta abi.ChainEpoch) big.Int {
+	iterativeCumSumOfRatio := func(num, denom smoothing.FilterEstimate, t0, delta abi.ChainEpoch) big.Int {
 		ratio := big.Zero() // Q.128
 		for i := abi.ChainEpoch(0); i < delta; i++ {
 			numEpsilon := num.Extrapolate(t0 + i)                // Q.256
@@ -67,7 +67,7 @@ func TestCumSumRatioProjection(t *testing.T) {
 	// two methods give similar results
 	errBound := big.NewInt(350)
 
-	assertErrBound := func(t *testing.T, num, denom *smoothing.FilterEstimate, delta, t0 abi.ChainEpoch, errBound big.Int) {
+	assertErrBound := func(t *testing.T, num, denom smoothing.FilterEstimate, delta, t0 abi.ChainEpoch, errBound big.Int) {
 		t.Helper()
 		analytic := smoothing.ExtrapolatedCumSumOfRatio(delta, t0, num, denom)
 		iterative := iterativeCumSumOfRatio(num, denom, t0, delta)

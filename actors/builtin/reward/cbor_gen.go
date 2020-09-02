@@ -7,7 +7,6 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	smoothing "github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -169,18 +168,8 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		b, err := br.ReadByte()
-		if err != nil {
-			return err
-		}
-		if b != cbg.CborNull[0] {
-			if err := br.UnreadByte(); err != nil {
-				return err
-			}
-			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
-			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
-			}
+		if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed: %w", err)
 		}
 
 	}
@@ -389,18 +378,8 @@ func (t *ThisEpochRewardReturn) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		b, err := br.ReadByte()
-		if err != nil {
-			return err
-		}
-		if b != cbg.CborNull[0] {
-			if err := br.UnreadByte(); err != nil {
-				return err
-			}
-			t.ThisEpochRewardSmoothed = new(smoothing.FilterEstimate)
-			if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed pointer: %w", err)
-			}
+		if err := t.ThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.ThisEpochRewardSmoothed: %w", err)
 		}
 
 	}

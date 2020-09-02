@@ -126,7 +126,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 }
 
 type ThisEpochRewardReturn struct {
-	ThisEpochRewardSmoothed *smoothing.FilterEstimate
+	ThisEpochRewardSmoothed smoothing.FilterEstimate
 	ThisEpochBaselinePower  abi.StoragePower
 }
 
