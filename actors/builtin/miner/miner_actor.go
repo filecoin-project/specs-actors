@@ -138,7 +138,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
-	// Register first cron callback for epoch before the next proving period starts.
+	// Register first cron callback for epoch before the next deadline starts.
 	deadlineClose := periodStart + WPoStChallengeWindow*abi.ChainEpoch(1+deadlineIndex)
 	enrollCronEvent(rt, deadlineClose-1, &CronEventPayload{
 		EventType: CronEventProvingDeadline,
@@ -2155,6 +2155,7 @@ func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) 
 // Computes the deadline index for the current epoch for a given period start.
 // currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
 func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
+	Assert(currEpoch >= periodStart)
 	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 

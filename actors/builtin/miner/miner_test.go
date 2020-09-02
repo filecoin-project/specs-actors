@@ -669,7 +669,8 @@ func TestCommitments(t *testing.T) {
 			WithBalance(bigBalance, big.Zero()).
 			Build(t)
 
-		// at epoch 101, the miner will get an initial proving period start thousands of epochs in the future
+		// Epoch 101 should be at the beginning of the miner's proving period so there will be time to commit
+		// and PoSt a sector.
 		rt.SetEpoch(101)
 		actor.constructAndVerify(rt)
 
