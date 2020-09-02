@@ -87,8 +87,8 @@ func computeReward(epoch abi.ChainEpoch, prevTheta, currTheta big.Int) abi.Token
 	simpleReward := big.Mul(SimpleTotal, expLamSubOne)    //Q.0 * Q.128 =>  Q.128
 	epochLam := big.Mul(big.NewInt(int64(epoch)), lambda) // Q.0 * Q.128 => Q.128
 
-	simpleReward = big.Mul(simpleReward, big.Int{Int: expneg(epochLam.Int)}) // Q.128 * Q.128 => Q.256
-	simpleReward = big.Rsh(simpleReward, math.Precision)                     // Q.256 >> 128 => Q.128
+	simpleReward = big.Mul(simpleReward, big.NewFromGo(*expneg(epochLam.Int))) // Q.128 * Q.128 => Q.256
+	simpleReward = big.Rsh(simpleReward, math.Precision)                       // Q.256 >> 128 => Q.128
 
 	baselineReward := big.Sub(computeBaselineSupply(currTheta), computeBaselineSupply(prevTheta)) // Q.128
 
@@ -103,7 +103,7 @@ func computeBaselineSupply(theta big.Int) big.Int {
 	thetaLam := big.Mul(theta, lambda)           // Q.128 * Q.128 => Q.256
 	thetaLam = big.Rsh(thetaLam, math.Precision) // Q.256 >> 128 => Q.128
 
-	eTL := big.Int{Int: expneg(thetaLam.Int)} // Q.128
+	eTL := big.NewFromGo(*expneg(thetaLam.Int)) // Q.128
 
 	one := big.NewInt(1)
 	one = big.Lsh(one, math.Precision) // Q.0 => Q.128

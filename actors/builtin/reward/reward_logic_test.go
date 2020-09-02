@@ -56,7 +56,7 @@ func TestBaselineReward(t *testing.T) {
 	simple := computeReward(0, big.Zero(), big.Zero())
 
 	for i := 0; i < 512; i++ {
-		reward := computeReward(0, big.Int{Int: prevTheta}, big.Int{Int: theta})
+		reward := computeReward(0, big.NewFromGo(*prevTheta), big.NewFromGo(*theta))
 		reward = big.Sub(reward, simple)
 		fmt.Fprintf(b, "%s,%s,%s\n", prevTheta, theta, reward.Int)
 		prevTheta = prevTheta.Add(prevTheta, step)
