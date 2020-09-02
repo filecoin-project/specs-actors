@@ -7,9 +7,9 @@ import (
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 )
 
 var PieceCIDPrefix = cid.Prefix{
@@ -53,7 +53,7 @@ type DealProposal struct {
 // ClientDealProposal is a DealProposal signed by a client
 type ClientDealProposal struct {
 	Proposal        DealProposal
-	ClientSignature acrypto.Signature
+	ClientSignature crypto.Signature
 }
 
 func (p *DealProposal) Duration() abi.ChainEpoch {

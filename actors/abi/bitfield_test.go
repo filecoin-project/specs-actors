@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 

@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/ipfs/go-cid"
+	"golang.org/x/xerrors"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"golang.org/x/xerrors"
-
-	"github.com/ipfs/go-cid"
 )
 
 func LoadSectors(store adt.Store, root cid.Cid) (Sectors, error) {

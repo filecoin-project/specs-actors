@@ -3,7 +3,7 @@ package builtin
 import (
 	"fmt"
 
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 // PARAM_SPEC
