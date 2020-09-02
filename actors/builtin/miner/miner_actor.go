@@ -1607,7 +1607,7 @@ func (a Actor) RepayDebt(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock fee debt")
 	})
 
-	notifyPledgeChanged(rt, fromVesting)
+	notifyPledgeChanged(rt, fromVesting.Neg())
 	burnFunds(rt, big.Sum(fromVesting, fromBalance))
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 	return nil
