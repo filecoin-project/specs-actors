@@ -1012,18 +1012,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	// we still use dlInfo.Last().
 	dlInfo := st.DeadlineInfo(currEpoch)
 
-	// This method is invoked once *before* the first proving period starts,
-	// after the actor is first constructed; this is detected by
-	// !dlInfo.PeriodStarted().
-	if !dlInfo.PeriodStarted() {
-		return &AdvanceDeadlineResult{
-			pledgeDelta,
-			powerDelta,
-			detectedFaultyPower,
-			NewPowerPairZero(),
-		}, nil
-	}
-
 	// Advance to the next deadline (in case we short-circuit below).
 	st.CurrentDeadline = (st.CurrentDeadline + 1) % WPoStPeriodDeadlines
 	if st.CurrentDeadline == 0 {
