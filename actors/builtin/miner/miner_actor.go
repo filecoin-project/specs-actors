@@ -299,6 +299,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
+	// Technically, ChainCommitRand should be _exactly_ 32 bytes. However:
+	// 1. It's convenient to allow smaller slices when testing.
+	// 2. Nothing bad will happen if the caller provides too little randomness.
+	if len(params.ChainCommitRand) > abi.RandomnessLength {
+		rt.Abortf(exitcode.ErrIllegalArgument, "expected at most %d bytes of randomness, got %d", abi.RandomnessLength, len(params.ChainCommitRand))
+	}
 
 	// Get the total power/reward. We need these to compute penalties.
 	rewardStats := requestCurrentEpochBlockReward(rt)
