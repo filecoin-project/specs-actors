@@ -2155,6 +2155,7 @@ func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) 
 // Computes the deadline index for the current epoch for a given period start.
 // currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
 func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
+	Assert(currEpoch >= periodStart)
 	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 
