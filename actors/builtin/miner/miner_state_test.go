@@ -872,13 +872,30 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("power does not meet minimum", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		pSt := constructPowerStateWithPowerAtAddr(t, big.Zero(), actor.receiver, rt)
+		pSt := constructPowerStateWithPowerAtAddr(t, big.Zero(), actor.receiver, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
 		store := adt.AsStore(rt)
 		mSt := getState(rt)
 		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
 		currEpoch := abi.ChainEpoch(100000)
 
 		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
+		require.NoError(t, err)
+		assert.False(t, eligible)
+
+		// get minimum
+		pow32GiBMin, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+
+		// with enough miners above minimum, power must be above min
+		pow := big.Sub(pow32GiBMin, big.NewInt(1))
+		pSt = constructPowerStateWithPowerAtAddr(t, pow, actor.receiver, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
+		pSt.MinerAboveMinPowerCount = power.ConsensusMinerMinMiners
+
+		// miner with 64GiB sectors has higher power minimum
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg64GiBV1)
+		pSt = constructPowerStateWithPowerAtAddr(t, pow32GiBMin, actor.receiver, abi.RegisteredSealProof_StackedDrg64GiBV1, rt)
+		pSt.MinerAboveMinPowerCount = power.ConsensusMinerMinMiners
+		eligible, err = miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -1094,7 +1111,7 @@ func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.
 	minPower, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
 	require.NoError(t, err)
 
-	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, rt)
+	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
 
 	// Ensure that this the mAddr passes min power check
 	ok, err := pSt.MinerNominalPowerMeetsConsensusMinimum(adt.AsStore(rt), mAddr)
@@ -1104,7 +1121,7 @@ func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.
 	return pSt
 }
 
-func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAddr address.Address, rt *mock.Runtime) *power.State {
+func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAddr address.Address, sealProofType abi.RegisteredSealProof, rt *mock.Runtime) *power.State {
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	require.NoError(t, err)
 	emptyMMap, err := adt.MakeEmptyMultimap(adt.AsStore(rt)).Root()
@@ -1114,7 +1131,7 @@ func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAdd
 	claims, err := adt.AsMap(adt.AsStore(rt), pSt.Claims)
 	require.NoError(t, err)
 
-	claim := &power.Claim{SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1, RawBytePower: pow, QualityAdjPower: pow}
+	claim := &power.Claim{SealProofType: sealProofType, RawBytePower: pow, QualityAdjPower: pow}
 
 	err = claims.Put(adt.AddrKey(mAddr), claim)
 	require.NoError(t, err)
