@@ -160,7 +160,7 @@ type SectorOnChainInfo struct {
 	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
 }
 
-func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
+func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
 	emptyVestingFundsCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
@@ -178,7 +178,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		AllocatedSectors:          emptyBitfieldCid,
 		Sectors:                   emptyArrayCid,
 		ProvingPeriodStart:        periodStart,
-		CurrentDeadline:           0,
+		CurrentDeadline:           deadlineIndex,
 		Deadlines:                 emptyDeadlinesCid,
 		EarlyTerminations:         bitfield.New(),
 	}, nil
@@ -1011,18 +1011,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	// invoked late due to skipped blocks. This is no longer the case, but
 	// we still use dlInfo.Last().
 	dlInfo := st.DeadlineInfo(currEpoch)
-
-	// This method is invoked once *before* the first proving period starts,
-	// after the actor is first constructed; this is detected by
-	// !dlInfo.PeriodStarted().
-	if !dlInfo.PeriodStarted() {
-		return &AdvanceDeadlineResult{
-			pledgeDelta,
-			powerDelta,
-			detectedFaultyPower,
-			NewPowerPairZero(),
-		}, nil
-	}
 
 	// Advance to the next deadline (in case we short-circuit below).
 	st.CurrentDeadline = (st.CurrentDeadline + 1) % WPoStPeriodDeadlines

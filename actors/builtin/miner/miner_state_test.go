@@ -1026,7 +1026,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	emptyVestingFundsCid, err := store.Put(context.Background(), emptyVestingFunds)
 	require.NoError(t, err)
 
-	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid,
+	state, err := miner.ConstructState(infoCid, periodBoundary, 0, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid,
 		emptyVestingFundsCid)
 	require.NoError(t, err)
 

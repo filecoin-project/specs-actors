@@ -126,19 +126,21 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 	currEpoch := rt.CurrEpoch()
 	offset, err := assignProvingPeriodOffset(rt.Message().Receiver(), currEpoch, rt.Syscalls().HashBlake2b)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period offset")
-	periodStart := nextProvingPeriodStart(currEpoch, offset)
-	Assert(periodStart > currEpoch)
+	periodStart := currentProvingPeriodStart(currEpoch, offset)
+	deadlineIndex := currentDeadlineIndex(currEpoch, periodStart)
+	Assert(deadlineIndex < WPoStPeriodDeadlines)
 
 	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
 	infoCid := rt.Store().Put(info)
 
-	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
+	state, err := ConstructState(infoCid, periodStart, deadlineIndex, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
 	rt.State().Create(state)
 
-	// Register first cron callback for epoch before the first proving period starts.
-	enrollCronEvent(rt, periodStart-1, &CronEventPayload{
+	// Register first cron callback for epoch before the next deadline starts.
+	deadlineClose := periodStart + WPoStChallengeWindow*abi.ChainEpoch(1+deadlineIndex)
+	enrollCronEvent(rt, deadlineClose-1, &CronEventPayload{
 		EventType: CronEventProvingDeadline,
 	})
 	return nil
@@ -2136,7 +2138,7 @@ func assignProvingPeriodOffset(myAddr addr.Address, currEpoch abi.ChainEpoch, ha
 // Computes the epoch at which a proving period should start such that it is greater than the current epoch, and
 // has a defined offset from being an exact multiple of WPoStProvingPeriod.
 // A miner is exempt from Winow PoSt until the first full proving period starts.
-func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi.ChainEpoch {
+func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi.ChainEpoch {
 	currModulus := currEpoch % WPoStProvingPeriod
 	var periodProgress abi.ChainEpoch // How far ahead is currEpoch from previous offset boundary.
 	if currModulus >= offset {
@@ -2145,9 +2147,16 @@ func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi
 		periodProgress = WPoStProvingPeriod - (offset - currModulus)
 	}
 
-	periodStart := currEpoch - periodProgress + WPoStProvingPeriod
-	Assert(periodStart > currEpoch)
+	periodStart := currEpoch - periodProgress
+	Assert(periodStart <= currEpoch)
 	return periodStart
+}
+
+// Computes the deadline index for the current epoch for a given period start.
+// currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
+func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
+	Assert(currEpoch >= periodStart)
+	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 
 func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*SectorOnChainInfo {
