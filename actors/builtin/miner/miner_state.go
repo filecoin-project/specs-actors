@@ -13,7 +13,6 @@ import (
 
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/actors/util"
-
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
