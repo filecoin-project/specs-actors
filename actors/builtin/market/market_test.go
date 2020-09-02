@@ -2272,6 +2272,49 @@ func TestMarketActorDeals(t *testing.T) {
 	}
 }
 
+func TestMaxDealLabelSize(t *testing.T) {
+	owner := tutil.NewIDAddr(t, 101)
+	provider := tutil.NewIDAddr(t, 102)
+	worker := tutil.NewIDAddr(t, 103)
+	client := tutil.NewIDAddr(t, 104)
+	minerAddrs := &minerAddrs{owner, worker, provider}
+
+	var st market.State
+
+	// Test adding provider funds from both worker and owner address
+	rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+	actor.addProviderFunds(rt, abi.NewTokenAmount(20000000), minerAddrs)
+	rt.GetState(&st)
+	assert.Equal(t, abi.NewTokenAmount(20000000), actor.getEscrowBalance(rt, provider))
+
+	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20000000))
+
+	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
+	dealProposal.Label = string(make([]byte, market.DealMaxLabelSize))
+	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{{Proposal: dealProposal}}}
+
+	// Label at max size should work.
+	{
+		actor.publishDeals(rt, minerAddrs, publishDealReq{deal: dealProposal})
+	}
+
+	dealProposal.Label = string(make([]byte, market.DealMaxLabelSize+1))
+
+	// Label greater than max size should fail.
+	{
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
+		expectQueryNetworkInfo(rt, actor)
+		rt.ExpectVerifySignature(crypto.Signature{}, client, mustCbor(&params.Deals[0].Proposal), nil)
+		rt.SetCaller(worker, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.PublishStorageDeals, params)
+		})
+
+		rt.Verify()
+	}
+}
+
 func TestComputeDataCommitment(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 101)
 	provider := tutil.NewIDAddr(t, 102)
