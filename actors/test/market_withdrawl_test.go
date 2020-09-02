@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMarketWithdrawl(t *testing.T) {
+func TestMarketWithdraw(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
 	initialBalance := big.Mul(big.NewInt(6), big.NewInt(1e18))
