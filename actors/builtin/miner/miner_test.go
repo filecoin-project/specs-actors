@@ -1741,11 +1741,6 @@ func TestDeadlineCron(t *testing.T) {
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
 
-		// introduce lots of fee debt
-		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
-		st.FeeDebt = feeDebt
-		rt.ReplaceState(st)
-
 		// Advance to expiration epoch and expect expiration during cron
 		rt.SetEpoch(expiration)
 		powerDelta := activePower.Neg()
@@ -1754,6 +1749,12 @@ func TestDeadlineCron(t *testing.T) {
 		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds to locked funds so expectedFee is taken from locked funds
 		actor.applyRewards(rt, expectedFee, big.Zero())
+
+		st = getState(rt)
+		// introduce lots of fee debt
+		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
 
 		// Miner balance = LF + IP. expectedFee covered by LF, debt repayment covered by IP
 		rt.SetBalance(big.Add(expectedFee, st.InitialPledge))
@@ -3052,7 +3053,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 }
 
-func TestAddLockedFund(t *testing.T) {
+func TestApplyRewards(t *testing.T) {
 	periodOffset := abi.ChainEpoch(1808)
 	actor := newHarness(t, periodOffset)
 
@@ -3091,7 +3092,9 @@ func TestAddLockedFund(t *testing.T) {
 		assert.Equal(t, amt, st.LockedFunds)
 	})
 
-	t.Run("funds vest when under collateralized", func(t *testing.T) {
+	// The system should not reach this state since fee debt removes mining eligibility
+	// But if invariants are violated this should work.
+	t.Run("rewards pay back fee debt ", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		st := getState(rt)
@@ -3104,17 +3107,18 @@ func TestAddLockedFund(t *testing.T) {
 		assert.True(t, availableBefore.LessThan(big.Zero()))
 		rt.ReplaceState(st)
 
-		amt := abi.NewTokenAmount(600_000)
-		actor.applyRewards(rt, amt, big.Zero())
+		amt := big.Mul(big.NewInt(3), balance)
 		// manually update actor balance to include the added funds from outside
 		newBalance := big.Add(balance, amt)
 		rt.SetBalance(newBalance)
+		actor.applyRewards(rt, amt, big.Zero())
 
 		st = getState(rt)
-		// no funds used to pay off ip debt
+		// balance funds used to pay off fee debt
+		// available balance should be 2
 		assert.Equal(t, availableBefore, st.GetAvailableBalance(newBalance))
-		assert.False(t, st.IsDebtFree())
-		// all funds locked in vesting table
+		assert.True(t, st.IsDebtFree())
+		// remaining funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
 	})
 
@@ -4066,17 +4070,30 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address)
 }
 
 func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmount) {
+	// This harness function does not handle the state where apply rewards is
+	// on a miner with existing fee debt.  This state is not protocol reachable
+	// because currently fee debt prevents election participation.
+	//
+	// We further assume the miner can pay the penalty.  If the miner
+	// goes into debt we can't rely on the harness call
+	// TODO unify those cases
+	pledgeDelta := big.Subtract(amt, penalty)
+
 	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
 	// expect pledge update
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdatePledgeTotal,
-		&amt,
+		&pledgeDelta,
 		abi.NewTokenAmount(0),
 		nil,
 		exitcode.Ok,
 	)
+
+	if penalty.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty, nil, exitcode.Ok)
+	}
 
 	rt.Call(h.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: &amt, Penalty: &penalty})
 	rt.Verify()

@@ -1423,8 +1423,10 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.
 
 	var st State
 	pledgeDeltaTotal := big.Zero()
+	toBurn := big.Zero()
 	rt.State().Transaction(&st, func() {
 		var err error
+		store := adt.AsStore(rt)
 		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
 
 		// This ensures the miner has sufficient funds to lock up amountToLock.
@@ -1434,16 +1436,21 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *params.Reward)
 		}
 
-		newlyVested, err := st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *params.Reward, &RewardVestingSpec)
+		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), *params.Reward, &RewardVestingSpec)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, newlyVested)
 		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, *params.Reward)
 
 		err = st.ApplyPenalty(*params.Penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
+		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, rt.CurrEpoch(), rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to repay penalty")
+		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
+		toBurn = big.Add(penaltyFromVesting, penaltyFromBalance)
 	})
 
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
+	burnFunds(rt, toBurn)
 
 	return nil
 }
