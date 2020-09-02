@@ -1740,6 +1740,7 @@ func TestDeadlineCron(t *testing.T) {
 		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
+		rt.ReplaceState(st)
 
 		// Advance to expiration epoch and expect expiration during cron
 		rt.SetEpoch(expiration)
@@ -1750,8 +1751,8 @@ func TestDeadlineCron(t *testing.T) {
 		// Add lots of funds to locked funds so expectedFee is taken from locked funds
 		actor.applyRewards(rt, expectedFee, big.Zero())
 
-		st = getState(rt)
 		// introduce lots of fee debt
+		st = getState(rt)
 		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
@@ -3092,6 +3093,50 @@ func TestApplyRewards(t *testing.T) {
 		assert.Equal(t, amt, st.LockedFunds)
 	})
 
+	t.Run("penalty is burnt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		
+		reward := abi.NewTokenAmount(600_000)
+		penalty := abi.NewTokenAmount(300_000)
+		rt.SetBalance(big.Add(rt.Balance(), reward))
+
+		actor.applyRewards(rt, reward, penalty)
+	})
+
+	t.Run("penalty is partially burnt and stored as fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		st := getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
+
+		amt := rt.Balance()
+		penalty := big.Mul(big.NewInt(3), amt)
+		reward := amt
+
+		// manually update actor balance to include the added funds on reward message
+		newBalance := big.Add(reward, amt)
+		rt.SetBalance(newBalance)
+
+		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
+
+		// pledge change is new reward - reward taken for fee debt
+		// zero here since all reward goes to debt
+		// so do not expect pledge update
+
+		// burn initial balance + reward = 2*amt
+		expectBurnt := big.Mul(big.NewInt(2), amt)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectBurnt, nil, exitcode.Ok)
+
+		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: &reward, Penalty: &penalty})
+		rt.Verify()
+
+		st = getState(rt)
+		// fee debt =  penalty - reward - initial balance = 3*amt - 2*amt = amt
+		assert.Equal(t, amt, st.FeeDebt)
+	})
+
 	// The system should not reach this state since fee debt removes mining eligibility
 	// But if invariants are violated this should work.
 	t.Run("rewards pay back fee debt ", func(t *testing.T) {
@@ -3101,22 +3146,48 @@ func TestApplyRewards(t *testing.T) {
 
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
-		balance := rt.Balance()
-		st.FeeDebt = big.Mul(big.NewInt(2), balance) // FeeDebt twice total balance
-		availableBefore := st.GetAvailableBalance(balance)
-		assert.True(t, availableBefore.LessThan(big.Zero()))
+		amt := rt.Balance()
+		availableBefore := st.GetAvailableBalance(amt)
+		assert.True(t, availableBefore.GreaterThan(big.Zero()))
+		st.FeeDebt = big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
+		assert.True(t, st.GetAvailableBalance(amt).LessThan(big.Zero()))
+
 		rt.ReplaceState(st)
 
-		amt := big.Mul(big.NewInt(3), balance)
+		reward := big.Mul(big.NewInt(3), amt)
+		penalty := big.Zero()
 		// manually update actor balance to include the added funds from outside
-		newBalance := big.Add(balance, amt)
+		newBalance := big.Add(amt, reward)
 		rt.SetBalance(newBalance)
-		actor.applyRewards(rt, amt, big.Zero())
+
+		// pledge change is new reward - reward taken for fee debt
+		// 3*amt - 2*amt = amt
+		pledgeDelta := big.Sub(reward, st.FeeDebt)
+		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
+		// expect pledge update
+		rt.ExpectSend(
+			builtin.StoragePowerActorAddr,
+			builtin.MethodsPower.UpdatePledgeTotal,
+			&pledgeDelta,
+			abi.NewTokenAmount(0),
+			nil,
+			exitcode.Ok,
+		)
+
+		expectBurnt := st.FeeDebt
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectBurnt, nil, exitcode.Ok)
+
+		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: &reward, Penalty: &penalty})
+		rt.Verify()
+
+		// Set balance to deduct fee
+		finalBalance := big.Sub(newBalance, expectBurnt)
 
 		st = getState(rt)
 		// balance funds used to pay off fee debt
 		// available balance should be 2
-		assert.Equal(t, availableBefore, st.GetAvailableBalance(newBalance))
+		assert.Equal(t, availableBefore, st.GetAvailableBalance(finalBalance))
 		assert.True(t, st.IsDebtFree())
 		// remaining funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
