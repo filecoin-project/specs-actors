@@ -674,11 +674,6 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(101)
 		actor.constructAndVerify(rt)
 
-		// require current epoch is just after miner proving period offset to ensure post will happen within
-		// same proving period. If this fails, adjust the epoch above.
-		st := getState(rt)
-		require.True(t, rt.Epoch() > st.ProvingPeriodStart%miner.WPoStProvingPeriod)
-
 		// Commit a sector the very next epoch
 		rt.SetEpoch(102)
 		sector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
