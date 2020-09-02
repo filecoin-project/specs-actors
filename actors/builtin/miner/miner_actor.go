@@ -70,6 +70,7 @@ func (a Actor) Exports() []interface{} {
 		19:                        a.CompactPartitions,
 		20:                        a.CompactSectorNumbers,
 		21:                        a.ConfirmUpdateWorkerKey,
+		22:                        a.RepayDebt,
 	}
 }
 
@@ -1588,6 +1589,26 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
 
+	st.AssertBalanceInvariants(rt.CurrentBalance())
+	return nil
+}
+
+func (a Actor) RepayDebt(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+	var st State
+	var fromVesting, fromBalance abi.TokenAmount
+	rt.State().Transaction(&st, func() {
+		var err error
+		info := getMinerInfo(rt, &st)
+		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+
+		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
+		// and repay fee debt now.
+		fromVesting, fromBalance, err = st.RepayPartialDebtInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock fee debt")
+	})
+
+	notifyPledgeChanged(rt, fromVesting)
+	burnFunds(rt, big.Sum(fromVesting, fromBalance))
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 	return nil
 }
