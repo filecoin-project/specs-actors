@@ -882,8 +882,8 @@ type ExpirationExtension struct {
 // The sector must not be terminated or faulty.
 // The sector's power is recomputed for the new expiration.
 func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
-	if uint64(len(params.Extensions)) > AddressedPartitionsMax {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), AddressedPartitionsMax)
+	if uint64(len(params.Extensions)) > DeclarationsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), DeclarationsMax)
 	}
 
 	// limit the number of sectors declared at once
@@ -1061,6 +1061,13 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	// Note: this cannot terminate pre-committed but un-proven sectors.
 	// They must be allowed to expire (and deposit burnt).
 
+	if len(params.Terminations) > DeclarationsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many declarations when terminating sectors: %d > %d",
+			len(params.Terminations), DeclarationsMax,
+		)
+	}
+
 	toProcess := make(DeadlineSectorMap)
 	for _, term := range params.Terminations {
 		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
@@ -1148,6 +1155,13 @@ type FaultDeclaration struct {
 }
 
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
+	if len(params.Faults) > DeclarationsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many fault declarations for a single message: %d > %d",
+			len(params.Faults), DeclarationsMax,
+		)
+	}
+
 	toProcess := make(DeadlineSectorMap)
 	for _, term := range params.Faults {
 		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
@@ -1221,6 +1235,13 @@ type RecoveryDeclaration struct {
 }
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
+	if len(params.Recoveries) > DeclarationsMax {
+		rt.Abortf(exitcode.ErrIllegalArgument,
+			"too many recovery declarations for a single message: %d > %d",
+			len(params.Recoveries), DeclarationsMax,
+		)
+	}
+
 	toProcess := make(DeadlineSectorMap)
 	for _, term := range params.Recoveries {
 		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
