@@ -1,7 +1,7 @@
 package power
 
 import (
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 // The number of miners that must meet the consensus minimum miner power before that minimum power is enforced

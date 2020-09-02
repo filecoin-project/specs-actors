@@ -3,9 +3,10 @@ package miner
 import (
 	"testing"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 func TestDeadlineAssignment(t *testing.T) {

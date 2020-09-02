@@ -1,7 +1,7 @@
 package builtin
 
 import (
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 const (

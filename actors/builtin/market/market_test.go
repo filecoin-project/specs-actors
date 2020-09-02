@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
+	cbg "github.com/whyrusleeping/cbor-gen"
+
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -22,8 +25,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
-	"github.com/ipfs/go-cid"
-	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -215,7 +216,6 @@ func TestMarketActor(t *testing.T) {
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, client))
 
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 			rt.ExpectValidateCallerAddr(client)
 			params := market.WithdrawBalanceParams{
 				ProviderOrClientAddress: client,
@@ -242,7 +242,6 @@ func TestMarketActor(t *testing.T) {
 			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
 
 			// only signing parties can add balance for client AND provider.
-			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 			rt.ExpectValidateCallerAddr(owner, worker)
 			params := market.WithdrawBalanceParams{
 				ProviderOrClientAddress: provider,
@@ -2585,7 +2584,6 @@ func (h *marketActorTestHarness) expectProviderControlAddresses(rt *mock.Runtime
 
 func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withDrawAmt, expectedSend abi.TokenAmount, miner *minerAddrs) {
 	rt.SetCaller(miner.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 	rt.ExpectValidateCallerAddr(miner.owner, miner.worker)
 	h.expectProviderControlAddresses(rt, miner.provider, miner.owner, miner.worker)
 
@@ -2601,7 +2599,6 @@ func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withD
 
 func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client address.Address, withDrawAmt, expectedSend abi.TokenAmount) {
 	rt.SetCaller(client, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 	rt.ExpectSend(client, builtin.MethodSend, nil, expectedSend, nil, exitcode.Ok)
 	rt.ExpectValidateCallerAddr(client)
 
