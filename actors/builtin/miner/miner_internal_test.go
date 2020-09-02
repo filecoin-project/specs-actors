@@ -40,56 +40,57 @@ func TestAssignProvingPeriodBoundary(t *testing.T) {
 	}
 }
 
-func TestNextProvingPeriodStart(t *testing.T) {
+func TestCurrentProvingPeriodStart(t *testing.T) {
 	// At epoch zero...
 	curr := e(0)
-	// ... with offset zero, the first period start skips one period ahead, ...
-	assert.Equal(t, WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
 
-	// ... and all non-zero offsets are simple.
-	assert.Equal(t, e(1), nextProvingPeriodStart(curr, 1))
-	assert.Equal(t, e(10), nextProvingPeriodStart(curr, 10))
-	assert.Equal(t, WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
+	// ... with offset zero, the current proving period starts now, ...
+	assert.Equal(t, e(0), currentProvingPeriodStart(curr, 0))
 
-	// At epoch 1, offsets 0 and 1 start a long way forward, but offsets 2 and later start soon.
+	// ... and all other offsets are negative.
+	assert.Equal(t, -WPoStProvingPeriod+1, currentProvingPeriodStart(curr, 1))
+	assert.Equal(t, -WPoStProvingPeriod+10, currentProvingPeriodStart(curr, 10))
+	assert.Equal(t, e(-1), currentProvingPeriodStart(curr, WPoStProvingPeriod-1))
+
+	// At epoch 1, offsets 0 and 1 start at offset, but offsets 2 and later start in the past.
 	curr = 1
-	assert.Equal(t, WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
-	assert.Equal(t, WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
-	assert.Equal(t, e(2), nextProvingPeriodStart(curr, 2))
-	assert.Equal(t, e(3), nextProvingPeriodStart(curr, 3))
-	assert.Equal(t, WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
+	assert.Equal(t, e(0), currentProvingPeriodStart(curr, 0))
+	assert.Equal(t, e(1), currentProvingPeriodStart(curr, 1))
+	assert.Equal(t, -WPoStProvingPeriod+2, currentProvingPeriodStart(curr, 2))
+	assert.Equal(t, -WPoStProvingPeriod+3, currentProvingPeriodStart(curr, 3))
+	assert.Equal(t, e(-1), currentProvingPeriodStart(curr, WPoStProvingPeriod-1))
 
 	// An arbitrary mid-period epoch.
 	curr = 123
-	assert.Equal(t, WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
-	assert.Equal(t, WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
-	assert.Equal(t, WPoStProvingPeriod+122, nextProvingPeriodStart(curr, 122))
-	assert.Equal(t, WPoStProvingPeriod+123, nextProvingPeriodStart(curr, 123))
-	assert.Equal(t, e(124), nextProvingPeriodStart(curr, 124))
-	assert.Equal(t, WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
+	assert.Equal(t, e(0), currentProvingPeriodStart(curr, 0))
+	assert.Equal(t, e(1), currentProvingPeriodStart(curr, 1))
+	assert.Equal(t, e(122), currentProvingPeriodStart(curr, 122))
+	assert.Equal(t, e(123), currentProvingPeriodStart(curr, 123))
+	assert.Equal(t, -WPoStProvingPeriod+124, currentProvingPeriodStart(curr, 124))
+	assert.Equal(t, e(-1), currentProvingPeriodStart(curr, WPoStProvingPeriod-1))
 
 	// The final epoch in the chain's first full period
 	curr = WPoStProvingPeriod - 1
-	assert.Equal(t, WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
-	assert.Equal(t, WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
-	assert.Equal(t, WPoStProvingPeriod+2, nextProvingPeriodStart(curr, 2))
-	assert.Equal(t, WPoStProvingPeriod+WPoStProvingPeriod-2, nextProvingPeriodStart(curr, WPoStProvingPeriod-2))
-	assert.Equal(t, WPoStProvingPeriod+WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
+	assert.Equal(t, e(0), currentProvingPeriodStart(curr, 0))
+	assert.Equal(t, e(1), currentProvingPeriodStart(curr, 1))
+	assert.Equal(t, e(2), currentProvingPeriodStart(curr, 2))
+	assert.Equal(t, WPoStProvingPeriod-2, currentProvingPeriodStart(curr, WPoStProvingPeriod-2))
+	assert.Equal(t, WPoStProvingPeriod-1, currentProvingPeriodStart(curr, WPoStProvingPeriod-1))
 
 	// Into the chain's second period
 	curr = WPoStProvingPeriod
-	assert.Equal(t, 2*WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
-	assert.Equal(t, WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
-	assert.Equal(t, WPoStProvingPeriod+2, nextProvingPeriodStart(curr, 2))
-	assert.Equal(t, WPoStProvingPeriod+WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
+	assert.Equal(t, WPoStProvingPeriod, currentProvingPeriodStart(curr, 0))
+	assert.Equal(t, e(1), currentProvingPeriodStart(curr, 1))
+	assert.Equal(t, e(2), currentProvingPeriodStart(curr, 2))
+	assert.Equal(t, WPoStProvingPeriod-1, currentProvingPeriodStart(curr, WPoStProvingPeriod-1))
 
 	curr = WPoStProvingPeriod + 234
-	assert.Equal(t, 2*WPoStProvingPeriod, nextProvingPeriodStart(curr, 0))
-	assert.Equal(t, 2*WPoStProvingPeriod+1, nextProvingPeriodStart(curr, 1))
-	assert.Equal(t, 2*WPoStProvingPeriod+233, nextProvingPeriodStart(curr, 233))
-	assert.Equal(t, 2*WPoStProvingPeriod+234, nextProvingPeriodStart(curr, 234))
-	assert.Equal(t, WPoStProvingPeriod+235, nextProvingPeriodStart(curr, 235))
-	assert.Equal(t, WPoStProvingPeriod+WPoStProvingPeriod-1, nextProvingPeriodStart(curr, WPoStProvingPeriod-1))
+	assert.Equal(t, WPoStProvingPeriod, currentProvingPeriodStart(curr, 0))
+	assert.Equal(t, WPoStProvingPeriod+1, currentProvingPeriodStart(curr, 1))
+	assert.Equal(t, WPoStProvingPeriod+233, currentProvingPeriodStart(curr, 233))
+	assert.Equal(t, WPoStProvingPeriod+234, currentProvingPeriodStart(curr, 234))
+	assert.Equal(t, e(235), currentProvingPeriodStart(curr, 235))
+	assert.Equal(t, WPoStProvingPeriod-1, currentProvingPeriodStart(curr, WPoStProvingPeriod-1))
 }
 
 type e = abi.ChainEpoch

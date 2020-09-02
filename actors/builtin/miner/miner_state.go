@@ -160,7 +160,7 @@ type SectorOnChainInfo struct {
 	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
 }
 
-func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
+func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
 	emptyVestingFundsCid cid.Cid) (*State, error) {
 	return &State{
 		Info: infoCid,
@@ -178,7 +178,7 @@ func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, emptyBitfieldCi
 		AllocatedSectors:          emptyBitfieldCid,
 		Sectors:                   emptyArrayCid,
 		ProvingPeriodStart:        periodStart,
-		CurrentDeadline:           0,
+		CurrentDeadline:           deadlineIndex,
 		Deadlines:                 emptyDeadlinesCid,
 		EarlyTerminations:         bitfield.New(),
 	}, nil
