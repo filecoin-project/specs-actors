@@ -624,7 +624,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 }
 
 func TestSectorAssignment(t *testing.T) {
-	partitionSectors, err := abi.RegisteredSealProof_StackedDrg32GiBV1.WindowPoStPartitionSectors()
+	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
 	require.NoError(t, err)
@@ -878,9 +878,9 @@ func TestMinerEligibleForElection(t *testing.T) {
 		currEpoch := abi.ChainEpoch(100000)
 
 		// get minimums
-		pow32GiBMin, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+		pow32GiBMin, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 		require.NoError(t, err)
-		pow64GiBMin, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
+		pow64GiBMin, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {
@@ -1055,7 +1055,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	sectorSize, err := testSealProofType.SectorSize()
 	require.NoError(t, err)
 
-	partitionSectors, err := testSealProofType.WindowPoStPartitionSectors()
+	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(testSealProofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
@@ -1140,7 +1140,7 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 }
 
 func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.Runtime) *power.State {
-	minPower, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	minPower, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 
 	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)

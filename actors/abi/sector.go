@@ -95,59 +95,35 @@ const (
 // Metadata about a seal proof type.
 type SealProofInfo struct {
 	SectorSize                 SectorSize
-	WindowPoStPartitionSectors uint64
 	WinningPoStProof           RegisteredPoStProof
 	WindowPoStProof            RegisteredPoStProof
-	SectorMaxLifetime          ChainEpoch
-	ConsensusMinerMinPower     StoragePower
 }
 
-// For all Stacked DRG sectors, the max is 5 years
-const epochsPerYear = 1_051_200
-const fiveYears = ChainEpoch(5 * epochsPerYear)
-
-// Partition sizes must match those used by the proofs library.
-// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
 var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 	RegisteredSealProof_StackedDrg2KiBV1: {
 		SectorSize:                 2 << 10,
-		WindowPoStPartitionSectors: 2,
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning2KiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow2KiBV1,
-		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(0),
 	},
 	RegisteredSealProof_StackedDrg8MiBV1: {
 		SectorSize:                 8 << 20,
-		WindowPoStPartitionSectors: 2,
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning8MiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow8MiBV1,
-		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(16 << 20),
 	},
 	RegisteredSealProof_StackedDrg512MiBV1: {
 		SectorSize:                 512 << 20,
-		WindowPoStPartitionSectors: 2,
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning512MiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow512MiBV1,
-		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(1 << 30),
 	},
 	RegisteredSealProof_StackedDrg32GiBV1: {
 		SectorSize:                 32 << 30,
-		WindowPoStPartitionSectors: 2349,
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning32GiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(100 << 40),
 	},
 	RegisteredSealProof_StackedDrg64GiBV1: {
 		SectorSize:                 64 << 30,
-		WindowPoStPartitionSectors: 2300,
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning64GiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow64GiBV1,
-		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(200 << 40),
 	},
 }
 
@@ -157,16 +133,6 @@ func (p RegisteredSealProof) SectorSize() (SectorSize, error) {
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
 	return info.SectorSize, nil
-}
-
-// Returns the partition size, in sectors, associated with a proof type.
-// The partition size is the number of sectors proved in a single PoSt proof.
-func (p RegisteredSealProof) WindowPoStPartitionSectors() (uint64, error) {
-	info, ok := SealProofInfos[p]
-	if !ok {
-		return 0, errors.Errorf("unsupported proof type: %v", p)
-	}
-	return info.WindowPoStPartitionSectors, nil
 }
 
 // RegisteredWinningPoStProof produces the PoSt-specific RegisteredProof corresponding
@@ -189,14 +155,60 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 	return info.WindowPoStProof, nil
 }
 
-// The maximum duration a sector sealed with this proof may exist between activation and expiration.
-// This ensures that SDR is secure in the cost model for Window PoSt and in the time model for Winning PoSt
-// This is based on estimation of hardware latency improvement and hardware and software cost reduction.
-const SectorMaximumLifetimeSDR = ChainEpoch(1_262_277 * 5)
+// Policy values for a seal proof type.
+type SealProofPolicy struct {
+	WindowPoStPartitionSectors uint64
+	SectorMaxLifetime          ChainEpoch
+  	ConsensusMinerMinPower     StoragePower
+}
+
+// For all Stacked DRG sectors, the max is 5 years
+const epochsPerYear = 1_051_200
+const fiveYears = ChainEpoch(5 * epochsPerYear)
+
+// Partition sizes must match those used by the proofs library.
+// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
+var SealProofPolicies = map[RegisteredSealProof]*SealProofPolicy{
+	RegisteredSealProof_StackedDrg2KiBV1: {
+		WindowPoStPartitionSectors: 2,
+		SectorMaxLifetime:          fiveYears,
+    	ConsensusMinerMinPower:     NewStoragePower(0),
+	},
+	RegisteredSealProof_StackedDrg8MiBV1: {
+		WindowPoStPartitionSectors: 2,
+		SectorMaxLifetime:          fiveYears,
+    	ConsensusMinerMinPower:     NewStoragePower(16 << 20),
+	},
+	RegisteredSealProof_StackedDrg512MiBV1: {
+		WindowPoStPartitionSectors: 2,
+		SectorMaxLifetime:          fiveYears,
+   		ConsensusMinerMinPower:     NewStoragePower(1 << 30),
+	},
+	RegisteredSealProof_StackedDrg32GiBV1: {
+		WindowPoStPartitionSectors: 2349,
+		SectorMaxLifetime:          fiveYears,
+    	ConsensusMinerMinPower:     NewStoragePower(100 << 40),
+	},
+	RegisteredSealProof_StackedDrg64GiBV1: {
+		WindowPoStPartitionSectors: 2300,
+		SectorMaxLifetime:          fiveYears,
+    	ConsensusMinerMinPower:     NewStoragePower(200 << 40),
+	},
+}
+
+// Returns the partition size, in sectors, associated with a proof type.
+// The partition size is the number of sectors proved in a single PoSt proof.
+func SealProofWindowPoStPartitionSectors(p RegisteredSealProof) (uint64, error) {
+	info, ok := SealProofPolicies[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.WindowPoStPartitionSectors, nil
+}
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
-func (p RegisteredSealProof) SectorMaximumLifetime() (ChainEpoch, error) {
-	info, ok := SealProofInfos[p]
+func SealProofSectorMaximumLifetime(p RegisteredSealProof) (ChainEpoch, error) {
+	info, ok := SealProofPolicies[p]
 	if !ok {
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
@@ -211,8 +223,8 @@ func (p RegisteredSealProof) SectorMaximumLifetime() (ChainEpoch, error) {
 // - Ensures that a specific soundness for the power table
 // Note: We may be able to reduce this in the future, addressing consensus faults with more complicated penalties,
 // sybil generation with crypto-economic mechanism, and PoSt soundness by increasing the challenges for small miners.
-func (p RegisteredSealProof) ConsensusMinerMinPower() (StoragePower, error) {
-	info, ok := SealProofInfos[p]
+func ConsensusMinerMinPower(p RegisteredSealProof) (StoragePower, error) {
+	info, ok := SealProofPolicies[p]
 	if !ok {
 		return NewStoragePower(0), errors.Errorf("unsupported proof type: %v", p)
 	}
@@ -251,12 +263,12 @@ func (p RegisteredPoStProof) SectorSize() (SectorSize, error) {
 
 // Returns the partition size, in sectors, associated with a proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
-func (p RegisteredPoStProof) WindowPoStPartitionSectors() (uint64, error) {
+func PoStProofWindowPoStPartitionSectors(p RegisteredPoStProof) (uint64, error) {
 	sp, err := p.RegisteredSealProof()
 	if err != nil {
 		return 0, err
 	}
-	return sp.WindowPoStPartitionSectors()
+	return SealProofWindowPoStPartitionSectors(sp)
 }
 
 ///

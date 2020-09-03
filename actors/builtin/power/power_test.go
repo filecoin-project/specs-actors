@@ -245,7 +245,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	miner5 := tutil.NewIDAddr(t, 115)
 
 	// These tests use the min power for consensus to check the accounting above and below that value.
-	powerUnit, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	powerUnit, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 
 	mul := func(a big.Int, b int64) big.Int {
@@ -397,7 +397,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
 			nil, abi.RegisteredSealProof_StackedDrg64GiBV1, big.Zero())
 
-		power64Unit, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
+		power64Unit, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
 		require.NoError(t, err)
 		assert.True(t, power64Unit.GreaterThan(powerUnit))
 
@@ -500,7 +500,7 @@ func TestCron(t *testing.T) {
 	})
 
 	t.Run("test amount sent to reward actor and state change", func(t *testing.T) {
-		powerUnit, err := abi.RegisteredSealProof_StackedDrg2KiBV1.ConsensusMinerMinPower()
+		powerUnit, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg2KiBV1)
 		require.NoError(t, err)
 
 		miner3 := tutil.NewIDAddr(t, 103)
@@ -622,7 +622,7 @@ func TestCron(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 
-		rawPow, err := abi.RegisteredSealProof_StackedDrg2KiBV1.ConsensusMinerMinPower()
+		rawPow, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg2KiBV1)
 		require.NoError(t, err)
 
 		qaPow := rawPow
