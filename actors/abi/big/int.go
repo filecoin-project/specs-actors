@@ -24,8 +24,8 @@ func NewIntUnsigned(i uint64) Int {
 	return Int{big.NewInt(0).SetUint64(i)}
 }
 
-func NewFromGo(i big.Int) Int {
-	return Int{big.NewInt(0).Set(&i)}
+func NewFromGo(i *big.Int) Int {
+	return Int{big.NewInt(0).Set(i)}
 }
 
 func Zero() Int {

@@ -58,7 +58,7 @@ func TestNewInt(t *testing.T) {
 	assert.True(t, ta.Equals(tc))
 	assert.Equal(t, "999", ta.String())
 
-	td := NewFromGo(*b)
+	td := NewFromGo(b)
 	assert.True(t, td.Equals(tb))
 	assert.Equal(t, td.Int, b)
 }
