@@ -2,7 +2,6 @@ package power
 
 import (
 	"bytes"
-
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -229,6 +228,7 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *adt.
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() {
+		validateMinerHasClaim(rt, st, rt.Message().Caller())
 		st.addPledgeTotal(*pledgeDelta)
 	})
 	return nil
@@ -245,6 +245,8 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 
 	var st State
 	rt.State().Transaction(&st, func() {
+		validateMinerHasClaim(rt, st, minerAddr)
+
 		store := adt.AsStore(rt)
 		var mmap *adt.Multimap
 		if st.ProofValidationBatch == nil {
@@ -302,6 +304,17 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPow
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
+func validateMinerHasClaim(rt Runtime, st State, minerAddr address.Address) {
+	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
+	found, err := claims.Has(AddrKey(minerAddr))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
+	if !found {
+		rt.Abortf(exitcode.ErrForbidden, "unknown miner %s forbidden to interact with power actor", minerAddr)
+	}
+}
+
 func (a Actor) processBatchProofVerifies(rt Runtime) {
 	var st State
 
@@ -316,9 +329,20 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs validation batch")
 
+		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
 		err = mmap.ForAll(func(k string, arr *adt.Array) error {
 			a, err := address.NewFromBytes([]byte(k))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to parse address key")
+
+			// refuse to process proofs for miner with no claim
+			found, err := claims.Has(AddrKey(a))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
+			if !found {
+				rt.Log(vmr.WARN, "skipping batch verifies for unknown miner %s", a)
+				return nil
+			}
 
 			miners = append(miners, a)
 
@@ -384,11 +408,23 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
+		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
 		for epoch := st.FirstCronEpoch; epoch <= rtEpoch; epoch++ {
 			epochEvents, err := loadCronEvents(events, epoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events at %v", epoch)
 
-			cronEvents = append(cronEvents, epochEvents...)
+			for _, evt := range epochEvents {
+				// refuse to process proofs for miner with no claim
+				found, err := claims.Has(AddrKey(evt.MinerAddr))
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
+				if !found {
+					rt.Log(vmr.WARN, "skipping cron event for unknown miner %s", a)
+					continue
+				}
+				cronEvents = append(cronEvents, evt)
+			}
 
 			if len(epochEvents) > 0 {
 				err = events.RemoveAll(epochKey(epoch))
@@ -418,31 +454,23 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
 		}
 	}
-	rt.State().Transaction(&st, func() {
-		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
-		// Remove power and leave miner frozen
-		for _, minerAddr := range failedMinerCrons {
-			claim, found, err := getClaim(claims, minerAddr)
-			if err != nil {
-				rt.Log(runtime.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
-				continue
-			}
-			if !found {
-				rt.Log(runtime.WARN, "miner OnDeferredCronEvent failed for miner %s with no power", minerAddr)
-				continue
+	if len(failedMinerCrons) > 0 {
+		rt.State().Transaction(&st, func() {
+			claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+
+			// Remove miner claim and leave miner frozen
+			for _, minerAddr := range failedMinerCrons {
+				err := claims.Delete(AddrKey(minerAddr))
+				if err != nil {
+					rt.Log(runtime.ERROR, "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+					continue
+				}
 			}
 
-			// zero out miner power
-			err = st.addToClaim(claims, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
-			if err != nil {
-				rt.Log(runtime.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
-				continue
-			}
-		}
-
-		st.Claims, err = claims.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
-	})
+			st.Claims, err = claims.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
+		})
+	}
 }
