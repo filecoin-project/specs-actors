@@ -5,8 +5,9 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -38,7 +39,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = Actor{}
+var _ aabi.Invokee = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
@@ -236,7 +237,7 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *adt.
 // This number is empirically determined
 const GasOnSubmitVerifySeal = 34721049
 
-func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *abi.SealVerifyInfo) *adt.EmptyValue {
+func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *aabi.SealVerifyInfo) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Message().Caller()
@@ -304,7 +305,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	var st State
 
 	var miners []address.Address
-	verifies := make(map[address.Address][]abi.SealVerifyInfo)
+	verifies := make(map[address.Address][]aabi.SealVerifyInfo)
 
 	rt.State().Transaction(&st, func() {
 		store := adt.AsStore(rt)
@@ -320,8 +321,8 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 
 			miners = append(miners, a)
 
-			var infos []abi.SealVerifyInfo
-			var svi abi.SealVerifyInfo
+			var infos []aabi.SealVerifyInfo
+			var svi aabi.SealVerifyInfo
 			err = arr.ForEach(&svi, func(i int64) error {
 				infos = append(infos, svi)
 				return nil

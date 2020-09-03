@@ -5,7 +5,7 @@ import (
 	"github.com/minio/sha256-simd"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/go-state-types/abi"
 )
 
 func MakeCID(input string, prefix *cid.Prefix) cid.Cid {

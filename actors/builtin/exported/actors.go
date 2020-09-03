@@ -1,11 +1,10 @@
 package exported
 
 import (
+	"github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-
 	"github.com/filecoin-project/specs-actors/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"

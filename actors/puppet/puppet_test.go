@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/puppet"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"

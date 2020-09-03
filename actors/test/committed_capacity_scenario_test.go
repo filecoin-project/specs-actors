@@ -4,8 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
+
+	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
@@ -16,10 +22,6 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 	vm "github.com/filecoin-project/specs-actors/support/vm"
 
-	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-bitfield"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
