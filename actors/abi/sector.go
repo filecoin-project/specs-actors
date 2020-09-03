@@ -123,7 +123,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning8MiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow8MiBV1,
 		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(0),
+		ConsensusMinerMinPower:     NewStoragePower(16 << 20),
 	},
 	RegisteredSealProof_StackedDrg512MiBV1: {
 		SectorSize:                 512 << 20,
@@ -131,7 +131,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning512MiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow512MiBV1,
 		SectorMaxLifetime:          fiveYears,
-		ConsensusMinerMinPower:     NewStoragePower(0),
+		ConsensusMinerMinPower:     NewStoragePower(1 << 30),
 	},
 	RegisteredSealProof_StackedDrg32GiBV1: {
 		SectorSize:                 32 << 30,
