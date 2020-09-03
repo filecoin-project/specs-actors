@@ -2547,7 +2547,7 @@ func TestRepayDebts(t *testing.T) {
 
 		amountToLock := big.Mul(big.NewInt(3), big.NewInt(1e18))
 		rt.SetBalance(amountToLock)
-		actor.addLockedFunds(rt, amountToLock)
+		actor.applyRewards(rt, amountToLock, big.Zero())
 
 		// introduce fee debt
 		st := getState(rt)
@@ -3175,7 +3175,7 @@ func TestApplyRewards(t *testing.T) {
 	t.Run("penalty is burnt", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		
+
 		reward := abi.NewTokenAmount(600_000)
 		penalty := abi.NewTokenAmount(300_000)
 		rt.SetBalance(big.Add(rt.Balance(), reward))

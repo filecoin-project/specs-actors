@@ -1601,8 +1601,7 @@ func (a Actor) RepayDebt(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
-		// and repay fee debt now.
+		// Repay as much fee debt as possible.
 		fromVesting, fromBalance, err = st.RepayPartialDebtInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock fee debt")
 	})
