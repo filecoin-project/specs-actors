@@ -95,7 +95,7 @@ func RegisteredSealProof(p stabi.RegisteredPoStProof) (stabi.RegisteredSealProof
 }
 
 func SectorSizeFromPoSt(p stabi.RegisteredPoStProof) (stabi.SectorSize, error) {
-	sp, err := p.RegisteredSealProof()
+	sp, err := RegisteredSealProof(p)
 	if err != nil {
 		return 0, err
 	}
@@ -105,11 +105,11 @@ func SectorSizeFromPoSt(p stabi.RegisteredPoStProof) (stabi.SectorSize, error) {
 // Returns the partition size, in sectors, associated with a proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
 func WindowPoStPartitionSectorsFromPoSt(p stabi.RegisteredPoStProof) (uint64, error) {
-	sp, err := p.RegisteredSealProof()
+	sp, err := RegisteredSealProof(p)
 	if err != nil {
 		return 0, err
 	}
-	return sp.WindowPoStPartitionSectors()
+	return WindowPoStPartitionSectors(sp)
 }
 
 ///
