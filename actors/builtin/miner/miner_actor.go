@@ -1441,8 +1441,12 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, newlyVested)
 		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, params.Reward)
 
+		// If the miner incurred block mining penalties charge these to miner's fee debt
 		err = st.ApplyPenalty(params.Penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
+		// Attempt to repay all fee debt in this call. In most cases the miner will have enough
+		// funds in the *reward alone* to cover the penalty. In the rare case a miner incurs more
+		// penalty than it can pay for with reward and existing funds, it will go into fee debt.
 		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, rt.CurrEpoch(), rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to repay penalty")
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
