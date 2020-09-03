@@ -68,9 +68,10 @@ var MethodsPower = struct {
 	EnrollCronEvent          abi.MethodNum
 	OnEpochTickEnd           abi.MethodNum
 	UpdatePledgeTotal        abi.MethodNum
+	Deprecated1              abi.MethodNum
 	SubmitPoRepForBulkVerify abi.MethodNum
 	CurrentTotalPower        abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8}
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
 var MethodsMiner = struct {
 	Constructor              abi.MethodNum

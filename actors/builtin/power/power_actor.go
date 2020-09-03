@@ -33,8 +33,9 @@ func (a Actor) Exports() []interface{} {
 		4:                         a.EnrollCronEvent,
 		5:                         a.OnEpochTickEnd,
 		6:                         a.UpdatePledgeTotal,
-		7:                         a.SubmitPoRepForBulkVerify,
-		8:                         a.CurrentTotalPower,
+		7:                         nil, // deprecated
+		8:                         a.SubmitPoRepForBulkVerify,
+		9:                         a.CurrentTotalPower,
 	}
 }
 

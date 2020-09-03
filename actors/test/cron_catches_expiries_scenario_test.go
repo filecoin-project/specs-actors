@@ -85,7 +85,8 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		Proofs: []abi.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
-		ChainCommitRand: fakeChainRandomness,
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  fakeChainRandomness,
 	}
 
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
@@ -130,6 +131,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	dlInfo, _, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
 
 	// prove original sector so it won't be faulted
+	submitParams.ChainCommitEpoch = dlInfo.Challenge
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 	require.Equal(t, exitcode.Ok, code)
 

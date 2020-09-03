@@ -91,7 +91,8 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		Proofs: []abi.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
-		ChainCommitRand: []byte("not really random"),
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte("not really random"),
 	}
 
 	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
@@ -334,7 +335,8 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			Proofs: []abi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
-			ChainCommitRand: []byte("not really random"),
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  []byte("not really random"),
 		}
 		_, code = tv.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		require.Equal(t, exitcode.Ok, code)
@@ -369,7 +371,8 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		Proofs: []abi.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
-		ChainCommitRand: []byte("not really random"),
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte("not really random"),
 	}
 	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 	require.Equal(t, exitcode.Ok, code)

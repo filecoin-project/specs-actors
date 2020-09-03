@@ -1343,8 +1343,9 @@ func TestWindowPost(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bf(uint64(sector.SectorNumber)),
 			}},
-			Proofs:          makePoStProofs(actor.postProofType),
-			ChainCommitRand: commitRand,
+			Proofs:           makePoStProofs(actor.postProofType),
+			ChainCommitEpoch: dlinfo.Challenge,
+			ChainCommitRand:  commitRand,
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
@@ -4061,10 +4062,11 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 	}
 
 	params := miner.SubmitWindowedPoStParams{
-		Deadline:        deadline.Index,
-		Partitions:      partitions,
-		Proofs:          proofs,
-		ChainCommitRand: commitRand,
+		Deadline:         deadline.Index,
+		Partitions:       partitions,
+		Proofs:           proofs,
+		ChainCommitEpoch: deadline.Challenge,
+		ChainCommitRand:  commitRand,
 	}
 
 	rt.Call(h.a.SubmitWindowedPoSt, &params)
