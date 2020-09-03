@@ -14,6 +14,8 @@ github.com/filecoin-project/go-crypto v0.0.0-20191218222705-effae4ea9f03/go.mod 
 github.com/filecoin-project/go-hamt-ipld v0.1.3 h1:CfHEyx0cYO3NP91yExqD3xxqbb/Ale+vHQZOyqQGfxk=
 github.com/filecoin-project/go-hamt-ipld v0.1.3/go.mod h1:REjlnb1+pe+fM8Q1OMt2fPZXn0KxWqJ4S7ZeS+2IksQ=
 github.com/filecoin-project/go-state-types v0.0.0-20200903042651-f6682d46fee6 h1:qBVCDpOGiZzMhDy/LeDxW2U2NVWH+hUULEca4nPdQWo=
+github.com/filecoin-project/go-state-types v0.0.0-20200903145444-247639ffa6ad h1:QdP78OrDeEvm/VaxKQ6kOQFSTm+/Y9g7quT5KChZAG8=
+github.com/filecoin-project/go-state-types v0.0.0-20200903145444-247639ffa6ad/go.mod h1:IQ0MBPnonv35CJHtWSN3YY1Hz2gkPru1Q9qoaYLxx9I=
 github.com/gogo/protobuf v1.3.1 h1:DqDEcV5aeaTmdFBePNpYsp3FlcVH/2ISVVM9Qf8PSls=
 github.com/gogo/protobuf v1.3.1/go.mod h1:SlYgWuQ5SjCEi6WLHjHCa1yvBfUnHcTbrrZtXPKa29o=
 github.com/google/go-cmp v0.4.0 h1:xsAVV57WRhGj6kEIi8ReJzQlHHqcBYCElAvkovg3B/4=
