@@ -11,11 +11,12 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
@@ -75,7 +76,7 @@ type Runtime struct {
 }
 
 type expectBatchVerifySeals struct {
-	in  map[addr.Address][]abi.SealVerifyInfo
+	in  map[addr.Address][]aabi.SealVerifyInfo
 	out map[addr.Address][]bool
 	err error
 }
@@ -111,7 +112,7 @@ type expectVerifySig struct {
 }
 
 type expectVerifySeal struct {
-	seal   abi.SealVerifyInfo
+	seal   aabi.SealVerifyInfo
 	result error
 }
 
@@ -123,7 +124,7 @@ type expectComputeUnsealedSectorCID struct {
 }
 
 type expectVerifyPoSt struct {
-	post   abi.WindowPoStVerifyInfo
+	post   aabi.WindowPoStVerifyInfo
 	result error
 }
 
@@ -589,7 +590,7 @@ func (rt *Runtime) ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces 
 	return cid.Cid{}, nil
 }
 
-func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
+func (rt *Runtime) VerifySeal(seal aabi.SealVerifyInfo) error {
 	exp := rt.expectVerifySeal
 	if exp != nil {
 		if !reflect.DeepEqual(exp.seal, seal) {
@@ -607,13 +608,13 @@ func (rt *Runtime) VerifySeal(seal abi.SealVerifyInfo) error {
 	return nil
 }
 
-func (rt *Runtime) ExpectBatchVerifySeals(in map[addr.Address][]abi.SealVerifyInfo, out map[addr.Address][]bool, err error) {
+func (rt *Runtime) ExpectBatchVerifySeals(in map[addr.Address][]aabi.SealVerifyInfo, out map[addr.Address][]bool, err error) {
 	rt.expectBatchVerifySeals = &expectBatchVerifySeals{
 		in, out, err,
 	}
 }
 
-func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]abi.SealVerifyInfo) (map[addr.Address][]bool, error) {
+func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]aabi.SealVerifyInfo) (map[addr.Address][]bool, error) {
 	exp := rt.expectBatchVerifySeals
 	if exp != nil {
 		if len(vis) != len(exp.in) {
@@ -654,7 +655,7 @@ func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]abi.SealVerifyInfo) (
 	return nil, nil
 }
 
-func (rt *Runtime) VerifyPoSt(vi abi.WindowPoStVerifyInfo) error {
+func (rt *Runtime) VerifyPoSt(vi aabi.WindowPoStVerifyInfo) error {
 	exp := rt.expectVerifyPoSt
 	if exp != nil {
 		if !reflect.DeepEqual(exp.post, vi) {
@@ -860,7 +861,7 @@ func (rt *Runtime) SetHasher(f func(data []byte) [32]byte) {
 	rt.hashfunc = f
 }
 
-func (rt *Runtime) ExpectVerifySeal(seal abi.SealVerifyInfo, result error) {
+func (rt *Runtime) ExpectVerifySeal(seal aabi.SealVerifyInfo, result error) {
 	rt.expectVerifySeal = &expectVerifySeal{
 		seal:   seal,
 		result: result,
@@ -873,7 +874,7 @@ func (rt *Runtime) ExpectComputeUnsealedSectorCID(reg abi.RegisteredSealProof, p
 	}
 }
 
-func (rt *Runtime) ExpectVerifyPoSt(post abi.WindowPoStVerifyInfo, result error) {
+func (rt *Runtime) ExpectVerifyPoSt(post aabi.WindowPoStVerifyInfo, result error) {
 	rt.expectVerifyPoSt = &expectVerifyPoSt{
 		post:   post,
 		result: result,
