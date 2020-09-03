@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
@@ -90,7 +91,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			Index:   pIdx,
 			Skipped: bitfield.New(),
 		}},
-		Proofs: []abi.PoStProof{{
+		Proofs: []aabi.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitRand: []byte("not really random"),
@@ -333,7 +334,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 				// skip cc upgrade
 				Skipped: bitfield.NewFromSet([]uint64{uint64(upgradeSectorNumber)}),
 			}},
-			Proofs: []abi.PoStProof{{
+			Proofs: []aabi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitRand: []byte("not really random"),
@@ -368,7 +369,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			Index:   pIdx,
 			Skipped: bitfield.New(),
 		}},
-		Proofs: []abi.PoStProof{{
+		Proofs: []aabi.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitRand: []byte("not really random"),

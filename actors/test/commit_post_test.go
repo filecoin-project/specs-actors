@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
@@ -217,7 +218,7 @@ func TestCommitPoStFlow(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bitfield.New(),
 			}},
-			Proofs: []abi.PoStProof{{
+			Proofs: []aabi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitRand: []byte("not really random"),
@@ -268,7 +269,7 @@ func TestCommitPoStFlow(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
 			}},
-			Proofs: []abi.PoStProof{{
+			Proofs: []aabi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitRand: []byte("not really random"),
