@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
+	abi "github.com/filecoin-project/specs-actors/v1/actors/abi"
+	crypto "github.com/filecoin-project/specs-actors/v1/actors/crypto"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )

@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/system"
-	"github.com/filecoin-project/specs-actors/support/mock"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin/system"
+	"github.com/filecoin-project/specs-actors/v1/support/mock"
 )
 
 func TestExports(t *testing.T) {

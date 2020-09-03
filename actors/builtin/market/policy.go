@@ -1,9 +1,9 @@
 package market
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
 )
 
 // The number of epochs between payment and other state processing for deals.

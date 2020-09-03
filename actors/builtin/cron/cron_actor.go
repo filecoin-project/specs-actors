@@ -1,10 +1,10 @@
 package cron
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	vmr "github.com/filecoin-project/specs-actors/v1/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
 )
 
 // The cron actor is a built-in singleton that sends messages to other registered actors at the end of each epoch.

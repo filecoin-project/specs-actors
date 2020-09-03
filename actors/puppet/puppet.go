@@ -8,11 +8,11 @@ import (
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
 )
 
 // The Puppet Actor exists to aid testing the runtime and environment in which it's embedded. It provides direct access

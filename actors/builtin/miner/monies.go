@@ -1,12 +1,12 @@
 package miner
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/math"
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/math"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/smoothing"
 )
 
 // Projection period of expected sector block reward for deposit required to pre-commit a sector.

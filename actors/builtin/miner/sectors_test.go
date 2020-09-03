@@ -7,12 +7,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/ipld"
-	tutil "github.com/filecoin-project/specs-actors/support/testing"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/support/ipld"
+	tutil "github.com/filecoin-project/specs-actors/v1/support/testing"
 )
 
 func sectorsArr(t *testing.T, store adt.Store, sectors []*miner.SectorOnChainInfo) miner.Sectors {

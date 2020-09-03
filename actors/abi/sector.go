@@ -8,7 +8,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
 )
 
 // SectorNumber is a numeric identifier for a sector. It is usually relative to a miner.

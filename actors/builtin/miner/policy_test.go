@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin/miner"
 )
 
 func TestQuality(t *testing.T) {

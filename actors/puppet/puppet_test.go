@@ -6,12 +6,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/puppet"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/support/testing"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/puppet"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/v1/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v1/support/testing"
 )
 
 func TestSend(t *testing.T) {

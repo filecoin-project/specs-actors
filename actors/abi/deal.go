@@ -1,6 +1,6 @@
 package abi
 
-import "github.com/filecoin-project/specs-actors/actors/abi/big"
+import "github.com/filecoin-project/specs-actors/v1/actors/abi/big"
 
 type DealID uint64
 

@@ -9,12 +9,12 @@ import (
 	errors "github.com/pkg/errors"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	. "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	. "github.com/filecoin-project/specs-actors/v1/actors/util"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/smoothing"
 )
 
 // genesis power in bytes = 750,000 GiB

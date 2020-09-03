@@ -1,6 +1,6 @@
 package abi
 
-import "github.com/filecoin-project/specs-actors/actors/abi/big"
+import "github.com/filecoin-project/specs-actors/v1/actors/abi/big"
 
 // Number of token units in an abstract "FIL" token.
 // The network works purely in the indivisible token amounts. This constant converts to a fixed decimal with more

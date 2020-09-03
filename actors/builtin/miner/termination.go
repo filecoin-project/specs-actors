@@ -5,7 +5,7 @@ import (
 
 	"github.com/filecoin-project/go-bitfield"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
 )
 
 type TerminationResult struct {

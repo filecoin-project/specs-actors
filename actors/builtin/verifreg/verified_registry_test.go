@@ -7,14 +7,14 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/support/testing"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v1/support/testing"
 )
 
 func TestExports(t *testing.T) {

@@ -8,15 +8,15 @@ import (
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/support/testing"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	init_ "github.com/filecoin-project/specs-actors/v1/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v1/support/testing"
 )
 
 func TestExports(t *testing.T) {

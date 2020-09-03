@@ -1,6 +1,6 @@
 package miner
 
-import "github.com/filecoin-project/specs-actors/actors/abi"
+import "github.com/filecoin-project/specs-actors/v1/actors/abi"
 
 // A spec for quantization.
 type QuantSpec struct {

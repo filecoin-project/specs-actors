@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	tutil "github.com/filecoin-project/specs-actors/support/testing"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
+	tutil "github.com/filecoin-project/specs-actors/v1/support/testing"
 )
 
 func TestAddrKey(t *testing.T) {

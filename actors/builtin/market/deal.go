@@ -7,9 +7,9 @@ import (
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/crypto"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/crypto"
 )
 
 var PieceCIDPrefix = cid.Prefix{
@@ -35,7 +35,7 @@ type DealProposal struct {
 	Provider     addr.Address
 
 	// Label is an arbitrary client chosen label to apply to the deal
-	// TODO: Limit the size of this: https://github.com/filecoin-project/specs-actors/issues/897
+	// TODO: Limit the size of this: https://github.com/filecoin-project/specs-actors/v1/issues/897
 	Label string
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,

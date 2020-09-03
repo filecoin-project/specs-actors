@@ -6,10 +6,10 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	autil "github.com/filecoin-project/specs-actors/v1/actors/util"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/adt"
 )
 
 type AddrKey = adt.AddrKey

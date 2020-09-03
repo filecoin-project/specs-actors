@@ -3,7 +3,7 @@ package reward
 import (
 	"math/big"
 
-	"github.com/filecoin-project/specs-actors/actors/util/math"
+	"github.com/filecoin-project/specs-actors/v1/actors/util/math"
 )
 
 var (

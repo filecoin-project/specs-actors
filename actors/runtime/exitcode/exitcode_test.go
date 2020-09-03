@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
 )
 
 func TestWithContext(t *testing.T) {

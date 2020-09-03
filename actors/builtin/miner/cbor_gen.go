@@ -7,7 +7,7 @@ import (
 	"io"
 
 	address "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/specs-actors/v1/actors/abi"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"

@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	vm "github.com/filecoin-project/specs-actors/support/vm"
+	"github.com/filecoin-project/specs-actors/v1/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v1/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
+	vm "github.com/filecoin-project/specs-actors/v1/support/vm"
 )
 
 func TestMarketWithdraw(t *testing.T) {

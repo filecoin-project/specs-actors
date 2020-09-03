@@ -9,8 +9,8 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	vmr "github.com/filecoin-project/specs-actors/v1/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v1/actors/runtime/exitcode"
 )
 
 // Store defines an interface required to back the ADTs in this package.
@@ -57,7 +57,7 @@ func (r rtStore) Context() context.Context {
 
 func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
 	// The Go context is (un/fortunately?) dropped here.
-	// See https://github.com/filecoin-project/specs-actors/issues/140
+	// See https://github.com/filecoin-project/specs-actors/v1/issues/140
 	if !r.Store().Get(c, out.(vmr.CBORUnmarshaler)) {
 		r.Abortf(exitcode.ErrNotFound, "not found")
 	}
@@ -66,7 +66,7 @@ func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
 
 func (r rtStore) Put(_ context.Context, v interface{}) (cid.Cid, error) {
 	// The Go context is (un/fortunately?) dropped here.
-	// See https://github.com/filecoin-project/specs-actors/issues/140
+	// See https://github.com/filecoin-project/specs-actors/v1/issues/140
 	return r.Store().Put(v.(vmr.CBORMarshaler)), nil
 }
 
