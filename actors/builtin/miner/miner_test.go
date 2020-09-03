@@ -776,7 +776,7 @@ func TestCommitments(t *testing.T) {
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
 		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
+		actor.applyRewards(rt, big.Mul(big.NewInt(5), faultPenalty), big.Zero())
 
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta:  &lostPower,
@@ -1026,7 +1026,7 @@ func TestCommitments(t *testing.T) {
 		faultPenalty := actor.undeclaredFaultPenalty(allSectors)
 		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
+		actor.applyRewards(rt, big.Mul(big.NewInt(5), faultPenalty), big.Zero())
 
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta:  &lostPower,
@@ -1326,7 +1326,7 @@ func TestWindowPost(t *testing.T) {
 
 		// add lots of funds so we can pay penalties without going into debt
 		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.addLockedFunds(rt, initialLocked)
+		actor.applyRewards(rt, initialLocked, big.Zero())
 
 		// Submit first PoSt to ensure we are sufficiently early to add a fault
 		// advance to next proving period
@@ -1385,7 +1385,7 @@ func TestWindowPost(t *testing.T) {
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
+		actor.applyRewards(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)), big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		st := getState(rt)
@@ -1453,7 +1453,7 @@ func TestWindowPost(t *testing.T) {
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
 		// add lots of funds so we can pay penalties without going into debt
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)))
+		actor.applyRewards(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)), big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		st := getState(rt)
@@ -1498,7 +1498,7 @@ func TestWindowPost(t *testing.T) {
 
 		// add lots of funds so we can pay penalties without going into debt
 		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.addLockedFunds(rt, initialLocked)
+		actor.applyRewards(rt, initialLocked, big.Zero())
 
 		// Submit first PoSt to ensure we are sufficiently early to add a fault
 		// advance to next proving period
@@ -1711,7 +1711,7 @@ func TestDeadlineCron(t *testing.T) {
 		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds so expectedFee is taken from locked funds
 		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
-		actor.addLockedFunds(rt, initialLocked)
+		actor.applyRewards(rt, initialLocked, big.Zero())
 
 		advanceDeadline(rt, actor, &cronConfig{
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
@@ -1740,10 +1740,6 @@ func TestDeadlineCron(t *testing.T) {
 		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
 		st.ProvingPeriodStart = expirationPeriod
 		st.CurrentDeadline = dlIdx
-
-		// introduce lots of fee debt
-		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
-		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
 
 		// Advance to expiration epoch and expect expiration during cron
@@ -1753,7 +1749,13 @@ func TestDeadlineCron(t *testing.T) {
 		// because we skip forward in state and don't post we incur SP
 		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds to locked funds so expectedFee is taken from locked funds
-		actor.addLockedFunds(rt, expectedFee)
+		actor.applyRewards(rt, expectedFee, big.Zero())
+
+		// introduce lots of fee debt
+		st = getState(rt)
+		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
 
 		// Miner balance = LF + IP. expectedFee covered by LF, debt repayment covered by IP
 		rt.SetBalance(big.Add(expectedFee, st.InitialPledge))
@@ -1784,7 +1786,7 @@ func TestDeadlineCron(t *testing.T) {
 
 		// add lots of funds so penalties come from vesting funds
 		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
-		actor.addLockedFunds(rt, initialLocked)
+		actor.applyRewards(rt, initialLocked, big.Zero())
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), activeSectors[0].SectorNumber)
@@ -1845,7 +1847,7 @@ func TestDeadlineCron(t *testing.T) {
 
 		// add lots of funds so we can pay penalties without going into debt
 		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.addLockedFunds(rt, initialLocked)
+		actor.applyRewards(rt, initialLocked, big.Zero())
 
 		// create enough sectors that one will be in a different partition
 		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
@@ -1900,7 +1902,7 @@ func TestDeclareFaults(t *testing.T) {
 
 		// add lots of funds so penalties come from vesting funds
 		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.addLockedFunds(rt, initialLocked)
+		actor.applyRewards(rt, initialLocked, big.Zero())
 
 		// find deadline for sector
 		st := getState(rt)
@@ -2353,7 +2355,7 @@ func TestTerminateSectors(t *testing.T) {
 
 		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
 		// correct fee calculation is used.
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+		actor.applyRewards(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)), big.Zero())
 		st := getState(rt)
 		initialLockedFunds := st.LockedFunds
 
@@ -2396,7 +2398,7 @@ func TestTerminateSectors(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// Add some locked funds to ensure full termination fee appears as pledge change.
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+		actor.applyRewards(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)), big.Zero())
 
 		// Move the current epoch forward so that the first deadline is a stable candidate for both sectors
 		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
@@ -2544,7 +2546,7 @@ func TestCompactPartitions(t *testing.T) {
 
 		// terminate sector1
 		rt.SetEpoch(rt.Epoch() + 100)
-		actor.addLockedFunds(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)))
+		actor.applyRewards(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)), big.Zero())
 		tsector := info[0]
 		sectorSize, err := tsector.SealProof.SectorSize()
 		require.NoError(t, err)
@@ -3052,7 +3054,7 @@ func TestReportConsensusFault(t *testing.T) {
 
 }
 
-func TestAddLockedFund(t *testing.T) {
+func TestApplyRewards(t *testing.T) {
 	periodOffset := abi.ChainEpoch(1808)
 	actor := newHarness(t, periodOffset)
 
@@ -3073,7 +3075,7 @@ func TestAddLockedFund(t *testing.T) {
 
 		// Lock some funds with AddLockedFund
 		amt := abi.NewTokenAmount(600_000)
-		actor.addLockedFunds(rt, amt)
+		actor.applyRewards(rt, amt, big.Zero())
 		st = getState(rt)
 		vestingFunds, err = st.LoadVestingFunds(adt.AsStore(rt))
 		require.NoError(t, err)
@@ -3091,30 +3093,103 @@ func TestAddLockedFund(t *testing.T) {
 		assert.Equal(t, amt, st.LockedFunds)
 	})
 
-	t.Run("funds vest when under collateralized", func(t *testing.T) {
+	t.Run("penalty is burnt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		
+		reward := abi.NewTokenAmount(600_000)
+		penalty := abi.NewTokenAmount(300_000)
+		rt.SetBalance(big.Add(rt.Balance(), reward))
+
+		actor.applyRewards(rt, reward, penalty)
+	})
+
+	t.Run("penalty is partially burnt and stored as fee debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		st := getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
+
+		amt := rt.Balance()
+		penalty := big.Mul(big.NewInt(3), amt)
+		reward := amt
+
+		// manually update actor balance to include the added funds on reward message
+		newBalance := big.Add(reward, amt)
+		rt.SetBalance(newBalance)
+
+		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
+
+		// pledge change is new reward - reward taken for fee debt
+		// zero here since all reward goes to debt
+		// so do not expect pledge update
+
+		// burn initial balance + reward = 2*amt
+		expectBurnt := big.Mul(big.NewInt(2), amt)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectBurnt, nil, exitcode.Ok)
+
+		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: reward, Penalty: penalty})
+		rt.Verify()
+
+		st = getState(rt)
+		// fee debt =  penalty - reward - initial balance = 3*amt - 2*amt = amt
+		assert.Equal(t, amt, st.FeeDebt)
+	})
+
+	// The system should not reach this state since fee debt removes mining eligibility
+	// But if invariants are violated this should work.
+	t.Run("rewards pay back fee debt ", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		st := getState(rt)
 
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
-		balance := rt.Balance()
-		st.FeeDebt = big.Mul(big.NewInt(2), balance) // FeeDebt twice total balance
-		availableBefore := st.GetAvailableBalance(balance)
-		assert.True(t, availableBefore.LessThan(big.Zero()))
+		amt := rt.Balance()
+		availableBefore := st.GetAvailableBalance(amt)
+		assert.True(t, availableBefore.GreaterThan(big.Zero()))
+		st.FeeDebt = big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
+		assert.True(t, st.GetAvailableBalance(amt).LessThan(big.Zero()))
+
 		rt.ReplaceState(st)
 
-		amt := abi.NewTokenAmount(600_000)
-		actor.addLockedFunds(rt, amt)
+		reward := big.Mul(big.NewInt(3), amt)
+		penalty := big.Zero()
 		// manually update actor balance to include the added funds from outside
-		newBalance := big.Add(balance, amt)
+		newBalance := big.Add(amt, reward)
 		rt.SetBalance(newBalance)
 
+		// pledge change is new reward - reward taken for fee debt
+		// 3*amt - 2*amt = amt
+		pledgeDelta := big.Sub(reward, st.FeeDebt)
+		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
+		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
+		// expect pledge update
+		rt.ExpectSend(
+			builtin.StoragePowerActorAddr,
+			builtin.MethodsPower.UpdatePledgeTotal,
+			&pledgeDelta,
+			abi.NewTokenAmount(0),
+			nil,
+			exitcode.Ok,
+		)
+
+		expectBurnt := st.FeeDebt
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectBurnt, nil, exitcode.Ok)
+
+		rt.Call(actor.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: reward, Penalty: penalty})
+		rt.Verify()
+
+		// Set balance to deduct fee
+		finalBalance := big.Sub(newBalance, expectBurnt)
+
 		st = getState(rt)
-		// no funds used to pay off ip debt
-		assert.Equal(t, availableBefore, st.GetAvailableBalance(newBalance))
-		assert.False(t, st.IsDebtFree())
-		// all funds locked in vesting table
+		// balance funds used to pay off fee debt
+		// available balance should be 2
+		assert.Equal(t, availableBefore, st.GetAvailableBalance(finalBalance))
+		assert.True(t, st.IsDebtFree())
+		// remaining funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
 	})
 
@@ -4065,20 +4140,33 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address)
 	rt.Verify()
 }
 
-func (h *actorHarness) addLockedFunds(rt *mock.Runtime, amt abi.TokenAmount) {
+func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmount) {
+	// This harness function does not handle the state where apply rewards is
+	// on a miner with existing fee debt.  This state is not protocol reachable
+	// because currently fee debt prevents election participation.
+	//
+	// We further assume the miner can pay the penalty.  If the miner
+	// goes into debt we can't rely on the harness call
+	// TODO unify those cases
+	pledgeDelta := big.Subtract(amt, penalty)
+
 	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
 	// expect pledge update
 	rt.ExpectSend(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdatePledgeTotal,
-		&amt,
+		&pledgeDelta,
 		abi.NewTokenAmount(0),
 		nil,
 		exitcode.Ok,
 	)
 
-	rt.Call(h.a.AddLockedFund, &amt)
+	if penalty.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty, nil, exitcode.Ok)
+	}
+
+	rt.Call(h.a.ApplyRewards, &builtin.ApplyRewardParams{Reward: amt, Penalty: penalty})
 	rt.Verify()
 }
 
