@@ -38,6 +38,7 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},
 		builtin.ConfirmSectorProofsParams{},
+		builtin.ApplyRewardParams{},
 	); err != nil {
 		panic(err)
 	}

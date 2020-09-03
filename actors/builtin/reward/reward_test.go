@@ -124,7 +124,7 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.Reset()
 	})
 
-	t.Run("pays reward and burns penalty", func(t *testing.T) {
+	t.Run("pays reward and tracks penalty", func(t *testing.T) {
 		rt := builder.Build(t)
 		startRealizedPower := abi.NewStoragePower(0)
 		actor.constructAndVerify(rt, &startRealizedPower)
@@ -133,7 +133,7 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		penalty := big.NewInt(100)
 		gasReward := big.NewInt(200)
-		expectedReward := big.Sum(big.Div(big.MustFromString(EpochZeroReward), big.NewInt(5)), gasReward, penalty.Neg())
+		expectedReward := big.Sum(big.Div(big.MustFromString(EpochZeroReward), big.NewInt(5)), gasReward)
 		actor.awardBlockReward(rt, winner, penalty, gasReward, 1, expectedReward)
 		rt.Reset()
 	})
@@ -149,9 +149,8 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.SetBalance(smallReward)
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
-		expectedReward := big.Sub(smallReward, penalty)
-		rt.ExpectSend(winner, builtin.MethodsMiner.AddLockedFund, &expectedReward, expectedReward, nil, 0)
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty, nil, 0)
+		expectedParams := builtin.ApplyRewardParams{Reward: smallReward, Penalty: penalty}
+		rt.ExpectSend(winner, builtin.MethodsMiner.ApplyRewards, &expectedParams, smallReward, nil, 0)
 		rt.Call(actor.AwardBlockReward, &reward.AwardBlockRewardParams{
 			Miner:     winner,
 			Penalty:   penalty,
@@ -201,7 +200,9 @@ func TestAwardBlockReward(t *testing.T) {
 
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		expectedReward := big.NewInt(1000)
-		rt.ExpectSend(miner, builtin.MethodsMiner.AddLockedFund, &expectedReward, expectedReward, nil, exitcode.ErrForbidden)
+		penalty := big.Zero()
+		expectedParams := builtin.ApplyRewardParams{Reward: expectedReward, Penalty: penalty}
+		rt.ExpectSend(miner, builtin.MethodsMiner.ApplyRewards, &expectedParams, expectedReward, nil, exitcode.ErrForbidden)
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedReward, nil, exitcode.Ok)
 
 		rt.Call(actor.AwardBlockReward, &reward.AwardBlockRewardParams{
@@ -274,10 +275,9 @@ func (h *rewardHarness) updateNetworkKPI(rt *mock.Runtime, currRawPower *abi.Sto
 
 func (h *rewardHarness) awardBlockReward(rt *mock.Runtime, miner address.Address, penalty, gasReward abi.TokenAmount, winCount int64, expectedPayment abi.TokenAmount) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	rt.ExpectSend(miner, builtin.MethodsMiner.AddLockedFund, &expectedPayment, expectedPayment, nil, 0)
-	if penalty.GreaterThan(big.Zero()) {
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty, nil, 0)
-	}
+	expectedParams := builtin.ApplyRewardParams{Reward: expectedPayment, Penalty: penalty}
+	rt.ExpectSend(miner, builtin.MethodsMiner.ApplyRewards, &expectedParams, expectedPayment, nil, 0)
+
 	rt.Call(h.AwardBlockReward, &reward.AwardBlockRewardParams{
 		Miner:     miner,
 		Penalty:   penalty,

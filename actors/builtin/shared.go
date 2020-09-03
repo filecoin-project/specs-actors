@@ -87,3 +87,8 @@ func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, er
 
 	return idAddr, nil
 }
+
+type ApplyRewardParams struct {
+	Reward  abi.TokenAmount
+	Penalty abi.TokenAmount
+}
