@@ -624,7 +624,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 }
 
 func TestSectorAssignment(t *testing.T) {
-	partitionSectors, err := abi.RegisteredSealProof_StackedDrg32GiBV1.WindowPoStPartitionSectors()
+	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
 	require.NoError(t, err)
@@ -1006,7 +1006,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	sectorSize, err := testSealProofType.SectorSize()
 	require.NoError(t, err)
 
-	partitionSectors, err := testSealProofType.WindowPoStPartitionSectors()
+	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(testSealProofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{

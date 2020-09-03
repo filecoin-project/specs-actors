@@ -192,7 +192,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		return nil, err
 	}
 
-	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
+	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(sealProofType)
 	if err != nil {
 		return nil, err
 	}

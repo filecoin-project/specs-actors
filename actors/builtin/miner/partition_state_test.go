@@ -689,7 +689,7 @@ func TestPartitions(t *testing.T) {
 		proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
 		sectorSize, err := proofType.SectorSize()
 		require.NoError(t, err)
-		partitionSectors, err := proofType.WindowPoStPartitionSectors()
+		partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(proofType)
 		require.NoError(t, err)
 
 		manySectors := make([]*miner.SectorOnChainInfo, partitionSectors)
