@@ -2115,7 +2115,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		// and prove it once to activate it.
 		advanceAndSubmitPoSts(rt, actor, sector)
 
-		maxLifetime, err := aabi.SectorMaximumLifetime(sector.SealProof)
+		maxLifetime, err := aabi.SealProofSectorMaximumLifetime(sector.SealProof)
 		require.NoError(t, err)
 
 		st := getState(rt)
@@ -3363,7 +3363,7 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 	require.NoError(h.t, err)
 	h.sectorSize, err = proof.SectorSize()
 	require.NoError(h.t, err)
-	h.partitionSize, err = aabi.WindowPoStPartitionSectors(proof)
+	h.partitionSize, err = aabi.SealProofWindowPoStPartitionSectors(proof)
 	require.NoError(h.t, err)
 }
 

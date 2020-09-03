@@ -8,10 +8,10 @@ import (
 
 
 // Metadata about a seal proof type.
-type SealProofInfo struct {
-	ProofInfo                  *stabi.SealProofInfo
+type SealProofPolicy struct {
 	WindowPoStPartitionSectors uint64
 	SectorMaxLifetime          stabi.ChainEpoch
+	ConsensusMinerMinPower     stabi.StoragePower
 }
 
 // For all Stacked DRG sectors, the max is 5 years
@@ -20,57 +20,70 @@ const fiveYears = stabi.ChainEpoch(5 * epochsPerYear)
 
 // Partition sizes must match those used by the proofs library.
 // See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
-var SealProofInfos = map[stabi.RegisteredSealProof]*SealProofInfo{
+var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
 	stabi.RegisteredSealProof_StackedDrg2KiBV1: {
-		ProofInfo: stabi.SealProofInfos[stabi.RegisteredSealProof_StackedDrg2KiBV1],
 		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(0),
 	},
 	stabi.RegisteredSealProof_StackedDrg8MiBV1: {
-		ProofInfo: stabi.SealProofInfos[stabi.RegisteredSealProof_StackedDrg8MiBV1],
 		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(16 << 20),
 	},
 	stabi.RegisteredSealProof_StackedDrg512MiBV1: {
-		ProofInfo: stabi.SealProofInfos[stabi.RegisteredSealProof_StackedDrg512MiBV1],
 		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(1 << 30),
 	},
 	stabi.RegisteredSealProof_StackedDrg32GiBV1: {
-		ProofInfo: stabi.SealProofInfos[stabi.RegisteredSealProof_StackedDrg32GiBV1],
+
 		WindowPoStPartitionSectors: 2349,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(100 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg64GiBV1: {
-		ProofInfo: stabi.SealProofInfos[stabi.RegisteredSealProof_StackedDrg64GiBV1],
 		WindowPoStPartitionSectors: 2300,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(200 << 40),
 	},
 }
 
 // Returns the partition size, in sectors, associated with a proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
-func WindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, error) {
-	info, ok := SealProofInfos[p]
+func SealProofWindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, error) {
+	info, ok := SealProofPolicies[p]
 	if !ok {
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
 	return info.WindowPoStPartitionSectors, nil
 }
 
-// The maximum duration a sector sealed with this proof may exist between activation and expiration.
-// This ensures that SDR is secure in the cost model for Window PoSt and in the time model for Winning PoSt
-// This is based on estimation of hardware latency improvement and hardware and software cost reduction.
-const SectorMaximumLifetimeSDR = stabi.ChainEpoch(1_262_277 * 5)
-
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
-func SectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpoch, error) {
-	info, ok := SealProofInfos[p]
+func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpoch, error) {
+	info, ok := SealProofPolicies[p]
 	if !ok {
 		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
 	return info.SectorMaxLifetime, nil
 }
+
+// The minimum power of an individual miner to meet the threshold for leader election (in bytes).
+// Motivation:
+// - Limits sybil generation
+// - Improves consensus fault detection
+// - Guarantees a minimum fee for consensus faults
+// - Ensures that a specific soundness for the power table
+// Note: We may be able to reduce this in the future, addressing consensus faults with more complicated penalties,
+// sybil generation with crypto-economic mechanism, and PoSt soundness by increasing the challenges for small miners.
+func ConsensusMinerMinPower(p stabi.RegisteredSealProof) (stabi.StoragePower, error) {
+	info, ok := SealProofPolicies[p]
+	if !ok {
+		return stabi.NewStoragePower(0), errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.ConsensusMinerMinPower, nil
+}
+
 
 var PoStSealProofTypes = map[stabi.RegisteredPoStProof]stabi.RegisteredSealProof{
 	stabi.RegisteredPoStProof_StackedDrgWinning2KiBV1:   stabi.RegisteredSealProof_StackedDrg2KiBV1,
@@ -94,7 +107,7 @@ func RegisteredSealProof(p stabi.RegisteredPoStProof) (stabi.RegisteredSealProof
 	return sp, nil
 }
 
-func SectorSizeFromPoSt(p stabi.RegisteredPoStProof) (stabi.SectorSize, error) {
+func PoStProofSectorSize(p stabi.RegisteredPoStProof) (stabi.SectorSize, error) {
 	sp, err := RegisteredSealProof(p)
 	if err != nil {
 		return 0, err
@@ -104,12 +117,12 @@ func SectorSizeFromPoSt(p stabi.RegisteredPoStProof) (stabi.SectorSize, error) {
 
 // Returns the partition size, in sectors, associated with a proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
-func WindowPoStPartitionSectorsFromPoSt(p stabi.RegisteredPoStProof) (uint64, error) {
+func PoStProofWindowPoStPartitionSectors(p stabi.RegisteredPoStProof) (uint64, error) {
 	sp, err := RegisteredSealProof(p)
 	if err != nil {
 		return 0, err
 	}
-	return WindowPoStPartitionSectors(sp)
+	return SealProofWindowPoStPartitionSectors(sp)
 }
 
 ///

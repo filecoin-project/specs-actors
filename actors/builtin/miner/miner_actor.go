@@ -1827,7 +1827,7 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 
 	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
-	maxLifetime, err := aabi.SectorMaximumLifetime(sealProof)
+	maxLifetime, err := aabi.SealProofSectorMaximumLifetime(sealProof)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "unrecognized seal proof type %d", sealProof)
 	if expiration-activation > maxLifetime {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",
