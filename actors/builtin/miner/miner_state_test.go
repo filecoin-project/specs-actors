@@ -872,32 +872,64 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("power does not meet minimum", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		pSt := constructPowerStateWithPowerAtAddr(t, big.Zero(), actor.receiver, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
 		store := adt.AsStore(rt)
 		mSt := getState(rt)
 		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
 		currEpoch := abi.ChainEpoch(100000)
 
-		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
-		require.NoError(t, err)
-		assert.False(t, eligible)
-
-		// get minimum
+		// get minimums
 		pow32GiBMin, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
 		require.NoError(t, err)
-
-		// with enough miners above minimum, power must be above min
-		pow := big.Sub(pow32GiBMin, big.NewInt(1))
-		pSt = constructPowerStateWithPowerAtAddr(t, pow, actor.receiver, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
-		pSt.MinerAboveMinPowerCount = power.ConsensusMinerMinMiners
-
-		// miner with 64GiB sectors has higher power minimum
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg64GiBV1)
-		pSt = constructPowerStateWithPowerAtAddr(t, pow32GiBMin, actor.receiver, abi.RegisteredSealProof_StackedDrg64GiBV1, rt)
-		pSt.MinerAboveMinPowerCount = power.ConsensusMinerMinMiners
-		eligible, err = miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
+		pow64GiBMin, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
 		require.NoError(t, err)
-		assert.False(t, eligible)
+
+		for _, tc := range []struct {
+			consensusMiners int64
+			minerProof      abi.RegisteredSealProof
+			power           abi.StoragePower
+			eligible        bool
+		}{{
+			// below consensus minimum miners, power only needs to be positive to be eligible
+			consensusMiners: 0,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           big.Zero(),
+			eligible:        false,
+		}, {
+			consensusMiners: 0,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           big.NewInt(1),
+			eligible:        true,
+		}, {
+			// with enough miners above minimum, power must be at or above consensus min
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           big.Sub(pow32GiBMin, big.NewInt(1)),
+			eligible:        false,
+		}, {
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           pow32GiBMin,
+			eligible:        true,
+		}, {
+			// bigger sector size requires higher minimum
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1,
+			power:           pow32GiBMin,
+			eligible:        false,
+		}, {
+			// bigger sector size requires higher minimum
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1,
+			power:           pow64GiBMin,
+			eligible:        true,
+		}} {
+			actor.setProofType(tc.minerProof)
+			pSt := constructPowerStateWithPowerAtAddr(t, tc.power, actor.receiver, tc.minerProof, rt)
+			pSt.MinerAboveMinPowerCount = tc.consensusMiners
+			eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
+			require.NoError(t, err)
+			assert.Equal(t, tc.eligible, eligible)
+		}
 	})
 }
 
