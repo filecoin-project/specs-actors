@@ -276,7 +276,7 @@ type CurrentTotalPowerReturn struct {
 	RawBytePower            abi.StoragePower
 	QualityAdjPower         abi.StoragePower
 	PledgeCollateral        abi.TokenAmount
-	QualityAdjPowerSmoothed *smoothing.FilterEstimate
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.

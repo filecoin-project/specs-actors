@@ -3314,8 +3314,8 @@ type actorHarness struct {
 	networkQAPower  abi.StoragePower
 	baselinePower   abi.StoragePower
 
-	epochRewardSmooth  *smoothing.FilterEstimate
-	epochQAPowerSmooth *smoothing.FilterEstimate
+	epochRewardSmooth  smoothing.FilterEstimate
+	epochQAPowerSmooth smoothing.FilterEstimate
 }
 
 func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness {

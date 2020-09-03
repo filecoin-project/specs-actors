@@ -37,7 +37,7 @@ type State struct {
 	ThisEpochRawBytePower     abi.StoragePower
 	ThisEpochQualityAdjPower  abi.StoragePower
 	ThisEpochPledgeCollateral abi.TokenAmount
-	ThisEpochQAPowerSmoothed  *smoothing.FilterEstimate
+	ThisEpochQAPowerSmoothed  smoothing.FilterEstimate
 
 	MinerCount int64
 	// Number of miners having proven the minimum consensus power.

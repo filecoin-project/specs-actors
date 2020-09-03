@@ -400,7 +400,7 @@ type NetworkStats struct {
 	MinerCount                int64
 	MinerAboveMinPowerCount   int64
 	ThisEpochReward           abi.TokenAmount
-	ThisEpochRewardSmoothed   *smoothing.FilterEstimate
+	ThisEpochRewardSmoothed   smoothing.FilterEstimate
 	ThisEpochBaselinePower    abi.StoragePower
 	TotalMined                abi.TokenAmount
 }

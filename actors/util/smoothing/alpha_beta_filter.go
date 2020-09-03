@@ -79,28 +79,28 @@ func (fe *FilterEstimate) Estimate() big.Int {
 	return big.Rsh(fe.PositionEstimate, math.Precision) // Q.128 => Q.0
 }
 
-func DefaultInitialEstimate() *FilterEstimate {
-	return &FilterEstimate{
+func DefaultInitialEstimate() FilterEstimate {
+	return FilterEstimate{
 		PositionEstimate: defaultInitialPosition,
 		VelocityEstimate: defaultInitialVelocity,
 	}
 }
 
 // Create a new filter estimate given two Q.0 format ints.
-func NewEstimate(position, velocity big.Int) *FilterEstimate {
-	return &FilterEstimate{
+func NewEstimate(position, velocity big.Int) FilterEstimate {
+	return FilterEstimate{
 		PositionEstimate: big.Lsh(position, math.Precision), // Q.0 => Q.128
 		VelocityEstimate: big.Lsh(velocity, math.Precision), // Q.0 => Q.128
 	}
 }
 
 type AlphaBetaFilter struct {
-	prevEstimate *FilterEstimate
+	prevEstimate FilterEstimate
 	alpha        big.Int // Q.128
 	beta         big.Int // Q.128
 }
 
-func LoadFilter(prevEstimate *FilterEstimate, alpha, beta big.Int) *AlphaBetaFilter {
+func LoadFilter(prevEstimate FilterEstimate, alpha, beta big.Int) *AlphaBetaFilter {
 	return &AlphaBetaFilter{
 		prevEstimate: prevEstimate,
 		alpha:        alpha,
@@ -108,7 +108,7 @@ func LoadFilter(prevEstimate *FilterEstimate, alpha, beta big.Int) *AlphaBetaFil
 	}
 }
 
-func (f *AlphaBetaFilter) NextEstimate(observation big.Int, epochDelta abi.ChainEpoch) *FilterEstimate {
+func (f *AlphaBetaFilter) NextEstimate(observation big.Int, epochDelta abi.ChainEpoch) FilterEstimate {
 	deltaT := big.Lsh(big.NewInt(int64(epochDelta)), math.Precision) // Q.0 => Q.128
 	deltaX := big.Mul(deltaT, f.prevEstimate.VelocityEstimate)       // Q.128 * Q.128 => Q.256
 	deltaX = big.Rsh(deltaX, math.Precision)                         // Q.256 => Q.128
@@ -124,7 +124,7 @@ func (f *AlphaBetaFilter) NextEstimate(observation big.Int, epochDelta abi.Chain
 	revisionV = big.Div(revisionV, deltaT) // Q.256 / Q.128 => Q.128
 	velocity := big.Sum(f.prevEstimate.VelocityEstimate, revisionV)
 
-	return &FilterEstimate{
+	return FilterEstimate{
 		PositionEstimate: position,
 		VelocityEstimate: velocity,
 	}
@@ -132,7 +132,7 @@ func (f *AlphaBetaFilter) NextEstimate(observation big.Int, epochDelta abi.Chain
 
 // Extrapolate the CumSumRatio given two filters.
 // Output is in Q.128 format
-func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoch, estimateNum, estimateDenom *FilterEstimate) big.Int {
+func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoch, estimateNum, estimateDenom FilterEstimate) big.Int {
 	deltaT := big.Lsh(big.NewInt(int64(delta)), math.Precision)     // Q.0 => Q.128
 	t0 := big.Lsh(big.NewInt(int64(relativeStart)), math.Precision) // Q.0 => Q.128
 	// Renaming for ease of following spec and clarity
