@@ -1,8 +1,6 @@
 package main
 
 import (
-	gen "github.com/whyrusleeping/cbor-gen"
-
 	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
@@ -17,6 +15,7 @@ import (
 	system "github.com/filecoin-project/specs-actors/actors/builtin/system"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	puppet "github.com/filecoin-project/specs-actors/actors/puppet"
+	gen "github.com/whyrusleeping/cbor-gen"
 
 	smoothing "github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -24,8 +23,6 @@ import (
 func main() {
 	// Common types
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
-		abi.PieceInfo{},
-		abi.SectorID{},
 		abi.SectorInfo{},
 		abi.SealVerifyInfo{},
 		abi.PoStProof{},
