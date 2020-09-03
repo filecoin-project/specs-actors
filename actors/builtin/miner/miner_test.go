@@ -3177,6 +3177,43 @@ func TestReportConsensusFault(t *testing.T) {
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
 
+	t.Run("Double report of consensus fault fails", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		precommitEpoch := abi.ChainEpoch(1)
+		rt.SetEpoch(precommitEpoch)
+		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
+
+		startInfo := actor.getInfo(rt)
+		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultElapsed)
+		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
+		_ = sectorInfo
+
+		reportEpoch := abi.ChainEpoch(333)
+		rt.SetEpoch(reportEpoch)
+
+		actor.reportConsensusFault(rt, addr.TestAddress)
+		endInfo := actor.getInfo(rt)
+		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "consensus fault has already been reported", func() {
+			actor.reportConsensusFault(rt, addr.TestAddress)
+		})
+		rt.Reset()
+
+		// new consensus faults are forbidden until original has elapsed
+		rt.SetEpoch(endInfo.ConsensusFaultElapsed - 1)
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "consensus fault has already been reported", func() {
+			actor.reportConsensusFault(rt, addr.TestAddress)
+		})
+		rt.Reset()
+
+		// a new consensus fault can be reported once fault has elapsed
+		rt.SetEpoch(endInfo.ConsensusFaultElapsed)
+		actor.reportConsensusFault(rt, addr.TestAddress)
+		endInfo = actor.getInfo(rt)
+		assert.Equal(t, rt.Epoch()+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+	})
 }
 
 func TestApplyRewards(t *testing.T) {

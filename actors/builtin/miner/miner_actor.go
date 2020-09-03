@@ -1508,6 +1508,13 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	burnAmount := big.Zero()
 	rewardAmount := big.Zero()
 	rt.State().Transaction(&st, func() {
+		info := getMinerInfo(rt, &st)
+
+		// verify miner hasn't already been faulted
+		if rt.CurrEpoch() < info.ConsensusFaultElapsed {
+			rt.Abortf(exitcode.ErrForbidden, "consensus fault has already been reported")
+		}
+
 		err := st.ApplyPenalty(faultPenalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 
@@ -1522,7 +1529,6 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		rewardAmount = big.Min(burnAmount, slasherReward)
 		// reduce burnAmount by rewardAmount
 		burnAmount = big.Sub(burnAmount, rewardAmount)
-		info := getMinerInfo(rt, &st)
 		info.ConsensusFaultElapsed = rt.CurrEpoch() + ConsensusFaultIneligibilityDuration
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
