@@ -3,9 +3,8 @@ package miner
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestQuantizeUp(t *testing.T) {

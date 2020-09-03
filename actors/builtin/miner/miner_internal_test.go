@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/minio/blake2b-simd"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"

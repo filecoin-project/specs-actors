@@ -4,7 +4,6 @@ import (
 	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
-
 	"github.com/filecoin-project/go-state-types/abi"
 )
 

@@ -7,15 +7,16 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
-	. "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -192,7 +193,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		return nil, err
 	}
 
-	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
+	partitionSectors, err := aabi.WindowPoStPartitionSectors(sealProofType)
 	if err != nil {
 		return nil, err
 	}

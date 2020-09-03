@@ -11,6 +11,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 var _ = xerrors.Errorf
@@ -2426,12 +2428,12 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.Proofs = make([]abi.PoStProof, extra)
+		t.Proofs = make([]aabi.PoStProof, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
 
-		var v abi.PoStProof
+		var v aabi.PoStProof
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}

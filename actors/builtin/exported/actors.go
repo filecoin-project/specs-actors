@@ -1,9 +1,9 @@
 package exported
 
 import (
-	"github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/actors/builtin/cron"
@@ -18,10 +18,10 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 )
 
-var _ abi.Invokee = BuiltinActor{}
+var _ aabi.Invokee = BuiltinActor{}
 
 type BuiltinActor struct {
-	actor abi.Invokee
+	actor aabi.Invokee
 	code  cid.Cid
 }
 
