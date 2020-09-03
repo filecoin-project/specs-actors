@@ -872,15 +872,64 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("power does not meet minimum", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		pSt := constructPowerStateWithPowerAtAddr(t, big.Zero(), actor.receiver, rt)
 		store := adt.AsStore(rt)
 		mSt := getState(rt)
 		mSt.InitialPledge = miner.ConsensusFaultPenalty(thisEpochReward)
 		currEpoch := abi.ChainEpoch(100000)
 
-		eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
+		// get minimums
+		pow32GiBMin, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
 		require.NoError(t, err)
-		assert.False(t, eligible)
+		pow64GiBMin, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+
+		for _, tc := range []struct {
+			consensusMiners int64
+			minerProof      abi.RegisteredSealProof
+			power           abi.StoragePower
+			eligible        bool
+		}{{
+			// below consensus minimum miners, power only needs to be positive to be eligible
+			consensusMiners: 0,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           big.Zero(),
+			eligible:        false,
+		}, {
+			consensusMiners: 0,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           big.NewInt(1),
+			eligible:        true,
+		}, {
+			// with enough miners above minimum, power must be at or above consensus min
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           big.Sub(pow32GiBMin, big.NewInt(1)),
+			eligible:        false,
+		}, {
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg32GiBV1,
+			power:           pow32GiBMin,
+			eligible:        true,
+		}, {
+			// bigger sector size requires higher minimum
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1,
+			power:           pow32GiBMin,
+			eligible:        false,
+		}, {
+			// bigger sector size requires higher minimum
+			consensusMiners: power.ConsensusMinerMinMiners,
+			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1,
+			power:           pow64GiBMin,
+			eligible:        true,
+		}} {
+			actor.setProofType(tc.minerProof)
+			pSt := constructPowerStateWithPowerAtAddr(t, tc.power, actor.receiver, tc.minerProof, rt)
+			pSt.MinerAboveMinPowerCount = tc.consensusMiners
+			eligible, err := miner.MinerEligibleForElection(store, actor.receiver, mSt, pSt, thisEpochReward, currEpoch)
+			require.NoError(t, err)
+			assert.Equal(t, tc.eligible, eligible)
+		}
 	})
 }
 
@@ -1091,7 +1140,10 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 }
 
 func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.Runtime) *power.State {
-	pSt := constructPowerStateWithPowerAtAddr(t, power.ConsensusMinerMinPower, mAddr, rt)
+	minPower, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	require.NoError(t, err)
+
+	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
 
 	// Ensure that this the mAddr passes min power check
 	ok, err := pSt.MinerNominalPowerMeetsConsensusMinimum(adt.AsStore(rt), mAddr)
@@ -1101,7 +1153,7 @@ func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.
 	return pSt
 }
 
-func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAddr address.Address, rt *mock.Runtime) *power.State {
+func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAddr address.Address, sealProofType abi.RegisteredSealProof, rt *mock.Runtime) *power.State {
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	require.NoError(t, err)
 	emptyMMap, err := adt.MakeEmptyMultimap(adt.AsStore(rt)).Root()
@@ -1111,7 +1163,7 @@ func constructPowerStateWithPowerAtAddr(t *testing.T, pow abi.StoragePower, mAdd
 	claims, err := adt.AsMap(adt.AsStore(rt), pSt.Claims)
 	require.NoError(t, err)
 
-	claim := &power.Claim{RawBytePower: pow, QualityAdjPower: pow}
+	claim := &power.Claim{SealProofType: sealProofType, RawBytePower: pow, QualityAdjPower: pow}
 
 	err = claims.Put(adt.AddrKey(mAddr), claim)
 	require.NoError(t, err)

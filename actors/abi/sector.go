@@ -99,6 +99,7 @@ type SealProofInfo struct {
 	WinningPoStProof           RegisteredPoStProof
 	WindowPoStProof            RegisteredPoStProof
 	SectorMaxLifetime          ChainEpoch
+	ConsensusMinerMinPower     StoragePower
 }
 
 // For all Stacked DRG sectors, the max is 5 years
@@ -114,6 +115,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning2KiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow2KiBV1,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     NewStoragePower(0),
 	},
 	RegisteredSealProof_StackedDrg8MiBV1: {
 		SectorSize:                 8 << 20,
@@ -121,6 +123,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning8MiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow8MiBV1,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     NewStoragePower(16 << 20),
 	},
 	RegisteredSealProof_StackedDrg512MiBV1: {
 		SectorSize:                 512 << 20,
@@ -128,6 +131,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning512MiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow512MiBV1,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     NewStoragePower(1 << 30),
 	},
 	RegisteredSealProof_StackedDrg32GiBV1: {
 		SectorSize:                 32 << 30,
@@ -135,6 +139,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning32GiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     NewStoragePower(100 << 40),
 	},
 	RegisteredSealProof_StackedDrg64GiBV1: {
 		SectorSize:                 64 << 30,
@@ -142,6 +147,7 @@ var SealProofInfos = map[RegisteredSealProof]*SealProofInfo{
 		WinningPoStProof:           RegisteredPoStProof_StackedDrgWinning64GiBV1,
 		WindowPoStProof:            RegisteredPoStProof_StackedDrgWindow64GiBV1,
 		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     NewStoragePower(200 << 40),
 	},
 }
 
@@ -197,6 +203,22 @@ func (p RegisteredSealProof) SectorMaximumLifetime() (ChainEpoch, error) {
 	return info.SectorMaxLifetime, nil
 }
 
+// The minimum power of an individual miner to meet the threshold for leader election (in bytes).
+// Motivation:
+// - Limits sybil generation
+// - Improves consensus fault detection
+// - Guarantees a minimum fee for consensus faults
+// - Ensures that a specific soundness for the power table
+// Note: We may be able to reduce this in the future, addressing consensus faults with more complicated penalties,
+// sybil generation with crypto-economic mechanism, and PoSt soundness by increasing the challenges for small miners.
+func (p RegisteredSealProof) ConsensusMinerMinPower() (StoragePower, error) {
+	info, ok := SealProofInfos[p]
+	if !ok {
+		return NewStoragePower(0), errors.Errorf("unsupported proof type: %v", p)
+	}
+	return info.ConsensusMinerMinPower, nil
+}
+
 var PoStSealProofTypes = map[RegisteredPoStProof]RegisteredSealProof{
 	RegisteredPoStProof_StackedDrgWinning2KiBV1:   RegisteredSealProof_StackedDrg2KiBV1,
 	RegisteredPoStProof_StackedDrgWindow2KiBV1:    RegisteredSealProof_StackedDrg2KiBV1,
@@ -236,8 +258,6 @@ func (p RegisteredPoStProof) WindowPoStPartitionSectors() (uint64, error) {
 	}
 	return sp.WindowPoStPartitionSectors()
 }
-
-
 
 ///
 /// Sealing
