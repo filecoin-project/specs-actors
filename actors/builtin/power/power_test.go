@@ -66,7 +66,7 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
+		assert.Equal(t, power.Claim{abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.CronEventQueue)
 	})
@@ -245,7 +245,9 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	miner5 := tutil.NewIDAddr(t, 115)
 
 	// These tests use the min power for consensus to check the accounting above and below that value.
-	powerUnit := power.ConsensusMinerMinPower
+	powerUnit, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	require.NoError(t, err)
+
 	mul := func(a big.Int, b int64) big.Int {
 		return big.Mul(a, big.NewInt(b))
 	}
@@ -253,7 +255,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		return big.Div(a, big.NewInt(b))
 	}
 	smallPowerUnit := big.NewInt(1_000_000)
-	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.CosensusMinerMinPower has changed requiring update to this test")
+	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.ConsensusMinerMinPower has changed requiring update to this test")
 	// Subtests implicitly rely on ConsensusMinerMinMiners = 3
 	require.Equal(t, 4, power.ConsensusMinerMinMiners, "power.ConsensusMinerMinMiners has changed requiring update to this test")
 
@@ -359,7 +361,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
 		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
-		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)		
+		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
 
 		expectedTotal := mul(powerUnit, 5)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
@@ -369,6 +371,52 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		expectedTotal = mul(powerUnit, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+	})
+
+	t.Run("consensus minimum power depends on proof type", func(t *testing.T) {
+		// Setup four miners above threshold
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// create 4 miners that meet minimum
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+		actor.createMinerBasic(rt, owner, owner, miner3)
+		actor.createMinerBasic(rt, owner, owner, miner4)
+
+		actor.updateClaimedPower(rt, miner1, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner2, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
+
+		actor.expectMinersAboveMinPower(rt, 4)
+		expectedTotal := mul(powerUnit, 4)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+
+		// miner 5 uses 64GiB sectors and has a higher minimum
+		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
+			nil, abi.RegisteredSealProof_StackedDrg64GiBV1, big.Zero())
+
+		power64Unit, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+		assert.True(t, power64Unit.GreaterThan(powerUnit))
+
+		// below limit actors power is not added
+		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
+		actor.expectMinersAboveMinPower(rt, 4)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+
+		// just below limit
+		delta := big.Subtract(power64Unit, powerUnit, big.NewInt(1))
+		actor.updateClaimedPower(rt, miner5, delta, delta)
+		actor.expectMinersAboveMinPower(rt, 4)
+		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+
+		// at limit power is added
+		actor.updateClaimedPower(rt, miner5, big.NewInt(1), big.NewInt(1))
+		actor.expectMinersAboveMinPower(rt, 5)
+		newExpectedTotal := big.Add(expectedTotal, power64Unit)
+		actor.expectTotalPowerEager(rt, newExpectedTotal, newExpectedTotal)
 	})
 
 	t.Run("threshold only depends on qa power, not raw byte", func(t *testing.T) {
@@ -452,7 +500,9 @@ func TestCron(t *testing.T) {
 	})
 
 	t.Run("test amount sent to reward actor and state change", func(t *testing.T) {
-		powerUnit := power.ConsensusMinerMinPower
+		powerUnit, err := abi.RegisteredSealProof_StackedDrg2KiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+
 		miner3 := tutil.NewIDAddr(t, 103)
 		miner4 := tutil.NewIDAddr(t, 104)
 
@@ -572,7 +622,9 @@ func TestCron(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 
-		rawPow := power.ConsensusMinerMinPower
+		rawPow, err := abi.RegisteredSealProof_StackedDrg2KiBV1.ConsensusMinerMinPower()
+		require.NoError(t, err)
+
 		qaPow := rawPow
 		actor.updateClaimedPower(rt, miner1, rawPow, qaPow)
 		actor.expectTotalPowerEager(rt, rawPow, qaPow)
@@ -997,7 +1049,7 @@ func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner
 	label := strconv.Itoa(h.minerSeq)
 	actrAddr := tutil.NewActorAddr(h.t, label)
 	h.minerSeq += 1
-	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero())
+	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg32GiBV1, big.Zero())
 }
 
 func (h *spActorHarness) updateClaimedPower(rt *mock.Runtime, miner addr.Address, rawDelta, qaDelta abi.StoragePower) {
@@ -1073,6 +1125,11 @@ func (h *spActorHarness) expectTotalPowerEager(rt *mock.Runtime, expectedRaw, ex
 	rawBytePower, qualityAdjPower := power.CurrentTotalPower(st)
 	assert.Equal(h.t, expectedRaw, rawBytePower)
 	assert.Equal(h.t, expectedQA, qualityAdjPower)
+}
+
+func (h *spActorHarness) expectMinersAboveMinPower(rt *mock.Runtime, count int64) {
+	st := getState(rt)
+	assert.Equal(h.t, count, st.MinerAboveMinPowerCount)
 }
 
 func (h *spActorHarness) expectTotalPledgeEager(rt *mock.Runtime, expectedPledge abi.TokenAmount) {

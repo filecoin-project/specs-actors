@@ -854,6 +854,14 @@ func TestCommitments(t *testing.T) {
 			})
 			rt.Reset()
 		}
+		{ // Target partition must exist
+			params := *upgradeParams
+			params.ReplaceSectorPartition = 999
+			rt.ExpectAbortContainsMessage(exitcode.ErrNotFound, "no partition 999", func() {
+				actor.preCommitSector(rt, &params, preCommitConf{})
+			})
+			rt.Reset()
+		}
 		{ // Expiration must not be sooner than target
 			params := *upgradeParams
 			params.Expiration = params.Expiration - miner.WPoStProvingPeriod
@@ -892,6 +900,42 @@ func TestCommitments(t *testing.T) {
 
 			rt.ReplaceState(st)
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+				actor.preCommitSector(rt, &params, preCommitConf{})
+			})
+			rt.ReplaceState(&prevState)
+			rt.Reset()
+		}
+
+		{ // Target must not be terminated
+			params := *upgradeParams
+			st := getState(rt)
+			prevState := *st
+			quant := st.QuantSpecForDeadline(dlIdx)
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+			deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
+			require.NoError(t, err)
+			partitions, err := deadline.PartitionsArray(rt.AdtStore())
+			require.NoError(t, err)
+			var partition miner.Partition
+			found, err := partitions.Get(partIdx, &partition)
+			require.True(t, found)
+			require.NoError(t, err)
+			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
+			require.NoError(t, err)
+			result, err := partition.TerminateSectors(rt.AdtStore(), sectorArr, rt.Epoch(), bf(uint64(oldSectors[0].SectorNumber)),
+				actor.sectorSize, quant)
+			require.NoError(t, err)
+			assertBitfieldEquals(t, result.OnTimeSectors, uint64(oldSectors[0].SectorNumber))
+			require.NoError(t, partitions.Set(partIdx, &partition))
+			deadline.Partitions, err = partitions.Root()
+			require.NoError(t, err)
+			deadlines.Due[dlIdx] = rt.Put(deadline)
+			require.NoError(t, st.SaveDeadlines(rt.AdtStore(), deadlines))
+			// Phew!
+
+			rt.ReplaceState(st)
+			rt.ExpectAbort(exitcode.ErrNotFound, func() {
 				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.ReplaceState(&prevState)
@@ -2036,7 +2080,6 @@ func TestDeclareRecoveries(t *testing.T) {
 			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
 		})
 	})
-
 }
 
 func TestExtendSectorExpiration(t *testing.T) {
@@ -2484,6 +2527,86 @@ func TestWithdrawBalance(t *testing.T) {
 		requested := rt.Balance()
 		expectedWithdraw := big.Sub(requested, feeDebt)
 		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
+	})
+}
+
+func TestRepayDebts(t *testing.T) {
+	actor := newHarness(t, abi.ChainEpoch(100))
+	builder := builderForHarness(actor).
+		WithBalance(big.Zero(), big.Zero())
+
+	t.Run("repay with no avaialable funds does nothing", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// introduce fee debt
+		st := getState(rt)
+		feeDebt := big.Mul(big.NewInt(4), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+
+		actor.repayDebt(rt, big.Zero(), big.Zero(), big.Zero())
+
+		st = getState(rt)
+		assert.Equal(t, feeDebt, st.FeeDebt)
+	})
+
+	t.Run("pay debt entirely from balance", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// introduce fee debt
+		st := getState(rt)
+		feeDebt := big.Mul(big.NewInt(4), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+
+		debtToRepay := big.Mul(big.NewInt(2), feeDebt)
+		actor.repayDebt(rt, debtToRepay, big.Zero(), feeDebt)
+
+		st = getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
+	})
+
+	t.Run("partially repay debt", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// introduce fee debt
+		st := getState(rt)
+		feeDebt := big.Mul(big.NewInt(4), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+
+		debtToRepay := big.Mul(big.NewInt(3), big.Div(feeDebt, big.NewInt(4)))
+		actor.repayDebt(rt, debtToRepay, big.Zero(), debtToRepay)
+
+		st = getState(rt)
+		assert.Equal(t, big.Div(feeDebt, big.NewInt(4)), st.FeeDebt)
+	})
+
+	t.Run("pay debt partially from vested funds", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		amountToLock := big.Mul(big.NewInt(3), big.NewInt(1e18))
+		rt.SetBalance(amountToLock)
+		actor.applyRewards(rt, amountToLock, big.Zero())
+
+		// introduce fee debt
+		st := getState(rt)
+		feeDebt := big.Mul(big.NewInt(4), big.NewInt(1e18))
+		st.FeeDebt = feeDebt
+		rt.ReplaceState(st)
+
+		// send 1 FIL and repay all debt from vesting funds and balance
+		actor.repayDebt(rt,
+			big.NewInt(1e18), // send 1 FIL
+			amountToLock,     // 3 FIL comes from vesting funds
+			big.NewInt(1e18)) // 1 FIL sent from balance
+
+		st = getState(rt)
+		assert.Equal(t, big.Zero(), st.FeeDebt)
 	})
 }
 
@@ -3096,7 +3219,7 @@ func TestApplyRewards(t *testing.T) {
 	t.Run("penalty is burnt", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
-		
+
 		reward := abi.NewTokenAmount(600_000)
 		penalty := abi.NewTokenAmount(300_000)
 		rt.SetBalance(big.Add(rt.Balance(), reward))
@@ -4267,6 +4390,26 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWi
 	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amountRequested,
 	})
+
+	rt.Verify()
+}
+
+func (h *actorHarness) repayDebt(rt *mock.Runtime, value, expectedRepayedFromVest, expectedRepaidFromBalance abi.TokenAmount) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+
+	rt.SetBalance(big.Sum(rt.Balance(), value))
+	rt.SetReceived(value)
+	if expectedRepayedFromVest.GreaterThan(big.Zero()) {
+		pledgeDelta := expectedRepayedFromVest.Neg()
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+	}
+
+	totalRepaid := big.Sum(expectedRepayedFromVest, expectedRepaidFromBalance)
+	if totalRepaid.GreaterThan((big.Zero())) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalRepaid, nil, exitcode.Ok)
+	}
+	rt.Call(h.a.RepayDebt, nil)
 
 	rt.Verify()
 }
