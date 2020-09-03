@@ -420,7 +420,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 				found, err := claims.Has(AddrKey(evt.MinerAddr))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 				if !found {
-					rt.Log(vmr.WARN, "skipping cron event for unknown miner %s", a)
+					rt.Log(vmr.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)
 					continue
 				}
 				cronEvents = append(cronEvents, evt)
