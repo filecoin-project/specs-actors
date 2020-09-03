@@ -1,8 +1,9 @@
 package reward
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 )
@@ -88,7 +89,7 @@ func computeReward(epoch abi.ChainEpoch, prevTheta, currTheta big.Int) abi.Token
 	epochLam := big.Mul(big.NewInt(int64(epoch)), lambda) // Q.0 * Q.128 => Q.128
 
 	simpleReward = big.Mul(simpleReward, big.NewFromGo(expneg(epochLam.Int))) // Q.128 * Q.128 => Q.256
-	simpleReward = big.Rsh(simpleReward, math.Precision)                       // Q.256 >> 128 => Q.128
+	simpleReward = big.Rsh(simpleReward, math.Precision)                      // Q.256 >> 128 => Q.128
 
 	baselineReward := big.Sub(computeBaselineSupply(currTheta), computeBaselineSupply(prevTheta)) // Q.128
 

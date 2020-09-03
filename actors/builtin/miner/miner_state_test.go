@@ -8,12 +8,13 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
@@ -609,7 +610,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 		require.NoError(t, err)
 
 		require.EqualValues(t, 1, queue.Length())
-		bf := abi.BitField{}
+		bf := aabi.BitField{}
 		qEpoch := quant.QuantizeUp(epoch)
 		found, err := queue.Get(uint64(qEpoch), &bf)
 		require.NoError(t, err)
@@ -624,7 +625,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 }
 
 func TestSectorAssignment(t *testing.T) {
-	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
 	require.NoError(t, err)
@@ -878,9 +879,9 @@ func TestMinerEligibleForElection(t *testing.T) {
 		currEpoch := abi.ChainEpoch(100000)
 
 		// get minimums
-		pow32GiBMin, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
+		pow32GiBMin, err := aabi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 		require.NoError(t, err)
-		pow64GiBMin, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
+		pow64GiBMin, err := aabi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {
@@ -1055,7 +1056,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	sectorSize, err := testSealProofType.SectorSize()
 	require.NoError(t, err)
 
-	partitionSectors, err := abi.SealProofWindowPoStPartitionSectors(testSealProofType)
+	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(testSealProofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
@@ -1140,7 +1141,7 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 }
 
 func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.Runtime) *power.State {
-	minPower, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	minPower, err := aabi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 
 	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)

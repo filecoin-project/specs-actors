@@ -5,11 +5,12 @@ import (
 	"sort"
 
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -59,12 +60,12 @@ func (es *ExpirationSet) Add(onTimeSectors, earlySectors bitfield.BitField, onTi
 // Removes sectors and power from the expiration set in place.
 func (es *ExpirationSet) Remove(onTimeSectors, earlySectors bitfield.BitField, onTimePledge abi.TokenAmount, activePower, faultyPower PowerPair) error {
 	// Check for sector intersection. This could be cheaper with a combined intersection/difference method used below.
-	if found, err := abi.BitFieldContainsAll(es.OnTimeSectors, onTimeSectors); err != nil {
+	if found, err := aabi.BitFieldContainsAll(es.OnTimeSectors, onTimeSectors); err != nil {
 		return err
 	} else if !found {
 		return xerrors.Errorf("removing on-time sectors %v not contained in %v", onTimeSectors, es.OnTimeSectors)
 	}
-	if found, err := abi.BitFieldContainsAll(es.EarlySectors, earlySectors); err != nil {
+	if found, err := aabi.BitFieldContainsAll(es.EarlySectors, earlySectors); err != nil {
 		return err
 	} else if !found {
 		return xerrors.Errorf("removing early sectors %v not contained in %v", earlySectors, es.EarlySectors)

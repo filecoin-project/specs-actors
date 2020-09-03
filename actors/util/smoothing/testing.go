@@ -1,7 +1,7 @@
 package smoothing
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-state-types/big"
 )
 
 // Returns an estimate with position val and velocity 0

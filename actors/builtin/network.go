@@ -3,7 +3,7 @@ package builtin
 import (
 	"fmt"
 
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-state-types/big"
 )
 
 // PARAM_SPEC

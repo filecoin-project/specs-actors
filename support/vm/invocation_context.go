@@ -8,8 +8,13 @@ import (
 	"reflect"
 	"runtime/debug"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+	"github.com/ipfs/go-cid"
+	"github.com/pkg/errors"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
@@ -18,10 +23,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/testing"
-
-	"github.com/filecoin-project/go-address"
-	"github.com/ipfs/go-cid"
-	"github.com/pkg/errors"
 )
 
 var EmptyObjectCid cid.Cid
@@ -388,11 +389,11 @@ func (s fakeSyscalls) ComputeUnsealedSectorCID(_ abi.RegisteredSealProof, _ []ab
 	return testing.MakeCID("presealedSectorCID", nil), nil
 }
 
-func (s fakeSyscalls) VerifySeal(_ abi.SealVerifyInfo) error {
+func (s fakeSyscalls) VerifySeal(_ aabi.SealVerifyInfo) error {
 	return nil
 }
 
-func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error) {
+func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]aabi.SealVerifyInfo) (map[address.Address][]bool, error) {
 	res := map[address.Address][]bool{}
 	for addr, infos := range vi { //nolint:nomaprange
 		verified := make([]bool, len(infos))
@@ -405,7 +406,7 @@ func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]abi.SealVerifyIn
 	return res, nil
 }
 
-func (s fakeSyscalls) VerifyPoSt(_ abi.WindowPoStVerifyInfo) error {
+func (s fakeSyscalls) VerifyPoSt(_ aabi.WindowPoStVerifyInfo) error {
 	return nil
 }
 
