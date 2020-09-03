@@ -112,7 +112,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	minerNominalPower := claim.QualityAdjPower
-	minerMinPower, err := claim.SealProofType.ConsensusMinerMinPower()
+	minerMinPower, err := abi.ConsensusMinerMinPower(claim.SealProofType)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get miner min power from proof type")
 	}
@@ -177,7 +177,7 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		QualityAdjPower: big.Add(oldClaim.QualityAdjPower, qapower),
 	}
 
-	minPower, err := oldClaim.SealProofType.ConsensusMinerMinPower()
+	minPower, err := abi.ConsensusMinerMinPower(oldClaim.SealProofType)
 	if err != nil {
 		return fmt.Errorf("could not get consensus miner min power: %w", err)
 	}

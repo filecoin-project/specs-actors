@@ -159,7 +159,7 @@ func (p RegisteredSealProof) RegisteredWindowPoStProof() (RegisteredPoStProof, e
 type SealProofPolicy struct {
 	WindowPoStPartitionSectors uint64
 	SectorMaxLifetime          ChainEpoch
-  ConsensusMinerMinPower     StoragePower
+  	ConsensusMinerMinPower     StoragePower
 }
 
 // For all Stacked DRG sectors, the max is 5 years
@@ -172,27 +172,27 @@ var SealProofPolicies = map[RegisteredSealProof]*SealProofPolicy{
 	RegisteredSealProof_StackedDrg2KiBV1: {
 		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
-    ConsensusMinerMinPower:     NewStoragePower(0),
+    	ConsensusMinerMinPower:     NewStoragePower(0),
 	},
 	RegisteredSealProof_StackedDrg8MiBV1: {
 		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
-    ConsensusMinerMinPower:     NewStoragePower(16 << 20),
+    	ConsensusMinerMinPower:     NewStoragePower(16 << 20),
 	},
 	RegisteredSealProof_StackedDrg512MiBV1: {
 		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
-    ConsensusMinerMinPower:     NewStoragePower(1 << 30),
+   		ConsensusMinerMinPower:     NewStoragePower(1 << 30),
 	},
 	RegisteredSealProof_StackedDrg32GiBV1: {
 		WindowPoStPartitionSectors: 2349,
 		SectorMaxLifetime:          fiveYears,
-    ConsensusMinerMinPower:     NewStoragePower(100 << 40),
+    	ConsensusMinerMinPower:     NewStoragePower(100 << 40),
 	},
 	RegisteredSealProof_StackedDrg64GiBV1: {
 		WindowPoStPartitionSectors: 2300,
 		SectorMaxLifetime:          fiveYears,
-    ConsensusMinerMinPower:     NewStoragePower(200 << 40),
+    	ConsensusMinerMinPower:     NewStoragePower(200 << 40),
 	},
 }
 
@@ -223,8 +223,8 @@ func SealProofSectorMaximumLifetime(p RegisteredSealProof) (ChainEpoch, error) {
 // - Ensures that a specific soundness for the power table
 // Note: We may be able to reduce this in the future, addressing consensus faults with more complicated penalties,
 // sybil generation with crypto-economic mechanism, and PoSt soundness by increasing the challenges for small miners.
-func (p RegisteredSealProof) ConsensusMinerMinPower() (StoragePower, error) {
-	info, ok := SealProofInfos[p]
+func ConsensusMinerMinPower(p RegisteredSealProof) (StoragePower, error) {
+	info, ok := SealProofPolicies[p]
 	if !ok {
 		return NewStoragePower(0), errors.Errorf("unsupported proof type: %v", p)
 	}

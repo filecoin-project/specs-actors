@@ -878,9 +878,9 @@ func TestMinerEligibleForElection(t *testing.T) {
 		currEpoch := abi.ChainEpoch(100000)
 
 		// get minimums
-		pow32GiBMin, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+		pow32GiBMin, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 		require.NoError(t, err)
-		pow64GiBMin, err := abi.RegisteredSealProof_StackedDrg64GiBV1.ConsensusMinerMinPower()
+		pow64GiBMin, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {
@@ -1140,7 +1140,7 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 }
 
 func constructEligibilePowerState(t *testing.T, mAddr address.Address, rt *mock.Runtime) *power.State {
-	minPower, err := abi.RegisteredSealProof_StackedDrg32GiBV1.ConsensusMinerMinPower()
+	minPower, err := abi.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 
 	pSt := constructPowerStateWithPowerAtAddr(t, minPower, mAddr, abi.RegisteredSealProof_StackedDrg32GiBV1, rt)
