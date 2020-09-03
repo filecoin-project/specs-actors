@@ -854,6 +854,14 @@ func TestCommitments(t *testing.T) {
 			})
 			rt.Reset()
 		}
+		{ // Target partition must exist
+			params := *upgradeParams
+			params.ReplaceSectorPartition = 999
+			rt.ExpectAbortContainsMessage(exitcode.ErrNotFound, "no partition 999", func() {
+				actor.preCommitSector(rt, &params, preCommitConf{})
+			})
+			rt.Reset()
+		}
 		{ // Expiration must not be sooner than target
 			params := *upgradeParams
 			params.Expiration = params.Expiration - miner.WPoStProvingPeriod
@@ -892,6 +900,42 @@ func TestCommitments(t *testing.T) {
 
 			rt.ReplaceState(st)
 			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+				actor.preCommitSector(rt, &params, preCommitConf{})
+			})
+			rt.ReplaceState(&prevState)
+			rt.Reset()
+		}
+
+		{ // Target must not be terminated
+			params := *upgradeParams
+			st := getState(rt)
+			prevState := *st
+			quant := st.QuantSpecForDeadline(dlIdx)
+			deadlines, err := st.LoadDeadlines(rt.AdtStore())
+			require.NoError(t, err)
+			deadline, err := deadlines.LoadDeadline(rt.AdtStore(), dlIdx)
+			require.NoError(t, err)
+			partitions, err := deadline.PartitionsArray(rt.AdtStore())
+			require.NoError(t, err)
+			var partition miner.Partition
+			found, err := partitions.Get(partIdx, &partition)
+			require.True(t, found)
+			require.NoError(t, err)
+			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
+			require.NoError(t, err)
+			result, err := partition.TerminateSectors(rt.AdtStore(), sectorArr, rt.Epoch(), bf(uint64(oldSectors[0].SectorNumber)),
+				actor.sectorSize, quant)
+			require.NoError(t, err)
+			assertBitfieldEquals(t, result.OnTimeSectors, uint64(oldSectors[0].SectorNumber))
+			require.NoError(t, partitions.Set(partIdx, &partition))
+			deadline.Partitions, err = partitions.Root()
+			require.NoError(t, err)
+			deadlines.Due[dlIdx] = rt.Put(deadline)
+			require.NoError(t, st.SaveDeadlines(rt.AdtStore(), deadlines))
+			// Phew!
+
+			rt.ReplaceState(st)
+			rt.ExpectAbort(exitcode.ErrNotFound, func() {
 				actor.preCommitSector(rt, &params, preCommitConf{})
 			})
 			rt.ReplaceState(&prevState)
