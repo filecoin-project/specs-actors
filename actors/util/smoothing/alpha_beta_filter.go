@@ -61,10 +61,10 @@ func init() {
 	}
 	constBigs := math.Parse(constStrs)
 	_ = math.Parse(constStrs)
-	DefaultAlpha = big.Int{Int: constBigs[0]}
-	DefaultBeta = big.Int{Int: constBigs[1]}
-	ExtrapolatedCumSumRatioEpsilon = big.Int{Int: constBigs[2]}
-	ln2 = big.Int{Int: constBigs[3]}
+	DefaultAlpha = big.NewFromGo(constBigs[0])
+	DefaultBeta = big.NewFromGo(constBigs[1])
+	ExtrapolatedCumSumRatioEpsilon = big.NewFromGo(constBigs[2])
+	ln2 = big.NewFromGo(constBigs[3])
 }
 
 // Alpha Beta Filter "position" (value) and "velocity" (rate of change of value) estimates
@@ -208,8 +208,8 @@ func lnBetweenOneAndTwo(x big.Int) big.Int {
 	num := math.Polyval(lnNumCoef, x.Int)     // Q.128
 	denom := math.Polyval(lnDenomCoef, x.Int) // Q.128
 
-	num = num.Lsh(num, math.Precision)       // Q.128 => Q.256
-	return big.Int{Int: num.Div(num, denom)} // Q.256 / Q.128 => Q.128
+	num = num.Lsh(num, math.Precision)        // Q.128 => Q.256
+	return big.NewFromGo(num.Div(num, denom)) // Q.256 / Q.128 => Q.128
 }
 
 // Extrapolate filter "position" delta epochs in the future.

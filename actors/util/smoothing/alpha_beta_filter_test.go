@@ -174,9 +174,9 @@ func TestNaturalLog(t *testing.T) {
 	fmt.Printf("%v %v\n", lnInputs, expectedLnOutputs)
 	require.Equal(t, len(lnInputs), len(expectedLnOutputs))
 	for i := 0; i < len(lnInputs); i++ {
-		z := big.Int{Int: lnInputs[i]}
+		z := big.NewFromGo(lnInputs[i])
 		lnOfZ := smoothing.Ln(z)
-		expectedZ := big.Int{Int: expectedLnOutputs[i]}
+		expectedZ := big.NewFromGo(expectedLnOutputs[i])
 		assert.Equal(t, big.Rsh(expectedZ, math.Precision), big.Rsh(lnOfZ, math.Precision), "failed ln of %v", z)
 	}
 }
