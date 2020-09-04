@@ -6,11 +6,12 @@ import (
 	gbig "math/big"
 	"testing"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/util/math"
+	. "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
 	"github.com/xorcare/golden"
+
+	"github.com/filecoin-project/specs-actors/actors/util/math"
 )
 
 func q128ToF(x big.Int) float64 {
@@ -21,7 +22,7 @@ func q128ToF(x big.Int) float64 {
 }
 
 func TestComputeRTeta(t *testing.T) {
-	baselinePowerAt := func(epoch abi.ChainEpoch) abi.StoragePower {
+	baselinePowerAt := func(epoch ChainEpoch) StoragePower {
 		return big.Mul(big.NewInt(int64(epoch+1)), big.NewInt(2048))
 	}
 
@@ -29,7 +30,7 @@ func TestComputeRTeta(t *testing.T) {
 	assert.Equal(t, 0.25, q128ToF(computeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.25), big.NewInt(2048+2*2048))))
 
 	cumsum15 := big.NewInt(0)
-	for i := abi.ChainEpoch(0); i < 16; i++ {
+	for i := ChainEpoch(0); i < 16; i++ {
 		cumsum15 = big.Add(cumsum15, baselinePowerAt(i))
 	}
 	assert.Equal(t, 15.25, q128ToF(computeRTheta(16,
@@ -70,7 +71,7 @@ func TestSimpleReward(t *testing.T) {
 	b.WriteString("x, y\n")
 	for i := int64(0); i < 512; i++ {
 		x := i * 5000
-		reward := computeReward(abi.ChainEpoch(x), big.Zero(), big.Zero())
+		reward := computeReward(ChainEpoch(x), big.Zero(), big.Zero())
 		fmt.Fprintf(b, "%d,%s\n", x, reward.Int)
 	}
 
@@ -79,9 +80,9 @@ func TestSimpleReward(t *testing.T) {
 
 func TestBaselineRewardGrowth(t *testing.T) {
 
-	baselineInYears := func(start abi.StoragePower, x abi.ChainEpoch) abi.StoragePower {
+	baselineInYears := func(start StoragePower, x ChainEpoch) StoragePower {
 		baseline := start
-		for i := abi.ChainEpoch(0); i < x*epochsInYear; i++ {
+		for i := ChainEpoch(0); i < x*epochsInYear; i++ {
 			baseline = BaselinePowerFromPrev(baseline)
 		}
 		return baseline
@@ -96,28 +97,28 @@ func TestBaselineRewardGrowth(t *testing.T) {
 	// 1. throw a test error if function changes and percent error goes up
 	// 2. serve as documentation of current error bounds
 	type growthTestCase struct {
-		StartVal abi.StoragePower
+		StartVal StoragePower
 		ErrBound float64
 	}
 	cases := []growthTestCase{
 		// 1 byte
 		{
-			abi.NewStoragePower(1),
+			NewStoragePower(1),
 			1,
 		},
 		// GiB
 		{
-			abi.NewStoragePower(1 << 30),
+			NewStoragePower(1 << 30),
 			1e-3,
 		},
 		// TiB
 		{
-			abi.NewStoragePower(1 << 40),
+			NewStoragePower(1 << 40),
 			1e-6,
 		},
 		// PiB
 		{
-			abi.NewStoragePower(1 << 50),
+			NewStoragePower(1 << 50),
 			1e-8,
 		},
 		// EiB
@@ -132,13 +133,13 @@ func TestBaselineRewardGrowth(t *testing.T) {
 		},
 		// non power of 2 ~ 1 EiB
 		{
-			abi.NewStoragePower(513633559722596517),
+			NewStoragePower(513633559722596517),
 			1e-8,
 		},
 	}
 	for _, testCase := range cases {
 		years := int64(1)
-		end := baselineInYears(testCase.StartVal, abi.ChainEpoch(1))
+		end := baselineInYears(testCase.StartVal, ChainEpoch(1))
 
 		multiplier := big.Exp(big.NewInt(3), big.NewInt(years)) // keeping this generalized in case we want to test more years
 		expected := big.Mul(testCase.StartVal, multiplier)

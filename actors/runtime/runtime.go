@@ -7,9 +7,10 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
+	abi "github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	crypto "github.com/filecoin-project/specs-actors/actors/crypto"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 )
@@ -186,12 +187,12 @@ type Syscalls interface {
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
-	VerifySeal(vi abi.SealVerifyInfo) error
+	VerifySeal(vi aabi.SealVerifyInfo) error
 
-	BatchVerifySeals(vis map[address.Address][]abi.SealVerifyInfo) (map[address.Address][]bool, error)
+	BatchVerifySeals(vis map[address.Address][]aabi.SealVerifyInfo) (map[address.Address][]bool, error)
 
 	// Verifies a proof of spacetime.
-	VerifyPoSt(vi abi.WindowPoStVerifyInfo) error
+	VerifyPoSt(vi aabi.WindowPoStVerifyInfo) error
 	// Verifies that two block headers provide proof of a consensus fault:
 	// - both headers mined by the same actor
 	// - headers are different

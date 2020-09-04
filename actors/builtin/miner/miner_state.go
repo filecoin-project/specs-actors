@@ -7,15 +7,15 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
+	abi "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
-	. "github.com/filecoin-project/specs-actors/actors/util"
-
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -183,7 +183,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		return nil, err
 	}
 
-	partitionSectors, err := sealProofType.WindowPoStPartitionSectors()
+	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(sealProofType)
 	if err != nil {
 		return nil, err
 	}
@@ -947,7 +947,7 @@ func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch,
 	return nil
 }
 
-func (st *State) checkPrecommitExpiry(store adt.Store, sectors abi.BitField) (depositToBurn abi.TokenAmount, err error) {
+func (st *State) checkPrecommitExpiry(store adt.Store, sectors bitfield.BitField) (depositToBurn abi.TokenAmount, err error) {
 	depositToBurn = abi.NewTokenAmount(0)
 
 	var precommitsToDelete []abi.SectorNumber

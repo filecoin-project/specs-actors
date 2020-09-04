@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
+	abi "github.com/filecoin-project/go-state-types/abi"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
 	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"

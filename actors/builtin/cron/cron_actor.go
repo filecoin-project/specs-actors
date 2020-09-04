@@ -1,7 +1,9 @@
 package cron
 
 import (
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/go-state-types/abi"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -17,7 +19,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = Actor{}
+var _ aabi.Invokee = Actor{}
 
 type ConstructorParams struct {
 	Entries []Entry

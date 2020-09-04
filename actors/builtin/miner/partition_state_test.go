@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPartitions(t *testing.T) {
@@ -571,7 +573,7 @@ func TestPartitions(t *testing.T) {
 		proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
 		sectorSize, err := proofType.SectorSize()
 		require.NoError(t, err)
-		partitionSectors, err := proofType.WindowPoStPartitionSectors()
+		partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(proofType)
 		require.NoError(t, err)
 
 		manySectors := make([]*miner.SectorOnChainInfo, partitionSectors)
@@ -661,32 +663,32 @@ func checkPartitionInvariants(t *testing.T,
 	assert.True(t, partitionActivePower.Equals(activePower), "active power was %v, expected %v", partitionActivePower, activePower)
 
 	// All recoveries are faults.
-	contains, err := abi.BitFieldContainsAll(partition.Faults, partition.Recoveries)
+	contains, err := aabi.BitFieldContainsAll(partition.Faults, partition.Recoveries)
 	require.NoError(t, err)
 	assert.True(t, contains)
 
 	// All faults are live.
-	contains, err = abi.BitFieldContainsAll(live, partition.Faults)
+	contains, err = aabi.BitFieldContainsAll(live, partition.Faults)
 	require.NoError(t, err)
 	assert.True(t, contains)
 
 	// All terminated sectors are part of the partition.
-	contains, err = abi.BitFieldContainsAll(partition.Sectors, partition.Terminated)
+	contains, err = aabi.BitFieldContainsAll(partition.Sectors, partition.Terminated)
 	require.NoError(t, err)
 	assert.True(t, contains)
 
 	// Live has no terminated sectors
-	contains, err = abi.BitFieldContainsAny(live, partition.Terminated)
+	contains, err = aabi.BitFieldContainsAny(live, partition.Terminated)
 	require.NoError(t, err)
 	assert.False(t, contains)
 
 	// Live contains active sectors
-	contains, err = abi.BitFieldContainsAll(live, active)
+	contains, err = aabi.BitFieldContainsAll(live, active)
 	require.NoError(t, err)
 	assert.True(t, contains)
 
 	// Active contains no faults
-	contains, err = abi.BitFieldContainsAny(active, partition.Faults)
+	contains, err = aabi.BitFieldContainsAny(active, partition.Faults)
 	require.NoError(t, err)
 	assert.False(t, contains)
 
@@ -714,11 +716,11 @@ func checkPartitionInvariants(t *testing.T,
 			earlySectors := selectSectors(t, liveSectors, exp.EarlySectors)
 
 			// Validate that expiration only contains valid sectors.
-			contains, err := abi.BitFieldContainsAll(partition.Faults, exp.EarlySectors)
+			contains, err := aabi.BitFieldContainsAll(partition.Faults, exp.EarlySectors)
 			require.NoError(t, err)
 			assert.True(t, contains, "all early expirations must be faulty")
 
-			contains, err = abi.BitFieldContainsAll(live, exp.OnTimeSectors)
+			contains, err = aabi.BitFieldContainsAll(live, exp.OnTimeSectors)
 			require.NoError(t, err)
 			assert.True(t, contains, "all expirations must be live")
 
@@ -777,7 +779,7 @@ func checkPartitionInvariants(t *testing.T,
 			earlyTerms.Set(bit)
 		}
 
-		contains, err := abi.BitFieldContainsAll(partition.Terminated, earlyTerms)
+		contains, err := aabi.BitFieldContainsAll(partition.Terminated, earlyTerms)
 		require.NoError(t, err)
 		require.True(t, contains)
 	}
