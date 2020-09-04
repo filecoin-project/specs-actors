@@ -5,12 +5,13 @@ import (
 	"reflect"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -112,7 +113,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	minerNominalPower := claim.QualityAdjPower
-	minerMinPower, err := abi.ConsensusMinerMinPower(claim.SealProofType)
+	minerMinPower, err := aabi.ConsensusMinerMinPower(claim.SealProofType)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get miner min power from proof type")
 	}
@@ -177,7 +178,7 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		QualityAdjPower: big.Add(oldClaim.QualityAdjPower, qapower),
 	}
 
-	minPower, err := abi.ConsensusMinerMinPower(oldClaim.SealProofType)
+	minPower, err := aabi.ConsensusMinerMinPower(oldClaim.SealProofType)
 	if err != nil {
 		return fmt.Errorf("could not get consensus miner min power: %w", err)
 	}

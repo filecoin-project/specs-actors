@@ -7,7 +7,8 @@ import (
 	"io"
 
 	address "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/go-state-types/abi"
+	abi1 "github.com/filecoin-project/specs-actors/actors/abi"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
@@ -2437,12 +2438,12 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.Proofs = make([]abi.PoStProof, extra)
+		t.Proofs = make([]abi1.PoStProof, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
 
-		var v abi.PoStProof
+		var v abi1.PoStProof
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
