@@ -243,12 +243,11 @@ type StateHandle interface {
 	// # Usage
 	// ```go
 	// var state SomeState
-	// ret := rt.State().Transaction(&state, func() (interface{}) {
-	//   // make some changes
-	//	 st.ImLoaded = True
-	//   return st.Thing, nil
+	// ret := rt.State().Transaction(&state, func() {
+	// 	// make some changes
+	// 	st.ImLoaded = true
 	// })
-	// // state.ImLoaded = False // BAD!! state is readonly outside the lambda, it will panic
+	// // state.ImLoaded = false // BAD!! state is readonly outside the lambda, it will panic
 	// ```
 	Transaction(obj CBORer, f func())
 }
