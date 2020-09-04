@@ -2,11 +2,11 @@ package multisig
 
 import (
 	address "github.com/filecoin-project/go-address"
+	abi "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
 )

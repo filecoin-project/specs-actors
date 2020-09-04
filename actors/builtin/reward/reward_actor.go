@@ -2,16 +2,16 @@ package reward
 
 import (
 	"github.com/filecoin-project/go-address"
+	abi "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
-
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type Actor struct{}
@@ -25,7 +25,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = Actor{}
+var _ aabi.Invokee = Actor{}
 
 func (a Actor) Constructor(rt vmr.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)

@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/ipld"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDeadlines(t *testing.T) {
@@ -713,7 +714,7 @@ func checkDeadlineInvariants(
 
 		partitionSectors = append(partitionSectors, partition.Sectors)
 
-		contains, err := abi.BitFieldContainsAny(allSectors, partition.Sectors)
+		contains, err := aabi.BitFieldContainsAny(allSectors, partition.Sectors)
 		require.NoError(t, err)
 		require.False(t, contains, "duplicate sectors in deadline")
 

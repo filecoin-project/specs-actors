@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/go-bitfield"
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 )
 
 func TestBitFieldUnset(t *testing.T) {
@@ -68,14 +68,14 @@ func TestBitFieldContains(t *testing.T) {
 
 	assertContainsAny := func(a, b bitfield.BitField, expected bool) {
 		t.Helper()
-		actual, err := abi.BitFieldContainsAny(a, b)
+		actual, err := aabi.BitFieldContainsAny(a, b)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, actual)
 	}
 
 	assertContainsAll := func(a, b bitfield.BitField, expected bool) {
 		t.Helper()
-		actual, err := abi.BitFieldContainsAll(a, b)
+		actual, err := aabi.BitFieldContainsAll(a, b)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, actual)
 	}

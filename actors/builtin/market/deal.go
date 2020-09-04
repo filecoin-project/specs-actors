@@ -4,11 +4,11 @@ import (
 	"bytes"
 
 	addr "github.com/filecoin-project/go-address"
+	abi "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	acrypto "github.com/filecoin-project/specs-actors/actors/crypto"
 )
 

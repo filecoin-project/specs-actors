@@ -8,8 +8,14 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+	"github.com/ipfs/go-cid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
@@ -22,11 +28,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
-	"github.com/ipfs/go-cid"
-	cbg "github.com/whyrusleeping/cbor-gen"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func mustCbor(o runtime.CBORMarshaler) []byte {
@@ -657,7 +658,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"price per epoch greater than total filecoin": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
-					d.StoragePricePerEpoch = big.Add(abi.TotalFilecoin, big.NewInt(1))
+					d.StoragePricePerEpoch = big.Add(aabi.TotalFilecoin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
@@ -669,7 +670,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"provider collateral greater than max collateral": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
-					d.ProviderCollateral = big.Add(abi.TotalFilecoin, big.NewInt(1))
+					d.ProviderCollateral = big.Add(aabi.TotalFilecoin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
@@ -694,7 +695,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"client collateral greater than max collateral": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
-					d.ClientCollateral = big.Add(abi.TotalFilecoin, big.NewInt(1))
+					d.ClientCollateral = big.Add(aabi.TotalFilecoin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},

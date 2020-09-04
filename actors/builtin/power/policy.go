@@ -1,7 +1,7 @@
 package power
 
 import (
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	abi "github.com/filecoin-project/go-state-types/abi"
 )
 
 // Minimum number of registered miners for the minimum miner size limit to effectively limit consensus power.

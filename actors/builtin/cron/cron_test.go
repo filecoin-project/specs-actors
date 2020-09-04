@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	abi "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"

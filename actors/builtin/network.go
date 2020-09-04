@@ -3,7 +3,7 @@ package builtin
 import (
 	"fmt"
 
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	big "github.com/filecoin-project/go-state-types/big"
 )
 
 // The duration of a chain epoch.

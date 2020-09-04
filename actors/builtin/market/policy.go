@@ -1,8 +1,10 @@
 package market
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
@@ -23,7 +25,7 @@ func dealDurationBounds(size abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.C
 }
 
 func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
-	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
+	return abi.NewTokenAmount(0), aabi.TotalFilecoin // PARAM_FINISH
 }
 
 func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
@@ -41,11 +43,11 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	num := big.Mul(lockTargetNum, powerShareNum)
 	denom := big.Mul(lockTargetDenom, powerShareDenom)
 	minCollateral := big.Div(num, denom)
-	return minCollateral, abi.TotalFilecoin // PARAM_FINISH
+	return minCollateral, aabi.TotalFilecoin // PARAM_FINISH
 }
 
 func DealClientCollateralBounds(pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
-	return abi.NewTokenAmount(0), abi.TotalFilecoin // PARAM_FINISH
+	return abi.NewTokenAmount(0), aabi.TotalFilecoin // PARAM_FINISH
 }
 
 // Penalty to provider deal collateral if the deadline expires before sector commitment.

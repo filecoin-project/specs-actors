@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/minio/sha256-simd"
 	mh "github.com/multiformats/go-multihash"

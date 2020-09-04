@@ -10,14 +10,15 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	bitfield "github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
@@ -1492,7 +1493,8 @@ func TestExtendSectorExpiration(t *testing.T) {
 		sector := commitSector(t, rt)
 		rt.SetEpoch(sector.Expiration)
 
-		maxLifetime := sector.SealProof.SectorMaximumLifetime()
+		maxLifetime, err := aabi.SealProofSectorMaximumLifetime(sector.SealProof)
+		require.NoError(t, err)
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
@@ -2334,7 +2336,7 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 	require.NoError(h.t, err)
 	h.sectorSize, err = proof.SectorSize()
 	require.NoError(h.t, err)
-	h.partitionSize, err = proof.WindowPoStPartitionSectors()
+	h.partitionSize, err = aabi.SealProofWindowPoStPartitionSectors(proof)
 	require.NoError(h.t, err)
 }
 
@@ -2630,7 +2632,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	{
 		actorId, err := addr.IDFromAddress(h.receiver)
 		require.NoError(h.t, err)
-		seal := abi.SealVerifyInfo{
+		seal :=aabi.SealVerifyInfo{
 			SectorID: abi.SectorID{
 				Miner:  abi.ActorID(actorId),
 				Number: precommit.SectorNumber,
@@ -2845,7 +2847,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 		require.NoError(h.t, err)
 
 		// if not all sectors are skipped
-		proofInfos := make([]abi.SectorInfo, len(infos))
+		proofInfos := make([]aabi.SectorInfo, len(infos))
 		for i, ci := range infos {
 			si := ci
 			contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
@@ -2853,14 +2855,14 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.Deadli
 			if contains {
 				si = goodInfo
 			}
-			proofInfos[i] = abi.SectorInfo{
+			proofInfos[i] = aabi.SectorInfo{
 				SealProof:    si.SealProof,
 				SectorNumber: si.SectorNumber,
 				SealedCID:    si.SealedCID,
 			}
 		}
 
-		vi := abi.WindowPoStVerifyInfo{
+		vi :=aabi.WindowPoStVerifyInfo{
 			Randomness:        abi.PoStRandomness(challengeRand),
 			Proofs:            proofs,
 			ChallengedSectors: proofInfos,
@@ -3309,8 +3311,8 @@ func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 	}
 }
 
-func makePoStProofs(registeredPoStProof abi.RegisteredPoStProof) []abi.PoStProof {
-	proofs := make([]abi.PoStProof, 1) // Number of proofs doesn't depend on partition count
+func makePoStProofs(registeredPoStProof abi.RegisteredPoStProof) []aabi.PoStProof {
+	proofs := make([]aabi.PoStProof, 1) // Number of proofs doesn't depend on partition count
 	for i := range proofs {
 		proofs[i].PoStProof = registeredPoStProof
 		proofs[i].ProofBytes = []byte(fmt.Sprintf("proof%d", i))

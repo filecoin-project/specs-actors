@@ -6,16 +6,17 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/specs-actors/actors/crypto"
+	abi "github.com/filecoin-project/go-state-types/abi"
+	big "github.com/filecoin-project/go-state-types/big"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
-	big "github.com/filecoin-project/specs-actors/actors/abi/big"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
@@ -40,7 +41,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = Actor{}
+var _ aabi.Invokee = Actor{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods

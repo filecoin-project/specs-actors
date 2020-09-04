@@ -8,12 +8,12 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	. "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	"github.com/filecoin-project/specs-actors/actors/crypto"

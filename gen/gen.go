@@ -3,7 +3,7 @@ package main
 import (
 	gen "github.com/whyrusleeping/cbor-gen"
 
-	abi "github.com/filecoin-project/specs-actors/actors/abi"
+	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
@@ -17,20 +17,17 @@ import (
 	system "github.com/filecoin-project/specs-actors/actors/builtin/system"
 	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	puppet "github.com/filecoin-project/specs-actors/actors/puppet"
-
 	smoothing "github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 func main() {
 	// Common types
 	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
-		abi.PieceInfo{},
-		abi.SectorID{},
-		abi.SectorInfo{},
-		abi.SealVerifyInfo{},
-		abi.PoStProof{},
-		abi.WindowPoStVerifyInfo{},
-		abi.WinningPoStVerifyInfo{},
+		aabi.SectorInfo{},
+		aabi.SealVerifyInfo{},
+		aabi.PoStProof{},
+		aabi.WindowPoStVerifyInfo{},
+		aabi.WinningPoStVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}
