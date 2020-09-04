@@ -1511,8 +1511,8 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		info := getMinerInfo(rt, &st)
 
 		// verify miner hasn't already been faulted
-		if rt.CurrEpoch() < info.ConsensusFaultElapsed {
-			rt.Abortf(exitcode.ErrForbidden, "consensus fault has already been reported")
+		if fault.Epoch < info.ConsensusFaultElapsed {
+			rt.Abortf(exitcode.ErrForbidden, "miner has existing fault that has not expired (this may be a duplicate)")
 		}
 
 		err := st.ApplyPenalty(faultPenalty)

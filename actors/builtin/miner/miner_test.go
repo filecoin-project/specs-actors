@@ -3196,20 +3196,20 @@ func TestReportConsensusFault(t *testing.T) {
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "consensus fault has already been reported", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "miner has existing fault that has not expired", func() {
 			actor.reportConsensusFault(rt, addr.TestAddress)
 		})
 		rt.Reset()
 
 		// new consensus faults are forbidden until original has elapsed
-		rt.SetEpoch(endInfo.ConsensusFaultElapsed - 1)
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "consensus fault has already been reported", func() {
+		rt.SetEpoch(endInfo.ConsensusFaultElapsed) // actor.reportConsensusFault reports a fault for previous epoch
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "miner has existing fault that has not expired", func() {
 			actor.reportConsensusFault(rt, addr.TestAddress)
 		})
 		rt.Reset()
 
 		// a new consensus fault can be reported once fault has elapsed
-		rt.SetEpoch(endInfo.ConsensusFaultElapsed)
+		rt.SetEpoch(endInfo.ConsensusFaultElapsed + 1)
 		actor.reportConsensusFault(rt, addr.TestAddress)
 		endInfo = actor.getInfo(rt)
 		assert.Equal(t, rt.Epoch()+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
