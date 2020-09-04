@@ -1512,7 +1512,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 
 		// verify miner hasn't already been faulted
 		if fault.Epoch < info.ConsensusFaultElapsed {
-			rt.Abortf(exitcode.ErrForbidden, "miner has existing fault that has not expired (this may be a duplicate)")
+			rt.Abortf(exitcode.ErrForbidden, "fault epoch %d is too old, last exclusion period ended at %d", fault.Epoch, info.ConsensusFaultElapsed)
 		}
 
 		err := st.ApplyPenalty(faultPenalty)

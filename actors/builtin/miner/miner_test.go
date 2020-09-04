@@ -655,7 +655,7 @@ func TestCommitments(t *testing.T) {
 		// Try to precommit with an active consensus fault
 		st = getState(rt)
 
-		actor.reportConsensusFault(rt, addr.TestAddress)
+		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "precommit not allowed during active consensus fault", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{})
 		})
@@ -2067,7 +2067,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// consensus fault
-		actor.reportConsensusFault(rt, addr.TestAddress)
+		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
 
 		// advance to first proving period and submit so we'll have time to declare the fault next cycle
 		advanceAndSubmitPoSts(rt, actor, oneSector...)
@@ -3154,7 +3154,7 @@ func TestReportConsensusFault(t *testing.T) {
 		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
 		_ = sectorInfo
 
-		actor.reportConsensusFault(rt, addr.TestAddress)
+		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
 	})
 
 	t.Run("Report consensus fault updates consensus fault reported field", func(t *testing.T) {
@@ -3172,7 +3172,7 @@ func TestReportConsensusFault(t *testing.T) {
 		reportEpoch := abi.ChainEpoch(333)
 		rt.SetEpoch(reportEpoch)
 
-		actor.reportConsensusFault(rt, addr.TestAddress)
+		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 	})
@@ -3192,27 +3192,37 @@ func TestReportConsensusFault(t *testing.T) {
 		reportEpoch := abi.ChainEpoch(333)
 		rt.SetEpoch(reportEpoch)
 
-		actor.reportConsensusFault(rt, addr.TestAddress)
+		fault1 := rt.Epoch() - 1
+		actor.reportConsensusFault(rt, addr.TestAddress, fault1)
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "miner has existing fault that has not expired", func() {
-			actor.reportConsensusFault(rt, addr.TestAddress)
+		// same fault can't be reported twice
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
+			actor.reportConsensusFault(rt, addr.TestAddress, fault1)
 		})
 		rt.Reset()
 
 		// new consensus faults are forbidden until original has elapsed
-		rt.SetEpoch(endInfo.ConsensusFaultElapsed) // actor.reportConsensusFault reports a fault for previous epoch
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "miner has existing fault that has not expired", func() {
-			actor.reportConsensusFault(rt, addr.TestAddress)
+		rt.SetEpoch(endInfo.ConsensusFaultElapsed)
+		fault2 := endInfo.ConsensusFaultElapsed - 1
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
+			actor.reportConsensusFault(rt, addr.TestAddress, fault2)
 		})
 		rt.Reset()
 
-		// a new consensus fault can be reported once fault has elapsed
+		// a new consensus fault can be reported for blocks once original has expired
 		rt.SetEpoch(endInfo.ConsensusFaultElapsed + 1)
-		actor.reportConsensusFault(rt, addr.TestAddress)
+		fault3 := endInfo.ConsensusFaultElapsed
+		actor.reportConsensusFault(rt, addr.TestAddress, fault3)
 		endInfo = actor.getInfo(rt)
 		assert.Equal(t, rt.Epoch()+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+
+		// old fault still cannot be reported after fault interval has elapsed
+		fault4 := fault1 + 1
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
+			actor.reportConsensusFault(rt, addr.TestAddress, fault4)
+		})
 	})
 }
 
@@ -4269,7 +4279,7 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitFi
 	rt.Verify()
 }
 
-func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address) {
+func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, faultEpoch abi.ChainEpoch) {
 	rt.SetCaller(from, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 	params := &miner.ReportConsensusFaultParams{
@@ -4280,7 +4290,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address)
 
 	rt.ExpectVerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, &runtime.ConsensusFault{
 		Target: h.receiver,
-		Epoch:  rt.Epoch() - 1,
+		Epoch:  faultEpoch,
 		Type:   runtime.ConsensusFaultDoubleForkMining,
 	}, nil)
 
