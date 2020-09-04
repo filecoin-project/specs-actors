@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -596,7 +596,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 	epoch := abi.ChainEpoch(10)
 	sectorNum := abi.SectorNumber(1)
 
-	t.Run("successfully add a sector to pre commit expiry queue", func(t *testing.T) {
+	t.Run("successfully add a proof to pre commit expiry queue", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 		err := harness.s.AddPreCommitExpiry(harness.store, epoch, sectorNum)
 		require.NoError(t, err)
@@ -622,7 +622,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 }
 
 func TestSectorAssignment(t *testing.T) {
-	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
 	require.NoError(t, err)
 	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
 	require.NoError(t, err)
@@ -856,7 +856,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	sectorSize, err := testSealProofType.SectorSize()
 	require.NoError(t, err)
 
-	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(testSealProofType)
+	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(testSealProofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{

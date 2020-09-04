@@ -5,15 +5,14 @@ import (
 	"io"
 
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // The Puppet Actor exists to aid testing the runtime and environment in which it's embedded. It provides direct access
@@ -31,7 +30,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 func (a Actor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()

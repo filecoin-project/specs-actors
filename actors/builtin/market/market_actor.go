@@ -6,26 +6,25 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/go-state-types/abi"
-	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
-	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type Actor struct{}
 
-type Runtime = vmr.Runtime
+type Runtime = runtime.Runtime
 
 func (a Actor) Exports() []interface{} {
 	return []interface{}{
@@ -41,7 +40,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
@@ -560,7 +559,7 @@ func (a Actor) CronTick(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 		)
 
 		if !code.IsSuccess() {
-			rt.Log(vmr.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
+			rt.Log(runtime.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
 				"provider: %v, got code %v", d.Client, d.PieceSize, d.Provider, code)
 		}
 	}

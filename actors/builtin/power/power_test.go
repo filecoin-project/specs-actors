@@ -8,22 +8,22 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/go-state-types/abi"
-	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	mineract "github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
-	mock "github.com/filecoin-project/specs-actors/support/mock"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
 
@@ -748,7 +748,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		actor.constructAndVerify(rt)
 		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
 		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
-		sealInfo := &aabi.SealVerifyInfo{
+		sealInfo := &proof.SealVerifyInfo{
 			SealedCID:   commR,
 			UnsealedCID: commD,
 		}
@@ -763,7 +763,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, uint64(1), arr.Length())
-		var storedSealInfo aabi.SealVerifyInfo
+		var storedSealInfo proof.SealVerifyInfo
 		found, err = arr.Get(0, &storedSealInfo)
 		require.NoError(t, err)
 		require.True(t, found)
@@ -774,8 +774,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		sealInfo := func(i int) *aabi.SealVerifyInfo {
-			var sealInfo aabi.SealVerifyInfo
+		sealInfo := func(i int) *proof.SealVerifyInfo {
+			var sealInfo proof.SealVerifyInfo
 			sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i), &mineract.SealedCIDPrefix)
 			sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i), &market.PieceCIDPrefix)
 			return &sealInfo
@@ -796,8 +796,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 }
 
 func TestCronBatchProofVerifies(t *testing.T) {
-	sealInfo := func(i int) *aabi.SealVerifyInfo {
-		var sealInfo aabi.SealVerifyInfo
+	sealInfo := func(i int) *proof.SealVerifyInfo {
+		var sealInfo proof.SealVerifyInfo
 		sealInfo.SealedCID = tutil.MakeCID(fmt.Sprintf("commR-%d", i), &mineract.SealedCIDPrefix)
 		sealInfo.UnsealedCID = tutil.MakeCID(fmt.Sprintf("commD-%d", i), &market.PieceCIDPrefix)
 		sealInfo.SectorID = abi.SectorID{Number: abi.SectorNumber(i)}
@@ -819,7 +819,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.submitPoRepForBulkVerify(rt, miner1, info)
 
-		infos := map[addr.Address][]aabi.SealVerifyInfo{miner1: []aabi.SealVerifyInfo{*info}}
+		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info}}
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
@@ -832,7 +832,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]aabi.SealVerifyInfo{miner1: []aabi.SealVerifyInfo{*info1, *info2, *info3}}
+		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number, info3.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
@@ -846,7 +846,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 
 		// duplicates will be sent to the batch verify call
-		infos := map[addr.Address][]aabi.SealVerifyInfo{miner1: []aabi.SealVerifyInfo{*info1, *info1, *info2}}
+		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info1, *info1, *info2}}
 
 		// however, duplicates will not be sent to the miner as confirmed
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number}}}
@@ -880,10 +880,10 @@ func TestCronBatchProofVerifies(t *testing.T) {
 			{miner4, []abi.SectorNumber{info7.Number, info8.Number}},
 			{miner2, []abi.SectorNumber{info3.Number, info4.Number}}}
 
-		infos := map[addr.Address][]aabi.SealVerifyInfo{miner1: []aabi.SealVerifyInfo{*info1, *info2},
-			miner2: []aabi.SealVerifyInfo{*info3, *info4},
-			miner3: []aabi.SealVerifyInfo{*info5, *info6},
-			miner4: []aabi.SealVerifyInfo{*info7, *info8}}
+		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info1, *info2},
+			miner2: {*info3, *info4},
+			miner3: {*info5, *info6},
+			miner4: {*info7, *info8}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
 	})
@@ -900,7 +900,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]aabi.SealVerifyInfo{miner1: []aabi.SealVerifyInfo{*info1, *info2, *info3}}
+		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 
 		res := map[addr.Address][]bool{
 			miner1: []bool{true, false, true},
@@ -934,7 +934,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
 
-		infos := map[addr.Address][]aabi.SealVerifyInfo{miner1: []aabi.SealVerifyInfo{*info1, *info2, *info3}}
+		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 
 		rt.ExpectBatchVerifySeals(infos, batchVerifyDefaultOutput(infos), fmt.Errorf("fail"))
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
@@ -1011,7 +1011,7 @@ type confirmedSectorSend struct {
 }
 
 func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpoch, expectedRawPower abi.StoragePower,
-	confirmedSectors []confirmedSectorSend, infos map[addr.Address][]aabi.SealVerifyInfo) {
+	confirmedSectors []confirmedSectorSend, infos map[addr.Address][]proof.SealVerifyInfo) {
 
 	// expect sends for confirmed sectors
 	for _, cs := range confirmedSectors {
@@ -1211,7 +1211,7 @@ func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Addre
 	require.EqualValues(h.t, big.Sub(prevPledged, *pledgeAmount), st.TotalPledgeCollateral)
 }
 
-func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr addr.Address, sealInfo *aabi.SealVerifyInfo) {
+func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr addr.Address, sealInfo *proof.SealVerifyInfo) {
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 	rt.SetCaller(minerAddr, builtin.StorageMinerActorCodeID)
 	rt.Call(h.Actor.SubmitPoRepForBulkVerify, sealInfo)
@@ -1255,7 +1255,7 @@ func getState(rt *mock.Runtime) *power.State {
 	return &st
 }
 
-func batchVerifyDefaultOutput(vis map[addr.Address][]aabi.SealVerifyInfo) map[addr.Address][]bool {
+func batchVerifyDefaultOutput(vis map[addr.Address][]proof.SealVerifyInfo) map[addr.Address][]bool {
 	out := make(map[addr.Address][]bool)
 	for k, v := range vis { //nolint:nomaprange
 		validations := make([]bool, len(v))

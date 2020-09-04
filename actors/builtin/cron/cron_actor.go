@@ -1,12 +1,11 @@
 package cron
 
 import (
-	abi "github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/abi"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // The cron actor is a built-in singleton that sends messages to other registered actors at the end of each epoch.
@@ -19,20 +18,20 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 type ConstructorParams struct {
 	Entries []Entry
 }
 
-func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	rt.State().Create(ConstructState(params.Entries))
 	return nil
 }
 
 // Invoked by the system after all other messages in the epoch have been processed.
-func (a Actor) EpochTick(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) EpochTick(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	var st State

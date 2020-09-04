@@ -3,31 +3,31 @@ package main
 import (
 	gen "github.com/whyrusleeping/cbor-gen"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	account "github.com/filecoin-project/specs-actors/actors/builtin/account"
-	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
-	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
-	paych "github.com/filecoin-project/specs-actors/actors/builtin/paych"
-	power "github.com/filecoin-project/specs-actors/actors/builtin/power"
-	reward "github.com/filecoin-project/specs-actors/actors/builtin/reward"
-	system "github.com/filecoin-project/specs-actors/actors/builtin/system"
-	verifreg "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
-	puppet "github.com/filecoin-project/specs-actors/actors/puppet"
-	smoothing "github.com/filecoin-project/specs-actors/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/actors/builtin/paych"
+	"github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/actors/builtin/system"
+	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/puppet"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 func main() {
 	// Common types
-	if err := gen.WriteTupleEncodersToFile("./actors/abi/cbor_gen.go", "abi",
-		aabi.SectorInfo{},
-		aabi.SealVerifyInfo{},
-		aabi.PoStProof{},
-		aabi.WindowPoStVerifyInfo{},
-		aabi.WinningPoStVerifyInfo{},
+	if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof",
+		proof.SectorInfo{},
+		proof.SealVerifyInfo{},
+		proof.PoStProof{},
+		proof.WindowPoStVerifyInfo{},
+		proof.WinningPoStVerifyInfo{},
 	); err != nil {
 		panic(err)
 	}

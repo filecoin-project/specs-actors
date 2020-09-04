@@ -4,12 +4,11 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	cid "github.com/ipfs/go-cid"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	autil "github.com/filecoin-project/specs-actors/actors/util"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // The init actor uniquely has the power to create new actors.
@@ -23,7 +22,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 type ConstructorParams struct {
 	NetworkName string

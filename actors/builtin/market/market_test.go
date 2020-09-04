@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
@@ -658,7 +657,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"price per epoch greater than total filecoin": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
-					d.StoragePricePerEpoch = big.Add(aabi.TotalFilecoin, big.NewInt(1))
+					d.StoragePricePerEpoch = big.Add(builtin.TotalFilecoin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
@@ -670,7 +669,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"provider collateral greater than max collateral": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
-					d.ProviderCollateral = big.Add(aabi.TotalFilecoin, big.NewInt(1))
+					d.ProviderCollateral = big.Add(builtin.TotalFilecoin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
@@ -695,7 +694,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			},
 			"client collateral greater than max collateral": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
-					d.ClientCollateral = big.Add(aabi.TotalFilecoin, big.NewInt(1))
+					d.ClientCollateral = big.Add(builtin.TotalFilecoin, big.NewInt(1))
 				},
 				exitCode: exitcode.ErrIllegalArgument,
 			},
