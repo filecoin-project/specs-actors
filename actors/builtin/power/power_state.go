@@ -208,6 +208,25 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 	return setClaim(claims, miner, &newClaim)
 }
 
+func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) error {
+	oldClaim, ok, err := getClaim(claims, miner)
+	if err != nil {
+		return fmt.Errorf("failed to get claim: %w", err)
+	}
+	if !ok {
+		return nil // no record, we're done
+	}
+
+	// subtract from stats as if we were simply removing power
+	err = st.addToClaim(claims, miner, oldClaim.RawBytePower.Neg(), oldClaim.QualityAdjPower.Neg())
+	if err != nil {
+		return fmt.Errorf("failed to subtract miner power before deleting claim: %w", err)
+	}
+
+	// delete claim from state to invalidate miner
+	return claims.Delete(AddrKey(miner))
+}
+
 func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 	var out Claim
 	found, err := claims.Get(AddrKey(a), &out)
