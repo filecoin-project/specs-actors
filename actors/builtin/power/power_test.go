@@ -159,10 +159,12 @@ func TestUpdateClaimedPowerFailures(t *testing.T) {
 }
 
 func TestEnrollCronEpoch(t *testing.T) {
+	owner := tutil.NewBLSAddr(t, 0)
 	miner := tutil.NewIDAddr(t, 101)
 
 	t.Run("enroll multiple events", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner)
 		e1 := abi.ChainEpoch(1)
 
 		// enroll event with miner 1
@@ -191,6 +193,7 @@ func TestEnrollCronEpoch(t *testing.T) {
 		e2 := abi.ChainEpoch(2)
 		p3 := []byte("test")
 		miner2 := tutil.NewIDAddr(t, 501)
+		ac.createMinerBasic(rt, owner, owner, miner2)
 		ac.enrollCronEvent(rt, miner2, e2, p3)
 		events = ac.getEnrolledCronTicks(rt, e2)
 		evt = events[0]
@@ -200,6 +203,7 @@ func TestEnrollCronEpoch(t *testing.T) {
 
 	t.Run("enroll for an epoch before the current epoch", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner)
 
 		// current epoch is 5
 		current := abi.ChainEpoch(5)
@@ -477,6 +481,29 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	})
 }
 
+func TestUpdatePledgeTotal(t *testing.T) {
+	// most coverage of update pledge total is in accounting test above
+
+	actor := newHarness(t)
+	owner := tutil.NewIDAddr(t, 101)
+	miner := tutil.NewIDAddr(t, 111)
+	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).
+		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+
+	t.Run("update pledge total aborts if miner has no claim", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		actor.createMinerBasic(rt, owner, owner, miner)
+
+		// explicitly delete miner claim
+		actor.deleteClaim(rt, miner)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "unknown miner", func() {
+			actor.updatePledgeTotal(rt, miner, abi.NewTokenAmount(1e6))
+		})
+	})
+}
+
 func TestCron(t *testing.T) {
 	actor := newHarness(t)
 	miner1 := tutil.NewIDAddr(t, 101)
@@ -534,6 +561,8 @@ func TestCron(t *testing.T) {
 	t.Run("event scheduled in null round called next round", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
 
 		//  0 - genesis
 		//  1 - block - registers events
@@ -561,6 +590,7 @@ func TestCron(t *testing.T) {
 	t.Run("event scheduled in past called next round", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		actor.createMinerBasic(rt, owner, owner, miner1)
 
 		// run cron once to put it in a clean state at epoch 4
 		rt.SetEpoch(4)
@@ -612,30 +642,68 @@ func TestCron(t *testing.T) {
 		})
 	})
 
+	t.Run("skips invocation if miner has no claim", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(1)
+		actor.createMinerBasic(rt, owner, owner, miner1)
+		actor.createMinerBasic(rt, owner, owner, miner2)
+
+		actor.enrollCronEvent(rt, miner1, 2, []byte{})
+		actor.enrollCronEvent(rt, miner2, 2, []byte{})
+
+		// explicitly delete miner 1's claim
+		actor.deleteClaim(rt, miner1)
+
+		rt.SetEpoch(2)
+		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+		// process batch verifies first
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
+		// only expect second deferred cron event call
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
+
+		// Reward actor still invoked
+		expectedPower := big.NewInt(0)
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
+		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Verify()
+
+		// expect cron skip was logged
+		rt.ExpectLogsContain("skipping cron event for unknown miner t0101")
+	})
+
 	t.Run("handles failed call", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
 		rt.SetEpoch(1)
-		actor.enrollCronEvent(rt, miner1, 2, []byte{})
-		actor.enrollCronEvent(rt, miner2, 2, []byte{})
-
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 
-		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg2KiBV1)
+		actor.enrollCronEvent(rt, miner1, 2, []byte{})
+		actor.enrollCronEvent(rt, miner2, 2, []byte{})
+
+		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 		require.NoError(t, err)
 
 		qaPow := rawPow
 		actor.updateClaimedPower(rt, miner1, rawPow, qaPow)
 		actor.expectTotalPowerEager(rt, rawPow, qaPow)
+		actor.expectMinersAboveMinPower(rt, 1)
 
 		expectedPower := big.NewInt(0)
 		rt.SetEpoch(2)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+		// process batch verifies first
+		rt.ExpectBatchVerifySeals(nil, nil, nil)
+
 		// First send fails
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.ErrIllegalState)
-		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
 		// Subsequent one still invoked
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, vmr.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
@@ -648,9 +716,15 @@ func TestCron(t *testing.T) {
 		// expect cron failure was logged
 		rt.ExpectLogsContain("OnDeferredCronEvent failed for miner")
 
-		newPow := actor.currentPowerTotal(rt)
-		assert.Equal(t, abi.NewStoragePower(0), newPow.RawBytePower)
-		assert.Equal(t, abi.NewStoragePower(0), newPow.QualityAdjPower)
+		// expect power stats to be decremented due to claim deletion
+		actor.expectTotalPowerEager(rt, big.Zero(), big.Zero())
+		actor.expectMinersAboveMinPower(rt, 0)
+
+		// miner's claim is removed
+		st := getState(rt)
+		_, found, err := st.GetClaim(rt.AdtStore(), miner1)
+		require.NoError(t, err)
+		assert.False(t, found)
 
 		// Next epoch, only the reward actor is invoked
 		rt.SetEpoch(3)
@@ -667,11 +741,13 @@ func TestCron(t *testing.T) {
 func TestSubmitPoRepForBulkVerify(t *testing.T) {
 	actor := newHarness(t)
 	miner := tutil.NewIDAddr(t, 101)
+	owner := tutil.NewIDAddr(t, 101)
 	builder := mock.NewBuilder(context.Background(), builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("registers porep and charges gas", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		actor.createMinerBasic(rt, owner, owner, miner)
 		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
 		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
 		sealInfo := &proof.SealVerifyInfo{
@@ -699,6 +775,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 	t.Run("aborts when too many poreps", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		actor.createMinerBasic(rt, owner, owner, miner)
 
 		sealInfo := func(i int) *proof.SealVerifyInfo {
 			var sealInfo proof.SealVerifyInfo
@@ -719,6 +796,25 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		// Gas only charged for successful submissions
 		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal * power.MaxMinerProveCommitsPerEpoch)
 	})
+
+	t.Run("aborts when miner has no claim", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		actor.createMinerBasic(rt, owner, owner, miner)
+		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
+		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
+		sealInfo := &proof.SealVerifyInfo{
+			SealedCID:   commR,
+			UnsealedCID: commD,
+		}
+
+		// delete miner
+		actor.deleteClaim(rt, miner)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "unknown miner", func() {
+			actor.submitPoRepForBulkVerify(rt, miner, sealInfo)
+		})
+	})
 }
 
 func TestCronBatchProofVerifies(t *testing.T) {
@@ -731,6 +827,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 	}
 
 	miner1 := tutil.NewIDAddr(t, 101)
+	owner := tutil.NewIDAddr(t, 102)
 	info := sealInfo(0)
 	info1 := sealInfo(1)
 	info2 := sealInfo(2)
@@ -743,6 +840,8 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 	t.Run("success with one miner and one confirmed sector", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
+
 		ac.submitPoRepForBulkVerify(rt, miner1, info)
 
 		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info}}
@@ -753,6 +852,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 	t.Run("success with one miner and multiple confirmed sectors", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
@@ -766,6 +866,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 	t.Run("duplicate sector numbers are ignored for a miner", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
@@ -780,12 +881,37 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
 	})
 
+	t.Run("skips verify if miner has no claim", func(t *testing.T) {
+		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
+
+		ac.submitPoRepForBulkVerify(rt, miner1, info1)
+
+		// now explicitly delete miner's claim
+		ac.deleteClaim(rt, miner1)
+
+		// all infos will be skipped
+		infos := map[addr.Address][]proof.SealVerifyInfo{}
+
+		// nothing will be sent to miner
+		cs := []confirmedSectorSend{}
+
+		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+
+		// expect cron failure was logged
+		rt.ExpectLogsContain("skipping batch verifies for unknown miner t0101")
+	})
+
 	t.Run("success with multiple miners and multiple confirmed sectors and assert expected power", func(t *testing.T) {
 		miner2 := tutil.NewIDAddr(t, 102)
 		miner3 := tutil.NewIDAddr(t, 103)
 		miner4 := tutil.NewIDAddr(t, 104)
 
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
+		ac.createMinerBasic(rt, owner, owner, miner2)
+		ac.createMinerBasic(rt, owner, owner, miner3)
+		ac.createMinerBasic(rt, owner, owner, miner4)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
@@ -821,6 +947,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 	t.Run("verification for one sector fails but others succeeds for a miner", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
 
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
@@ -856,6 +983,8 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 	t.Run("fails if batch verify seals fails", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
+		ac.createMinerBasic(rt, owner, owner, miner1)
+
 		ac.submitPoRepForBulkVerify(rt, miner1, info1)
 		ac.submitPoRepForBulkVerify(rt, miner1, info2)
 		ac.submitPoRepForBulkVerify(rt, miner1, info3)
@@ -1013,6 +1142,17 @@ func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim
 	require.True(h.t, found)
 
 	return &out
+}
+
+func (h *spActorHarness) deleteClaim(rt *mock.Runtime, a addr.Address) {
+	st := getState(rt)
+	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
+	require.NoError(h.t, err)
+	err = claims.Delete(power.AddrKey(a))
+	require.NoError(h.t, err)
+	st.Claims, err = claims.Root()
+	require.NoError(h.t, err)
+	rt.ReplaceState(st)
 }
 
 func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainEpoch) []power.CronEvent {
