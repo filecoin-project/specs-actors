@@ -6,9 +6,8 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -26,9 +25,9 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
-func (a Actor) Constructor(rt vmr.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	if currRealizedPower == nil {
@@ -57,7 +56,7 @@ type AwardBlockRewardParams struct {
 //
 // The reward is reduced before the residual is credited to the block producer, by:
 // - a penalty amount, provided as a parameter, which is burnt,
-func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
+func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	priorBalance := rt.CurrentBalance()
 	if params.Penalty.LessThan(big.Zero()) {
@@ -88,7 +87,7 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 		totalReward = big.Add(blockReward, params.GasReward)
 		currBalance := rt.CurrentBalance()
 		if totalReward.GreaterThan(currBalance) {
-			rt.Log(vmr.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
+			rt.Log(runtime.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
 			totalReward = currBalance
 
 			blockReward = big.Sub(totalReward, params.GasReward)
@@ -107,10 +106,10 @@ func (a Actor) AwardBlockReward(rt vmr.Runtime, params *AwardBlockRewardParams) 
 	}
 	_, code := rt.Send(minerAddr, builtin.MethodsMiner.ApplyRewards, &rewardParams, totalReward)
 	if !code.IsSuccess() {
-		rt.Log(vmr.ERROR, "failed to send ApplyRewards call to the miner actor with funds: %v, code: %v", totalReward, code)
+		rt.Log(runtime.ERROR, "failed to send ApplyRewards call to the miner actor with funds: %v, code: %v", totalReward, code)
 		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalReward)
 		if !code.IsSuccess() {
-			rt.Log(vmr.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
+			rt.Log(runtime.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
 		}
 	}
 
@@ -125,7 +124,7 @@ type ThisEpochRewardReturn struct {
 // The award value used for the current epoch, updated at the end of an epoch
 // through cron tick.  In the case previous epochs were null blocks this
 // is the reward value as calculated at the last non-null epoch.
-func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *ThisEpochRewardReturn {
+func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *adt.EmptyValue) *ThisEpochRewardReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
@@ -139,7 +138,7 @@ func (a Actor) ThisEpochReward(rt vmr.Runtime, _ *adt.EmptyValue) *ThisEpochRewa
 // Called at the end of each epoch by the power actor (in turn by its cron hook).
 // This is only invoked for non-empty tipsets, but catches up any number of null
 // epochs to compute the next epoch reward.
-func (a Actor) UpdateNetworkKPI(rt vmr.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
+func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	if currRealizedPower == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "arugment should not be nil")

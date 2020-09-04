@@ -7,11 +7,9 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -31,7 +29,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 type ConstructorParams struct {
 	From addr.Address // Payer
@@ -39,7 +37,7 @@ type ConstructorParams struct {
 }
 
 // Constructor creates a payment channel actor. See State for meaning of params.
-func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	// Only InitActor can create a payment channel actor. It creates the actor on
 	// behalf of the payer/payee.
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
@@ -60,7 +58,7 @@ func (pca *Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.Em
 }
 
 // Resolves an address to a canonical ID address and requires it to address an account actor.
-func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address, error) {
+func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Address, error) {
 	resolved, err := builtin.ResolveToIDAddr(rt, raw)
 	if err != nil {
 		return addr.Undef, exitcode.ErrIllegalState.Wrapf("failed to resolve address %v: %w", raw, err)
@@ -127,7 +125,7 @@ type ModVerifyParams struct {
 	Params []byte
 }
 
-func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
+func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
@@ -282,7 +280,7 @@ func (pca Actor) UpdateChannelState(rt vmr.Runtime, params *UpdateChannelStatePa
 	return nil
 }
 
-func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (pca Actor) Settle(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() {
 		rt.ValidateImmediateCallerIs(st.From, st.To)
@@ -299,7 +297,7 @@ func (pca Actor) Settle(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func (pca Actor) Collect(rt vmr.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (pca Actor) Collect(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.From, st.To)
@@ -336,7 +334,7 @@ func (t *SignedVoucher) SigningBytes() ([]byte, error) {
 }
 
 // Returns the insertion index for a lane ID, with the matching lane state if found, or nil.
-func findLane(rt vmr.Runtime, ls *adt.Array, id uint64) *LaneState {
+func findLane(rt runtime.Runtime, ls *adt.Array, id uint64) *LaneState {
 	if id > MaxLane {
 		rt.Abortf(exitcode.ErrIllegalArgument, "maximum lane ID is 2^63-1")
 	}

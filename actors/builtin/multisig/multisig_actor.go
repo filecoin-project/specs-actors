@@ -8,9 +8,8 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -64,7 +63,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 type ConstructorParams struct {
 	Signers               []addr.Address
@@ -73,7 +72,7 @@ type ConstructorParams struct {
 	StartEpoch            abi.ChainEpoch
 }
 
-func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	if len(params.Signers) < 1 {
@@ -149,7 +148,7 @@ type ProposeReturn struct {
 	Ret []byte
 }
 
-func (a Actor) Propose(rt vmr.Runtime, params *ProposeParams) *ProposeReturn {
+func (a Actor) Propose(rt runtime.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	proposer := rt.Message().Caller()
 
@@ -214,7 +213,7 @@ type ApproveReturn struct {
 	Ret []byte
 }
 
-func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
+func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
@@ -247,7 +246,7 @@ func (a Actor) Approve(rt vmr.Runtime, params *TxnIDParams) *ApproveReturn {
 	}
 }
 
-func (a Actor) Cancel(rt vmr.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
@@ -291,7 +290,7 @@ type AddSignerParams struct {
 	Increase bool
 }
 
-func (a Actor) AddSigner(rt vmr.Runtime, params *AddSignerParams) *adt.EmptyValue {
+func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 	resolvedNewSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
@@ -321,7 +320,7 @@ type RemoveSignerParams struct {
 	Decrease bool
 }
 
-func (a Actor) RemoveSigner(rt vmr.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
+func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 	resolvedOldSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
@@ -367,7 +366,7 @@ type SwapSignerParams struct {
 	To   addr.Address
 }
 
-func (a Actor) SwapSigner(rt vmr.Runtime, params *SwapSignerParams) *adt.EmptyValue {
+func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
@@ -406,7 +405,7 @@ type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold uint64
 }
 
-func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
+func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
@@ -421,7 +420,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt vmr.Runtime, params *ChangeNumAppr
 	return nil
 }
 
-func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
+func (a Actor) approveTransaction(rt runtime.Runtime, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
 	caller := rt.Message().Caller()
 
 	var st State
@@ -449,7 +448,7 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 	return executeTransactionIfApproved(rt, st, txnID, txn)
 }
 
-func getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
+func getTransaction(rt runtime.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
 	var txn Transaction
 
 	// get transaction from the state trie
@@ -471,8 +470,8 @@ func getTransaction(rt vmr.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []by
 	return &txn
 }
 
-func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
-	var out vmr.CBORBytes
+func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn *Transaction) (bool, []byte, exitcode.ExitCode) {
+	var out runtime.CBORBytes
 	var code exitcode.ExitCode
 	applied := false
 
@@ -482,12 +481,12 @@ func executeTransactionIfApproved(rt vmr.Runtime, st State, txnID TxnID, txn *Tr
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: %v", err)
 		}
 
-		var ret vmr.SendReturn
+		var ret runtime.SendReturn
 		// A sufficient number of approvals have arrived and sufficient funds have been unlocked: relay the message and delete from pending queue.
 		ret, code = rt.Send(
 			txn.To,
 			txn.Method,
-			vmr.CBORBytes(txn.Params),
+			runtime.CBORBytes(txn.Params),
 			txn.Value,
 		)
 		applied = true

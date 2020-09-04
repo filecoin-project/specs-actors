@@ -14,20 +14,20 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
-type Runtime = vmr.Runtime
+type Runtime = runtime.Runtime
 
 type CronEventType int64
 
@@ -75,7 +75,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 /////////////////
 // Constructor //
@@ -288,7 +288,7 @@ type SubmitWindowedPoStParams struct {
 	Partitions []PoStPartition
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
-	Proofs []aabi.PoStProof
+	Proofs []proof.PoStProof
 	// The epoch at which these proofs is being committed to a particular chain.
 	// NOTE: This field should be removed in the future. See
 	// https://github.com/filecoin-project/specs-actors/issues/1094
@@ -684,7 +684,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// This should be enforced by the power actor. We log here just in case
 	// something goes wrong.
 	if len(params.Sectors) > power.MaxMinerProveCommitsPerEpoch {
-		rt.Log(vmr.WARN, "confirmed more prove commits in an epoch than permitted: %d > %d",
+		rt.Log(runtime.WARN, "confirmed more prove commits in an epoch than permitted: %d > %d",
 			len(params.Sectors), power.MaxMinerProveCommitsPerEpoch,
 		)
 	}
@@ -739,7 +739,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			)
 
 			if code != exitcode.Ok {
-				rt.Log(vmr.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
+				rt.Log(runtime.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
 				continue
 			}
 		}
@@ -781,7 +781,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// This should have been caught in precommit, but don't let other sectors fail because of it.
 			if duration < MinSectorExpiration {
-				rt.Log(vmr.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
+				rt.Log(runtime.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
 				continue
 			}
 
@@ -1529,7 +1529,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	})
 	_, code := rt.Send(reporter, builtin.MethodSend, nil, rewardAmount)
 	if !code.IsSuccess() {
-		rt.Log(vmr.ERROR, "failed to send reward")
+		rt.Log(runtime.ERROR, "failed to send reward")
 	}
 	burnFunds(rt, burnAmount)
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -1856,7 +1856,7 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 
 	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
-	maxLifetime, err := aabi.SealProofSectorMaximumLifetime(sealProof)
+	maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sealProof)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "unrecognized seal proof type %d", sealProof)
 	if expiration-activation > maxLifetime {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",
@@ -1951,7 +1951,7 @@ func havePendingEarlyTerminations(rt Runtime, st *State) bool {
 	return !noEarlyTerminations
 }
 
-func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []aabi.PoStProof) {
+func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof) {
 	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
@@ -1962,9 +1962,9 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	AssertNoError(err)
 	postRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
 
-	sectorProofInfo := make([]aabi.SectorInfo, len(sectors))
+	sectorProofInfo := make([]proof.SectorInfo, len(sectors))
 	for i, s := range sectors {
-		sectorProofInfo[i] = aabi.SectorInfo{
+		sectorProofInfo[i] = proof.SectorInfo{
 			SealProof:    s.SealProof,
 			SectorNumber: s.SectorNumber,
 			SealedCID:    s.SealedCID,
@@ -1972,7 +1972,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 
 	// Get public inputs
-	pvInfo := aabi.WindowPoStVerifyInfo{
+	pvInfo := proof.WindowPoStVerifyInfo{
 		Randomness:        abi.PoStRandomness(postRandomness),
 		Proofs:            proofs,
 		ChallengedSectors: sectorProofInfo,
@@ -1999,7 +1999,7 @@ type SealVerifyStuff struct {
 	SealRandEpoch abi.ChainEpoch // Used to tie the seal to a chain.
 }
 
-func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *aabi.SealVerifyInfo {
+func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 	if rt.CurrEpoch() <= params.InteractiveEpoch {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
@@ -2017,7 +2017,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *aabi.SealVerifyInfo {
 	svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
 	svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())
 
-	return &aabi.SealVerifyInfo{
+	return &proof.SealVerifyInfo{
 		SealProof: params.RegisteredSealProof,
 		SectorID: abi.SectorID{
 			Miner:  abi.ActorID(minerActorID),
@@ -2267,7 +2267,7 @@ func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
 // Validates that a partition contains the given sectors.
 func validatePartitionContainsSectors(partition *Partition, sectors bitfield.BitField) error {
 	// Check that the declared sectors are actually assigned to the partition.
-	contains, err := aabi.BitFieldContainsAll(partition.Sectors, sectors)
+	contains, err := BitFieldContainsAll(partition.Sectors, sectors)
 	if err != nil {
 		return xerrors.Errorf("failed to check sectors: %w", err)
 	}

@@ -14,13 +14,13 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -389,11 +389,11 @@ func (s fakeSyscalls) ComputeUnsealedSectorCID(_ abi.RegisteredSealProof, _ []ab
 	return testing.MakeCID("presealedSectorCID", nil), nil
 }
 
-func (s fakeSyscalls) VerifySeal(_ aabi.SealVerifyInfo) error {
+func (s fakeSyscalls) VerifySeal(_ proof.SealVerifyInfo) error {
 	return nil
 }
 
-func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]aabi.SealVerifyInfo) (map[address.Address][]bool, error) {
+func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]proof.SealVerifyInfo) (map[address.Address][]bool, error) {
 	res := map[address.Address][]bool{}
 	for addr, infos := range vi { //nolint:nomaprange
 		verified := make([]bool, len(infos))
@@ -406,7 +406,7 @@ func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]aabi.SealVerifyI
 	return res, nil
 }
 
-func (s fakeSyscalls) VerifyPoSt(_ aabi.WindowPoStVerifyInfo) error {
+func (s fakeSyscalls) VerifyPoSt(_ proof.WindowPoStVerifyInfo) error {
 	return nil
 }
 

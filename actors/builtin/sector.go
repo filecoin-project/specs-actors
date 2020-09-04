@@ -1,11 +1,9 @@
-package abi
+package builtin
 
 import (
 	stabi "github.com/filecoin-project/go-state-types/abi"
-	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 )
-
 
 // Metadata about a seal proof type.
 type SealProofPolicy struct {
@@ -92,55 +90,4 @@ func PoStProofWindowPoStPartitionSectors(p stabi.RegisteredPoStProof) (uint64, e
 		return 0, err
 	}
 	return SealProofWindowPoStPartitionSectors(sp)
-}
-
-///
-/// Sealing
-///
-
-// Information needed to verify a seal proof.
-type SealVerifyInfo struct {
-	SealProof stabi.RegisteredSealProof
-	stabi.SectorID
-	DealIDs               []stabi.DealID
-	Randomness            stabi.SealRandomness
-	InteractiveRandomness stabi.InteractiveSealRandomness
-	Proof                 []byte
-
-	// Safe because we get those from the miner actor
-	SealedCID   cid.Cid `checked:"true"` // CommR
-	UnsealedCID cid.Cid `checked:"true"` // CommD
-}
-
-///
-/// PoSting
-///
-
-// Information about a sector necessary for PoSt verification.
-type SectorInfo struct {
-	SealProof    stabi.RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
-	SectorNumber stabi.SectorNumber
-	SealedCID    cid.Cid // CommR
-}
-
-type PoStProof struct {
-	PoStProof  stabi.RegisteredPoStProof
-	ProofBytes []byte
-}
-
-// Information needed to verify a Winning PoSt attached to a block header.
-// Note: this is not used within the state machine, but by the consensus/election mechanisms.
-type WinningPoStVerifyInfo struct {
-	Randomness        stabi.PoStRandomness
-	Proofs            []PoStProof
-	ChallengedSectors []SectorInfo
-	Prover            stabi.ActorID // used to derive 32-byte prover ID
-}
-
-// Information needed to verify a Window PoSt submitted directly to a miner actor.
-type WindowPoStVerifyInfo struct {
-	Randomness        stabi.PoStRandomness
-	Proofs            []PoStProof
-	ChallengedSectors []SectorInfo
-	Prover            stabi.ActorID // used to derive 32-byte prover ID
 }
