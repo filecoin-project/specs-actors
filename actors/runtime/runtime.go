@@ -245,7 +245,7 @@ type StateHandle interface {
 	// var state SomeState
 	// ret := rt.State().Transaction(&state, func() {
 	// 	// make some changes
-	// 	st.ImLoaded = true
+	// 	state.ImLoaded = true
 	// })
 	// // state.ImLoaded = false // BAD!! state is readonly outside the lambda, it will panic
 	// ```
