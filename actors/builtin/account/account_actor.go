@@ -3,9 +3,8 @@ package account
 import (
 	addr "github.com/filecoin-project/go-address"
 
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
@@ -19,13 +18,13 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 type State struct {
 	Address addr.Address
 }
 
-func (a Actor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, address *addr.Address) *adt.EmptyValue {
 	// Account actors are created implicitly by sending a message to a pubkey-style address.
 	// This constructor is not invoked by the InitActor, but by the system.
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
@@ -42,7 +41,7 @@ func (a Actor) Constructor(rt vmr.Runtime, address *addr.Address) *adt.EmptyValu
 }
 
 // Fetches the pubkey-type address from this actor.
-func (a Actor) PubkeyAddress(rt vmr.Runtime, _ *adt.EmptyValue) *addr.Address {
+func (a Actor) PubkeyAddress(rt runtime.Runtime, _ *adt.EmptyValue) *addr.Address {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)

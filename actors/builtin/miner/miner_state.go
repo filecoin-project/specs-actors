@@ -13,7 +13,7 @@ import (
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
@@ -193,7 +193,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		return nil, err
 	}
 
-	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(sealProofType)
+	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(sealProofType)
 	if err != nil {
 		return nil, err
 	}

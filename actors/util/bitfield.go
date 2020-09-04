@@ -1,4 +1,4 @@
-package abi
+package util
 
 import (
 	"github.com/filecoin-project/go-bitfield"

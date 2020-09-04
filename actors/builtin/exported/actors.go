@@ -3,7 +3,6 @@ package exported
 import (
 	cid "github.com/ipfs/go-cid"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/actors/builtin/cron"
@@ -16,12 +15,13 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
-var _ aabi.Invokee = BuiltinActor{}
+var _ runtime.Invokee = BuiltinActor{}
 
 type BuiltinActor struct {
-	actor aabi.Invokee
+	actor runtime.Invokee
 	code  cid.Cid
 }
 

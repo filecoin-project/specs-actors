@@ -4,22 +4,19 @@ import (
 	"context"
 	"testing"
 
-
-	"github.com/filecoin-project/go-bitfield"	
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 	vm "github.com/filecoin-project/specs-actors/support/vm"
-
-
 )
 
 func TestCommitPoStFlow(t *testing.T) {
@@ -218,7 +215,7 @@ func TestCommitPoStFlow(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bitfield.New(),
 			}},
-			Proofs: []aabi.PoStProof{{
+			Proofs: []proof.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitEpoch: dlInfo.Challenge,
@@ -270,7 +267,7 @@ func TestCommitPoStFlow(t *testing.T) {
 				Index:   pIdx,
 				Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
 			}},
-			Proofs: []aabi.PoStProof{{
+			Proofs: []proof.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitEpoch: dlInfo.Challenge,

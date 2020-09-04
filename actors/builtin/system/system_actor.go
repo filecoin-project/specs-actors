@@ -1,7 +1,6 @@
 package system
 
 import (
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -15,7 +14,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ abi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 func (a Actor) Constructor(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
