@@ -5,20 +5,20 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/go-state-types/abi"
-	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	. "github.com/filecoin-project/specs-actors/actors/util"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
-type Runtime = vmr.Runtime
+type Runtime = runtime.Runtime
 
 type SectorTermination int64
 
@@ -42,7 +42,7 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
@@ -276,7 +276,7 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *adt.
 // This number is empirically determined
 const GasOnSubmitVerifySeal = 34721049
 
-func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *aabi.SealVerifyInfo) *adt.EmptyValue {
+func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyInfo) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Message().Caller()
@@ -303,7 +303,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *aabi.SealVerifyInf
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to insert proof into batch")
 
 		mmrc, err := mmap.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush proofs batch")
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush proof batch")
 
 		rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
 		st.ProofValidationBatch = &mmrc
@@ -344,7 +344,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	var st State
 
 	var miners []address.Address
-	verifies := make(map[address.Address][]aabi.SealVerifyInfo)
+	verifies := make(map[address.Address][]proof.SealVerifyInfo)
 
 	rt.State().Transaction(&st, func() {
 		store := adt.AsStore(rt)
@@ -360,8 +360,8 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 
 			miners = append(miners, a)
 
-			var infos []aabi.SealVerifyInfo
-			var svi aabi.SealVerifyInfo
+			var infos []proof.SealVerifyInfo
+			var svi proof.SealVerifyInfo
 			err = arr.ForEach(&svi, func(i int64) error {
 				infos = append(infos, svi)
 				return nil
@@ -444,7 +444,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
-			vmr.CBORBytes(event.CallbackPayload),
+			runtime.CBORBytes(event.CallbackPayload),
 			abi.NewTokenAmount(0),
 		)
 		// If a callback fails, this actor continues to invoke other callbacks
@@ -452,7 +452,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		// Failures are unexpected here but will result in removal of miner power
 		// A log message would really help here.
 		if code != exitcode.Ok {
-			rt.Log(vmr.WARN, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
+			rt.Log(runtime.WARN, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
 			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
 		}
 	}
@@ -464,18 +464,18 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		for _, minerAddr := range failedMinerCrons {
 			claim, found, err := getClaim(claims, minerAddr)
 			if err != nil {
-				rt.Log(vmr.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+				rt.Log(runtime.ERROR, "failed to get claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 				continue
 			}
 			if !found {
-				rt.Log(vmr.WARN, "miner OnDeferredCronEvent failed for miner %s with no power", minerAddr)
+				rt.Log(runtime.WARN, "miner OnDeferredCronEvent failed for miner %s with no power", minerAddr)
 				continue
 			}
 
 			// zero out miner power
 			err = st.addToClaim(claims, minerAddr, claim.RawBytePower.Neg(), claim.QualityAdjPower.Neg())
 			if err != nil {
-				rt.Log(vmr.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
+				rt.Log(runtime.WARN, "failed to remove (%d, %d) power for miner %s after to failed cron", claim.RawBytePower, claim.QualityAdjPower, minerAddr)
 				continue
 			}
 		}

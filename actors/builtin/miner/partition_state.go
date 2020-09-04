@@ -9,8 +9,8 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
@@ -108,7 +108,7 @@ func (p *Partition) AddSectors(store adt.Store, sectors []*SectorOnChainInfo, ss
 		return NewPowerPairZero(), xerrors.Errorf("failed to store sector expirations: %w", err)
 	}
 
-	if contains, err := aabi.BitFieldContainsAny(p.Sectors, snos); err != nil {
+	if contains, err := util.BitFieldContainsAny(p.Sectors, snos); err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to check if any new sector was already in the partition: %w", err)
 	} else if contains {
 		return NewPowerPairZero(), xerrors.Errorf("not all added sectors are new")
@@ -391,7 +391,7 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 	if err != nil {
 		return NewPowerPairZero(), big.Zero(), err
 	}
-	allActive, err := aabi.BitFieldContainsAll(active, oldSnos)
+	allActive, err := util.BitFieldContainsAll(active, oldSnos)
 	if err != nil {
 		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to check for active sectors: %w", err)
 	} else if !allActive {
@@ -436,7 +436,7 @@ func (p *Partition) TerminateSectors(
 	if err != nil {
 		return nil, err
 	}
-	if contains, err := aabi.BitFieldContainsAll(liveSectors, sectorNos); err != nil {
+	if contains, err := util.BitFieldContainsAll(liveSectors, sectorNos); err != nil {
 		return nil, xc.ErrIllegalArgument.Wrapf("failed to intersect live sectors with terminating sectors: %w", err)
 	} else if !contains {
 		return nil, xc.ErrIllegalArgument.Wrapf("can only terminate live sectors")
@@ -522,7 +522,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 		return nil, xerrors.Errorf("unexpected recovering power while processing expirations")
 	}
 	// Nothing expiring now should have already terminated.
-	alreadyTerminated, err := aabi.BitFieldContainsAny(p.Terminated, expiredSectors)
+	alreadyTerminated, err := util.BitFieldContainsAny(p.Terminated, expiredSectors)
 	if err != nil {
 		return nil, err
 	} else if alreadyTerminated {
@@ -680,7 +680,7 @@ func (p *Partition) RecordSkippedFaults(
 	}
 
 	// Check that the declared sectors are actually in the partition.
-	contains, err := aabi.BitFieldContainsAll(p.Sectors, skipped)
+	contains, err := util.BitFieldContainsAll(p.Sectors, skipped)
 	if err != nil {
 		return NewPowerPairZero(), NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to check if skipped faults are in partition: %w", err)
 	} else if !contains {

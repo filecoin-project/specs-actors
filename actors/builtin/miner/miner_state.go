@@ -7,16 +7,16 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
-	abi "github.com/filecoin-project/go-state-types/abi"
-	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	xc "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // Balance of Miner Actor should be greater than or equal to
@@ -183,7 +183,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		return nil, err
 	}
 
-	partitionSectors, err := aabi.SealProofWindowPoStPartitionSectors(sealProofType)
+	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(sealProofType)
 	if err != nil {
 		return nil, err
 	}

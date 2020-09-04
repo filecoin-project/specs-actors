@@ -2,15 +2,15 @@ package verifreg
 
 import (
 	addr "github.com/filecoin-project/go-address"
-	abi "github.com/filecoin-project/go-state-types/abi"
-	big "github.com/filecoin-project/go-state-types/big"
 
-	aabi "github.com/filecoin-project/specs-actors/actors/abi"
-	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
+
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
-	adt "github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 type Actor struct{}
@@ -26,13 +26,13 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ aabi.Invokee = Actor{}
+var _ runtime.Invokee = Actor{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) Constructor(rt vmr.Runtime, rootKey *addr.Address) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	// root should be an ID address
@@ -52,7 +52,7 @@ type AddVerifierParams struct {
 	Allowance DataCap
 }
 
-func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.EmptyValue {
+func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *adt.EmptyValue {
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verifier %v", params.Allowance, params.Address)
 	}
@@ -90,7 +90,7 @@ func (a Actor) AddVerifier(rt vmr.Runtime, params *AddVerifierParams) *adt.Empty
 	return nil
 }
 
-func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr *addr.Address) *adt.EmptyValue {
+func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *adt.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
@@ -114,7 +114,7 @@ type AddVerifiedClientParams struct {
 	Allowance DataCap
 }
 
-func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
+func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
 	}
@@ -191,7 +191,7 @@ type UseBytesParams struct {
 // Called by StorageMarketActor during PublishStorageDeals.
 // Do not allow partially verified deals (DealSize must be greater than equal to allowed cap).
 // Delete VerifiedClient if remaining DataCap is smaller than minimum VerifiedDealSize.
-func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue {
+func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
 	if params.DealSize.LessThan(MinVerifiedDealSize) {
@@ -240,7 +240,7 @@ type RestoreBytesParams struct {
 
 // Called by HandleInitTimeoutDeals from StorageMarketActor when a VerifiedDeal fails to init.
 // Restore allowable cap for the client, creating new entry if the client has been deleted.
-func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.EmptyValue {
+func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
 	if params.DealSize.LessThan(MinVerifiedDealSize) {

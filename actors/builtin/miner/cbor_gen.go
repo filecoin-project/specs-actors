@@ -8,7 +8,7 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/go-state-types/abi"
-	abi1 "github.com/filecoin-project/specs-actors/actors/abi"
+	proof "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
@@ -2194,7 +2194,7 @@ func (t *SubmitWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Proofs ([]abi.PoStProof) (slice)
+	// t.Proofs ([]proof.PoStProof) (slice)
 	if len(t.Proofs) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Proofs was too long")
 	}
@@ -2295,7 +2295,7 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		t.Partitions[i] = v
 	}
 
-	// t.Proofs ([]abi.PoStProof) (slice)
+	// t.Proofs ([]proof.PoStProof) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
@@ -2311,12 +2311,12 @@ func (t *SubmitWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.Proofs = make([]abi1.PoStProof, extra)
+		t.Proofs = make([]proof.PoStProof, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
 
-		var v abi1.PoStProof
+		var v proof.PoStProof
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
