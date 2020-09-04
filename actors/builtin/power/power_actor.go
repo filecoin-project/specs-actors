@@ -340,7 +340,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			found, err := claims.Has(AddrKey(a))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 			if !found {
-				rt.Log(vmr.WARN, "skipping batch verifies for unknown miner %s", a)
+				rt.Log(runtime.WARN, "skipping batch verifies for unknown miner %s", a)
 				return nil
 			}
 
@@ -420,7 +420,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 				found, err := claims.Has(AddrKey(evt.MinerAddr))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 				if !found {
-					rt.Log(vmr.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)
+					rt.Log(runtime.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)
 					continue
 				}
 				cronEvents = append(cronEvents, evt)
@@ -462,7 +462,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 
 			// Remove miner claim and leave miner frozen
 			for _, minerAddr := range failedMinerCrons {
-				err := claims.Delete(AddrKey(minerAddr))
+				err := st.deleteClaim(claims, minerAddr)
 				if err != nil {
 					rt.Log(runtime.ERROR, "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 					continue

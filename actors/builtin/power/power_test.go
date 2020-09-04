@@ -687,12 +687,13 @@ func TestCron(t *testing.T) {
 		actor.enrollCronEvent(rt, miner1, 2, []byte{})
 		actor.enrollCronEvent(rt, miner2, 2, []byte{})
 
-		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg2KiBV1)
+		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
 		require.NoError(t, err)
 
 		qaPow := rawPow
 		actor.updateClaimedPower(rt, miner1, rawPow, qaPow)
 		actor.expectTotalPowerEager(rt, rawPow, qaPow)
+		actor.expectMinersAboveMinPower(rt, 1)
 
 		expectedPower := big.NewInt(0)
 		rt.SetEpoch(2)
@@ -715,9 +716,9 @@ func TestCron(t *testing.T) {
 		// expect cron failure was logged
 		rt.ExpectLogsContain("OnDeferredCronEvent failed for miner")
 
-		newPow := actor.currentPowerTotal(rt)
-		assert.Equal(t, abi.NewStoragePower(0), newPow.RawBytePower)
-		assert.Equal(t, abi.NewStoragePower(0), newPow.QualityAdjPower)
+		// expect power stats to be decremented due to claim deletion
+		actor.expectTotalPowerEager(rt, big.Zero(), big.Zero())
+		actor.expectMinersAboveMinPower(rt, 0)
 
 		// miner's claim is removed
 		st := getState(rt)
@@ -802,7 +803,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner)
 		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
 		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
-		sealInfo := &abi.SealVerifyInfo{
+		sealInfo := &proof.SealVerifyInfo{
 			SealedCID:   commR,
 			UnsealedCID: commD,
 		}
@@ -890,7 +891,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.deleteClaim(rt, miner1)
 
 		// all infos will be skipped
-		infos := map[addr.Address][]abi.SealVerifyInfo{}
+		infos := map[addr.Address][]proof.SealVerifyInfo{}
 
 		// nothing will be sent to miner
 		cs := []confirmedSectorSend{}
