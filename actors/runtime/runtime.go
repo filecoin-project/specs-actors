@@ -243,7 +243,7 @@ type StateHandle interface {
 	// # Usage
 	// ```go
 	// var state SomeState
-	// ret := rt.State().Transaction(&state, func() {
+	// rt.State().Transaction(&state, func() {
 	// 	// make some changes
 	// 	state.ImLoaded = true
 	// })
