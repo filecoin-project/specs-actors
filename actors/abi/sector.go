@@ -1,9 +1,9 @@
 package abi
 
 import (
+	stabi "github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
-	stabi "github.com/filecoin-project/go-state-types/abi"
 )
 
 
@@ -84,40 +84,10 @@ func ConsensusMinerMinPower(p stabi.RegisteredSealProof) (stabi.StoragePower, er
 	return info.ConsensusMinerMinPower, nil
 }
 
-var PoStSealProofTypes = map[stabi.RegisteredPoStProof]stabi.RegisteredSealProof{
-	stabi.RegisteredPoStProof_StackedDrgWinning2KiBV1:   stabi.RegisteredSealProof_StackedDrg2KiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWindow2KiBV1:    stabi.RegisteredSealProof_StackedDrg2KiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWinning8MiBV1:   stabi.RegisteredSealProof_StackedDrg8MiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWindow8MiBV1:    stabi.RegisteredSealProof_StackedDrg8MiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWinning512MiBV1: stabi.RegisteredSealProof_StackedDrg512MiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWindow512MiBV1:  stabi.RegisteredSealProof_StackedDrg512MiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWinning32GiBV1:  stabi.RegisteredSealProof_StackedDrg32GiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWindow32GiBV1:   stabi.RegisteredSealProof_StackedDrg32GiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWinning64GiBV1:  stabi.RegisteredSealProof_StackedDrg64GiBV1,
-	stabi.RegisteredPoStProof_StackedDrgWindow64GiBV1:   stabi.RegisteredSealProof_StackedDrg64GiBV1,
-}
-
-// Maps PoSt proof types back to seal proof types.
-func RegisteredSealProof(p stabi.RegisteredPoStProof) (stabi.RegisteredSealProof, error) {
-	sp, ok := PoStSealProofTypes[p]
-	if !ok {
-		return 0, errors.Errorf("unsupported PoSt proof type: %v", p)
-	}
-	return sp, nil
-}
-
-func PoStProofSectorSize(p stabi.RegisteredPoStProof) (stabi.SectorSize, error) {
-	sp, err := RegisteredSealProof(p)
-	if err != nil {
-		return 0, err
-	}
-	return sp.SectorSize()
-}
-
 // Returns the partition size, in sectors, associated with a proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
 func PoStProofWindowPoStPartitionSectors(p stabi.RegisteredPoStProof) (uint64, error) {
-	sp, err := RegisteredSealProof(p)
+	sp, err := p.RegisteredSealProof()
 	if err != nil {
 		return 0, err
 	}
