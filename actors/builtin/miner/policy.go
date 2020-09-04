@@ -99,17 +99,17 @@ var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
 // Maximum delay to allow between sector pre-commit and subsequent proof.
 // The allowable delay depends on seal proof algorithm.
 var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
-	abi.RegisteredSealProof_StackedDrg32GiBV1:  abi.ChainEpoch(10000), // PARAM_SPEC PARAM_FINISH
-	abi.RegisteredSealProof_StackedDrg2KiBV1:   abi.ChainEpoch(10000),
-	abi.RegisteredSealProof_StackedDrg8MiBV1:   abi.ChainEpoch(10000),
-	abi.RegisteredSealProof_StackedDrg512MiBV1: abi.ChainEpoch(10000),
-	abi.RegisteredSealProof_StackedDrg64GiBV1:  abi.ChainEpoch(10000),
+	abi.RegisteredSealProof_StackedDrg32GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC PARAM_FINISH
+	abi.RegisteredSealProof_StackedDrg2KiBV1:   builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg8MiBV1:   builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg512MiBV1: builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg64GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay,
 }
 
 // Maximum delay between challenge and pre-commitment.
 // This prevents a miner sealing sectors far in advance of committing them to the chain, thus committing to a
 // particular chain.
-var MaxPreCommitRandomnessLookback = abi.ChainEpoch(10000) // PARAM_SPEC
+var MaxPreCommitRandomnessLookback = builtin.EpochsInDay + ChainFinality // PARAM_SPEC
 
 // Number of epochs between publishing a sector pre-commitment and when the challenge for interactive PoRep is drawn.
 // This (1) prevents a miner predicting a challenge before staking their pre-commit deposit, and
