@@ -288,8 +288,11 @@ type SubmitWindowedPoStParams struct {
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
 	Proofs []abi.PoStProof
-	// The ticket randomness on the chain at the challenge epoch (WPoStChallengeLookback before the
-	// challenge window opens).
+	// The epoch at which these proofs is being committed to a particular chain.
+	// NOTE: This field should be removed in the future. See
+	// https://github.com/filecoin-project/specs-actors/issues/1094
+	ChainCommitEpoch abi.ChainEpoch
+	// The ticket randomness on the chain at the chain commit epoch.
 	ChainCommitRand abi.Randomness
 }
 
@@ -357,9 +360,15 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
-		// Verify that the PoSt was committed to the chain at the challenge deadline
-		// (or at most WPoStChallengeLookback+WPoStChallengeWindow in the past).
-		commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, currDeadline.Challenge, nil)
+		// Verify that the PoSt was committed to the chain at most WPoStChallengeLookback+WPoStChallengeWindow in the past.
+		if params.ChainCommitEpoch < currDeadline.Challenge {
+			rt.Abortf(exitcode.ErrIllegalArgument, "expected chain commit epoch %d to be after %d", params.ChainCommitEpoch, currDeadline.Challenge)
+		}
+		if params.ChainCommitEpoch >= currEpoch {
+			rt.Abortf(exitcode.ErrIllegalArgument, "chain commit epoch %d must be less than the current epoch %d", params.ChainCommitEpoch, currEpoch)
+		}
+		// Verify the chain commit randomness.
+		commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
 		if !bytes.Equal(commRand, params.ChainCommitRand) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 		}

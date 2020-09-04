@@ -217,7 +217,8 @@ func TestCommitPoStFlow(t *testing.T) {
 			Proofs: []abi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
-			ChainCommitRand: []byte("not really random"),
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  []byte("not really random"),
 		}
 		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		require.Equal(t, exitcode.Ok, code)
@@ -268,7 +269,8 @@ func TestCommitPoStFlow(t *testing.T) {
 			Proofs: []abi.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
-			ChainCommitRand: []byte("not really random"),
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  []byte("not really random"),
 		}
 		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		require.Equal(t, exitcode.Ok, code)
