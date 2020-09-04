@@ -218,7 +218,10 @@ func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) error {
 	}
 
 	// subtract from stats as if we were simply removing power
-	st.addToClaim(claims, miner, oldClaim.RawBytePower.Neg(), oldClaim.QualityAdjPower.Neg())
+	err = st.addToClaim(claims, miner, oldClaim.RawBytePower.Neg(), oldClaim.QualityAdjPower.Neg())
+	if err != nil {
+		return fmt.Errorf("failed to subtract miner power before deleting claim: %w", err)
+	}
 
 	// delete claim from state to invalidate miner
 	return claims.Delete(AddrKey(miner))
