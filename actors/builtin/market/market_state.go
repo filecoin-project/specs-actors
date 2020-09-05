@@ -5,10 +5,10 @@ import (
 
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
+	exitcode "github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
 	xerrors "golang.org/x/xerrors"
 
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	. "github.com/filecoin-project/specs-actors/actors/util"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
