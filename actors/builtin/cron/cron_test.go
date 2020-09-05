@@ -6,11 +6,11 @@ import (
 
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
+	exitcode "github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 
 	builtin "github.com/filecoin-project/specs-actors/actors/builtin"
 	cron "github.com/filecoin-project/specs-actors/actors/builtin/cron"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	mock "github.com/filecoin-project/specs-actors/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 )
