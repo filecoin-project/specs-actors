@@ -13,7 +13,7 @@ import (
 // TODO: In lieu of a real configuration mechanism for this value, we'd like to make it a var so that implementations
 // can override it at runtime. Doing so requires changing all the static references to it in this repo to go through
 // late-binding function calls, or they'll see the "wrong" value.
-// https://github.com/filecoin-project/specs-actors/v2/issues/353
+// https://github.com/filecoin-project/specs-actors/issues/353
 // If EpochDurationSeconds is changed, update `BaselineExponent`, `lambda`, and // `expLamSubOne` in ./reward/reward_logic.go
 // You can re-calculate these constants by changing the epoch duration in ./reward/reward_calc.py and running it.
 const EpochDurationSeconds = 30
