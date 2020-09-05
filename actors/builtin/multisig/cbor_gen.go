@@ -8,7 +8,7 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/go-state-types/abi"
-	exitcode "github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
+	exitcode "github.com/filecoin-project/go-state-types/exitcode"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )

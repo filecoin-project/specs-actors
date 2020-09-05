@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-hamt-ipld"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/exitcode"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
