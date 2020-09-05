@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 	tutils "github.com/filecoin-project/specs-actors/support/testing"
 )
@@ -97,6 +98,7 @@ type e = abi.ChainEpoch
 func TestFaultFeeInvariants(t *testing.T) {
 
 	// Construct plausible reward and qa power filtered estimates
+	nv := runtime.NetworkVersion0
 	epochReward := abi.NewTokenAmount(100 << 53)
 	rewardEstimate := smoothing.TestingConstantEstimate(epochReward) // not too much growth over ~3000 epoch projection in BR
 
@@ -107,7 +109,7 @@ func TestFaultFeeInvariants(t *testing.T) {
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
 		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
-		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
+		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower, nv)
 		assert.True(t, sp.GreaterThan(ff))
 	})
 
@@ -174,11 +176,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		assert.True(t, diff.LessThan(big.NewInt(3)))
 
 		// Undeclared faults
-		spA := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower)
-		spB := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower)
-		spC := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower)
+		spA := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower, nv)
+		spB := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower, nv)
+		spC := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower, nv)
 
-		spAll := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, totalFaultPower)
+		spAll := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, totalFaultPower, nv)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.

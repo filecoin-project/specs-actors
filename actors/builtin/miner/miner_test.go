@@ -516,7 +516,7 @@ func TestCommitments(t *testing.T) {
 		// Expect the old sector to be marked as terminated.
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
-		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
+		faultPenalty := actor.undeclaredFaultPenalty(bothSectors, rt.NetworkVersion())
 		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
@@ -978,7 +978,7 @@ func TestWindowPost(t *testing.T) {
 		// First sector should be penalized as an undeclared fault and its power should be removed
 		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
 		// which is charged at next cron and the rest which is charged during submit PoSt.
-		undeclaredFee := actor.undeclaredFaultPenalty(infos[:1])
+		undeclaredFee := actor.undeclaredFaultPenalty(infos[:1], rt.NetworkVersion())
 		declaredFee := actor.declaredFaultPenalty(infos[:1])
 		faultFee := big.Sub(undeclaredFee, declaredFee)
 
@@ -1002,7 +1002,7 @@ func TestWindowPost(t *testing.T) {
 		}
 
 		// skip second fault
-		undeclaredFee = actor.undeclaredFaultPenalty(infos[1:])
+		undeclaredFee = actor.undeclaredFaultPenalty(infos[1:], rt.NetworkVersion())
 		declaredFee = actor.declaredFaultPenalty(infos[1:])
 		faultFee = big.Sub(undeclaredFee, declaredFee)
 		pwr = miner.PowerForSectors(actor.sectorSize, infos[1:])
@@ -1048,7 +1048,7 @@ func TestWindowPost(t *testing.T) {
 		// Sectors should be penalized as an undeclared fault and its power should be removed
 		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
 		// which is charged at next cron and the rest which is charged during submit PoSt.
-		undeclaredFee := actor.undeclaredFaultPenalty(infos)
+		undeclaredFee := actor.undeclaredFaultPenalty(infos, rt.NetworkVersion())
 		declaredFee := actor.declaredFaultPenalty(infos)
 		faultFee := big.Sub(undeclaredFee, declaredFee)
 
@@ -1104,7 +1104,7 @@ func TestWindowPost(t *testing.T) {
 		// No power should be returned
 		// Retracted recovery will be charged difference between undeclared and ongoing fault fees
 		ongoingFee := actor.declaredFaultPenalty(infos)
-		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos), ongoingFee)
+		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos, rt.NetworkVersion()), ongoingFee)
 		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
 			expectedQAPowerDelta:  big.Zero(),
@@ -1284,7 +1284,7 @@ func TestDeadlineCron(t *testing.T) {
 		}
 
 		// Skip to end of the deadline, cron detects and penalizes sectors as faulty
-		undeclaredFee := actor.undeclaredFaultPenalty(allSectors)
+		undeclaredFee := actor.undeclaredFaultPenalty(allSectors, rt.NetworkVersion())
 		pwrDelta := pwr.Neg()
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta: &pwrDelta,
@@ -1309,7 +1309,7 @@ func TestDeadlineCron(t *testing.T) {
 
 		// Retracted recovery is penalized as an undetected fault, but power is unchanged
 		retractedPwr := miner.PowerForSectors(actor.sectorSize, allSectors[1:])
-		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA)
+		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA, rt.NetworkVersion())
 		// subtract ongoing penalty, because it's charged below (this prevents round-off mismatches)
 		retractedPenalty = big.Sub(retractedPenalty, miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA))
 
@@ -1355,7 +1355,7 @@ func TestDeadlineCron(t *testing.T) {
 
 		// run cron and expect all sectors to be penalized as undetected faults
 		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
-		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+		undetectedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA, rt.NetworkVersion())
 
 		// power for sectors is removed
 		powerDeltaClaim := miner.NewPowerPair(pwr.Raw.Neg(), pwr.QA.Neg())
@@ -1746,7 +1746,7 @@ func TestTerminateSectors(t *testing.T) {
 		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		sectorAge := rt.Epoch() - sector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower)
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, twentyDayReward, sectorAge, actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, rt.NetworkVersion())
 
 		sectors := bf(uint64(sector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -2114,11 +2114,11 @@ func TestAddLockedFund(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.PledgeVestingSpec.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpecV0.Quantization
 
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.PledgeVestingSpec.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpecV0.Quantization))
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)
@@ -3196,9 +3196,9 @@ func (h *actorHarness) declaredFaultPenalty(sectors []*miner.SectorOnChainInfo) 
 	return miner.PledgePenaltyForDeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
 }
 
-func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo) abi.TokenAmount {
+func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo, nv runtime.NetworkVersion) abi.TokenAmount {
 	_, qa := powerForSectors(h.sectorSize, sectors)
-	return miner.PledgePenaltyForUndeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
+	return miner.PledgePenaltyForUndeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa, nv)
 }
 
 func (h *actorHarness) powerPairForSectors(sectors []*miner.SectorOnChainInfo) miner.PowerPair {
