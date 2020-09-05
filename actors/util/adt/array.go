@@ -9,7 +9,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 
 // Array stores a sparse sequence of values in an AMT.

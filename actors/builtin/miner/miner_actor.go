@@ -16,15 +16,15 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
-	. "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
+	. "github.com/filecoin-project/specs-actors/v2/actors/util"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
 type Runtime = runtime.Runtime
@@ -291,7 +291,7 @@ type SubmitWindowedPoStParams struct {
 	Proofs []proof.PoStProof
 	// The epoch at which these proofs is being committed to a particular chain.
 	// NOTE: This field should be removed in the future. See
-	// https://github.com/filecoin-project/specs-actors/issues/1094
+	// https://github.com/filecoin-project/specs-actors/v2/issues/1094
 	ChainCommitEpoch abi.ChainEpoch
 	// The ticket randomness on the chain at the chain commit epoch.
 	ChainCommitRand abi.Randomness
@@ -458,7 +458,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	// Restore power for recovered sectors. Remove power for new faults.
 	// NOTE: It would be permissible to delay the power loss until the deadline closes, but that would require
 	// additional accounting state.
-	// https://github.com/filecoin-project/specs-actors/issues/414
+	// https://github.com/filecoin-project/specs-actors/v2/issues/414
 	requestUpdatePower(rt, postResult.PowerDelta)
 	// Burn penalties.
 	burnFunds(rt, penaltyTotal)
@@ -727,7 +727,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		if len(precommit.Info.DealIDs) > 0 {
 			// Check (and activate) storage deals associated to sector. Abort if checks failed.
 			// TODO: we should batch these calls...
-			// https://github.com/filecoin-project/specs-actors/issues/474
+			// https://github.com/filecoin-project/specs-actors/v2/issues/474
 			_, code := rt.Send(
 				builtin.StorageMarketActorAddr,
 				builtin.MethodsMarket.ActivateDeals,
@@ -900,7 +900,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	}
 
 	// limit the number of sectors declared at once
-	// https://github.com/filecoin-project/specs-actors/issues/416
+	// https://github.com/filecoin-project/specs-actors/v2/issues/416
 	var sectorCount uint64
 	for _, decl := range params.Extensions {
 		if decl.Deadline >= WPoStPeriodDeadlines {
@@ -1227,7 +1227,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	// Remove power for new faulty sectors.
 	// NOTE: It would be permissible to delay the power loss until the deadline closes, but that would require
 	// additional accounting state.
-	// https://github.com/filecoin-project/specs-actors/issues/414
+	// https://github.com/filecoin-project/specs-actors/v2/issues/414
 	requestUpdatePower(rt, powerDelta)
 
 	// Payment of penalty for declared faults is deferred to the deadline cron.
@@ -1656,7 +1656,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 	// TODO: We're using the current power+epoch reward. Technically, we
 	// should use the power/reward at the time of termination.
-	// https://github.com/filecoin-project/specs-actors/pull/648
+	// https://github.com/filecoin-project/specs-actors/v2/pull/648
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 

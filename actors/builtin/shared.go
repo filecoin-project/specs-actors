@@ -8,8 +8,8 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
 
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	autil "github.com/filecoin-project/specs-actors/actors/util"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	autil "github.com/filecoin-project/specs-actors/v2/actors/util"
 )
 
 ///// Code shared by multiple built-in actors. /////

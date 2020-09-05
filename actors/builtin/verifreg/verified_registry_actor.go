@@ -7,10 +7,10 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
 
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	. "github.com/filecoin-project/specs-actors/v2/actors/util"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
 type Actor struct{}
@@ -65,7 +65,7 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *adt.E
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
 	// TODO We need to resolve the verifier address to an ID address before making this comparison.
-	// https://github.com/filecoin-project/specs-actors/issues/556
+	// https://github.com/filecoin-project/specs-actors/v2/issues/556
 	if verifier == st.RootKey {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
 	}
@@ -233,7 +233,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *adt.EmptyVa
 			// Will be restored later if the deal did not get activated with a ProvenSector.
 			//
 			// NOTE: Technically, client could lose up to MinVerifiedDealSize worth of DataCap.
-			// See: https://github.com/filecoin-project/specs-actors/issues/727
+			// See: https://github.com/filecoin-project/specs-actors/v2/issues/727
 			err = verifiedClients.Delete(AddrKey(client))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", client)
 		} else {
