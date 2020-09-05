@@ -71,10 +71,13 @@ func (s *Signature) UnmarshalCBOR(br io.Reader) error {
 	}
 
 	if maj != cbg.MajByteString {
-		return fmt.Errorf("cbor input for signature was not a byte string")
+		return fmt.Errorf("not a byte string")
 	}
 	if l > SignatureMaxLength {
-		return fmt.Errorf("cbor byte array for signature was too long")
+		return fmt.Errorf("string too long")
+	}
+	if l == 0 {
+		return fmt.Errorf("string empty")
 	}
 	buf := make([]byte, l)
 	if _, err = io.ReadFull(br, buf); err != nil {
@@ -100,6 +103,9 @@ func (s *Signature) MarshalBinary() ([]byte, error) {
 }
 
 func (s *Signature) UnmarshalBinary(bs []byte) error {
+	if len(bs) > SignatureMaxLength {
+		return fmt.Errorf("invalid signature bytes, too long (%d)", len(bs))
+	}
 	if len(bs) == 0 {
 		return fmt.Errorf("invalid signature bytes of length 0")
 	}
