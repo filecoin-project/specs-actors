@@ -1623,7 +1623,7 @@ func TestChangeThreshold(t *testing.T) {
 			setThreshold:     uint64(len(initialSigner) + 1),
 			code:             exitcode.ErrIllegalArgument,
 		},
-		// TODO missing test case that needs definition: https://github.com/filecoin-project/specs-actors/v2/issues/71
+		// TODO missing test case that needs definition: https://github.com/filecoin-project/specs-actors/issues/71
 		// what happens when threshold is reduced below the number of approvers an existing transaction already ha
 	}
 
