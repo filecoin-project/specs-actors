@@ -30,12 +30,6 @@ import (
 
 type Runtime = runtime.Runtime
 
-// Identifier for a single partition within a miner.
-type PartitionKey struct {
-	Deadline  uint64
-	Partition uint64
-}
-
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
@@ -971,16 +965,15 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 			quant := st.QuantSpecForDeadline(dlIdx)
 
 			for _, decl := range declsByDeadline[dlIdx] {
-				key := PartitionKey{dlIdx, decl.Partition}
 				var partition Partition
 				found, err := partitions.Get(decl.Partition, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition %v", key)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %v partition %v", dlIdx, decl.Partition)
 				if !found {
-					rt.Abortf(exitcode.ErrNotFound, "no such partition %v", key)
+					rt.Abortf(exitcode.ErrNotFound, "no such deadline %v partition %v", dlIdx, decl.Partition)
 				}
 
 				oldSectors, err := sectors.Load(decl.Sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in partition %v", key)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in deadline %v partition %v", dlIdx, decl.Partition)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
 					// This can happen if the sector should have already expired, but hasn't
@@ -1010,13 +1003,13 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 				// Remove old sectors from partition and assign new sectors.
 				partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store, oldSectors, newSectors, info.SectorSize, quant)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replaces sector expirations at %v", key)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations at deadline %v partition %v", dlIdx, decl.Partition)
 
 				powerDelta = powerDelta.Add(partitionPowerDelta)
 				pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta) // expected to be zero, see note below.
 
 				err = partitions.Set(decl.Partition, &partition)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partition", key)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %v partition %v", dlIdx, decl.Partition)
 			}
 
 			deadline.Partitions, err = partitions.Root()
