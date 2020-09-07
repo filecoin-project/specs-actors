@@ -5,6 +5,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
 // DealUpdatesInterval is the number of blocks between payouts for deals
@@ -12,7 +13,8 @@ const DealUpdatesInterval = builtin.EpochsInDay
 
 // ProvCollateralPercentSupplyNum is the numerator of the percentage of normalized cirulating
 // supply that must be covered by provider collateral
-var ProvCollateralPercentSupplyNum = big.NewInt(5)
+var ProvCollateralPercentSupplyNumV0 = big.NewInt(5)
+var ProvCollateralPercentSupplyNumV1 = big.NewInt(1)
 
 // ProvCollateralPercentSupplyDenom is the denominator of the percentage of normalized cirulating
 // supply that must be covered by provider collateral
@@ -27,17 +29,23 @@ func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) 
 	return abi.NewTokenAmount(0), builtin.TotalFilecoin // PARAM_FINISH
 }
 
-func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
+func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkRawPower, networkQAPower, baselinePower abi.StoragePower,
+	networkCirculatingSupply abi.TokenAmount, networkVersion runtime.NetworkVersion) (min, max abi.TokenAmount) {
 	// minimumProviderCollateral = (ProvCollateralPercentSupplyNum / ProvCollateralPercentSupplyDenom) * normalizedCirculatingSupply
 	// normalizedCirculatingSupply = FILCirculatingSupply * dealPowerShare
 	// dealPowerShare = dealQAPower / max(BaselinePower(t), NetworkQAPower(t), dealQAPower)
 
-	lockTargetNum := big.Mul(ProvCollateralPercentSupplyNum, networkCirculatingSupply)
-	lockTargetDenom := ProvCollateralPercentSupplyDenom
+	lockTargetNum := big.Mul(ProvCollateralPercentSupplyNumV0, networkCirculatingSupply)
+	powerShareNum := dealQAPower(pieceSize, verified)
+	powerShareDenom := big.Max(big.Max(networkQAPower, baselinePower), powerShareNum)
 
-	qaPower := dealQAPower(pieceSize, verified)
-	powerShareNum := qaPower
-	powerShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower)
+	if networkVersion >= runtime.NetworkVersion1 {
+		lockTargetNum = big.Mul(ProvCollateralPercentSupplyNumV1, networkCirculatingSupply)
+		powerShareNum = big.NewIntUnsigned(uint64(pieceSize))
+		powerShareDenom = big.Max(big.Max(networkRawPower, baselinePower), powerShareNum)
+	}
+
+	lockTargetDenom := ProvCollateralPercentSupplyDenom
 
 	num := big.Mul(lockTargetNum, powerShareNum)
 	denom := big.Mul(lockTargetDenom, powerShareDenom)

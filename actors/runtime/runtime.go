@@ -32,9 +32,21 @@ const (
 	ERROR
 )
 
+// Enumeration of network upgrades where actor behaviour can change (without necessarily
+// vendoring and versioning the whole actor codebase).
+type NetworkVersion uint
+
+const (
+	NetworkVersion0 = NetworkVersion(iota) // specs-actors v0.9.3
+	NetworkVersion1                        // specs-actors v0.9.?
+)
+
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
+	// The network protocol version number at the current epoch.
+	NetworkVersion() NetworkVersion
+
 	// Information related to the current message being executed.
 	// When an actor invokes a method on another actor as a sub-call, these values reflect
 	// the sub-call context, rather than the top-level context.

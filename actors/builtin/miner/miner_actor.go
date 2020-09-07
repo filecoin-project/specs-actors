@@ -393,6 +393,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		undeclaredPenaltyPower := postResult.PenaltyPower()
 		undeclaredPenaltyTarget := PledgePenaltyForUndeclaredFault(
 			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA,
+			rt.NetworkVersion(),
 		)
 		// Subtract the "ongoing" fault fee from the amount charged now, since it will be charged at
 		// the end-of-deadline cron.
@@ -1318,6 +1319,11 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
 
+ 	vestingSchedule := &RewardVestingSpecV0
+ 	if rt.NetworkVersion() >= runtime.NetworkVersion1 {
+ 		vestingSchedule = &RewardVestingSpecV1
+	}
+
 	var st State
 	newlyVested := big.Zero()
 	rt.State().Transaction(&st, func() {
@@ -1333,7 +1339,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, *amountToLock)
 		}
 
-		newlyVested, err = st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *amountToLock, &RewardVestingSpec)
+		newlyVested, err = st.AddLockedFunds(adt.AsStore(rt), rt.CurrEpoch(), *amountToLock, vestingSchedule)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
 	})
 
@@ -1467,6 +1473,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.E
 
 func processEarlyTerminations(rt Runtime) (more bool) {
 	store := adt.AsStore(rt)
+	networkVersion := rt.NetworkVersion()
 
 	// TODO: We're using the current power+epoch reward. Technically, we
 	// should use the power/reward at the time of termination.
@@ -1512,7 +1519,8 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 				params.DealIDs = append(params.DealIDs, sector.DealIDs...)
 				totalInitialPledge = big.Add(totalInitialPledge, sector.InitialPledge)
 			}
-			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch, rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectors))
+			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch, networkVersion,
+				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
 
 			return nil
@@ -1628,7 +1636,8 @@ func handleProvingDeadline(rt Runtime) {
 			penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultyPower.QA, failedRecoveryPower.QA)
 
 			// Unlock sector penalty for all undeclared faults.
-			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal)
+			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed,
+				penalizePowerTotal, rt.NetworkVersion())
 			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
 			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal))
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
@@ -2169,11 +2178,13 @@ func validatePartitionContainsSectors(partition *Partition, sectors bitfield.Bit
 	return nil
 }
 
-func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, sectors []*SectorOnChainInfo) abi.TokenAmount {
+func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, networkVersion runtime.NetworkVersion,
+	rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, sectors []*SectorOnChainInfo) abi.TokenAmount {
 	totalFee := big.Zero()
 	for _, s := range sectors {
 		sectorPower := QAPowerForSector(sectorSize, s)
-		fee := PledgePenaltyForTermination(s.ExpectedDayReward, s.ExpectedStoragePledge, currEpoch-s.Activation, rewardEstimate, networkQAPowerEstimate, sectorPower)
+		fee := PledgePenaltyForTermination(s.ExpectedDayReward, s.ExpectedStoragePledge, currEpoch-s.Activation, rewardEstimate,
+			networkQAPowerEstimate, sectorPower, networkVersion)
 		totalFee = big.Add(fee, totalFee)
 	}
 	return totalFee

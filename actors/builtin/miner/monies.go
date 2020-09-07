@@ -5,6 +5,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -33,7 +34,12 @@ var DeclaredFaultFactorDenom = 100
 var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNum) / DeclaredFaultFactorDenom)
 
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
-var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay
+var UndeclaredFaultFactorNumV0 = 50
+var UndeclaredFaultFactorNumV1 = 35
+var UndeclaredFaultFactorDenom = 10
+
+var UndeclaredFaultProjectionPeriodV0 = abi.ChainEpoch((builtin.EpochsInDay * UndeclaredFaultFactorNumV0) / UndeclaredFaultFactorDenom)
+var UndeclaredFaultProjectionPeriodV1 = abi.ChainEpoch((builtin.EpochsInDay * UndeclaredFaultFactorNumV1) / UndeclaredFaultFactorDenom)
 
 // Maximum number of days of BR a terminated sector can be penalized
 const TerminationLifetimeCap = abi.ChainEpoch(70)
@@ -60,18 +66,29 @@ func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate *smoot
 
 // This is the SP(t) penalty for a newly faulty sector that has not been declared.
 // SP(t) = UndeclaredFaultFactor * BR(t)
-func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, UndeclaredFaultProjectionPeriod)
+func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower,
+	networkVersion runtime.NetworkVersion) abi.TokenAmount {
+	projectionPeriod := UndeclaredFaultProjectionPeriodV0
+	if networkVersion >= runtime.NetworkVersion1 {
+		projectionPeriod = UndeclaredFaultProjectionPeriodV1
+	}
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, projectionPeriod)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
-func PledgePenaltyForTermination(dayRewardAtActivation, twentyDayRewardAtActivation abi.TokenAmount, sectorAge abi.ChainEpoch, rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForTermination(dayRewardAtActivation, twentyDayRewardAtActivation abi.TokenAmount, sectorAge abi.ChainEpoch,
+	rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower, networkVersion runtime.NetworkVersion) abi.TokenAmount {
 	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d)*min(SectorAgeInDays, 70))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
+
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, TerminationLifetimeCap*builtin.EpochsInDay)))
+	if networkVersion >= runtime.NetworkVersion1 {
+		cappedSectorAge = big.NewInt(int64(minEpoch(sectorAge / 2, TerminationLifetimeCap*builtin.EpochsInDay)))
+	}
+
 	return big.Max(
-		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
+		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower, networkVersion),
 		big.Add(
 			twentyDayRewardAtActivation,
 			big.Div(

@@ -172,7 +172,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
 	baselinePower := requestCurrentBaselinePower(rt)
-	networkQAPower := requestCurrentNetworkQAPower(rt)
+	networkRawPower, networkQAPower := requestCurrentNetworkPower(rt)
 
 	var newDealIds []abi.DealID
 	var st State
@@ -184,7 +184,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
-			validateDeal(rt, deal, baselinePower, networkQAPower)
+			validateDeal(rt, deal, baselinePower, networkRawPower, networkQAPower)
 
 			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
@@ -659,7 +659,7 @@ func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sec
 	return nil
 }
 
-func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkQAPower abi.StoragePower) {
+func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkRawPower, networkQAPower abi.StoragePower) {
 	if err := dealProposalIsInternallyValid(rt, deal); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal: %s", err)
 	}
@@ -696,8 +696,7 @@ func validateDeal(rt Runtime, deal ClientDealProposal, baselinePower, networkQAP
 		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
 
-	minProviderCollateral, maxProviderCollateral := DealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal,
-		networkQAPower, baselinePower, rt.TotalFilCircSupply())
+	minProviderCollateral, maxProviderCollateral := DealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal, networkRawPower, networkQAPower, baselinePower, rt.TotalFilCircSupply(), rt.NetworkVersion())
 	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
 	}
@@ -758,11 +757,11 @@ func requestCurrentBaselinePower(rt Runtime) abi.StoragePower {
 }
 
 // Requests the current network total power and pledge from the power actor.
-func requestCurrentNetworkQAPower(rt Runtime) abi.StoragePower {
+func requestCurrentNetworkPower(rt Runtime) (rawPower, qaPower abi.StoragePower) {
 	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
 	builtin.RequireSuccess(rt, code, "failed to check current power")
 	var pwr power.CurrentTotalPowerReturn
 	err := pwret.Into(&pwr)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
-	return pwr.QualityAdjPower
+	return pwr.RawBytePower, pwr.QualityAdjPower
 }
