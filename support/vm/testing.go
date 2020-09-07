@@ -216,7 +216,7 @@ func listInvocations(invocations []*Invocation) string {
 
 // helpers to simplify pointer creation
 func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount }
-func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(runtime.CBORBytes(b)) }
+func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(builtin.CBORBytes(b)) }
 func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
 
 func ExpectObject(v runtime.CBORMarshaler) *objectExpectation {

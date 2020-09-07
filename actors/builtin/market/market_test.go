@@ -444,7 +444,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		buf := bytes.Buffer{}
 		require.NoError(t, deal.MarshalCBOR(&buf), "failed to marshal deal proposal")
 		sig := crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("does not matter")}
-		clientProposal := market.ClientDealProposal{deal, sig}
+		clientProposal := market.ClientDealProposal{Proposal: deal, ClientSignature: sig}
 		params.Deals = append(params.Deals, clientProposal)
 		// expect a call to verify the above signature
 		rt.ExpectVerifySignature(sig, deal.Client, buf.Bytes(), nil)
@@ -2741,7 +2741,7 @@ func (h *marketActorTestHarness) publishDeals(rt *mock.Runtime, minerAddrs *mine
 		buf := bytes.Buffer{}
 		require.NoError(h.t, pdr.deal.MarshalCBOR(&buf), "failed to marshal deal proposal")
 		sig := crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("does not matter")}
-		clientProposal := market.ClientDealProposal{pdr.deal, sig}
+		clientProposal := market.ClientDealProposal{Proposal: pdr.deal, ClientSignature: sig}
 		params.Deals = append(params.Deals, clientProposal)
 
 		// expect a call to verify the above signature
@@ -3017,8 +3017,8 @@ func generateDealProposalWithCollateral(client, provider address.Address, provid
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
 
-	return market.DealProposal{pieceCid, pieceSize, false, client, provider, "label", startEpoch,
-		endEpoch, storagePerEpoch, providerCollateral, clientCollateral}
+	return market.DealProposal{PieceCID: pieceCid, PieceSize: pieceSize, Client: client, Provider: provider, Label: "label", StartEpoch: startEpoch,
+		EndEpoch: endEpoch, StoragePricePerEpoch: storagePerEpoch, ProviderCollateral: providerCollateral, ClientCollateral: clientCollateral}
 }
 
 func generateDealProposal(client, provider address.Address, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {

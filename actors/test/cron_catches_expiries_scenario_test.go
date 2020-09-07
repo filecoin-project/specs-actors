@@ -46,7 +46,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	require.True(t, ok)
 
 	// precommit sector
-	preCommitParams := miner.SectorPreCommitInfo{
+	preCommitParams := miner.PreCommitSectorParams{
 		SealProof:     sealProof,
 		SectorNumber:  sectorNumber,
 		SealedCID:     sealedCid,
@@ -110,7 +110,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	// precommit capacity upgrade sector with deals
 	upgradeSectorNumber := abi.SectorNumber(101)
 	upgradeSealedCid := tutil.MakeCID("101", &miner.SealedCIDPrefix)
-	preCommitParams = miner.SectorPreCommitInfo{
+	preCommitParams = miner.PreCommitSectorParams{
 		SealProof:              sealProof,
 		SectorNumber:           upgradeSectorNumber,
 		SealedCID:              upgradeSealedCid,

@@ -53,7 +53,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	sectorSize, err := sealProof.SectorSize()
 	require.NoError(t, err)
 
-	preCommitParams := miner.SectorPreCommitInfo{
+	preCommitParams := miner.PreCommitSectorParams{
 		SealProof:     sealProof,
 		SectorNumber:  sectorNumber,
 		SealedCID:     sealedCid,

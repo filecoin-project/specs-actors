@@ -1,11 +1,10 @@
 package reward
 
 import (
-	"github.com/filecoin-project/go-address"
-
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
@@ -39,12 +38,13 @@ func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePow
 	return nil
 }
 
-type AwardBlockRewardParams struct {
-	Miner     address.Address
-	Penalty   abi.TokenAmount // penalty for including bad messages in a block, >= 0
-	GasReward abi.TokenAmount // gas reward from all gas fees in a block, >= 0
-	WinCount  int64           // number of reward units won, > 0
-}
+//type AwardBlockRewardParams struct {
+//	Miner     address.Address
+//	Penalty   abi.TokenAmount // penalty for including bad messages in a block, >= 0
+//	GasReward abi.TokenAmount // gas reward from all gas fees in a block, >= 0
+//	WinCount  int64           // number of reward units won, > 0
+//}
+type AwardBlockRewardParams = reward0.AwardBlockRewardParams
 
 // Awards a reward to a block producer.
 // This method is called only by the system actor, implicitly, as the last message in the evaluation of a block.
@@ -116,6 +116,8 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 	return nil
 }
 
+// Changed since v0:
+// - removed ThisEpochReward (unsmoothed)
 type ThisEpochRewardReturn struct {
 	ThisEpochRewardSmoothed smoothing.FilterEstimate
 	ThisEpochBaselinePower  abi.StoragePower

@@ -35,12 +35,6 @@ type LaneState struct {
 	Nonce    uint64
 }
 
-// Specifies which `Lane`s to be merged with what `Nonce` on channelUpdate
-type Merge struct {
-	Lane  uint64
-	Nonce uint64
-}
-
 func ConstructState(from addr.Address, to addr.Address, emptyArrCid cid.Cid) *State {
 	return &State{
 		From:            from,

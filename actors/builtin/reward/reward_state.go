@@ -20,6 +20,8 @@ var InitialRewardPositionEstimate = big.MustFromString(InitialRewardPositionEsti
 // https://www.wolframalpha.com/input/?i=IntegerPart%5B%28Exp%5B-Log%5B2%5D+%2F+%286+*+%281+year+%2F+30+seconds%29%29%5D+-+1%29+*+10%5E18%5D
 var InitialRewardVelocityEstimate = abi.NewTokenAmount(-109897758509)
 
+// Changed since v0:
+// - ThisEpochRewardSmoothed is not a pointer
 type State struct {
 	// CumsumBaseline is a target CumsumRealized needs to reach for EffectiveNetworkTime to increase
 	// CumsumBaseline and CumsumRealized are expressed in byte-epochs.

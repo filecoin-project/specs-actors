@@ -361,7 +361,7 @@ func TestAddVerifiedClient(t *testing.T) {
 	t.Run("fails when allowance is less than MinVerifiedDealSize", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		allowance := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
-		p := &verifreg.AddVerifiedClientParams{tutil.NewIDAddr(t, 501), allowance}
+		p := &verifreg.AddVerifiedClientParams{Address: tutil.NewIDAddr(t, 501), Allowance: allowance}
 
 		rt.ExpectValidateCallerAny()
 
@@ -505,7 +505,7 @@ func TestUseBytes(t *testing.T) {
 
 		// fails now because client does NOT have enough capacity for second deal
 		dSize2 := big.Add(verifreg.MinVerifiedDealSize, big.NewInt(2))
-		param := &verifreg.UseBytesParams{clientAddr, dSize2}
+		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: dSize2}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
@@ -543,7 +543,7 @@ func TestUseBytes(t *testing.T) {
 
 		// fails now because client has been removed
 		dSize2 := verifreg.MinVerifiedDealSize
-		param := &verifreg.UseBytesParams{clientAddr, dSize2}
+		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: dSize2}
 
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
@@ -557,7 +557,7 @@ func TestUseBytes(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-		param := &verifreg.UseBytesParams{clientAddr, verifreg.MinVerifiedDealSize}
+		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: verifreg.MinVerifiedDealSize}
 
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(ac.UseBytes, param)
@@ -569,7 +569,7 @@ func TestUseBytes(t *testing.T) {
 	t.Run("fail if deal size is less than min verified deal size", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		dSize2 := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
-		param := &verifreg.UseBytesParams{clientAddr, dSize2}
+		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: dSize2}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
@@ -581,7 +581,7 @@ func TestUseBytes(t *testing.T) {
 	t.Run("fail if verified client does not exist", func(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		dSize2 := verifreg.MinVerifiedDealSize
-		param := &verifreg.UseBytesParams{clientAddr, dSize2}
+		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: dSize2}
 
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
@@ -600,7 +600,7 @@ func TestUseBytes(t *testing.T) {
 
 		// use bytes
 		dSize := big.Add(clientAllowance, big.NewInt(1))
-		param := &verifreg.UseBytesParams{clientAddr, dSize}
+		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: dSize}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			ac.useBytes(rt, param.Address, param.DealSize, nil)
@@ -721,7 +721,7 @@ func TestRestoreBytes(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-		param := &verifreg.RestoreBytesParams{clientAddr, verifreg.MinVerifiedDealSize}
+		param := &verifreg.RestoreBytesParams{Address: clientAddr, DealSize: verifreg.MinVerifiedDealSize}
 
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(ac.RestoreBytes, param)
@@ -735,7 +735,7 @@ func TestRestoreBytes(t *testing.T) {
 		dSize2 := big.Sub(verifreg.MinVerifiedDealSize, big.NewInt(1))
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
-		param := &verifreg.RestoreBytesParams{clientAddr, dSize2}
+		param := &verifreg.RestoreBytesParams{Address: clientAddr, DealSize: dSize2}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.RestoreBytes, param)
@@ -748,7 +748,7 @@ func TestRestoreBytes(t *testing.T) {
 		rt, ac := basicVerifRegSetup(t, root)
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
-		param := &verifreg.RestoreBytesParams{root, verifreg.MinVerifiedDealSize}
+		param := &verifreg.RestoreBytesParams{Address: root, DealSize: verifreg.MinVerifiedDealSize}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.RestoreBytes, param)
@@ -764,7 +764,7 @@ func TestRestoreBytes(t *testing.T) {
 
 		rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 		rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
-		param := &verifreg.RestoreBytesParams{verifierAddr, verifreg.MinVerifiedDealSize}
+		param := &verifreg.RestoreBytesParams{Address: verifierAddr, DealSize: verifreg.MinVerifiedDealSize}
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.RestoreBytes, param)
@@ -805,7 +805,7 @@ func (h *verifRegActorTestHarness) mkVerifierParams(a address.Address, allowance
 }
 
 func (h *verifRegActorTestHarness) mkClientParams(a address.Address, cap verifreg.DataCap) *verifreg.AddVerifiedClientParams {
-	return &verifreg.AddVerifiedClientParams{a, cap}
+	return &verifreg.AddVerifiedClientParams{Address: a, Allowance: cap}
 }
 
 func (h *verifRegActorTestHarness) addNewVerifier(rt *mock.Runtime, a address.Address, allowance verifreg.DataCap) *verifreg.AddVerifierParams {
@@ -832,7 +832,7 @@ func (h *verifRegActorTestHarness) addVerifiedClient(rt *mock.Runtime, verifier,
 	rt.SetCaller(verifier, builtin.VerifiedRegistryActorCodeID)
 	rt.ExpectValidateCallerAny()
 
-	params := &verifreg.AddVerifiedClientParams{client, allowance}
+	params := &verifreg.AddVerifiedClientParams{Address: client, Allowance: allowance}
 	rt.Call(h.AddVerifiedClient, params)
 	rt.Verify()
 
@@ -878,7 +878,7 @@ func (h *verifRegActorTestHarness) useBytes(rt *mock.Runtime, a address.Address,
 	rt.ExpectValidateCallerAddr(builtin.StorageMarketActorAddr)
 	rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
 
-	param := &verifreg.UseBytesParams{a, dealSize}
+	param := &verifreg.UseBytesParams{Address: a, DealSize: dealSize}
 
 	ret := rt.Call(h.UseBytes, param)
 	rt.Verify()
@@ -900,7 +900,7 @@ func (h *verifRegActorTestHarness) restoreBytes(rt *mock.Runtime, a address.Addr
 	rt.SetCaller(builtin.StorageMarketActorAddr, builtin.StorageMinerActorCodeID)
 
 	// call RestoreBytes
-	param := &verifreg.RestoreBytesParams{a, dealSize}
+	param := &verifreg.RestoreBytesParams{Address: a, DealSize: dealSize}
 	ret := rt.Call(h.RestoreBytes, param)
 	rt.Verify()
 	require.Nil(h.t, ret)

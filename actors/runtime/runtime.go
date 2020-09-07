@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"io"
 
@@ -15,25 +14,13 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 )
 
-// Specifies importance of message, LogLevel numbering is consistent with the uber-go/zap package.
-type LogLevel int
+// Interfaces for the runtime.
+// These interfaces are not aliased onto prior versions even if they match exactly.
+// Go's implicit interface satisfaction should mean that a single concrete type can satisfy
+// many versions at the same time.
 
-const (
-	// DebugLevel logs are typically voluminous, and are usually disabled in
-	// production.
-	DEBUG LogLevel = iota - 1
-	// InfoLevel is the default logging priority.
-	INFO
-	// WarnLevel logs are more important than Info, but don't need individual
-	// human review.
-	WARN
-	// ErrorLevel logs are high-priority. If an application is running smoothly,
-	// it shouldn't generate any error-level logs.
-	ERROR
-)
-
-// Runtime is the VM's internal runtime object.
-// this is everything that is accessible to actors, beyond parameters.
+// Runtime is the interface to the execution environment for actor methods..
+// This is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
 	// Information related to the current message being executed.
 	// When an actor invokes a method on another actor as a sub-call, these values reflect
@@ -252,25 +239,6 @@ type StateHandle interface {
 	Transaction(obj CBORer, f func())
 }
 
-// Result of checking two headers for a consensus fault.
-type ConsensusFault struct {
-	// Address of the miner at fault (always an ID address).
-	Target addr.Address
-	// Epoch of the fault, which is the higher epoch of the two blocks causing it.
-	Epoch abi.ChainEpoch
-	// Type of fault.
-	Type ConsensusFaultType
-}
-
-type ConsensusFaultType int64
-
-const (
-	//ConsensusFaultNone             ConsensusFaultType = 0
-	ConsensusFaultDoubleForkMining ConsensusFaultType = 1
-	ConsensusFaultParentGrinding   ConsensusFaultType = 2
-	ConsensusFaultTimeOffsetMining ConsensusFaultType = 3
-)
-
 // These interfaces are intended to match those from whyrusleeping/cbor-gen, such that code generated from that
 // system is automatically usable here (but not mandatory).
 type CBORMarshaler interface {
@@ -284,19 +252,4 @@ type CBORUnmarshaler interface {
 type CBORer interface {
 	CBORMarshaler
 	CBORUnmarshaler
-}
-
-// Wraps already-serialized bytes as CBOR-marshalable.
-type CBORBytes []byte
-
-func (b CBORBytes) MarshalCBOR(w io.Writer) error {
-	_, err := w.Write(b)
-	return err
-}
-
-func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
-	var c bytes.Buffer
-	_, err := c.ReadFrom(r)
-	*b = c.Bytes()
-	return err
 }

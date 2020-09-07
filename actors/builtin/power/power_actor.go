@@ -7,6 +7,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
@@ -44,6 +45,8 @@ var _ runtime.Invokee = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
+// Changed since v0:
+// - Added ControlAddrs
 type MinerConstructorParams struct {
 	OwnerAddr     addr.Address
 	WorkerAddr    addr.Address
@@ -51,13 +54,6 @@ type MinerConstructorParams struct {
 	SealProofType abi.RegisteredSealProof
 	PeerId        abi.PeerID
 	Multiaddrs    []abi.Multiaddrs
-}
-
-type SectorStorageWeightDesc struct {
-	SectorSize         abi.SectorSize
-	Duration           abi.ChainEpoch
-	DealWeight         abi.DealWeight
-	VerifiedDealWeight abi.DealWeight
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,18 +73,20 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-type CreateMinerParams struct {
-	Owner         addr.Address
-	Worker        addr.Address
-	SealProofType abi.RegisteredSealProof
-	Peer          abi.PeerID
-	Multiaddrs    []abi.Multiaddrs
-}
+//type CreateMinerParams struct {
+//	Owner         addr.Address
+//	Worker        addr.Address
+//	SealProofType abi.RegisteredSealProof
+//	Peer          abi.PeerID
+//	Multiaddrs    []abi.Multiaddrs
+//}
+type CreateMinerParams = power0.CreateMinerParams
 
-type CreateMinerReturn struct {
-	IDAddress     addr.Address // The canonical ID-based address for the actor.
-	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
-}
+//type CreateMinerReturn struct {
+//	IDAddress     addr.Address // The canonical ID-based address for the actor.
+//	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
+//}
+type CreateMinerReturn = power0.CreateMinerReturn
 
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -137,10 +135,11 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	}
 }
 
-type UpdateClaimedPowerParams struct {
-	RawByteDelta         abi.StoragePower
-	QualityAdjustedDelta abi.StoragePower
-}
+//type UpdateClaimedPowerParams struct {
+//	RawByteDelta         abi.StoragePower
+//	QualityAdjustedDelta abi.StoragePower
+//}
+type UpdateClaimedPowerParams = power0.UpdateClaimedPowerParams
 
 // Adds or removes claimed power for the calling actor.
 // May only be invoked by a miner actor.
@@ -161,10 +160,11 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 	return nil
 }
 
-type EnrollCronEventParams struct {
-	EventEpoch abi.ChainEpoch
-	Payload    []byte
-}
+//type EnrollCronEventParams struct {
+//	EventEpoch abi.ChainEpoch
+//	Payload    []byte
+//}
+type EnrollCronEventParams = power0.EnrollCronEventParams
 
 func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
@@ -277,6 +277,8 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 	return nil
 }
 
+// Changed since v0:
+// - QualityAdjPowerSmoothed is not a pointer
 type CurrentTotalPowerReturn struct {
 	RawBytePower            abi.StoragePower
 	QualityAdjPower         abi.StoragePower
@@ -443,7 +445,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		_, code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
-			runtime.CBORBytes(event.CallbackPayload),
+			builtin.CBORBytes(event.CallbackPayload),
 			abi.NewTokenAmount(0),
 		)
 		// If a callback fails, this actor continues to invoke other callbacks

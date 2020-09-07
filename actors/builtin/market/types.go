@@ -48,6 +48,12 @@ type DealMetaArray struct {
 	*Array
 }
 
+type DealState struct {
+	SectorStartEpoch abi.ChainEpoch // -1 if not yet included in proven sector
+	LastUpdatedEpoch abi.ChainEpoch // -1 if deal state never updated
+	SlashEpoch       abi.ChainEpoch // -1 if deal never slashed
+}
+
 // Interprets a store as balance table with root `r`.
 func AsDealStateArray(s Store, r cid.Cid) (*DealMetaArray, error) {
 	dsa, err := AsArray(s, r)
