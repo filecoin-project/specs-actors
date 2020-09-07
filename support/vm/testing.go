@@ -390,20 +390,23 @@ func MinerPower(t *testing.T, vm *VM, minerIdAddr address.Address) miner.PowerPa
 
 type NetworkStats struct {
 	power.State
-	TotalRawBytePower         abi.StoragePower
-	TotalBytesCommitted       abi.StoragePower
-	TotalQualityAdjPower      abi.StoragePower
-	TotalQABytesCommitted     abi.StoragePower
-	TotalPledgeCollateral     abi.TokenAmount
-	ThisEpochRawBytePower     abi.StoragePower
-	ThisEpochQualityAdjPower  abi.StoragePower
-	ThisEpochPledgeCollateral abi.TokenAmount
-	MinerCount                int64
-	MinerAboveMinPowerCount   int64
-	ThisEpochReward           abi.TokenAmount
-	ThisEpochRewardSmoothed   smoothing.FilterEstimate
-	ThisEpochBaselinePower    abi.StoragePower
-	TotalMined                abi.TokenAmount
+	TotalRawBytePower             abi.StoragePower
+	TotalBytesCommitted           abi.StoragePower
+	TotalQualityAdjPower          abi.StoragePower
+	TotalQABytesCommitted         abi.StoragePower
+	TotalPledgeCollateral         abi.TokenAmount
+	ThisEpochRawBytePower         abi.StoragePower
+	ThisEpochQualityAdjPower      abi.StoragePower
+	ThisEpochPledgeCollateral     abi.TokenAmount
+	MinerCount                    int64
+	MinerAboveMinPowerCount       int64
+	ThisEpochReward               abi.TokenAmount
+	ThisEpochRewardSmoothed       smoothing.FilterEstimate
+	ThisEpochBaselinePower        abi.StoragePower
+	TotalMined                    abi.TokenAmount
+	TotalClientLockedCollateral   abi.TokenAmount
+	TotalProviderLockedCollateral abi.TokenAmount
+	TotalClientStorageFee         abi.TokenAmount
 }
 
 func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
@@ -415,21 +418,28 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 	err = vm.GetState(builtin.RewardActorAddr, &rewardState)
 	require.NoError(t, err)
 
+	var marketState market.State
+	err = vm.GetState(builtin.StorageMarketActorAddr, &marketState)
+	require.NoError(t, err)
+
 	return NetworkStats{
-		TotalRawBytePower:         powerState.TotalRawBytePower,
-		TotalBytesCommitted:       powerState.TotalBytesCommitted,
-		TotalQualityAdjPower:      powerState.TotalQualityAdjPower,
-		TotalQABytesCommitted:     powerState.TotalQABytesCommitted,
-		TotalPledgeCollateral:     powerState.TotalPledgeCollateral,
-		ThisEpochRawBytePower:     powerState.ThisEpochRawBytePower,
-		ThisEpochQualityAdjPower:  powerState.ThisEpochQualityAdjPower,
-		ThisEpochPledgeCollateral: powerState.ThisEpochPledgeCollateral,
-		MinerCount:                powerState.MinerCount,
-		MinerAboveMinPowerCount:   powerState.MinerAboveMinPowerCount,
-		ThisEpochReward:           rewardState.ThisEpochReward,
-		ThisEpochRewardSmoothed:   rewardState.ThisEpochRewardSmoothed,
-		ThisEpochBaselinePower:    rewardState.ThisEpochBaselinePower,
-		TotalMined:                rewardState.TotalMined,
+		TotalRawBytePower:             powerState.TotalRawBytePower,
+		TotalBytesCommitted:           powerState.TotalBytesCommitted,
+		TotalQualityAdjPower:          powerState.TotalQualityAdjPower,
+		TotalQABytesCommitted:         powerState.TotalQABytesCommitted,
+		TotalPledgeCollateral:         powerState.TotalPledgeCollateral,
+		ThisEpochRawBytePower:         powerState.ThisEpochRawBytePower,
+		ThisEpochQualityAdjPower:      powerState.ThisEpochQualityAdjPower,
+		ThisEpochPledgeCollateral:     powerState.ThisEpochPledgeCollateral,
+		MinerCount:                    powerState.MinerCount,
+		MinerAboveMinPowerCount:       powerState.MinerAboveMinPowerCount,
+		ThisEpochReward:               rewardState.ThisEpochReward,
+		ThisEpochRewardSmoothed:       rewardState.ThisEpochRewardSmoothed,
+		ThisEpochBaselinePower:        rewardState.ThisEpochBaselinePower,
+		TotalMined:                    rewardState.TotalMined,
+		TotalClientLockedCollateral:   marketState.TotalClientLockedCollateral,
+		TotalProviderLockedCollateral: marketState.TotalProviderLockedCollateral,
+		TotalClientStorageFee:         marketState.TotalClientStorageFee,
 	}
 }
 
