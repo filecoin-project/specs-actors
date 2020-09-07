@@ -172,8 +172,12 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "voucher signature invalid")
 
 	pchAddr := rt.Message().Receiver()
-	if pchAddr != sv.ChannelAddr {
-		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not match receiver %s", sv.ChannelAddr, pchAddr)
+	svpchIDAddr, found := rt.ResolveAddress(sv.ChannelAddr)
+	if !found {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not resolve to an ID address", sv.ChannelAddr)
+	}
+	if pchAddr != svpchIDAddr {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not match receiver %s", svpchIDAddr, pchAddr)
 	}
 
 	if rt.CurrEpoch() < sv.TimeLockMin {
