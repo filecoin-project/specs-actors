@@ -34,8 +34,12 @@ var DeclaredFaultFactorDenom = 100
 var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNum) / DeclaredFaultFactorDenom)
 
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
-var UndeclaredFaultProjectionPeriodV0 = abi.ChainEpoch(5) * builtin.EpochsInDay
-var UndeclaredFaultProjectionPeriodV1 = abi.ChainEpoch(3) * builtin.EpochsInDay
+var UndeclaredFaultFactorNumV0 = 50
+var UndeclaredFaultFactorNumV1 = 35
+var UndeclaredFaultFactorDenom = 10
+
+var UndeclaredFaultProjectionPeriodV0 = abi.ChainEpoch((builtin.EpochsInDay * UndeclaredFaultFactorNumV0) / UndeclaredFaultFactorDenom)
+var UndeclaredFaultProjectionPeriodV1 = abi.ChainEpoch((builtin.EpochsInDay * UndeclaredFaultFactorNumV1) / UndeclaredFaultFactorDenom)
 
 // Maximum number of days of BR a terminated sector can be penalized
 const TerminationLifetimeCap = abi.ChainEpoch(70)
