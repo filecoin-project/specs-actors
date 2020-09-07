@@ -54,7 +54,7 @@ type State struct {
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
-	ProofValidationBatch *cid.Cid
+	ProofValidationBatch *cid.Cid // HAMT[Address]AMT[SealVerifyInfo]
 }
 
 type Claim struct {
