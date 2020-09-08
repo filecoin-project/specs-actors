@@ -223,7 +223,7 @@ func TestVesting(t *testing.T) {
 
 	const unlockDuration = 10
 	var multisigInitialBalance = abi.NewTokenAmount(100)
-	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
+	var fakeParams = builtin.CBORBytes([]byte{1, 2, 3, 4})
 
 	builder := mock.NewBuilder(context.Background(), receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
@@ -353,7 +353,7 @@ func TestPropose(t *testing.T) {
 
 	const noUnlockDuration = int64(0)
 	var sendValue = abi.NewTokenAmount(10)
-	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
+	var fakeParams = builtin.CBORBytes([]byte{1, 2, 3, 4})
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -473,7 +473,7 @@ func TestApprove(t *testing.T) {
 	const txnID = int64(0)
 	const fakeMethod = abi.MethodNum(42)
 	var sendValue = abi.NewTokenAmount(10)
-	var fakeParams = runtime.CBORBytes([]byte{1, 2, 3, 4})
+	var fakeParams = builtin.CBORBytes([]byte{1, 2, 3, 4})
 	var signers = []addr.Address{anne, bob}
 
 	builder := mock.NewBuilder(context.Background(), receiver).

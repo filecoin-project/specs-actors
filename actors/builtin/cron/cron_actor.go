@@ -2,6 +2,7 @@ package cron
 
 import (
 	"github.com/filecoin-project/go-state-types/abi"
+	cron0 "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
@@ -20,13 +21,20 @@ func (a Actor) Exports() []interface{} {
 
 var _ runtime.Invokee = Actor{}
 
-type ConstructorParams struct {
-	Entries []Entry
-}
+//type ConstructorParams struct {
+//	Entries []Entry
+//}
+type ConstructorParams = cron0.ConstructorParams
+
+type EntryParam = cron0.Entry
 
 func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	rt.State().Create(ConstructState(params.Entries))
+	entries := make([]Entry, len(params.Entries))
+	for i, e := range params.Entries {
+		entries[i] = Entry(e) // Identical
+	}
+	rt.State().Create(ConstructState(entries))
 	return nil
 }
 

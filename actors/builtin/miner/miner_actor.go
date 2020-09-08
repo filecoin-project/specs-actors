@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -28,17 +29,6 @@ import (
 )
 
 type Runtime = runtime.Runtime
-
-type CronEventType int64
-
-const (
-	CronEventProvingDeadline CronEventType = iota + 1
-	CronEventProcessEarlyTerminations
-)
-
-type CronEventPayload struct {
-	EventType CronEventType
-}
 
 // Identifier for a single partition within a miner.
 type PartitionKey struct {
@@ -152,6 +142,8 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValu
 // Control //
 /////////////
 
+// Changed since v0:
+// - Add ControlAddrs
 type GetControlAddressesReturn struct {
 	Owner        addr.Address
 	Worker       addr.Address
@@ -170,6 +162,8 @@ func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddres
 	}
 }
 
+// Changed since v0:
+// - Add NewControlAddrs
 type ChangeWorkerAddressParams struct {
 	NewWorker       addr.Address
 	NewControlAddrs []addr.Address
@@ -229,9 +223,10 @@ func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *adt.EmptyValue) *adt.E
 	return nil
 }
 
-type ChangePeerIDParams struct {
-	NewID abi.PeerID
-}
+//type ChangePeerIDParams struct {
+//	NewID abi.PeerID
+//}
+type ChangePeerIDParams = miner0.ChangePeerIDParams
 
 func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
 	checkPeerInfo(rt, params.NewID, nil)
@@ -249,9 +244,10 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 	return nil
 }
 
-type ChangeMultiaddrsParams struct {
-	NewMultiaddrs []abi.Multiaddrs
-}
+//type ChangeMultiaddrsParams struct {
+//	NewMultiaddrs []abi.Multiaddrs
+//}
+type ChangeMultiaddrsParams = miner0.ChangeMultiaddrsParams
 
 func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
 	checkPeerInfo(rt, nil, params.NewMultiaddrs)
@@ -273,29 +269,31 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt
 // WindowedPoSt //
 //////////////////
 
-type PoStPartition struct {
-	// Partitions are numbered per-deadline, from zero.
-	Index uint64
-	// Sectors skipped while proving that weren't already declared faulty
-	Skipped bitfield.BitField
-}
+//type PoStPartition struct {
+//	// Partitions are numbered per-deadline, from zero.
+//	Index uint64
+//	// Sectors skipped while proving that weren't already declared faulty
+//	Skipped bitfield.BitField
+//}
+type PoStPartition = miner0.PoStPartition
 
 // Information submitted by a miner to provide a Window PoSt.
-type SubmitWindowedPoStParams struct {
-	// The deadline index which the submission targets.
-	Deadline uint64
-	// The partitions being proven.
-	Partitions []PoStPartition
-	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
-	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
-	Proofs []proof.PoStProof
-	// The epoch at which these proofs is being committed to a particular chain.
-	// NOTE: This field should be removed in the future. See
-	// https://github.com/filecoin-project/specs-actors/issues/1094
-	ChainCommitEpoch abi.ChainEpoch
-	// The ticket randomness on the chain at the chain commit epoch.
-	ChainCommitRand abi.Randomness
-}
+//type SubmitWindowedPoStParams struct {
+//	// The deadline index which the submission targets.
+//	Deadline uint64
+//	// The partitions being proven.
+//	Partitions []PoStPartition
+//	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
+//	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
+//	Proofs []proof.PoStProof
+//	// The epoch at which these proofs is being committed to a particular chain.
+//	// NOTE: This field should be removed in the future. See
+//	// https://github.com/filecoin-project/specs-actors/issues/1094
+//	ChainCommitEpoch abi.ChainEpoch
+//	// The ticket randomness on the chain at the chain commit epoch.
+//	ChainCommitRand abi.Randomness
+//}
+type SubmitWindowedPoStParams = miner0.SubmitWindowedPoStParams
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
@@ -473,9 +471,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 // Sector Commitment //
 ///////////////////////
 
+type PreCommitSectorParams = miner0.SectorPreCommitInfo
+
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
+func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.EmptyValue {
 	if _, ok := SupportedProofTypes[params.SealProof]; !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type: %s", params.SealProof)
 	}
@@ -585,7 +585,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		st.AddPreCommitDeposit(depositReq)
 
 		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
-			Info:               *params,
+			Info:               SectorPreCommitInfo(*params),
 			PreCommitDeposit:   depositReq,
 			PreCommitEpoch:     rt.CurrEpoch(),
 			DealWeight:         dealWeight.DealWeight,
@@ -616,10 +616,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 	return nil
 }
 
-type ProveCommitSectorParams struct {
-	SectorNumber abi.SectorNumber
-	Proof        []byte
-}
+//type ProveCommitSectorParams struct {
+//	SectorNumber abi.SectorNumber
+//	Proof        []byte
+//}
+type ProveCommitSectorParams = miner0.ProveCommitSectorParams
 
 // Checks state of the corresponding sector pre-commitment, then schedules the proof to be verified in bulk
 // by the power actor.
@@ -852,9 +853,10 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	return nil
 }
 
-type CheckSectorProvenParams struct {
-	SectorNumber abi.SectorNumber
-}
+//type CheckSectorProvenParams struct {
+//	SectorNumber abi.SectorNumber
+//}
+type CheckSectorProvenParams = miner0.CheckSectorProvenParams
 
 func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
@@ -880,16 +882,18 @@ func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *a
 // Sector Modification //
 /////////////////////////
 
-type ExtendSectorExpirationParams struct {
-	Extensions []ExpirationExtension
-}
+//type ExtendSectorExpirationParams struct {
+//	Extensions []ExpirationExtension
+//}
+type ExtendSectorExpirationParams = miner0.ExtendSectorExpirationParams
 
-type ExpirationExtension struct {
-	Deadline      uint64
-	Partition     uint64
-	Sectors       bitfield.BitField
-	NewExpiration abi.ChainEpoch
-}
+//type ExpirationExtension struct {
+//	Deadline      uint64
+//	Partition     uint64
+//	Sectors       bitfield.BitField
+//	NewExpiration abi.ChainEpoch
+//}
+type ExpirationExtension = miner0.ExpirationExtension
 
 // Changes the expiration epoch for a sector to a new, later one.
 // The sector must not be terminated or faulty.
@@ -1033,24 +1037,27 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	return nil
 }
 
-type TerminateSectorsParams struct {
-	Terminations []TerminationDeclaration
-}
+//type TerminateSectorsParams struct {
+//	Terminations []TerminationDeclaration
+//}
+type TerminateSectorsParams = miner0.TerminateSectorsParams
 
-type TerminationDeclaration struct {
-	Deadline  uint64
-	Partition uint64
-	Sectors   bitfield.BitField
-}
+//type TerminationDeclaration struct {
+//	Deadline  uint64
+//	Partition uint64
+//	Sectors   bitfield.BitField
+//}
+type TerminationDeclaration = miner0.TerminationDeclaration
 
-type TerminateSectorsReturn struct {
-	// Set to true if all early termination work has been completed. When
-	// false, the miner may choose to repeatedly invoke TerminateSectors
-	// with no new sectors to process the remainder of the pending
-	// terminations. While pending terminations are outstanding, the miner
-	// will not be able to withdraw funds.
-	Done bool
-}
+//type TerminateSectorsReturn struct {
+//	// Set to true if all early termination work has been completed. When
+//	// false, the miner may choose to repeatedly invoke TerminateSectors
+//	// with no new sectors to process the remainder of the pending
+//	// terminations. While pending terminations are outstanding, the miner
+//	// will not be able to withdraw funds.
+//	Done bool
+//}
+type TerminateSectorsReturn = miner0.TerminateSectorsReturn
 
 // Marks some sectors as terminated at the present epoch, earlier than their
 // scheduled termination, and adds these sectors to the early termination queue.
@@ -1154,18 +1161,20 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 // Faults //
 ////////////
 
-type DeclareFaultsParams struct {
-	Faults []FaultDeclaration
-}
+//type DeclareFaultsParams struct {
+//	Faults []FaultDeclaration
+//}
+type DeclareFaultsParams = miner0.DeclareFaultsParams
 
-type FaultDeclaration struct {
-	// The deadline to which the faulty sectors are assigned, in range [0..WPoStPeriodDeadlines)
-	Deadline uint64
-	// Partition index within the deadline containing the faulty sectors.
-	Partition uint64
-	// Sectors in the partition being declared faulty.
-	Sectors bitfield.BitField
-}
+//type FaultDeclaration struct {
+//	// The deadline to which the faulty sectors are assigned, in range [0..WPoStPeriodDeadlines)
+//	Deadline uint64
+//	// Partition index within the deadline containing the faulty sectors.
+//	Partition uint64
+//	// Sectors in the partition being declared faulty.
+//	Sectors bitfield.BitField
+//}
+type FaultDeclaration = miner0.FaultDeclaration
 
 func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
 	if len(params.Faults) > DeclarationsMax {
@@ -1234,18 +1243,20 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.Empty
 	return nil
 }
 
-type DeclareFaultsRecoveredParams struct {
-	Recoveries []RecoveryDeclaration
-}
+//type DeclareFaultsRecoveredParams struct {
+//	Recoveries []RecoveryDeclaration
+//}
+type DeclareFaultsRecoveredParams = miner0.DeclareFaultsRecoveredParams
 
-type RecoveryDeclaration struct {
-	// The deadline to which the recovered sectors are assigned, in range [0..WPoStPeriodDeadlines)
-	Deadline uint64
-	// Partition index within the deadline containing the recovered sectors.
-	Partition uint64
-	// Sectors in the partition being declared recovered.
-	Sectors bitfield.BitField
-}
+//type RecoveryDeclaration struct {
+//	// The deadline to which the recovered sectors are assigned, in range [0..WPoStPeriodDeadlines)
+//	Deadline uint64
+//	// Partition index within the deadline containing the recovered sectors.
+//	Partition uint64
+//	// Sectors in the partition being declared recovered.
+//	Sectors bitfield.BitField
+//}
+type RecoveryDeclaration = miner0.RecoveryDeclaration
 
 func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
 	if len(params.Recoveries) > DeclarationsMax {
@@ -1319,10 +1330,11 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 // Maintenance //
 /////////////////
 
-type CompactPartitionsParams struct {
-	Deadline   uint64
-	Partitions bitfield.BitField
-}
+//type CompactPartitionsParams struct {
+//	Deadline   uint64
+//	Partitions bitfield.BitField
+//}
+type CompactPartitionsParams = miner0.CompactPartitionsParams
 
 // Compacts a number of partitions at one deadline by removing terminated sectors, re-ordering the remaining sectors,
 // and assigning them to new partitions so as to completely fill all but one partition with live sectors.
@@ -1386,9 +1398,10 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 	return nil
 }
 
-type CompactSectorNumbersParams struct {
-	MaskSectorNumbers bitfield.BitField
-}
+//type CompactSectorNumbersParams struct {
+//	MaskSectorNumbers bitfield.BitField
+//}
+type CompactSectorNumbersParams = miner0.CompactSectorNumbersParams
 
 // Compacts sector number allocations to reduce the size of the allocated sector
 // number bitfield.
@@ -1470,11 +1483,12 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.
 	return nil
 }
 
-type ReportConsensusFaultParams struct {
-	BlockHeader1     []byte
-	BlockHeader2     []byte
-	BlockHeaderExtra []byte
-}
+//type ReportConsensusFaultParams struct {
+//	BlockHeader1     []byte
+//	BlockHeader2     []byte
+//	BlockHeaderExtra []byte
+//}
+type ReportConsensusFaultParams = miner0.ReportConsensusFaultParams
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
 	// Note: only the first reporter of any fault is rewarded.
@@ -1546,9 +1560,10 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	return nil
 }
 
-type WithdrawBalanceParams struct {
-	AmountRequested abi.TokenAmount
-}
+//type WithdrawBalanceParams struct {
+//	AmountRequested abi.TokenAmount
+//}
+type WithdrawBalanceParams = miner0.WithdrawBalanceParams
 
 func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
 	var st State
@@ -1609,7 +1624,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	return nil
 }
 
-func (a Actor) RepayDebt(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) RepayDebt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	var st State
 	var fromVesting, fromBalance abi.TokenAmount
 	rt.State().Transaction(&st, func() {
@@ -1631,6 +1646,18 @@ func (a Actor) RepayDebt(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
 //////////
 // Cron //
 //////////
+
+//type CronEventPayload struct {
+//	EventType CronEventType
+//}
+type CronEventPayload = miner0.CronEventPayload
+
+type CronEventType = miner0.CronEventType
+
+const (
+	CronEventProvingDeadline          = miner0.CronEventProvingDeadline
+	CronEventProcessEarlyTerminations = miner0.CronEventProcessEarlyTerminations
+)
 
 func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
@@ -1870,7 +1897,7 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 }
 
-func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *SectorPreCommitInfo) {
+func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *PreCommitSectorParams) {
 	replaceSector, found, err := st.GetSector(store, params.ReplaceSectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
 	if !found {

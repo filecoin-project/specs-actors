@@ -13,7 +13,6 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/v2/support/testing"
@@ -55,7 +54,7 @@ func TestExec(t *testing.T) {
 		})
 	})
 
-	var fakeParams = runtime.CBORBytes([]byte{'D', 'E', 'A', 'D', 'B', 'E', 'E', 'F'})
+	var fakeParams = builtin.CBORBytes([]byte{'D', 'E', 'A', 'D', 'B', 'E', 'E', 'F'})
 	var balance = abi.NewTokenAmount(100)
 
 	t.Run("happy path exec create 2 payment channels", func(t *testing.T) {

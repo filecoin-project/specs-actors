@@ -10,6 +10,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -63,10 +64,11 @@ func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-type WithdrawBalanceParams struct {
-	ProviderOrClientAddress addr.Address
-	Amount                  abi.TokenAmount
-}
+//type WithdrawBalanceParams struct {
+//	ProviderOrClientAddress addr.Address
+//	Amount                  abi.TokenAmount
+//}
+type WithdrawBalanceParams = market0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
@@ -132,13 +134,15 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 	return nil
 }
 
-type PublishStorageDealsParams struct {
-	Deals []ClientDealProposal
-}
+//type PublishStorageDealsParams struct {
+//	Deals []ClientDealProposal
+//}
+type PublishStorageDealsParams = market0.PublishStorageDealsParams
 
-type PublishStorageDealsReturn struct {
-	IDs []abi.DealID
-}
+//type PublishStorageDealsReturn struct {
+//	IDs []abi.DealID
+//}
+type PublishStorageDealsReturn = market0.PublishStorageDealsReturn
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
@@ -253,15 +257,18 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		}
 	}
 
-	return &PublishStorageDealsReturn{newDealIds}
+	return &PublishStorageDealsReturn{IDs: newDealIds}
 }
 
-type VerifyDealsForActivationParams struct {
-	DealIDs      []abi.DealID
-	SectorExpiry abi.ChainEpoch
-	SectorStart  abi.ChainEpoch
-}
+//type VerifyDealsForActivationParams struct {
+//	DealIDs      []abi.DealID
+//	SectorExpiry abi.ChainEpoch
+//	SectorStart  abi.ChainEpoch
+//}
+type VerifyDealsForActivationParams = market0.VerifyDealsForActivationParams
 
+// Changed since v0:
+// - Added DealSpace
 type VerifyDealsForActivationReturn struct {
 	DealWeight         abi.DealWeight
 	VerifiedDealWeight abi.DealWeight
@@ -289,10 +296,11 @@ func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActiva
 	}
 }
 
-type ActivateDealsParams struct {
-	DealIDs      []abi.DealID
-	SectorExpiry abi.ChainEpoch
-}
+//type ActivateDealsParams struct {
+//	DealIDs      []abi.DealID
+//	SectorExpiry abi.ChainEpoch
+//}
+type ActivateDealsParams = market0.ActivateDealsParams
 
 // Verify that a given set of storage deals is valid for a sector currently being ProveCommitted,
 // update the market's internal state accordingly.
@@ -350,10 +358,11 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 	return nil
 }
 
-type ComputeDataCommitmentParams struct {
-	DealIDs    []abi.DealID
-	SectorType abi.RegisteredSealProof
-}
+//type ComputeDataCommitmentParams struct {
+//	DealIDs    []abi.DealID
+//	SectorType abi.RegisteredSealProof
+//}
+type ComputeDataCommitmentParams = market0.ComputeDataCommitmentParams
 
 func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
@@ -382,10 +391,11 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 	return (*cbg.CborCid)(&commd)
 }
 
-type OnMinerSectorsTerminateParams struct {
-	Epoch   abi.ChainEpoch
-	DealIDs []abi.DealID
-}
+//type OnMinerSectorsTerminateParams struct {
+//	Epoch   abi.ChainEpoch
+//	DealIDs []abi.DealID
+//}
+type OnMinerSectorsTerminateParams = market0.OnMinerSectorsTerminateParams
 
 // Terminate a set of deals in response to their containing sector being terminated.
 // Slash provider collateral, refund client collateral, and refund partial unpaid escrow

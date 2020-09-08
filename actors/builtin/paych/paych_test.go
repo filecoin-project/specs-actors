@@ -555,7 +555,7 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 	ex := &ModVerifyParams{
 		Actor:  otherAddr,
 		Method: mnum,
-		Params: fakeParams,
+		Data: fakeParams,
 	}
 
 	t.Run("Succeeds if extra call succeeds", func(t *testing.T) {

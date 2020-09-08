@@ -578,7 +578,7 @@ func (ic *invocationContext) dispatch(actor exported.BuiltinActor, method abi.Me
 			return nil, err
 		}
 		args = append(args, reflect.ValueOf(obj))
-	} else if raw, ok := arg.(runtime.CBORBytes); ok {
+	} else if raw, ok := arg.(builtin.CBORBytes); ok {
 		obj, err := decodeBytes(t, raw)
 		if err != nil {
 			return nil, err
