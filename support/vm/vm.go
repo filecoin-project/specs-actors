@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-hamt-ipld"
+	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
@@ -69,6 +69,8 @@ type Invocation struct {
 
 // NewVM creates a new runtime for executing messages.
 func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM {
+	// Note: this uses the most recent HAMT implementation.
+	// To test across chain state upgrades, factor out this initial state tree construction.
 	actors := adt.MakeEmptyMap(store)
 	actorRoot, err := actors.Root()
 	if err != nil {

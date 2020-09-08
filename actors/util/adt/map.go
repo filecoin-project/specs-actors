@@ -3,7 +3,7 @@ package adt
 import (
 	"bytes"
 
-	hamt "github.com/filecoin-project/go-hamt-ipld"
+	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/sha256-simd"
 	errors "github.com/pkg/errors"
