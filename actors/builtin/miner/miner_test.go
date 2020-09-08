@@ -1633,9 +1633,14 @@ func TestProveCommit(t *testing.T) {
 	t.Run("prove commit aborts if pledge requirement not met", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
+		// Set the circulating supply high and expected reward low in order to coerce
+		// pledge requirements (BR + share of money supply, but capped at 1FIL)
+		// to exceed pre-commit deposit (BR only).
+		rt.SetCirculatingSupply(big.Mul(big.NewInt(100_000_000), big.NewInt(1e18)))
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.NewInt(1e15))
 
 		// prove one sector to establish collateral and locked funds
-		actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		sectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// preecommit another sector so we may prove it
 		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
@@ -1644,11 +1649,12 @@ func TestProveCommit(t *testing.T) {
 		params := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
 		precommit := actor.preCommitSector(rt, params, preCommitConf{})
 
-		// alter balance to simulate dipping into it for fees
+		// Confirm the unlocked PCD will not cover the new IP
+		assert.True(t, sectors[0].InitialPledge.GreaterThan(precommit.PreCommitDeposit))
 
+		// Set balance to exactly cover locked funds.
 		st := getState(rt)
-		bal := rt.Balance()
-		rt.SetBalance(big.Add(st.PreCommitDeposits, st.LockedFunds))
+		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
 		info := actor.getInfo(rt)
 
 		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[info.SealProofType] - 1)
@@ -1657,8 +1663,8 @@ func TestProveCommit(t *testing.T) {
 		})
 		rt.Reset()
 
-		// succeeds when pledge deposits satisfy initial pledge requirement
-		rt.SetBalance(bal)
+		// succeeds with enough free balance (enough to cover 2x IP)
+		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.InitialPledge, st.LockedFunds))
 		actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 	})
 
