@@ -74,7 +74,7 @@ func TestMarketActor(t *testing.T) {
 
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
-		ret := rt.Call(actor.Constructor, nil).(*adt.EmptyValue)
+		ret := rt.Call(actor.Constructor, nil).(*abi.EmptyValue)
 		assert.Nil(t, ret)
 		rt.Verify()
 
@@ -2029,7 +2029,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 					rt.ExpectAssertionFailure(tc.assertionMsg, func() {
 						rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 						rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-						param := adt.EmptyValue{}
+						param := abi.EmptyValue{}
 						rt.Call(actor.CronTick, &param)
 						rt.Verify()
 					})
@@ -2644,7 +2644,7 @@ func (h *marketActorTestHarness) cronTickAndAssertBalances(rt *mock.Runtime, cli
 func (h *marketActorTestHarness) cronTick(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 	rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-	param := adt.EmptyValue{}
+	param := abi.EmptyValue{}
 
 	rt.Call(h.CronTick, &param)
 	rt.Verify()

@@ -84,7 +84,7 @@ var _ runtime.Invokee = Actor{}
 // between the two, the construction parameters are defined in the power actor.
 type ConstructorParams = power.MinerConstructorParams
 
-func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	_, ok := SupportedProofTypes[params.SealProofType]
@@ -152,7 +152,7 @@ type GetControlAddressesReturn struct {
 	ControlAddrs []addr.Address
 }
 
-func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddressesReturn {
+func (a Actor) ControlAddresses(rt Runtime, _ *abi.EmptyValue) *GetControlAddressesReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
@@ -172,7 +172,7 @@ type ChangeWorkerAddressParams struct {
 // ChangeWorkerAddress will ALWAYS overwrite the existing control addresses with the control addresses passed in the params.
 // If a nil addresses slice is passed, the control addresses will be cleared.
 // A worker change will be scheduled if the worker passed in the params is different from the existing worker.
-func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
+func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *abi.EmptyValue {
 	var effectiveEpoch abi.ChainEpoch
 
 	newWorker := resolveWorkerAddress(rt, params.NewWorker)
@@ -230,7 +230,7 @@ type ChangePeerIDParams struct {
 	NewID abi.PeerID
 }
 
-func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
+func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *abi.EmptyValue {
 	// TODO: Consider limiting the maximum number of bytes used by the peer ID on-chain.
 	// https://github.com/filecoin-project/specs-actors/issues/712
 	var st State
@@ -250,7 +250,7 @@ type ChangeMultiaddrsParams struct {
 	NewMultiaddrs []abi.Multiaddrs
 }
 
-func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
+func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *abi.EmptyValue {
 	// TODO: Consider limiting the maximum number of bytes used by multiaddrs on-chain.
 	// https://github.com/filecoin-project/specs-actors/issues/712
 	var st State
@@ -293,7 +293,7 @@ type SubmitWindowedPoStParams struct {
 }
 
 // Invoked by miner's worker address to submit their fallback post
-func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
+func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *abi.EmptyValue {
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
@@ -441,7 +441,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.EmptyValue {
+func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *abi.EmptyValue {
 	if _, ok := SupportedProofTypes[params.SealProof]; !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type: %s", params.SealProof)
 	}
@@ -585,7 +585,7 @@ type ProveCommitSectorParams struct {
 // Checks state of the corresponding sector pre-commitment, then schedules the proof to be verified in bulk
 // by the power actor.
 // If valid, the power actor will call ConfirmSectorProofsValid at the end of the same epoch as this message.
-func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
+func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	store := adt.AsStore(rt)
@@ -635,7 +635,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	return nil
 }
 
-func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
+func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	// get network stats from other actors
@@ -799,7 +799,7 @@ type CheckSectorProvenParams struct {
 	SectorNumber abi.SectorNumber
 }
 
-func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *adt.EmptyValue {
+func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
@@ -833,7 +833,7 @@ type ExpirationExtension struct {
 // Changes the expiration epoch for a sector to a new, later one.
 // The sector must not be terminated or faulty.
 // The sector's power is recomputed for the new expiration.
-func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
+func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *abi.EmptyValue {
 	if uint64(len(params.Extensions)) > AddressedPartitionsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), AddressedPartitionsMax)
 	}
@@ -1088,7 +1088,7 @@ type FaultDeclaration struct {
 	Sectors bitfield.BitField
 }
 
-func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
+func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.EmptyValue {
 	toProcess := make(DeadlineSectorMap)
 	for _, term := range params.Faults {
 		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
@@ -1161,7 +1161,7 @@ type RecoveryDeclaration struct {
 	Sectors bitfield.BitField
 }
 
-func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
+func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *abi.EmptyValue {
 	toProcess := make(DeadlineSectorMap)
 	for _, term := range params.Recoveries {
 		err := toProcess.Add(term.Deadline, term.Partition, term.Sectors)
@@ -1225,7 +1225,7 @@ type CompactPartitionsParams struct {
 // The final partition in the deadline is always included in the compaction, whether or not explicitly requested.
 // Removed sectors are removed from state entirely.
 // May not be invoked if the deadline has any un-processed early terminations.
-func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *adt.EmptyValue {
+func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *abi.EmptyValue {
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %v", params.Deadline)
 	}
@@ -1289,7 +1289,7 @@ type CompactSectorNumbersParams struct {
 // can be called to mask out (throw away) entire ranges of unused sector IDs.
 // For example, if sectors 1-99 and 101-200 have been allocated, sector number
 // 99 can be masked out to collapse these two ranges into one.
-func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *adt.EmptyValue {
+func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *abi.EmptyValue {
 	lastSectorNo, err := params.MaskSectorNumbers.Last()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid mask bitfield")
 	if lastSectorNo > abi.MaxSectorNumber {
@@ -1314,7 +1314,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 ///////////////////////
 
 // Locks up some amount of the miner's unlocked balance (including funds received alongside the invoking message).
-func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.EmptyValue {
+func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *abi.EmptyValue {
 	if amountToLock.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
@@ -1354,7 +1354,7 @@ type ReportConsensusFaultParams struct {
 	BlockHeaderExtra []byte
 }
 
-func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
+func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *abi.EmptyValue {
 	// Note: only the first reporter of any fault is rewarded.
 	// Subsequent invocations fail because the target miner has been removed.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -1398,7 +1398,7 @@ type WithdrawBalanceParams struct {
 	AmountRequested abi.TokenAmount
 }
 
-func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.EmptyValue {
 	var st State
 	if params.AmountRequested.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative fund requested for withdrawal: %s", params.AmountRequested)
@@ -1450,7 +1450,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 // Cron //
 //////////
 
-func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.EmptyValue {
+func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	switch payload.EventType {
@@ -1991,7 +1991,7 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 
 }
 
-func commitWorkerKeyChange(rt Runtime) *adt.EmptyValue {
+func commitWorkerKeyChange(rt Runtime) *abi.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)

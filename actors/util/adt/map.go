@@ -4,7 +4,7 @@ import (
 	"bytes"
 
 	cid "github.com/ipfs/go-cid"
-	hamt "github.com/ipfs/go-hamt-ipld"
+	hamt "github.com/filecoin-project/go-hamt-ipld"
 	"github.com/minio/sha256-simd"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"

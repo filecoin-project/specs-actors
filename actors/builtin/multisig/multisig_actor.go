@@ -71,7 +71,7 @@ type ConstructorParams struct {
 	UnlockDuration        abi.ChainEpoch
 }
 
-func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	if len(params.Signers) < 1 {
@@ -241,7 +241,7 @@ func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 	}
 }
 
-func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
@@ -285,7 +285,7 @@ type AddSignerParams struct {
 	Increase bool
 }
 
-func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *adt.EmptyValue {
+func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 	resolvedNewSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
@@ -311,7 +311,7 @@ type RemoveSignerParams struct {
 	Decrease bool
 }
 
-func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
+func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 	resolvedOldSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
@@ -357,7 +357,7 @@ type SwapSignerParams struct {
 	To   addr.Address
 }
 
-func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *adt.EmptyValue {
+func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
@@ -396,7 +396,7 @@ type ChangeNumApprovalsThresholdParams struct {
 	NewThreshold uint64
 }
 
-func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
+func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNumApprovalsThresholdParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
