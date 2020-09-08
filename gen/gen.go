@@ -15,7 +15,6 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/actors/puppet"
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -215,16 +214,6 @@ func main() {
 		verifreg.UseBytesParams{},
 		verifreg.RestoreBytesParams{},
 		// other types
-	); err != nil {
-		panic(err)
-	}
-
-	if err := gen.WriteTupleEncodersToFile("./actors/puppet/cbor_gen.go", "puppet",
-		// actor state
-		puppet.State{},
-		// method params
-		puppet.SendParams{},
-		puppet.SendReturn{},
 	); err != nil {
 		panic(err)
 	}
