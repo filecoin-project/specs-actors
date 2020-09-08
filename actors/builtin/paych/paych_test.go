@@ -149,6 +149,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 func TestPaymentChannelActor_CreateLane(t *testing.T) {
 	ctx := context.Background()
 	initActorAddr := tutil.NewIDAddr(t, 100)
+	paychNonId := tutil.NewBLSAddr(t, 201)
 	paychAddr := tutil.NewIDAddr(t, 101)
 	payerAddr := tutil.NewIDAddr(t, 102)
 	payeeAddr := tutil.NewIDAddr(t, 103)
@@ -186,6 +187,14 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 			amt: 1, paymentChannel: tutil.NewIDAddr(t, 210), epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
+		{desc: "fails if address on the signed voucher cannot be resolved to ID address", targetCode: builtin.AccountActorCodeID,
+			amt: 1, paymentChannel: tutil.NewBLSAddr(t, 1), epoch: 1, tlmin: 1, tlmax: 0,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.ErrIllegalArgument},
+		{desc: "succeeds if address on the signed voucher can be resolved to channel ID address", targetCode: builtin.AccountActorCodeID,
+			amt: 1, paymentChannel: paychNonId, epoch: 1, tlmin: 1, tlmax: 0,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.Ok},
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
 			amt: 10, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
@@ -230,6 +239,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				WithHasher(hasher)
 
 			rt := builder.Build(t)
+			rt.AddIDAddress(paychNonId, paychAddr)
 			actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 
 			sv := SignedVoucher{
