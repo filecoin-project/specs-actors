@@ -8,9 +8,9 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
-	tutils "github.com/filecoin-project/specs-actors/support/testing"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
+	tutils "github.com/filecoin-project/specs-actors/v2/support/testing"
 )
 
 func TestAssignProvingPeriodBoundary(t *testing.T) {

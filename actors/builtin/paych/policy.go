@@ -3,7 +3,7 @@ package paych
 import (
 	"math"
 
-	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 )
 
 // Maximum number of lanes in a channel.

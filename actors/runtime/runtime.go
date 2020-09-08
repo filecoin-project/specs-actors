@@ -12,7 +12,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	cid "github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 )
 
 // Specifies importance of message, LogLevel numbering is consistent with the uber-go/zap package.

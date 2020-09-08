@@ -10,7 +10,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
-	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
+	vmr "github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 
 // Store defines an interface required to back the ADTs in this package.
