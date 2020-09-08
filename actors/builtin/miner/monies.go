@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/math"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
@@ -47,10 +48,16 @@ var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * Declar
 // (2) when a miner stores less than (1-spacegap) of a sector, does not declare it as faulty,
 //     and hopes to be challenged on the stored parts, it means the miner would not be expected to earn positive rewards.
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
-var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay // PARAM_SPEC
+var UndeclaredFaultProjectionPeriodV1 = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
+
+// Fraction of assumed block reward penalized when a sector is terminated.
+var TerminationRewardFactorV2 = builtin.BigFrac{ // PARAM_SPEC
+	Numerator:   big.NewInt(1),
+	Denominator: big.NewInt(2),
+}
 
 // Maximum number of lifetime days penalized when a sector is terminated.
-const TerminationLifetimeCap = abi.ChainEpoch(70)
+const TerminationLifetimeCapV2 = 140 // PARAM_SPEC
 
 // Multiplier of whole per-winner rewards for a consensus fault penalty.
 const ConsensusFaultFactor = 5
@@ -81,8 +88,10 @@ func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate smooth
 // The penalty for a newly faulty sector that was been declared in advance.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "SP(t)"
-func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, UndeclaredFaultProjectionPeriod)
+func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate,
+	qaSectorPower abi.StoragePower, _ runtime.NetworkVersion) abi.TokenAmount {
+	projectionPeriod := UndeclaredFaultProjectionPeriodV1
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, projectionPeriod)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
@@ -92,11 +101,11 @@ func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate smoo
 func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainEpoch,
 	twentyDayRewardAtActivation abi.TokenAmount, networkQAPowerEstimate smoothing.FilterEstimate,
 	qaSectorPower abi.StoragePower, rewardEstimate smoothing.FilterEstimate, replacedDayReward abi.TokenAmount,
-	replacedSectorAge abi.ChainEpoch,
+	replacedSectorAge abi.ChainEpoch, networkVersion runtime.NetworkVersion,
 ) abi.TokenAmount {
-	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d)*min(SectorAgeInDays, 70))
+	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d) * factor * min(SectorAgeInDays, 140))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
-	lifetimeCap := TerminationLifetimeCap * builtin.EpochsInDay
+	lifetimeCap := abi.ChainEpoch(TerminationLifetimeCapV2) * builtin.EpochsInDay
 	cappedSectorAge := minEpoch(sectorAge, lifetimeCap)
 	// expected reward for lifetime of new sector (epochs*AttoFIL/day)
 	expectedReward := big.Mul(dayReward, big.NewInt(int64(cappedSectorAge)))
@@ -104,13 +113,15 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 	relevantReplacedAge := minEpoch(replacedSectorAge, lifetimeCap-cappedSectorAge)
 	expectedReward = big.Add(expectedReward, big.Mul(replacedDayReward, big.NewInt(int64(relevantReplacedAge))))
 
+	penalizedReward := big.Mul(expectedReward, TerminationRewardFactorV2.Numerator)
+
 	return big.Max(
-		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
+		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower, networkVersion),
 		big.Add(
 			twentyDayRewardAtActivation,
 			big.Div(
-				expectedReward,
-				big.NewInt(builtin.EpochsInDay)))) // (epochs*AttoFIL/day -> AttoFIL)
+				penalizedReward,
+				big.Mul(big.NewInt(builtin.EpochsInDay), TerminationRewardFactorV2.Denominator)))) // (epochs*AttoFIL/day -> AttoFIL)
 }
 
 // Computes the PreCommit deposit given sector qa weight and current network conditions.

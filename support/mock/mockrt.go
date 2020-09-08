@@ -32,6 +32,7 @@ type Runtime struct {
 	// Execution context
 	ctx               context.Context
 	epoch             abi.ChainEpoch
+	networkVersion    runtime.NetworkVersion
 	receiver          addr.Address
 	caller            addr.Address
 	callerType        cid.Cid
@@ -169,6 +170,10 @@ var typeOfCborUnmarshaler = reflect.TypeOf((*runtime.CBORUnmarshaler)(nil)).Elem
 var typeOfCborMarshaler = reflect.TypeOf((*runtime.CBORMarshaler)(nil)).Elem()
 
 ///// Implementation of the runtime API /////
+
+func (rt *Runtime) NetworkVersion() runtime.NetworkVersion {
+	return rt.networkVersion
+}
 
 func (rt *Runtime) Message() runtime.Message {
 	rt.requireInCall()
@@ -766,6 +771,10 @@ func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
 
 func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
 	rt.valueReceived = amt
+}
+
+func (rt *Runtime) SetNetworkVersion(v runtime.NetworkVersion) {
+	rt.networkVersion = v
 }
 
 func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {

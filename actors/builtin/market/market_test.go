@@ -503,11 +503,11 @@ func TestPublishStorageDeals(t *testing.T) {
 
 		clientCollateral := abi.NewTokenAmount(10) // min is zero so this is placeholder
 
-		// given power and circ supply cancel this should be 5*dealqapower / 100
+		// given power and circ supply cancel this should be 1*dealqapower / 100
 		dealSize := abi.PaddedPieceSize(2048) // generateDealProposal's deal size
 		providerCollateral := big.Div(
-			big.Mul(big.NewInt(int64(dealSize)), market.ProviderCollateralSupplyTarget.Numerator),
-			market.ProviderCollateralSupplyTarget.Denominator,
+			big.Mul(big.NewInt(int64(dealSize)), market.ProviderCollateralSupplyTargetV1.Numerator),
+			market.ProviderCollateralSupplyTargetV1.Denominator,
 		)
 		deal := actor.generateDealWithCollateralAndAddFunds(rt, client, mAddr, providerCollateral, clientCollateral, startEpoch, endEpoch)
 		rt.SetCirculatingSupply(actor.networkQAPower) // convenient for these two numbers to cancel out
@@ -678,8 +678,8 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 					rt.SetCirculatingSupply(h.networkQAPower)
 					dealSize := big.NewInt(2048) // default deal size used
 					providerMin := big.Div(
-						big.Mul(dealSize, market.ProviderCollateralSupplyTarget.Numerator),
-						market.ProviderCollateralSupplyTarget.Denominator,
+						big.Mul(dealSize, market.ProviderCollateralSupplyTargetV1.Numerator),
+						market.ProviderCollateralSupplyTargetV1.Denominator,
 					)
 					d.ProviderCollateral = big.Sub(providerMin, big.NewInt(1))
 				},
