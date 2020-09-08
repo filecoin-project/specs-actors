@@ -13,7 +13,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
@@ -95,7 +94,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
-	_, code = v.ApplyMessage(builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, adt.Empty)
+	_, code = v.ApplyMessage(builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
 	assert.Equal(t, exitcode.Ok, code)
 
 	// expect miner call to be missing
@@ -116,7 +115,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
-	_, code = v.ApplyMessage(builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, adt.Empty)
+	_, code = v.ApplyMessage(builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
 	assert.Equal(t, exitcode.Ok, code)
 
 	// expect call to miner

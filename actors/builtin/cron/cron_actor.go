@@ -6,7 +6,6 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
 // The cron actor is a built-in singleton that sends messages to other registered actors at the end of each epoch.
@@ -28,7 +27,7 @@ type ConstructorParams = cron0.ConstructorParams
 
 type EntryParam = cron0.Entry
 
-func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	entries := make([]Entry, len(params.Entries))
 	for i, e := range params.Entries {
@@ -39,7 +38,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.E
 }
 
 // Invoked by the system after all other messages in the epoch have been processed.
-func (a Actor) EpochTick(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) EpochTick(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	var st State

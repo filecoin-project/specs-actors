@@ -60,7 +60,7 @@ type MinerConstructorParams struct {
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) Constructor(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
@@ -143,7 +143,7 @@ type UpdateClaimedPowerParams = power0.UpdateClaimedPowerParams
 
 // Adds or removes claimed power for the calling actor.
 // May only be invoked by a miner actor.
-func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *adt.EmptyValue {
+func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 	var st State
@@ -166,7 +166,7 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 //}
 type EnrollCronEventParams = power0.EnrollCronEventParams
 
-func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.EmptyValue {
+func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Message().Caller()
 	minerEvent := CronEvent{
@@ -194,7 +194,7 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *adt.E
 }
 
 // Called by Cron.
-func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) OnEpochTickEnd(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	a.processBatchProofVerifies(rt)
@@ -225,7 +225,7 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *adt.EmptyValue {
+func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.State().Transaction(&st, func() {
@@ -239,7 +239,7 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *adt.
 // This number is empirically determined
 const GasOnSubmitVerifySeal = 34721049
 
-func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyInfo) *adt.EmptyValue {
+func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyInfo) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Message().Caller()
@@ -290,7 +290,7 @@ type CurrentTotalPowerReturn struct {
 // The returned values are frozen during the cron tick before this epoch
 // so that this method returns consistent values while processing all messages
 // of an epoch.
-func (a Actor) CurrentTotalPower(rt Runtime, _ *adt.EmptyValue) *CurrentTotalPowerReturn {
+func (a Actor) CurrentTotalPower(rt Runtime, _ *abi.EmptyValue) *CurrentTotalPowerReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)

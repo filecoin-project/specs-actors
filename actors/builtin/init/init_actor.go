@@ -2,6 +2,7 @@ package init
 
 import (
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	init0 "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	cid "github.com/ipfs/go-cid"
@@ -30,7 +31,7 @@ var _ runtime.Invokee = Actor{}
 //}
 type ConstructorParams = init0.ConstructorParams
 
-func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")

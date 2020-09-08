@@ -2,6 +2,7 @@ package verifreg
 
 import (
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
@@ -32,7 +33,7 @@ var _ runtime.Invokee = Actor{}
 // Actor methods
 ////////////////////////////////////////////////////////////////////////////////
 
-func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	// root should be an ID address
@@ -53,7 +54,7 @@ func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *adt.Empty
 //}
 type AddVerifierParams = verifreg0.AddVerifierParams
 
-func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *adt.EmptyValue {
+func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.EmptyValue {
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verifier %v", params.Allowance, params.Address)
 	}
@@ -94,7 +95,7 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *adt.E
 	return nil
 }
 
-func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *adt.EmptyValue {
+func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *abi.EmptyValue {
 	verifier, err := builtin.ResolveToIDAddr(rt, *verifierAddr)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve verifier address %v to ID address", *verifierAddr)
 
@@ -122,7 +123,7 @@ func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *a
 //}
 type AddVerifiedClientParams = verifreg0.AddVerifiedClientParams
 
-func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientParams) *adt.EmptyValue {
+func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientParams) *abi.EmptyValue {
 	// The caller will be verified by checking the verifiers table below.
 	rt.ValidateImmediateCallerAcceptAny()
 
@@ -203,7 +204,7 @@ type UseBytesParams = verifreg0.UseBytesParams
 // Called by StorageMarketActor during PublishStorageDeals.
 // Do not allow partially verified deals (DealSize must be greater than equal to allowed cap).
 // Delete VerifiedClient if remaining DataCap is smaller than minimum VerifiedDealSize.
-func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *adt.EmptyValue {
+func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
 	client, err := builtin.ResolveToIDAddr(rt, params.Address)
@@ -259,7 +260,7 @@ type RestoreBytesParams = verifreg0.RestoreBytesParams
 
 // Called by HandleInitTimeoutDeals from StorageMarketActor when a VerifiedDeal fails to init.
 // Restore allowable cap for the client, creating new entry if the client has been deleted.
-func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *adt.EmptyValue {
+func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
 	if params.DealSize.LessThan(MinVerifiedDealSize) {

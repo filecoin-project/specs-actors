@@ -9,7 +9,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	. "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
@@ -26,7 +25,7 @@ func (a Actor) Exports() []interface{} {
 
 var _ runtime.Invokee = Actor{}
 
-func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	if currRealizedPower == nil {
@@ -56,7 +55,7 @@ type AwardBlockRewardParams = reward0.AwardBlockRewardParams
 //
 // The reward is reduced before the residual is credited to the block producer, by:
 // - a penalty amount, provided as a parameter, which is burnt,
-func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardParams) *adt.EmptyValue {
+func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 	priorBalance := rt.CurrentBalance()
 	if params.Penalty.LessThan(big.Zero()) {
@@ -126,7 +125,7 @@ type ThisEpochRewardReturn struct {
 // The award value used for the current epoch, updated at the end of an epoch
 // through cron tick.  In the case previous epochs were null blocks this
 // is the reward value as calculated at the last non-null epoch.
-func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *adt.EmptyValue) *ThisEpochRewardReturn {
+func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *abi.EmptyValue) *ThisEpochRewardReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
@@ -140,7 +139,7 @@ func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *adt.EmptyValue) *ThisEpoch
 // Called at the end of each epoch by the power actor (in turn by its cron hook).
 // This is only invoked for non-empty tipsets, but catches up any number of null
 // epochs to compute the next epoch reward.
-func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *adt.EmptyValue {
+func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	if currRealizedPower == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "arugment should not be nil")
