@@ -209,9 +209,11 @@ var consensusFaultReporterInitialShare = builtin.BigFrac{
 }
 
 // Per-epoch growth rate of the consensus fault reporter reward.
+// consensusFaultReporterInitialShare*consensusFaultReporterShareGrowthRate^consensusFaultGrowthDuration ~= consensusFaultReporterMaxShare
+// consensusFaultGrowthDuration = 500 epochs
 var consensusFaultReporterShareGrowthRate = builtin.BigFrac{
-	Numerator:   big.NewInt(101251), // PARAM_FINISH PARAM_SPEC
-	Denominator: big.NewInt(100000),
+	Numerator:   big.NewInt(100785473384), // PARAM_FINISH PARAM_SPEC
+	Denominator: big.NewInt(100000000000),
 }
 
 // Maximum share of consensus fault penalty allocated as reporter reward.
