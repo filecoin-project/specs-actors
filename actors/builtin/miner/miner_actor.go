@@ -75,7 +75,7 @@ var _ runtime.Invokee = Actor{}
 // between the two, the construction parameters are defined in the power actor.
 type ConstructorParams = power.MinerConstructorParams
 
-func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	checkControlAddresses(rt, params.ControlAddrs)
@@ -150,7 +150,7 @@ type GetControlAddressesReturn struct {
 	ControlAddrs []addr.Address
 }
 
-func (a Actor) ControlAddresses(rt Runtime, _ *adt.EmptyValue) *GetControlAddressesReturn {
+func (a Actor) ControlAddresses(rt Runtime, _ *abi.EmptyValue) *GetControlAddressesReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
 	rt.State().Readonly(&st)
@@ -172,7 +172,7 @@ type ChangeWorkerAddressParams struct {
 // ChangeWorkerAddress will ALWAYS overwrite the existing control addresses with the control addresses passed in the params.
 // If a nil addresses slice is passed, the control addresses will be cleared.
 // A worker change will be scheduled if the worker passed in the params is different from the existing worker.
-func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *adt.EmptyValue {
+func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams) *abi.EmptyValue {
 	checkControlAddresses(rt, params.NewControlAddrs)
 
 	newWorker := resolveWorkerAddress(rt, params.NewWorker)
@@ -209,7 +209,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 }
 
 // Triggers a worker address change if a change has been requested and its effective epoch has arrived.
-func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *abi.EmptyValue) *abi.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() {
 		info := getMinerInfo(rt, &st)
@@ -228,7 +228,7 @@ func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *adt.EmptyValue) *adt.E
 //}
 type ChangePeerIDParams = miner0.ChangePeerIDParams
 
-func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
+func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *abi.EmptyValue {
 	checkPeerInfo(rt, params.NewID, nil)
 
 	var st State
@@ -249,7 +249,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 //}
 type ChangeMultiaddrsParams = miner0.ChangeMultiaddrsParams
 
-func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
+func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *abi.EmptyValue {
 	checkPeerInfo(rt, nil, params.NewMultiaddrs)
 
 	var st State
@@ -296,7 +296,7 @@ type PoStPartition = miner0.PoStPartition
 type SubmitWindowedPoStParams = miner0.SubmitWindowedPoStParams
 
 // Invoked by miner's worker address to submit their fallback post
-func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *adt.EmptyValue {
+func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *abi.EmptyValue {
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
 	var st State
@@ -475,7 +475,7 @@ type PreCommitSectorParams = miner0.SectorPreCommitInfo
 
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
-func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *adt.EmptyValue {
+func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.EmptyValue {
 	if _, ok := SupportedProofTypes[params.SealProof]; !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type: %s", params.SealProof)
 	}
@@ -625,7 +625,7 @@ type ProveCommitSectorParams = miner0.ProveCommitSectorParams
 // Checks state of the corresponding sector pre-commitment, then schedules the proof to be verified in bulk
 // by the power actor.
 // If valid, the power actor will call ConfirmSectorProofsValid at the end of the same epoch as this message.
-func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
+func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	if params.SectorNumber > abi.MaxSectorNumber {
@@ -679,7 +679,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	return nil
 }
 
-func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
+func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	// This should be enforced by the power actor. We log here just in case
@@ -861,7 +861,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 //}
 type CheckSectorProvenParams = miner0.CheckSectorProvenParams
 
-func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *adt.EmptyValue {
+func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
 	if params.SectorNumber > abi.MaxSectorNumber {
@@ -901,7 +901,7 @@ type ExpirationExtension = miner0.ExpirationExtension
 // Changes the expiration epoch for a sector to a new, later one.
 // The sector must not be terminated or faulty.
 // The sector's power is recomputed for the new expiration.
-func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *adt.EmptyValue {
+func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *abi.EmptyValue {
 	if uint64(len(params.Extensions)) > DeclarationsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), DeclarationsMax)
 	}
@@ -1179,7 +1179,7 @@ type DeclareFaultsParams = miner0.DeclareFaultsParams
 //}
 type FaultDeclaration = miner0.FaultDeclaration
 
-func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *adt.EmptyValue {
+func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.EmptyValue {
 	if len(params.Faults) > DeclarationsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument,
 			"too many fault declarations for a single message: %d > %d",
@@ -1261,7 +1261,7 @@ type DeclareFaultsRecoveredParams = miner0.DeclareFaultsRecoveredParams
 //}
 type RecoveryDeclaration = miner0.RecoveryDeclaration
 
-func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *adt.EmptyValue {
+func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecoveredParams) *abi.EmptyValue {
 	if len(params.Recoveries) > DeclarationsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument,
 			"too many recovery declarations for a single message: %d > %d",
@@ -1345,7 +1345,7 @@ type CompactPartitionsParams = miner0.CompactPartitionsParams
 // The final partition in the deadline is always included in the compaction, whether or not explicitly requested.
 // Removed sectors are removed from state entirely.
 // May not be invoked if the deadline has any un-processed early terminations.
-func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *adt.EmptyValue {
+func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *abi.EmptyValue {
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %v", params.Deadline)
 	}
@@ -1415,7 +1415,7 @@ type CompactSectorNumbersParams = miner0.CompactSectorNumbersParams
 // can be called to mask out (throw away) entire ranges of unused sector IDs.
 // For example, if sectors 1-99 and 101-200 have been allocated, sector number
 // 99 can be masked out to collapse these two ranges into one.
-func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *adt.EmptyValue {
+func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersParams) *abi.EmptyValue {
 	lastSectorNo, err := params.MaskSectorNumbers.Last()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid mask bitfield")
 	if lastSectorNo > abi.MaxSectorNumber {
@@ -1440,7 +1440,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 ///////////////////////
 
 // Locks up some amount of the miner's unlocked balance (including funds received alongside the invoking message).
-func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.EmptyValue {
+func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.EmptyValue {
 	if params.Reward.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
@@ -1493,7 +1493,7 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *adt.
 //}
 type ReportConsensusFaultParams = miner0.ReportConsensusFaultParams
 
-func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
+func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *abi.EmptyValue {
 	// Note: only the first reporter of any fault is rewarded.
 	// Subsequent invocations fail because the target miner has been removed.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -1568,7 +1568,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 //}
 type WithdrawBalanceParams = miner0.WithdrawBalanceParams
 
-func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.EmptyValue {
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.EmptyValue {
 	var st State
 	if params.AmountRequested.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative fund requested for withdrawal: %s", params.AmountRequested)
@@ -1627,7 +1627,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *adt.E
 	return nil
 }
 
-func (a Actor) RepayDebt(rt Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var st State
 	var fromVesting, fromBalance abi.TokenAmount
 	rt.State().Transaction(&st, func() {
@@ -1662,7 +1662,7 @@ const (
 	CronEventProcessEarlyTerminations = miner0.CronEventProcessEarlyTerminations
 )
 
-func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *adt.EmptyValue {
+func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	switch payload.EventType {

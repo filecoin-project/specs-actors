@@ -359,7 +359,7 @@ type returnWrapper struct {
 
 func (r returnWrapper) Into(o runtime.CBORUnmarshaler) error {
 	if r.inner == nil {
-		return fmt.Errorf("failed to unmarshal nil return (did you mean adt.Empty?)")
+		return fmt.Errorf("failed to unmarshal nil return (did you mean abi.Empty?)")
 	}
 	b := bytes.Buffer{}
 	if err := r.inner.MarshalCBOR(&b); err != nil {
@@ -476,8 +476,8 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 			case abort:
 				ic.rt.Log(runtime.WARN, "Abort during actor execution. errMsg: %v exitCode: %d sender: %v receiver; %v method: %d value %v",
 					r, r.code, ic.msg.from, ic.msg.to, ic.msg.method, ic.msg.value)
-				ic.rt.endInvocation(r.code, adt.Empty)
-				ret = returnWrapper{adt.Empty} // The Empty here should never be used, but slightly safer than zero value.
+				ic.rt.endInvocation(r.code, abi.Empty)
+				ret = returnWrapper{abi.Empty} // The Empty here should never be used, but slightly safer than zero value.
 				errcode = r.code
 				return
 			default:
@@ -518,8 +518,8 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 
 	// 4. if we are just sending funds, there is nothing else to do.
 	if ic.msg.method == builtin.MethodSend {
-		ic.rt.endInvocation(exitcode.Ok, adt.Empty)
-		return returnWrapper{adt.Empty}, exitcode.Ok
+		ic.rt.endInvocation(exitcode.Ok, abi.Empty)
+		return returnWrapper{abi.Empty}, exitcode.Ok
 	}
 
 	// 5. load target actor code
@@ -532,7 +532,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	}
 
 	// assert output implements expected interface
-	var marsh runtime.CBORMarshaler = adt.Empty
+	var marsh runtime.CBORMarshaler = abi.Empty
 	if out != nil {
 		var ok bool
 		marsh, ok = out.(runtime.CBORMarshaler)

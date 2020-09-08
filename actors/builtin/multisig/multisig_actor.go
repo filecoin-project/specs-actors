@@ -69,7 +69,7 @@ type ConstructorParams struct {
 	StartEpoch            abi.ChainEpoch
 }
 
-func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
 
 	if len(params.Signers) < 1 {
@@ -247,7 +247,7 @@ func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 	}
 }
 
-func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *adt.EmptyValue {
+func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	callerAddr := rt.Message().Caller()
 
@@ -292,7 +292,7 @@ func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *adt.EmptyValue {
 //}
 type AddSignerParams = multisig0.AddSignerParams
 
-func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *adt.EmptyValue {
+func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 	resolvedNewSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
@@ -323,7 +323,7 @@ func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *adt.Empty
 //}
 type RemoveSignerParams = multisig0.RemoveSignerParams
 
-func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *adt.EmptyValue {
+func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 	resolvedOldSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
@@ -370,7 +370,7 @@ func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *adt
 //}
 type SwapSignerParams = multisig0.SwapSignerParams
 
-func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *adt.EmptyValue {
+func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
@@ -410,7 +410,7 @@ func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *adt.Emp
 //}
 type ChangeNumApprovalsThresholdParams = multisig0.ChangeNumApprovalsThresholdParams
 
-func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNumApprovalsThresholdParams) *adt.EmptyValue {
+func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNumApprovalsThresholdParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 

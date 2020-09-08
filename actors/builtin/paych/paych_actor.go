@@ -39,7 +39,7 @@ type ConstructorParams = paych0.ConstructorParams
 
 
 // Constructor creates a payment channel actor. See State for meaning of params.
-func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *adt.EmptyValue {
+func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	// Only InitActor can create a payment channel actor. It creates the actor on
 	// behalf of the payer/payee.
 	rt.ValidateImmediateCallerType(builtin.InitActorCodeID)
@@ -139,7 +139,7 @@ type ModVerifyParams = paych0.ModVerifyParams
 //}
 type Merge = paych0.Merge
 
-func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *adt.EmptyValue {
+func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *abi.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 
@@ -298,7 +298,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 	return nil
 }
 
-func (pca Actor) Settle(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (pca Actor) Settle(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var st State
 	rt.State().Transaction(&st, func() {
 		rt.ValidateImmediateCallerIs(st.From, st.To)
@@ -315,7 +315,7 @@ func (pca Actor) Settle(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
 	return nil
 }
 
-func (pca Actor) Collect(rt runtime.Runtime, _ *adt.EmptyValue) *adt.EmptyValue {
+func (pca Actor) Collect(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var st State
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.From, st.To)
