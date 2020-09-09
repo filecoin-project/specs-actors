@@ -13,7 +13,7 @@ const DealUpdatesInterval = builtin.EpochsInDay // PARAM_SPEC
 // The percentage of normalized cirulating
 // supply that must be covered by provider collateral in a deal
 var ProviderCollateralSupplyTarget = builtin.BigFrac{
-	Numerator:   big.NewInt(5), // PARAM_SPEC
+	Numerator:   big.NewInt(1), // PARAM_SPEC
 	Denominator: big.NewInt(100),
 }
 
@@ -35,17 +35,16 @@ func dealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.T
 	return abi.NewTokenAmount(0), builtin.TotalFilecoin // PARAM_FINISH
 }
 
-func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkQAPower, baselinePower abi.StoragePower, networkCirculatingSupply abi.TokenAmount) (min abi.TokenAmount, max abi.TokenAmount) {
-	// minimumProviderCollateral = (ProvCollateralPercentSupplyNum / ProvCollateralPercentSupplyDenom) * normalizedCirculatingSupply
-	// normalizedCirculatingSupply = FILCirculatingSupply * dealPowerShare
-	// dealPowerShare = dealQAPower / max(BaselinePower(t), NetworkQAPower(t), dealQAPower)
+func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkRawPower, networkQAPower, baselinePower abi.StoragePower,
+	networkCirculatingSupply abi.TokenAmount) (min, max abi.TokenAmount) {
+	// minimumProviderCollateral = ProviderCollateralSupplyTarget * normalizedCirculatingSupply
+	// normalizedCirculatingSupply = networkCirculatingSupply * dealPowerShare
+	// dealPowerShare = dealRawPower / max(BaselinePower(t), NetworkRawPower(t), dealRawPower)
 
 	lockTargetNum := big.Mul(ProviderCollateralSupplyTarget.Numerator, networkCirculatingSupply)
 	lockTargetDenom := ProviderCollateralSupplyTarget.Denominator
-
-	qaPower := dealQAPower(pieceSize, verified)
-	powerShareNum := qaPower
-	powerShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower)
+	powerShareNum := big.NewIntUnsigned(uint64(pieceSize))
+	powerShareDenom := big.Max(big.Max(networkRawPower, baselinePower), powerShareNum)
 
 	num := big.Mul(lockTargetNum, powerShareNum)
 	denom := big.Mul(lockTargetDenom, powerShareDenom)
@@ -68,17 +67,4 @@ func DealWeight(proposal *DealProposal) abi.DealWeight {
 	dealSize := big.NewIntUnsigned(uint64(proposal.PieceSize))
 	dealSpaceTime := big.Mul(dealDuration, dealSize)
 	return dealSpaceTime
-}
-
-func dealQAPower(dealSize abi.PaddedPieceSize, verified bool) abi.StoragePower {
-	scaledUpQuality := big.Zero() // nolint:ineffassign
-	if verified {
-		scaledUpQuality = big.Lsh(builtin.VerifiedDealWeightMultiplier, builtin.SectorQualityPrecision)
-		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)
-	} else {
-		scaledUpQuality = big.Lsh(builtin.DealWeightMultiplier, builtin.SectorQualityPrecision)
-		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)
-	}
-	scaledUpQAPower := big.Mul(scaledUpQuality, big.NewIntUnsigned(uint64(dealSize)))
-	return big.Rsh(scaledUpQAPower, builtin.SectorQualityPrecision)
 }

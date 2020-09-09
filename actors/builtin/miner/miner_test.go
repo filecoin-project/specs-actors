@@ -1904,7 +1904,6 @@ func TestDeadlineCron(t *testing.T) {
 		// advance cron to activate power.
 		advanceAndSubmitPoSts(rt, actor, allSectors...)
 
-		// add lots of funds so we can pay penalties without going into debt
 		st := getState(rt)
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), allSectors[0].SectorNumber)
 		require.NoError(t, err)
@@ -2486,7 +2485,8 @@ func TestTerminateSectors(t *testing.T) {
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		newSectorAge := rt.Epoch() - newSector.Activation
 		oldSectorAge := newSector.Activation - oldSector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(newSector.ExpectedDayReward, newSectorAge, twentyDayReward, actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth, oldSector.ExpectedDayReward, oldSectorAge)
+		expectedFee := miner.PledgePenaltyForTermination(newSector.ExpectedDayReward, newSectorAge, twentyDayReward,
+			actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth, oldSector.ExpectedDayReward, oldSectorAge)
 
 		sectors := bf(uint64(newSector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -2681,7 +2681,8 @@ func TestCompactPartitions(t *testing.T) {
 		dayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, builtin.EpochsInDay)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		sectorAge := rt.Epoch() - tsector.Activation
-		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth, big.Zero(), 0)
+		expectedFee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, actor.epochQAPowerSmooth,
+			sectorPower, actor.epochRewardSmooth, big.Zero(), 0)
 
 		sectors := bitfield.NewFromSet([]uint64{uint64(sector1)})
 		actor.terminateSectors(rt, sectors, expectedFee)
@@ -3801,6 +3802,12 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
 	st := getState(rt)
+
+	pledgeDelta :=  immediatelyVestingFunds(rt, st).Neg()
+	if !pledgeDelta.IsZero() {
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+	}
+
 	if st.FeeDebt.GreaterThan(big.Zero()) {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, st.FeeDebt, nil, exitcode.Ok)
 	}
@@ -4356,6 +4363,8 @@ type cronConfig struct {
 }
 
 func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
+	var st miner.State
+	rt.GetState(&st)
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	// Preamble
@@ -4415,6 +4424,9 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	if !config.expiredSectorsPledgeDelta.NilOrZero() {
 		pledgeDelta = big.Add(pledgeDelta, config.expiredSectorsPledgeDelta)
 	}
+
+	pledgeDelta = big.Sub(pledgeDelta, immediatelyVestingFunds(rt, &st))
+
 	if !pledgeDelta.IsZero() {
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
 	}
@@ -4646,6 +4658,21 @@ func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.
 		advanceDeadline(rt, h, &cronConfig{})
 		dlinfo = h.deadline(rt)
 	}
+}
+
+func immediatelyVestingFunds(rt *mock.Runtime, st *miner.State) big.Int {
+	// Account just the very next vesting funds entry.
+	var vesting miner.VestingFunds
+	rt.Get(st.VestingFunds, &vesting)
+	sum := big.Zero()
+	for _, v := range vesting.Funds {
+		if v.Epoch <= rt.Epoch() {
+			sum = big.Add(sum, v.Amount)
+		} else {
+			break
+		}
+	}
+	return sum
 }
 
 //

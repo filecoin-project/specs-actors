@@ -22,6 +22,9 @@ import (
 // Runtime is the interface to the execution environment for actor methods..
 // This is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
+	// The network protocol version number at the current epoch.
+	NetworkVersion() NetworkVersion
+
 	// Information related to the current message being executed.
 	// When an actor invokes a method on another actor as a sub-call, these values reflect
 	// the sub-call context, rather than the top-level context.

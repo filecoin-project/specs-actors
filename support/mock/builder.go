@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 
-	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 
 // Build for fluent initialization of a mock runtime.
@@ -21,6 +22,7 @@ func NewBuilder(ctx context.Context, receiver addr.Address) *RuntimeBuilder {
 	m := &Runtime{
 		ctx:               ctx,
 		epoch:             0,
+		networkVersion:    runtime.NetworkVersionLatest,
 		receiver:          receiver,
 		caller:            addr.Address{},
 		callerType:        cid.Undef,

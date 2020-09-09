@@ -153,6 +153,10 @@ func (ic *invocationContext) State() runtime.StateHandle {
 	return ic
 }
 
+func (ic *invocationContext) NetworkVersion() runtime.NetworkVersion {
+	return ic.rt.networkVersion
+}
+
 func (ic *invocationContext) CurrEpoch() abi.ChainEpoch {
 	return ic.rt.currentEpoch
 }

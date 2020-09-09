@@ -27,7 +27,8 @@ type VM struct {
 	ctx   context.Context
 	store adt.Store
 
-	currentEpoch abi.ChainEpoch
+	currentEpoch   abi.ChainEpoch
+	networkVersion runtime.NetworkVersion
 
 	actorImpls  ActorImplLookup
 	stateRoot   cid.Cid  // The last committed root.
@@ -82,17 +83,15 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		panic(err)
 	}
 
-	if err != nil {
-		panic("could not create empty actor root")
-	}
 	return &VM{
-		ctx:         ctx,
-		actorImpls:  actorImpls,
-		store:       store,
-		actors:      actors,
-		stateRoot:   actorRoot,
-		actorsDirty: false,
-		emptyObject: emptyObject,
+		ctx:            ctx,
+		actorImpls:     actorImpls,
+		store:          store,
+		actors:         actors,
+		stateRoot:      actorRoot,
+		actorsDirty:    false,
+		emptyObject:    emptyObject,
+		networkVersion: runtime.NetworkVersionLatest,
 	}
 }
 
@@ -108,14 +107,15 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 	}
 
 	return &VM{
-		ctx:          vm.ctx,
-		actorImpls:   vm.actorImpls,
-		store:        vm.store,
-		actors:       actors,
-		stateRoot:    vm.stateRoot,
-		actorsDirty:  false,
-		emptyObject:  vm.emptyObject,
-		currentEpoch: epoch,
+		ctx:            vm.ctx,
+		actorImpls:     vm.actorImpls,
+		store:          vm.store,
+		actors:         actors,
+		stateRoot:      vm.stateRoot,
+		actorsDirty:    false,
+		emptyObject:    vm.emptyObject,
+		currentEpoch:   epoch,
+		networkVersion: vm.networkVersion,
 	}, nil
 }
 

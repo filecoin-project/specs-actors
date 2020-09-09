@@ -3,9 +3,9 @@ package miner
 import (
 	"testing"
 
-	"github.com/minio/blake2b-simd"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
