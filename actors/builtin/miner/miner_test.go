@@ -4702,19 +4702,20 @@ func makeFaultParamsFromFaultingSectors(t testing.TB, st *miner.State, store adt
 	deadlines, err := st.LoadDeadlines(store)
 	require.NoError(t, err)
 
-	declarationMap := map[miner.PartitionKey]*miner.FaultDeclaration{}
+	declarationMap := map[string]*miner.FaultDeclaration{}
 	for _, sector := range faultSectorInfos {
 		dlIdx, pIdx, err := miner.FindSector(store, deadlines, sector.SectorNumber)
 		require.NoError(t, err)
 
-		declaration, ok := declarationMap[miner.PartitionKey{dlIdx, pIdx}]
+		key := fmt.Sprintf("%d:%d", dlIdx, pIdx)
+		declaration, ok := declarationMap[key]
 		if !ok {
 			declaration = &miner.FaultDeclaration{
 				Deadline:  dlIdx,
 				Partition: pIdx,
 				Sectors:   bf(),
 			}
-			declarationMap[miner.PartitionKey{dlIdx, pIdx}] = declaration
+			declarationMap[key] = declaration
 		}
 		declaration.Sectors.Set(uint64(sector.SectorNumber))
 	}
