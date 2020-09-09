@@ -13,6 +13,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -153,7 +154,7 @@ func (ic *invocationContext) State() runtime.StateHandle {
 	return ic
 }
 
-func (ic *invocationContext) NetworkVersion() runtime.NetworkVersion {
+func (ic *invocationContext) NetworkVersion() network.Version {
 	return ic.rt.networkVersion
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
@@ -32,7 +33,7 @@ type Runtime struct {
 	// Execution context
 	ctx               context.Context
 	epoch             abi.ChainEpoch
-	networkVersion    runtime.NetworkVersion
+	networkVersion    network.Version
 	receiver          addr.Address
 	caller            addr.Address
 	callerType        cid.Cid
@@ -171,7 +172,7 @@ var typeOfCborMarshaler = reflect.TypeOf((*runtime.CBORMarshaler)(nil)).Elem()
 
 ///// Implementation of the runtime API /////
 
-func (rt *Runtime) NetworkVersion() runtime.NetworkVersion {
+func (rt *Runtime) NetworkVersion() network.Version {
 	return rt.networkVersion
 }
 
@@ -773,7 +774,7 @@ func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
 	rt.valueReceived = amt
 }
 
-func (rt *Runtime) SetNetworkVersion(v runtime.NetworkVersion) {
+func (rt *Runtime) SetNetworkVersion(v network.Version) {
 	rt.networkVersion = v
 }
 
