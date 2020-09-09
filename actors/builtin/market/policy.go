@@ -5,7 +5,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 
 // The number of epochs between payment and other state processing for deals.
@@ -13,7 +12,7 @@ const DealUpdatesInterval = builtin.EpochsInDay // PARAM_SPEC
 
 // The percentage of normalized cirulating
 // supply that must be covered by provider collateral in a deal
-var ProviderCollateralSupplyTargetV1 = builtin.BigFrac{
+var ProviderCollateralSupplyTarget = builtin.BigFrac{
 	Numerator:   big.NewInt(1), // PARAM_SPEC
 	Denominator: big.NewInt(100),
 }
@@ -37,13 +36,13 @@ func dealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.T
 }
 
 func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkRawPower, networkQAPower, baselinePower abi.StoragePower,
-	networkCirculatingSupply abi.TokenAmount, _ runtime.NetworkVersion) (min, max abi.TokenAmount) {
-	// minimumProviderCollateral = (ProvCollateralPercentSupplyNum / ProvCollateralPercentSupplyDenom) * normalizedCirculatingSupply
-	// normalizedCirculatingSupply = FILCirculatingSupply * dealPowerShare
-	// dealPowerShare = dealQAPower / max(BaselinePower(t), NetworkQAPower(t), dealQAPower)
+	networkCirculatingSupply abi.TokenAmount) (min, max abi.TokenAmount) {
+	// minimumProviderCollateral = ProviderCollateralSupplyTarget * normalizedCirculatingSupply
+	// normalizedCirculatingSupply = networkCirculatingSupply * dealPowerShare
+	// dealPowerShare = dealRawPower / max(BaselinePower(t), NetworkRawPower(t), dealRawPower)
 
-	lockTargetNum := big.Mul(ProviderCollateralSupplyTargetV1.Numerator, networkCirculatingSupply)
-	lockTargetDenom := ProviderCollateralSupplyTargetV1.Denominator
+	lockTargetNum := big.Mul(ProviderCollateralSupplyTarget.Numerator, networkCirculatingSupply)
+	lockTargetDenom := ProviderCollateralSupplyTarget.Denominator
 	powerShareNum := big.NewIntUnsigned(uint64(pieceSize))
 	powerShareDenom := big.Max(big.Max(networkRawPower, baselinePower), powerShareNum)
 
@@ -68,17 +67,4 @@ func DealWeight(proposal *DealProposal) abi.DealWeight {
 	dealSize := big.NewIntUnsigned(uint64(proposal.PieceSize))
 	dealSpaceTime := big.Mul(dealDuration, dealSize)
 	return dealSpaceTime
-}
-
-func dealQAPower(dealSize abi.PaddedPieceSize, verified bool) abi.StoragePower {
-	scaledUpQuality := big.Zero() // nolint:ineffassign
-	if verified {
-		scaledUpQuality = big.Lsh(builtin.VerifiedDealWeightMultiplier, builtin.SectorQualityPrecision)
-		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)
-	} else {
-		scaledUpQuality = big.Lsh(builtin.DealWeightMultiplier, builtin.SectorQualityPrecision)
-		scaledUpQuality = big.Div(scaledUpQuality, builtin.QualityBaseMultiplier)
-	}
-	scaledUpQAPower := big.Mul(scaledUpQuality, big.NewIntUnsigned(uint64(dealSize)))
-	return big.Rsh(scaledUpQAPower, builtin.SectorQualityPrecision)
 }
