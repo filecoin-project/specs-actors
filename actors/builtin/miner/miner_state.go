@@ -9,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/deadline"
+	"github.com/filecoin-project/go-state-types/dline"
 	xc "github.com/filecoin-project/go-state-types/exitcode"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
@@ -230,7 +230,7 @@ func (st *State) SaveInfo(store adt.Store, info *MinerInfo) error {
 }
 
 // Returns deadline calculations for the current (according to state) proving period.
-func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *deadline.DeadlineInfo {
+func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *dline.Info {
 	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
 }
 

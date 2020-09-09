@@ -11,7 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
-	"github.com/filecoin-project/go-state-types/deadline"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	cid "github.com/ipfs/go-cid"
@@ -2277,7 +2277,7 @@ func processPendingWorker(info *MinerInfo, rt Runtime, st *State) {
 // Computes deadline information for a fault or recovery declaration.
 // If the deadline has not yet elapsed, the declaration is taken as being for the current proving period.
 // If the deadline has elapsed, it's instead taken as being for the next proving period after the current epoch.
-func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) (*deadline.DeadlineInfo, error) {
+func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) (*dline.Info, error) {
 	if deadlineIdx >= WPoStPeriodDeadlines {
 		return nil, fmt.Errorf("invalid deadline %d, must be < %d", deadlineIdx, WPoStPeriodDeadlines)
 	}
@@ -2287,7 +2287,7 @@ func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, cur
 }
 
 // Checks that a fault or recovery declaration at a specific deadline is outside the exclusion window for the deadline.
-func validateFRDeclarationDeadline(deadline *deadline.DeadlineInfo) error {
+func validateFRDeclarationDeadline(deadline *dline.Info) error {
 	if deadline.FaultCutoffPassed() {
 		return fmt.Errorf("late fault or recovery declaration at %v", deadline)
 	}
