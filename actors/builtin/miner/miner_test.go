@@ -773,7 +773,7 @@ func TestCommitments(t *testing.T) {
 		// Expect the old sector to be marked as terminated.
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors[:1]).Neg() // new sector not active yet.
-		faultPenalty := actor.undeclaredFaultPenalty(bothSectors, rt.NetworkVersion())
+		faultPenalty := actor.undeclaredFaultPenalty(bothSectors)
 		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
 		actor.applyRewards(rt, big.Mul(big.NewInt(5), faultPenalty), big.Zero())
@@ -1065,7 +1065,7 @@ func TestCommitments(t *testing.T) {
 		// Expect the old sector to be marked as terminated.
 		allSectors := []*miner.SectorOnChainInfo{oldSector, newSector1, newSector2}
 		lostPower := actor.powerPairForSectors(allSectors[:1]).Neg() // new sectors not active yet.
-		faultPenalty := actor.undeclaredFaultPenalty(allSectors, rt.NetworkVersion())
+		faultPenalty := actor.undeclaredFaultPenalty(allSectors)
 		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
 		actor.applyRewards(rt, big.Mul(big.NewInt(5), faultPenalty), big.Zero())
@@ -1447,7 +1447,7 @@ func TestWindowPost(t *testing.T) {
 		// First sector should be penalized as an undeclared fault and its power should not be activated.
 		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
 		// which is charged at next cron and the rest which is charged during submit PoSt.
-		undeclaredFee := actor.undeclaredFaultPenalty(infos[:1], rt.NetworkVersion())
+		undeclaredFee := actor.undeclaredFaultPenalty(infos[:1])
 		declaredFee := actor.declaredFaultPenalty(infos[:1])
 		faultFee := big.Sub(undeclaredFee, declaredFee)
 
@@ -1471,7 +1471,7 @@ func TestWindowPost(t *testing.T) {
 		}
 
 		// skip second fault
-		undeclaredFee = actor.undeclaredFaultPenalty(infos[1:], rt.NetworkVersion())
+		undeclaredFee = actor.undeclaredFaultPenalty(infos[1:])
 		declaredFee = actor.declaredFaultPenalty(infos[1:])
 		faultFee = big.Sub(undeclaredFee, declaredFee)
 		pwr := miner.PowerForSectors(actor.sectorSize, infos[1:])
@@ -1516,7 +1516,7 @@ func TestWindowPost(t *testing.T) {
 		// Sectors should be penalized as an undeclared fault and unproven power won't be activated.
 		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
 		// which is charged at next cron and the rest which is charged during submit PoSt.
-		undeclaredFee := actor.undeclaredFaultPenalty(infos, rt.NetworkVersion())
+		undeclaredFee := actor.undeclaredFaultPenalty(infos)
 		declaredFee := actor.declaredFaultPenalty(infos)
 		faultFee := big.Sub(undeclaredFee, declaredFee)
 
@@ -1570,7 +1570,7 @@ func TestWindowPost(t *testing.T) {
 		// No power should be returned
 		// Retracted recovery will be charged difference between undeclared and ongoing fault fees
 		ongoingFee := actor.declaredFaultPenalty(infos)
-		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos, rt.NetworkVersion()), ongoingFee)
+		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos), ongoingFee)
 		cfg := &poStConfig{
 			expectedPowerDelta: miner.NewPowerPairZero(),
 			expectedPenalty:    recoveryFee,
@@ -1757,7 +1757,7 @@ func TestDeadlineCron(t *testing.T) {
 		rt.SetEpoch(expiration)
 		powerDelta := activePower.Neg()
 		// because we skip forward in state and don't post we incur SP
-		expectedFee := actor.undeclaredFaultPenalty(sectors, rt.NetworkVersion())
+		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds so expectedFee is taken from locked funds
 		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
 		actor.applyRewards(rt, initialLocked, big.Zero())
@@ -1796,7 +1796,7 @@ func TestDeadlineCron(t *testing.T) {
 		powerDelta := activePower.Neg()
 
 		// because we skip forward in state and don't post we incur SP
-		expectedFee := actor.undeclaredFaultPenalty(sectors, rt.NetworkVersion())
+		expectedFee := actor.undeclaredFaultPenalty(sectors)
 		// Add lots of funds to locked funds so expectedFee is taken from locked funds
 		actor.applyRewards(rt, expectedFee, big.Zero())
 
@@ -1848,7 +1848,7 @@ func TestDeadlineCron(t *testing.T) {
 		}
 
 		// Skip to end of the deadline, cron detects and penalizes sectors as faulty
-		undeclaredFee := actor.undeclaredFaultPenalty(allSectors, rt.NetworkVersion())
+		undeclaredFee := actor.undeclaredFaultPenalty(allSectors)
 		activePowerDelta := activePower.Neg()
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta: &activePowerDelta,
@@ -4492,7 +4492,7 @@ func (h *actorHarness) declaredFaultPenalty(sectors []*miner.SectorOnChainInfo) 
 	return miner.PledgePenaltyForDeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
 }
 
-func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo, nv runtime.NetworkVersion) abi.TokenAmount {
+func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo) abi.TokenAmount {
 	_, qa := powerForSectors(h.sectorSize, sectors)
 	return miner.PledgePenaltyForUndeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
 }
