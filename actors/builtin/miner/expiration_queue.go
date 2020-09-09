@@ -224,7 +224,7 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 	rescheduledPower := NewPowerPairZero()
 
 	// Group sectors by their target expiration, then remove from existing queue entries according to those groups.
-	groups, err := q.groupSectorsByExpirationWithRescheduled(ssize, sectors, q.quant)
+	groups, err := q.groupSectorsByExpirationWithRescheduled(ssize, sectors)
 	if err != nil {
 		return NewPowerPairZero(), err
 	}
@@ -615,7 +615,12 @@ func (q ExpirationQueue) removeActiveSectors(sectors []*SectorOnChainInfo, ssize
 	noFaultyPower := NewPowerPairZero()
 
 	// Group sectors by their expiration, then remove from existing queue entries according to those groups.
-	for _, group := range groupSectorsByExpiration(ssize, sectors, q.quant) {
+	groups, err := q.groupSectorsByExpirationWithRescheduled(ssize, sectors)
+	if err != nil {
+		return bitfield.BitField{}, NewPowerPairZero(), big.Zero(), err
+	}
+
+	for _, group := range groups {
 		sectorsBf := bitfield.NewFromSet(group.sectors)
 		if err := q.remove(group.epoch, sectorsBf, noEarlySectors, group.power, noFaultyPower, group.pledge); err != nil {
 			return bitfield.BitField{}, NewPowerPairZero(), big.Zero(), err
@@ -747,11 +752,11 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 }
 
 // Works like groupSectorsByExpiration but finds all sectors rescheduled out their expected expiration set and groups them as well
-func (q *ExpirationQueue) groupSectorsByExpirationWithRescheduled(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo, quant QuantSpec) ([]sectorEpochSet, error) {
+func (q *ExpirationQueue) groupSectorsByExpirationWithRescheduled(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) ([]sectorEpochSet, error) {
 	sectorsByExpiration := make(map[abi.ChainEpoch][]*SectorOnChainInfo)
 
 	for _, sector := range sectors {
-		qExpiration := quant.QuantizeUp(sector.Expiration)
+		qExpiration := q.quant.QuantizeUp(sector.Expiration)
 		sectorsByExpiration[qExpiration] = append(sectorsByExpiration[qExpiration], sector)
 	}
 
