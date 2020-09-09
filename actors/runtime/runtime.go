@@ -10,6 +10,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
@@ -32,20 +33,11 @@ const (
 	ERROR
 )
 
-// Enumeration of network upgrades where actor behaviour can change (without necessarily
-// vendoring and versioning the whole actor codebase).
-type NetworkVersion uint
-
-const (
-	NetworkVersion0 = NetworkVersion(iota) // specs-actors v0.9.3
-	NetworkVersion1                        // specs-actors v0.9.?
-)
-
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
 	// The network protocol version number at the current epoch.
-	NetworkVersion() NetworkVersion
+	NetworkVersion() network.Version
 
 	// Information related to the current message being executed.
 	// When an actor invokes a method on another actor as a sub-call, these values reflect

@@ -5,17 +5,17 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 // Test termination fee
 func TestPledgePenaltyForTermination(t *testing.T) {
-	nv := runtime.NetworkVersion0
+	nv := network.Version0
 	epochTargetReward := abi.NewTokenAmount(1 << 50)
 	qaSectorPower := abi.NewStoragePower(1 << 36)
 	networkQAPower := abi.NewStoragePower(1 << 50)

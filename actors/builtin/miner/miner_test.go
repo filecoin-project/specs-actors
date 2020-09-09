@@ -14,6 +14,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
@@ -3196,7 +3197,7 @@ func (h *actorHarness) declaredFaultPenalty(sectors []*miner.SectorOnChainInfo) 
 	return miner.PledgePenaltyForDeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
 }
 
-func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo, nv runtime.NetworkVersion) abi.TokenAmount {
+func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo, nv network.Version) abi.TokenAmount {
 	_, qa := powerForSectors(h.sectorSize, sectors)
 	return miner.PledgePenaltyForUndeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa, nv)
 }
