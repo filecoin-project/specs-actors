@@ -1058,12 +1058,12 @@ func TestCommitments(t *testing.T) {
 
 		// At proving period cron expect to pay declared fee for new sector
 		// and to have its pledge requirement deducted indicating it has expired.
-		//oldPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
+		oldPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
 		//expectedPowerDelta := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), oldPower).Neg()
-		//expectedFee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldPower)
-		//actor.applyRewards(rt, expectedFee, big.Zero())
+		expectedFee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldPower)
+		actor.applyRewards(rt, expectedFee, big.Zero())
 		actor.onDeadlineCron(rt, &cronConfig{
-			//detectedFaultsPenalty:     expectedFee,
+			detectedFaultsPenalty:     expectedFee,
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
