@@ -1005,7 +1005,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	pledgeDelta := abi.NewTokenAmount(0)
 	powerDelta := NewPowerPairZero()
 
-	totalFaultyPower := NewPowerPairZero()
+	var totalFaultyPower PowerPair
 	detectedFaultyPower := NewPowerPairZero()
 
 	// Note: Use dlInfo.Last() rather than rt.CurrEpoch unless certain
