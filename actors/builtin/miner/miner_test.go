@@ -13,6 +13,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
+	"github.com/filecoin-project/go-state-types/deadline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
@@ -500,7 +501,7 @@ func TestCommitments(t *testing.T) {
 		// The partition is registered with an expiry at both epochs.
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
-		quantizedExpiration := dlInfo.QuantSpec().QuantizeUp(oldSector.Expiration)
+		quantizedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(oldSector.Expiration)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
 			dlInfo.NextNotElapsed().Last(): {uint64(0)},
 			quantizedExpiration:            {uint64(0)},
@@ -518,7 +519,7 @@ func TestCommitments(t *testing.T) {
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors).Neg()
 		faultPenalty := actor.undeclaredFaultPenalty(bothSectors, rt.NetworkVersion())
-		faultExpiration := dlInfo.QuantSpec().QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
+		faultExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
 
 		actor.addLockedFunds(rt, big.Mul(big.NewInt(5), faultPenalty))
 
@@ -544,7 +545,7 @@ func TestCommitments(t *testing.T) {
 		// and once on-time.
 		dQueue = actor.collectDeadlineExpirations(rt, deadline)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			dlInfo.QuantSpec().QuantizeUp(newSector.Expiration): {uint64(0)},
+			miner.QuantSpecForDeadline(dlInfo).QuantizeUp(newSector.Expiration): {uint64(0)},
 			faultExpiration: {uint64(0)},
 		}, dQueue)
 
@@ -754,7 +755,7 @@ func TestCommitments(t *testing.T) {
 	})
 
 	t.Run("fails with too many deals", func(t *testing.T) {
-		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *miner.DeadlineInfo) {
+		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *deadline.DeadlineInfo) {
 			actor := newHarness(t, periodOffset)
 			actor.setProofType(proof)
 			rt := builderForHarness(actor).
@@ -2370,7 +2371,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 // State access helpers
 //
 
-func (h *actorHarness) deadline(rt *mock.Runtime) *miner.DeadlineInfo {
+func (h *actorHarness) deadline(rt *mock.Runtime) *deadline.DeadlineInfo {
 	st := getState(rt)
 	return st.DeadlineInfo(rt.Epoch())
 }
@@ -2800,7 +2801,7 @@ type poStConfig struct {
 	expectedPenalty       abi.TokenAmount
 }
 
-func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *miner.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
+func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *deadline.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
 	commitEpoch := rt.Epoch() - 4
@@ -3224,7 +3225,7 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 
 // Completes a deadline by moving the epoch forward to the penultimate one, calling the deadline cron handler,
 // and then advancing to the first epoch in the new deadline.
-func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *miner.DeadlineInfo {
+func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *deadline.DeadlineInfo {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.Last())
 	config.expectedEnrollment = deadline.Last() + miner.WPoStChallengeWindow
