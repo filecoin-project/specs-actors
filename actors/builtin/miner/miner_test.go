@@ -755,7 +755,7 @@ func TestCommitments(t *testing.T) {
 	})
 
 	t.Run("fails with too many deals", func(t *testing.T) {
-		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *deadline.DeadlineInfo) {
+		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *dline.Info) {
 			actor := newHarness(t, periodOffset)
 			actor.setProofType(proof)
 			rt := builderForHarness(actor).
@@ -2371,7 +2371,7 @@ func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 // State access helpers
 //
 
-func (h *actorHarness) deadline(rt *mock.Runtime) *deadline.DeadlineInfo {
+func (h *actorHarness) deadline(rt *mock.Runtime) *dline.Info {
 	st := getState(rt)
 	return st.DeadlineInfo(rt.Epoch())
 }
@@ -2801,7 +2801,7 @@ type poStConfig struct {
 	expectedPenalty       abi.TokenAmount
 }
 
-func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *deadline.DeadlineInfo, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
+func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
 	commitEpoch := rt.Epoch() - 4
@@ -3225,7 +3225,7 @@ func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expir
 
 // Completes a deadline by moving the epoch forward to the penultimate one, calling the deadline cron handler,
 // and then advancing to the first epoch in the new deadline.
-func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *deadline.DeadlineInfo {
+func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *dline.Info {
 	deadline := h.deadline(rt)
 	rt.SetEpoch(deadline.Last())
 	config.expectedEnrollment = deadline.Last() + miner.WPoStChallengeWindow
