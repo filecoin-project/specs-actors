@@ -49,7 +49,8 @@ func MinerEligibleForElection(store adt.Store, mstate *miner.State, pstate *powe
 }
 
 // Tests whether a miner is eligible for election given a Winning PoSt lookback state.
-func MinerEligibleForElectionAtPoStLookback(store adt.Store, pstate *power.State, mAddr addr.Address) (bool, error) {
+// The power state must be the state of the power actor at Winning PoSt lookback epoch.
+func MinerPoStLookbackEligibleForElection(store adt.Store, pstate *power.State, mAddr addr.Address) (bool, error) {
 	// Minimum power requirements.
 	return pstate.MinerNominalPowerMeetsConsensusMinimum(store, mAddr)
 }

@@ -32,8 +32,6 @@ func TestMinerEligibleForElection(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 100)
 	maddr := tutil.NewIDAddr(t, 101)
 
-	// Construct valid power state
-
 	t.Run("miner eligible", func(t *testing.T) {
 		mstate := constructMinerState(ctx, t, store, owner)
 		pstate := constructPowerStateWithMiner(t, store, maddr, pwr, proofType)
@@ -89,7 +87,7 @@ func TestMinerEligibleForElection(t *testing.T) {
 		assert.False(t, eligible)
 	})
 
-	t.Run("ip requirement below consensus fault penalty", func(t *testing.T) {
+	t.Run("IP below consensus fault penalty", func(t *testing.T) {
 		mstate := constructMinerState(ctx, t, store, owner)
 		pstate := constructPowerStateWithMiner(t, store, maddr, pwr, proofType)
 		rstate := constructRewardState(t, tenFIL)
@@ -157,7 +155,7 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 		}} {
 			pstate := constructPowerStateWithMiner(t, store, maddr, tc.power, tc.minerProof)
 			pstate.MinerAboveMinPowerCount = tc.consensusMiners
-			eligible, err := states.MinerEligibleForElectionAtPoStLookback(store, pstate, maddr)
+			eligible, err := states.MinerPoStLookbackEligibleForElection(store, pstate, maddr)
 			require.NoError(t, err)
 			assert.Equal(t, tc.eligible, eligible)
 		}
