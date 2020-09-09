@@ -224,7 +224,12 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 	rescheduledPower := NewPowerPairZero()
 
 	// Group sectors by their target expiration, then remove from existing queue entries according to those groups.
-	for _, group := range groupSectorsByExpiration(ssize, sectors, q.quant) {
+	groups, err := q.groupSectorsByExpirationWithRescheduled(ssize, sectors, q.quant)
+	if err != nil {
+		return NewPowerPairZero(), err
+	}
+
+	for _, group := range groups {
 		var err error
 		var es ExpirationSet
 		if err = q.mustGet(group.epoch, &es); err != nil {
@@ -739,4 +744,113 @@ func groupSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChai
 		return sectorEpochSets[i].epoch < sectorEpochSets[j].epoch
 	})
 	return sectorEpochSets
+}
+
+// Works like groupSectorsByExpiration but finds all sectors rescheduled out their expected expiration set and groups them as well
+func (q *ExpirationQueue) groupSectorsByExpirationWithRescheduled(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo, quant QuantSpec) ([]sectorEpochSet, error) {
+	sectorsByExpiration := make(map[abi.ChainEpoch][]*SectorOnChainInfo)
+
+	for _, sector := range sectors {
+		qExpiration := quant.QuantizeUp(sector.Expiration)
+		sectorsByExpiration[qExpiration] = append(sectorsByExpiration[qExpiration], sector)
+	}
+
+	sectorEpochSets := make([]sectorEpochSet, 0, len(sectorsByExpiration))
+	allRescheduled := bitfield.New()
+
+	// This map iteration is non-deterministic but safe because we sort by epoch below.
+	for expiration, epochSectors := range sectorsByExpiration { //nolint:nomaprange // result is subsequently sorted
+		var es ExpirationSet
+		if err := q.mustGet(expiration, &es); err != nil {
+			return nil, err
+		}
+
+		sectorNumbers := []uint64{}
+		totalPower := NewPowerPairZero()
+		totalPledge := big.Zero()
+		for _, sector := range epochSectors {
+			if found, err := es.OnTimeSectors.IsSet(uint64(sector.SectorNumber)); err != nil {
+				return nil, err
+			} else if found {
+				sectorNumbers = append(sectorNumbers, uint64(sector.SectorNumber))
+				totalPower = totalPower.Add(PowerForSector(sectorSize, sector))
+				totalPledge = big.Add(totalPledge, sector.InitialPledge)
+			} else {
+				allRescheduled.Set(uint64(sector.SectorNumber))
+			}
+		}
+		if len(sectorNumbers) > 0 {
+			sectorEpochSets = append(sectorEpochSets, sectorEpochSet{
+				epoch:   expiration,
+				sectors: sectorNumbers,
+				power:   totalPower,
+				pledge:  totalPledge,
+			})
+		}
+	}
+
+	if empty, err := allRescheduled.IsEmpty(); err != nil {
+		return nil, err
+	} else if !empty {
+		err := q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {
+			intersect, err := bitfield.IntersectBitField(es.OnTimeSectors, allRescheduled)
+			if err != nil {
+				return false, false, err
+			}
+
+			group, err := groupSectorSet(sectorSize, sectors, &intersect, epoch)
+			if err != nil {
+				return false, false, err
+			}
+			sectorEpochSets = append(sectorEpochSets, group)
+
+			allRescheduled, err = bitfield.SubtractBitField(allRescheduled, intersect)
+			if err != nil {
+				return false, false, err
+			}
+
+			empty, err := allRescheduled.IsEmpty()
+			if err != nil {
+				return false, false, err
+			}
+			return false, !empty, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	sort.Slice(sectorEpochSets, func(i, j int) bool {
+		return sectorEpochSets[i].epoch < sectorEpochSets[j].epoch
+	})
+	return sectorEpochSets, nil
+}
+
+// Takes a slice of sector infos a bitfield of sector numbers and returns a single group for all bitfield sectors
+func groupSectorSet(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo, set *bitfield.BitField, expiration abi.ChainEpoch) (sectorEpochSet, error) {
+	var filteredSectors []*SectorOnChainInfo
+	if filter, err := set.AllMap(uint64(len(sectors))); err != nil {
+		return sectorEpochSet{}, err
+	} else {
+		for _, sector := range sectors {
+			if _, ok := filter[uint64(sector.SectorNumber)]; ok {
+				filteredSectors = append(filteredSectors, sector)
+			}
+		}
+	}
+
+	sectorNumbers := make([]uint64, len(filteredSectors))
+	totalPower := NewPowerPairZero()
+	totalPledge := big.Zero()
+	for i, sector := range filteredSectors {
+		sectorNumbers[i] = uint64(sector.SectorNumber)
+		totalPower = totalPower.Add(PowerForSector(sectorSize, sector))
+		totalPledge = big.Add(totalPledge, sector.InitialPledge)
+	}
+	return sectorEpochSet{
+		epoch:   expiration,
+		sectors: sectorNumbers,
+		power:   totalPower,
+		pledge:  totalPledge,
+	}, nil
 }

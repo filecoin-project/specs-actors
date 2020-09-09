@@ -948,6 +948,127 @@ func TestCommitments(t *testing.T) {
 		rt.Verify()
 	})
 
+	t.Run("declared fault for replaced cc upgrade sector doesn't double subtract power", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		// Move the current epoch forward so that the first deadline is a stable candidate for both sectors
+		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
+
+		// Commit a sector to upgrade
+		// Use the max sector number to make sure everything works.
+		oldSector := actor.commitAndProveSector(rt, abi.MaxSectorNumber, defaultSectorExpiration, nil)
+
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, oldSector)
+
+		st := getState(rt)
+		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		// Reduce the epoch reward so that a new sector's initial pledge would otherwise be lesser.
+		// It has to be reduced quite a lot to overcome the new sector having more power due to verified deal weight.
+		actor.epochRewardSmooth = smoothing.TestingConstantEstimate(big.Div(actor.epochRewardSmooth.Estimate(), big.NewInt(20)))
+
+		challengeEpoch := rt.Epoch() - 1
+		upgradeParams := actor.makePreCommit(200, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
+		upgradeParams.ReplaceCapacity = true
+		upgradeParams.ReplaceSectorDeadline = dlIdx
+		upgradeParams.ReplaceSectorPartition = partIdx
+		upgradeParams.ReplaceSectorNumber = oldSector.SectorNumber
+		upgrade := actor.preCommitSector(rt, upgradeParams, preCommitConf{
+			dealWeight:         big.Zero(),
+			verifiedDealWeight: big.NewInt(int64(actor.sectorSize)),
+			dealSpace:          actor.sectorSize,
+		})
+
+		// Prove new sector
+		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
+		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
+			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
+
+		// Both sectors are present (in the same deadline/partition).
+		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
+		assert.Equal(t, uint64(2), deadline.TotalSectors)
+		assert.Equal(t, uint64(2), deadline.LiveSectors)
+
+		// The old sector's expiration has changed to the end of this proving deadline.
+		// The new one expires when the old one used to.
+		// The partition is registered with an expiry at both epochs.
+		pIdx := uint64(0)
+		dQueue := actor.collectDeadlineExpirations(rt, deadline)
+		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
+		quantizedExpiration := dlInfo.QuantSpec().QuantizeUp(oldSector.Expiration)
+		assert.Equal(t, map[abi.ChainEpoch][]uint64{
+			dlInfo.NextNotElapsed().Last(): {pIdx},
+			quantizedExpiration:            {pIdx},
+		}, dQueue)
+
+		pQueue := actor.collectPartitionExpirations(rt, partition)
+		assertBitfieldEquals(t, pQueue[dlInfo.NextNotElapsed().Last()].OnTimeSectors, uint64(oldSector.SectorNumber))
+		assertBitfieldEquals(t, pQueue[quantizedExpiration].OnTimeSectors, uint64(newSector.SectorNumber))
+
+		// now declare old sector faulty
+		actor.declareFaults(rt, oldSector)
+
+		deadline, _ = actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
+		dQueue = actor.collectDeadlineExpirations(rt, deadline)
+		dlInfo = miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
+		expectedReplacedExpiration := dlInfo.QuantSpec().QuantizeUp(rt.Epoch() + miner.FaultMaxAge)
+		quantizedExpiration = dlInfo.QuantSpec().QuantizeUp(oldSector.Expiration)
+
+		// deadling marks expirations for partition at expiration epoch
+		assert.Equal(t, map[abi.ChainEpoch][]uint64{
+			dlInfo.NextNotElapsed().Last(): {pIdx},
+			expectedReplacedExpiration:     {pIdx},
+			quantizedExpiration:            {pIdx},
+		}, dQueue)
+
+		// but partitions expiration set at that epoch is empty
+		_, partition = actor.getDeadlineAndPartition(rt, dlInfo.Index, pIdx)
+		queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, dlInfo.QuantSpec())
+		require.NoError(t, err)
+		var es miner.ExpirationSet
+		expirationSetNotEmpty, err := queue.Get(uint64(expectedReplacedExpiration), &es)
+		require.NoError(t, err)
+		assert.False(t, expirationSetNotEmpty)
+
+		// advance to sector proving deadline
+		dlInfo = actor.deadline(rt)
+		for dlIdx != dlInfo.Index {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlInfo = actor.deadline(rt)
+		}
+
+		// submit post for new sector
+		rt.SetEpoch(dlInfo.Last())
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bitfield.New()},
+		}
+		// oldSector is faulty, so expect newSector twice in validation; once for its proof and once to replace oldSector
+		// power is added for new sector and no penalties are paid yet
+		newPower := miner.QAPowerForSector(actor.sectorSize, newSector)
+		actor.submitWindowPoSt(rt, dlInfo, partitions, []*miner.SectorOnChainInfo{newSector, newSector}, &poStConfig{
+			expectedPowerDelta: miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), newPower),
+			expectedPenalty:    big.Zero(),
+		})
+
+		// At proving period cron expect to pay declared fee for new sector
+		// and to have its pledge requirement deducted indicating it has expired.
+		//oldPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
+		//expectedPowerDelta := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), oldPower).Neg()
+		//expectedFee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldPower)
+		//actor.applyRewards(rt, expectedFee, big.Zero())
+		actor.onDeadlineCron(rt, &cronConfig{
+			//detectedFaultsPenalty:     expectedFee,
+			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+		})
+	})
+
 	t.Run("try to upgrade committed capacity sector twice", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
