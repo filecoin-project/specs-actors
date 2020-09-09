@@ -3,9 +3,9 @@ package miner
 import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -67,9 +67,9 @@ func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate *smoot
 // This is the SP(t) penalty for a newly faulty sector that has not been declared.
 // SP(t) = UndeclaredFaultFactor * BR(t)
 func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower,
-	networkVersion runtime.NetworkVersion) abi.TokenAmount {
+	networkVersion network.Version) abi.TokenAmount {
 	projectionPeriod := UndeclaredFaultProjectionPeriodV0
-	if networkVersion >= runtime.NetworkVersion1 {
+	if networkVersion >= network.Version1 {
 		projectionPeriod = UndeclaredFaultProjectionPeriodV1
 	}
 	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, projectionPeriod)
@@ -78,12 +78,12 @@ func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate *smo
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
 // SectorAge is the time between the sector's activation and termination.
 func PledgePenaltyForTermination(dayRewardAtActivation, twentyDayRewardAtActivation abi.TokenAmount, sectorAge abi.ChainEpoch,
-	rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower, networkVersion runtime.NetworkVersion) abi.TokenAmount {
+	rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower, networkVersion network.Version) abi.TokenAmount {
 	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d)*min(SectorAgeInDays, 70))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
 
 	cappedSectorAge := big.NewInt(int64(minEpoch(sectorAge, TerminationLifetimeCap*builtin.EpochsInDay)))
-	if networkVersion >= runtime.NetworkVersion1 {
+	if networkVersion >= network.Version1 {
 		cappedSectorAge = big.NewInt(int64(minEpoch(sectorAge / 2, TerminationLifetimeCap*builtin.EpochsInDay)))
 	}
 

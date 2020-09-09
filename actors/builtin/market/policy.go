@@ -3,9 +3,9 @@ package market
 import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
 // DealUpdatesInterval is the number of blocks between payouts for deals
@@ -30,7 +30,7 @@ func dealPricePerEpochBounds(size abi.PaddedPieceSize, duration abi.ChainEpoch) 
 }
 
 func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkRawPower, networkQAPower, baselinePower abi.StoragePower,
-	networkCirculatingSupply abi.TokenAmount, networkVersion runtime.NetworkVersion) (min, max abi.TokenAmount) {
+	networkCirculatingSupply abi.TokenAmount, networkVersion network.Version) (min, max abi.TokenAmount) {
 	// minimumProviderCollateral = (ProvCollateralPercentSupplyNum / ProvCollateralPercentSupplyDenom) * normalizedCirculatingSupply
 	// normalizedCirculatingSupply = FILCirculatingSupply * dealPowerShare
 	// dealPowerShare = dealQAPower / max(BaselinePower(t), NetworkQAPower(t), dealQAPower)
@@ -39,7 +39,7 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	powerShareNum := dealQAPower(pieceSize, verified)
 	powerShareDenom := big.Max(big.Max(networkQAPower, baselinePower), powerShareNum)
 
-	if networkVersion >= runtime.NetworkVersion1 {
+	if networkVersion >= network.Version1 {
 		lockTargetNum = big.Mul(ProvCollateralPercentSupplyNumV1, networkCirculatingSupply)
 		powerShareNum = big.NewIntUnsigned(uint64(pieceSize))
 		powerShareDenom = big.Max(big.Max(networkRawPower, baselinePower), powerShareNum)

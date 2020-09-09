@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -1320,7 +1321,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *abi.Emp
 	}
 
  	vestingSchedule := &RewardVestingSpecV0
- 	if rt.NetworkVersion() >= runtime.NetworkVersion1 {
+ 	if rt.NetworkVersion() >= network.Version1 {
  		vestingSchedule = &RewardVestingSpecV1
 	}
 
@@ -2178,7 +2179,7 @@ func validatePartitionContainsSectors(partition *Partition, sectors bitfield.Bit
 	return nil
 }
 
-func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, networkVersion runtime.NetworkVersion,
+func terminationPenalty(sectorSize abi.SectorSize, currEpoch abi.ChainEpoch, networkVersion network.Version,
 	rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, sectors []*SectorOnChainInfo) abi.TokenAmount {
 	totalFee := big.Zero()
 	for _, s := range sectors {
