@@ -1198,6 +1198,101 @@ func TestCCUpgrade(t *testing.T) {
 		})
 	})
 
+	t.Run("skip replaced sector last PoSt", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		oldSector, newSector := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		// advance to sector proving deadline
+		dlInfo := actor.deadline(rt)
+		for dlIdx != dlInfo.Index {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlInfo = actor.deadline(rt)
+		}
+
+		// skip old sector when submitting post. Expect newSector to fill place of old sector in proof.
+		// Miner should gain power for new sector, lose power for old sector and pay undeclared fee for skipped old sector.
+		rt.SetEpoch(dlInfo.Last())
+
+		oldQAPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
+		newQAPower := miner.QAPowerForSector(actor.sectorSize, newSector)
+		expectedPowerDelta := miner.NewPowerPair(big.Zero(), big.Sub(newQAPower, oldQAPower))
+
+		// miner will pay undeclared fee this round, but declared fee is deferred till cron
+		undeclaredFee := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldQAPower)
+		declaredFee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldQAPower)
+		expectedFee := big.Sub(undeclaredFee, declaredFee)
+		actor.applyRewards(rt, undeclaredFee, big.Zero())
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bf(uint64(oldSector.SectorNumber))},
+		}
+		actor.submitWindowPoSt(rt, dlInfo, partitions, []*miner.SectorOnChainInfo{newSector, newSector}, &poStConfig{
+			expectedPowerDelta: expectedPowerDelta,
+			expectedPenalty:    expectedFee,
+		})
+
+		// At proving period cron expect to pay declared fee for old (now faulty) sector
+		// and to have its pledge requirement deducted indicating it has expired.
+		// Importantly, power is NOT removed, because it was taken when fault was declared.
+		actor.onDeadlineCron(rt, &cronConfig{
+			detectedFaultsPenalty:     declaredFee,
+			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+		})
+	})
+
+	t.Run("skip PoSt altogether on replaced sector expiry", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		oldSector, newSector := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
+
+		st := getState(rt)
+		dlIdx, _, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		// advance to sector proving deadline
+		dlInfo := actor.deadline(rt)
+		for dlIdx != dlInfo.Index {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlInfo = actor.deadline(rt)
+		}
+		rt.SetEpoch(dlInfo.Last())
+
+		// do not PoSt
+
+		// expect old sector to lose power (new sector hasn't added any yet)
+		oldQAPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
+		expectedPowerDelta := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), oldQAPower).Neg()
+
+		// expect to pay undeclared fee for both sectors
+		newQAPower := miner.QAPowerForSector(actor.sectorSize, newSector)
+		oldSectorFee := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldQAPower)
+		newSectorFee := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, newQAPower)
+		expectedFee := big.Add(oldSectorFee, newSectorFee)
+		actor.applyRewards(rt, expectedFee, big.Zero())
+
+		// At cron, expect both sectors to be treated as undeclared faults.
+		// The replaced sector will expire anyway, so its pledge will be removed.
+		actor.onDeadlineCron(rt, &cronConfig{
+			expiredSectorsPowerDelta:  &expectedPowerDelta,
+			detectedFaultsPenalty:     expectedFee,
+			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+		})
+	})
+
 	t.Run("terminate replaced sector early", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
