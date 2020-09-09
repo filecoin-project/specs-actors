@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -28,7 +29,7 @@ type VM struct {
 	store adt.Store
 
 	currentEpoch   abi.ChainEpoch
-	networkVersion runtime.NetworkVersion
+	networkVersion network.Version
 
 	actorImpls  ActorImplLookup
 	stateRoot   cid.Cid  // The last committed root.
@@ -91,7 +92,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		stateRoot:      actorRoot,
 		actorsDirty:    false,
 		emptyObject:    emptyObject,
-		networkVersion: runtime.NetworkVersionLatest,
+		networkVersion: network.VersionMax,
 	}
 }
 
