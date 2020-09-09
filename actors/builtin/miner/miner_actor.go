@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
@@ -368,7 +369,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// If proof verification fails, the this deadline MUST NOT be saved and this function should
 		// be aborted.
 		faultExpiration := currDeadline.Last() + FaultMaxAge
-		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, currDeadline.QuantSpec(), faultExpiration, params.Partitions)
+		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
 		// Validate proofs
@@ -1124,7 +1125,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
-			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, targetDeadline.QuantSpec(), faultExpirationEpoch, pm)
+			newFaultyPower, err := deadline.DeclareFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, pm)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
@@ -1320,9 +1321,9 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *abi.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot lock up a negative amount of funds")
 	}
 
- 	vestingSchedule := &RewardVestingSpecV0
- 	if rt.NetworkVersion() >= network.Version1 {
- 		vestingSchedule = &RewardVestingSpecV1
+	vestingSchedule := &RewardVestingSpecV0
+	if rt.NetworkVersion() >= network.Version1 {
+		vestingSchedule = &RewardVestingSpecV1
 	}
 
 	var st State
@@ -1622,7 +1623,7 @@ func handleProvingDeadline(rt Runtime) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 		deadline, err := deadlines.LoadDeadline(store, dlInfo.Index)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlInfo.Index)
-		quant := dlInfo.QuantSpec()
+		quant := QuantSpecForDeadline(dlInfo)
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 
 		{
@@ -2149,7 +2150,7 @@ func nextProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) abi
 // Computes deadline information for a fault or recovery declaration.
 // If the deadline has not yet elapsed, the declaration is taken as being for the current proving period.
 // If the deadline has elapsed, it's instead taken as being for the next proving period after the current epoch.
-func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) (*DeadlineInfo, error) {
+func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) (*dline.Info, error) {
 	if deadlineIdx >= WPoStPeriodDeadlines {
 		return nil, fmt.Errorf("invalid deadline %d, must be < %d", deadlineIdx, WPoStPeriodDeadlines)
 	}
@@ -2159,7 +2160,7 @@ func declarationDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, cur
 }
 
 // Checks that a fault or recovery declaration at a specific deadline is outside the exclusion window for the deadline.
-func validateFRDeclarationDeadline(deadline *DeadlineInfo) error {
+func validateFRDeclarationDeadline(deadline *dline.Info) error {
 	if deadline.FaultCutoffPassed() {
 		return fmt.Errorf("late fault or recovery declaration at %v", deadline)
 	}
