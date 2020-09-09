@@ -4,18 +4,18 @@ import (
 	"errors"
 
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/deadline"
+	"github.com/filecoin-project/go-state-types/dline"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
 // Returns deadline-related calculations for a deadline in some proving period and the current epoch.
-func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) *deadline.DeadlineInfo {
-	return deadline.NewDeadlineInfo(periodStart, deadlineIdx, currEpoch, WPoStPeriodDeadlines, WPoStProvingPeriod, WPoStChallengeWindow, WPoStChallengeLookback, FaultDeclarationCutoff)
+func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) *dline.DeadlineInfo {
+	return dline.NewDeadlineInfo(periodStart, deadlineIdx, currEpoch, WPoStPeriodDeadlines, WPoStProvingPeriod, WPoStChallengeWindow, WPoStChallengeLookback, FaultDeclarationCutoff)
 }
 
-func QuantSpecForDeadline(di *deadline.DeadlineInfo) QuantSpec {
+func QuantSpecForDeadline(di *dline.DeadlineInfo) QuantSpec {
 	return NewQuantSpec(WPoStProvingPeriod, di.Last())
 }
 

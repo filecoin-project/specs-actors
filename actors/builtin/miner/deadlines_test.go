@@ -15,7 +15,7 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		periodStart := abi.ChainEpoch(2)
 		curr := periodStart + miner.WPoStProvingPeriod
 		d := miner.NewDeadlineInfo(periodStart, 10, curr)
-		quant := QuantSpecForDeadline(d)
+		quant := miner.QuantSpecForDeadline(d)
 		assert.Equal(t, d.NextNotElapsed().Last(), quant.QuantizeUp(curr))
 	})
 }
