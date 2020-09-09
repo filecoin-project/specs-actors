@@ -15,7 +15,6 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	. "github.com/filecoin-project/specs-actors/v2/actors/util"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
@@ -1097,39 +1096,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		detectedFaultyPower,
 		deadline.FaultyPower,
 	}, nil
-}
-
-func MinerEligibleForElection(store adt.Store, mAddr addr.Address, mSt *State, pSt *power.State, thisEpochReward abi.TokenAmount, currEpoch abi.ChainEpoch) (bool, error) {
-	// Minimum power requirements
-	powerOK, err := pSt.MinerNominalPowerMeetsConsensusMinimum(store, mAddr)
-	if err != nil {
-		return false, err
-	}
-	if !powerOK {
-		return false, nil
-	}
-
-	// IP requirements are met.  This includes zero fee debt
-	if !mSt.IsDebtFree() {
-		return false, nil
-	}
-
-	// No active consensus faults
-	mInfo, err := mSt.GetInfo(store)
-	if err != nil {
-		return false, err
-	}
-	if ConsensusFaultActive(mInfo, currEpoch) {
-		return false, nil
-	}
-
-	// IP requirement is sufficient to cover fee for a consensus fault
-	electionRequirement := ConsensusFaultPenalty(thisEpochReward)
-	if mSt.InitialPledge.LessThan(electionRequirement) {
-		return false, nil
-	}
-
-	return true, nil
 }
 
 //
