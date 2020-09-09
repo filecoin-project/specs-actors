@@ -1243,8 +1243,56 @@ func TestCCUpgrade(t *testing.T) {
 			expectedPenalty:    big.Zero(),
 		})
 
-		// At proving period cron expect to pay declared fee for new sector
+		// Nothing interesting happens at cron.
 		// Importantly, power and pledge are NOT removed. This happened when sector was terminated
+		actor.onDeadlineCron(rt, &cronConfig{
+			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
+		})
+	})
+
+	t.Run("extend a replaced sector's expiration", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		// create sector and upgrade it
+		oldSector, newSector := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
+
+		st := getState(rt)
+		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		params := &miner.ExtendSectorExpirationParams{
+			Extensions: []miner.ExpirationExtension{{
+				Deadline:      dlIdx,
+				Partition:     partIdx,
+				Sectors:       bf(uint64(oldSector.SectorNumber)),
+				NewExpiration: rt.Epoch() + 250*builtin.EpochsInDay,
+			}},
+		}
+		actor.extendSectors(rt, params)
+
+		// advance to sector proving deadline
+		dlInfo := actor.deadline(rt)
+		for dlIdx != dlInfo.Index {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlInfo = actor.deadline(rt)
+		}
+
+		// both sectors are now active and not set to expire
+		rt.SetEpoch(dlInfo.Last())
+		newPower := miner.QAPowerForSector(actor.sectorSize, newSector)
+		partitions := []miner.PoStPartition{
+			{Index: partIdx, Skipped: bitfield.New()},
+		}
+		actor.submitWindowPoSt(rt, dlInfo, partitions, []*miner.SectorOnChainInfo{oldSector, newSector}, &poStConfig{
+			expectedPowerDelta: miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), newPower),
+			expectedPenalty:    big.Zero(),
+		})
+
+		// Nothing interesting happens at cron because both sectors are active
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
 		})
@@ -1410,7 +1458,6 @@ func TestCCUpgrade(t *testing.T) {
 		assert.Equal(t, st.InitialPledge, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
 		assert.Equal(t, st.LockedFunds, big.Mul(big.NewInt(4), faultPenalty)) // from manual fund addition above - 1 fault penalty
 	})
-
 }
 
 func TestWindowPost(t *testing.T) {
