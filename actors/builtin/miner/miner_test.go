@@ -987,8 +987,7 @@ func TestCommitments(t *testing.T) {
 
 		// Prove new sector
 		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
-		newSector := actor.proveCommitSectorAndConfirm(rt, &upgrade.Info, upgrade.PreCommitEpoch,
-			makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
+		newSector := actor.proveCommitSectorAndConfirm(rt, upgrade, makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
 
 		// Both sectors are present (in the same deadline/partition).
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
@@ -3925,7 +3924,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 	}
 	st := getState(rt)
 
-	pledgeDelta :=  immediatelyVestingFunds(rt, st).Neg()
+	pledgeDelta := immediatelyVestingFunds(rt, st).Neg()
 	if !pledgeDelta.IsZero() {
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
 	}
