@@ -1106,7 +1106,7 @@ func TestCCUpgrade(t *testing.T) {
 		rt.Verify()
 	})
 
-	t.Run("declared fault for replaced cc upgrade sector doesn't double subtract power", func(t *testing.T) {
+	t.Run("declare fault for replaced cc upgrade sector doesn't double subtract power", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero()).
@@ -1390,6 +1390,66 @@ func TestCCUpgrade(t *testing.T) {
 		// Nothing interesting happens at cron because both sectors are active
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
+		})
+	})
+
+	t.Run("fault and recover a replaced sector", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+
+		// create sector and upgrade it
+		oldSector, newSector := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
+
+		// declare replaced sector faulty
+		powerDelta := actor.declareFaults(rt, oldSector)
+
+		// power for old sector should have been removed
+		oldQAPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
+		oldSectorPower := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), oldQAPower)
+		assert.Equal(t, oldSectorPower.Neg(), powerDelta)
+
+		st := getState(rt)
+		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
+		require.NoError(t, err)
+
+		// recover replaced sector
+		actor.declareRecoveries(rt, dlIdx, partIdx, bf(uint64(oldSector.SectorNumber)), big.Zero())
+
+		// advance to sector proving deadline
+		dlInfo := actor.deadline(rt)
+		for dlIdx != dlInfo.Index {
+			advanceDeadline(rt, actor, &cronConfig{})
+			dlInfo = actor.deadline(rt)
+		}
+
+		// both sectors now need to be proven.
+		// Upon success, new sector will gain power and replaced sector will briefly regain power/
+		rt.SetEpoch(dlInfo.Last())
+		newQAPower := miner.QAPowerForSector(actor.sectorSize, newSector)
+		newSectorPower := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), newQAPower)
+		expectedPowerDelta := oldSectorPower.Add(newSectorPower)
+
+		// miner will still need to pay declared fee recovered power's time as a fault.
+		expectedFee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldQAPower)
+		actor.applyRewards(rt, expectedFee, big.Zero())
+
+		partitions := []miner.PoStPartition{
+			{Index: partIdx, Skipped: bitfield.New()},
+		}
+		actor.submitWindowPoSt(rt, dlInfo, partitions, []*miner.SectorOnChainInfo{oldSector, newSector}, &poStConfig{
+			expectedPowerDelta: expectedPowerDelta,
+			expectedPenalty:    expectedFee,
+		})
+
+		// At cron replaced sector's power is removed because it expires, and its initial pledge is removed
+		expectedPowerDelta = oldSectorPower.Neg()
+		actor.onDeadlineCron(rt, &cronConfig{
+			expiredSectorsPowerDelta:  &expectedPowerDelta,
+			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
 	})
 
@@ -4461,7 +4521,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, 
 	rt.Verify()
 }
 
-func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) {
+func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*miner.SectorOnChainInfo) miner.PowerPair {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
@@ -4490,6 +4550,8 @@ func (h *actorHarness) declareFaults(rt *mock.Runtime, faultSectorInfos ...*mine
 	params := makeFaultParamsFromFaultingSectors(h.t, st, rt.AdtStore(), faultSectorInfos)
 	rt.Call(h.a.DeclareFaults, params)
 	rt.Verify()
+
+	return miner.NewPowerPair(claim.RawByteDelta, claim.QualityAdjustedDelta)
 }
 
 func (h *actorHarness) declareRecoveries(rt *mock.Runtime, deadlineIdx uint64, partitionIdx uint64, recoverySectors bitfield.BitField, expectedDebtRepaid abi.TokenAmount) {
