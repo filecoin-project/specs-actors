@@ -9,6 +9,7 @@ import (
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
 	exitcode "github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/minio/blake2b-simd"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -1547,6 +1548,7 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("retroactive vesting", func(t *testing.T) {
 		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig
 		rt.SetEpoch(100)
@@ -1603,6 +1605,7 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("prospective vesting", func(t *testing.T) {
 		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig
 		rt.SetEpoch(100)
@@ -1659,6 +1662,7 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("can't alter vesting", func(t *testing.T) {
 		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig
 		rt.SetEpoch(100)
@@ -1692,6 +1696,28 @@ func TestLockBalance(t *testing.T) {
 			actor.lockBalance(rt, vestStart, vestDuration, big.Sub(lockAmount, big.NewInt(1)))
 		})
 		rt.Reset()
+	})
+
+	t.Run("unavailable at network version 1", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version1)
+
+		// Create empty multisig
+		rt.SetEpoch(100)
+		actor.constructAndVerify(rt, 1, 0, anne)
+
+		// Lock balance unavailable.
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.SysErrInvalidMethod, func() {
+			actor.lockBalance(rt, abi.ChainEpoch(0), abi.ChainEpoch(1000), abi.NewTokenAmount(100_000))
+		})
+		rt.Reset()
+
+		// Now available
+		rt.SetNetworkVersion(network.Version2)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.lockBalance(rt, abi.ChainEpoch(0), abi.ChainEpoch(1000), abi.NewTokenAmount(100_000))
 	})
 }
 

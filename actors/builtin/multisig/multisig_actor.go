@@ -417,6 +417,14 @@ type LockBalanceParams struct {
 }
 
 func (a Actor) LockBalance(rt runtime.Runtime, params *LockBalanceParams) *abi.EmptyValue {
+	// This method was introduced at network version 2 in testnet.
+	// Prior to that, the method did not exist so the VM would abort.
+	// Lotus does not enforce that actors shall not abort with system exit codes (at network versions 0 and 1),
+	// so we can exploit this to make the change backwards compatible.
+	if rt.NetworkVersion() < 2 {
+		rt.Abortf(exitcode.SysErrInvalidMethod, "invalid method until network version 2")
+	}
+
 	// Can only be called by the multisig wallet itself.
 	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
 
