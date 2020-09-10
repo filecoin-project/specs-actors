@@ -88,9 +88,9 @@ func TestBaselineRewardGrowth(t *testing.T) {
 		return baseline
 	}
 
-	// Baseline reward should have 200% growth rate
+	// Baseline reward should have 100% growth rate
 	// This implies that for every year x, the baseline function should be:
-	// StartVal * 3^x.
+	// StartVal * 2^x.
 	//
 	// Error values for 1 years of growth were determined empirically with latest
 	// baseline power construction to set bounds in this test in order to
@@ -141,7 +141,7 @@ func TestBaselineRewardGrowth(t *testing.T) {
 		years := int64(1)
 		end := baselineInYears(testCase.StartVal, abi.ChainEpoch(1))
 
-		multiplier := big.Exp(big.NewInt(3), big.NewInt(years)) // keeping this generalized in case we want to test more years
+		multiplier := big.Exp(big.NewInt(2), big.NewInt(years)) // keeping this generalized in case we want to test more years
 		expected := big.Mul(testCase.StartVal, multiplier)
 		diff := big.Sub(expected, end)
 

@@ -56,7 +56,7 @@ func TestConstructor(t *testing.T) {
 		rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
 			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
 			Build(t)
-		startRealizedPower := big.Lsh(abi.NewStoragePower(1), 60)
+		startRealizedPower := reward.BaselineInitialValue
 		actor.constructAndVerify(rt, &startRealizedPower)
 		st := getState(rt)
 		rwrd := st.ThisEpochReward
@@ -65,7 +65,7 @@ func TestConstructor(t *testing.T) {
 		rt = mock.NewBuilder(context.Background(), builtin.RewardActorAddr).
 			WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID).
 			Build(t)
-		startRealizedPower = big.Lsh(abi.NewStoragePower(2), 60)
+		startRealizedPower = big.Mul(reward.BaselineInitialValue, big.NewInt(2))
 		actor.constructAndVerify(rt, &startRealizedPower)
 		newSt := getState(rt)
 		// Reward value is the same; realized power impact on reward is capped at baseline
