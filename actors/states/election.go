@@ -7,7 +7,6 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
@@ -17,7 +16,7 @@ import (
 
 // Tests whether a miner is eligible to win an election given the immediately prior state of the
 // miner and system actors.
-func MinerEligibleForElection(store adt.Store, mstate *miner.State, pstate *power.State, rstate *reward.State, maddr addr.Address, currEpoch abi.ChainEpoch) (bool, error) {
+func MinerEligibleForElection(store adt.Store, mstate *miner.State, pstate *power.State, maddr addr.Address, currEpoch abi.ChainEpoch) (bool, error) {
 	// Non-empty power claim.
 	if claim, found, err := pstate.GetClaim(store, maddr); err != nil {
 		return false, err
@@ -36,12 +35,6 @@ func MinerEligibleForElection(store adt.Store, mstate *miner.State, pstate *powe
 	if mInfo, err := mstate.GetInfo(store); err != nil {
 		return false, err
 	} else if miner.ConsensusFaultActive(mInfo, currEpoch) {
-		return false, nil
-	}
-
-	// IP requirement is sufficient to cover fee for a consensus fault
-	electionRequirement := miner.ConsensusFaultPenalty(rstate.ThisEpochReward)
-	if mstate.InitialPledge.LessThan(electionRequirement) {
 		return false, nil
 	}
 
