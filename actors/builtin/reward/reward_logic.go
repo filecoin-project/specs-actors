@@ -24,11 +24,11 @@ const (
 
 // Floor(e^(ln[1 + 200%] / epochsInYear) * 2^128
 // Q.128 formatted number such that f(epoch) = baseExponent^epoch grows 200% in one year of epochs
-// Calculation here: https://www.wolframalpha.com/input/?i=IntegerPart%5BExp%5BLog%5B1%2B200%25%5D%2F%28%28365+days%29%2F%2830+seconds%29%29%5D*2%5E128%5D
-var BaselineExponent = big.MustFromString("340282722551251692435795578557183609728") // Q.128
+// Calculation here: https://www.wolframalpha.com/input/?i=IntegerPart%5BExp%5BLog%5B1%2B100%25%5D%2F%28%28365+days%29%2F%2830+seconds%29%29%5D*2%5E128%5D
+var BaselineExponent = big.MustFromString("340282591298641078465964189926313473653") // Q.128
 
-// 1EiB
-var BaselineInitialValue = big.Lsh(big.NewInt(1), 60) // Q.0
+// 2.5057116798121726 EiB
+var BaselineInitialValue = big.NewInt(2_888_888_880_000_000_000) // Q.0
 
 // Initialize baseline power for epoch -1 so that baseline power at epoch 0 is
 // BaselineInitialValue.
