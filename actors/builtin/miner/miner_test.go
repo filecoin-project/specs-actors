@@ -1176,7 +1176,7 @@ func TestCCUpgrade(t *testing.T) {
 		// The partition is registered with an expiry at both epochs.
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
-		quantizedExpiration := dlInfo.QuantSpec().QuantizeUp(oldSector.Expiration)
+		quantizedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(oldSector.Expiration)
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
 			dlInfo.NextNotElapsed().Last(): {uint64(0)},
 			quantizedExpiration:            {uint64(0)},
