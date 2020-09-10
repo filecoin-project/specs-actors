@@ -2,15 +2,15 @@ package adt
 
 import (
 	"bytes"
+	"crypto/sha256"
 
+	hamt "github.com/filecoin-project/go-hamt-ipld"
 	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
+	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
-	"github.com/minio/sha256-simd"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
-
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 
 // Branching factor of the HAMT.
@@ -74,7 +74,7 @@ func (m *Map) Root() (cid.Cid, error) {
 }
 
 // Put adds value `v` with key `k` to the hamt store.
-func (m *Map) Put(k Keyer, v runtime.CBORMarshaler) error {
+func (m *Map) Put(k Keyer, v cbor.Marshaler) error {
 	if err := m.root.Set(m.store.Context(), k.Key(), v); err != nil {
 		return errors.Wrapf(err, "map put failed set in node %v with key %v value %v", m.lastCid, k.Key(), v)
 	}
@@ -82,7 +82,7 @@ func (m *Map) Put(k Keyer, v runtime.CBORMarshaler) error {
 }
 
 // Get puts the value at `k` into `out`.
-func (m *Map) Get(k Keyer, out runtime.CBORUnmarshaler) (bool, error) {
+func (m *Map) Get(k Keyer, out cbor.Unmarshaler) (bool, error) {
 	if err := m.root.Find(m.store.Context(), k.Key(), out); err != nil {
 		if err == hamt.ErrNotFound {
 			return false, nil
@@ -116,7 +116,7 @@ func (m *Map) Delete(k Keyer) error {
 // calling a function with the corresponding key.
 // Iteration halts if the function returns an error.
 // If the output parameter is nil, deserialization is skipped.
-func (m *Map) ForEach(out runtime.CBORUnmarshaler, fn func(key string) error) error {
+func (m *Map) ForEach(out cbor.Unmarshaler, fn func(key string) error) error {
 	return m.root.ForEach(m.store.Context(), func(k string, val interface{}) error {
 		if out != nil {
 			// Why doesn't hamt.ForEach() just return the value as bytes?

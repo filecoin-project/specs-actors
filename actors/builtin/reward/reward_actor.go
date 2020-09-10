@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -33,7 +34,7 @@ func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePow
 		return nil // linter does not understand abort exiting
 	}
 	st := ConstructState(*currRealizedPower)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 	return nil
 }
 
@@ -80,13 +81,13 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 	penalty := params.Penalty
 	totalReward := big.Zero()
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
 		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 		totalReward = big.Add(blockReward, params.GasReward)
 		currBalance := rt.CurrentBalance()
 		if totalReward.GreaterThan(currBalance) {
-			rt.Log(runtime.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
+			rt.Log(rtt.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
 			totalReward = currBalance
 
 			blockReward = big.Sub(totalReward, params.GasReward)
@@ -103,12 +104,12 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 		Reward:  totalReward,
 		Penalty: penalty,
 	}
-	_, code := rt.Send(minerAddr, builtin.MethodsMiner.ApplyRewards, &rewardParams, totalReward)
+	code := rt.Send(minerAddr, builtin.MethodsMiner.ApplyRewards, &rewardParams, totalReward, &builtin.Discard{})
 	if !code.IsSuccess() {
 		rt.Log(runtime.ERROR, "failed to send ApplyRewards call to the miner actor with funds: %v, code: %v", totalReward, code)
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalReward)
+		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalReward, &builtin.Discard{})
 		if !code.IsSuccess() {
-			rt.Log(runtime.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
+			rt.Log(rtt.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
 		}
 	}
 
@@ -129,7 +130,7 @@ func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *abi.EmptyValue) *ThisEpoch
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	return &ThisEpochRewardReturn{
 		ThisEpochRewardSmoothed: st.ThisEpochRewardSmoothed,
 		ThisEpochBaselinePower:  st.ThisEpochBaselinePower,
@@ -146,7 +147,7 @@ func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.Stora
 	}
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		prev := st.Epoch
 		// if there were null runs catch up the computation until
 		// st.Epoch == rt.CurrEpoch()

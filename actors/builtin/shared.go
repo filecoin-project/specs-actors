@@ -11,8 +11,8 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
 
+	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	autil "github.com/filecoin-project/specs-actors/v2/actors/util"
 )
 
 ///// Code shared by multiple built-in actors. /////
@@ -21,7 +21,6 @@ type BigFrac struct {
 	Numerator   big.Int
 	Denominator big.Int
 }
-
 
 // Wraps already-serialized bytes as CBOR-marshalable.
 type CBORBytes []byte
@@ -64,10 +63,9 @@ func RequireNoErr(rt runtime.Runtime, err error, defaultExitCode exitcode.ExitCo
 }
 
 func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (ownerAddr addr.Address, workerAddr addr.Address, controlAddrs []addr.Address) {
-	ret, code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0))
-	RequireSuccess(rt, code, "failed fetching control addresses")
 	var addrs MinerAddrs
-	autil.AssertNoError(ret.Into(&addrs))
+	code := rt.Send(minerAddr, MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &addrs)
+	RequireSuccess(rt, code, "failed fetching control addresses")
 
 	return addrs.Owner, addrs.Worker, addrs.ControlAddrs
 }
@@ -96,7 +94,7 @@ func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, er
 	}
 
 	// send 0 balance to the account so an ID address for it is created and then try to resolve
-	_, code := rt.Send(address, MethodSend, nil, abi.NewTokenAmount(0))
+	code := rt.Send(address, MethodSend, nil, abi.NewTokenAmount(0), &Discard{})
 	if !code.IsSuccess() {
 		return address, code.Wrapf("failed to send zero balance to address %v", address)
 	}
@@ -115,4 +113,17 @@ func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, er
 type ApplyRewardParams struct {
 	Reward  abi.TokenAmount
 	Penalty abi.TokenAmount
+}
+
+// Discard is a helper
+type Discard struct{}
+
+func (d *Discard) MarshalCBOR(_ io.Writer) error {
+	// serialization is a noop
+	return nil
+}
+
+func (d *Discard) UnmarshalCBOR(_ io.Reader) error {
+	// deserialization is a noop
+	return nil
 }

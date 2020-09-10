@@ -37,7 +37,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.E
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 
 	st := ConstructState(emptyMap, params.NetworkName)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 	return nil
 }
 
@@ -55,8 +55,8 @@ type ExecReturn = init0.ExecReturn
 
 func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
-	callerCodeCID, ok := rt.GetActorCodeCID(rt.Message().Caller())
-	autil.AssertMsg(ok, "no code for actor at %s", rt.Message().Caller())
+	callerCodeCID, ok := rt.GetActorCodeCID(rt.Caller())
+	autil.AssertMsg(ok, "no code for actor at %s", rt.Caller())
 	if !canExec(callerCodeCID, params.CodeCID) {
 		rt.Abortf(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}
@@ -71,7 +71,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	// Store mapping of pubkey or actor address to actor ID
 	var st State
 	var idAddr addr.Address
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var err error
 		idAddr, err = st.MapAddressToNewID(adt.AsStore(rt), uniqueAddress)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate ID address")
@@ -81,7 +81,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.CreateActor(params.CodeCID, idAddr)
 
 	// Invoke constructor.
-	_, code := rt.Send(idAddr, builtin.MethodConstructor, builtin.CBORBytes(params.ConstructorParams), rt.Message().ValueReceived())
+	code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.ValueReceived(), &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{IDAddress: idAddr, RobustAddress: uniqueAddress}
