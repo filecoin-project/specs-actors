@@ -38,10 +38,11 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	if elapsedEpoch >= st.UnlockDuration {
 		return abi.NewTokenAmount(0)
 	}
-	if elapsedEpoch <= 0 {
+	if elapsedEpoch < 0 {
 		return st.InitialBalance
 	}
 
+	// TODO: fix division truncation https://github.com/filecoin-project/specs-actors/issues/1131
 	unitLocked := big.Div(st.InitialBalance, big.NewInt(int64(st.UnlockDuration)))
 	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
 }
