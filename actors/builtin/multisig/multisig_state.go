@@ -28,11 +28,21 @@ type State struct {
 	PendingTxns cid.Cid
 }
 
+func (st *State) SetLocked(startEpoch abi.ChainEpoch, unlockDuration abi.ChainEpoch, lockedAmount abi.TokenAmount) {
+	st.StartEpoch = startEpoch
+	st.UnlockDuration = unlockDuration
+	st.InitialBalance = lockedAmount
+}
+
 func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	if elapsedEpoch >= st.UnlockDuration {
 		return abi.NewTokenAmount(0)
 	}
+	if elapsedEpoch <= 0 {
+		return st.InitialBalance
+	}
 
+	// TODO: fix division truncation https://github.com/filecoin-project/specs-actors/issues/1131
 	unitLocked := big.Div(st.InitialBalance, big.NewInt(int64(st.UnlockDuration)))
 	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
 }
@@ -49,7 +59,8 @@ func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.
 	remainingBalance := big.Sub(currBalance, amountToSpend)
 	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
 	if remainingBalance.LessThan(amountLocked) {
-		return xerrors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
+		return xerrors.Errorf("balance %s if spent %s would be less than locked amount %s",
+			remainingBalance.String(), amountToSpend, amountLocked.String())
 	}
 
 	return nil
