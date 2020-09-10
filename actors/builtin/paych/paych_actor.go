@@ -54,7 +54,7 @@ func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *ab
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
 
 	st := ConstructState(from, to, emptyArrCid)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 
 	return nil
 }
@@ -133,12 +133,12 @@ type PaymentVerifyParams struct {
 
 func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *abi.EmptyValue {
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 
 	// both parties must sign voucher: one who submits it, the other explicitly signs it
 	rt.ValidateImmediateCallerIs(st.From, st.To)
 	var signer addr.Address
-	if rt.Message().Caller() == st.From {
+	if rt.Caller() == st.From {
 		signer = st.To
 	} else {
 		signer = st.From
@@ -152,10 +152,10 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 	vb, err := sv.SigningBytes()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 
-	err = rt.Syscalls().VerifySignature(*sv.Signature, signer, vb)
+	err = rt.VerifySignature(*sv.Signature, signer, vb)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "voucher signature invalid")
 
-	pchAddr := rt.Message().Receiver()
+	pchAddr := rt.Receiver()
 	if pchAddr != sv.ChannelAddr {
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not match receiver %s", sv.ChannelAddr, pchAddr)
 	}
@@ -173,7 +173,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 	}
 
 	if len(sv.SecretPreimage) > 0 {
-		hashedSecret := rt.Syscalls().HashBlake2b(params.Secret)
+		hashedSecret := rt.HashBlake2b(params.Secret)
 		if !bytes.Equal(hashedSecret[:], sv.SecretPreimage) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "incorrect secret!")
 		}
@@ -181,7 +181,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 
 	if sv.Extra != nil {
 
-		_, code := rt.Send(
+		code := rt.Send(
 			sv.Extra.Actor,
 			sv.Extra.Method,
 			&PaymentVerifyParams{
@@ -189,11 +189,12 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 				params.Proof,
 			},
 			abi.NewTokenAmount(0),
+			&builtin.Discard{},
 		)
 		builtin.RequireSuccess(rt, code, "spend voucher verification failed")
 	}
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		laneFound := true
 
 		lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
@@ -283,7 +284,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 
 func (pca Actor) Settle(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		rt.ValidateImmediateCallerIs(st.From, st.To)
 
 		if st.SettlingAt != 0 {
@@ -300,7 +301,7 @@ func (pca Actor) Settle(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 
 func (pca Actor) Collect(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	rt.ValidateImmediateCallerIs(st.From, st.To)
 
 	if st.SettlingAt == 0 || rt.CurrEpoch() < st.SettlingAt {
@@ -308,11 +309,12 @@ func (pca Actor) Collect(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue 
 	}
 
 	// send ToSend to "To"
-	_, codeTo := rt.Send(
+	codeTo := rt.Send(
 		st.To,
 		builtin.MethodSend,
 		nil,
 		st.ToSend,
+		&builtin.Discard{},
 	)
 	builtin.RequireSuccess(rt, codeTo, "Failed to send funds to `To`")
 
