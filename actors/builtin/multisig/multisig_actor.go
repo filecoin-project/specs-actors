@@ -60,6 +60,7 @@ func (a Actor) Exports() []interface{} {
 		6:                         a.RemoveSigner,
 		7:                         a.SwapSigner,
 		8:                         a.ChangeNumApprovalsThreshold,
+		9:                         a.LockBalance,
 	}
 }
 
@@ -116,9 +117,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.E
 	st.PendingTxns = pending
 	st.InitialBalance = abi.NewTokenAmount(0)
 	if params.UnlockDuration != 0 {
-		st.InitialBalance = rt.Message().ValueReceived()
-		st.UnlockDuration = params.UnlockDuration
-		st.StartEpoch = rt.CurrEpoch()
+		st.SetLocked(rt.CurrEpoch(), params.UnlockDuration, rt.Message().ValueReceived())
 	}
 
 	rt.State().Create(&st)
@@ -407,6 +406,39 @@ func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNum
 		}
 
 		st.NumApprovalsThreshold = params.NewThreshold
+	})
+	return nil
+}
+
+type LockBalanceParams struct {
+	StartEpoch abi.ChainEpoch
+	UnlockDuration abi.ChainEpoch
+	Amount abi.TokenAmount
+}
+
+func (a Actor) LockBalance(rt runtime.Runtime, params *LockBalanceParams) *abi.EmptyValue {
+	// This method was introduced at network version 2 in testnet.
+	// Prior to that, the method did not exist so the VM would abort.
+	// Lotus does not enforce that actors shall not abort with system exit codes (at network versions 0 and 1),
+	// so we can exploit this to make the change backwards compatible.
+	if rt.NetworkVersion() < 2 {
+		rt.Abortf(exitcode.SysErrInvalidMethod, "invalid method until network version 2")
+	}
+
+	// Can only be called by the multisig wallet itself.
+	rt.ValidateImmediateCallerIs(rt.Message().Receiver())
+
+	if params.UnlockDuration <= 0 {
+		// Note: Unlock duration of zero is workable, but rejected as ineffective, probably an error.
+		rt.Abortf(exitcode.ErrIllegalArgument, "unlock duration must be positive")
+	}
+
+	var st State
+	rt.State().Transaction(&st, func() {
+		if st.UnlockDuration != 0 {
+			rt.Abortf(exitcode.ErrForbidden, "modification of unlock disallowed")
+		}
+		st.SetLocked(params.StartEpoch, params.UnlockDuration, params.Amount)
 	})
 	return nil
 }

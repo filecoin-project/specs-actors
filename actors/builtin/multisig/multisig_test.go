@@ -9,6 +9,7 @@ import (
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
 	exitcode "github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/minio/blake2b-simd"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -1151,7 +1152,7 @@ func TestAddSigner(t *testing.T) {
 
 			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
 
-			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.SetCaller(multisigWalletAdd, builtin.MultisigActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
 
 			if tc.code != exitcode.Ok {
@@ -1321,7 +1322,7 @@ func TestRemoveSigner(t *testing.T) {
 
 			actor.constructAndVerify(rt, tc.initialApprovals, noUnlockDuration, tc.initialSigners...)
 
-			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.SetCaller(multisigWalletAdd, builtin.MultisigActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
 			if tc.code != exitcode.Ok {
 				rt.ExpectAbort(tc.code, func() {
@@ -1446,7 +1447,7 @@ func TestSwapSigners(t *testing.T) {
 
 			actor.constructAndVerify(rt, numApprovals, noUnlockDuration, tc.initialSigner...)
 
-			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.SetCaller(multisigWalletAdd, builtin.MultisigActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
 			if tc.code != exitcode.Ok {
 				rt.ExpectAbort(tc.code, func() {
@@ -1517,7 +1518,7 @@ func TestChangeThreshold(t *testing.T) {
 
 			actor.constructAndVerify(rt, tc.initialThreshold, noUnlockDuration, initialSigner...)
 
-			rt.SetCaller(multisigWalletAdd, builtin.AccountActorCodeID)
+			rt.SetCaller(multisigWalletAdd, builtin.MultisigActorCodeID)
 			rt.ExpectValidateCallerAddr(multisigWalletAdd)
 			if tc.code != exitcode.Ok {
 				rt.ExpectAbort(tc.code, func() {
@@ -1532,6 +1533,192 @@ func TestChangeThreshold(t *testing.T) {
 			rt.Verify()
 		})
 	}
+}
+
+func TestLockBalance(t *testing.T) {
+	actor := msActorHarness{multisig.Actor{}, t}
+	receiver := tutil.NewIDAddr(t, 100)
+	anne := tutil.NewIDAddr(t, 101)
+	bob := tutil.NewIDAddr(t, 102)
+
+	builder := mock.NewBuilder(context.Background(), receiver).
+		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
+		WithEpoch(0).
+		WithHasher(blake2b.Sum256)
+
+	t.Run("retroactive vesting", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version2)
+
+		// Create empty multisig
+		rt.SetEpoch(100)
+		actor.constructAndVerify(rt, 1, 0, anne)
+
+		// Some time later, initialize vesting
+		rt.SetEpoch(200)
+		vestStart := abi.ChainEpoch(0)
+		lockAmount := abi.NewTokenAmount(100_000)
+		vestDuration := abi.ChainEpoch(1000)
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.lockBalance(rt, vestStart, vestDuration, lockAmount)
+
+		rt.SetEpoch(300)
+		vested := abi.NewTokenAmount(30_000) // Since vestStart
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+
+		// Fail to spend balance the multisig doesn't have
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.proposeOK(rt, bob, vested, builtin.MethodSend, nil, nil)
+		})
+		rt.Reset()
+
+		// Fail to spend more than the vested amount
+		rt.SetBalance(lockAmount)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.proposeOK(rt, bob, big.Add(vested, big.NewInt(1)), builtin.MethodSend, nil, nil)
+		})
+		rt.Reset()
+
+		// Can fully spend the vested amount
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, vested, nil, exitcode.Ok)
+		actor.proposeOK(rt, bob, vested, builtin.MethodSend, nil, nil)
+
+		// Can't spend more
+		rt.SetBalance(big.Sub(lockAmount, vested))
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+		})
+		rt.Reset()
+
+		// Later, can spend the rest
+		rt.SetEpoch(vestStart+vestDuration)
+		rested := big.NewInt(70_000)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, rested, nil, exitcode.Ok)
+		actor.proposeOK(rt, bob, rested, builtin.MethodSend, nil, nil)
+	})
+
+	t.Run("prospective vesting", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version2)
+
+		// Create empty multisig
+		rt.SetEpoch(100)
+		actor.constructAndVerify(rt, 1, 0, anne)
+
+		// Some time later, initialize vesting
+		rt.SetEpoch(200)
+		vestStart := abi.ChainEpoch(1000)
+		lockAmount := abi.NewTokenAmount(100_000)
+		vestDuration := abi.ChainEpoch(1000)
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.lockBalance(rt, vestStart, vestDuration, lockAmount)
+
+		rt.SetEpoch(300)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+
+		// Oversupply the wallet, allow spending the oversupply.
+		rt.SetBalance(big.Add(lockAmount, abi.NewTokenAmount(1)))
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, abi.NewTokenAmount(1), nil, exitcode.Ok)
+		actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+
+		// Fail to spend locked funds before vesting starts
+		rt.SetBalance(lockAmount)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+		})
+		rt.Reset()
+
+		// Can spend partially vested amount
+		rt.SetEpoch(vestStart + 200)
+		vested := abi.NewTokenAmount(20_000)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, vested, nil, exitcode.Ok)
+		actor.proposeOK(rt, bob, vested, builtin.MethodSend, nil, nil)
+
+		// Can't spend more
+		rt.SetBalance(big.Sub(lockAmount, vested))
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+		})
+		rt.Reset()
+
+		// Later, can spend the rest
+		rt.SetEpoch(vestStart+vestDuration)
+		rested := big.NewInt(80_000)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, rested, nil, exitcode.Ok)
+		actor.proposeOK(rt, bob, rested, builtin.MethodSend, nil, nil)
+	})
+
+	t.Run("can't alter vesting", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version2)
+
+		// Create empty multisig
+		rt.SetEpoch(100)
+		actor.constructAndVerify(rt, 1, 0, anne)
+
+		// Initialize vesting from zero
+		vestStart := abi.ChainEpoch(0)
+		lockAmount := abi.NewTokenAmount(100_000)
+		vestDuration := abi.ChainEpoch(1000)
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.lockBalance(rt, vestStart, vestDuration, lockAmount)
+
+		// Can't change vest start
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.lockBalance(rt, vestStart-1, vestDuration, lockAmount)
+		})
+		rt.Reset()
+
+		// Can't change lock duration
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.lockBalance(rt, vestStart, vestDuration - 1, lockAmount)
+		})
+		rt.Reset()
+
+		// Can't change locked amount
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.lockBalance(rt, vestStart, vestDuration, big.Sub(lockAmount, big.NewInt(1)))
+		})
+		rt.Reset()
+	})
+
+	t.Run("unavailable at network version 1", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetNetworkVersion(network.Version1)
+
+		// Create empty multisig
+		rt.SetEpoch(100)
+		actor.constructAndVerify(rt, 1, 0, anne)
+
+		// Lock balance unavailable.
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		rt.ExpectAbort(exitcode.SysErrInvalidMethod, func() {
+			actor.lockBalance(rt, abi.ChainEpoch(0), abi.ChainEpoch(1000), abi.NewTokenAmount(100_000))
+		})
+		rt.Reset()
+
+		// Now available
+		rt.SetNetworkVersion(network.Version2)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.lockBalance(rt, abi.ChainEpoch(0), abi.ChainEpoch(1000), abi.NewTokenAmount(100_000))
+	})
 }
 
 //
@@ -1652,11 +1839,22 @@ func (h *msActorHarness) swapSigners(rt *mock.Runtime, oldSigner, newSigner addr
 		To:   newSigner,
 	}
 	rt.Call(h.a.SwapSigner, swpParams)
+	rt.Verify()
 }
 
 func (h *msActorHarness) changeNumApprovalsThreshold(rt *mock.Runtime, newThreshold uint64) {
 	thrshParams := &multisig.ChangeNumApprovalsThresholdParams{NewThreshold: newThreshold}
 	rt.Call(h.a.ChangeNumApprovalsThreshold, thrshParams)
+}
+
+func (h *msActorHarness) lockBalance(rt *mock.Runtime, start, duration abi.ChainEpoch, amount abi.TokenAmount) {
+	params := &multisig.LockBalanceParams{
+		StartEpoch:     start,
+		UnlockDuration: duration,
+		Amount:         amount,
+	}
+	rt.Call(h.a.LockBalance, params)
+	rt.Verify()
 }
 
 func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multisig.Transaction) {
