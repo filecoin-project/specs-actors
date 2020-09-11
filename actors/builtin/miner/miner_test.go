@@ -1260,9 +1260,7 @@ func TestCCUpgrade(t *testing.T) {
 			dlInfo = actor.deadline(rt)
 		}
 
-		// submit post for new sector
-		// oldSector is faulty, so expect newSector twice in validation; once for its proof and once to replace oldSector
-		// power is added for new sector and no penalties are paid yet
+		// submit post for new sector. Power is added for new sector and no penalties are paid yet
 		rt.SetEpoch(dlInfo.Last())
 		newPower := miner.QAPowerForSector(actor.sectorSize, newSector)
 		partitions := []miner.PoStPartition{
@@ -1273,15 +1271,17 @@ func TestCCUpgrade(t *testing.T) {
 			expectedPenalty:    big.Zero(),
 		})
 
-		// At proving period cron expect to pay declared fee for new sector
+		// At proving period cron expect to pay declared fee for old sector
 		// and to have its pledge requirement deducted indicating it has expired.
 		// Importantly, power is NOT removed, because it was taken when fault was declared.
 		oldPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
 		expectedFee := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldPower)
+		expectedPowerDelta := miner.NewPowerPairZero()
 		actor.applyRewards(rt, expectedFee, big.Zero())
 		actor.onDeadlineCron(rt, &cronConfig{
 			detectedFaultsPenalty:     expectedFee,
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
+			expiredSectorsPowerDelta:  &expectedPowerDelta,
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
 	})
@@ -1329,7 +1329,7 @@ func TestCCUpgrade(t *testing.T) {
 
 		// At proving period cron expect to pay declared fee for old (now faulty) sector
 		// and to have its pledge requirement deducted indicating it has expired.
-		// Importantly, power is NOT removed, because it was taken when fault was declared.
+		// Importantly, power is NOT removed, because it was taken when sector was skipped in Windowe PoSt.
 		actor.onDeadlineCron(rt, &cronConfig{
 			detectedFaultsPenalty:     declaredFee,
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
