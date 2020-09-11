@@ -140,7 +140,7 @@ func (es *ExpirationSet) ValidateState() error {
 	}
 
 	if es.FaultyPower.QA.LessThan(big.Zero()) {
-		return xerrors.Errorf("ESet left with negative qa active power: %+v", es)
+		return xerrors.Errorf("ESet left with negative qa faulty power: %+v", es)
 	}
 
 	return nil
@@ -302,7 +302,12 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 			rescheduledPower = rescheduledPower.Add(es.ActivePower)
 			rescheduledPower = rescheduledPower.Add(es.FaultyPower)
 		}
-		return es.ValidateState()
+
+		if err := es.ValidateState(); err != nil {
+			return err
+		}
+
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -385,7 +390,11 @@ func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 			}
 		}
 
-		return changed, len(remaining) > 0, es.ValidateState()
+		if err = es.ValidateState(); err != nil {
+			return false, false, err
+		}
+
+		return changed, len(remaining) > 0, nil
 	}); err != nil {
 		return NewPowerPairZero(), err
 	}
@@ -507,7 +516,11 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults bitf
 			}
 		}
 
-		return changed, len(remaining) > 0, es.ValidateState()
+		if err = es.ValidateState(); err != nil {
+			return false, false, err
+		}
+
+		return changed, len(remaining) > 0, nil
 	}); err != nil {
 		return nil, recoveringPower, err
 	}
