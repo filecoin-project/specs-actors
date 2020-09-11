@@ -43,7 +43,7 @@ func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *abi.Empty
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	st := ConstructState(emptyMap, idAddr)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 	return nil
 }
 
@@ -58,7 +58,7 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 	}
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
 	// TODO We need to resolve the verifier address to an ID address before making this comparison.
@@ -66,7 +66,7 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 	if params.Address == st.RootKey {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
 	}
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -92,10 +92,10 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 
 func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *abi.EmptyValue {
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -121,14 +121,14 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	// TODO We need to resolve the client address to an ID address before making this comparison.
 	// https://github.com/filecoin-project/specs-actors/issues/556
 	if st.RootKey == params.Address {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as a verified client")
 	}
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -136,7 +136,7 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
 		// Validate caller is one of the verifiers.
-		verifierAddr := rt.Message().Caller()
+		verifierAddr := rt.Caller()
 		var verifierCap DataCap
 		found, err := verifiers.Get(AddrKey(verifierAddr), &verifierCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier %v", verifierAddr)
@@ -199,7 +199,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 	}
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
@@ -248,14 +248,14 @@ func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi
 	}
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	// TODO We need to resolve the client address to an ID address before making this comparison.
 	// https://github.com/filecoin-project/specs-actors/issues/556
 	if st.RootKey == params.Address {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Cannot restore allowance for Rootkey")
 	}
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 

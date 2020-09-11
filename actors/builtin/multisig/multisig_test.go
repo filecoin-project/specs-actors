@@ -8,6 +8,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	exitcode "github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/minio/blake2b-simd"
@@ -1162,7 +1163,7 @@ func TestAddSigner(t *testing.T) {
 			} else {
 				actor.addSigner(rt, tc.addSigner, tc.increase)
 				var st multisig.State
-				rt.Readonly(&st)
+				rt.StateReadonly(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
 			}
@@ -1331,7 +1332,7 @@ func TestRemoveSigner(t *testing.T) {
 			} else {
 				actor.removeSigner(rt, tc.removeSigner, tc.decrease)
 				var st multisig.State
-				rt.Readonly(&st)
+				rt.StateReadonly(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
 			}
@@ -1456,7 +1457,7 @@ func TestSwapSigners(t *testing.T) {
 			} else {
 				actor.swapSigners(rt, tc.from, tc.to)
 				var st multisig.State
-				rt.Readonly(&st)
+				rt.StateReadonly(&st)
 				assert.Equal(t, tc.expect, st.Signers)
 			}
 			rt.Verify()
@@ -1527,7 +1528,7 @@ func TestChangeThreshold(t *testing.T) {
 			} else {
 				actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
 				var st multisig.State
-				rt.Readonly(&st)
+				rt.StateReadonly(&st)
 				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
 			}
 			rt.Verify()
@@ -1743,7 +1744,7 @@ func (h *msActorHarness) constructAndVerify(rt *mock.Runtime, numApprovalsThresh
 	rt.Verify()
 }
 
-func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
+func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out cbor.Unmarshaler) exitcode.ExitCode {
 	proposeParams := &multisig.ProposeParams{
 		To:     to,
 		Value:  value,
@@ -1767,7 +1768,7 @@ func (h *msActorHarness) propose(rt *mock.Runtime, to addr.Address, value abi.To
 }
 
 // returns the proposal hash
-func (h *msActorHarness) proposeOK(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out runtime.CBORUnmarshaler) []byte {
+func (h *msActorHarness) proposeOK(rt *mock.Runtime, to addr.Address, value abi.TokenAmount, method abi.MethodNum, params []byte, out cbor.Unmarshaler) []byte {
 	code := h.propose(rt, to, value, method, params, out)
 	if code != exitcode.Ok {
 		h.t.Fatalf("unexpected exitcode %d from propose", code)
@@ -1785,7 +1786,7 @@ func (h *msActorHarness) proposeOK(rt *mock.Runtime, to addr.Address, value abi.
 	return proposalHashData
 }
 
-func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte, out runtime.CBORUnmarshaler) exitcode.ExitCode {
+func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams []byte, out cbor.Unmarshaler) exitcode.ExitCode {
 	approveParams := &multisig.TxnIDParams{ID: multisig.TxnID(txnID), ProposalHash: proposalParams}
 	ret := rt.Call(h.a.Approve, approveParams)
 	rt.Verify()
@@ -1802,7 +1803,7 @@ func (h *msActorHarness) approve(rt *mock.Runtime, txnID int64, proposalParams [
 	return approveReturn.Code
 }
 
-func (h *msActorHarness) approveOK(rt *mock.Runtime, txnID int64, proposalParams []byte, out runtime.CBORUnmarshaler) {
+func (h *msActorHarness) approveOK(rt *mock.Runtime, txnID int64, proposalParams []byte, out cbor.Unmarshaler) {
 	code := h.approve(rt, txnID, proposalParams, out)
 	if code != exitcode.Ok {
 		h.t.Fatalf("unexpected exitcode %d from approve", code)

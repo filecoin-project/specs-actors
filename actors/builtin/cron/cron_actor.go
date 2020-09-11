@@ -25,7 +25,7 @@ type ConstructorParams struct {
 
 func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	rt.State().Create(ConstructState(params.Entries))
+	rt.StateCreate(ConstructState(params.Entries))
 	return nil
 }
 
@@ -34,9 +34,9 @@ func (a Actor) EpochTick(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue 
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	for _, entry := range st.Entries {
-		_, _ = rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0))
+		_ = rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0), &builtin.Discard{})
 		// Any error and return value are ignored.
 	}
 

@@ -5,9 +5,10 @@ import (
 	"encoding/binary"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/cbor"
 	exitcode "github.com/filecoin-project/go-state-types/exitcode"
 	cid "github.com/ipfs/go-cid"
-	cbor "github.com/ipfs/go-ipld-cbor"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
 	vmr "github.com/filecoin-project/specs-actors/actors/runtime"
@@ -16,11 +17,11 @@ import (
 // Store defines an interface required to back the ADTs in this package.
 type Store interface {
 	Context() context.Context
-	cbor.IpldStore
+	ipldcbor.IpldStore
 }
 
 // Adapts a vanilla IPLD store as an ADT store.
-func WrapStore(ctx context.Context, store cbor.IpldStore) Store {
+func WrapStore(ctx context.Context, store ipldcbor.IpldStore) Store {
 	return &wstore{
 		ctx:       ctx,
 		IpldStore: store,
@@ -29,7 +30,7 @@ func WrapStore(ctx context.Context, store cbor.IpldStore) Store {
 
 type wstore struct {
 	ctx context.Context
-	cbor.IpldStore
+	ipldcbor.IpldStore
 }
 
 var _ Store = &wstore{}
@@ -58,7 +59,7 @@ func (r rtStore) Context() context.Context {
 func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
 	// The Go context is (un/fortunately?) dropped here.
 	// See https://github.com/filecoin-project/specs-actors/issues/140
-	if !r.Store().Get(c, out.(vmr.CBORUnmarshaler)) {
+	if !r.StoreGet(c, out.(cbor.Unmarshaler)) {
 		r.Abortf(exitcode.ErrNotFound, "not found")
 	}
 	return nil
@@ -67,7 +68,7 @@ func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
 func (r rtStore) Put(_ context.Context, v interface{}) (cid.Cid, error) {
 	// The Go context is (un/fortunately?) dropped here.
 	// See https://github.com/filecoin-project/specs-actors/issues/140
-	return r.Store().Put(v.(vmr.CBORMarshaler)), nil
+	return r.StorePut(v.(cbor.Marshaler)), nil
 }
 
 // Keyer defines an interface required to put values in mapping.

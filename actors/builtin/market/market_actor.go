@@ -10,6 +10,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -59,7 +60,7 @@ func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	st := ConstructState(emptyArray, emptyMap, emptyMSet)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 	return nil
 }
 
@@ -84,7 +85,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 
 	amountExtracted := abi.NewTokenAmount(0)
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(WritePermission).
 			withLockedTable(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
@@ -104,14 +105,14 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 		amountExtracted = ex
 	})
 
-	_, code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted)
+	code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted, &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "failed to send funds")
 	return nil
 }
 
 // Deposits the received value into the balance held in escrow.
 func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *abi.EmptyValue {
-	msgValue := rt.Message().ValueReceived()
+	msgValue := rt.ValueReceived()
 	builtin.RequireParam(rt, msgValue.GreaterThan(big.Zero()), "balance to add must be greater than zero")
 
 	// only signing parties can add balance for client AND provider.
@@ -120,7 +121,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 	nominal, _, _ := escrowAddress(rt, *providerOrClientAddress)
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withEscrowTable(WritePermission).
 			withLockedTable(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
@@ -166,7 +167,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 
 	_, worker, _ := builtin.RequestMinerControlAddrs(rt, provider)
-	if worker != rt.Message().Caller() {
+	if worker != rt.Caller() {
 		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
 	}
 
@@ -176,7 +177,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	var newDealIds []abi.DealID
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(WritePermission).
 			withDealProposals(WritePermission).withDealsByEpoch(WritePermission).withEscrowTable(WritePermission).
 			withLockedTable(WritePermission).build()
@@ -242,7 +243,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			resolvedClient, ok := resolvedAddrs[deal.Proposal.Client]
 			builtin.RequireParam(rt, ok, "could not get resolvedClient client address")
 
-			_, code := rt.Send(
+			code := rt.Send(
 				builtin.VerifiedRegistryActorAddr,
 				builtin.MethodsVerifiedRegistry.UseBytes,
 				&verifreg.UseBytesParams{
@@ -250,6 +251,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
 				},
 				abi.NewTokenAmount(0),
+				&builtin.Discard{},
 			)
 			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
 		}
@@ -274,10 +276,10 @@ type VerifyDealsForActivationReturn struct {
 // The weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
 func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActivationParams) *VerifyDealsForActivationReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Message().Caller()
+	minerAddr := rt.Caller()
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	store := adt.AsStore(rt)
 
 	dealWeight, verifiedWeight, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
@@ -298,14 +300,14 @@ type ActivateDealsParams struct {
 // update the market's internal state accordingly.
 func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Message().Caller()
+	minerAddr := rt.Caller()
 	currEpoch := rt.CurrEpoch()
 
 	var st State
 	store := adt.AsStore(rt)
 
 	// Update deal dealStates.
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		_, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
@@ -359,7 +361,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal dealProposals")
 
@@ -374,7 +376,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 		})
 	}
 
-	commd, err := rt.Syscalls().ComputeUnsealedSectorCID(params.SectorType, pieces)
+	commd, err := rt.ComputeUnsealedSectorCID(params.SectorType, pieces)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to compute unsealed sector CID: %s", err)
 	}
@@ -392,10 +394,10 @@ type OnMinerSectorsTerminateParams struct {
 // amount to client.
 func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTerminateParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Message().Caller()
+	minerAddr := rt.Caller()
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
 			withDealProposals(ReadOnlyPermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state")
@@ -448,7 +450,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var timedOutVerifiedDeals []*DealProposal
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
@@ -548,7 +550,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	})
 
 	for _, d := range timedOutVerifiedDeals {
-		_, code := rt.Send(
+		code := rt.Send(
 			builtin.VerifiedRegistryActorAddr,
 			builtin.MethodsVerifiedRegistry.RestoreBytes,
 			&verifreg.RestoreBytesParams{
@@ -556,16 +558,17 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 				DealSize: big.NewIntUnsigned(uint64(d.PieceSize)),
 			},
 			abi.NewTokenAmount(0),
+			&builtin.Discard{},
 		)
 
 		if !code.IsSuccess() {
-			rt.Log(runtime.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
+			rt.Log(rtt.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
 				"provider: %v, got code %v", d.Client, d.PieceSize, d.Provider, code)
 		}
 	}
 
 	if !amountSlashed.IsZero() {
-		_, e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed)
+		e := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amountSlashed, &builtin.Discard{})
 		builtin.RequireSuccess(rt, e, "expected send to burnt funds actor to succeed")
 	}
 
@@ -748,20 +751,16 @@ func getDealProposal(proposals *DealArray, dealID abi.DealID) (*DealProposal, er
 
 // Requests the current epoch target block reward from the reward actor.
 func requestCurrentBaselinePower(rt Runtime) abi.StoragePower {
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
-	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
 	var ret reward.ThisEpochRewardReturn
-	err := rwret.Into(&ret)
-	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
+	code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &ret)
+	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
 	return ret.ThisEpochBaselinePower
 }
 
 // Requests the current network total power and pledge from the power actor.
 func requestCurrentNetworkPower(rt Runtime) (rawPower, qaPower abi.StoragePower) {
-	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
-	builtin.RequireSuccess(rt, code, "failed to check current power")
 	var pwr power.CurrentTotalPowerReturn
-	err := pwret.Into(&pwr)
-	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
+	code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
+	builtin.RequireSuccess(rt, code, "failed to check current power")
 	return pwr.RawBytePower, pwr.QualityAdjPower
 }

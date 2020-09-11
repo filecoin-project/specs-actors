@@ -36,7 +36,7 @@ func (a Actor) Constructor(rt runtime.Runtime, address *addr.Address) *abi.Empty
 		rt.Abortf(exitcode.ErrIllegalArgument, "address must use BLS or SECP protocol, got %v", address.Protocol())
 	}
 	st := State{Address: *address}
-	rt.State().Create(&st)
+	rt.StateCreate(&st)
 	return nil
 }
 
@@ -44,6 +44,6 @@ func (a Actor) Constructor(rt runtime.Runtime, address *addr.Address) *abi.Empty
 func (a Actor) PubkeyAddress(rt runtime.Runtime, _ *abi.EmptyValue) *addr.Address {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	return &st.Address
 }

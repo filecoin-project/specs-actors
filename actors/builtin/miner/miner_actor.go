@@ -14,6 +14,7 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -113,29 +114,29 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	}
 
 	emptyBitfield := bitfield.NewFromSet(nil)
-	emptyBitfieldCid := rt.Store().Put(emptyBitfield)
+	emptyBitfieldCid := rt.StorePut(emptyBitfield)
 
 	emptyDeadline := ConstructDeadline(emptyArray)
-	emptyDeadlineCid := rt.Store().Put(emptyDeadline)
+	emptyDeadlineCid := rt.StorePut(emptyDeadline)
 
 	emptyDeadlines := ConstructDeadlines(emptyDeadlineCid)
 	emptyVestingFunds := ConstructVestingFunds()
-	emptyDeadlinesCid := rt.Store().Put(emptyDeadlines)
-	emptyVestingFundsCid := rt.Store().Put(emptyVestingFunds)
+	emptyDeadlinesCid := rt.StorePut(emptyDeadlines)
+	emptyVestingFundsCid := rt.StorePut(emptyVestingFunds)
 
 	currEpoch := rt.CurrEpoch()
-	offset, err := assignProvingPeriodOffset(rt.Message().Receiver(), currEpoch, rt.Syscalls().HashBlake2b)
+	offset, err := assignProvingPeriodOffset(rt.Receiver(), currEpoch, rt.HashBlake2b)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period offset")
 	periodStart := nextProvingPeriodStart(currEpoch, offset)
 	Assert(periodStart > currEpoch)
 
 	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
-	infoCid := rt.Store().Put(info)
+	infoCid := rt.StorePut(info)
 
 	state, err := ConstructState(infoCid, periodStart, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
-	rt.State().Create(state)
+	rt.StateCreate(state)
 
 	// Register first cron callback for epoch before the first proving period starts.
 	enrollCronEvent(rt, periodStart-1, &CronEventPayload{
@@ -157,7 +158,7 @@ type GetControlAddressesReturn struct {
 func (a Actor) ControlAddresses(rt Runtime, _ *abi.EmptyValue) *GetControlAddressesReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	info := getMinerInfo(rt, &st)
 	return &GetControlAddressesReturn{
 		Owner:        info.Owner,
@@ -187,7 +188,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 
 	var st State
 	isWorkerChange := false
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		// Only the Owner is allowed to change the newWorker and control addresses.
@@ -236,7 +237,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *abi.EmptyVa
 	// TODO: Consider limiting the maximum number of bytes used by the peer ID on-chain.
 	// https://github.com/filecoin-project/specs-actors/issues/712
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -256,7 +257,7 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *abi
 	// TODO: Consider limiting the maximum number of bytes used by multiaddrs on-chain.
 	// https://github.com/filecoin-project/specs-actors/issues/712
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -324,7 +325,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var postResult *PoStResult
 
 	var info *MinerInfo
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info = getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -490,7 +491,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *abi.Emp
 	store := adt.AsStore(rt)
 	var st State
 	newlyVested := big.Zero()
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -592,7 +593,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 
 	// Verify locked funds are are at least the sum of sector initial pledges.
 	// Note that this call does not actually compute recent vesting, so the reported locked funds may be
@@ -627,11 +628,12 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		RegisteredSealProof: precommit.Info.SealProof,
 	})
 
-	_, code := rt.Send(
+	code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.SubmitPoRepForBulkVerify,
 		svi,
 		abi.NewTokenAmount(0),
+		&builtin.Discard{},
 	)
 	builtin.RequireSuccess(rt, code, "failed to submit proof for bulk verification")
 	return nil
@@ -658,7 +660,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// a constant number of them.
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	store := adt.AsStore(rt)
 	info := getMinerInfo(rt, &st)
 
@@ -678,7 +680,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// Check (and activate) storage deals associated to sector. Abort if checks failed.
 		// TODO: we should batch these calls...
 		// https://github.com/filecoin-project/specs-actors/issues/474
-		_, code := rt.Send(
+		code := rt.Send(
 			builtin.StorageMarketActorAddr,
 			builtin.MethodsMarket.ActivateDeals,
 			&market.ActivateDealsParams{
@@ -686,10 +688,11 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 				SectorExpiry: precommit.Info.Expiration,
 			},
 			abi.NewTokenAmount(0),
+			&builtin.Discard{},
 		)
 
 		if code != exitcode.Ok {
-			rt.Log(runtime.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
+			rt.Log(rtt.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
 			continue
 		}
 
@@ -716,7 +719,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	totalPrecommitDeposit := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
 	newlyVested := big.Zero()
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		// Schedule expiration for replaced sectors to the end of their next deadline window.
 		// They can't be removed right now because we want to challenge them immediately before termination.
 		err = st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
@@ -730,7 +733,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 
 			// This should have been caught in precommit, but don't let other sectors fail because of it.
 			if duration < MinSectorExpiration {
-				rt.Log(runtime.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
+				rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
 				continue
 			}
 
@@ -805,7 +808,7 @@ func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *a
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
 
@@ -868,7 +871,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	pledgeDelta := big.Zero()
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -1019,7 +1022,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	store := adt.AsStore(rt)
 	currEpoch := rt.CurrEpoch()
 	powerDelta := NewPowerPairZero()
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		info := getMinerInfo(rt, &st)
@@ -1104,7 +1107,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 	store := adt.AsStore(rt)
 	var st State
 	newFaultPowerTotal := NewPowerPairZero()
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
@@ -1176,7 +1179,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
@@ -1237,7 +1240,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
@@ -1300,7 +1303,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 
 	store := adt.AsStore(rt)
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
@@ -1328,7 +1331,7 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *abi.Emp
 
 	var st State
 	newlyVested := big.Zero()
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var err error
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker, builtin.RewardActorAddr)...)
@@ -1360,9 +1363,9 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	// Note: only the first reporter of any fault is rewarded.
 	// Subsequent invocations fail because the target miner has been removed.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	reporter := rt.Message().Caller()
+	reporter := rt.Caller()
 
-	fault, err := rt.Syscalls().VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra)
+	fault, err := rt.VerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "fault not verified: %s", err)
 	}
@@ -1375,18 +1378,19 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 
 	// Reward reporter with a share of the miner's current balance.
 	slasherReward := RewardForConsensusSlashReport(faultAge, rt.CurrentBalance())
-	_, code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward)
+	code := rt.Send(reporter, builtin.MethodSend, nil, slasherReward, &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "failed to reward reporter")
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 
 	// Notify power actor with lock-up total being removed.
-	_, code = rt.Send(
+	code = rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.OnConsensusFault,
 		&st.LockedFunds,
 		abi.NewTokenAmount(0),
+		&builtin.Discard{},
 	)
 	builtin.RequireSuccess(rt, code, "failed to notify power actor on consensus fault")
 
@@ -1407,7 +1411,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 	}
 	var info *MinerInfo
 	newlyVested := big.Zero()
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
 		// Only the owner is allowed to withdraw the balance as it belongs to/is controlled by the owner
@@ -1438,7 +1442,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 	Assert(amountWithdrawn.GreaterThanEqual(big.Zero()))
 	Assert(amountWithdrawn.LessThanEqual(currBalance))
 
-	_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn)
+	code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 
 	pledgeDelta := newlyVested.Neg()
@@ -1491,7 +1495,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 	)
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var err error
 		result, more, err = st.PopEarlyTerminations(store, AddressedPartitionsMax, AddressedSectorsMax)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop early terminations")
@@ -1577,7 +1581,7 @@ func handleProvingDeadline(rt Runtime) {
 	pledgeDelta := abi.NewTokenAmount(0)
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var err error
 		{
 			// Vest locked funds.
@@ -1788,7 +1792,7 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "failed to serialize payload: %v", err)
 	}
-	_, code := rt.Send(
+	code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.EnrollCronEvent,
 		&power.EnrollCronEventParams{
@@ -1796,6 +1800,7 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 			Payload:    payload.Bytes(),
 		},
 		abi.NewTokenAmount(0),
+		&builtin.Discard{},
 	)
 	builtin.RequireSuccess(rt, code, "failed to enroll cron event")
 }
@@ -1804,7 +1809,7 @@ func requestUpdatePower(rt Runtime, delta PowerPair) {
 	if delta.IsZero() {
 		return
 	}
-	_, code := rt.Send(
+	code := rt.Send(
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.UpdateClaimedPower,
 		&power.UpdateClaimedPowerParams{
@@ -1812,6 +1817,7 @@ func requestUpdatePower(rt Runtime, delta PowerPair) {
 			QualityAdjustedDelta: delta.QA,
 		},
 		abi.NewTokenAmount(0),
+		&builtin.Discard{},
 	)
 	builtin.RequireSuccess(rt, code, "failed to update power with %v", delta)
 }
@@ -1819,7 +1825,7 @@ func requestUpdatePower(rt Runtime, delta PowerPair) {
 func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealID) {
 	for len(dealIDs) > 0 {
 		size := min64(cbg.MaxLength, uint64(len(dealIDs)))
-		_, code := rt.Send(
+		code := rt.Send(
 			builtin.StorageMarketActorAddr,
 			builtin.MethodsMarket.OnMinerSectorsTerminate,
 			&market.OnMinerSectorsTerminateParams{
@@ -1827,6 +1833,7 @@ func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealI
 				DealIDs: dealIDs[:size],
 			},
 			abi.NewTokenAmount(0),
+			&builtin.Discard{},
 		)
 		builtin.RequireSuccess(rt, code, "failed to terminate deals, exit code %v", code)
 		dealIDs = dealIDs[size:]
@@ -1861,12 +1868,12 @@ func havePendingEarlyTerminations(rt Runtime, st *State) bool {
 }
 
 func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof) {
-	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
+	minerActorID, err := addr.IDFromAddress(rt.Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
 	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
-	receiver := rt.Message().Receiver()
+	receiver := rt.Receiver()
 	err = receiver.MarshalCBOR(&addrBuf)
 	AssertNoError(err)
 	postRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
@@ -1889,7 +1896,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	}
 
 	// Verify the PoSt Proof
-	if err = rt.Syscalls().VerifyPoSt(pvInfo); err != nil {
+	if err = rt.VerifyPoSt(pvInfo); err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid PoSt %+v: %s", pvInfo, err)
 	}
 }
@@ -1921,11 +1928,11 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 
 	commD := requestUnsealedSectorCID(rt, params.RegisteredSealProof, params.DealIDs)
 
-	minerActorID, err := addr.IDFromAddress(rt.Message().Receiver())
+	minerActorID, err := addr.IDFromAddress(rt.Receiver())
 	AssertNoError(err) // Runtime always provides ID-addresses
 
 	buf := new(bytes.Buffer)
-	receiver := rt.Message().Receiver()
+	receiver := rt.Receiver()
 	err = receiver.MarshalCBOR(buf)
 	AssertNoError(err)
 
@@ -1950,7 +1957,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 // Closes down this miner by erasing its power, terminating all its deals and burning its funds
 func terminateMiner(rt Runtime) {
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 
 	requestTerminateAllDeals(rt, &st)
 
@@ -1960,7 +1967,8 @@ func terminateMiner(rt Runtime) {
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
 func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dealIDs []abi.DealID) cid.Cid {
-	ret, code := rt.Send(
+	var unsealedCID cbg.CborCid
+	code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.ComputeDataCommitment,
 		&market.ComputeDataCommitmentParams{
@@ -1968,16 +1976,16 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 			DealIDs:    dealIDs,
 		},
 		abi.NewTokenAmount(0),
+		&unsealedCID,
 	)
 	builtin.RequireSuccess(rt, code, "failed request for unsealed sector CID for deals %v", dealIDs)
-	var unsealedCID cbg.CborCid
-	AssertNoError(ret.Into(&unsealedCID))
 	return cid.Cid(unsealedCID)
 }
 
 func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
 	var dealWeights market.VerifyDealsForActivationReturn
-	ret, code := rt.Send(
+
+	code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.VerifyDealsForActivation,
 		&market.VerifyDealsForActivationParams{
@@ -1986,16 +1994,16 @@ func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpi
 			SectorExpiry: sectorExpiry,
 		},
 		abi.NewTokenAmount(0),
+		&dealWeights,
 	)
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-	AssertNoError(ret.Into(&dealWeights))
 	return dealWeights
 
 }
 
 func commitWorkerKeyChange(rt Runtime) *abi.EmptyValue {
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 		// A previously scheduled key change could have been replaced with a new key change request
 		// scheduled in the future. This case should be treated as a no-op.
@@ -2014,21 +2022,17 @@ func commitWorkerKeyChange(rt Runtime) *abi.EmptyValue {
 // Requests the current epoch target block reward from the reward actor.
 // return value includes reward, smoothed estimate of reward, and baseline power
 func requestCurrentEpochBlockReward(rt Runtime) reward.ThisEpochRewardReturn {
-	rwret, code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero())
-	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
 	var ret reward.ThisEpochRewardReturn
-	err := rwret.Into(&ret)
-	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal target power value")
+	code := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &ret)
+	builtin.RequireSuccess(rt, code, "failed to check epoch baseline power")
 	return ret
 }
 
 // Requests the current network total power and pledge from the power actor.
 func requestCurrentTotalPower(rt Runtime) *power.CurrentTotalPowerReturn {
-	pwret, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero())
-	builtin.RequireSuccess(rt, code, "failed to check current power")
 	var pwr power.CurrentTotalPowerReturn
-	err := pwret.Into(&pwr)
-	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to unmarshal power total value")
+	code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
+	builtin.RequireSuccess(rt, code, "failed to check current power")
 	return &pwr
 }
 
@@ -2077,13 +2081,9 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	}
 
 	if raw.Protocol() != addr.BLS {
-		ret, code := rt.Send(resolved, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero())
-		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %v", resolved)
 		var pubkey addr.Address
-		err := ret.Into(&pubkey)
-		if err != nil {
-			rt.Abortf(exitcode.ErrSerialization, "failed to deserialize address result: %v", ret)
-		}
+		code := rt.Send(resolved, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &pubkey)
+		builtin.RequireSuccess(rt, code, "failed to fetch account pubkey from %v", resolved)
 		if pubkey.Protocol() != addr.BLS {
 			rt.Abortf(exitcode.ErrIllegalArgument, "worker account %v must have BLS pubkey, was %v", resolved, pubkey.Protocol())
 		}
@@ -2093,14 +2093,14 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 
 func burnFunds(rt Runtime, amt abi.TokenAmount) {
 	if amt.GreaterThan(big.Zero()) {
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt)
+		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}
 }
 
 func notifyPledgeChanged(rt Runtime, pledgeDelta abi.TokenAmount) {
 	if !pledgeDelta.IsZero() {
-		_, code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero())
+		code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to update total pledge")
 	}
 }

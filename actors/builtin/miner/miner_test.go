@@ -122,10 +122,10 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, uint64(0), st.CurrentDeadline)
 
 		var deadlines miner.Deadlines
-		rt.Get(st.Deadlines, &deadlines)
+		rt.StoreGet(st.Deadlines, &deadlines)
 		for i := uint64(0); i < miner.WPoStPeriodDeadlines; i++ {
 			var deadline miner.Deadline
-			rt.Get(deadlines.Due[i], &deadline)
+			rt.StoreGet(deadlines.Due[i], &deadline)
 			assert.True(t, deadline.Partitions.Defined())
 			assert.True(t, deadline.ExpirationsEpochs.Defined())
 			assertEmptyBitfield(t, deadline.PostSubmissions)
@@ -631,7 +631,7 @@ func TestCommitments(t *testing.T) {
 			require.NoError(t, partitions.Set(partIdx, &partition))
 			deadline.Partitions, err = partitions.Root()
 			require.NoError(t, err)
-			deadlines.Due[dlIdx] = rt.Put(deadline)
+			deadlines.Due[dlIdx] = rt.StorePut(deadline)
 			require.NoError(t, st.SaveDeadlines(rt.AdtStore(), deadlines))
 			// Phew!
 

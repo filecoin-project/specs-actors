@@ -8,41 +8,35 @@ import (
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	"github.com/filecoin-project/go-state-types/rt"
 	cid "github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 )
 
-// Specifies importance of message, LogLevel numbering is consistent with the uber-go/zap package.
-type LogLevel int
-
-const (
-	// DebugLevel logs are typically voluminous, and are usually disabled in
-	// production.
-	DEBUG LogLevel = iota - 1
-	// InfoLevel is the default logging priority.
-	INFO
-	// WarnLevel logs are more important than Info, but don't need individual
-	// human review.
-	WARN
-	// ErrorLevel logs are high-priority. If an application is running smoothly,
-	// it shouldn't generate any error-level logs.
-	ERROR
-)
-
 // Runtime is the VM's internal runtime object.
 // this is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
-	// The network protocol version number at the current epoch.
-	NetworkVersion() network.Version
-
 	// Information related to the current message being executed.
 	// When an actor invokes a method on another actor as a sub-call, these values reflect
 	// the sub-call context, rather than the top-level context.
-	Message() Message
+	Message
+
+	// Provides a handle for the actor's state object.
+	StateHandle
+
+	// Provides IPLD storage for actor state
+	Store
+
+	// Provides the system call interface.
+	Syscalls
+
+	// The network protocol version number at the current epoch.
+	NetworkVersion() network.Version
 
 	// The current chain epoch number. The genesis block has epoch zero.
 	CurrEpoch() abi.ChainEpoch
@@ -88,16 +82,10 @@ type Runtime interface {
 	// See GetRandomnessFromBeacon for notes about the personalization tag, epoch, and entropy.
 	GetRandomnessFromTickets(personalization crypto.DomainSeparationTag, randEpoch abi.ChainEpoch, entropy []byte) abi.Randomness
 
-	// Provides a handle for the actor's state object.
-	State() StateHandle
-
-	Store() Store
-
 	// Sends a message to another actor, returning the exit code and return value envelope.
 	// If the invoked method does not return successfully, its state changes (and that of any messages it sent in turn)
 	// will be rolled back.
-	// The result is never a bare nil, but may be (a wrapper of) abi.Empty.
-	Send(toAddr addr.Address, methodNum abi.MethodNum, params CBORMarshaler, value abi.TokenAmount) (SendReturn, exitcode.ExitCode)
+	Send(toAddr addr.Address, methodNum abi.MethodNum, params cbor.Marshaler, value abi.TokenAmount, out cbor.Er) exitcode.ExitCode
 
 	// Halts execution upon an error from which the receiver cannot recover. The caller will receive the exitcode and
 	// an empty return value. State changes made within this call will be rolled back.
@@ -123,9 +111,6 @@ type Runtime interface {
 	// May only be called by the actor itself.
 	DeleteActor(beneficiary addr.Address)
 
-	// Provides the system call interface.
-	Syscalls() Syscalls
-
 	// Returns the total token supply in circulation at the beginning of the current epoch.
 	// The circulating supply is the sum of:
 	// - rewards emitted by the reward actor,
@@ -141,8 +126,8 @@ type Runtime interface {
 	// should not be used by actor code directly.
 	Context() context.Context
 
-	// Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
-	StartSpan(name string) TraceSpan
+	// Starts a new tracing span. The span must be End()ed explicitly by invoking or deferring EndSpan
+	StartSpan(name string) (EndSpan func())
 
 	// ChargeGas charges specified amount of `gas` for execution.
 	// `name` provides information about gas charging point
@@ -152,15 +137,15 @@ type Runtime interface {
 	ChargeGas(name string, gas int64, virtual int64)
 
 	// Note events that may make debugging easier
-	Log(level LogLevel, msg string, args ...interface{})
+	Log(level rt.LogLevel, msg string, args ...interface{})
 }
 
 // Store defines the storage module exposed to actors.
 type Store interface {
 	// Retrieves and deserializes an object from the store into `o`. Returns whether successful.
-	Get(c cid.Cid, o CBORUnmarshaler) bool
+	StoreGet(c cid.Cid, o cbor.Unmarshaler) bool
 	// Serializes and stores an object, returning its CID.
-	Put(x CBORMarshaler) cid.Cid
+	StorePut(x cbor.Marshaler) cid.Cid
 }
 
 // Message contains information available to the actor about the executing message.
@@ -209,29 +194,16 @@ type Syscalls interface {
 	VerifyConsensusFault(h1, h2, extra []byte) (*ConsensusFault, error)
 }
 
-// The return type from a message send from one actor to another. This abstracts over the internal representation of
-// the return, in particular whether it has been serialized to bytes or just passed through.
-// Production code is expected to de/serialize, but test and other code may pass the value straight through.
-type SendReturn interface {
-	Into(CBORUnmarshaler) error
-}
-
-// Provides (minimal) tracing facilities to actor code.
-type TraceSpan interface {
-	// Ends the span
-	End()
-}
-
 // StateHandle provides mutable, exclusive access to actor state.
 type StateHandle interface {
 	// Create initializes the state object.
 	// This is only valid in a constructor function and when the state has not yet been initialized.
-	Create(obj CBORMarshaler)
+	StateCreate(obj cbor.Marshaler)
 
 	// Readonly loads a readonly copy of the state into the argument.
 	//
 	// Any modification to the state is illegal and will result in an abort.
-	Readonly(obj CBORUnmarshaler)
+	StateReadonly(obj cbor.Unmarshaler)
 
 	// Transaction loads a mutable version of the state into the `obj` argument and protects
 	// the execution from side effects (including message send).
@@ -247,14 +219,14 @@ type StateHandle interface {
 	// # Usage
 	// ```go
 	// var state SomeState
-	// ret := rt.State().Transaction(&state, func() (interface{}) {
+	// ret := rt.StateTransaction(&state, func() (interface{}) {
 	//   // make some changes
 	//	 st.ImLoaded = True
 	//   return st.Thing, nil
 	// })
 	// // state.ImLoaded = False // BAD!! state is readonly outside the lambda, it will panic
 	// ```
-	Transaction(obj CBORer, f func())
+	StateTransaction(obj cbor.Er, f func())
 }
 
 // Result of checking two headers for a consensus fault.
@@ -275,21 +247,6 @@ const (
 	ConsensusFaultParentGrinding   ConsensusFaultType = 2
 	ConsensusFaultTimeOffsetMining ConsensusFaultType = 3
 )
-
-// These interfaces are intended to match those from whyrusleeping/cbor-gen, such that code generated from that
-// system is automatically usable here (but not mandatory).
-type CBORMarshaler interface {
-	MarshalCBOR(w io.Writer) error
-}
-
-type CBORUnmarshaler interface {
-	UnmarshalCBOR(r io.Reader) error
-}
-
-type CBORer interface {
-	CBORMarshaler
-	CBORUnmarshaler
-}
 
 // Wraps already-serialized bytes as CBOR-marshalable.
 type CBORBytes []byte

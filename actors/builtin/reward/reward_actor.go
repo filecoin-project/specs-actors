@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
@@ -34,7 +35,7 @@ func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePow
 		return nil // linter does not understand abort exiting
 	}
 	st := ConstructState(*currRealizedPower)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 	return nil
 }
 
@@ -80,13 +81,13 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 	penalty := abi.NewTokenAmount(0)
 	totalReward := big.Zero()
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
 		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
 		totalReward = big.Add(blockReward, params.GasReward)
 		currBalance := rt.CurrentBalance()
 		if totalReward.GreaterThan(currBalance) {
-			rt.Log(runtime.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
+			rt.Log(rtt.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
 			totalReward = currBalance
 
 			blockReward = big.Sub(totalReward, params.GasReward)
@@ -106,18 +107,18 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 		"reward payable %v + penalty %v exceeds balance %v", rewardPayable, penalty, priorBalance)
 
 	// if this fails, we can assume the miner is responsible and avoid failing here.
-	_, code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable)
+	code := rt.Send(minerAddr, builtin.MethodsMiner.AddLockedFund, &rewardPayable, rewardPayable, &builtin.Discard{})
 	if !code.IsSuccess() {
-		rt.Log(runtime.ERROR, "failed to send AddLockedFund call to the miner actor with funds: %v, code: %v", rewardPayable, code)
-		_, code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, rewardPayable)
+		rt.Log(rtt.ERROR, "failed to send AddLockedFund call to the miner actor with funds: %v, code: %v", rewardPayable, code)
+		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, rewardPayable, &builtin.Discard{})
 		if !code.IsSuccess() {
-			rt.Log(runtime.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
+			rt.Log(rtt.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
 		}
 	}
 
 	// Burn the penalty amount.
 	if penalty.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty)
+		code = rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penalty, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to send penalty to burnt funds actor")
 	}
 
@@ -137,7 +138,7 @@ func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *abi.EmptyValue) *ThisEpoch
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	return &ThisEpochRewardReturn{
 		ThisEpochReward:         st.ThisEpochReward,
 		ThisEpochBaselinePower:  st.ThisEpochBaselinePower,
@@ -155,7 +156,7 @@ func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.Stora
 	}
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		prev := st.Epoch
 		// if there were null runs catch up the computation until
 		// st.Epoch == rt.CurrEpoch()
