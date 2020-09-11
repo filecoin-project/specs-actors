@@ -180,7 +180,7 @@ type Syscalls interface {
 	// Verifies a sector seal proof.
 	VerifySeal(vi proof.SealVerifyInfo) error
 
-	BatchVerifySeals(vis map[address.Address][]proof.SealVerifyInfo) (map[address.Address][]bool, error)
+	BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo) (map[addr.Address][]bool, error)
 
 	// Verifies a proof of spacetime.
 	VerifyPoSt(vi proof.WindowPoStVerifyInfo) error

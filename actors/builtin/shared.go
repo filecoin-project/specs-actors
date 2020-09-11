@@ -9,9 +9,8 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
 
-	runtime "github.com/filecoin-project/specs-actors/actors/runtime"
+	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 

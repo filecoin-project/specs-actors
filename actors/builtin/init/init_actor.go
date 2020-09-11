@@ -81,7 +81,7 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.CreateActor(params.CodeCID, idAddr)
 
 	// Invoke constructor.
-	code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.ValueReceived(), &builtin.Discard{})
+	code := rt.Send(idAddr, builtin.MethodConstructor, builtin.CBORBytes(params.ConstructorParams), rt.ValueReceived(), &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
 	return &ExecReturn{IDAddress: idAddr, RobustAddress: uniqueAddress}

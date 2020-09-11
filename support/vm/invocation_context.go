@@ -8,12 +8,15 @@ import (
 	"reflect"
 	"runtime/debug"
 
+	"github.com/filecoin-project/go-state-types/cbor"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	"github.com/filecoin-project/go-state-types/rt"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -64,43 +67,7 @@ func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage
 
 var _ runtime.StateHandle = (*invocationContext)(nil)
 
-func (ic *invocationContext) Create(obj runtime.CBORMarshaler) {
-	actr := ic.loadActor()
-	if actr.Head.Defined() && !ic.emptyObject.Equals(actr.Head) {
-		ic.Abortf(exitcode.SysErrorIllegalActor, "failed to construct actor state: already initialized")
-	}
-	c, err := ic.rt.store.Put(ic.rt.ctx, obj)
-	if err != nil {
-		ic.Abortf(exitcode.ErrIllegalState, "failed to create actor state")
-	}
-	actr.Head = c
-	ic.storeActor(actr)
-}
-
-// Readonly is the implementation of the ActorStateHandle interface.
-func (ic *invocationContext) Readonly(obj runtime.CBORUnmarshaler) {
-	// Load state to obj.
-	ic.loadState(obj)
-}
-
-// Transaction is the implementation of the ActorStateHandle interface.
-func (ic *invocationContext) Transaction(obj runtime.CBORer, f func()) {
-	if obj == nil {
-		ic.Abortf(exitcode.SysErrorIllegalActor, "Must not pass nil to Transaction()")
-	}
-
-	// Load state to obj.
-	ic.loadState(obj)
-
-	// Call user code allowing mutation but not side-effects
-	ic.allowSideEffects = false
-	f()
-	ic.allowSideEffects = true
-
-	ic.replace(obj)
-}
-
-func (ic *invocationContext) loadState(obj runtime.CBORUnmarshaler) cid.Cid {
+func (ic *invocationContext) loadState(obj cbor.Unmarshaler) cid.Cid {
 	// The actor must be loaded from store every time since the state may have changed via a different state handle
 	// (e.g. in a recursive call).
 	actr := ic.loadActor()
@@ -140,18 +107,94 @@ func (ic *invocationContext) storeActor(actr *TestActor) {
 var _ runtime.Runtime = (*invocationContext)(nil)
 
 // Store implements runtime.Runtime.
-func (ic *invocationContext) Store() runtime.Store {
-	return &storeWrapper{s: ic.rt.store, rt: ic.rt}
+func (ic *invocationContext) StoreGet(c cid.Cid, o cbor.Unmarshaler) bool {
+	sw := &storeWrapper{s: ic.rt.store, rt: ic.rt}
+	return sw.StoreGet(c, o)
 }
 
-// Message implements runtime.InvocationContext.
-func (ic *invocationContext) Message() runtime.Message {
-	return ic.msg
+func (ic *invocationContext) StorePut(x cbor.Marshaler) cid.Cid {
+	sw := &storeWrapper{s: ic.rt.store, rt: ic.rt}
+	return sw.StorePut(x)
 }
 
-// State implements runtime.InvocationContext.
-func (ic *invocationContext) State() runtime.StateHandle {
-	return ic
+// These methods implement
+// ValueReceived implements runtime.Message
+func (ic *invocationContext) ValueReceived() abi.TokenAmount {
+	return ic.msg.ValueReceived()
+}
+
+// Caller implements runtime.Message
+func (ic *invocationContext) Caller() address.Address {
+	return ic.msg.Caller()
+}
+
+// Receiver implements runtime.Message
+func (ic *invocationContext) Receiver() address.Address {
+	return ic.msg.Receiver()
+}
+
+func (ic *invocationContext) StateCreate(obj cbor.Marshaler) {
+	actr := ic.loadActor()
+	if actr.Head.Defined() && !ic.emptyObject.Equals(actr.Head) {
+		ic.Abortf(exitcode.SysErrorIllegalActor, "failed to construct actor state: already initialized")
+	}
+	c, err := ic.rt.store.Put(ic.rt.ctx, obj)
+	if err != nil {
+		ic.Abortf(exitcode.ErrIllegalState, "failed to create actor state")
+	}
+	actr.Head = c
+	ic.storeActor(actr)
+}
+
+// Readonly is the implementation of the ActorStateHandle interface.
+func (ic *invocationContext) StateReadonly(obj cbor.Unmarshaler) {
+	// Load state to obj.
+	ic.loadState(obj)
+}
+
+// Transaction is the implementation of the ActorStateHandle interface.
+func (ic *invocationContext) StateTransaction(obj cbor.Er, f func()) {
+	if obj == nil {
+		ic.Abortf(exitcode.SysErrorIllegalActor, "Must not pass nil to Transaction()")
+	}
+
+	// Load state to obj.
+	ic.loadState(obj)
+
+	// Call user code allowing mutation but not side-effects
+	ic.allowSideEffects = false
+	f()
+	ic.allowSideEffects = true
+
+	ic.replace(obj)
+}
+
+func (ic *invocationContext) VerifySignature(signature crypto.Signature, signer address.Address, plaintext []byte) error {
+	return ic.Syscalls().VerifySignature(signature, signer, plaintext)
+}
+
+func (ic *invocationContext) HashBlake2b(data []byte) [32]byte {
+	return ic.Syscalls().HashBlake2b(data)
+}
+
+func (ic *invocationContext) ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error) {
+	return ic.Syscalls().ComputeUnsealedSectorCID(reg, pieces)
+}
+
+func (ic *invocationContext) VerifySeal(vi proof.SealVerifyInfo) error {
+	return ic.Syscalls().VerifySeal(vi)
+}
+
+func (ic *invocationContext) BatchVerifySeals(vis map[address.Address][]proof.SealVerifyInfo) (map[address.Address][]bool, error) {
+	return ic.Syscalls().BatchVerifySeals(vis)
+}
+
+func (ic *invocationContext) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
+	return ic.Syscalls().VerifyPoSt(vi)
+}
+
+func (ic *invocationContext) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
+	return ic.Syscalls().VerifyConsensusFault(h1, h2, extra)
 }
 
 func (ic *invocationContext) NetworkVersion() network.Version {
@@ -256,7 +299,7 @@ func (ic *invocationContext) NewActorAddress() address.Address {
 }
 
 // Send implements runtime.InvocationContext.
-func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNum, params runtime.CBORMarshaler, value abi.TokenAmount) (ret runtime.SendReturn, errcode exitcode.ExitCode) {
+func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNum, params cbor.Marshaler, value abi.TokenAmount, out cbor.Er) (errcode exitcode.ExitCode) {
 	// check if side-effects are allowed
 	if !ic.allowSideEffects {
 		ic.Abortf(exitcode.SysErrorIllegalActor, "Calling Send() is not allowed during side-effect lock")
@@ -272,7 +315,12 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 	}
 
 	newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, fromActor, ic.emptyObject)
-	return newCtx.invoke()
+	ret, code := newCtx.invoke()
+	err := ret.Into(out)
+	if err != nil {
+		ic.Abortf(exitcode.ErrSerialization, "failed to serialize send return value into output parameter")
+	}
+	return code
 }
 
 // CreateActor implements runtime.ExtendedInvocationContext.
@@ -285,7 +333,7 @@ func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only have one instance of singleton actors.")
 	}
 
-	ic.rt.Log(runtime.DEBUG, "creating actor, friendly-name: %s, Exitcode: %s, addr: %s\n", builtin.ActorNameByCode(codeID), codeID, addr)
+	ic.rt.Log(rt.DEBUG, "creating actor, friendly-name: %s, Exitcode: %s, addr: %s\n", builtin.ActorNameByCode(codeID), codeID, addr)
 
 	// Check existing address. If nothing there, create empty actor.
 	//
@@ -344,8 +392,8 @@ func (ic *invocationContext) ChargeGas(_ string, _ int64, _ int64) {
 }
 
 // Starts a new tracing span. The span must be End()ed explicitly, typically with a deferred invocation.
-func (ic *invocationContext) StartSpan(_ string) runtime.TraceSpan {
-	return &fakeTraceSpan{}
+func (ic *invocationContext) StartSpan(_ string) func() {
+	return fakeTraceSpanEnd
 }
 
 // Provides the system call interface.
@@ -354,15 +402,15 @@ func (ic *invocationContext) Syscalls() runtime.Syscalls {
 }
 
 // Note events that may make debugging easier
-func (ic *invocationContext) Log(level runtime.LogLevel, msg string, args ...interface{}) {
+func (ic *invocationContext) Log(level rt.LogLevel, msg string, args ...interface{}) {
 	ic.rt.Log(level, msg, args...)
 }
 
 type returnWrapper struct {
-	inner runtime.CBORMarshaler
+	inner cbor.Marshaler
 }
 
-func (r returnWrapper) Into(o runtime.CBORUnmarshaler) error {
+func (r returnWrapper) Into(o cbor.Unmarshaler) error {
 	if r.inner == nil {
 		return fmt.Errorf("failed to unmarshal nil return (did you mean abi.Empty?)")
 	}
@@ -427,9 +475,7 @@ func (s fakeSyscalls) VerifyConsensusFault(_, _, _ []byte) (*runtime.ConsensusFa
 //          Fake trace span
 /////////////////////////////////////////////
 
-type fakeTraceSpan struct{}
-
-func (fts *fakeTraceSpan) End() {
+func fakeTraceSpanEnd() {
 }
 
 /////////////////////////////////////////////
@@ -441,13 +487,13 @@ type storeWrapper struct {
 	rt *VM
 }
 
-func (s storeWrapper) Get(c cid.Cid, o runtime.CBORUnmarshaler) bool {
+func (s storeWrapper) StoreGet(c cid.Cid, o cbor.Unmarshaler) bool {
 	err := s.s.Get(s.rt.ctx, c, o)
 	// assume all errors are not found errors (bad assumption, but ok for testing)
 	return err == nil
 }
 
-func (s storeWrapper) Put(x runtime.CBORMarshaler) cid.Cid {
+func (s storeWrapper) StorePut(x cbor.Marshaler) cid.Cid {
 	c, err := s.s.Put(s.rt.ctx, x)
 	if err != nil {
 		s.rt.Abortf(exitcode.ErrIllegalState, "could not put object in store")
@@ -479,7 +525,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 			}
 			switch r := r.(type) {
 			case abort:
-				ic.rt.Log(runtime.WARN, "Abort during actor execution. errMsg: %v exitCode: %d sender: %v receiver; %v method: %d value %v",
+				ic.rt.Log(rt.WARN, "Abort during actor execution. errMsg: %v exitCode: %d sender: %v receiver; %v method: %d value %v",
 					r, r.code, ic.msg.from, ic.msg.to, ic.msg.method, ic.msg.value)
 				ic.rt.endInvocation(r.code, abi.Empty)
 				ret = returnWrapper{abi.Empty} // The Empty here should never be used, but slightly safer than zero value.
@@ -537,10 +583,10 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	}
 
 	// assert output implements expected interface
-	var marsh runtime.CBORMarshaler = abi.Empty
+	var marsh cbor.Marshaler = abi.Empty
 	if out != nil {
 		var ok bool
-		marsh, ok = out.(runtime.CBORMarshaler)
+		marsh, ok = out.(cbor.Marshaler)
 		if !ok {
 			ic.Abortf(exitcode.SysErrorIllegalActor, "Returned value is not a CBORMarshaler")
 		}
@@ -700,7 +746,7 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, 
 	return targetActor, targetIDAddr
 }
 
-func (ic *invocationContext) replace(obj runtime.CBORMarshaler) cid.Cid {
+func (ic *invocationContext) replace(obj cbor.Marshaler) cid.Cid {
 	actr, found, err := ic.rt.GetActor(ic.msg.to)
 	if err != nil {
 		panic(err)
@@ -726,7 +772,7 @@ func decodeBytes(t reflect.Type, argBytes []byte) (interface{}, error) {
 
 	// This would be better fixed in then encoding library.
 	obj := v.Elem().Interface()
-	if _, ok := obj.(runtime.CBORUnmarshaler); !ok {
+	if _, ok := obj.(cbor.Unmarshaler); !ok {
 		return nil, errors.New("method argument cannot be decoded")
 	}
 
@@ -734,7 +780,7 @@ func decodeBytes(t reflect.Type, argBytes []byte) (interface{}, error) {
 	auxv := reflect.New(t.Elem())
 	obj = auxv.Interface()
 
-	unmarsh := obj.(runtime.CBORUnmarshaler)
+	unmarsh := obj.(cbor.Unmarshaler)
 	if err := unmarsh.UnmarshalCBOR(buf); err != nil {
 		return nil, err
 	}

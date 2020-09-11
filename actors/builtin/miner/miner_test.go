@@ -931,7 +931,7 @@ func TestCommitments(t *testing.T) {
 			require.NoError(t, partitions.Set(partIdx, &partition))
 			deadline.Partitions, err = partitions.Root()
 			require.NoError(t, err)
-			deadlines.Due[dlIdx] = rt.Put(deadline)
+			deadlines.Due[dlIdx] = rt.StorePut(deadline)
 			require.NoError(t, st.SaveDeadlines(rt.AdtStore(), deadlines))
 			// Phew!
 
@@ -4664,7 +4664,7 @@ func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.
 func immediatelyVestingFunds(rt *mock.Runtime, st *miner.State) big.Int {
 	// Account just the very next vesting funds entry.
 	var vesting miner.VestingFunds
-	rt.Get(st.VestingFunds, &vesting)
+	rt.StoreGet(st.VestingFunds, &vesting)
 	sum := big.Zero()
 	for _, v := range vesting.Funds {
 		if v.Epoch <= rt.Epoch() {

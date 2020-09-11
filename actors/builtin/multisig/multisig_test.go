@@ -7,12 +7,9 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
-	abi "github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	big "github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	exitcode "github.com/filecoin-project/go-state-types/exitcode"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"

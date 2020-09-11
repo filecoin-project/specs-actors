@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 
-	hamt "github.com/filecoin-project/go-hamt-ipld"
 	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"

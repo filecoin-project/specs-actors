@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
@@ -26,7 +27,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
@@ -220,13 +220,13 @@ func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount 
 func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(builtin.CBORBytes(b)) }
 func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
 
-func ExpectObject(v runtime.CBORMarshaler) *objectExpectation {
+func ExpectObject(v cbor.Marshaler) *objectExpectation {
 	return &objectExpectation{v}
 }
 
 // distinguishes a non-expectation from an expectation of nil
 type objectExpectation struct {
-	val runtime.CBORMarshaler
+	val cbor.Marshaler
 }
 
 // match by cbor encoding to avoid inconsistencies in internal representations of effectively equal objects
@@ -237,7 +237,7 @@ func (oe objectExpectation) matches(obj interface{}) bool {
 
 	paramBuf1 := new(bytes.Buffer)
 	oe.val.MarshalCBOR(paramBuf1) // nolint: errcheck
-	marshaller, ok := obj.(runtime.CBORMarshaler)
+	marshaller, ok := obj.(cbor.Marshaler)
 	if !ok {
 		return false
 	}
@@ -437,7 +437,7 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 //  internal stuff
 //
 
-func initializeActor(ctx context.Context, t *testing.T, vm *VM, state runtime.CBORMarshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
+func initializeActor(ctx context.Context, t *testing.T, vm *VM, state cbor.Marshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
 	stateCID, err := vm.store.Put(ctx, state)
 	require.NoError(t, err)
 	actor := &TestActor{

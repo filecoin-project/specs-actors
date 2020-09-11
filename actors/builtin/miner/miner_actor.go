@@ -7,6 +7,7 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
@@ -206,7 +207,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 // Triggers a worker address change if a change has been requested and its effective epoch has arrived.
 func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *abi.EmptyValue) *abi.EmptyValue {
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
 
 		// Only the Owner is allowed to change the newWorker.
@@ -456,7 +457,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	burnFunds(rt, penaltyTotal)
 	notifyPledgeChanged(rt, pledgeDelta)
 
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 	return nil
 }
@@ -602,7 +603,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 	})
 
 	burnFunds(rt, feeToBurn)
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
@@ -634,7 +635,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	var st State
 	var precommit *SectorPreCommitOnChainInfo
 	sectorNo := params.SectorNumber
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var found bool
 		var err error
 		precommit, found, err = st.GetPrecommittedSector(store, sectorNo)
@@ -680,7 +681,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// This should be enforced by the power actor. We log here just in case
 	// something goes wrong.
 	if len(params.Sectors) > power.MaxMinerProveCommitsPerEpoch {
-		rt.Log(runtime.WARN, "confirmed more prove commits in an epoch than permitted: %d > %d",
+		rt.Log(rtt.WARN, "confirmed more prove commits in an epoch than permitted: %d > %d",
 			len(params.Sectors), power.MaxMinerProveCommitsPerEpoch,
 		)
 	}
@@ -724,7 +725,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			// Check (and activate) storage deals associated to sector. Abort if checks failed.
 			// TODO: we should batch these calls...
 			// https://github.com/filecoin-project/specs-actors/issues/474
-			_, code := rt.Send(
+			code := rt.Send(
 				builtin.StorageMarketActorAddr,
 				builtin.MethodsMarket.ActivateDeals,
 				&market.ActivateDealsParams{
@@ -1317,7 +1318,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	})
 
 	burnFunds(rt, feeToBurn)
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
@@ -1545,14 +1546,14 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
 	})
-	_, code := rt.Send(reporter, builtin.MethodSend, nil, rewardAmount, &builtin.Discard{})
+	code := rt.Send(reporter, builtin.MethodSend, nil, rewardAmount, &builtin.Discard{})
 	if !code.IsSuccess() {
-		rt.Log(runtime.ERROR, "failed to send reward")
+		rt.Log(rtt.ERROR, "failed to send reward")
 	}
 	burnFunds(rt, burnAmount)
 	notifyPledgeChanged(rt, pledgeDelta)
 
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	st.AssertBalanceInvariants(rt.CurrentBalance())
 
 	return nil
@@ -1609,7 +1610,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 	Assert(amountWithdrawn.LessThanEqual(availableBalance))
 
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
-		_, code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
+		code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 	}
 
@@ -1625,7 +1626,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	var st State
 	var fromVesting, fromBalance abi.TokenAmount
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		var err error
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)

@@ -15,14 +15,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
-
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	initact "github.com/filecoin-project/specs-actors/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
-	. "github.com/filecoin-project/specs-actors/actors/util"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 type Runtime = runtime.Runtime
@@ -237,7 +229,7 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *abi.
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	var st State
 	rt.StateTransaction(&st, func() {
-		validateMinerHasClaim(rt, st, rt.Message().Caller())
+		validateMinerHasClaim(rt, st, rt.Caller())
 		st.addPledgeTotal(*pledgeDelta)
 	})
 	return nil
@@ -315,7 +307,7 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *abi.EmptyValue) *CurrentTotalPow
 // Method utility functions
 ////////////////////////////////////////////////////////////////////////////////
 
-func validateMinerHasClaim(rt Runtime, st State, minerAddr address.Address) {
+func validateMinerHasClaim(rt Runtime, st State, minerAddr addr.Address) {
 	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
@@ -329,8 +321,8 @@ func validateMinerHasClaim(rt Runtime, st State, minerAddr address.Address) {
 func (a Actor) processBatchProofVerifies(rt Runtime) {
 	var st State
 
-	var miners []address.Address
-	verifies := make(map[address.Address][]proof.SealVerifyInfo)
+	var miners []addr.Address
+	verifies := make(map[addr.Address][]proof.SealVerifyInfo)
 
 	rt.StateTransaction(&st, func() {
 		store := adt.AsStore(rt)
@@ -344,14 +336,14 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
 		err = mmap.ForAll(func(k string, arr *adt.Array) error {
-			a, err := address.NewFromBytes([]byte(k))
+			a, err := addr.NewFromBytes([]byte(k))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to parse address key")
 
 			// refuse to process proofs for miner with no claim
 			found, err := claims.Has(AddrKey(a))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 			if !found {
-				rt.Log(runtime.WARN, "skipping batch verifies for unknown miner %s", a)
+				rt.Log(rtt.WARN, "skipping batch verifies for unknown miner %s", a)
 				return nil
 			}
 
@@ -432,7 +424,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 				found, err := claims.Has(AddrKey(evt.MinerAddr))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 				if !found {
-					rt.Log(runtime.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)
+					rt.Log(rtt.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)
 					continue
 				}
 				cronEvents = append(cronEvents, evt)
@@ -477,7 +469,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 			for _, minerAddr := range failedMinerCrons {
 				err := st.deleteClaim(claims, minerAddr)
 				if err != nil {
-					rt.Log(runtime.ERROR, "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+					rt.Log(rtt.ERROR, "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 					continue
 				}
 			}

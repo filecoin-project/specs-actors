@@ -1105,20 +1105,6 @@ func (rt *Runtime) ChargeGas(_ string, gas, _ int64) {
 	rt.gasCharged += gas
 }
 
-type ReturnWrapper struct {
-	V runtime.CBORMarshaler
-}
-
-func (r ReturnWrapper) Into(o runtime.CBORUnmarshaler) error {
-	b := bytes.Buffer{}
-	err := r.V.MarshalCBOR(&b)
-	if err != nil {
-		return err
-	}
-	err = o.UnmarshalCBOR(&b)
-	return err
-}
-
 func getMethodName(code cid.Cid, num abi.MethodNum) string {
 	for _, actor := range exported.BuiltinActors() {
 		if actor.Code().Equals(code) {
