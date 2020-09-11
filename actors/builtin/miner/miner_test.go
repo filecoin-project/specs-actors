@@ -1228,35 +1228,15 @@ func TestCCUpgrade(t *testing.T) {
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
 
-		// Both sectors are present (in the same deadline/partition).
-		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
-		assert.Equal(t, uint64(2), deadline.TotalSectors)
-		assert.Equal(t, uint64(2), deadline.LiveSectors)
-
-		// The old sector's expiration has changed to the end of this proving deadline.
-		// The new one expires when the old one used to.
-		// The partition is registered with an expiry at both epochs.
-		pIdx := uint64(0)
-		dQueue := actor.collectDeadlineExpirations(rt, deadline)
-		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
-		quantizedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(oldSector.Expiration)
-		assert.Equal(t, map[abi.ChainEpoch][]uint64{
-			dlInfo.NextNotElapsed().Last(): {pIdx},
-			quantizedExpiration:            {pIdx},
-		}, dQueue)
-
-		pQueue := actor.collectPartitionExpirations(rt, partition)
-		assertBitfieldEquals(t, pQueue[dlInfo.NextNotElapsed().Last()].OnTimeSectors, uint64(oldSector.SectorNumber))
-		assertBitfieldEquals(t, pQueue[quantizedExpiration].OnTimeSectors, uint64(newSector.SectorNumber))
-
 		// now declare old sector faulty
 		actor.declareFaults(rt, oldSector)
 
-		deadline, _ = actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
-		dQueue = actor.collectDeadlineExpirations(rt, deadline)
-		dlInfo = miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
+		pIdx := uint64(0)
+		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
+		dQueue := actor.collectDeadlineExpirations(rt, deadline)
+		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
 		expectedReplacedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(rt.Epoch() + miner.FaultMaxAge)
-		quantizedExpiration = miner.QuantSpecForDeadline(dlInfo).QuantizeUp(oldSector.Expiration)
+		quantizedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(oldSector.Expiration)
 
 		// deadling marks expirations for partition at expiration epoch
 		assert.Equal(t, map[abi.ChainEpoch][]uint64{
@@ -1266,7 +1246,6 @@ func TestCCUpgrade(t *testing.T) {
 		}, dQueue)
 
 		// but partitions expiration set at that epoch is empty
-		_, partition = actor.getDeadlineAndPartition(rt, dlInfo.Index, pIdx)
 		queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.QuantSpecForDeadline(dlInfo))
 		require.NoError(t, err)
 		var es miner.ExpirationSet
