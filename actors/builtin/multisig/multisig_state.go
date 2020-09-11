@@ -42,9 +42,20 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 		return st.InitialBalance
 	}
 
-	// TODO: fix division truncation https://github.com/filecoin-project/specs-actors/issues/1131
-	unitLocked := big.Div(st.InitialBalance, big.NewInt(int64(st.UnlockDuration)))
-	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
+	unlockDuration := big.NewInt(int64(st.UnlockDuration))
+	remainingLockDuration := big.Sub(unlockDuration, big.NewInt(int64(elapsedEpoch)))
+
+	// locked = ceil(InitialBalance * remainingLockDuration / UnlockDuration)
+	numerator := big.Mul(st.InitialBalance, remainingLockDuration)
+	denominator := unlockDuration
+	quot := big.Div(numerator, denominator)
+	rem := big.Mod(numerator, denominator)
+
+	locked := quot
+	if !rem.IsZero() {
+		locked = big.Add(locked, big.NewInt(1))
+	}
+	return locked
 }
 
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
