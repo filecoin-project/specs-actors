@@ -110,8 +110,12 @@ func TestCreateMinerFailures(t *testing.T) {
 			CodeCID:           builtin.StorageMinerActorCodeID,
 			ConstructorParams: initCreateMinerBytes(t, owner, owner, peer, mAddr, sealProofType),
 		}
+		expRet :=  initact.ExecReturn{
+			IDAddress:  tutil.NewIDAddr(t, 1475),
+			RobustAddress: tutil.NewActorAddr(t, "test"),
+		}
 		rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, abi.NewTokenAmount(10),
-			nil, exitcode.ErrInsufficientFunds)
+			&expRet, exitcode.ErrInsufficientFunds)
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			rt.Call(ac.CreateMiner, createMinerParams)

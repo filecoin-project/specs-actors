@@ -44,7 +44,7 @@ func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *abi.Empty
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
 
 	st := ConstructState(emptyMap, idAddr)
-	rt.State().Create(st)
+	rt.StateCreate(st)
 	return nil
 }
 
@@ -63,7 +63,7 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve verifier address %v to ID address", params.Address)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
 	// TODO We need to resolve the verifier address to an ID address before making this comparison.
@@ -71,7 +71,7 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 	if verifier == st.RootKey {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
 	}
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -100,10 +100,10 @@ func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *a
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve verifier address %v to ID address", *verifierAddr)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -135,12 +135,12 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve verified client address %v", params.Address)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	if st.RootKey == client {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as a verified client")
 	}
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
@@ -148,7 +148,7 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
 		// Validate caller is one of the verifiers.
-		verifier := rt.Message().Caller()
+		verifier := rt.Caller()
 		var verifierCap DataCap
 		found, err := verifiers.Get(AddrKey(verifier), &verifierCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier %v", verifier)
@@ -215,7 +215,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 	}
 
 	var st State
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
@@ -271,12 +271,12 @@ func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve verified client addr %v", params.Address)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	if st.RootKey == client {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Cannot restore allowance for Rootkey")
 	}
 
-	rt.State().Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 

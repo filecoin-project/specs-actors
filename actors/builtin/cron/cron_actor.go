@@ -33,7 +33,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.E
 	for i, e := range params.Entries {
 		entries[i] = Entry(e) // Identical
 	}
-	rt.State().Create(ConstructState(entries))
+	rt.StateCreate(ConstructState(entries))
 	return nil
 }
 
@@ -42,9 +42,9 @@ func (a Actor) EpochTick(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue 
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	var st State
-	rt.State().Readonly(&st)
+	rt.StateReadonly(&st)
 	for _, entry := range st.Entries {
-		_, _ = rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0))
+		_ = rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0), &builtin.Discard{})
 		// Any error and return value are ignored.
 	}
 

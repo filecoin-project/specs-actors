@@ -20,7 +20,7 @@ var _ runtime.Invokee = Actor{}
 func (a Actor) Constructor(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	rt.State().Create(&State{})
+	rt.StateCreate(&State{})
 	return nil
 }
 
