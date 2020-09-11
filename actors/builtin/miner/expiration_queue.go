@@ -830,6 +830,12 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 		}
 	}
 
+	if isEmpty, err := allNotFound.IsEmpty(); err != nil {
+		return nil, err
+	} else if !isEmpty {
+		return nil, xerrors.New("some sectors not found in expiration queue")
+	}
+
 	// sort groups, earliest first.
 	sort.Slice(expirationGroups, func(i, j int) bool {
 		return expirationGroups[i].epoch < expirationGroups[j].epoch
