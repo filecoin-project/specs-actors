@@ -781,15 +781,14 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 	// Traverse expiration sets first by expected expirations. This will find all groups if no sectors have been rescheduled.
 	// This map iteration is non-deterministic but safe because we sort by epoch below.
 	for expiration := range declaredExpirations { //nolint:nomaprange // result is subsequently sorted
-		var es ExpirationSet
-		if err := q.mustGet(expiration, &es); err != nil {
+		es, err := q.mayGet(expiration)
+		if err != nil {
 			return nil, err
 		}
 
 		// create group from overlap
 		var group sectorExpirationSet
-		var err error
-		group, allNotFound, err = groupExpirationSet(sectorSize, sectorsByNumber, allNotFound, &es, expiration)
+		group, allNotFound, err = groupExpirationSet(sectorSize, sectorsByNumber, allNotFound, es, expiration)
 		if err != nil {
 			return nil, err
 		}
