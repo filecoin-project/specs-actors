@@ -99,6 +99,7 @@ func main() {
 		//multisig.ApproveReturn{}, // Aliased from v0
 		//multisig.ChangeNumApprovalsThresholdParams{}, // Aliased from v0
 		//multisig.SwapSignerParams{}, // Aliased from v0
+		//multisig.LockBalanceParams{}, // Aliased from v0
 	); err != nil {
 		panic(err)
 	}
