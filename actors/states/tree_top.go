@@ -39,8 +39,8 @@ func AsTreeTop(s adt.Store, r cid.Cid) (*TreeTop, error) {
 	}, nil
 }
 
-func (t *TreeTop) GetActor(addr address.Address) (*Actor, error) {
-	iaddr, err := t.LookupID(addr)
+func (t *TreeTop) GetActor(ctx context.Context, addr address.Address) (*Actor, error) {
+	iaddr, err := t.LookupID(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +56,8 @@ func (t *TreeTop) GetActor(addr address.Address) (*Actor, error) {
 	return &actor, nil
 }
 
-func (t *TreeTop) SetActor(addr address.Address, actor *Actor) error {
-	iaddr, err := t.LookupID(addr)
+func (t *TreeTop) SetActor(ctx context.Context, addr address.Address, actor *Actor) error {
+	iaddr, err := t.LookupID(ctx, addr)
 	if err != nil {
 		return err
 	}
@@ -68,17 +68,17 @@ func (t *TreeTop) Root() (cid.Cid, error) {
 	return t.m.Root()
 }
 
-func (t *TreeTop) LookupID(addr address.Address) (address.Address, error) {
+func (t *TreeTop) LookupID(ctx context.Context, addr address.Address) (address.Address, error) {
 	if addr.Protocol() == address.ID {
 		return addr, nil
 	}
-	act, err := t.GetActor(builtin.InitActorAddr)
+	act, err := t.GetActor(ctx, builtin.InitActorAddr)
 	if err != nil {
 		return address.Undef, xerrors.Errorf("getting init actor: %w", err)
 	}
 
 	var ias init_.State
-	if err := t.s.Get(context.Background(), act.Head, &ias); err != nil {
+	if err := t.s.Get(ctx, act.Head, &ias); err != nil {
 		return address.Undef, xerrors.Errorf("loading init actor state: %w", err)
 	}
 
@@ -91,4 +91,16 @@ func (t *TreeTop) LookupID(addr address.Address) (address.Address, error) {
 	}
 
 	return a, nil
+}
+
+func (t *TreeTop) ForEach(ctx context.Context, fn func(addr address.Address, actor *Actor) error) error {
+	var val Actor
+	return t.m.ForEach(&val, func(key string) error {
+		addr, err := address.NewFromString(key)
+		if err != nil {
+			return err
+		}
+		return fn(addr, &val)
+	})
+
 }
