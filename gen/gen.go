@@ -15,6 +15,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
@@ -215,6 +216,12 @@ func main() {
 		//verifreg.UseBytesParams{}, // Aliased from v0
 		//verifreg.RestoreBytesParams{}, // Aliased from v0
 		// other types
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
+		states.Actor{},
 	); err != nil {
 		panic(err)
 	}
