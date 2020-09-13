@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	adt0 "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -16,6 +17,11 @@ import (
 )
 
 type minerMigrator struct {
+	// inputs
+	MinerBalance abi.TokenAmount
+
+	// outputs
+	Transfer abi.TokenAmount
 }
 
 func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
@@ -59,12 +65,21 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		return cid.Undef, err
 	}
 
+	// To preserve v2 Balance Invariant that actor balance > initial pledge + pre commit deposit + locked funds
+	// we must transfer burned funds to all states in IP debt to cover their balance requirements.
+	// We can maintain the fee deduction by setting the fee debt to the transferred value.
+	debt := big.Zero()
+	if !inState.MeetsInitialPledgeCondition(m.MinerBalance) {
+		debt = inState.GetAvailableBalance(m.MinerBalance).Neg() // debt must always be positive
+		m.Transfer = debt
+	}
+
 	outState := miner2.State{
 		Info:                      infoCid,
 		PreCommitDeposits:         inState.PreCommitDeposits,
 		LockedFunds:               inState.LockedFunds,
 		VestingFunds:              vestingFunds,
-		FeeDebt:                   big.Zero(), // FIXME calculate debt from actor balance
+		FeeDebt:                   debt,
 		InitialPledge:             inState.InitialPledgeRequirement,
 		PreCommittedSectors:       precommitsRoot,
 		PreCommittedSectorsExpiry: precommitExpiryRoot,
