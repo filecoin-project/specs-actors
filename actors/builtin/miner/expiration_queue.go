@@ -255,7 +255,7 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 			return NewPowerPairZero(), err
 		}
 
-		if err = es.ValidateState(); err != nil {
+		if err = group.expirationSet.ValidateState(); err != nil {
 			return NewPowerPairZero(), err
 		}
 	}
@@ -318,15 +318,15 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 		return nil
 	}
 
-	// Add missing sectors to new expiration as early-terminating and faulty.
-	allNotFound, err := bitfield.MultiMerge(rescheduledSectors...)
+	// Add rescheduled sectors to new expiration as early-terminating and faulty.
+	allRescheduled, err := bitfield.MultiMerge(rescheduledSectors...)
 	if err != nil {
 		return xerrors.Errorf("failed to merge rescheduled sectors: %w", err)
 	}
 	noOnTimeSectors := bitfield.New()
 	noActivePower := NewPowerPairZero()
 	noOnTimePledge := abi.NewTokenAmount(0)
-	if err = q.add(faultExpiration, noOnTimeSectors, allNotFound, noActivePower, rescheduledPower, noOnTimePledge); err != nil {
+	if err = q.add(faultExpiration, noOnTimeSectors, allRescheduled, noActivePower, rescheduledPower, noOnTimePledge); err != nil {
 		return err
 	}
 
@@ -767,8 +767,7 @@ func groupNewSectorsByDeclaredExpiration(sectorSize abi.SectorSize, sectors []*S
 func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) ([]sectorExpirationSet, error) {
 	declaredExpirations := make(map[abi.ChainEpoch]bool, len(sectors))
 	sectorsByNumber := make(map[uint64]*SectorOnChainInfo, len(sectors))
-	emptyBitfield := bitfield.New()
-	allNotFound := &emptyBitfield
+	allNotFound := bitfield.New()
 	expirationGroups := make([]sectorExpirationSet, 0, len(declaredExpirations))
 
 	for _, sector := range sectors {
@@ -845,11 +844,11 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 // Takes a slice of sector infos a bitfield of sector numbers and returns a single group for all bitfield sectors
 // Also returns a bitfield containing sectors not found in expiration set.
 func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnChainInfo,
-	set *bitfield.BitField, es *ExpirationSet, expiration abi.ChainEpoch,
-) (sectorExpirationSet, *bitfield.BitField, error) {
-	matches, err := bitfield.IntersectBitField(es.OnTimeSectors, *set)
+	set bitfield.BitField, es *ExpirationSet, expiration abi.ChainEpoch,
+) (sectorExpirationSet, bitfield.BitField, error) {
+	matches, err := bitfield.IntersectBitField(es.OnTimeSectors, set)
 	if err != nil {
-		return sectorExpirationSet{}, nil, err
+		return sectorExpirationSet{}, bitfield.New(), err
 	}
 
 	sectorNumbers := []uint64{}
@@ -863,12 +862,12 @@ func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnC
 		return nil
 	})
 	if err != nil {
-		return sectorExpirationSet{}, nil, err
+		return sectorExpirationSet{}, bitfield.New(), err
 	}
 
-	remainder, err := bitfield.SubtractBitField(*set, es.OnTimeSectors)
+	remainder, err := bitfield.SubtractBitField(set, es.OnTimeSectors)
 	if err != nil {
-		return sectorExpirationSet{}, nil, err
+		return sectorExpirationSet{}, bitfield.New(), err
 	}
 
 	return sectorExpirationSet{
@@ -879,5 +878,5 @@ func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnC
 			pledge:  totalPledge,
 		},
 		expirationSet: es,
-	}, &remainder, nil
+	}, remainder, nil
 }
