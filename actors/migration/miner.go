@@ -32,37 +32,37 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 
 	infoCid, err := m.migrateInfo(ctx, store, inState.Info)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating info %w", err)
 	}
 
 	vestingFunds, err := m.migrateVestingFunds(ctx, store, inState.VestingFunds)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating vesting funds %w", err)
 	}
 
 	precommitsRoot, err := m.migratePreCommittedSectors(ctx, store, inState.PreCommittedSectors)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating precommitted sectors %w", err)
 	}
 
 	precommitExpiryRoot, err := m.migrateBitfieldQueue(ctx, store, inState.PreCommittedSectorsExpiry)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating precommit expiry queue %w", err)
 	}
 
 	allocatedSectors, err := m.migrateAllocatedSectors(ctx, store, inState.AllocatedSectors)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating allocated sectors %w", err)
 	}
 
 	sectorsRoot, err := m.migrateSectors(ctx, store, inState.Sectors)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating sectors %w", err)
 	}
 
 	deadlinesRoot, err := m.migrateDeadlines(ctx, store, inState.Deadlines)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("failed migrating deadlines %w", err)
 	}
 
 	// To preserve v2 Balance Invariant that actor balance > initial pledge + pre commit deposit + locked funds
