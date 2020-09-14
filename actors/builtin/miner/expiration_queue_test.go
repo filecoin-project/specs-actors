@@ -591,7 +591,7 @@ func TestExpirationQueue(t *testing.T) {
 		require.NoError(t, err)
 
 		// put queue in a state where some sectors are early and some are faulty
-		_, err = queue.RescheduleAsFaults(abi.ChainEpoch(6), sectors[1:5], sectorSize)
+		_, err = queue.RescheduleAsFaults(abi.ChainEpoch(6), sectors[1:6], sectorSize)
 		require.NoError(t, err)
 
 		_, err = queue.Root()
@@ -609,9 +609,9 @@ func TestExpirationQueue(t *testing.T) {
 		require.NoError(t, err)
 
 		// assert all return values are correct
-		assertBitfieldEquals(t, removed.OnTimeSectors, 1, 4, 6)
-		assertBitfieldEquals(t, removed.EarlySectors, 5)
-		assert.Equal(t, abi.NewTokenAmount(1000+1003+1005), removed.OnTimePledge) // only on-time sectors
+		assertBitfieldEquals(t, removed.OnTimeSectors, 1, 4)
+		assertBitfieldEquals(t, removed.EarlySectors, 5, 6)
+		assert.Equal(t, abi.NewTokenAmount(1000+1003), removed.OnTimePledge) // only on-time sectors
 		assert.True(t, removed.ActivePower.Equals(miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sectors[0]})))
 		assert.True(t, removed.FaultyPower.Equals(miner.PowerForSectors(sectorSize, sectors[3:6])))
 		assert.True(t, recoveringPower.Equals(miner.PowerForSectors(sectorSize, sectors[5:6])))

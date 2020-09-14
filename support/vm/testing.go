@@ -9,6 +9,8 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
@@ -25,7 +27,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
@@ -219,13 +220,13 @@ func ExpectAttoFil(amount big.Int) *big.Int                    { return &amount 
 func ExpectBytes(b []byte) *objectExpectation                  { return ExpectObject(builtin.CBORBytes(b)) }
 func ExpectExitCode(code exitcode.ExitCode) *exitcode.ExitCode { return &code }
 
-func ExpectObject(v runtime.CBORMarshaler) *objectExpectation {
+func ExpectObject(v cbor.Marshaler) *objectExpectation {
 	return &objectExpectation{v}
 }
 
 // distinguishes a non-expectation from an expectation of nil
 type objectExpectation struct {
-	val runtime.CBORMarshaler
+	val cbor.Marshaler
 }
 
 // match by cbor encoding to avoid inconsistencies in internal representations of effectively equal objects
@@ -236,7 +237,7 @@ func (oe objectExpectation) matches(obj interface{}) bool {
 
 	paramBuf1 := new(bytes.Buffer)
 	oe.val.MarshalCBOR(paramBuf1) // nolint: errcheck
-	marshaller, ok := obj.(runtime.CBORMarshaler)
+	marshaller, ok := obj.(cbor.Marshaler)
 	if !ok {
 		return false
 	}
@@ -266,9 +267,9 @@ func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 // Advancing Time while updating state
 //
 
-type advanceDeadlinePredicate func(dlInfo *miner.DeadlineInfo) bool
+type advanceDeadlinePredicate func(dlInfo *dline.Info) bool
 
-func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *miner.DeadlineInfo {
+func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *dline.Info {
 	var minerState miner.State
 	err := v.GetState(minerIDAddr, &minerState)
 	require.NoError(t, err)
@@ -278,7 +279,7 @@ func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *miner.Deadli
 
 // AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
 // miner state upu-to-date by running a cron at the end of each deadline period.
-func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *miner.DeadlineInfo) {
+func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *dline.Info) {
 	dlInfo := MinerDLInfo(t, v, minerIDAddr)
 	var err error
 	for predicate(dlInfo) {
@@ -295,16 +296,16 @@ func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predica
 
 // Advances by deadline until e is contained within the deadline period represented by the returned deadline info.
 // The VM returned will be set to the last deadline close, not at e.
-func AdvanceByDeadlineTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *miner.DeadlineInfo) {
-	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+func AdvanceByDeadlineTillEpoch(t *testing.T, v *VM, minerIDAddr address.Address, e abi.ChainEpoch) (*VM, *dline.Info) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *dline.Info) bool {
 		return dlInfo.Close <= e
 	})
 }
 
 // Advances by deadline until the deadline index matches the given index.
 // The vm returned will be set to the close epoch of the previous deadline.
-func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *miner.DeadlineInfo) {
-	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *miner.DeadlineInfo) bool {
+func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address, i uint64) (*VM, *dline.Info) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *dline.Info) bool {
 		return dlInfo.Index != i
 	})
 }
@@ -312,7 +313,7 @@ func AdvanceByDeadlineTillIndex(t *testing.T, v *VM, minerIDAddr address.Address
 // Advance to the epoch when the sector is due to be proven.
 // Returns the deadline info for proving deadline for sector, partition index of sector, and a VM at the opening of
 // the deadline (ready for SubmitWindowedPoSt).
-func AdvanceTillProvingDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (*miner.DeadlineInfo, uint64, *VM) {
+func AdvanceTillProvingDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (*dline.Info, uint64, *VM) {
 	dlIdx, pIdx := SectorDeadline(t, v, minerIDAddress, sectorNumber)
 
 	// advance time to next proving period
@@ -436,7 +437,7 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 //  internal stuff
 //
 
-func initializeActor(ctx context.Context, t *testing.T, vm *VM, state runtime.CBORMarshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
+func initializeActor(ctx context.Context, t *testing.T, vm *VM, state cbor.Marshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
 	stateCID, err := vm.store.Put(ctx, state)
 	require.NoError(t, err)
 	actor := &TestActor{

@@ -7,13 +7,14 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/filecoin-project/go-address"
+	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/ipfs/go-cid"
-	cbg "github.com/whyrusleeping/cbor-gen"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	cid "github.com/ipfs/go-cid"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
@@ -21,7 +22,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/v2/support/testing"
@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func mustCbor(o runtime.CBORMarshaler) []byte {
+func mustCbor(o cbor.Marshaler) []byte {
 	buf := new(bytes.Buffer)
 	if err := o.MarshalCBOR(buf); err != nil {
 		panic(err)
@@ -2959,7 +2959,7 @@ func (h *marketActorTestHarness) publishAndActivateDeal(rt *mock.Runtime, client
 
 func (h *marketActorTestHarness) updateLastUpdated(rt *mock.Runtime, dealId abi.DealID, newLastUpdated abi.ChainEpoch) {
 	var st market.State
-	rt.Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
 		require.NoError(h.t, err)
 		s, found, err := states.Get(dealId)
@@ -2976,7 +2976,7 @@ func (h *marketActorTestHarness) updateLastUpdated(rt *mock.Runtime, dealId abi.
 func (h *marketActorTestHarness) deleteDealProposal(rt *mock.Runtime, dealId abi.DealID) {
 	var st market.State
 
-	rt.Transaction(&st, func() {
+	rt.StateTransaction(&st, func() {
 		deals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 		require.NoError(h.t, err)
 		require.NoError(h.t, deals.Delete(uint64(dealId)))

@@ -212,7 +212,7 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 	if err != nil {
 		return xerrors.Errorf("proposal signature verification failed to marshal proposal: %w", err)
 	}
-	err = rt.Syscalls().VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, buf.Bytes())
+	err = rt.VerifySignature(proposal.ClientSignature, proposal.Proposal.Client, buf.Bytes())
 	if err != nil {
 		return xerrors.Errorf("signature proposal invalid: %w", err)
 	}

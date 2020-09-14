@@ -14,17 +14,14 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	tutil "github.com/filecoin-project/specs-actors/v2/support/testing"
 )
 
 func TestMinerEligibleForElection(t *testing.T) {
 	ctx := context.Background()
-	tenFIL := big.Mul(big.NewInt(1e18), big.NewInt(10))
 	store := ipld.NewADTStore(ctx)
 	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
 	pwr := abi.NewStoragePower(1)
@@ -35,11 +32,10 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("miner eligible", func(t *testing.T) {
 		mstate := constructMinerState(ctx, t, store, owner)
 		pstate := constructPowerStateWithMiner(t, store, maddr, pwr, proofType)
-		rstate := constructRewardState(t, tenFIL)
-		mstate.InitialPledge = miner.ConsensusFaultPenalty(rstate.ThisEpochReward)
+		assert.Equal(t, big.Zero(), mstate.InitialPledge) // Not directly relevant.
 
 		currEpoch := abi.ChainEpoch(100000)
-		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, rstate, maddr, currEpoch)
+		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, maddr, currEpoch)
 		require.NoError(t, err)
 		assert.True(t, eligible)
 	})
@@ -47,11 +43,9 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("zero claim", func(t *testing.T) {
 		mstate := constructMinerState(ctx, t, store, owner)
 		pstate := constructPowerStateWithMiner(t, store, maddr, big.Zero(), proofType)
-		rstate := constructRewardState(t, tenFIL)
-		mstate.InitialPledge = miner.ConsensusFaultPenalty(rstate.ThisEpochReward)
 
 		currEpoch := abi.ChainEpoch(100000)
-		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, rstate, maddr, currEpoch)
+		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, maddr, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -59,8 +53,6 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("active consensus fault", func(t *testing.T) {
 		mstate := constructMinerState(ctx, t, store, owner)
 		pstate := constructPowerStateWithMiner(t, store, maddr, pwr, proofType)
-		rstate := constructRewardState(t, tenFIL)
-		mstate.InitialPledge = miner.ConsensusFaultPenalty(rstate.ThisEpochReward)
 
 		info, err := mstate.GetInfo(store)
 		require.NoError(t, err)
@@ -69,7 +61,7 @@ func TestMinerEligibleForElection(t *testing.T) {
 		require.NoError(t, err)
 
 		currEpoch := abi.ChainEpoch(33) // 33 less than 55 so consensus fault still active
-		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, rstate, maddr, currEpoch)
+		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, maddr, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -77,24 +69,10 @@ func TestMinerEligibleForElection(t *testing.T) {
 	t.Run("fee debt", func(t *testing.T) {
 		mstate := constructMinerState(ctx, t, store, owner)
 		pstate := constructPowerStateWithMiner(t, store, maddr, pwr, proofType)
-		rstate := constructRewardState(t, tenFIL)
-		mstate.InitialPledge = miner.ConsensusFaultPenalty(rstate.ThisEpochReward)
 		mstate.FeeDebt = abi.NewTokenAmount(1000)
 
 		currEpoch := abi.ChainEpoch(100000)
-		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, rstate, maddr, currEpoch)
-		require.NoError(t, err)
-		assert.False(t, eligible)
-	})
-
-	t.Run("IP below consensus fault penalty", func(t *testing.T) {
-		mstate := constructMinerState(ctx, t, store, owner)
-		pstate := constructPowerStateWithMiner(t, store, maddr, pwr, proofType)
-		rstate := constructRewardState(t, tenFIL)
-		mstate.InitialPledge = big.Sub(miner.ConsensusFaultPenalty(rstate.ThisEpochReward), abi.NewTokenAmount(1))
-
-		currEpoch := abi.ChainEpoch(100000)
-		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, rstate, maddr, currEpoch)
+		eligible, err := states.MinerEligibleForElection(store, mstate, pstate, maddr, currEpoch)
 		require.NoError(t, err)
 		assert.False(t, eligible)
 	})
@@ -234,18 +212,4 @@ func constructPowerStateWithMiner(t *testing.T, store adt.Store, maddr address.A
 	pSt.Claims, err = claims.Root()
 	require.NoError(t, err)
 	return pSt
-}
-
-func constructRewardState(t *testing.T, epochReward abi.TokenAmount) *reward.State {
-	return &reward.State{
-		CumsumBaseline:          big.Zero(),
-		CumsumRealized:          big.Zero(),
-		EffectiveNetworkTime:    0,
-		EffectiveBaselinePower:  big.Zero(),
-		ThisEpochReward:         epochReward,
-		ThisEpochRewardSmoothed: smoothing.TestingConstantEstimate(big.Zero()),
-		ThisEpochBaselinePower:  big.Zero(),
-		Epoch:                   0,
-		TotalMined:              big.Zero(),
-	}
 }

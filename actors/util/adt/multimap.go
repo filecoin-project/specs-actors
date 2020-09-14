@@ -1,12 +1,11 @@
 package adt
 
 import (
+	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
-
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 )
 
 // Multimap stores multiple values per key in a HAMT of AMTs.
@@ -37,7 +36,7 @@ func (mm *Multimap) Root() (cid.Cid, error) {
 }
 
 // Adds a value for a key.
-func (mm *Multimap) Add(key Keyer, value runtime.CBORMarshaler) error {
+func (mm *Multimap) Add(key Keyer, value cbor.Marshaler) error {
 	// Load the array under key, or initialize a new empty one if not found.
 	array, found, err := mm.Get(key)
 	if err != nil {
@@ -79,7 +78,7 @@ func (mm *Multimap) RemoveAll(key Keyer) error {
 // calling a function.
 // Iteration halts if the function returns an error.
 // If the output parameter is nil, deserialization is skipped.
-func (mm *Multimap) ForEach(key Keyer, out runtime.CBORUnmarshaler, fn func(i int64) error) error {
+func (mm *Multimap) ForEach(key Keyer, out cbor.Unmarshaler, fn func(i int64) error) error {
 	array, found, err := mm.Get(key)
 	if err != nil {
 		return err

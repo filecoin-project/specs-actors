@@ -28,13 +28,34 @@ type State struct {
 	PendingTxns cid.Cid
 }
 
+func (st *State) SetLocked(startEpoch abi.ChainEpoch, unlockDuration abi.ChainEpoch, lockedAmount abi.TokenAmount) {
+	st.StartEpoch = startEpoch
+	st.UnlockDuration = unlockDuration
+	st.InitialBalance = lockedAmount
+}
+
 func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	if elapsedEpoch >= st.UnlockDuration {
 		return abi.NewTokenAmount(0)
 	}
+	if elapsedEpoch <= 0 {
+		return st.InitialBalance
+	}
 
-	unitLocked := big.Div(st.InitialBalance, big.NewInt(int64(st.UnlockDuration)))
-	return big.Mul(unitLocked, big.Sub(big.NewInt(int64(st.UnlockDuration)), big.NewInt(int64(elapsedEpoch))))
+	unlockDuration := big.NewInt(int64(st.UnlockDuration))
+	remainingLockDuration := big.Sub(unlockDuration, big.NewInt(int64(elapsedEpoch)))
+
+	// locked = ceil(InitialBalance * remainingLockDuration / UnlockDuration)
+	numerator := big.Mul(st.InitialBalance, remainingLockDuration)
+	denominator := unlockDuration
+	quot := big.Div(numerator, denominator)
+	rem := big.Mod(numerator, denominator)
+
+	locked := quot
+	if !rem.IsZero() {
+		locked = big.Add(locked, big.NewInt(1))
+	}
+	return locked
 }
 
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
@@ -49,7 +70,8 @@ func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.
 	remainingBalance := big.Sub(currBalance, amountToSpend)
 	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
 	if remainingBalance.LessThan(amountLocked) {
-		return xerrors.Errorf("actor balance if spent %s would be less than required locked amount %s", remainingBalance.String(), amountLocked.String())
+		return xerrors.Errorf("balance %s if spent %s would be less than locked amount %s",
+			remainingBalance.String(), amountToSpend, amountLocked.String())
 	}
 
 	return nil

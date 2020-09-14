@@ -38,6 +38,12 @@ func main() {
 		panic(err)
 	}
 
+	// if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
+	// 	states.Actor{},
+	// ); err != nil {
+	// 	panic(err)
+	// }
+
 	// Actors
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/system/cbor_gen.go", "system",
 		// actor state
@@ -99,6 +105,7 @@ func main() {
 		//multisig.ApproveReturn{}, // Aliased from v0
 		//multisig.ChangeNumApprovalsThresholdParams{}, // Aliased from v0
 		//multisig.SwapSignerParams{}, // Aliased from v0
+		//multisig.LockBalanceParams{}, // Aliased from v0
 	); err != nil {
 		panic(err)
 	}

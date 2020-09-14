@@ -54,7 +54,7 @@ func (es *ExpirationSet) Add(onTimeSectors, earlySectors bitfield.BitField, onTi
 	es.OnTimePledge = big.Add(es.OnTimePledge, onTimePledge)
 	es.ActivePower = es.ActivePower.Add(activePower)
 	es.FaultyPower = es.FaultyPower.Add(faultyPower)
-	return nil
+	return es.ValidateState()
 }
 
 // Removes sectors and power from the expiration set in place.
@@ -88,7 +88,7 @@ func (es *ExpirationSet) Remove(onTimeSectors, earlySectors bitfield.BitField, o
 	if es.ActivePower.QA.LessThan(big.Zero()) || es.FaultyPower.QA.LessThan(big.Zero()) {
 		return xerrors.Errorf("expiration set power underflow: %v", es)
 	}
-	return nil
+	return es.ValidateState()
 }
 
 // A set is empty if it has no sectors.
@@ -119,6 +119,31 @@ func (es *ExpirationSet) Count() (count uint64, err error) {
 	}
 
 	return onTime + early, nil
+}
+
+// validates a set of assertions that must hold for expiration sets
+func (es *ExpirationSet) ValidateState() error {
+	if es.OnTimePledge.LessThan(big.Zero()) {
+		return xerrors.Errorf("ESet left with negative pledge: %+v", es)
+	}
+
+	if es.ActivePower.Raw.LessThan(big.Zero()) {
+		return xerrors.Errorf("ESet left with negative raw active power: %+v", es)
+	}
+
+	if es.ActivePower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("ESet left with negative qa active power: %+v", es)
+	}
+
+	if es.FaultyPower.Raw.LessThan(big.Zero()) {
+		return xerrors.Errorf("ESet left with negative raw faulty power: %+v", es)
+	}
+
+	if es.FaultyPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("ESet left with negative qa faulty power: %+v", es)
+	}
+
+	return nil
 }
 
 // A queue of expiration sets by epoch, representing the on-time or early termination epoch for a collection of sectors.
@@ -228,6 +253,10 @@ func (q ExpirationQueue) RescheduleAsFaults(newExpiration abi.ChainEpoch, sector
 		if err = q.mustUpdateOrDelete(group.epoch, &es); err != nil {
 			return NewPowerPairZero(), err
 		}
+
+		if err = es.ValidateState(); err != nil {
+			return NewPowerPairZero(), err
+		}
 	}
 
 	if len(sectorsTotal) > 0 {
@@ -273,6 +302,11 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 			rescheduledPower = rescheduledPower.Add(es.ActivePower)
 			rescheduledPower = rescheduledPower.Add(es.FaultyPower)
 		}
+
+		if err := es.ValidateState(); err != nil {
+			return err
+		}
+
 		return nil
 	}); err != nil {
 		return err
@@ -354,6 +388,10 @@ func (q ExpirationQueue) RescheduleRecovered(sectors []*SectorOnChainInfo, ssize
 				delete(remaining, sector.SectorNumber)
 				changed = true
 			}
+		}
+
+		if err = es.ValidateState(); err != nil {
+			return false, false, err
 		}
 
 		return changed, len(remaining) > 0, nil
@@ -476,6 +514,10 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults bitf
 				delete(remaining, sector.SectorNumber)
 				changed = true
 			}
+		}
+
+		if err = es.ValidateState(); err != nil {
+			return false, false, err
 		}
 
 		return changed, len(remaining) > 0, nil

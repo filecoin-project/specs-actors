@@ -8,7 +8,10 @@ import (
 	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
+	"github.com/filecoin-project/go-state-types/rt"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -28,7 +31,7 @@ type VM struct {
 	store adt.Store
 
 	currentEpoch   abi.ChainEpoch
-	networkVersion runtime.NetworkVersion
+	networkVersion network.Version
 
 	actorImpls  ActorImplLookup
 	stateRoot   cid.Cid  // The last committed root.
@@ -64,7 +67,7 @@ type InternalMessage struct {
 type Invocation struct {
 	Msg            *InternalMessage
 	Exitcode       exitcode.ExitCode
-	Ret            runtime.CBORMarshaler
+	Ret            cbor.Marshaler
 	SubInvocations []*Invocation
 }
 
@@ -91,7 +94,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		stateRoot:      actorRoot,
 		actorsDirty:    false,
 		emptyObject:    emptyObject,
-		networkVersion: runtime.NetworkVersionLatest,
+		networkVersion: network.VersionMax,
 	}
 }
 
@@ -154,7 +157,7 @@ func (vm *VM) setActor(ctx context.Context, key address.Address, a *TestActor) e
 }
 
 // setActorState stores the state and updates the addressed actor
-func (vm *VM) setActorState(ctx context.Context, key address.Address, state runtime.CBORMarshaler) error {
+func (vm *VM) setActorState(ctx context.Context, key address.Address, state cbor.Marshaler) error {
 	stateCid, err := vm.store.Put(ctx, state)
 	if err != nil {
 		return err
@@ -225,7 +228,7 @@ func (vm *VM) NormalizeAddress(addr address.Address) (address.Address, bool) {
 }
 
 // ApplyMessage applies the message to the current state.
-func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (runtime.CBORMarshaler, exitcode.ExitCode) {
+func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (cbor.Marshaler, exitcode.ExitCode) {
 	// This method does not actually execute the message itself,
 	// but rather deals with the pre/post processing of a message.
 	// (see: `invocationContext.invoke()` for the dispatch and execution)
@@ -291,7 +294,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	return ret.inner, exitCode
 }
 
-func (vm *VM) GetState(addr address.Address, out runtime.CBORUnmarshaler) error {
+func (vm *VM) GetState(addr address.Address, out cbor.Unmarshaler) error {
 	act, found, err := vm.GetActor(addr)
 	if err != nil {
 		return err
@@ -385,7 +388,7 @@ func (vm *VM) startInvocation(msg *InternalMessage) {
 	vm.invocationStack = append(vm.invocationStack, &invocation)
 }
 
-func (vm *VM) endInvocation(code exitcode.ExitCode, ret runtime.CBORMarshaler) {
+func (vm *VM) endInvocation(code exitcode.ExitCode, ret cbor.Marshaler) {
 	curIndex := len(vm.invocationStack) - 1
 	current := vm.invocationStack[curIndex]
 	current.Exitcode = code
@@ -406,7 +409,7 @@ func (vm *VM) LastInvocation() *Invocation {
 // implement runtime.Runtime for VM
 //
 
-func (vm *VM) Log(level runtime.LogLevel, msg string, args ...interface{}) {
+func (vm *VM) Log(level rt.LogLevel, msg string, args ...interface{}) {
 	vm.logs = append(vm.logs, fmt.Sprintf(msg, args...))
 }
 
