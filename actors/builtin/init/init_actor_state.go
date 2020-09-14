@@ -12,8 +12,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
-type AddrKey = adt.AddrKey
-
 type State struct {
 	AddressMap  cid.Cid // HAMT[addr.Address]abi.ActorID
 	NextID      abi.ActorID
@@ -49,7 +47,7 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 	}
 
 	var actorID cbg.CborInt
-	found, err := m.Get(AddrKey(address), &actorID)
+	found, err := m.Get(abi.AddrKey(address), &actorID)
 	if err != nil {
 		return addr.Undef, false, xerrors.Errorf("failed to get from address map: %w", err)
 	}
@@ -73,7 +71,7 @@ func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.A
 	if err != nil {
 		return addr.Undef, xerrors.Errorf("failed to load address map: %w", err)
 	}
-	err = m.Put(AddrKey(address), &actorID)
+	err = m.Put(abi.AddrKey(address), &actorID)
 	if err != nil {
 		return addr.Undef, xerrors.Errorf("map address failed to store entry: %w", err)
 	}

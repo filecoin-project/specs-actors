@@ -258,13 +258,13 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
 		}
 
-		arr, found, err := mmap.Get(adt.AddrKey(minerAddr))
+		arr, found, err := mmap.Get(abi.AddrKey(minerAddr))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get get seal verify infos at addr %s", minerAddr)
 		if found && arr.Length() >= MaxMinerProveCommitsPerEpoch {
 			rt.Abortf(ErrTooManyProveCommits, "miner %s attempting to prove commit over %d sectors in epoch", minerAddr, MaxMinerProveCommitsPerEpoch)
 		}
 
-		err = mmap.Add(adt.AddrKey(minerAddr), sealInfo)
+		err = mmap.Add(abi.AddrKey(minerAddr), sealInfo)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to insert proof into batch")
 
 		mmrc, err := mmap.Root()
@@ -311,7 +311,7 @@ func validateMinerHasClaim(rt Runtime, st State, minerAddr addr.Address) {
 	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
-	found, err := claims.Has(AddrKey(minerAddr))
+	found, err := claims.Has(abi.AddrKey(minerAddr))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 	if !found {
 		rt.Abortf(exitcode.ErrForbidden, "unknown miner %s forbidden to interact with power actor", minerAddr)
@@ -340,7 +340,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to parse address key")
 
 			// refuse to process proofs for miner with no claim
-			found, err := claims.Has(AddrKey(a))
+			found, err := claims.Has(abi.AddrKey(a))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 			if !found {
 				rt.Log(rtt.WARN, "skipping batch verifies for unknown miner %s", a)
@@ -421,7 +421,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 
 			for _, evt := range epochEvents {
 				// refuse to process proofs for miner with no claim
-				found, err := claims.Has(AddrKey(evt.MinerAddr))
+				found, err := claims.Has(abi.AddrKey(evt.MinerAddr))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 				if !found {
 					rt.Log(rtt.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)

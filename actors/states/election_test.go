@@ -204,7 +204,7 @@ func constructPowerStateWithMiner(t *testing.T, store adt.Store, maddr address.A
 
 	claim := &power.Claim{SealProofType: proof, RawBytePower: pwr, QualityAdjPower: pwr}
 
-	err = claims.Put(adt.AddrKey(maddr), claim)
+	err = claims.Put(abi.AddrKey(maddr), claim)
 	require.NoError(t, err)
 
 	pSt.MinerCount += 1

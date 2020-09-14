@@ -73,8 +73,6 @@ type CronEvent struct {
 	CallbackPayload []byte
 }
 
-type AddrKey = adt.AddrKey
-
 func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 	return &State{
 		TotalRawBytePower:         abi.NewStoragePower(0),
@@ -224,12 +222,12 @@ func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) error {
 	}
 
 	// delete claim from state to invalidate miner
-	return claims.Delete(AddrKey(miner))
+	return claims.Delete(abi.AddrKey(miner))
 }
 
 func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 	var out Claim
-	found, err := claims.Get(AddrKey(a), &out)
+	found, err := claims.Get(abi.AddrKey(a), &out)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "failed to get claim for address %v", a)
 	}
@@ -276,7 +274,7 @@ func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
 	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
 	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
 
-	if err := claims.Put(AddrKey(a), claim); err != nil {
+	if err := claims.Put(abi.AddrKey(a), claim); err != nil {
 		return xerrors.Errorf("failed to put claim with address %s power %v: %w", a, claim, err)
 	}
 
@@ -292,8 +290,8 @@ func CurrentTotalPower(st *State) (abi.StoragePower, abi.StoragePower) {
 	return st.TotalRawBytePower, st.TotalQualityAdjPower
 }
 
-func epochKey(e abi.ChainEpoch) adt.Keyer {
-	return adt.IntKey(int64(e))
+func epochKey(e abi.ChainEpoch) abi.Keyer {
+	return abi.IntKey(int64(e))
 }
 
 func init() {
