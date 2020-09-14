@@ -1005,6 +1005,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	pledgeDelta := abi.NewTokenAmount(0)
 	powerDelta := NewPowerPairZero()
 
+	var totalFaultyPower PowerPair
 	detectedFaultyPower := NewPowerPairZero()
 
 	// Note: Use dlInfo.Last() rather than rt.CurrEpoch unless certain
@@ -1047,6 +1048,10 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		if err != nil {
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
+
+		// Capture deadline's faulty power after new faults have been detected, but before it is
+		// dropped along with faulty sectors expiring this round.
+		totalFaultyPower = deadline.FaultyPower
 	}
 	{
 		// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
@@ -1095,7 +1100,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		pledgeDelta,
 		powerDelta,
 		detectedFaultyPower,
-		deadline.FaultyPower,
+		totalFaultyPower,
 	}, nil
 }
 
