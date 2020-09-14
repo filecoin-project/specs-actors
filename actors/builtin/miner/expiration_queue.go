@@ -808,6 +808,13 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 				return true, nil
 			}
 
+			// Sector should not be found in EarlyExpirations which holds faults. An implicit assumption
+			// of grouping is that it only returns sectors with active power. ExpirationQueue should not
+			// provide operations that allow this to happen.
+			if err := assertNoEarlySectors(allNotFound, es); err != nil {
+				return true, err
+			}
+
 			var group sectorExpirationSet
 			var err error
 			group, allNotFound, err = groupExpirationSet(sectorSize, sectorsByNumber, allNotFound, es, epoch)
@@ -880,4 +887,16 @@ func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnC
 		},
 		expirationSet: es,
 	}, remainder, nil
+}
+
+// assertNoEarlySectors checks for an invalid overlap between a bitfield an a set's early sectors.
+func assertNoEarlySectors(set bitfield.BitField, es *ExpirationSet) error {
+	if intersect, err := bitfield.IntersectBitField(es.EarlySectors, set); err != nil {
+		return xerrors.Errorf("Could not interesect with early sectors: %v", err)
+	} else if empty, err := intersect.IsEmpty(); err != nil {
+		return xerrors.Errorf("Could not check if early sector intersect was empty: %v", err)
+	} else if !empty {
+		return xerrors.New("Invalid attempt to group a sector with an early expiration")
+	}
+	return nil
 }
