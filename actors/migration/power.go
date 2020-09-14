@@ -3,17 +3,21 @@ package migration
 import (
 	"context"
 
+	address "github.com/filecoin-project/go-address"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	adt0 "github.com/filecoin-project/specs-actors/actors/util/adt"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	smoothing2 "github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
 type powerMigrator struct {
+	actorsIn *states.TreeTop
 }
 
 func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
@@ -71,8 +75,26 @@ func (m *powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore,
 
 	var inClaim power0.Claim
 	if err = inMap.ForEach(&inClaim, func(key string) error {
+		// look up seal proof type from miner actor
+		a, err := address.NewFromString(key)
+		if err != nil {
+			return err
+		}
+		minerActor, err := m.actorsIn.GetActor(ctx, address.Address(a))
+		if err != nil {
+			return err
+		}
+		var minerState miner0.State
+		if err := store.Get(ctx, minerActor.Head, &minerState); err != nil {
+			return err
+		}
+		info, err := minerState.GetInfo(adt0.WrapStore(ctx, store))
+		if err != nil {
+			return err
+		}
+
 		outClaim := power2.Claim{
-			SealProofType:   0, // FIXME look-up from miner actor
+			SealProofType:   info.SealProofType,
 			RawBytePower:    inClaim.RawBytePower,
 			QualityAdjPower: inClaim.QualityAdjPower,
 		}
