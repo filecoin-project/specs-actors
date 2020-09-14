@@ -88,10 +88,6 @@ func (p phoenix) load(ctx context.Context, actorsIn *states.TreeTop) error {
 	return nil
 }
 
-func (p phoenix) curr() abi.TokenAmount {
-	return p.burntBalance
-}
-
 func (p phoenix) transfer(amt abi.TokenAmount) error {
 	p.burntBalance = big.Sub(p.burntBalance, amt)
 	if p.burntBalance.LessThan(big.Zero()) {
@@ -118,26 +114,40 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	if err != nil {
 		return cid.Undef, err
 	}
+	// Setup input and output state tree helpers
 	adtStore := adt.WrapStore(ctx, store)
 	actorsIn, err := states.AsTreeTop(adtStore, stateRootInTweaked)
 	if err != nil {
 		return cid.Undef, err
 	}
-	var p phoenix
-	if err := p.load(ctx, actorsIn); err != nil {
-		return cid.Undef, err
-	}
-
 	stateRootOut, err := adt.MakeEmptyMap(adtStore).Root()
 	if err != nil {
 		return cid.Undef, err
 	}
 	actorsOut, err := states.AsTreeTop(adtStore, stateRootOut)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	// Extra setup
+	// miner
+	var p phoenix
+	if err := p.load(ctx, actorsIn); err != nil {
+		return cid.Undef, err
+	}
+	// power
+	pm := migrations[builtin0.StoragePowerActorCodeID].StateMigration.(*powerMigrator)
+	pm.actorsIn = actorsIn
 
 	// Iterate all actors in old state root
 	// Set new state root actors as we go
 	err = actorsIn.ForEach(ctx, func(addr address.Address, actorIn *states.Actor) error {
 		migration := migrations[actorIn.Code]
+
+		// This will be migrated at the end
+		if actorIn.Code == builtin0.VerifiedRegistryActorCodeID {
+			return nil
+		}
 		if actorIn.Code == builtin0.StorageMinerActorCodeID {
 			// setup migration fields
 			mm := migration.StateMigration.(*minerMigrator)
@@ -169,6 +179,27 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return actorsOut.SetActor(ctx, addr, &actorOut)
 	})
 	if err != nil {
+		return cid.Undef, err
+	}
+
+	// // Migrate verified registry
+	vm := migrations[builtin0.VerifiedRegistryActorCodeID].StateMigration.(*verifregMigrator)
+	vm.actorsOut = actorsOut
+	verifRegActorIn, err := actorsIn.GetActor(ctx, builtin0.VerifiedRegistryActorAddr)
+	if err != nil {
+		return cid.Undef, err
+	}
+	verifRegHeadOut, err := vm.MigrateState(ctx, store, verifRegActorIn.Head)
+	if err != nil {
+		return cid.Undef, err
+	}
+	verifRegActorOut := states.Actor{
+		Code:    builtin.VerifiedRegistryActorCodeID,
+		Head:    verifRegHeadOut,
+		Nonce:   verifRegActorIn.Nonce,
+		Balance: verifRegActorIn.Balance,
+	}
+	if err := actorsOut.SetActor(ctx, builtin.VerifiedRegistryActorAddr, &verifRegActorOut); err != nil {
 		return cid.Undef, err
 	}
 
