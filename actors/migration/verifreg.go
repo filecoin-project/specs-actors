@@ -31,12 +31,12 @@ func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 
 	verifiersRoot, err := m.migrateCapTable(ctx, store, inState.Verifiers)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("verifiers cap table: %w", err)
 	}
 
 	clientsRoot, err := m.migrateCapTable(ctx, store, inState.VerifiedClients)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("clients cap table: %w", err)
 	}
 
 	if inState.RootKey.Protocol() != addr.ID {
@@ -81,7 +81,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 		}
 		idInAddr, err := m.resolveAndMaybeCreateAccount(ctx, inAddr, adt2.WrapStore(ctx, store), &outInitState)
 		if err != nil {
-			return err
+			return xerrors.Errorf("resolving address %s: %w", inAddr, err)
 		}
 		outAddr := idInAddr
 		outCap := verifreg2.DataCap(inCap) // Identical
@@ -111,7 +111,7 @@ func (m *verifregMigrator) resolveAndMaybeCreateAccount(ctx context.Context, inA
 	// check if this already exists in init actor state
 	idInAddr, found, err := outInitState.ResolveAddress(store, inAddr)
 	if err != nil {
-		return addr.Undef, err
+		return addr.Undef, xerrors.Errorf("init resolve: %w", err)
 	}
 	if found {
 		return idInAddr, nil
@@ -124,7 +124,7 @@ func (m *verifregMigrator) resolveAndMaybeCreateAccount(ctx context.Context, inA
 
 	idInAddr, err = outInitState.MapAddressToNewID(store, inAddr)
 	if err != nil {
-		return addr.Undef, err
+		return addr.Undef, xerrors.Errorf("init map: %w", err)
 	}
 
 	// and new account

@@ -6,6 +6,7 @@ import (
 	init0 "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	"golang.org/x/xerrors"
 
 	init2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
 )
@@ -22,7 +23,7 @@ func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 	// Migrate address resolution map
 	addrMapRoot, err := m.migrateAddrs(ctx, store, inState.AddressMap)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("migrate addrs: %w", err)
 	}
 
 	outState := init2.State{
