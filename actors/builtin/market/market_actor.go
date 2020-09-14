@@ -208,13 +208,13 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			pcid, err := deal.Proposal.Cid()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
 
-			has, err := msm.pendingDeals.Get(adt.CidKey(pcid), nil)
+			has, err := msm.pendingDeals.Get(abi.CidKey(pcid), nil)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
 			if has {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
 			}
 
-			err = msm.pendingDeals.Put(adt.CidKey(pcid), &deal.Proposal)
+			err = msm.pendingDeals.Put(abi.CidKey(pcid), &deal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
 
 			err = msm.dealProposals.Set(id, &deal.Proposal)
@@ -330,7 +330,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 			propc, err := proposal.Cid()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate proposal CID")
 
-			has, err := msm.pendingDeals.Get(adt.CidKey(propc), nil)
+			has, err := msm.pendingDeals.Get(abi.CidKey(propc), nil)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get pending proposal %v", propc)
 
 			if !has {
@@ -487,7 +487,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal")
 					}
 
-					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
+					pdErr := msm.pendingDeals.Delete(abi.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 
 					return nil
@@ -495,7 +495,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 
 				// if this is the first cron tick for the deal, it should be in the pending state.
 				if state.LastUpdatedEpoch == epochUndefined {
-					pdErr := msm.pendingDeals.Delete(adt.CidKey(dcid))
+					pdErr := msm.pendingDeals.Delete(abi.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal")
 				}
 

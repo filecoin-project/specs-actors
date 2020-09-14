@@ -787,7 +787,7 @@ func (h *verifRegActorTestHarness) getVerifierCap(rt *mock.Runtime, a address.Ad
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
-	found, err := v.Get(verifreg.AddrKey(a), &dc)
+	found, err := v.Get(abi.AddrKey(a), &dc)
 	require.NoError(h.t, err)
 	require.True(h.t, found)
 	return dc
@@ -801,7 +801,7 @@ func (h *verifRegActorTestHarness) getClientCap(rt *mock.Runtime, a address.Addr
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
-	found, err := v.Get(verifreg.AddrKey(a), &dc)
+	found, err := v.Get(abi.AddrKey(a), &dc)
 	require.NoError(h.t, err)
 	require.True(h.t, found)
 	return dc
@@ -815,7 +815,7 @@ func (h *verifRegActorTestHarness) assertVerifierRemoved(rt *mock.Runtime, a add
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
-	found, err := v.Get(verifreg.AddrKey(a), &dc)
+	found, err := v.Get(abi.AddrKey(a), &dc)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 }
@@ -828,7 +828,7 @@ func (h *verifRegActorTestHarness) assertClientRemoved(rt *mock.Runtime, a addre
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
-	found, err := v.Get(verifreg.AddrKey(a), &dc)
+	found, err := v.Get(abi.AddrKey(a), &dc)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 }

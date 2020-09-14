@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	hamt "github.com/filecoin-project/go-hamt-ipld"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/sha256-simd"
@@ -73,7 +74,7 @@ func (m *Map) Root() (cid.Cid, error) {
 }
 
 // Put adds value `v` with key `k` to the hamt store.
-func (m *Map) Put(k Keyer, v cbor.Marshaler) error {
+func (m *Map) Put(k abi.Keyer, v cbor.Marshaler) error {
 	if err := m.root.Set(m.store.Context(), k.Key(), v); err != nil {
 		return errors.Wrapf(err, "map put failed set in node %v with key %v value %v", m.lastCid, k.Key(), v)
 	}
@@ -81,7 +82,7 @@ func (m *Map) Put(k Keyer, v cbor.Marshaler) error {
 }
 
 // Get puts the value at `k` into `out`.
-func (m *Map) Get(k Keyer, out cbor.Unmarshaler) (bool, error) {
+func (m *Map) Get(k abi.Keyer, out cbor.Unmarshaler) (bool, error) {
 	if err := m.root.Find(m.store.Context(), k.Key(), out); err != nil {
 		if err == hamt.ErrNotFound {
 			return false, nil
@@ -92,7 +93,7 @@ func (m *Map) Get(k Keyer, out cbor.Unmarshaler) (bool, error) {
 }
 
 // Delete removes the value at `k` from the hamt store.
-func (m *Map) Delete(k Keyer) error {
+func (m *Map) Delete(k abi.Keyer) error {
 	if err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
 		return errors.Wrapf(err, "map delete failed in node %v key %v", m.root, k.Key())
 	}
