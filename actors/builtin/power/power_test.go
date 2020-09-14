@@ -675,7 +675,7 @@ func TestCron(t *testing.T) {
 		require.NoError(t, err)
 
 		var ev power.CronEvent
-		err = mmap.ForEach(adt.IntKey(int64(2)), &ev, func(i int64) error {
+		err = mmap.ForEach(abi.IntKey(int64(2)), &ev, func(i int64) error {
 			t.Errorf("Unexpected bitfield at epoch %d", i)
 			return nil
 		})
@@ -763,7 +763,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		require.NotNil(t, st.ProofValidationBatch)
 		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
 		require.NoError(t, err)
-		arr, found, err := mmap.Get(adt.AddrKey(miner))
+		arr, found, err := mmap.Get(abi.AddrKey(miner))
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, uint64(1), arr.Length())
@@ -959,7 +959,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 type key string
 
-func asKey(in string) adt.Keyer {
+func asKey(in string) abi.Keyer {
 	return key(in)
 }
 
@@ -1086,7 +1086,7 @@ func (h *spActorHarness) getClaim(rt *mock.Runtime, a addr.Address) *power.Claim
 	require.NoError(h.t, err)
 
 	var out power.Claim
-	found, err := claims.Get(power.AddrKey(a), &out)
+	found, err := claims.Get(abi.AddrKey(a), &out)
 	require.NoError(h.t, err)
 	require.True(h.t, found)
 
@@ -1100,7 +1100,7 @@ func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainE
 	events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
-	evts, found, err := events.Get(adt.IntKey(int64(epoch)))
+	evts, found, err := events.Get(abi.IntKey(int64(epoch)))
 	require.NoError(h.t, err)
 	require.True(h.t, found)
 
@@ -1206,7 +1206,7 @@ func (h *spActorHarness) onConsensusFault(rt *mock.Runtime, minerAddr addr.Addre
 	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims)
 	require.NoError(h.t, err)
 	var out power.Claim
-	found, err := claims.Get(power.AddrKey(minerAddr), &out)
+	found, err := claims.Get(abi.AddrKey(minerAddr), &out)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 

@@ -991,8 +991,8 @@ func (st *State) checkPrecommitExpiry(store adt.Store, sectors bitfield.BitField
 // Misc helpers
 //
 
-func SectorKey(e abi.SectorNumber) adt.Keyer {
-	return adt.UIntKey(uint64(e))
+func SectorKey(e abi.SectorNumber) abi.Keyer {
+	return abi.UIntKey(uint64(e))
 }
 
 func init() {

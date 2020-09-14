@@ -1889,6 +1889,6 @@ func (s key) Key() string {
 	return string(s)
 }
 
-func asKey(in string) adt.Keyer {
+func asKey(in string) abi.Keyer {
 	return key(in)
 }

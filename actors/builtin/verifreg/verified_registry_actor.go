@@ -74,13 +74,13 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
 		// A verified client cannot become a verifier
-		found, err := verifiedClients.Get(AddrKey(params.Address), nil)
+		found, err := verifiedClients.Get(abi.AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed get verified client state for %v", params.Address)
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "verified client %v cannot become a verifier", params.Address)
 		}
 
-		err = verifiers.Put(AddrKey(params.Address), &params.Allowance)
+		err = verifiers.Put(abi.AddrKey(params.Address), &params.Allowance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verifier")
 
 		st.Verifiers, err = verifiers.Root()
@@ -99,7 +99,7 @@ func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *a
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
-		err = verifiers.Delete(AddrKey(*verifierAddr))
+		err = verifiers.Delete(abi.AddrKey(*verifierAddr))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove verifier")
 
 		st.Verifiers, err = verifiers.Root()
@@ -138,14 +138,14 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 		// Validate caller is one of the verifiers.
 		verifierAddr := rt.Caller()
 		var verifierCap DataCap
-		found, err := verifiers.Get(AddrKey(verifierAddr), &verifierCap)
+		found, err := verifiers.Get(abi.AddrKey(verifierAddr), &verifierCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier %v", verifierAddr)
 		if !found {
 			rt.Abortf(exitcode.ErrNotFound, "no such verifier %v", verifierAddr)
 		}
 
 		// Validate client to be added isn't a verifier
-		found, err = verifiers.Get(AddrKey(params.Address), nil)
+		found, err = verifiers.Get(abi.AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier")
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "verifier %v cannot be added as a verified client", params.Address)
@@ -157,20 +157,20 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 		}
 		newVerifierCap := big.Sub(verifierCap, params.Allowance)
 
-		err = verifiers.Put(AddrKey(verifierAddr), &newVerifierCap)
+		err = verifiers.Put(abi.AddrKey(verifierAddr), &newVerifierCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update new verifier cap (%d) for %v", newVerifierCap, verifierAddr)
 
 		// This is a one-time, upfront allocation.
 		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
 		// If parties need more allowance, they need to create a new verified client or use up the the current allowance
 		// and then create a new verified client.
-		found, err = verifiedClients.Get(AddrKey(params.Address), nil)
+		found, err = verifiedClients.Get(abi.AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "verified client already exists: %v", params.Address)
 		}
 
-		err = verifiedClients.Put(AddrKey(params.Address), &params.Allowance)
+		err = verifiedClients.Put(abi.AddrKey(params.Address), &params.Allowance)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified client %v with cap %d", params.Address, params.Allowance)
 
 		st.Verifiers, err = verifiers.Root()
@@ -204,7 +204,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 
 		var vcCap DataCap
-		found, err := verifiedClients.Get(AddrKey(params.Address), &vcCap)
+		found, err := verifiedClients.Get(abi.AddrKey(params.Address), &vcCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
 		if !found {
 			rt.Abortf(exitcode.ErrNotFound, "no such verified client %v", params.Address)
@@ -219,10 +219,10 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 		if newVcCap.LessThan(MinVerifiedDealSize) {
 			// Delete entry if remaining DataCap is less than MinVerifiedDealSize.
 			// Will be restored later if the deal did not get activated with a ProvenSector.
-			err = verifiedClients.Delete(AddrKey(params.Address))
+			err = verifiedClients.Delete(abi.AddrKey(params.Address))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", params.Address)
 		} else {
-			err = verifiedClients.Put(AddrKey(params.Address), &newVcCap)
+			err = verifiedClients.Put(abi.AddrKey(params.Address), &newVcCap)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update verified client %v with %v", params.Address, newVcCap)
 		}
 
@@ -263,21 +263,21 @@ func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
 		// validate we are NOT attempting to do this for a verifier
-		found, err := verifiers.Get(AddrKey(params.Address), nil)
+		found, err := verifiers.Get(abi.AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed tp get verifier")
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "cannot restore allowance for a verifier")
 		}
 
 		var vcCap DataCap
-		found, err = verifiedClients.Get(AddrKey(params.Address), &vcCap)
+		found, err = verifiedClients.Get(abi.AddrKey(params.Address), &vcCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
 		if !found {
 			vcCap = big.Zero()
 		}
 
 		newVcCap := big.Add(vcCap, params.DealSize)
-		err = verifiedClients.Put(AddrKey(params.Address), &newVcCap)
+		err = verifiedClients.Put(abi.AddrKey(params.Address), &newVcCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put verified client %v with %v", params.Address, newVcCap)
 
 		st.VerifiedClients, err = verifiedClients.Root()

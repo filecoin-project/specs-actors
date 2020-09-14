@@ -262,7 +262,7 @@ func (a Actor) OnConsensusFault(rt Runtime, pledgeAmount *abi.TokenAmount) *abi.
 		st.addPledgeTotal(pledgeAmount.Neg())
 
 		// delete miner actor claims
-		err = claims.Delete(AddrKey(minerAddr))
+		err = claims.Delete(abi.AddrKey(minerAddr))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove miner %v", minerAddr)
 
 		st.MinerCount -= 1
@@ -295,13 +295,13 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
 		}
 
-		arr, found, err := mmap.Get(adt.AddrKey(minerAddr))
+		arr, found, err := mmap.Get(abi.AddrKey(minerAddr))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get get seal verify infos at addr %s", minerAddr)
 		if found && arr.Length() >= MaxMinerProveCommitsPerEpoch {
 			rt.Abortf(ErrTooManyProveCommits, "miner %s attempting to prove commit over %d sectors in epoch", minerAddr, MaxMinerProveCommitsPerEpoch)
 		}
 
-		err = mmap.Add(adt.AddrKey(minerAddr), sealInfo)
+		err = mmap.Add(abi.AddrKey(minerAddr), sealInfo)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to insert proof into batch")
 
 		mmrc, err := mmap.Root()

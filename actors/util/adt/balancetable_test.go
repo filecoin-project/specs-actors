@@ -53,7 +53,7 @@ func TestBalanceTable(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, abi.NewTokenAmount(0), amount)
 		// The zero entry is not stored.
-		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
+		found, err := ((*adt.Map)(bt)).Get(abi.AddrKey(addr), nil)
 		require.NoError(t, err)
 		require.False(t, found)
 	})
@@ -88,7 +88,7 @@ func TestBalanceTable(t *testing.T) {
 		require.Equal(t, abi.NewTokenAmount(0), bal)
 
 		// The zero entry is not stored.
-		found, err := ((*adt.Map)(bt)).Get(adt.AddrKey(addr), nil)
+		found, err := ((*adt.Map)(bt)).Get(abi.AddrKey(addr), nil)
 		require.NoError(t, err)
 		require.False(t, found)
 	})
