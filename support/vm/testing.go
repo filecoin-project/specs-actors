@@ -443,6 +443,20 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 	}
 }
 
+func GetDealState(t *testing.T, vm *VM, dealID abi.DealID) (*market.DealState, bool) {
+	var marketState market.State
+	err := vm.GetState(builtin.StorageMarketActorAddr, &marketState)
+	require.NoError(t, err)
+
+	states, err := market.AsDealStateArray(vm.store, marketState.States)
+	require.NoError(t, err)
+
+	state, found, err := states.Get(dealID)
+	require.NoError(t, err)
+
+	return state, found
+}
+
 //
 //  internal stuff
 //

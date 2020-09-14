@@ -2,16 +2,17 @@ package test_test
 
 import (
 	"context"
-	"github.com/stretchr/testify/assert"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
@@ -20,6 +21,7 @@ import (
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
+// This scenario hits all Market Actor methods.
 func TestTerminateSectors(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
@@ -69,13 +71,13 @@ func TestTerminateSectors(t *testing.T) {
 	require.Equal(t, exitcode.Ok, code)
 	_, code = v.ApplyMessage(verifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &verifiedClient)
 	require.Equal(t, exitcode.Ok, code)
-	collateral = big.Mul(big.NewInt(64), vm.FIL)
-	_, code = v.ApplyMessage(worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
+	minerCollateral := big.Mul(big.NewInt(64), vm.FIL)
+	_, code = v.ApplyMessage(worker, builtin.StorageMarketActorAddr, minerCollateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 	require.Equal(t, exitcode.Ok, code)
 
 	// create 3 deals, some verified and some not
 	dealIDs := []abi.DealID{}
-	dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	dealStart := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
 	deals := publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal1", 1<<30, true, dealStart, 181*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
 	deals = publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal2", 1<<32, true, dealStart, 200*builtin.EpochsInDay)
@@ -83,16 +85,13 @@ func TestTerminateSectors(t *testing.T) {
 	deals = publishDeal(t, v, worker, unverifiedClient, minerAddrs.IDAddress, "deal3", 1<<34, false, dealStart, 210*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
 
-	stats := vm.GetNetworkStats(t, v)
-	assert.Equal(t, int64(0), stats.MinerAboveMinPowerCount)
-	assert.Equal(t, big.Zero(), stats.TotalRawBytePower)
-	assert.Equal(t, big.Zero(), stats.TotalQualityAdjPower)
-	assert.Equal(t, big.Zero(), stats.TotalBytesCommitted)
-	assert.Equal(t, big.Zero(), stats.TotalQABytesCommitted)
-	assert.Equal(t, big.Zero(), stats.TotalPledgeCollateral)
-	assert.Equal(t, big.Zero(), stats.TotalClientLockedCollateral)
-	assert.Equal(t, big.Zero(), stats.TotalProviderLockedCollateral)
-	assert.Equal(t, big.Zero(), stats.TotalClientStorageFee)
+	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	require.Equal(t, exitcode.Ok, code)
+	for _, id := range dealIDs {
+		// deals are pending and don't yet have deal states
+		_, found := vm.GetDealState(t, v, id)
+		require.False(t, found)
+	}
 
 	//
 	// Precommit, Prove, Verify and PoSt sector with deals
@@ -151,9 +150,22 @@ func TestTerminateSectors(t *testing.T) {
 	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 	require.Equal(t, exitcode.Ok, code)
 
+	// market cron updates deal states indicating deals are no longer pending.
+	for _, id := range dealIDs {
+		state, found := vm.GetDealState(t, v, id)
+		require.True(t, found)
+		// non-zero
+		assert.Greater(t, uint64(state.LastUpdatedEpoch), uint64(0))
+		// deal has not been slashed
+		assert.Equal(t, abi.ChainEpoch(-1), state.SlashEpoch)
+	}
+
 	//
 	// Terminate Sector
 	//
+
+	v, err = v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
 
 	terminateParams := miner.TerminateSectorsParams{
 		Terminations: []miner.TerminationDeclaration{{
@@ -185,14 +197,50 @@ func TestTerminateSectors(t *testing.T) {
 	assert.Equal(t, big.Zero(), minerBalances.InitialPledge)
 	assert.Equal(t, big.Zero(), minerBalances.PreCommitDeposit)
 
-	stats = vm.GetNetworkStats(t, v)
+	// expect network stats to reflect power has been removed from sector
+	stats := vm.GetNetworkStats(t, v)
 	assert.Equal(t, int64(0), stats.MinerAboveMinPowerCount)
 	assert.Equal(t, big.Zero(), stats.TotalRawBytePower)
 	assert.Equal(t, big.Zero(), stats.TotalQualityAdjPower)
 	assert.Equal(t, big.Zero(), stats.TotalBytesCommitted)
 	assert.Equal(t, big.Zero(), stats.TotalQABytesCommitted)
 	assert.Equal(t, big.Zero(), stats.TotalPledgeCollateral)
-	assert.Equal(t, big.Zero(), stats.TotalClientLockedCollateral)
-	assert.Equal(t, big.Zero(), stats.TotalProviderLockedCollateral)
-	assert.Equal(t, big.Zero(), stats.TotalClientStorageFee)
+
+	// market cron slashes deals because sector has been terminated
+	for _, id := range dealIDs {
+		state, found := vm.GetDealState(t, v, id)
+		require.True(t, found)
+		// non-zero
+		assert.Greater(t, uint64(state.LastUpdatedEpoch), uint64(0))
+		// deal has not been slashed
+		assert.Equal(t, v.GetEpoch(), state.SlashEpoch)
+
+	}
+
+	// advance and run cron to complete processing of termination
+	v, err = v.WithEpoch(v.GetEpoch() + 1000)
+	require.NoError(t, err)
+	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	require.Equal(t, exitcode.Ok, code)
+
+	// Verified client should be able to withdraw all all deal collateral.
+	// Client added 3 FIL balance and had 2 deals with 1 FIL collateral apiece.
+	// Should only be able to withdraw the full 2 FIL if deals have been slashed and balance was unlocked.
+	withdrawal := big.Mul(big.NewInt(2), vm.FIL)
+	withdrawParams := &market.WithdrawBalanceParams{
+		ProviderOrClientAddress: verifiedClient,
+		Amount:                  withdrawal,
+	}
+	_, code = v.ApplyMessage(verifiedClient, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, withdrawParams)
+	require.Equal(t, exitcode.Ok, code)
+
+	verifiedIDAddr, found := v.NormalizeAddress(verifiedClient)
+	require.True(t, found)
+	vm.ExpectInvocation{
+		To:     builtin.StorageMarketActorAddr,
+		Method: builtin.MethodsMarket.WithdrawBalance,
+		SubInvocations: []vm.ExpectInvocation{
+			{To: verifiedIDAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(withdrawal)},
+		},
+	}.Matches(t, v.LastInvocation())
 }
