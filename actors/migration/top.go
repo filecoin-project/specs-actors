@@ -156,7 +156,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		}
 		headOut, err := migration.StateMigration.MigrateState(ctx, store, actorIn.Head)
 		if err != nil {
-			return err
+			return xerrors.Errorf("state migration error on addr %s actor type %s: %w", addr, migration.OutCodeCID, err)
 		}
 
 		// set up new state root with the migrated state
