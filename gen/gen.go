@@ -38,6 +38,12 @@ func main() {
 		panic(err)
 	}
 
+	// if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
+	// 	states.Actor{},
+	// ); err != nil {
+	// 	panic(err)
+	// }
+
 	// Actors
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/system/cbor_gen.go", "system",
 		// actor state
