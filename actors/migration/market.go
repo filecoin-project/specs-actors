@@ -37,17 +37,17 @@ func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 
 	escrowRoot, err := m.migrateBalanceTable(ctx, store, inState.EscrowTable)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("escrow table %w", err)
+		return cid.Undef, xerrors.Errorf("escrow table: %w", err)
 	}
 
 	lockedRoot, err := m.migrateBalanceTable(ctx, store, inState.LockedTable)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("locked table %w", err)
+		return cid.Undef, xerrors.Errorf("locked table: %w", err)
 	}
 
 	dealOpsRoot, err := m.migrateDealOps(ctx, store, inState.DealOpsByEpoch)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("deal ops by epoch %w", err)
+		return cid.Undef, xerrors.Errorf("deal ops by epoch: %w", err)
 	}
 
 	outState := market2.State{
