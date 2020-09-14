@@ -852,7 +852,7 @@ func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnC
 		return sectorExpirationSet{}, bitfield.New(), err
 	}
 
-	sectorNumbers := []uint64{}
+	var sectorNumbers []uint64
 	totalPower := NewPowerPairZero()
 	totalPledge := big.Zero()
 	err = matches.ForEach(func(u uint64) error {
