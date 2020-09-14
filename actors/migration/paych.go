@@ -24,7 +24,7 @@ func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	// Migrate lane states map
 	laneStatesRoot, err := m.migrateLaneStates(ctx, store, inState.LaneStates)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("lane state: %w", err)
 	}
 
 	// Verify parties are all ID addrs

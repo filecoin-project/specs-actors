@@ -6,6 +6,7 @@ import (
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	"golang.org/x/xerrors"
 
 	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 )
@@ -21,32 +22,32 @@ func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 
 	proposalsRoot, err := m.migrateProposals(ctx, store, inState.Proposals)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("proposals: %w", err)
 	}
 
 	statesRoot, err := m.migrateStates(ctx, store, inState.States)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("states: %w", err)
 	}
 
 	pendingRoot, err := m.migratePendingProposals(ctx, store, inState.PendingProposals)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("pending proposals: %w", err)
 	}
 
 	escrowRoot, err := m.migrateBalanceTable(ctx, store, inState.EscrowTable)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("escrow table %w", err)
 	}
 
 	lockedRoot, err := m.migrateBalanceTable(ctx, store, inState.LockedTable)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("locked table %w", err)
 	}
 
 	dealOpsRoot, err := m.migrateDealOps(ctx, store, inState.DealOpsByEpoch)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("deal ops by epoch %w", err)
 	}
 
 	outState := market2.State{

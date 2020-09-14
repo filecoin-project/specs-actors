@@ -24,7 +24,7 @@ func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 	// Migrate pending txns map
 	pendingRoot, err := m.migratePending(ctx, store, inState.PendingTxns)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("pending: %w", err)
 	}
 
 	// Verify signers are all ID addrs

@@ -29,12 +29,12 @@ func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 
 	cronEventsRoot, err := m.migrateCronEvents(ctx, store, inState.CronEventQueue)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("cron events: %w", err)
 	}
 
 	claimsRoot, err := m.migrateClaims(ctx, store, inState.Claims)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, xerrors.Errorf("claims: %w", err)
 	}
 
 	outState := power2.State{

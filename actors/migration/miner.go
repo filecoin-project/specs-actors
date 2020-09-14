@@ -32,37 +32,37 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 
 	infoCid, err := m.migrateInfo(ctx, store, inState.Info)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating info %w", err)
+		return cid.Undef, xerrors.Errorf("info: %w", err)
 	}
 
 	vestingFunds, err := m.migrateVestingFunds(ctx, store, inState.VestingFunds)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating vesting funds %w", err)
+		return cid.Undef, xerrors.Errorf("vesting funds: %w", err)
 	}
 
 	precommitsRoot, err := m.migratePreCommittedSectors(ctx, store, inState.PreCommittedSectors)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating precommitted sectors %w", err)
+		return cid.Undef, xerrors.Errorf("precommitted sectors: %w", err)
 	}
 
 	precommitExpiryRoot, err := m.migrateBitfieldQueue(ctx, store, inState.PreCommittedSectorsExpiry)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating precommit expiry queue %w", err)
+		return cid.Undef, xerrors.Errorf("precommit expiry queue: %w", err)
 	}
 
 	allocatedSectors, err := m.migrateAllocatedSectors(ctx, store, inState.AllocatedSectors)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating allocated sectors %w", err)
+		return cid.Undef, xerrors.Errorf("allocated sectors: %w", err)
 	}
 
 	sectorsRoot, err := m.migrateSectors(ctx, store, inState.Sectors)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating sectors %w", err)
+		return cid.Undef, xerrors.Errorf("sectors: %w", err)
 	}
 
 	deadlinesRoot, err := m.migrateDeadlines(ctx, store, inState.Deadlines)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("failed migrating deadlines %w", err)
+		return cid.Undef, xerrors.Errorf("deadlines: %w", err)
 	}
 
 	// To preserve v2 Balance Invariant that actor balance > initial pledge + pre commit deposit + locked funds
@@ -217,12 +217,12 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 
 		partitions, err := m.migratePartitions(ctx, store, inDeadline.Partitions)
 		if err != nil {
-			return cid.Undef, err
+			return cid.Undef, xerrors.Errorf("partitions: %w", err)
 		}
 
 		expirationEpochs, err := m.migrateBitfieldQueue(ctx, store, inDeadline.ExpirationsEpochs)
 		if err != nil {
-			return cid.Undef, err
+			return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
 		}
 
 		outDeadline := miner2.Deadline{
@@ -257,12 +257,12 @@ func (m *minerMigrator) migratePartitions(ctx context.Context, store cbor.IpldSt
 	if err = inArray.ForEach(&inPartition, func(i int64) error {
 		expirationEpochs, err := m.migrateExpirationQueue(ctx, store, inPartition.ExpirationsEpochs)
 		if err != nil {
-			return err
+			return xerrors.Errorf("expiration queue: %w", err)
 		}
 
 		earlyTerminated, err := m.migrateBitfieldQueue(ctx, store, inPartition.EarlyTerminated)
 		if err != nil {
-			return err
+			return xerrors.Errorf("early termination queue: %w", err)
 		}
 
 		outPartition := miner2.Partition{
