@@ -6,18 +6,19 @@ import (
 	address "github.com/filecoin-project/go-address"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	states0 "github.com/filecoin-project/specs-actors/actors/states"
 	adt0 "github.com/filecoin-project/specs-actors/actors/util/adt"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	"golang.org/x/xerrors"
 
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	smoothing2 "github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
 type powerMigrator struct {
-	actorsIn *states.TreeTop
+	actorsIn *states0.Tree
 }
 
 func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
@@ -80,9 +81,12 @@ func (m *powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore,
 		if err != nil {
 			return err
 		}
-		minerActor, err := m.actorsIn.GetActor(ctx, address.Address(a))
+		minerActor, found, err := m.actorsIn.GetActor(address.Address(a))
 		if err != nil {
 			return err
+		}
+		if !found {
+			return xerrors.Errorf("claim exists for miner %s but miner not in state tree", a)
 		}
 		var minerState miner0.State
 		if err := store.Get(ctx, minerActor.Head, &minerState); err != nil {
