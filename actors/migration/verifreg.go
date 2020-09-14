@@ -20,7 +20,7 @@ import (
 )
 
 type verifregMigrator struct {
-	actorsOut *states.TreeTop
+	actorsOut *states.Tree
 }
 
 func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
@@ -60,9 +60,12 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 	}
 	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store))
 
-	outInit, err := m.actorsOut.GetActor(ctx, builtin2.InitActorAddr)
+	outInit, found, err := m.actorsOut.GetActor(builtin2.InitActorAddr)
 	if err != nil {
 		return cid.Undef, err
+	}
+	if !found {
+		return cid.Undef, xerrors.Errorf("could not find init actor in input state")
 	}
 	var outInitState init2.State
 	err = store.Get(ctx, outInit.Head, &outInitState)
@@ -95,7 +98,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 	}
 	// update init actor
 	outInit.Head = outInitHead
-	if err := m.actorsOut.SetActor(ctx, builtin2.InitActorAddr, outInit); err != nil {
+	if err := m.actorsOut.SetActor(builtin2.InitActorAddr, outInit); err != nil {
 		return cid.Undef, err
 	}
 
@@ -136,6 +139,6 @@ func (m *verifregMigrator) resolveAndMaybeCreateAccount(ctx context.Context, inA
 		Head:    acctCid,
 	}
 
-	err = m.actorsOut.SetActor(ctx, idInAddr, &acctActor)
+	err = m.actorsOut.SetActor(idInAddr, &acctActor)
 	return idInAddr, err
 }

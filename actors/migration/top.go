@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
+	states0 "github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -79,10 +80,13 @@ type phoenix struct {
 	burntBalance abi.TokenAmount
 }
 
-func (p phoenix) load(ctx context.Context, actorsIn *states.TreeTop) error {
-	burntFundsActor, err := actorsIn.GetActor(ctx, builtin0.BurntFundsActorAddr)
+func (p phoenix) load(ctx context.Context, actorsIn *states0.Tree) error {
+	burntFundsActor, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return xerrors.Errorf("burnt funds actor not in tree")
 	}
 	p.burntBalance = burntFundsActor.Balance
 	return nil
@@ -96,27 +100,23 @@ func (p phoenix) transfer(amt abi.TokenAmount) error {
 	return nil
 }
 
-func (p phoenix) flush(ctx context.Context, actorsIn, actorsOut *states.TreeTop) error {
-	burntFundsActor, err := actorsIn.GetActor(ctx, builtin0.BurntFundsActorAddr)
+func (p phoenix) flush(ctx context.Context, actorsIn *states0.Tree, actorsOut *states.Tree) error {
+	burntFundsActor, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
 	if err != nil {
 		return err
 	}
+	if !found {
+		return xerrors.Errorf("burnt funds actor not in tree")
+	}
 	burntFundsActor.Balance = p.burntBalance
-	return actorsOut.SetActor(ctx, builtin.BurntFundsActorAddr, burntFundsActor)
+	return actorsOut.SetActor(builtin.BurntFundsActorAddr, burntFundsActor)
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
 func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (cid.Cid, error) {
-	// first migrate the global state tree hamt to something v2 can work with
-	// if this is very slow (likely) we can cherry-pick states.TreeTop to v0.9
-	// to avoid this step.
-	stateRootInTweaked, err := migrateHAMTRaw(ctx, store, stateRootIn)
-	if err != nil {
-		return cid.Undef, err
-	}
 	// Setup input and output state tree helpers
 	adtStore := adt.WrapStore(ctx, store)
-	actorsIn, err := states.AsTreeTop(adtStore, stateRootInTweaked)
+	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -124,7 +124,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	if err != nil {
 		return cid.Undef, err
 	}
-	actorsOut, err := states.AsTreeTop(adtStore, stateRootOut)
+	actorsOut, err := states.LoadTree(adtStore, stateRootOut)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -141,7 +141,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 	// Iterate all actors in old state root
 	// Set new state root actors as we go
-	err = actorsIn.ForEach(ctx, func(addr address.Address, actorIn *states.Actor) error {
+	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
 		migration := migrations[actorIn.Code]
 
 		// This will be migrated at the end
@@ -161,10 +161,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 		// set up new state root with the migrated state
 		actorOut := states.Actor{
-			Code:    migration.OutCodeCID,
-			Head:    headOut,
-			Nonce:   actorIn.Nonce,
-			Balance: actorIn.Balance,
+			Code:       migration.OutCodeCID,
+			Head:       headOut,
+			CallSeqNum: actorIn.CallSeqNum,
+			Balance:    actorIn.Balance,
 		}
 
 		if actorIn.Code == builtin0.StorageMinerActorCodeID {
@@ -176,7 +176,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 			actorOut.Balance = big.Add(actorOut.Balance, mm.Transfer)
 		}
-		return actorsOut.SetActor(ctx, addr, &actorOut)
+		return actorsOut.SetActor(addr, &actorOut)
 	})
 	if err != nil {
 		return cid.Undef, err
@@ -185,21 +185,24 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	// // Migrate verified registry
 	vm := migrations[builtin0.VerifiedRegistryActorCodeID].StateMigration.(*verifregMigrator)
 	vm.actorsOut = actorsOut
-	verifRegActorIn, err := actorsIn.GetActor(ctx, builtin0.VerifiedRegistryActorAddr)
+	verifRegActorIn, found, err := actorsIn.GetActor(builtin0.VerifiedRegistryActorAddr)
 	if err != nil {
 		return cid.Undef, err
+	}
+	if !found {
+		return cid.Undef, xerrors.Errorf("could not find verifreg actor in state")
 	}
 	verifRegHeadOut, err := vm.MigrateState(ctx, store, verifRegActorIn.Head)
 	if err != nil {
 		return cid.Undef, err
 	}
 	verifRegActorOut := states.Actor{
-		Code:    builtin.VerifiedRegistryActorCodeID,
-		Head:    verifRegHeadOut,
-		Nonce:   verifRegActorIn.Nonce,
-		Balance: verifRegActorIn.Balance,
+		Code:       builtin.VerifiedRegistryActorCodeID,
+		Head:       verifRegHeadOut,
+		CallSeqNum: verifRegActorIn.CallSeqNum,
+		Balance:    verifRegActorIn.Balance,
 	}
-	if err := actorsOut.SetActor(ctx, builtin.VerifiedRegistryActorAddr, &verifRegActorOut); err != nil {
+	if err := actorsOut.SetActor(builtin.VerifiedRegistryActorAddr, &verifRegActorOut); err != nil {
 		return cid.Undef, err
 	}
 
@@ -208,5 +211,5 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return cid.Undef, err
 	}
 
-	return actorsOut.Root()
+	return actorsOut.Flush()
 }
