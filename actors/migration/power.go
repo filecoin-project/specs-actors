@@ -77,7 +77,7 @@ func (m *powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore,
 	var inClaim power0.Claim
 	if err = inMap.ForEach(&inClaim, func(key string) error {
 		// look up seal proof type from miner actor
-		a, err := address.NewFromString(key)
+		a, err := address.NewFromBytes([]byte(key))
 		if err != nil {
 			return err
 		}
