@@ -592,8 +592,10 @@ func (q ExpirationQueue) remove(rawEpoch abi.ChainEpoch, onTimeSectors, earlySec
 	pledge abi.TokenAmount) error {
 	epoch := q.quant.QuantizeUp(rawEpoch)
 	var es ExpirationSet
-	if err := q.mustGet(epoch, &es); err != nil {
-		return err
+	if found, err := q.Array.Get(uint64(epoch), &es); err != nil {
+		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
+	} else if !found {
+		return xerrors.Errorf("missing expected expiration set at epoch %v", epoch)
 	}
 
 	if err := es.Remove(onTimeSectors, earlySectors, pledge, activePower, faultyPower); err != nil {
@@ -677,15 +679,6 @@ func (q ExpirationQueue) mayGet(key abi.ChainEpoch) (*ExpirationSet, error) {
 		return nil, xerrors.Errorf("failed to lookup queue epoch %v: %w", key, err)
 	}
 	return es, nil
-}
-
-func (q ExpirationQueue) mustGet(key abi.ChainEpoch, es *ExpirationSet) error {
-	if found, err := q.Array.Get(uint64(key), es); err != nil {
-		return xerrors.Errorf("failed to lookup queue epoch %v: %w", key, err)
-	} else if !found {
-		return xerrors.Errorf("missing expected expiration set at epoch %v", key)
-	}
-	return nil
 }
 
 func (q ExpirationQueue) mustUpdate(epoch abi.ChainEpoch, es *ExpirationSet) error {
