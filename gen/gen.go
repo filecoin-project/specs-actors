@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
@@ -34,6 +35,12 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},
 		builtin.ConfirmSectorProofsParams{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
+		states.Actor{},
 	); err != nil {
 		panic(err)
 	}
