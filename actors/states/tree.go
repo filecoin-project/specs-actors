@@ -7,7 +7,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
 // Value type of the top level of the state tree.
@@ -18,6 +18,8 @@ type Actor struct {
 	CallSeqNum uint64  // CallSeqNum for the next message to be received by the actor (non-zero for accounts only)
 	Balance    big.Int // Token balance of the actor
 }
+// XXX: import from v0.9 before merging
+//type Actor = states0.Actor
 
 // A specialization of a map of ID-addresses to actor heads.
 type Tree struct {
