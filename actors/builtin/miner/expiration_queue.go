@@ -760,13 +760,13 @@ func groupNewSectorsByDeclaredExpiration(sectorSize abi.SectorSize, sectors []*S
 func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo) ([]sectorExpirationSet, error) {
 	declaredExpirations := make(map[abi.ChainEpoch]bool, len(sectors))
 	sectorsByNumber := make(map[uint64]*SectorOnChainInfo, len(sectors))
-	allRemaining := bitfield.New()
+	allRemaining := make(map[uint64]struct{})
 	expirationGroups := make([]sectorExpirationSet, 0, len(declaredExpirations))
 
 	for _, sector := range sectors {
 		qExpiration := q.quant.QuantizeUp(sector.Expiration)
 		declaredExpirations[qExpiration] = true
-		allRemaining.Set(uint64(sector.SectorNumber))
+		allRemaining[uint64(sector.SectorNumber)] = struct{}{}
 		sectorsByNumber[uint64(sector.SectorNumber)] = sector
 	}
 
@@ -791,9 +791,7 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 
 	// If sectors remain, traverse next in epoch order. Remaining sectors should be rescheduled to expire soon, so
 	// this traversal should exit early.
-	if empty, err := allRemaining.IsEmpty(); err != nil {
-		return nil, err
-	} else if !empty {
+	if len(allRemaining) > 0 {
 		err := q.traverse(func(epoch abi.ChainEpoch, es *ExpirationSet) (bool, error) {
 			// If this set's epoch is one of our declared epochs, we've already processed it in the loop above,
 			// so skip processing here.
@@ -818,20 +816,14 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 				expirationGroups = append(expirationGroups, group)
 			}
 
-			empty, err := allRemaining.IsEmpty()
-			if err != nil {
-				return false, err
-			}
-			return !empty, nil
+			return len(allRemaining) > 0, nil
 		})
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if isEmpty, err := allRemaining.IsEmpty(); err != nil {
-		return nil, err
-	} else if !isEmpty {
+	if len(allRemaining) > 0 {
 		return nil, xerrors.New("some sectors not found in expiration queue")
 	}
 
@@ -844,31 +836,25 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 
 // Takes a slice of sector infos a bitfield of sector numbers and returns a single group for all bitfield sectors
 // Also returns a bitfield containing sectors not found in expiration set.
+// This method mutates includeSet by removing sector numbers of sectors found in expiration set.
 func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnChainInfo,
-	set bitfield.BitField, es *ExpirationSet, expiration abi.ChainEpoch,
-) (sectorExpirationSet, bitfield.BitField, error) {
-	matches, err := bitfield.IntersectBitField(es.OnTimeSectors, set)
-	if err != nil {
-		return sectorExpirationSet{}, bitfield.New(), err
-	}
-
+	includeSet map[uint64]struct{}, es *ExpirationSet, expiration abi.ChainEpoch,
+) (sectorExpirationSet, map[uint64]struct{}, error) {
 	var sectorNumbers []uint64
 	totalPower := NewPowerPairZero()
 	totalPledge := big.Zero()
-	err = matches.ForEach(func(u uint64) error {
-		sector := sectors[u]
-		sectorNumbers = append(sectorNumbers, u)
-		totalPower = totalPower.Add(PowerForSector(sectorSize, sector))
-		totalPledge = big.Add(totalPledge, sector.InitialPledge)
+	err := es.OnTimeSectors.ForEach(func(u uint64) error {
+		if _, found := includeSet[u]; found {
+			sector := sectors[u]
+			sectorNumbers = append(sectorNumbers, u)
+			totalPower = totalPower.Add(PowerForSector(sectorSize, sector))
+			totalPledge = big.Add(totalPledge, sector.InitialPledge)
+			delete(includeSet, u)
+		}
 		return nil
 	})
 	if err != nil {
-		return sectorExpirationSet{}, bitfield.New(), err
-	}
-
-	remainder, err := bitfield.SubtractBitField(set, es.OnTimeSectors)
-	if err != nil {
-		return sectorExpirationSet{}, bitfield.New(), err
+		return sectorExpirationSet{}, nil, err
 	}
 
 	return sectorExpirationSet{
@@ -879,17 +865,15 @@ func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnC
 			pledge:  totalPledge,
 		},
 		expirationSet: es,
-	}, remainder, nil
+	}, includeSet, nil
 }
 
 // assertNoEarlySectors checks for an invalid overlap between a bitfield an a set's early sectors.
-func assertNoEarlySectors(set bitfield.BitField, es *ExpirationSet) error {
-	if intersect, err := bitfield.IntersectBitField(es.EarlySectors, set); err != nil {
-		return xerrors.Errorf("Could not intersect with early sectors: %v", err)
-	} else if empty, err := intersect.IsEmpty(); err != nil {
-		return xerrors.Errorf("Could not check if early sector intersect was empty: %v", err)
-	} else if !empty {
-		return xerrors.New("Invalid attempt to group a sector with an early expiration")
-	}
-	return nil
+func assertNoEarlySectors(set map[uint64]struct{}, es *ExpirationSet) error {
+	return es.EarlySectors.ForEach(func(u uint64) error {
+		if _, found := set[u]; found {
+			return xerrors.Errorf("Invalid attempt to group sector %d with an early expiration", u)
+		}
+		return nil
+	})
 }
