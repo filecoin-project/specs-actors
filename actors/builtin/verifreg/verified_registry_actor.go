@@ -66,8 +66,6 @@ func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.E
 	rt.State().Readonly(&st)
 	rt.ValidateImmediateCallerIs(st.RootKey)
 
-	// TODO We need to resolve the verifier address to an ID address before making this comparison.
-	// https://github.com/filecoin-project/specs-actors/issues/556
 	if verifier == st.RootKey {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Rootkey cannot be added as verifier")
 	}

@@ -27,7 +27,7 @@ type State struct {
 	// CumsumBaseline and CumsumRealized are expressed in byte-epochs.
 	CumsumBaseline Spacetime
 
-	// CumsumRealized is cumulative sum of network power capped by BalinePower(epoch)
+	// CumsumRealized is cumulative sum of network power capped by BaselinePower(epoch)
 	CumsumRealized Spacetime
 
 	// EffectiveNetworkTime is ceiling of real effective network time `theta` based on
@@ -52,7 +52,7 @@ type State struct {
 	// Epoch tracks for which epoch the Reward was computed
 	Epoch abi.ChainEpoch
 
-	// TotalMined tracks the total FIL awared to block miners
+	// TotalMined tracks the total FIL awarded to block miners
 	TotalMined abi.TokenAmount
 }
 
