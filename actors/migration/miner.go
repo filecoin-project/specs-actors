@@ -197,7 +197,7 @@ func (m *minerMigrator) migrateSectors(ctx context.Context, store cbor.IpldStore
 
 func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, deadlines cid.Cid) (cid.Cid, error) {
 	var inDeadlines miner0.Deadlines
-	err := store.Get(ctx, deadlines, &deadlines)
+	err := store.Get(ctx, deadlines, &inDeadlines)
 	if err != nil {
 		return cid.Undef, err
 	}

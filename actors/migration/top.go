@@ -80,7 +80,7 @@ type phoenix struct {
 	burntBalance abi.TokenAmount
 }
 
-func (p phoenix) load(ctx context.Context, actorsIn *states0.Tree) error {
+func (p *phoenix) load(ctx context.Context, actorsIn *states0.Tree) error {
 	burntFundsActor, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
 	if err != nil {
 		return err
@@ -92,7 +92,7 @@ func (p phoenix) load(ctx context.Context, actorsIn *states0.Tree) error {
 	return nil
 }
 
-func (p phoenix) transfer(amt abi.TokenAmount) error {
+func (p *phoenix) transfer(amt abi.TokenAmount) error {
 	p.burntBalance = big.Sub(p.burntBalance, amt)
 	if p.burntBalance.LessThan(big.Zero()) {
 		return xerrors.Errorf("migration programmer error burnt funds balance falls to %v, below zero", p.burntBalance)
@@ -100,7 +100,7 @@ func (p phoenix) transfer(amt abi.TokenAmount) error {
 	return nil
 }
 
-func (p phoenix) flush(ctx context.Context, actorsIn *states0.Tree, actorsOut *states.Tree) error {
+func (p *phoenix) flush(ctx context.Context, actorsIn *states0.Tree, actorsOut *states.Tree) error {
 	burntFundsActor, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
 	if err != nil {
 		return err
