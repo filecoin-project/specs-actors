@@ -30,7 +30,7 @@ func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePow
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	if currRealizedPower == nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "arugment should not be nil")
+		rt.Abortf(exitcode.ErrIllegalArgument, "argument should not be nil")
 		return nil // linter does not understand abort exiting
 	}
 	st := ConstructState(*currRealizedPower)
