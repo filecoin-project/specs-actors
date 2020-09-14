@@ -61,7 +61,8 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid)
 		if err != nil {
 			return err
 		}
-		return outRootNode.Set(ctx, k, cbg.CborCid(outInner))
+		c := cbg.CborCid(outInner)
+		return outRootNode.Set(ctx, k, &c)
 	}); err != nil {
 		return cid.Undef, err
 	}
@@ -73,4 +74,3 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid)
 	return store.Put(ctx, outRootNode)
 
 }
-
