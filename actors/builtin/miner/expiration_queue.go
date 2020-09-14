@@ -802,7 +802,8 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 		return nil, err
 	} else if !empty {
 		err := q.traverse(func(epoch abi.ChainEpoch, es *ExpirationSet) (bool, error) {
-			// skip if we've processed this epoch above
+			// If this set's epoch is one of our declared epochs, we've already processed it in the loop above,
+			// so skip processing here.
 			if _, found := declaredExpirations[epoch]; found {
 				return true, nil
 			}
