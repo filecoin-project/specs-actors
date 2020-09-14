@@ -15,7 +15,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
@@ -39,11 +38,11 @@ func main() {
 		panic(err)
 	}
 
-	if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
-		states.Actor{},
-	); err != nil {
-		panic(err)
-	}
+	// if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
+	// 	states.Actor{},
+	// ); err != nil {
+	// 	panic(err)
+	// }
 
 	// Actors
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/system/cbor_gen.go", "system",
