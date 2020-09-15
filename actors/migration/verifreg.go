@@ -85,7 +85,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 		}
 		outAddr := idInAddr
 		outCap := verifreg2.DataCap(inCap) // Identical
-		return outMap.Put(verifreg2.AddrKey(outAddr), &outCap)
+		return outMap.Put(abi.AddrKey(outAddr), &outCap)
 	}); err != nil {
 		return cid.Undef, err
 	}
