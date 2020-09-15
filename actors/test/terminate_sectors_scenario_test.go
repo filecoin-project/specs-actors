@@ -33,13 +33,12 @@ func TestTerminateSectors(t *testing.T) {
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
 
 	// create miner
-	params := power.CreateMinerParams{
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &power.CreateMinerParams{
 		Owner:         worker,
 		Worker:        worker,
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
+	})
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -49,17 +48,15 @@ func TestTerminateSectors(t *testing.T) {
 	//
 
 	// register verifier then verified client
-	addVerifierParams := verifreg.AddVerifierParams{
+	vm.ApplyOk(t, v, vm.VerifregRoot, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifier, &verifreg.AddVerifierParams{
 		Address:   verifier,
 		Allowance: abi.NewStoragePower(32 << 40),
-	}
-	vm.ApplyOk(t, v, vm.VerifregRoot, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifier, &addVerifierParams)
+	})
 
-	addClientParams := verifreg.AddVerifiedClientParams{
+	vm.ApplyOk(t, v, verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &verifreg.AddVerifiedClientParams{
 		Address:   verifiedClient,
 		Allowance: abi.NewStoragePower(32 << 40),
-	}
-	vm.ApplyOk(t, v, verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &addClientParams)
+	})
 
 	// add market collateral for clients and miner
 	collateral := big.Mul(big.NewInt(3), vm.FIL)
@@ -90,7 +87,7 @@ func TestTerminateSectors(t *testing.T) {
 	//
 
 	// precommit sector with deals
-	preCommitParams := miner.PreCommitSectorParams{
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &miner.PreCommitSectorParams{
 		SealProof:       sealProof,
 		SectorNumber:    sectorNumber,
 		SealedCID:       sealedCid,
@@ -98,8 +95,7 @@ func TestTerminateSectors(t *testing.T) {
 		DealIDs:         dealIDs,
 		Expiration:      v.GetEpoch() + 220*builtin.EpochsInDay,
 		ReplaceCapacity: false,
-	}
-	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
+	})
 
 	// advance time to min seal duration
 	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
@@ -108,17 +104,16 @@ func TestTerminateSectors(t *testing.T) {
 	// Prove commit sector after max seal duration
 	v, err := v.WithEpoch(proveTime)
 	require.NoError(t, err)
-	proveCommitParams := miner.ProveCommitSectorParams{
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
-	}
-	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
+	})
 
 	// In the same epoch, trigger cron to validate prove commit
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// advance to proving period and submit post
 	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
-	submitParams := miner.SubmitWindowedPoStParams{
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &miner.SubmitWindowedPoStParams{
 		Deadline: dlInfo.Index,
 		Partitions: []miner.PoStPartition{{
 			Index:   pIdx,
@@ -129,8 +124,7 @@ func TestTerminateSectors(t *testing.T) {
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte("not really random"),
-	}
-	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+	})
 
 	// proving period cron adds miner power
 	v, err = v.WithEpoch(dlInfo.Last())
@@ -154,15 +148,13 @@ func TestTerminateSectors(t *testing.T) {
 	v, err = v.WithEpoch(v.GetEpoch() + 1)
 	require.NoError(t, err)
 
-	terminateParams := miner.TerminateSectorsParams{
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.TerminateSectors, &miner.TerminateSectorsParams{
 		Terminations: []miner.TerminationDeclaration{{
 			Deadline:  dlInfo.Index,
 			Partition: pIdx,
 			Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
 		}},
-	}
-
-	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.TerminateSectors, &terminateParams)
+	})
 
 	noSubinvocations := []vm.ExpectInvocation{}
 	vm.ExpectInvocation{
@@ -212,11 +204,10 @@ func TestTerminateSectors(t *testing.T) {
 	// Client added 3 FIL balance and had 2 deals with 1 FIL collateral apiece.
 	// Should only be able to withdraw the full 2 FIL if deals have been slashed and balance was unlocked.
 	withdrawal := big.Mul(big.NewInt(2), vm.FIL)
-	withdrawParams := &market.WithdrawBalanceParams{
+	vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, &market.WithdrawBalanceParams{
 		ProviderOrClientAddress: verifiedClient,
 		Amount:                  withdrawal,
-	}
-	vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, withdrawParams)
+	})
 
 	verifiedIDAddr, found := v.NormalizeAddress(verifiedClient)
 	require.True(t, found)
