@@ -2919,7 +2919,7 @@ func (h *marketActorTestHarness) assertDealDeleted(rt *mock.Runtime, dealId abi.
 	require.NoError(h.t, err)
 	pending, err := adt.AsMap(adt.AsStore(rt), st.PendingProposals)
 	require.NoError(h.t, err)
-	found, err = pending.Get(adt.CidKey(pcid), nil)
+	found, err = pending.Get(abi.CidKey(pcid), nil)
 	require.NoError(h.t, err)
 	require.False(h.t, found)
 }

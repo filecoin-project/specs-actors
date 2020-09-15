@@ -255,7 +255,7 @@ func TestVesting(t *testing.T) {
 			To:       darlene,
 			Value:    multisigInitialBalance,
 			Method:   builtin.MethodSend,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
 		actor.approveOK(rt, 0, proposalHashData, nil)
@@ -282,7 +282,7 @@ func TestVesting(t *testing.T) {
 			To:       darlene,
 			Value:    big.Div(multisigInitialBalance, big.NewInt(2)),
 			Method:   builtin.MethodSend,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
 
@@ -332,7 +332,7 @@ func TestVesting(t *testing.T) {
 				To:       darlene,
 				Value:    big.Div(multisigInitialBalance, big.NewInt(2)),
 				Method:   builtin.MethodSend,
-				Params: nil,
+				Params:   nil,
 				Approved: []addr.Address{anne},
 			})
 			_ = actor.approve(rt, 0, proposalHashData, nil)
@@ -374,7 +374,7 @@ func TestVesting(t *testing.T) {
 		rt.SetBalance(lockedBalance)
 
 		// Do not expect full vesting before full duration has elapsed
-		rt.SetEpoch(unlockDuration-1)
+		rt.SetEpoch(unlockDuration - 1)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proposeOK(rt, anne, lockedBalance, builtin.MethodSend, nil, nil)
@@ -1008,7 +1008,7 @@ func TestCancel(t *testing.T) {
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
 		actor.cancel(rt, txnID, proposalHashData)
@@ -1038,7 +1038,7 @@ func TestCancel(t *testing.T) {
 				To:       bob,
 				Value:    sendValue,
 				Method:   fakeMethod,
-				Params: nil,
+				Params:   nil,
 				Approved: []addr.Address{chuck},
 			})
 			actor.cancel(rt, txnID, proposalHashData)
@@ -1064,7 +1064,7 @@ func TestCancel(t *testing.T) {
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
-				Params: nil,
+				Params:   nil,
 				Approved: []addr.Address{anne},
 			})
 			actor.cancel(rt, txnID, proposalHashData)
@@ -1076,7 +1076,7 @@ func TestCancel(t *testing.T) {
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
 	})
@@ -1100,7 +1100,7 @@ func TestCancel(t *testing.T) {
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
-				Params: nil,
+				Params:   nil,
 				Approved: []addr.Address{anne},
 			})
 			actor.cancel(rt, txnID, proposalHashData)
@@ -1112,7 +1112,7 @@ func TestCancel(t *testing.T) {
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
 	})
@@ -1136,7 +1136,7 @@ func TestCancel(t *testing.T) {
 				To:       chuck,
 				Value:    sendValue,
 				Method:   fakeMethod,
-				Params: nil,
+				Params:   nil,
 				Approved: []addr.Address{anne},
 			})
 			actor.cancel(rt, dneTxnID, proposalHashData)
@@ -1148,7 +1148,7 @@ func TestCancel(t *testing.T) {
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
 	})
@@ -1195,7 +1195,7 @@ func TestCancel(t *testing.T) {
 			To:       chuck,
 			Value:    sendValue,
 			Method:   fakeMethod,
-			Params: nil,
+			Params:   nil,
 			Approved: []addr.Address{anne, bob},
 		})
 
@@ -1765,7 +1765,7 @@ func TestLockBalance(t *testing.T) {
 		rt.Reset()
 
 		// Later, can spend the rest
-		rt.SetEpoch(vestStart+vestDuration)
+		rt.SetEpoch(vestStart + vestDuration)
 		rested := big.NewInt(70_000)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(bob, builtin.MethodSend, nil, rested, nil, exitcode.Ok)
@@ -1822,7 +1822,7 @@ func TestLockBalance(t *testing.T) {
 		rt.Reset()
 
 		// Later, can spend the rest
-		rt.SetEpoch(vestStart+vestDuration)
+		rt.SetEpoch(vestStart + vestDuration)
 		rested := big.NewInt(80_000)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectSend(bob, builtin.MethodSend, nil, rested, nil, exitcode.Ok)
@@ -1855,7 +1855,7 @@ func TestLockBalance(t *testing.T) {
 		// Can't change lock duration
 		rt.ExpectValidateCallerAddr(receiver)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
-			actor.lockBalance(rt, vestStart, vestDuration - 1, lockAmount)
+			actor.lockBalance(rt, vestStart, vestDuration-1, lockAmount)
 		})
 		rt.Reset()
 
@@ -2053,6 +2053,6 @@ func (s key) Key() string {
 	return string(s)
 }
 
-func asKey(in string) adt.Keyer {
+func asKey(in string) abi.Keyer {
 	return key(in)
 }

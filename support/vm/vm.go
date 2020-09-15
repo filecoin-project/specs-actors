@@ -141,7 +141,7 @@ func (vm *VM) GetActor(a address.Address) (*TestActor, bool, error) {
 		return nil, false, nil
 	}
 	var act TestActor
-	found, err := vm.actors.Get(adt.AddrKey(na), &act)
+	found, err := vm.actors.Get(abi.AddrKey(na), &act)
 	return &act, found, err
 }
 
@@ -149,7 +149,7 @@ func (vm *VM) GetActor(a address.Address) (*TestActor, bool, error) {
 //
 // This method will not check if the actor previously existed, it will blindly overwrite it.
 func (vm *VM) setActor(ctx context.Context, key address.Address, a *TestActor) error {
-	if err := vm.actors.Put(adt.AddrKey(key), a); err != nil {
+	if err := vm.actors.Put(abi.AddrKey(key), a); err != nil {
 		return errors.Wrap(err, "setting actor in state tree failed")
 	}
 	vm.actorsDirty = true
@@ -179,7 +179,7 @@ func (vm *VM) setActorState(ctx context.Context, key address.Address, state cbor
 // This behaviour is based on a principle that some store implementations might not be able to determine
 // whether something exists before deleting it.
 func (vm *VM) deleteActor(ctx context.Context, key address.Address) error {
-	err := vm.actors.Delete(adt.AddrKey(key))
+	err := vm.actors.Delete(abi.AddrKey(key))
 	vm.actorsDirty = true
 	if err == hamt.ErrNotFound {
 		return nil

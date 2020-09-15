@@ -1108,8 +1108,8 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 // Misc helpers
 //
 
-func SectorKey(e abi.SectorNumber) adt.Keyer {
-	return adt.UIntKey(uint64(e))
+func SectorKey(e abi.SectorNumber) abi.Keyer {
+	return abi.UIntKey(uint64(e))
 }
 
 func init() {
