@@ -135,17 +135,25 @@ func (p *Partition) AddSectors(
 		return NewPowerPairZero(), xerrors.Errorf("failed to record new sector numbers: %w", err)
 	}
 	p.LivePower = p.LivePower.Add(power)
+
+	provenPower := power
 	if !proven {
 		p.UnprovenPower = p.UnprovenPower.Add(power)
 		if p.Unproven, err = bitfield.MergeBitFields(p.Unproven, snos); err != nil {
 			return NewPowerPairZero(), xerrors.Errorf("failed to update unproven sectors bitfield: %w", err)
 		}
 		// Only return the power if proven. Otherwise, it'll "go live" on the next window PoSt.
-		return NewPowerPairZero(), nil
+		provenPower = NewPowerPairZero()
 	}
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return NewPowerPairZero(), err
+	}
+
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
-	return power, nil
+	return provenPower, nil
 }
 
 // marks a set of sectors faulty
@@ -196,6 +204,11 @@ func (p *Partition) addFaults(
 		lostUnprovenPower := PowerForSectors(ssize, unprovenInfos)
 		p.UnprovenPower = p.UnprovenPower.Sub(lostUnprovenPower)
 		powerDelta = powerDelta.Add(lostUnprovenPower)
+	}
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), err
 	}
 
 	// No change to live or recovering power.
@@ -262,6 +275,12 @@ func (p *Partition) DeclareFaults(
 			return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), xerrors.Errorf("failed to remove recoveries: %w", err)
 		}
 	}
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return bitfield.BitField{}, NewPowerPairZero(), NewPowerPairZero(), err
+	}
+
 	return newFaults, powerDelta, newFaultyPower, nil
 }
 
@@ -303,6 +322,11 @@ func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.Se
 	// No change to unproven sectors.
 	p.FaultyPower = p.FaultyPower.Sub(power)
 	p.RecoveringPower = p.RecoveringPower.Sub(power)
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return NewPowerPairZero(), err
+	}
 
 	return power, err
 }
@@ -346,6 +370,12 @@ func (p *Partition) DeclareFaultsRecovered(sectors Sectors, ssize abi.SectorSize
 
 	power := PowerForSectors(ssize, recoverySectors)
 	p.RecoveringPower = p.RecoveringPower.Add(power)
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return err
+	}
+
 	// No change to faults, or terminations.
 	// No change to faulty power.
 	// No change to unproven power/sectors.
@@ -420,6 +450,11 @@ func (p *Partition) RescheduleExpirations(
 		return nil, err
 	}
 
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return nil, err
+	}
+
 	return sectorInfos, nil
 }
 
@@ -462,6 +497,12 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to add replaced sectors: %w", err)
 	}
 	p.LivePower = p.LivePower.Add(powerDelta)
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return NewPowerPairZero(), big.Zero(), err
+	}
+
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
 	return powerDelta, pledgeDelta, nil
@@ -555,6 +596,11 @@ func (p *Partition) TerminateSectors(
 		removed.ActivePower = removed.ActivePower.Sub(removedUnprovenPower)
 	}
 
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return nil, err
+	}
+
 	return removed, nil
 }
 
@@ -627,6 +673,11 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 		return nil, xerrors.Errorf("failed to record early terminations: %w", err)
 	}
 
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return nil, err
+	}
+
 	return popped, nil
 }
 
@@ -671,6 +722,11 @@ func (p *Partition) RecordMissedPost(
 	p.FaultyPower = p.LivePower
 	p.RecoveringPower = NewPowerPairZero()
 	p.UnprovenPower = NewPowerPairZero()
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), err
+	}
 
 	return powerDelta, penalizedPower, newFaultyPower, nil
 }
@@ -751,6 +807,12 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 	if err != nil {
 		return TerminationResult{}, false, xerrors.Errorf("failed to store early terminations queue: %w", err)
 	}
+
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return TerminationResult{}, false, err
+	}
+
 	return result, earlyTerminatedQ.Length() > 0, nil
 }
 
@@ -816,7 +878,97 @@ func (p *Partition) RecordSkippedFaults(
 		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to remove recoveries: %w", err)
 	}
 
+	// check invariants
+	if err := p.ValidateState(); err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, err
+	}
+
 	return powerDelta, newFaultPower, retractedRecoveryPower, len(newFaultSectors) > 0, nil
+}
+
+// Test that invariants about partition power hold
+func (p *Partition) ValidatePowerState() error {
+	if p.LivePower.Raw.LessThan(big.Zero()) || p.LivePower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("Partition left with negative live power: %v", p)
+	}
+
+	if p.UnprovenPower.Raw.LessThan(big.Zero()) || p.UnprovenPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("Partition left with negative unproven power: %v", p)
+	}
+
+	if p.FaultyPower.Raw.LessThan(big.Zero()) || p.FaultyPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("Partition left with negative faulty power: %v", p)
+	}
+
+	if p.RecoveringPower.Raw.LessThan(big.Zero()) || p.RecoveringPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("Partition left with negative recovering power: %v", p)
+	}
+
+	if p.UnprovenPower.Raw.GreaterThan(p.LivePower.Raw) {
+		return xerrors.Errorf("Partition left with invalid unproven power: %v", p)
+	}
+
+	if p.FaultyPower.Raw.GreaterThan(p.LivePower.Raw) {
+		return xerrors.Errorf("Partition left with invalid faulty power: %v", p)
+	}
+
+	if p.RecoveringPower.Raw.GreaterThan(p.LivePower.Raw) || p.RecoveringPower.Raw.GreaterThan(p.FaultyPower.Raw) {
+		return xerrors.Errorf("Partition left with invalid recovering power: %v", p)
+	}
+
+	return nil
+}
+
+// Test that invariants about sector bitfields hold
+func (p *Partition) ValidateBFState() error {
+	// Merge unproven, recoveries, and faults for checks
+	merge, err := bitfield.MultiMerge(p.Unproven, p.Recoveries, p.Faults)
+	if err != nil {
+		return err
+	}
+
+	// Unproven, recovering, or faulty sectors should not be in terminated
+	if containsAny, err := util.BitFieldContainsAny(p.Terminated, merge); err != nil {
+		return err
+	} else if containsAny {
+		return xerrors.Errorf("Partition left with terminated sectors in multiple states: %v", p)
+	}
+
+	// Merge terminated into set for checks
+	merge, err = bitfield.MergeBitFields(merge, p.Terminated)
+	if err != nil {
+		return err
+	}
+
+	// All merged sectors should exist in p.Sectors
+	if containsAll, err := util.BitFieldContainsAll(p.Sectors, merge); err != nil {
+		return err
+	} else if !containsAll {
+		return xerrors.Errorf("Partition left with invalid sector state: %v", p)
+	}
+
+	// All recoveries should exist in p.Faults
+	if containsAll, err := util.BitFieldContainsAll(p.Faults, p.Recoveries); err != nil {
+		return err
+	} else if !containsAll {
+		return xerrors.Errorf("Partition left with invalid recovery state: %v", p)
+	}
+
+	return nil
+}
+
+// Test all invariants hold
+func (p *Partition) ValidateState() error {
+	var err error
+	if err = p.ValidatePowerState(); err != nil {
+		return err
+	}
+
+	if err = p.ValidateBFState(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 //
