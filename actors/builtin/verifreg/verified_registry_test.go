@@ -104,7 +104,7 @@ func TestAddVerifier(t *testing.T) {
 		rt.ExpectValidateCallerAddr(ac.rootkey)
 
 		rt.SetCaller(tutil.NewIDAddr(t, 501), builtin.VerifiedRegistryActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(ac.AddVerifier, verifier)
 		})
 		rt.Verify()
@@ -187,7 +187,7 @@ func TestRemoveVerifier(t *testing.T) {
 		rt.ExpectValidateCallerAddr(ac.rootkey)
 
 		rt.SetCaller(tutil.NewIDAddr(t, 501), builtin.VerifiedRegistryActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(ac.RemoveVerifier, &v.Address)
 		})
 		rt.Verify()
@@ -559,7 +559,7 @@ func TestUseBytes(t *testing.T) {
 		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 		param := &verifreg.UseBytesParams{Address: clientAddr, DealSize: verifreg.MinVerifiedDealSize}
 
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(ac.UseBytes, param)
 		})
 
@@ -723,7 +723,7 @@ func TestRestoreBytes(t *testing.T) {
 		rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 		param := &verifreg.RestoreBytesParams{Address: clientAddr, DealSize: verifreg.MinVerifiedDealSize}
 
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(ac.RestoreBytes, param)
 		})
 

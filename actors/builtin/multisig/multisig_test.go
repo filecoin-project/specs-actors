@@ -1878,7 +1878,7 @@ func TestLockBalance(t *testing.T) {
 
 		// Can't change vest start
 		rt.ExpectValidateCallerAddr(receiver)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			actor.lockBalance(rt, startEpoch-1, abi.ChainEpoch(unlockDuration), big.Zero())
 		})
 		rt.Reset()

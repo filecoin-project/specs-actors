@@ -140,7 +140,7 @@ func TestMarketActor(t *testing.T) {
 			rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
 			rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
-			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 				rt.Call(actor.AddBalance, &provider)
 			})
 
@@ -224,7 +224,7 @@ func TestMarketActor(t *testing.T) {
 
 			// caller is not the recipient
 			rt.SetCaller(tutil.NewIDAddr(t, 909), builtin.AccountActorCodeID)
-			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 				rt.Call(actor.WithdrawBalance, &params)
 			})
 			rt.Verify()
@@ -252,7 +252,7 @@ func TestMarketActor(t *testing.T) {
 			rt.SetCaller(tutil.NewIDAddr(t, 909), builtin.AccountActorCodeID)
 			actor.expectProviderControlAddresses(rt, provider, owner, worker)
 
-			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 				rt.Call(actor.WithdrawBalance, &params)
 			})
 			rt.Verify()
@@ -865,7 +865,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			w := tutil.NewIDAddr(t, 1000)
 			rt.SetCaller(w, builtin.StorageMinerActorCodeID)
 			rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 				rt.Call(actor.PublishStorageDeals, params)
 			})
 		})
@@ -1006,7 +1006,7 @@ func TestActivateDealFailures(t *testing.T) {
 			rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 			rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 			rt.SetCaller(provider, builtin.AccountActorCodeID)
-			rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 				rt.Call(actor.ActivateDeals, &market.ActivateDealsParams{})
 			})
 
@@ -1263,7 +1263,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider, builtin.AccountActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(actor.OnMinerSectorsTerminate, &market.OnMinerSectorsTerminateParams{})
 		})
 
@@ -2438,7 +2438,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
 	})
