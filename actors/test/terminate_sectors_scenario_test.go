@@ -25,7 +25,8 @@ func TestTerminateSectors(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
 	addrs := vm.CreateAccounts(ctx, t, v, 4, big.Mul(big.NewInt(10_000), vm.FIL), 93837778)
-	worker, verifier, unverifiedClient, verifiedClient := addrs[0], addrs[1], addrs[2], addrs[3]
+	owner, verifier, unverifiedClient, verifiedClient := addrs[0], addrs[1], addrs[2], addrs[3]
+	worker := owner
 
 	minerBalance := big.Mul(big.NewInt(1_000), vm.FIL)
 	sectorNumber := abi.SectorNumber(100)
@@ -34,7 +35,7 @@ func TestTerminateSectors(t *testing.T) {
 
 	// create miner
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &power.CreateMinerParams{
-		Owner:         worker,
+		Owner:         owner,
 		Worker:        worker,
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
@@ -202,7 +203,7 @@ func TestTerminateSectors(t *testing.T) {
 
 	// Verified client should be able to withdraw all all deal collateral.
 	// Client added 3 FIL balance and had 2 deals with 1 FIL collateral apiece.
-	// Should only be able to withdraw the full 2 FIL if deals have been slashed and balance was unlocked.
+	// Should only be able to withdraw the full 2 FIL only if deals have been slashed and balance was unlocked.
 	withdrawal := big.Mul(big.NewInt(2), vm.FIL)
 	vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, &market.WithdrawBalanceParams{
 		ProviderOrClientAddress: verifiedClient,
@@ -218,4 +219,17 @@ func TestTerminateSectors(t *testing.T) {
 			{To: verifiedIDAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(withdrawal)},
 		},
 	}.Matches(t, v.LastInvocation())
+
+	// Check that miner's collateral has been slashed by attempting to withdraw all funds
+	vm.ApplyOk(t, v, owner, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, &market.WithdrawBalanceParams{
+		ProviderOrClientAddress: minerAddrs.IDAddress,
+		Amount:                  minerCollateral,
+	})
+
+	// miner add 64 balance. Each of 3 deals required 2 FIL collateral, so provider collateral should have been
+	// slashed by 6 FIL. Miner's remaining market balance should be 64 - 6 + payment, where payment is for storage
+	// before the slash and should be << 1 FIL. Actual amount withdrawn should be between 58 and 59 FIL.
+	valueWithdrawn := vm.ValueForInvocation(t, v, len(v.Invocations())-1, 1)
+	assert.True(t, big.Mul(big.NewInt(58), vm.FIL).LessThan(valueWithdrawn))
+	assert.True(t, big.Mul(big.NewInt(59), vm.FIL).GreaterThan(valueWithdrawn))
 }

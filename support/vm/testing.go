@@ -263,6 +263,18 @@ func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 	return invocation.Msg.params
 }
 
+func ValueForInvocation(t *testing.T, vm *VM, idxs ...int) abi.TokenAmount {
+	invocations := vm.Invocations()
+	var invocation *Invocation
+	for _, idx := range idxs {
+		require.Greater(t, len(invocations), idx)
+		invocation = invocations[idx]
+		invocations = invocation.SubInvocations
+	}
+	require.NotNil(t, invocation)
+	return invocation.Msg.value
+}
+
 //
 // Advancing Time while updating state
 //
