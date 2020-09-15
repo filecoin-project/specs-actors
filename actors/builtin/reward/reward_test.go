@@ -160,14 +160,14 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.Verify()
 	})
 
-	t.Run("TotalMined tracks correctly", func(t *testing.T) {
+	t.Run("TotalStoragePowerReward tracks correctly", func(t *testing.T) {
 		rt := builder.Build(t)
 		startRealizedPower := abi.NewStoragePower(1)
 		actor.constructAndVerify(rt, &startRealizedPower)
 		miner := tutil.NewIDAddr(t, 1000)
 
 		st := getState(rt)
-		assert.Equal(t, big.Zero(), st.TotalMined)
+		assert.Equal(t, big.Zero(), st.TotalStoragePowerReward)
 		st.ThisEpochReward = abi.NewTokenAmount(5000)
 		rt.ReplaceState(st)
 		// enough balance to pay 3 full rewards and one partial
@@ -181,7 +181,7 @@ func TestAwardBlockReward(t *testing.T) {
 		actor.awardBlockReward(rt, miner, big.Zero(), big.Zero(), 1, big.NewInt(500)) // partial payout when balance below reward
 
 		newState := getState(rt)
-		assert.Equal(t, totalPayout, newState.TotalMined)
+		assert.Equal(t, totalPayout, newState.TotalStoragePowerReward)
 
 	})
 
@@ -191,7 +191,7 @@ func TestAwardBlockReward(t *testing.T) {
 		actor.constructAndVerify(rt, &startRealizedPower)
 		miner := tutil.NewIDAddr(t, 1000)
 		st := getState(rt)
-		assert.Equal(t, big.Zero(), st.TotalMined)
+		assert.Equal(t, big.Zero(), st.TotalStoragePowerReward)
 		st.ThisEpochReward = abi.NewTokenAmount(5000)
 		rt.ReplaceState(st)
 		// enough balance to pay 3 full rewards and one partial

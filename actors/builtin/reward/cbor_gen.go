@@ -78,8 +78,8 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.TotalMined (big.Int) (struct)
-	if err := t.TotalMined.MarshalCBOR(w); err != nil {
+	// t.TotalStoragePowerReward (big.Int) (struct)
+	if err := t.TotalStoragePowerReward.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -207,12 +207,12 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		t.Epoch = abi.ChainEpoch(extraI)
 	}
-	// t.TotalMined (big.Int) (struct)
+	// t.TotalStoragePowerReward (big.Int) (struct)
 
 	{
 
-		if err := t.TotalMined.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.TotalMined: %w", err)
+		if err := t.TotalStoragePowerReward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.TotalStoragePowerReward: %w", err)
 		}
 
 	}
