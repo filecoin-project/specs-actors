@@ -23,18 +23,18 @@ type verifregMigrator struct {
 	actorsOut *states.Tree
 }
 
-func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *verifregMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState verifreg0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
-	verifiersRoot, err := m.migrateCapTable(ctx, store, inState.Verifiers)
+	verifiersRoot, err := m.migrateCapTable(ctx, storeIn, storeOut, inState.Verifiers)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("verifiers cap table: %w", err)
 	}
 
-	clientsRoot, err := m.migrateCapTable(ctx, store, inState.VerifiedClients)
+	clientsRoot, err := m.migrateCapTable(ctx, storeIn, storeOut, inState.VerifiedClients)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("clients cap table: %w", err)
 	}
@@ -48,17 +48,17 @@ func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 		Verifiers:       verifiersRoot,
 		VerifiedClients: clientsRoot,
 	}
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
 
-func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *verifregMigrator) migrateCapTable(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, but the value type (big.Int) is identical.
 	// The keys must be normalized to ID-addresses.
-	inMap, err := adt0.AsMap(adt0.WrapStore(ctx, store), root)
+	inMap, err := adt0.AsMap(adt0.WrapStore(ctx, storeIn), root)
 	if err != nil {
 		return cid.Undef, err
 	}
-	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store))
+	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, storeOut))
 
 	outInit, found, err := m.actorsOut.GetActor(builtin2.InitActorAddr)
 	if err != nil {
@@ -68,7 +68,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 		return cid.Undef, xerrors.Errorf("could not find init actor in input state")
 	}
 	var outInitState init2.State
-	err = store.Get(ctx, outInit.Head, &outInitState)
+	err = storeOut.Get(ctx, outInit.Head, &outInitState)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -79,7 +79,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 		if err != nil {
 			return err
 		}
-		idInAddr, err := m.resolveAndMaybeCreateAccount(ctx, inAddr, adt2.WrapStore(ctx, store), &outInitState)
+		idInAddr, err := m.resolveAndMaybeCreateAccount(ctx, inAddr, adt2.WrapStore(ctx, storeOut), &outInitState)
 		if err != nil {
 			return xerrors.Errorf("resolving address %s: %w", inAddr, err)
 		}
@@ -92,7 +92,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 
 	// Flush the out init state up to the top of the state tree
 	// store new state
-	outInitHead, err := store.Put(ctx, &outInitState)
+	outInitHead, err := storeOut.Put(ctx, &outInitState)
 	if err != nil {
 		return cid.Undef, err
 	}

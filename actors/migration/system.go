@@ -13,7 +13,7 @@ import (
 type systemMigrator struct {
 }
 
-func (m *systemMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *systemMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	// No change
 	var _ = system2.State(system0.State{})
 	return head, nil

@@ -15,14 +15,14 @@ import (
 type multisigMigrator struct {
 }
 
-func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *multisigMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState multisig0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
 	// Migrate pending txns map
-	pendingRoot, err := m.migratePending(ctx, store, inState.PendingTxns)
+	pendingRoot, err := m.migratePending(ctx, storeIn, storeOut, inState.PendingTxns)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("pending: %w", err)
 	}
@@ -43,12 +43,12 @@ func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 		UnlockDuration:        inState.UnlockDuration,
 		PendingTxns:           pendingRoot,
 	}
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
 
-func (m *multisigMigrator) migratePending(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *multisigMigrator) migratePending(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, but the value type is identical.
 	var _ = multisig2.Transaction(multisig0.Transaction{})
 
-	return migrateHAMTRaw(ctx, store, root)
+	return migrateHAMTRaw(ctx, storeIn, storeOut, root)
 }

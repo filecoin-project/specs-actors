@@ -14,38 +14,38 @@ import (
 type marketMigrator struct {
 }
 
-func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *marketMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState market0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
-	proposalsRoot, err := m.migrateProposals(ctx, store, inState.Proposals)
+	proposalsRoot, err := m.migrateProposals(ctx, storeIn, storeOut, inState.Proposals)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("proposals: %w", err)
 	}
 
-	statesRoot, err := m.migrateStates(ctx, store, inState.States)
+	statesRoot, err := m.migrateStates(ctx, storeIn, storeOut, inState.States)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("states: %w", err)
 	}
 
-	pendingRoot, err := m.migratePendingProposals(ctx, store, inState.PendingProposals)
+	pendingRoot, err := m.migratePendingProposals(ctx, storeIn, storeOut, inState.PendingProposals)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("pending proposals: %w", err)
 	}
 
-	escrowRoot, err := m.migrateBalanceTable(ctx, store, inState.EscrowTable)
+	escrowRoot, err := m.migrateBalanceTable(ctx, storeIn, storeOut, inState.EscrowTable)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("escrow table: %w", err)
 	}
 
-	lockedRoot, err := m.migrateBalanceTable(ctx, store, inState.LockedTable)
+	lockedRoot, err := m.migrateBalanceTable(ctx, storeIn, storeOut, inState.LockedTable)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("locked table: %w", err)
 	}
 
-	dealOpsRoot, err := m.migrateDealOps(ctx, store, inState.DealOpsByEpoch)
+	dealOpsRoot, err := m.migrateDealOps(ctx, storeIn, storeOut, inState.DealOpsByEpoch)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("deal ops by epoch: %w", err)
 	}
@@ -63,35 +63,35 @@ func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		TotalProviderLockedCollateral: inState.TotalProviderLockedCollateral,
 		TotalClientStorageFee:         inState.TotalClientStorageFee,
 	}
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
 
-func (m *marketMigrator) migrateProposals(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *marketMigrator) migrateProposals(_ context.Context, _, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// AMT and both the key and value type unchanged between v0 and v2.
 	// Verify that the value type is identical.
 	var _ = market0.DealProposal(market2.DealProposal{})
 	return root, nil
 }
 
-func (m *marketMigrator) migrateStates(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *marketMigrator) migrateStates(_ context.Context, _, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// AMT and both the key and value type unchanged between v0 and v2.
 	// Verify that the value type is identical.
 	var _ = market0.DealState(market2.DealState{})
 	return root, nil
 }
 
-func (m *marketMigrator) migratePendingProposals(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *marketMigrator) migratePendingProposals(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, but the value type is identical.
 	var _ = market0.DealProposal(market2.DealProposal{})
-	return migrateHAMTRaw(ctx, store, root)
+	return migrateHAMTRaw(ctx, storeIn, storeOut, root)
 }
 
-func (m *marketMigrator) migrateBalanceTable(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *marketMigrator) migrateBalanceTable(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, but the value type (abi.TokenAmount) is identical.
-	return migrateHAMTRaw(ctx, store, root)
+	return migrateHAMTRaw(ctx, storeIn, storeOut, root)
 }
 
-func (m *marketMigrator) migrateDealOps(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *marketMigrator) migrateDealOps(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, at each level, but the final value type (abi.DealID) is identical.
-	return migrateHAMTHAMTRaw(ctx, store, root)
+	return migrateHAMTHAMTRaw(ctx, storeIn, storeOut, root)
 }

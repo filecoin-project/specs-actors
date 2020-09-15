@@ -22,13 +22,13 @@ func (k StringKey) Key() string {
 }
 
 // Migrates a HAMT from v0 (ipfs) to v2 (filecoin-project) without re-encoding keys or values.
-func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
-	inRootNode, err := hamt0.LoadNode(ctx, store, root, adt0.HamtOptions...)
+func migrateHAMTRaw(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+	inRootNode, err := hamt0.LoadNode(ctx, storeIn, root, adt0.HamtOptions...)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	outRootNode := hamt2.NewNode(store, adt2.HamtOptions...)
+	outRootNode := hamt2.NewNode(storeOut, adt2.HamtOptions...)
 
 	if err = inRootNode.ForEach(ctx, func(k string, val interface{}) error {
 		return outRootNode.SetRaw(ctx, k, val.(*cbg.Deferred).Raw)
@@ -40,16 +40,16 @@ func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid) (ci
 	if err != nil {
 		return cid.Undef, err
 	}
-	return store.Put(ctx, outRootNode)
+	return storeOut.Put(ctx, outRootNode)
 }
 
 // Migrates a HAMT of HAMTS from v0 (ipfs) to v2 (filecoin-project) without re-encoding leaf keys or values.
-func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
-	inRootNode, err := hamt0.LoadNode(ctx, store, root, adt0.HamtOptions...)
+func migrateHAMTHAMTRaw(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+	inRootNode, err := hamt0.LoadNode(ctx, storeIn, root, adt0.HamtOptions...)
 	if err != nil {
 		return cid.Undef, err
 	}
-	outRootNode := hamt2.NewNode(store, adt2.HamtOptions...)
+	outRootNode := hamt2.NewNode(storeOut, adt2.HamtOptions...)
 
 	if err = inRootNode.ForEach(ctx, func(k string, val interface{}) error {
 		var inInner cbg.CborCid
@@ -57,7 +57,7 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid)
 			return err
 		}
 
-		outInner, err := migrateHAMTRaw(ctx, store, cid.Cid(inInner))
+		outInner, err := migrateHAMTRaw(ctx, storeIn, storeOut, cid.Cid(inInner))
 		if err != nil {
 			return err
 		}
@@ -71,6 +71,6 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid)
 	if err != nil {
 		return cid.Undef, err
 	}
-	return store.Put(ctx, outRootNode)
+	return storeOut.Put(ctx, outRootNode)
 
 }

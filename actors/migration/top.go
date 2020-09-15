@@ -20,7 +20,7 @@ import (
 type StateMigration interface {
 	// Loads an actor's state from an input store and writes new state to an output store.
 	// Returns the new state head CID.
-	MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error)
+	MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error)
 }
 
 type ActorMigration struct {
@@ -113,18 +113,17 @@ func (p *phoenix) flush(ctx context.Context, actorsIn *states0.Tree, actorsOut *
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (cid.Cid, error) {
+func MigrateStateTree(ctx context.Context, storeIn, storeOut cbor.IpldStore, stateRootIn cid.Cid) (cid.Cid, error) {
 	// Setup input and output state tree helpers
-	adtStore := adt.WrapStore(ctx, store)
-	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
+	actorsIn, err := states0.LoadTree(adt.WrapStore(ctx, storeIn), stateRootIn)
 	if err != nil {
 		return cid.Undef, err
 	}
-	stateRootOut, err := adt.MakeEmptyMap(adtStore).Root()
+	stateRootOut, err := adt.MakeEmptyMap(adt.WrapStore(ctx, storeOut)).Root()
 	if err != nil {
 		return cid.Undef, err
 	}
-	actorsOut, err := states.LoadTree(adtStore, stateRootOut)
+	actorsOut, err := states.LoadTree(adt.WrapStore(ctx, storeOut), stateRootOut)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -154,7 +153,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 			mm.MinerBalance = actorIn.Balance
 			mm.Transfer = big.Zero()
 		}
-		headOut, err := migration.StateMigration.MigrateState(ctx, store, actorIn.Head)
+		headOut, err := migration.StateMigration.MigrateState(ctx, storeIn, storeOut, actorIn.Head)
 		if err != nil {
 			return xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(migration.OutCodeCID), addr, err)
 		}
@@ -192,7 +191,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	if !found {
 		return cid.Undef, xerrors.Errorf("could not find verifreg actor in state")
 	}
-	verifRegHeadOut, err := vm.MigrateState(ctx, store, verifRegActorIn.Head)
+	verifRegHeadOut, err := vm.MigrateState(ctx, storeIn, storeOut, verifRegActorIn.Head)
 	if err != nil {
 		return cid.Undef, err
 	}

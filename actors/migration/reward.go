@@ -15,9 +15,9 @@ import (
 type rewardMigrator struct {
 }
 
-func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *rewardMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState reward0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
@@ -45,6 +45,5 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		Epoch:                   inState.Epoch,
 		TotalMined:              inState.TotalMined,
 	}
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
-

@@ -24,43 +24,43 @@ type minerMigrator struct {
 	Transfer abi.TokenAmount
 }
 
-func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState miner0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
-	infoCid, err := m.migrateInfo(ctx, store, inState.Info)
+	infoCid, err := m.migrateInfo(ctx, storeIn, storeOut, inState.Info)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("info: %w", err)
 	}
 
-	vestingFunds, err := m.migrateVestingFunds(ctx, store, inState.VestingFunds)
+	vestingFunds, err := m.migrateVestingFunds(ctx, storeIn, storeOut, inState.VestingFunds)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("vesting funds: %w", err)
 	}
 
-	precommitsRoot, err := m.migratePreCommittedSectors(ctx, store, inState.PreCommittedSectors)
+	precommitsRoot, err := m.migratePreCommittedSectors(ctx, storeIn, storeOut, inState.PreCommittedSectors)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("precommitted sectors: %w", err)
 	}
 
-	precommitExpiryRoot, err := m.migrateBitfieldQueue(ctx, store, inState.PreCommittedSectorsExpiry)
+	precommitExpiryRoot, err := m.migrateBitfieldQueue(ctx, storeIn, storeOut, inState.PreCommittedSectorsExpiry)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("precommit expiry queue: %w", err)
 	}
 
-	allocatedSectors, err := m.migrateAllocatedSectors(ctx, store, inState.AllocatedSectors)
+	allocatedSectors, err := m.migrateAllocatedSectors(ctx, storeIn, storeOut, inState.AllocatedSectors)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("allocated sectors: %w", err)
 	}
 
-	sectorsRoot, err := m.migrateSectors(ctx, store, inState.Sectors)
+	sectorsRoot, err := m.migrateSectors(ctx, storeIn, storeOut, inState.Sectors)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("sectors: %w", err)
 	}
 
-	deadlinesRoot, err := m.migrateDeadlines(ctx, store, inState.Deadlines)
+	deadlinesRoot, err := m.migrateDeadlines(ctx, storeIn, storeOut, inState.Deadlines)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("deadlines: %w", err)
 	}
@@ -91,12 +91,12 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		EarlyTerminations:         inState.EarlyTerminations,
 	}
 
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
 
-func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateInfo(ctx context.Context, storeIn, storeOut cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
 	var oldInfo miner0.MinerInfo
-	err := store.Get(ctx, c, &oldInfo)
+	err := storeIn.Get(ctx, c, &oldInfo)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -117,22 +117,22 @@ func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c
 		WindowPoStPartitionSectors: oldInfo.WindowPoStPartitionSectors,
 		ConsensusFaultElapsed:      -1, // New
 	}
-	return store.Put(ctx, &newInfo)
+	return storeOut.Put(ctx, &newInfo)
 }
 
-func (m *minerMigrator) migrateVestingFunds(_ context.Context, _ cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateVestingFunds(_ context.Context, _, _ cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
 	// VestingFunds has a single element, a slice of VestingFund, which is unchanged between versions.
 	var _ = miner2.VestingFund(miner0.VestingFund{})
 
 	return c, nil
 }
 
-func (m *minerMigrator) migratePreCommittedSectors(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
-	inMap, err := adt0.AsMap(adt0.WrapStore(ctx, store), root)
+func (m *minerMigrator) migratePreCommittedSectors(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+	inMap, err := adt0.AsMap(adt0.WrapStore(ctx, storeIn), root)
 	if err != nil {
 		return cid.Undef, err
 	}
-	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store))
+	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, storeOut))
 
 	var inSPCOCI miner0.SectorPreCommitOnChainInfo
 	if err = inMap.ForEach(&inSPCOCI, func(key string) error {
@@ -152,22 +152,22 @@ func (m *minerMigrator) migratePreCommittedSectors(ctx context.Context, store cb
 	return outMap.Root()
 }
 
-func (m *minerMigrator) migrateBitfieldQueue(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateBitfieldQueue(_ context.Context, _, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// AMT[Epoch]BitField is unchanged
 	return root, nil
 }
 
-func (m *minerMigrator) migrateAllocatedSectors(_ context.Context, _ cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateAllocatedSectors(_ context.Context, _, _ cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
 	// Bitfield is unchanged
 	return c, nil
 }
 
-func (m *minerMigrator) migrateSectors(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
-	inArray, err := adt0.AsArray(adt0.WrapStore(ctx, store), root)
+func (m *minerMigrator) migrateSectors(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+	inArray, err := adt0.AsArray(adt0.WrapStore(ctx, storeIn), root)
 	if err != nil {
 		return cid.Undef, err
 	}
-	outArray := adt2.MakeEmptyArray(adt2.WrapStore(ctx, store))
+	outArray := adt2.MakeEmptyArray(adt2.WrapStore(ctx, storeOut))
 
 	var inSector miner0.SectorOnChainInfo
 	if err = inArray.ForEach(&inSector, func(i int64) error {
@@ -195,9 +195,9 @@ func (m *minerMigrator) migrateSectors(ctx context.Context, store cbor.IpldStore
 	return outArray.Root()
 }
 
-func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, deadlines cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateDeadlines(ctx context.Context, storeIn, storeOut cbor.IpldStore, deadlines cid.Cid) (cid.Cid, error) {
 	var inDeadlines miner0.Deadlines
-	err := store.Get(ctx, deadlines, &inDeadlines)
+	err := storeIn.Get(ctx, deadlines, &inDeadlines)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -211,16 +211,16 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 
 	for i, c := range inDeadlines.Due {
 		var inDeadline miner0.Deadline
-		if err = store.Get(ctx, c, &inDeadline); err != nil {
+		if err = storeIn.Get(ctx, c, &inDeadline); err != nil {
 			return cid.Undef, err
 		}
 
-		partitions, err := m.migratePartitions(ctx, store, inDeadline.Partitions)
+		partitions, err := m.migratePartitions(ctx, storeIn, storeOut, inDeadline.Partitions)
 		if err != nil {
 			return cid.Undef, xerrors.Errorf("partitions: %w", err)
 		}
 
-		expirationEpochs, err := m.migrateBitfieldQueue(ctx, store, inDeadline.ExpirationsEpochs)
+		expirationEpochs, err := m.migrateBitfieldQueue(ctx, storeIn, storeOut, inDeadline.ExpirationsEpochs)
 		if err != nil {
 			return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
 		}
@@ -235,32 +235,32 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 			FaultyPower:       miner2.PowerPair(inDeadline.FaultyPower),
 		}
 
-		outDlCid, err := store.Put(ctx, &outDeadline)
+		outDlCid, err := storeOut.Put(ctx, &outDeadline)
 		if err != nil {
 			return cid.Undef, err
 		}
 		outDeadlines.Due[i] = outDlCid
 	}
 
-	return store.Put(ctx, &outDeadlines)
+	return storeOut.Put(ctx, &outDeadlines)
 }
 
-func (m *minerMigrator) migratePartitions(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migratePartitions(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// AMT[PartitionNumber]Partition
-	inArray, err := adt0.AsArray(adt0.WrapStore(ctx, store), root)
+	inArray, err := adt0.AsArray(adt0.WrapStore(ctx, storeIn), root)
 	if err != nil {
 		return cid.Undef, err
 	}
-	outArray := adt2.MakeEmptyArray(adt2.WrapStore(ctx, store))
+	outArray := adt2.MakeEmptyArray(adt2.WrapStore(ctx, storeOut))
 
 	var inPartition miner0.Partition
 	if err = inArray.ForEach(&inPartition, func(i int64) error {
-		expirationEpochs, err := m.migrateExpirationQueue(ctx, store, inPartition.ExpirationsEpochs)
+		expirationEpochs, err := m.migrateExpirationQueue(ctx, storeIn, storeOut, inPartition.ExpirationsEpochs)
 		if err != nil {
 			return xerrors.Errorf("expiration queue: %w", err)
 		}
 
-		earlyTerminated, err := m.migrateBitfieldQueue(ctx, store, inPartition.EarlyTerminated)
+		earlyTerminated, err := m.migrateBitfieldQueue(ctx, storeIn, storeOut, inPartition.EarlyTerminated)
 		if err != nil {
 			return xerrors.Errorf("early termination queue: %w", err)
 		}
@@ -287,7 +287,7 @@ func (m *minerMigrator) migratePartitions(ctx context.Context, store cbor.IpldSt
 	return outArray.Root()
 }
 
-func (m *minerMigrator) migrateExpirationQueue(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateExpirationQueue(_ context.Context, _, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The AMT[ChainEpoch]ExpirationSet is unchanged, though we can't statically show this because the
 	// ExpirationSet has nested structures, which Go refuses to equate.
 	return root, nil

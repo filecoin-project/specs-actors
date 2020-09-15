@@ -13,12 +13,12 @@ import (
 type accountMigrator struct {
 }
 
-func (m *accountMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *accountMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState account0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
 	outState := account2.State(inState) // Identical
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }

@@ -15,14 +15,14 @@ import (
 type paychMigrator struct {
 }
 
-func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *paychMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState paych0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
 	// Migrate lane states map
-	laneStatesRoot, err := m.migrateLaneStates(ctx, store, inState.LaneStates)
+	laneStatesRoot, err := m.migrateLaneStates(ctx, storeIn, storeOut, inState.LaneStates)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("lane state: %w", err)
 	}
@@ -43,10 +43,10 @@ func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		MinSettleHeight: inState.MinSettleHeight,
 		LaneStates:      laneStatesRoot,
 	}
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
 
-func (m *paychMigrator) migrateLaneStates(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *paychMigrator) migrateLaneStates(_ context.Context, _, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// AMT and both the key and value type unchanged between v0 and v2.
 	// Verify that the value type is identical.
 	var _ = paych2.LaneState(paych0.LaneState{})

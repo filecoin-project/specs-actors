@@ -14,14 +14,14 @@ import (
 type initMigrator struct {
 }
 
-func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *initMigrator) MigrateState(ctx context.Context, storeIn, storeOut cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
 	var inState init0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := storeIn.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, err
 	}
 
 	// Migrate address resolution map
-	addrMapRoot, err := m.migrateAddrs(ctx, store, inState.AddressMap)
+	addrMapRoot, err := m.migrateAddrs(ctx, storeIn, storeOut, inState.AddressMap)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("migrate addrs: %w", err)
 	}
@@ -31,10 +31,10 @@ func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		NextID:      inState.NextID,
 		NetworkName: inState.NetworkName,
 	}
-	return store.Put(ctx, &outState)
+	return storeOut.Put(ctx, &outState)
 }
 
-func (m *initMigrator) migrateAddrs(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func (m *initMigrator) migrateAddrs(ctx context.Context, storeIn, storeOut cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, but the value type (Address) is identical.
-	return migrateHAMTRaw(ctx, store, root)
+	return migrateHAMTRaw(ctx, storeIn, storeOut, root)
 }
