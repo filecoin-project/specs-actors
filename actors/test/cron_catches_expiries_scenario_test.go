@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -39,8 +38,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := v.ApplyMessage(worker, builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	require.Equal(t, exitcode.Ok, code)
+	ret := vm.ApplyOk(t, v, worker, builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -54,8 +52,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		DealIDs:       nil,
 		Expiration:    v.GetEpoch() + 200*builtin.EpochsInDay,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
@@ -67,12 +64,10 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	// In the same epoch, trigger cron to validate prove commit
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// advance to proving period and submit post
 	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -90,16 +85,13 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		ChainCommitRand:  fakeChainRandomness,
 	}
 
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 	// add market collateral for client and miner
 	collateral := big.Mul(big.NewInt(3), vm.FIL)
-	_, code = v.ApplyMessage(unverifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &unverifiedClient)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, unverifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &unverifiedClient)
 	collateral = big.Mul(big.NewInt(64), vm.FIL)
-	_, code = v.ApplyMessage(worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 
 	// create a deal required by upgrade sector
 	dealIDs := []abi.DealID{}
@@ -122,8 +114,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		ReplaceSectorPartition: pIdx,
 		ReplaceSectorNumber:    sectorNumber,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// Advance to beginning of the valid prove-commit window, then advance to proving deadline of original sector.
 	// This should allow us to prove commit the upgrade on the last epoch of the original sector's proving period.
@@ -133,8 +124,7 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 
 	// prove original sector so it won't be faulted
 	submitParams.ChainCommitEpoch = dlInfo.Challenge
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 	// one epoch before deadline close (i.e. Last) is where we might see a problem with cron scheduling of expirations
 	v, err = v.WithEpoch(dlInfo.Last())
@@ -150,14 +140,12 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	proveCommitParams = miner.ProveCommitSectorParams{
 		SectorNumber: upgradeSectorNumber,
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	// In the same epoch, trigger cron to validate prove commit
 	// Replaced sector should be terminated at end of deadline it was replace in, so it should be terminated
 	// by this call. This requires the miner's proving period handling to be run after commit verification.
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// Loss of power indicates original sector has been terminated at correct time.
 	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)

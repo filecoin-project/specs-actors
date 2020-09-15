@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -40,8 +39,7 @@ func TestTerminateSectors(t *testing.T) {
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := v.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	require.Equal(t, exitcode.Ok, code)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -55,25 +53,20 @@ func TestTerminateSectors(t *testing.T) {
 		Address:   verifier,
 		Allowance: abi.NewStoragePower(32 << 40),
 	}
-	_, code = v.ApplyMessage(vm.VerifregRoot, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifier, &addVerifierParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, vm.VerifregRoot, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifier, &addVerifierParams)
 
 	addClientParams := verifreg.AddVerifiedClientParams{
 		Address:   verifiedClient,
 		Allowance: abi.NewStoragePower(32 << 40),
 	}
-	_, code = v.ApplyMessage(verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &addClientParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &addClientParams)
 
 	// add market collateral for clients and miner
 	collateral := big.Mul(big.NewInt(3), vm.FIL)
-	_, code = v.ApplyMessage(unverifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &unverifiedClient)
-	require.Equal(t, exitcode.Ok, code)
-	_, code = v.ApplyMessage(verifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &verifiedClient)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, unverifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &unverifiedClient)
+	vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &verifiedClient)
 	minerCollateral := big.Mul(big.NewInt(64), vm.FIL)
-	_, code = v.ApplyMessage(worker, builtin.StorageMarketActorAddr, minerCollateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, minerCollateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 
 	// create 3 deals, some verified and some not
 	dealIDs := []abi.DealID{}
@@ -85,8 +78,7 @@ func TestTerminateSectors(t *testing.T) {
 	deals = publishDeal(t, v, worker, unverifiedClient, minerAddrs.IDAddress, "deal3", 1<<34, false, dealStart, 210*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
 
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 	for _, id := range dealIDs {
 		// deals are pending and don't yet have deal states
 		_, found := vm.GetDealState(t, v, id)
@@ -107,8 +99,7 @@ func TestTerminateSectors(t *testing.T) {
 		Expiration:      v.GetEpoch() + 220*builtin.EpochsInDay,
 		ReplaceCapacity: false,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to min seal duration
 	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
@@ -120,12 +111,10 @@ func TestTerminateSectors(t *testing.T) {
 	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	// In the same epoch, trigger cron to validate prove commit
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// advance to proving period and submit post
 	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -141,14 +130,12 @@ func TestTerminateSectors(t *testing.T) {
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte("not really random"),
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 	// proving period cron adds miner power
 	v, err = v.WithEpoch(dlInfo.Last())
 	require.NoError(t, err)
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// market cron updates deal states indicating deals are no longer pending.
 	for _, id := range dealIDs {
@@ -175,8 +162,7 @@ func TestTerminateSectors(t *testing.T) {
 		}},
 	}
 
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.TerminateSectors, &terminateParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.TerminateSectors, &terminateParams)
 
 	noSubinvocations := []vm.ExpectInvocation{}
 	vm.ExpectInvocation{
@@ -220,8 +206,7 @@ func TestTerminateSectors(t *testing.T) {
 	// advance and run cron to complete processing of termination
 	v, err = v.WithEpoch(v.GetEpoch() + 1000)
 	require.NoError(t, err)
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// Verified client should be able to withdraw all all deal collateral.
 	// Client added 3 FIL balance and had 2 deals with 1 FIL collateral apiece.
@@ -231,8 +216,7 @@ func TestTerminateSectors(t *testing.T) {
 		ProviderOrClientAddress: verifiedClient,
 		Amount:                  withdrawal,
 	}
-	_, code = v.ApplyMessage(verifiedClient, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, withdrawParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, withdrawParams)
 
 	verifiedIDAddr, found := v.NormalizeAddress(verifiedClient)
 	require.True(t, found)

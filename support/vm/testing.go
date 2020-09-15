@@ -334,7 +334,7 @@ func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorN
 	return dlIdx, pIdx
 }
 
-//
+///
 // state abstraction
 //
 
@@ -455,6 +455,16 @@ func GetDealState(t *testing.T, vm *VM, dealID abi.DealID) (*market.DealState, b
 	require.NoError(t, err)
 
 	return state, found
+}
+
+//
+// Misc. helpers
+//
+
+func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) cbor.Marshaler {
+	ret, code := v.ApplyMessage(from, to, value, method, params)
+	require.Equal(t, exitcode.Ok, code)
+	return ret
 }
 
 //

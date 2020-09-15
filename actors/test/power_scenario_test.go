@@ -6,8 +6,6 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -27,8 +25,7 @@ func TestCreateMiner(t *testing.T) {
 		SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := v.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
-	assert.Equal(t, exitcode.Ok, code)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -75,8 +72,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 
 	// create a miner
 	params := power.CreateMinerParams{Owner: addrs[0], Worker: addrs[0], SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1, Peer: abi.PeerID("pid")}
-	ret, code := v.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
-	assert.Equal(t, exitcode.Ok, code)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
 
 	ret, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -94,8 +90,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
-	_, code = v.ApplyMessage(builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
-	assert.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
 
 	// expect miner call to be missing
 	vm.ExpectInvocation{
@@ -115,8 +110,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
-	_, code = v.ApplyMessage(builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
-	assert.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
 
 	// expect call to miner
 	vm.ExpectInvocation{
