@@ -4,12 +4,9 @@ import (
 	"context"
 	"testing"
 
-	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/crypto"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,8 +38,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := v.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	require.Equal(t, exitcode.Ok, code)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -60,8 +56,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		DealIDs:       nil,
 		Expiration:    v.GetEpoch() + 200*builtin.EpochsInDay,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
@@ -73,12 +68,10 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	// In the same epoch, trigger cron to validate prove commit
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// advance to proving period and submit post
 	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -96,8 +89,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		ChainCommitRand:  []byte("not really random"),
 	}
 
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 	// check power table
 	sectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -120,25 +112,20 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		Address:   verifier,
 		Allowance: abi.NewStoragePower(32 << 40),
 	}
-	_, code = v.ApplyMessage(vm.VerifregRoot, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifier, &addVerifierParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, vm.VerifregRoot, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifier, &addVerifierParams)
 
 	addClientParams := verifreg.AddVerifiedClientParams{
 		Address:   verifiedClient,
 		Allowance: abi.NewStoragePower(32 << 40),
 	}
-	_, code = v.ApplyMessage(verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &addClientParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &addClientParams)
 
 	// add market collateral for clients and miner
 	collateral := big.Mul(big.NewInt(3), vm.FIL)
-	_, code = v.ApplyMessage(unverifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &unverifiedClient)
-	require.Equal(t, exitcode.Ok, code)
-	_, code = v.ApplyMessage(verifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &verifiedClient)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, unverifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &unverifiedClient)
+	vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &verifiedClient)
 	collateral = big.Mul(big.NewInt(64), vm.FIL)
-	_, code = v.ApplyMessage(worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 
 	// create 3 deals, some verified and some not
 	dealIDs := []abi.DealID{}
@@ -169,8 +156,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		ReplaceSectorPartition: pIdx,
 		ReplaceSectorNumber:    sectorNumber,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// assert successful precommit invocation
 	none := []vm.ExpectInvocation{}
@@ -191,8 +177,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		require.NoError(t, err)
 
 		// run cron and check for deal expiry in market actor
-		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		vm.ExpectInvocation{
 			To:     builtin.CronActorAddr,
@@ -229,8 +214,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	proveCommitParams = miner.ProveCommitSectorParams{
 		SectorNumber: upgradeSectorNumber,
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	vm.ExpectInvocation{
 		To:     minerAddrs.IDAddress,
@@ -243,8 +227,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	}.Matches(t, v.LastInvocation())
 
 	// In the same epoch, trigger cron to validate prove commit
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	vm.ExpectInvocation{
 		To:     builtin.CronActorAddr,
@@ -287,8 +270,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		require.NoError(t, err)
 
 		// run cron to penalize missing PoSt
-		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		vm.ExpectInvocation{
 			To:     builtin.CronActorAddr,
@@ -339,8 +321,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			ChainCommitEpoch: dlInfo.Challenge,
 			ChainCommitRand:  []byte("not really random"),
 		}
-		_, code = tv.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 		vm.ExpectInvocation{
 			To:     minerAddrs.IDAddress,
@@ -375,8 +356,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte("not really random"),
 	}
-	_, code = v.ApplyMessage(worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 	vm.ExpectInvocation{
 		To:     minerAddrs.IDAddress,
@@ -404,8 +384,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	// proving period cron removes sector reducing the miner's power to that of the new sector
 	v, err = v.WithEpoch(dlInfo.Last())
 	require.NoError(t, err)
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// power is removed
 	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
@@ -415,53 +394,4 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 	assert.Equal(t, upgradeSectorPower.QA, minerPower.QA)
 	assert.Equal(t, upgradeSectorPower.Raw, networkStats.TotalBytesCommitted)
 	assert.Equal(t, upgradeSectorPower.QA, networkStats.TotalQABytesCommitted)
-}
-
-func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
-	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
-) *market.PublishStorageDealsReturn {
-	deal := market.DealProposal{
-		PieceCID:             tutil.MakeCID(dealLabel, &market.PieceCIDPrefix),
-		PieceSize:            pieceSize,
-		VerifiedDeal:         verifiedDeal,
-		Client:               dealClient,
-		Provider:             minerID,
-		Label:                dealLabel,
-		StartEpoch:           dealStart,
-		EndEpoch:             dealStart + dealLifetime,
-		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),
-		ProviderCollateral:   big.Mul(big.NewInt(2), vm.FIL),
-		ClientCollateral:     big.Mul(big.NewInt(1), vm.FIL),
-	}
-
-	publishDealParams := market.PublishStorageDealsParams{
-		Deals: []market.ClientDealProposal{{
-			Proposal:        deal,
-			ClientSignature: crypto.Signature{},
-		}},
-	}
-	ret, code := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
-	require.Equal(t, exitcode.Ok, code)
-
-	expectedPublishSubinvocations := []vm.ExpectInvocation{
-		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm.ExpectInvocation{}},
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm.ExpectInvocation{}},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm.ExpectInvocation{}},
-	}
-
-	if verifiedDeal {
-		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm.ExpectInvocation{
-			To:             builtin.VerifiedRegistryActorAddr,
-			Method:         builtin.MethodsVerifiedRegistry.UseBytes,
-			SubInvocations: []vm.ExpectInvocation{},
-		})
-	}
-
-	vm.ExpectInvocation{
-		To:             builtin.StorageMarketActorAddr,
-		Method:         builtin.MethodsMarket.PublishStorageDeals,
-		SubInvocations: expectedPublishSubinvocations,
-	}.Matches(t, v.LastInvocation())
-
-	return ret.(*market.PublishStorageDealsReturn)
 }
