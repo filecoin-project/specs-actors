@@ -43,8 +43,7 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		ThisEpochRewardSmoothed: smoothing2.FilterEstimate(*inState.ThisEpochRewardSmoothed),
 		ThisEpochBaselinePower:  reward2.BaselineInitialValue,
 		Epoch:                   inState.Epoch,
-		TotalMined:              inState.TotalMined,
+		TotalStoragePowerReward: inState.TotalMined,
 	}
 	return store.Put(ctx, &outState)
 }
-

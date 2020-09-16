@@ -415,7 +415,7 @@ type NetworkStats struct {
 	ThisEpochReward               abi.TokenAmount
 	ThisEpochRewardSmoothed       smoothing.FilterEstimate
 	ThisEpochBaselinePower        abi.StoragePower
-	TotalMined                    abi.TokenAmount
+	TotalStoragePowerReward       abi.TokenAmount
 	TotalClientLockedCollateral   abi.TokenAmount
 	TotalProviderLockedCollateral abi.TokenAmount
 	TotalClientStorageFee         abi.TokenAmount
@@ -448,7 +448,7 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 		ThisEpochReward:               rewardState.ThisEpochReward,
 		ThisEpochRewardSmoothed:       rewardState.ThisEpochRewardSmoothed,
 		ThisEpochBaselinePower:        rewardState.ThisEpochBaselinePower,
-		TotalMined:                    rewardState.TotalMined,
+		TotalStoragePowerReward:       rewardState.TotalStoragePowerReward,
 		TotalClientLockedCollateral:   marketState.TotalClientLockedCollateral,
 		TotalProviderLockedCollateral: marketState.TotalProviderLockedCollateral,
 		TotalClientStorageFee:         marketState.TotalClientStorageFee,
