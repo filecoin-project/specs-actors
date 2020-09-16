@@ -259,6 +259,9 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	mul := func(a big.Int, b int64) big.Int {
 		return big.Mul(a, big.NewInt(b))
 	}
+	div := func(a big.Int, b int64) big.Int {
+		return big.Div(a, big.NewInt(b))
+	}
 	smallPowerUnit := big.NewInt(1_000_000)
 	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.ConsensusMinerMinPower has changed requiring update to this test")
 	// Subtests implicitly rely on ConsensusMinerMinMiners = 3
@@ -326,29 +329,30 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner4)
 		actor.createMinerBasic(rt, owner, owner, miner5)
 
-		actor.updateClaimedPower(rt, miner1, smallPowerUnit, smallPowerUnit)
-		actor.updateClaimedPower(rt, miner2, smallPowerUnit, smallPowerUnit)
+		// Use qa power 10x raw power to show it's not being used for threshold calculations.
+		actor.updateClaimedPower(rt, miner1, smallPowerUnit, mul(smallPowerUnit, 10))
+		actor.updateClaimedPower(rt, miner2, smallPowerUnit, mul(smallPowerUnit, 10))
 
-		actor.updateClaimedPower(rt, miner3, powerUnit, powerUnit)
-		actor.updateClaimedPower(rt, miner4, powerUnit, powerUnit)
-		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner3, powerUnit, mul(powerUnit, 10))
+		actor.updateClaimedPower(rt, miner4, powerUnit, mul(powerUnit, 10))
+		actor.updateClaimedPower(rt, miner5, powerUnit, mul(powerUnit, 10))
 
 		// Below threshold small miner power is counted
 		expectedTotalBelow := big.Sum(mul(smallPowerUnit, 2), mul(powerUnit, 3))
-		actor.expectTotalPowerEager(rt, expectedTotalBelow, expectedTotalBelow)
+		actor.expectTotalPowerEager(rt, expectedTotalBelow, mul(expectedTotalBelow, 10))
 
 		// Above threshold (power.ConsensusMinerMinMiners = 4) small miner power is ignored
 		delta := big.Sub(powerUnit, smallPowerUnit)
-		actor.updateClaimedPower(rt, miner2, delta, delta)
+		actor.updateClaimedPower(rt, miner2, delta, mul(delta, 10))
 		expectedTotalAbove := mul(powerUnit, 4)
-		actor.expectTotalPowerEager(rt, expectedTotalAbove, expectedTotalAbove)
+		actor.expectTotalPowerEager(rt, expectedTotalAbove, mul(expectedTotalAbove, 10))
 
 		st := getState(rt)
 		assert.Equal(t, int64(4), st.MinerAboveMinPowerCount)
 
 		// Less than 4 miners above threshold again small miner power is counted again
-		actor.updateClaimedPower(rt, miner4, delta.Neg(), delta.Neg())
-		actor.expectTotalPowerEager(rt, expectedTotalBelow, expectedTotalBelow)
+		actor.updateClaimedPower(rt, miner4, delta.Neg(), mul(delta.Neg(), 10))
+		actor.expectTotalPowerEager(rt, expectedTotalBelow, mul(expectedTotalBelow, 10))
 	})
 
 	t.Run("all of one miner's power disappears when that miner dips below min power threshold", func(t *testing.T) {
@@ -424,8 +428,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectTotalPowerEager(rt, newExpectedTotal, newExpectedTotal)
 	})
 
-	t.Run("threshold only depends on qa power, not raw byte", func(t *testing.T) {
-		t.Skip("switching to consensus min based on raw byte power for space race")
+	t.Run("threshold only depends on raw power, not qa power", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -434,15 +437,15 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner3)
 		actor.createMinerBasic(rt, owner, owner, miner4)
 
-		actor.updateClaimedPower(rt, miner1, powerUnit, big.Zero())
-		actor.updateClaimedPower(rt, miner2, powerUnit, big.Zero())
-		actor.updateClaimedPower(rt, miner3, powerUnit, big.Zero())
+		actor.updateClaimedPower(rt, miner1, div(powerUnit, 2), powerUnit)
+		actor.updateClaimedPower(rt, miner2, div(powerUnit, 2), powerUnit)
+		actor.updateClaimedPower(rt, miner3, div(powerUnit, 2), powerUnit)
 		st := getState(rt)
 		assert.Equal(t, int64(0), st.MinerAboveMinPowerCount)
 
-		actor.updateClaimedPower(rt, miner1, big.Zero(), powerUnit)
-		actor.updateClaimedPower(rt, miner2, big.Zero(), powerUnit)
-		actor.updateClaimedPower(rt, miner3, big.Zero(), powerUnit)
+		actor.updateClaimedPower(rt, miner1, div(powerUnit, 2), powerUnit)
+		actor.updateClaimedPower(rt, miner2, div(powerUnit, 2), powerUnit)
+		actor.updateClaimedPower(rt, miner3, div(powerUnit, 2), powerUnit)
 		st = getState(rt)
 		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
 	})
