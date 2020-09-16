@@ -1479,6 +1479,19 @@ func TestRemoveSigner(t *testing.T) {
 			expectApprovals: uint64(2),
 			code:            exitcode.ErrForbidden,
 		},
+		{
+			desc: "fail to remove a signer and decrease approvals below 1",
+
+			initialSigners:   []addr.Address{anne, bob, chuck},
+			initialApprovals: uint64(1),
+
+			removeSigner: anne,
+			decrease:     true,
+
+			expectSigners:   []addr.Address{anne, bob, chuck},
+			expectApprovals: uint64(1),
+			code:            exitcode.ErrIllegalArgument,
+		},
 	}
 
 	for _, tc := range testCases {
