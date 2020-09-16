@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,8 +22,7 @@ func TestMarketWithdraw(t *testing.T) {
 
 	// add market collateral for clients and miner
 	collateral := big.Mul(big.NewInt(3), vm.FIL)
-	_, code := v.ApplyMessage(caller, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &caller)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, caller, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &caller)
 
 	a, found, err := v.GetActor(caller)
 	require.NoError(t, err)
@@ -36,8 +34,7 @@ func TestMarketWithdraw(t *testing.T) {
 		ProviderOrClientAddress: caller,
 		Amount:                  collateral,
 	}
-	_, code = v.ApplyMessage(caller, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, params)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, caller, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.WithdrawBalance, params)
 
 	a, found, err = v.GetActor(caller)
 	require.NoError(t, err)
