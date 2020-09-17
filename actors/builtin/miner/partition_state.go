@@ -921,13 +921,13 @@ func (p *Partition) ValidatePowerState() error {
 
 // Test that invariants about sector bitfields hold
 func (p *Partition) ValidateBFState() error {
-	// Merge unproven, recoveries, and faults for checks
-	merge, err := bitfield.MultiMerge(p.Unproven, p.Recoveries, p.Faults)
+	// Merge unproven and faults for checks
+	merge, err := bitfield.MultiMerge(p.Unproven, p.Faults)
 	if err != nil {
 		return err
 	}
 
-	// Unproven, recovering, or faulty sectors should not be in terminated
+	// Unproven or faulty sectors should not be in terminated
 	if containsAny, err := util.BitFieldContainsAny(p.Terminated, merge); err != nil {
 		return err
 	} else if containsAny {
