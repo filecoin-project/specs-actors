@@ -98,11 +98,17 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 	if dlIdx >= uint64(len(d.Due)) {
 		return xerrors.Errorf("invalid deadline %d", dlIdx)
 	}
+
+	if err := deadline.ValidateState(); err != nil {
+		return err
+	}
+
 	dlCid, err := store.Put(store.Context(), deadline)
 	if err != nil {
 		return err
 	}
 	d.Due[dlIdx] = dlCid
+
 	return nil
 }
 
@@ -1052,4 +1058,16 @@ func (dl *Deadline) RescheduleSectorExpirations(
 	}
 
 	return allReplaced, nil
+}
+
+func (d *Deadline) ValidateState() error {
+	if d.LiveSectors > d.TotalSectors {
+		return xerrors.Errorf("Deadline left with more live sectors than total: %v", d)
+	}
+
+	if d.FaultyPower.Raw.LessThan(big.Zero()) || d.FaultyPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("Deadline left with negative faulty power: %v", d)
+	}
+
+	return nil
 }
