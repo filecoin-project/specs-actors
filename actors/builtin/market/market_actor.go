@@ -714,12 +714,12 @@ func validateDeal(rt Runtime, deal ClientDealProposal, networkRawPower, networkQ
 		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
 	}
 
-	minDuration, maxDuration := dealDurationBounds(proposal.PieceSize)
+	minDuration, maxDuration := DealDurationBounds(proposal.PieceSize)
 	if proposal.Duration() < minDuration || proposal.Duration() > maxDuration {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
 	}
 
-	minPrice, maxPrice := dealPricePerEpochBounds(proposal.PieceSize, proposal.Duration())
+	minPrice, maxPrice := DealPricePerEpochBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.StoragePricePerEpoch.LessThan(minPrice) || proposal.StoragePricePerEpoch.GreaterThan(maxPrice) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
 	}
