@@ -67,6 +67,8 @@ func TestAccountactor(t *testing.T) {
 				rt.ExpectValidateCallerAny()
 				pubkeyAddress := rt.Call(actor.PubkeyAddress, nil).(*address.Address)
 				assert.Equal(t, &tc.addr, pubkeyAddress)
+
+				checkState(t, rt)
 			} else {
 				rt.ExpectAbort(tc.exitCode, func() {
 					rt.Call(actor.Constructor, &tc.addr)
@@ -75,4 +77,12 @@ func TestAccountactor(t *testing.T) {
 			rt.Verify()
 		})
 	}
+}
+
+func checkState(t *testing.T, rt *mock.Runtime) {
+	var st account.State
+	rt.GetState(&st)
+	_, msgs, err := account.CheckStateInvariants(&st)
+	assert.NoError(t, err)
+	assert.True(t, msgs.IsEmpty())
 }
