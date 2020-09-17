@@ -213,3 +213,17 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 	return actorsOut.Flush()
 }
+
+func InputTreeBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (abi.TokenAmount, error) {
+	adtStore := adt.WrapStore(ctx, store)
+	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
+	if err != nil {
+		return big.Zero(), err
+	}
+	total := abi.NewTokenAmount(0)
+	err = actorsIn.ForEach(func(addr address.Address, a *states.Actor) error {
+		total = big.Add(total, a.Balance)
+		return nil
+	})
+	return total, err
+}
