@@ -69,8 +69,12 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	// we must transfer burned funds to all states in IP debt to cover their balance requirements.
 	// We can maintain the fee deduction by setting the fee debt to the transferred value.
 	debt := big.Zero()
-	if !inState.MeetsInitialPledgeCondition(m.MinerBalance) {
-		debt = inState.GetAvailableBalance(m.MinerBalance).Neg() // debt must always be positive
+	// We need to calculate this explicitly without using miner state functions because
+	// miner state invariants are violated in v1 chain state so state functions panic
+	minerLiabilities := big.Sum(inState.LockedFunds, inState.PreCommitDeposits, inState.InitialPledgeRequirement)
+	availableBalance := big.Sub(m.MinerBalance, minerLiabilities)
+	if availableBalance.LessThan(big.Zero()) {
+		debt = availableBalance.Neg() // debt must always be positive
 		m.Transfer = debt
 	}
 
