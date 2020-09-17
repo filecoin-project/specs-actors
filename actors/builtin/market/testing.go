@@ -1,14 +1,18 @@
 package market
 
 import (
+	"bytes"
+	"encoding/binary"
+
+	"github.com/ipfs/go-cid"
+	"github.com/pkg/errors"
+	cbg "github.com/whyrusleeping/cbor-gen"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/ipfs/go-cid"
-	cbg "github.com/whyrusleeping/cbor-gen"
-	"strconv"
 )
 
 type StateSummary struct {
@@ -57,9 +61,6 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		if err != nil {
 			return err
 		}
-
-		_, found := proposalCids[pcid]
-		acc.Require(!found, "duplicate DealProposal %d found in proposals", dealID)
 
 		// keep some state
 		proposalCids[pcid] = struct{}{}
@@ -200,8 +201,10 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	// get into internals just to iterate through full data structure
 	var setRoot cbg.CborCid
 	err = dealOps.mp.ForEach(&setRoot, func(key string) error {
-		epoch, err := strconv.ParseInt(key, 10, 64)
-		acc.Require(err != nil, "deal ops has key that is not a natural number: %s", key)
+		epoch, err := binary.ReadUvarint(bytes.NewReader([]byte(key)))
+		if err != nil {
+			return errors.Wrapf(err, "deal ops has key that is not an int: %s", key)
+		}
 
 		dealOpEpochCount++
 		return dealOps.ForEach(abi.ChainEpoch(epoch), func(id abi.DealID) error {

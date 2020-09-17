@@ -147,6 +147,8 @@ func TestMarketActor(t *testing.T) {
 			})
 
 			rt.Verify()
+
+			actor.checkState(rt)
 		})
 
 		t.Run("adds to non-provider escrow funds", func(t *testing.T) {
@@ -190,6 +192,8 @@ func TestMarketActor(t *testing.T) {
 				rt.Call(actor.AddBalance, &provider)
 			})
 			rt.Verify()
+
+			actor.checkState(rt)
 		})
 	})
 
@@ -211,6 +215,7 @@ func TestMarketActor(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 
 		t.Run("fails if withdraw from non provider funds is not initiated by the recipient", func(t *testing.T) {
@@ -236,6 +241,8 @@ func TestMarketActor(t *testing.T) {
 			// verify there was no withdrawal
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, client))
+
+			actor.checkState(rt)
 		})
 
 		t.Run("fails if withdraw from provider funds is not initiated by the owner or worker", func(t *testing.T) {
@@ -264,6 +271,8 @@ func TestMarketActor(t *testing.T) {
 			// verify there was no withdrawal
 			rt.GetState(&st)
 			assert.Equal(t, abi.NewTokenAmount(20), actor.getEscrowBalance(rt, provider))
+
+			actor.checkState(rt)
 		})
 
 		t.Run("withdraws from provider escrow funds and sends to owner", func(t *testing.T) {
@@ -805,6 +814,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 				})
 
 				rt.Verify()
+				actor.checkState(rt)
 			})
 		}
 	}
@@ -831,6 +841,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 
 		t.Run("fail when provider has some funds but not enough for a deal", func(t *testing.T) {
@@ -852,6 +863,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -880,6 +892,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 
 		//  failures because of incorrect call params
@@ -892,6 +905,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 				rt.Call(actor.PublishStorageDeals, params)
 			})
+			actor.checkState(rt)
 		})
 
 		t.Run("fail when no deals in params", func(t *testing.T) {
@@ -902,6 +916,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.PublishStorageDeals, params)
 			})
+			actor.checkState(rt)
 		})
 
 		t.Run("fail to resolve provider address", func(t *testing.T) {
@@ -915,6 +930,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			rt.ExpectAbort(exitcode.ErrNotFound, func() {
 				rt.Call(actor.PublishStorageDeals, params)
 			})
+			actor.checkState(rt)
 		})
 
 		t.Run("caller is not the same as the worker address for miner", func(t *testing.T) {
@@ -929,6 +945,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -948,6 +965,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
 	})
 }
 
@@ -1023,6 +1041,7 @@ func TestActivateDealFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -1037,6 +1056,7 @@ func TestActivateDealFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -1053,6 +1073,7 @@ func TestActivateDealFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -1070,6 +1091,7 @@ func TestActivateDealFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -1087,6 +1109,7 @@ func TestActivateDealFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 
 		t.Run("fail when end epoch of deal greater than sector expiry", func(t *testing.T) {
@@ -1100,6 +1123,7 @@ func TestActivateDealFailures(t *testing.T) {
 			})
 
 			rt.Verify()
+			actor.checkState(rt)
 		})
 	}
 
@@ -1131,6 +1155,9 @@ func TestActivateDealFailures(t *testing.T) {
 			_, found, err := states.Get(dealId2)
 			require.NoError(t, err)
 			require.False(t, found)
+
+			actor.checkState(rt)
+
 		})
 	}
 
@@ -1305,6 +1332,8 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
+
 	})
 
 	t.Run("fail when caller is not the provider of the deal", func(t *testing.T) {
@@ -1324,6 +1353,8 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
+
 	})
 
 	t.Run("fail when deal has been published but not activated", func(t *testing.T) {
@@ -1340,6 +1371,8 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
+
 	})
 
 	t.Run("termination of all deals should fail when one deal fails", func(t *testing.T) {
@@ -1362,6 +1395,8 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 
 		// verify deal1 has not been terminated
 		actor.assertDeaslNotTerminated(rt, dealId1)
+
+		actor.checkState(rt)
 	})
 }
 
@@ -1380,7 +1415,7 @@ func TestCronTick(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry, startEpoch)
 
-		// delete the deal proposal
+		// delete the deal proposal (this breaks state invariants)
 		actor.deleteDealProposal(rt, dealId)
 
 		// move the current epoch to the start epoch of the deal
@@ -1408,6 +1443,8 @@ func TestCronTick(t *testing.T) {
 		rt.ExpectAssertionFailure("assertion failed", func() {
 			actor.cronTick(rt)
 		})
+
+		actor.checkState(rt)
 	})
 
 	t.Run("crontick for a deal at it's start epoch results in zero payment and no slashing", func(t *testing.T) {
@@ -1479,6 +1516,8 @@ func TestCronTick(t *testing.T) {
 		rt.SetEpoch(d1.StartEpoch)
 		actor.cronTick(rt)
 		actor.publishDeals(rt, mAddrs, publishDealReq{deal: d2})
+
+		actor.checkState(rt)
 	})
 }
 
@@ -1584,6 +1623,8 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.activateDeals(rt, sectorExpiry, provider, startEpoch+1, dealId)
 		})
+
+		actor.checkState(rt)
 	})
 
 	t.Run("cron processing of deal after missed activation should fail and slash", func(t *testing.T) {
@@ -1759,6 +1800,8 @@ func TestCronTickTimedoutDeals(t *testing.T) {
 
 		// now publishing should work
 		actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch, startEpoch)
+
+		actor.checkState(rt)
 	})
 
 	t.Run("timed out and verified deals are slashed, deleted AND sent to the Registry actor", func(t *testing.T) {
@@ -2089,8 +2132,6 @@ func TestCronTickDealSlashing(t *testing.T) {
 						// running cron tick again dosen't do anything
 						actor.cronTickNoChange(rt, client, provider)
 					}
-
-					actor.checkState(rt)
 				} else {
 					rt.ExpectAssertionFailure(tc.assertionMsg, func() {
 						rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
@@ -2100,6 +2141,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 						rt.Verify()
 					})
 				}
+				actor.checkState(rt)
 			})
 		}
 	}
@@ -2346,6 +2388,7 @@ func TestMarketActorDeals(t *testing.T) {
 	{
 		actor.publishDeals(rt, minerAddrs, publishDealReq{deal: dealProposal})
 	}
+	actor.checkState(rt)
 }
 
 func TestMaxDealLabelSize(t *testing.T) {
@@ -2389,6 +2432,7 @@ func TestMaxDealLabelSize(t *testing.T) {
 
 		rt.Verify()
 	}
+	actor.checkState(rt)
 }
 
 func TestComputeDataCommitment(t *testing.T) {
@@ -2436,6 +2480,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(actor.ComputeDataCommitment, param)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail when syscall returns an error", func(t *testing.T) {
@@ -2452,6 +2497,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.ComputeDataCommitment, param)
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -2526,6 +2572,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail when deal proposal is not found", func(t *testing.T) {
@@ -2536,6 +2583,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail when caller is not the provider", func(t *testing.T) {
@@ -2550,6 +2598,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail when sector start epoch is greater than proposal start epoch", func(t *testing.T) {
@@ -2562,6 +2611,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail when deal end epoch is greater than sector expiration", func(t *testing.T) {
@@ -2574,6 +2624,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail when the same deal ID is passed multiple times", func(t *testing.T) {
@@ -2586,6 +2637,7 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "multiple times", func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
 		})
+		actor.checkState(rt)
 	})
 }
 
