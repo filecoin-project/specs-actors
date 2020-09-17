@@ -1,4 +1,4 @@
-package account
+package cron
 
 import (
 	"github.com/filecoin-project/go-address"
@@ -7,17 +7,17 @@ import (
 )
 
 type StateSummary struct {
-	PubKeyAddr address.Address
+	EntryCount int
 }
 
-// Checks internal invariants of account state.
+// Checks internal invariants of cron state.
 func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
-	acc.Require(
-		st.Address.Protocol() == address.BLS || st.Address.Protocol() == address.SECP256K1,
-		"actor address %v must be BLS or SECP256K1 protocol", st.Address)
+	for i, e := range st.Entries {
+		acc.Require(e.Receiver.Protocol() == address.ID, "entry %d receiver address %v must be ID protocol", i, e.Receiver)
+	}
 
 	return &StateSummary{
-		PubKeyAddr: st.Address,
+		EntryCount: len(st.Entries),
 	}, acc, nil
 }

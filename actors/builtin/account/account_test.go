@@ -82,7 +82,7 @@ func TestAccountactor(t *testing.T) {
 func checkState(t *testing.T, rt *mock.Runtime) {
 	var st account.State
 	rt.GetState(&st)
-	_, msgs, err := account.CheckStateInvariants(&st)
+	_, msgs, err := account.CheckStateInvariants(&st, rt.AdtStore())
 	assert.NoError(t, err)
 	assert.True(t, msgs.IsEmpty())
 }
