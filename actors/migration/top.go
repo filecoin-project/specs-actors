@@ -214,7 +214,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	return actorsOut.Flush()
 }
 
-func InBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (abi.TokenAmount, error) {
+func InputTreeBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (abi.TokenAmount, error) {
 	adtStore := adt.WrapStore(ctx, store)
 	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
 	if err != nil {
