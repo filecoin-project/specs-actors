@@ -54,7 +54,7 @@ type State struct {
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
-	ProofValidationBatch *cid.Cid
+	ProofValidationBatch *cid.Cid // HAMT[Address]AMT[SealVerifyInfo]
 }
 
 type Claim struct {
@@ -110,7 +110,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return false, errors.Errorf("no claim for actor %v", miner)
 	}
 
-	minerNominalPower := claim.QualityAdjPower
+	minerNominalPower := claim.RawBytePower
 	minerMinPower, err := builtin.ConsensusMinerMinPower(claim.SealProofType)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get miner min power from proof type")
@@ -181,8 +181,8 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		return fmt.Errorf("could not get consensus miner min power: %w", err)
 	}
 
-	prevBelow := oldClaim.QualityAdjPower.LessThan(minPower)
-	stillBelow := newClaim.QualityAdjPower.LessThan(minPower)
+	prevBelow := oldClaim.RawBytePower.LessThan(minPower)
+	stillBelow := newClaim.RawBytePower.LessThan(minPower)
 
 	if prevBelow && !stillBelow {
 		// just passed min miner size

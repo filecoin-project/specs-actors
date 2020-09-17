@@ -355,6 +355,9 @@ func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi
 		}
 
 		if params.Decrease {
+			if st.NumApprovalsThreshold < 2 {
+				rt.Abortf(exitcode.ErrIllegalArgument, "can't decrease approvals from %d to %d", st.NumApprovalsThreshold, st.NumApprovalsThreshold-1)
+			}
 			st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 		}
 		st.Signers = newSigners

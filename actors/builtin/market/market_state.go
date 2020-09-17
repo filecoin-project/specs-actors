@@ -166,7 +166,7 @@ func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProp
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client collateral: %s", err)
 	}
 
-	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
+	amountSlashed := CollateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
 
 	if err := m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral); err != nil {

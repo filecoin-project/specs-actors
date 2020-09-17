@@ -94,7 +94,7 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 			// Since we have already asserted the balance is greater than gas reward blockReward is >= 0
 			AssertMsg(blockReward.GreaterThanEqual(big.Zero()), "programming error, block reward is %v below zero", blockReward)
 		}
-		st.TotalMined = big.Add(st.TotalMined, blockReward)
+		st.TotalStoragePowerReward = big.Add(st.TotalStoragePowerReward, blockReward)
 	})
 
 	AssertMsg(totalReward.LessThanEqual(priorBalance), "reward %v exceeds balance %v", totalReward, priorBalance)
