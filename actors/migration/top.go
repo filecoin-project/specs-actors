@@ -100,8 +100,8 @@ func (p *phoenix) transfer(amt abi.TokenAmount) error {
 	return nil
 }
 
-func (p *phoenix) flush(ctx context.Context, actorsIn *states0.Tree, actorsOut *states.Tree) error {
-	burntFundsActor, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
+func (p *phoenix) flush(ctx context.Context, actorsOut *states.Tree) error {
+	burntFundsActor, found, err := actorsOut.GetActor(builtin.BurntFundsActorAddr)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	}
 
 	// Track deductions to burntFunds actor's balance
-	if err := p.flush(ctx, actorsIn, actorsOut); err != nil {
+	if err := p.flush(ctx, actorsOut); err != nil {
 		return cid.Undef, err
 	}
 
