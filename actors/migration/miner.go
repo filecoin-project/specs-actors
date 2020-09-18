@@ -20,6 +20,7 @@ type minerMigrator struct {
 }
 
 func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, balance abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+	transfer := big.Zero()
 	var inState miner0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err
@@ -70,6 +71,7 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	availableBalance := big.Sub(balance, minerLiabilities)
 	if availableBalance.LessThan(big.Zero()) {
 		debt = availableBalance.Neg() // debt must always be positive
+		transfer = debt
 	}
 
 	outState := miner2.State{
@@ -89,8 +91,8 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		EarlyTerminations:         inState.EarlyTerminations,
 	}
 
-	newHead, err := store.Put(ctx, &outState)
-	return newHead, debt, err
+	c, err := store.Put(ctx, &outState)
+	return c, transfer, err
 }
 
 func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c cid.Cid) (cid.Cid, error) {

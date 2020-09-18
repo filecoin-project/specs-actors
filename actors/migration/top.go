@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"sync"
 
 	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -12,10 +13,18 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
+)
+
+var (
+	maxWorkers = 64 // TODO evaluate empirically
+	sem        *semaphore.Weighted
+	migMu      = &sync.Mutex{}
+	actOutMu   = &sync.Mutex{}
 )
 
 type StateMigration interface {
@@ -46,10 +55,6 @@ var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
 		OutCodeCID:     builtin.StorageMarketActorCodeID,
 		StateMigration: &marketMigrator{},
 	},
-	builtin0.StorageMinerActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.StorageMinerActorCodeID,
-		StateMigration: &minerMigrator{},
-	},
 	builtin0.MultisigActorCodeID: ActorMigration{
 		OutCodeCID:     builtin.MultisigActorCodeID,
 		StateMigration: &multisigMigrator{},
@@ -76,41 +81,65 @@ var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
 	},
 }
 
-// A phoenix tracks the unburning of funds
-type phoenix struct {
-	burntBalance abi.TokenAmount
+type MinerStateMigration interface {
+	MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, balance abi.TokenAmount) (cid.Cid, abi.TokenAmount, error)
 }
 
-func (p *phoenix) load(ctx context.Context, actorsIn *states0.Tree) error {
-	burntFundsActor, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
+type MinerMigration struct {
+	OutCodeCID          cid.Cid
+	MinerStateMigration MinerStateMigration
+}
+
+var minerMigration = MinerMigration{
+	OutCodeCID:          builtin.StorageMinerActorCodeID,
+	MinerStateMigration: &minerMigrator{},
+}
+
+func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor, actorsOut *states.Tree, transferCh chan big.Int, errCh chan error) {
+	var headOut, codeOut cid.Cid
+	var err error
+	transfer := big.Zero()
+	// This will be migrated at the end
+	if actorIn.Code == builtin0.VerifiedRegistryActorCodeID {
+		sem.Release(1)
+		return
+	} else {
+		migMu.Lock()
+		migration := migrations[actorIn.Code]
+		migMu.Unlock()
+		codeOut = migration.OutCodeCID
+		headOut, transfer, err = migration.StateMigration.MigrateState(ctx, store, actorIn.Head, actorIn.Balance)
+	}
+
 	if err != nil {
-		return err
+		err = xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(codeOut), addr, err)
+		sem.Release(1)
+		errCh <- err
+		return
 	}
-	if !found {
-		return xerrors.Errorf("burnt funds actor not in tree")
-	}
-	p.burntBalance = burntFundsActor.Balance
-	return nil
-}
 
-func (p *phoenix) transfer(amt abi.TokenAmount) error {
-	p.burntBalance = big.Sub(p.burntBalance, amt)
-	if p.burntBalance.LessThan(big.Zero()) {
-		return xerrors.Errorf("migration programmer error burnt funds balance falls to %v, below zero", p.burntBalance)
+	// set up new state root with the migrated state
+	actorOut := states.Actor{
+		Code:       codeOut,
+		Head:       headOut,
+		CallSeqNum: actorIn.CallSeqNum,
+		Balance:    big.Add(actorIn.Balance, transfer),
 	}
-	return nil
-}
-
-func (p *phoenix) flush(ctx context.Context, actorsOut *states.Tree) error {
-	burntFundsActor, found, err := actorsOut.GetActor(builtin.BurntFundsActorAddr)
+	actOutMu.Lock()
+	err = actorsOut.SetActor(addr, &actorOut)
+	actOutMu.Unlock()
 	if err != nil {
-		return err
+		sem.Release(1)
+		errCh <- err
+		return
 	}
-	if !found {
-		return xerrors.Errorf("burnt funds actor not in tree")
+	if transfer.GreaterThan(big.Zero()) {
+		sem.Release(1)
+		transferCh <- transfer
+		return
 	}
-	burntFundsActor.Balance = p.burntBalance
-	return actorsOut.SetActor(builtin.BurntFundsActorAddr, burntFundsActor)
+	sem.Release(1)
+	return // nolint:gosimple
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
@@ -130,48 +159,69 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return cid.Undef, err
 	}
 
-	// Extra setup
-	// miner
-	var p phoenix
-	if err := p.load(ctx, actorsIn); err != nil {
-		return cid.Undef, err
-	}
+	// Extra actor setup
 	// power
+	migMu.Lock()
 	pm := migrations[builtin0.StoragePowerActorCodeID].StateMigration.(*powerMigrator)
+	migMu.Unlock()
 	pm.actorsIn = actorsIn
+	// miner
+	transferFromBurnt := big.Zero()
+
+	// Setup synchronization
+	sem = semaphore.NewWeighted(int64(maxWorkers)) // reset global for each invocation
+	errCh := make(chan error)
+	transferCh := make(chan big.Int)
 
 	// Iterate all actors in old state root
 	// Set new state root actors as we go
-	if err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
-		migration := migrations[actorIn.Code]
+	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
+		// Read from err and transfer channels without blocking.
+		// Terminate on the first error.
+		// Accumulate funds transfered from burnt to miners.
+	READLOOP:
+		for {
+			select {
+			case err := <-errCh:
+				return err
+			case transfer := <-transferCh:
+				transferFromBurnt = big.Add(transferFromBurnt, transfer)
+			default:
+				break READLOOP
+			}
+		}
 
-		// This will be migrated at the end
-		if actorIn.Code == builtin0.VerifiedRegistryActorCodeID {
-			return nil
-		}
-		headOut, transfer, err := migration.StateMigration.MigrateState(ctx, store, actorIn.Head, actorIn.Balance)
-		if err != nil {
-			return xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(migration.OutCodeCID), addr, err)
-		}
-
-		// set up new state root with the migrated state
-		actorOut := states.Actor{
-			Code:       migration.OutCodeCID,
-			Head:       headOut,
-			CallSeqNum: actorIn.CallSeqNum,
-			Balance:    big.Add(actorIn.Balance, transfer),
-		}
-		if err = p.transfer(transfer); err != nil {
+		// Hand off migration of one actor, blocking if we are out of worker goroutines
+		if err := sem.Acquire(ctx, 1); err != nil {
 			return err
 		}
-
-		return actorsOut.SetActor(addr, &actorOut)
-	}); err != nil {
+		go migrateOneActor(ctx, store, addr, *actorIn, actorsOut, transferCh, errCh)
+		return nil
+	})
+	if err != nil {
 		return cid.Undef, err
 	}
+	// Wait on all jobs finishing
+	if err := sem.Acquire(ctx, int64(maxWorkers)); err != nil {
+		return cid.Undef, xerrors.Errorf("failed to wait for all worker jobs: %w", err)
+	}
+	// Check for outstanding transfers and errors
+READEND:
+	for {
+		select {
+		case err := <-errCh:
+			return cid.Undef, err
+		case transfer := <-transferCh:
+			transferFromBurnt = big.Add(transferFromBurnt, transfer)
+		default:
+			break READEND
+		}
+	}
 
-	// // Migrate verified registry
+	// Migrate verified registry
+	migMu.Lock()
 	vm := migrations[builtin0.VerifiedRegistryActorCodeID].StateMigration.(*verifregMigrator)
+	migMu.Unlock()
 	vm.actorsOut = actorsOut
 	verifRegActorIn, found, err := actorsIn.GetActor(builtin0.VerifiedRegistryActorAddr)
 	if err != nil {
@@ -190,15 +240,25 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		CallSeqNum: verifRegActorIn.CallSeqNum,
 		Balance:    big.Add(verifRegActorIn.Balance, transfer),
 	}
-	if err = p.transfer(transfer); err != nil {
-		return cid.Undef, err
-	}
-	if err := actorsOut.SetActor(builtin.VerifiedRegistryActorAddr, &verifRegActorOut); err != nil {
+	err = actorsOut.SetActor(builtin.VerifiedRegistryActorAddr, &verifRegActorOut)
+	if err != nil {
 		return cid.Undef, err
 	}
 
 	// Track deductions to burntFunds actor's balance
-	if err := p.flush(ctx, actorsOut); err != nil {
+	burntFundsActor, found, err := actorsOut.GetActor(builtin.BurntFundsActorAddr)
+	if err != nil {
+		return cid.Undef, err
+	}
+	if !found {
+		return cid.Undef, xerrors.Errorf("burnt funds actor not in tree")
+	}
+	burntFundsActor.Balance = big.Sub(burntFundsActor.Balance, transferFromBurnt)
+	if burntFundsActor.Balance.LessThan(big.Zero()) {
+		return cid.Undef, xerrors.Errorf("miner transfers send burnt funds actor balance below zero")
+	}
+	err = actorsOut.SetActor(builtin.BurntFundsActorAddr, burntFundsActor)
+	if err != nil {
 		return cid.Undef, err
 	}
 
