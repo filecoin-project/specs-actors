@@ -16,7 +16,7 @@ import (
 )
 
 type StateSummary struct {
-	ProposalCount        uint64
+	ProposalIDs          []abi.DealID
 	PendingProposalCount uint64
 	DealStateCount       uint64
 	LockTableCount       uint64
@@ -47,7 +47,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	allIDs := make(map[abi.DealID]struct{})
 	proposalCids := make(map[cid.Cid]struct{})
 	maxDealID := int64(-1)
-	proposalCount := uint64(0)
+	var proposalIDs []abi.DealID
 
 	proposals, err := adt.AsArray(store, st.Proposals)
 	if err != nil {
@@ -67,7 +67,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		if dealID > maxDealID {
 			maxDealID = dealID
 		}
-		proposalCount++
+		proposalIDs = append(proposalIDs, dealID)
 
 		return nil
 	})
@@ -219,7 +219,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	}
 
 	return &StateSummary{
-		ProposalCount:        proposalCount,
+		ProposalIDs:          proposalIDs,
 		PendingProposalCount: pendingProposalCount,
 		DealStateCount:       dealStateCount,
 		LockTableCount:       lockTableCount,
