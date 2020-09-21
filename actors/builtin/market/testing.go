@@ -25,7 +25,7 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of market state.
-func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 
 	acc.Require(
@@ -67,7 +67,10 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		if dealID > maxDealID {
 			maxDealID = dealID
 		}
-		proposalIDs = append(proposalIDs, dealID)
+		proposalIDs = append(proposalIDs, abi.DealID(dealID))
+
+		acc.Require(proposal.Client.Protocol() == address.ID, "client address for deal %d is not an ID address", dealID)
+		acc.Require(proposal.Provider.Protocol() == address.ID, "provider address for deal %d is not an ID address", dealID)
 
 		return nil
 	})
@@ -186,6 +189,14 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(lockedTotal.Equals(expectedLockTotal),
 		"locked total, %s, does not sum to provider locked, %s, client locked, %s, and client storage fee, %s",
 		lockedTotal, st.TotalProviderLockedCollateral, st.TotalClientLockedCollateral, st.TotalClientStorageFee)
+
+	// assert escrow <= actor balance
+	// lockTable item <= escrow item and escrowTotal <= balance implies lockTable total <= balance
+	escrowTotal, err := escrowTable.Total()
+	if err != nil {
+		return nil, acc, err
+	}
+	acc.Require(escrowTotal.LessThanEqual(balance), "escrow total, %v, greater than actor balance, %v", escrowTotal, balance)
 
 	//
 	// Deal Ops by Epoch

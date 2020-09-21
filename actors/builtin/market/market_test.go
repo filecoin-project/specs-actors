@@ -3152,7 +3152,7 @@ func (h *marketActorTestHarness) generateDealWithCollateralAndAddFunds(rt *mock.
 func (h *marketActorTestHarness) checkState(rt *mock.Runtime) {
 	var st market.State
 	rt.GetState(&st)
-	_, msgs, err := market.CheckStateInvariants(&st, rt.AdtStore())
+	_, msgs, err := market.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
 	assert.NoError(h.t, err)
 	for _, msg := range msgs.Messages() {
 		assert.Fail(h.t, msg)
@@ -3178,6 +3178,7 @@ func generateDealProposal(client, provider address.Address, startEpoch, endEpoch
 func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Address) (*mock.Runtime, *marketActorTestHarness) {
 	builder := mock.NewBuilder(context.Background(), builtin.StorageMarketActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID).
+		WithBalance(big.Mul(big.NewInt(10), big.NewInt(1e18)), big.Zero()).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
 		WithActorType(provider, builtin.StorageMinerActorCodeID).
