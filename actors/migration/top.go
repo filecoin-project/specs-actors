@@ -21,7 +21,7 @@ import (
 type StateMigration interface {
 	// Loads an actor's state from an input store and writes new state to an output store.
 	// Returns the new state head CID.
-	MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error)
+	MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, balance abi.TokenAmount) (newHead cid.Cid, balanceChange abi.TokenAmount, err error)
 }
 
 type ActorMigration struct {
@@ -142,20 +142,14 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 	// Iterate all actors in old state root
 	// Set new state root actors as we go
-	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
+	if err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
 		migration := migrations[actorIn.Code]
 
 		// This will be migrated at the end
 		if actorIn.Code == builtin0.VerifiedRegistryActorCodeID {
 			return nil
 		}
-		if actorIn.Code == builtin0.StorageMinerActorCodeID {
-			// setup migration fields
-			mm := migration.StateMigration.(*minerMigrator)
-			mm.MinerBalance = actorIn.Balance
-			mm.Transfer = big.Zero()
-		}
-		headOut, err := migration.StateMigration.MigrateState(ctx, store, actorIn.Head)
+		headOut, transfer, err := migration.StateMigration.MigrateState(ctx, store, actorIn.Head, actorIn.Balance)
 		if err != nil {
 			return xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(migration.OutCodeCID), addr, err)
 		}
@@ -165,21 +159,14 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 			Code:       migration.OutCodeCID,
 			Head:       headOut,
 			CallSeqNum: actorIn.CallSeqNum,
-			Balance:    actorIn.Balance,
+			Balance:    big.Add(actorIn.Balance, transfer),
+		}
+		if err = p.transfer(transfer); err != nil {
+			return err
 		}
 
-		if actorIn.Code == builtin0.StorageMinerActorCodeID {
-			// propagate transfer to miner actor
-			mm := migration.StateMigration.(*minerMigrator)
-			if err := p.transfer(mm.Transfer); err != nil {
-				return err
-			}
-
-			actorOut.Balance = big.Add(actorOut.Balance, mm.Transfer)
-		}
 		return actorsOut.SetActor(addr, &actorOut)
-	})
-	if err != nil {
+	}); err != nil {
 		return cid.Undef, err
 	}
 
@@ -193,7 +180,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	if !found {
 		return cid.Undef, xerrors.Errorf("could not find verifreg actor in state")
 	}
-	verifRegHeadOut, err := vm.MigrateState(ctx, store, verifRegActorIn.Head)
+	verifRegHeadOut, transfer, err := vm.MigrateState(ctx, store, verifRegActorIn.Head, verifRegActorIn.Balance)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -201,7 +188,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		Code:       builtin.VerifiedRegistryActorCodeID,
 		Head:       verifRegHeadOut,
 		CallSeqNum: verifRegActorIn.CallSeqNum,
-		Balance:    verifRegActorIn.Balance,
+		Balance:    big.Add(verifRegActorIn.Balance, transfer),
+	}
+	if err = p.transfer(transfer); err != nil {
+		return cid.Undef, err
 	}
 	if err := actorsOut.SetActor(builtin.VerifiedRegistryActorAddr, &verifRegActorOut); err != nil {
 		return cid.Undef, err
