@@ -4,6 +4,8 @@ import (
 	"context"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	paych0 "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -15,24 +17,24 @@ import (
 type paychMigrator struct {
 }
 
-func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
 	var inState paych0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, err
+		return cid.Undef, big.Zero(), err
 	}
 
 	// Migrate lane states map
 	laneStatesRoot, err := m.migrateLaneStates(ctx, store, inState.LaneStates)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("lane state: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("lane state: %w", err)
 	}
 
 	// Verify parties are all ID addrs
 	if inState.From.Protocol() != addr.ID {
-		return cid.Undef, xerrors.Errorf("unexpected non-ID from address %s", inState.From)
+		return cid.Undef, big.Zero(), xerrors.Errorf("unexpected non-ID from address %s", inState.From)
 	}
 	if inState.To.Protocol() != addr.ID {
-		return cid.Undef, xerrors.Errorf("unexpected non-ID to address %s", inState.To)
+		return cid.Undef, big.Zero(), xerrors.Errorf("unexpected non-ID to address %s", inState.To)
 	}
 
 	outState := paych2.State{
@@ -43,7 +45,8 @@ func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		MinSettleHeight: inState.MinSettleHeight,
 		LaneStates:      laneStatesRoot,
 	}
-	return store.Put(ctx, &outState)
+	newHead, err := store.Put(ctx, &outState)
+	return newHead, big.Zero(), err
 }
 
 func (m *paychMigrator) migrateLaneStates(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

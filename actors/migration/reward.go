@@ -3,6 +3,8 @@ package migration
 import (
 	"context"
 
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -15,10 +17,10 @@ import (
 type rewardMigrator struct {
 }
 
-func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
 	var inState reward0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, err
+		return cid.Undef, big.Zero(), err
 	}
 
 	// The baseline function initial value and growth rate are changed from v0.
@@ -30,7 +32,7 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 	// This will be a bit annoying for external analytical calculations of the baseline function.
 
 	if inState.ThisEpochBaselinePower.GreaterThan(reward2.BaselineInitialValue) {
-		return cid.Undef, xerrors.Errorf("unexpected baseline power %v higher than new initial value %v",
+		return cid.Undef, big.Zero(), xerrors.Errorf("unexpected baseline power %v higher than new initial value %v",
 			inState.ThisEpochBaselinePower, reward2.BaselineInitialValue)
 	}
 
@@ -45,5 +47,6 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		Epoch:                   inState.Epoch,
 		TotalStoragePowerReward: inState.TotalMined,
 	}
-	return store.Put(ctx, &outState)
+	newHead, err := store.Put(ctx, &outState)
+	return newHead, big.Zero(), err
 }

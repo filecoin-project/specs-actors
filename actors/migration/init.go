@@ -3,6 +3,8 @@ package migration
 import (
 	"context"
 
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	init0 "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -14,16 +16,16 @@ import (
 type initMigrator struct {
 }
 
-func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
 	var inState init0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, err
+		return cid.Undef, big.Zero(), err
 	}
 
 	// Migrate address resolution map
 	addrMapRoot, err := m.migrateAddrs(ctx, store, inState.AddressMap)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("migrate addrs: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("migrate addrs: %w", err)
 	}
 
 	outState := init2.State{
@@ -31,7 +33,8 @@ func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		NextID:      inState.NextID,
 		NetworkName: inState.NetworkName,
 	}
-	return store.Put(ctx, &outState)
+	newHead, err := store.Put(ctx, &outState)
+	return newHead, big.Zero(), err
 }
 
 func (m *initMigrator) migrateAddrs(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

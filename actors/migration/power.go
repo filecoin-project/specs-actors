@@ -4,6 +4,8 @@ import (
 	"context"
 
 	address "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	states0 "github.com/filecoin-project/specs-actors/actors/states"
@@ -21,20 +23,20 @@ type powerMigrator struct {
 	actorsIn *states0.Tree
 }
 
-func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
 	var inState power0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, err
+		return cid.Undef, big.Zero(), err
 	}
 
 	cronEventsRoot, err := m.migrateCronEvents(ctx, store, inState.CronEventQueue)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("cron events: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("cron events: %w", err)
 	}
 
 	claimsRoot, err := m.migrateClaims(ctx, store, inState.Claims)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("claims: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("claims: %w", err)
 	}
 
 	outState := power2.State{
@@ -55,7 +57,8 @@ func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		ProofValidationBatch:      nil, // Set nil at the end of every epoch in cron handler
 	}
 
-	return store.Put(ctx, &outState)
+	newHead, err := store.Put(ctx, &outState)
+	return newHead, big.Zero(), err
 }
 
 func (m *powerMigrator) migrateCronEvents(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

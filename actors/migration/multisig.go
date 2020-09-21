@@ -4,6 +4,8 @@ import (
 	"context"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	multisig0 "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -15,22 +17,22 @@ import (
 type multisigMigrator struct {
 }
 
-func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
 	var inState multisig0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, err
+		return cid.Undef, big.Zero(), err
 	}
 
 	// Migrate pending txns map
 	pendingRoot, err := m.migratePending(ctx, store, inState.PendingTxns)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("pending: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("pending: %w", err)
 	}
 
 	// Verify signers are all ID addrs
 	for _, signer := range inState.Signers {
 		if signer.Protocol() != addr.ID {
-			return cid.Undef, xerrors.Errorf("unexpected non-ID signer address %s", signer)
+			return cid.Undef, big.Zero(), xerrors.Errorf("unexpected non-ID signer address %s", signer)
 		}
 	}
 
@@ -43,7 +45,8 @@ func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 		UnlockDuration:        inState.UnlockDuration,
 		PendingTxns:           pendingRoot,
 	}
-	return store.Put(ctx, &outState)
+	newHead, err := store.Put(ctx, &outState)
+	return newHead, big.Zero(), err
 }
 
 func (m *multisigMigrator) migratePending(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

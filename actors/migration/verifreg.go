@@ -5,6 +5,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	verifreg0 "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	adt0 "github.com/filecoin-project/specs-actors/actors/util/adt"
 	cid "github.com/ipfs/go-cid"
@@ -23,24 +24,24 @@ type verifregMigrator struct {
 	actorsOut *states.Tree
 }
 
-func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
 	var inState verifreg0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, err
+		return cid.Undef, big.Zero(), err
 	}
 
 	verifiersRoot, err := m.migrateCapTable(ctx, store, inState.Verifiers)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("verifiers cap table: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("verifiers cap table: %w", err)
 	}
 
 	clientsRoot, err := m.migrateCapTable(ctx, store, inState.VerifiedClients)
 	if err != nil {
-		return cid.Undef, xerrors.Errorf("clients cap table: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("clients cap table: %w", err)
 	}
 
 	if inState.RootKey.Protocol() != addr.ID {
-		return cid.Undef, xerrors.Errorf("unexpected non-ID root key address %v", inState.RootKey)
+		return cid.Undef, big.Zero(), xerrors.Errorf("unexpected non-ID root key address %v", inState.RootKey)
 	}
 
 	outState := verifreg2.State{
@@ -48,7 +49,8 @@ func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 		Verifiers:       verifiersRoot,
 		VerifiedClients: clientsRoot,
 	}
-	return store.Put(ctx, &outState)
+	newHead, err := store.Put(ctx, &outState)
+	return newHead, big.Zero(), err
 }
 
 func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
