@@ -27,11 +27,11 @@ var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_SPEC
 const DealMaxLabelSize = 256
 
 // Bounds (inclusive) on deal duration
-func dealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
+func DealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
 	return DealMinDuration, DealMaxDuration // PARAM_FINISH
 }
 
-func dealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
+func DealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
 	return abi.NewTokenAmount(0), builtin.TotalFilecoin // PARAM_FINISH
 }
 
@@ -57,7 +57,7 @@ func DealClientCollateralBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min ab
 }
 
 // Penalty to provider deal collateral if the deadline expires before sector commitment.
-func collateralPenaltyForDealActivationMissed(providerCollateral abi.TokenAmount) abi.TokenAmount {
+func CollateralPenaltyForDealActivationMissed(providerCollateral abi.TokenAmount) abi.TokenAmount {
 	return providerCollateral // PARAM_FINISH
 }
 

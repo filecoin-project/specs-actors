@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,8 +33,7 @@ func TestCommitPoStFlow(t *testing.T) {
 		SealProofType: sealProof,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret, code := v.ApplyMessage(addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	require.Equal(t, exitcode.Ok, code)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -61,8 +59,7 @@ func TestCommitPoStFlow(t *testing.T) {
 		DealIDs:       nil,
 		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// assert successful precommit invocation
 	vm.ExpectInvocation{
@@ -100,8 +97,7 @@ func TestCommitPoStFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		// run cron which should expire precommit
-		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		vm.ExpectInvocation{
 			To:     builtin.CronActorAddr,
@@ -146,8 +142,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
-	_, code = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	vm.ExpectInvocation{
 		To:     minerAddrs.IDAddress,
@@ -160,8 +155,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	}.Matches(t, v.Invocations()[0])
 
 	// In the same epoch, trigger cron to validate prove commit
-	_, code = v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	require.Equal(t, exitcode.Ok, code)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	vm.ExpectInvocation{
 		To:     builtin.CronActorAddr,
@@ -221,8 +215,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			ChainCommitEpoch: dlInfo.Challenge,
 			ChainCommitRand:  []byte("not really random"),
 		}
-		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 		sectorPower := miner.PowerForSector(sectorSize, sector)
 		updatePowerParams := &power.UpdateClaimedPowerParams{
@@ -273,8 +266,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			ChainCommitEpoch: dlInfo.Challenge,
 			ChainCommitRand:  []byte("not really random"),
 		}
-		_, code = tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
 		vm.ExpectInvocation{
 			To:     minerAddrs.IDAddress,
@@ -304,8 +296,7 @@ func TestCommitPoStFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		// Run cron to detect missing PoSt
-		_, code = tv.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-		require.Equal(t, exitcode.Ok, code)
+		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		vm.ExpectInvocation{
 			To:     builtin.CronActorAddr,

@@ -263,6 +263,18 @@ func ParamsForInvocation(t *testing.T, vm *VM, idxs ...int) interface{} {
 	return invocation.Msg.params
 }
 
+func ValueForInvocation(t *testing.T, vm *VM, idxs ...int) abi.TokenAmount {
+	invocations := vm.Invocations()
+	var invocation *Invocation
+	for _, idx := range idxs {
+		require.Greater(t, len(invocations), idx)
+		invocation = invocations[idx]
+		invocations = invocation.SubInvocations
+	}
+	require.NotNil(t, invocation)
+	return invocation.Msg.value
+}
+
 //
 // Advancing Time while updating state
 //
@@ -334,7 +346,7 @@ func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorN
 	return dlIdx, pIdx
 }
 
-//
+///
 // state abstraction
 //
 
@@ -390,20 +402,23 @@ func MinerPower(t *testing.T, vm *VM, minerIdAddr address.Address) miner.PowerPa
 
 type NetworkStats struct {
 	power.State
-	TotalRawBytePower         abi.StoragePower
-	TotalBytesCommitted       abi.StoragePower
-	TotalQualityAdjPower      abi.StoragePower
-	TotalQABytesCommitted     abi.StoragePower
-	TotalPledgeCollateral     abi.TokenAmount
-	ThisEpochRawBytePower     abi.StoragePower
-	ThisEpochQualityAdjPower  abi.StoragePower
-	ThisEpochPledgeCollateral abi.TokenAmount
-	MinerCount                int64
-	MinerAboveMinPowerCount   int64
-	ThisEpochReward           abi.TokenAmount
-	ThisEpochRewardSmoothed   smoothing.FilterEstimate
-	ThisEpochBaselinePower    abi.StoragePower
-	TotalMined                abi.TokenAmount
+	TotalRawBytePower             abi.StoragePower
+	TotalBytesCommitted           abi.StoragePower
+	TotalQualityAdjPower          abi.StoragePower
+	TotalQABytesCommitted         abi.StoragePower
+	TotalPledgeCollateral         abi.TokenAmount
+	ThisEpochRawBytePower         abi.StoragePower
+	ThisEpochQualityAdjPower      abi.StoragePower
+	ThisEpochPledgeCollateral     abi.TokenAmount
+	MinerCount                    int64
+	MinerAboveMinPowerCount       int64
+	ThisEpochReward               abi.TokenAmount
+	ThisEpochRewardSmoothed       smoothing.FilterEstimate
+	ThisEpochBaselinePower        abi.StoragePower
+	TotalStoragePowerReward       abi.TokenAmount
+	TotalClientLockedCollateral   abi.TokenAmount
+	TotalProviderLockedCollateral abi.TokenAmount
+	TotalClientStorageFee         abi.TokenAmount
 }
 
 func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
@@ -415,22 +430,53 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 	err = vm.GetState(builtin.RewardActorAddr, &rewardState)
 	require.NoError(t, err)
 
+	var marketState market.State
+	err = vm.GetState(builtin.StorageMarketActorAddr, &marketState)
+	require.NoError(t, err)
+
 	return NetworkStats{
-		TotalRawBytePower:         powerState.TotalRawBytePower,
-		TotalBytesCommitted:       powerState.TotalBytesCommitted,
-		TotalQualityAdjPower:      powerState.TotalQualityAdjPower,
-		TotalQABytesCommitted:     powerState.TotalQABytesCommitted,
-		TotalPledgeCollateral:     powerState.TotalPledgeCollateral,
-		ThisEpochRawBytePower:     powerState.ThisEpochRawBytePower,
-		ThisEpochQualityAdjPower:  powerState.ThisEpochQualityAdjPower,
-		ThisEpochPledgeCollateral: powerState.ThisEpochPledgeCollateral,
-		MinerCount:                powerState.MinerCount,
-		MinerAboveMinPowerCount:   powerState.MinerAboveMinPowerCount,
-		ThisEpochReward:           rewardState.ThisEpochReward,
-		ThisEpochRewardSmoothed:   rewardState.ThisEpochRewardSmoothed,
-		ThisEpochBaselinePower:    rewardState.ThisEpochBaselinePower,
-		TotalMined:                rewardState.TotalMined,
+		TotalRawBytePower:             powerState.TotalRawBytePower,
+		TotalBytesCommitted:           powerState.TotalBytesCommitted,
+		TotalQualityAdjPower:          powerState.TotalQualityAdjPower,
+		TotalQABytesCommitted:         powerState.TotalQABytesCommitted,
+		TotalPledgeCollateral:         powerState.TotalPledgeCollateral,
+		ThisEpochRawBytePower:         powerState.ThisEpochRawBytePower,
+		ThisEpochQualityAdjPower:      powerState.ThisEpochQualityAdjPower,
+		ThisEpochPledgeCollateral:     powerState.ThisEpochPledgeCollateral,
+		MinerCount:                    powerState.MinerCount,
+		MinerAboveMinPowerCount:       powerState.MinerAboveMinPowerCount,
+		ThisEpochReward:               rewardState.ThisEpochReward,
+		ThisEpochRewardSmoothed:       rewardState.ThisEpochRewardSmoothed,
+		ThisEpochBaselinePower:        rewardState.ThisEpochBaselinePower,
+		TotalStoragePowerReward:       rewardState.TotalStoragePowerReward,
+		TotalClientLockedCollateral:   marketState.TotalClientLockedCollateral,
+		TotalProviderLockedCollateral: marketState.TotalProviderLockedCollateral,
+		TotalClientStorageFee:         marketState.TotalClientStorageFee,
 	}
+}
+
+func GetDealState(t *testing.T, vm *VM, dealID abi.DealID) (*market.DealState, bool) {
+	var marketState market.State
+	err := vm.GetState(builtin.StorageMarketActorAddr, &marketState)
+	require.NoError(t, err)
+
+	states, err := market.AsDealStateArray(vm.store, marketState.States)
+	require.NoError(t, err)
+
+	state, found, err := states.Get(dealID)
+	require.NoError(t, err)
+
+	return state, found
+}
+
+//
+// Misc. helpers
+//
+
+func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) cbor.Marshaler {
+	ret, code := v.ApplyMessage(from, to, value, method, params)
+	require.Equal(t, exitcode.Ok, code)
+	return ret
 }
 
 //
