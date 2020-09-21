@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	states0 "github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/ipfs/go-cid"
@@ -226,4 +227,48 @@ func InputTreeBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return nil
 	})
 	return total, err
+}
+
+// InputTreeMinerAvailableBalance returns a map of every miner's outstanding
+// available balance at the provided state tree.  It is used for validating
+// that the system has enough funds to unburn all debts and add them to fee debt.
+func InputTreeMinerAvailableBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (map[address.Address]abi.TokenAmount, error) {
+	adtStore := adt.WrapStore(ctx, store)
+	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
+	if err != nil {
+		return nil, err
+	}
+	available := make(map[address.Address]abi.TokenAmount)
+	err = actorsIn.ForEach(func(addr address.Address, a *states.Actor) error {
+		if !a.Code.Equals(builtin0.StorageMinerActorCodeID) {
+			return nil
+		}
+		var inState miner0.State
+		if err := store.Get(ctx, a.Head, &inState); err != nil {
+			return err
+		}
+		minerLiabilities := big.Sum(inState.LockedFunds, inState.PreCommitDeposits, inState.InitialPledgeRequirement)
+		availableBalance := big.Sub(a.Balance, minerLiabilities)
+		available[addr] = availableBalance
+		return nil
+	})
+	return available, err
+}
+
+// InputTreeBurntFunds returns the current balance of the burnt funds actor
+// as defined by the given state tree
+func InputTreeBurntFunds(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (abi.TokenAmount, error) {
+	adtStore := adt.WrapStore(ctx, store)
+	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
+	if err != nil {
+		return big.Zero(), err
+	}
+	bf, found, err := actorsIn.GetActor(builtin0.BurntFundsActorAddr)
+	if err != nil {
+		return big.Zero(), err
+	}
+	if !found {
+		return big.Zero(), xerrors.Errorf("burnt funds actor not found")
+	}
+	return bf.Balance, nil
 }
