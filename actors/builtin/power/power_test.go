@@ -83,7 +83,7 @@ func TestCreateMinerFailures(t *testing.T) {
 
 		rt.SetCaller(owner, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(ac.CreateMiner, &power.CreateMinerParams{})
 		})
 		rt.Verify()
@@ -137,7 +137,7 @@ func TestUpdateClaimedPowerFailures(t *testing.T) {
 		rt.SetCaller(miner, builtin.SystemActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(ac.UpdateClaimedPower, &params)
 		})
 

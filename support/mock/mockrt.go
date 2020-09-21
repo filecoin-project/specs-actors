@@ -213,7 +213,7 @@ func (rt *Runtime) ValidateImmediateCallerIs(addrs ...addr.Address) {
 			return
 		}
 	}
-	rt.Abortf(exitcode.ErrForbidden, "caller address %v forbidden, allowed: %v", rt.caller, addrs)
+	rt.Abortf(exitcode.SysErrForbidden, "caller address %v forbidden, allowed: %v", rt.caller, addrs)
 }
 
 func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
@@ -237,7 +237,7 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 			return
 		}
 	}
-	rt.Abortf(exitcode.ErrForbidden, "caller type %v forbidden, allowed: %v", rt.callerType, types)
+	rt.Abortf(exitcode.SysErrForbidden, "caller type %v forbidden, allowed: %v", rt.callerType, types)
 }
 
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {

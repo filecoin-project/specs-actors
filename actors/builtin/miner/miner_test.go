@@ -3514,7 +3514,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		param := &miner.ChangeWorkerAddressParams{NewWorker: newWorker}
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
@@ -3886,7 +3886,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 		rt.SetCaller(rAddr, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
 			rt.Call(actor.a.CompactSectorNumbers, &miner.CompactSectorNumbersParams{
 				MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
 			})
