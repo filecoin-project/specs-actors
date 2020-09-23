@@ -154,6 +154,7 @@ func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.Stora
 	if currRealizedPower == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "arugment should not be nil")
 	}
+	networkVersion := rt.NetworkVersion()
 
 	var st State
 	rt.StateTransaction(&st, func() {
@@ -162,10 +163,10 @@ func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.Stora
 		// st.Epoch == rt.CurrEpoch()
 		for st.Epoch < rt.CurrEpoch() {
 			// Update to next epoch to process null rounds
-			st.updateToNextEpoch(*currRealizedPower)
+			st.updateToNextEpoch(*currRealizedPower, networkVersion)
 		}
 
-		st.updateToNextEpochWithReward(*currRealizedPower)
+		st.updateToNextEpochWithReward(*currRealizedPower, networkVersion)
 		// only update smoothed estimates after updating reward and epoch
 		st.updateSmoothedEstimates(st.Epoch - prev)
 	})

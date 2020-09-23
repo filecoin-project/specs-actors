@@ -8,6 +8,7 @@ import (
 
 	. "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/stretchr/testify/assert"
 	"github.com/xorcare/golden"
 
@@ -83,7 +84,7 @@ func TestBaselineRewardGrowth(t *testing.T) {
 	baselineInYears := func(start StoragePower, x ChainEpoch) StoragePower {
 		baseline := start
 		for i := ChainEpoch(0); i < x*epochsInYear; i++ {
-			baseline = BaselinePowerFromPrev(baseline)
+			baseline = BaselinePowerFromPrev(baseline, network.Version0)
 		}
 		return baseline
 	}
@@ -123,7 +124,7 @@ func TestBaselineRewardGrowth(t *testing.T) {
 		},
 		// EiB
 		{
-			BaselineInitialValue,
+			BaselineInitialValueV0,
 			1e-8,
 		},
 		// ZiB
