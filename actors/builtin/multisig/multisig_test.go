@@ -371,6 +371,44 @@ func TestVesting(t *testing.T) {
 		rt.ExpectSend(anne, builtin.MethodSend, nil, lockedBalance, nil, exitcode.Ok)
 		actor.proposeOK(rt, anne, lockedBalance, builtin.MethodSend, nil, nil)
 	})
+
+	t.Run("sending zero ok when nothing vested", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt, 1, unlockDuration, startEpoch, anne)
+		rt.SetReceived(big.Zero())
+
+		sendAmount := abi.NewTokenAmount(0)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, sendAmount, nil, 0)
+		actor.proposeOK(rt, bob, sendAmount, builtin.MethodSend, nil, nil)
+	})
+
+	t.Run("sending zero ok when lockup exceeds balance", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.SetReceived(big.Zero())
+		rt.SetBalance(big.Zero())
+		actor.constructAndVerify(rt, 1, 0, startEpoch, anne)
+
+		// Lock up funds the actor doesn't have yet.
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		rt.ExpectValidateCallerAddr(receiver)
+		actor.lockBalance(rt, startEpoch, unlockDuration, abi.NewTokenAmount(10))
+
+		// Make a transaction that transfers no value.
+		sendAmount := abi.NewTokenAmount(0)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectSend(bob, builtin.MethodSend, nil, sendAmount, nil, 0)
+		actor.proposeOK(rt, bob, sendAmount, builtin.MethodSend, nil, nil)
+
+		// Verify that sending any value is prevented
+		sendAmount = abi.NewTokenAmount(1)
+		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			_ = actor.propose(rt, bob, sendAmount, builtin.MethodSend, nil, nil)
+		})
+	})
 }
 
 func TestPropose(t *testing.T) {
@@ -607,7 +645,7 @@ func TestApprove(t *testing.T) {
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: current balance 9 less than amount to spend 10", func() {
-			actor.proposeOK(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
+			_ = actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
 		})
 	})
 
@@ -1639,7 +1677,7 @@ func TestLockBalance(t *testing.T) {
 		// Fail to spend balance the multisig doesn't have
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, bob, vested, builtin.MethodSend, nil, nil)
+			_ = actor.propose(rt, bob, vested, builtin.MethodSend, nil, nil)
 		})
 		rt.Reset()
 
@@ -1647,7 +1685,7 @@ func TestLockBalance(t *testing.T) {
 		rt.SetBalance(lockAmount)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, bob, big.Add(vested, big.NewInt(1)), builtin.MethodSend, nil, nil)
+			_ = actor.propose(rt, bob, big.Add(vested, big.NewInt(1)), builtin.MethodSend, nil, nil)
 		})
 		rt.Reset()
 
@@ -1660,7 +1698,7 @@ func TestLockBalance(t *testing.T) {
 		rt.SetBalance(big.Sub(lockAmount, vested))
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+			_ = actor.propose(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 		})
 		rt.Reset()
 
@@ -1702,7 +1740,7 @@ func TestLockBalance(t *testing.T) {
 		rt.SetBalance(lockAmount)
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+			_ = actor.propose(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 		})
 		rt.Reset()
 
@@ -1717,7 +1755,7 @@ func TestLockBalance(t *testing.T) {
 		rt.SetBalance(big.Sub(lockAmount, vested))
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
-			actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
+			_ = actor.propose(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 		})
 		rt.Reset()
 
