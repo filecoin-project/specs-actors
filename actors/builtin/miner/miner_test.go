@@ -929,7 +929,7 @@ func TestWindowPost(t *testing.T) {
 		// Now submit PoSt
 		// Power should return for recovered sector.
 		// Recovery should be charged ongoing fee.
-		recoveryFee := actor.declaredFaultPenalty(infos)
+		recoveryFee := actor.declaredFaultPenalty(infos, rt.NetworkVersion())
 		cfg := &poStConfig{
 			expectedRawPowerDelta: pwr.Raw,
 			expectedQAPowerDelta:  pwr.QA,
@@ -981,7 +981,7 @@ func TestWindowPost(t *testing.T) {
 		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
 		// which is charged at next cron and the rest which is charged during submit PoSt.
 		undeclaredFee := actor.undeclaredFaultPenalty(infos[:1], rt.NetworkVersion())
-		declaredFee := actor.declaredFaultPenalty(infos[:1])
+		declaredFee := actor.declaredFaultPenalty(infos[:1], rt.NetworkVersion())
 		faultFee := big.Sub(undeclaredFee, declaredFee)
 
 		pwr := miner.PowerForSectors(actor.sectorSize, infos[:1])
@@ -1005,7 +1005,7 @@ func TestWindowPost(t *testing.T) {
 
 		// skip second fault
 		undeclaredFee = actor.undeclaredFaultPenalty(infos[1:], rt.NetworkVersion())
-		declaredFee = actor.declaredFaultPenalty(infos[1:])
+		declaredFee = actor.declaredFaultPenalty(infos[1:], rt.NetworkVersion())
 		faultFee = big.Sub(undeclaredFee, declaredFee)
 		pwr = miner.PowerForSectors(actor.sectorSize, infos[1:])
 
@@ -1020,7 +1020,7 @@ func TestWindowPost(t *testing.T) {
 		actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 
 		// expect ongoing fault from both sectors
-		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: actor.declaredFaultPenalty(infos)})
+		advanceDeadline(rt, actor, &cronConfig{ongoingFaultsPenalty: actor.declaredFaultPenalty(infos, rt.NetworkVersion())})
 	})
 
 	t.Run("skipped all sectors in a deadline may be skipped", func(t *testing.T) {
@@ -1051,7 +1051,7 @@ func TestWindowPost(t *testing.T) {
 		// Fee for skipped fault is undeclared fault fee, but it is split into the ongoing fault fee
 		// which is charged at next cron and the rest which is charged during submit PoSt.
 		undeclaredFee := actor.undeclaredFaultPenalty(infos, rt.NetworkVersion())
-		declaredFee := actor.declaredFaultPenalty(infos)
+		declaredFee := actor.declaredFaultPenalty(infos, rt.NetworkVersion())
 		faultFee := big.Sub(undeclaredFee, declaredFee)
 
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
@@ -1105,7 +1105,7 @@ func TestWindowPost(t *testing.T) {
 		// Now submit PoSt and skip recovered sector
 		// No power should be returned
 		// Retracted recovery will be charged difference between undeclared and ongoing fault fees
-		ongoingFee := actor.declaredFaultPenalty(infos)
+		ongoingFee := actor.declaredFaultPenalty(infos, rt.NetworkVersion())
 		recoveryFee := big.Sub(actor.undeclaredFaultPenalty(infos, rt.NetworkVersion()), ongoingFee)
 		cfg := &poStConfig{
 			expectedRawPowerDelta: big.Zero(),
@@ -1313,11 +1313,12 @@ func TestDeadlineCron(t *testing.T) {
 		retractedPwr := miner.PowerForSectors(actor.sectorSize, allSectors[1:])
 		retractedPenalty := miner.PledgePenaltyForUndeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA, rt.NetworkVersion())
 		// subtract ongoing penalty, because it's charged below (this prevents round-off mismatches)
-		retractedPenalty = big.Sub(retractedPenalty, miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA))
+		retractedPenalty = big.Sub(retractedPenalty,
+			miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, retractedPwr.QA, rt.NetworkVersion()))
 
 		// Un-recovered faults are charged as ongoing faults
 		ongoingPwr := miner.PowerForSectors(actor.sectorSize, allSectors)
-		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA)
+		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA, rt.NetworkVersion())
 
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPenalty: retractedPenalty,
@@ -1413,7 +1414,7 @@ func TestDeclareFaults(t *testing.T) {
 
 		// faults are charged at ongoing rate and no additional power is removed
 		ongoingPwr := miner.PowerForSectors(actor.sectorSize, allSectors)
-		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA)
+		ongoingPenalty := miner.PledgePenaltyForDeclaredFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, ongoingPwr.QA, rt.NetworkVersion())
 
 		advanceDeadline(rt, actor, &cronConfig{
 			ongoingFaultsPenalty: ongoingPenalty,
@@ -3193,9 +3194,9 @@ func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amount abi.TokenAmount) {
 	rt.Verify()
 }
 
-func (h *actorHarness) declaredFaultPenalty(sectors []*miner.SectorOnChainInfo) abi.TokenAmount {
+func (h *actorHarness) declaredFaultPenalty(sectors []*miner.SectorOnChainInfo, nv network.Version) abi.TokenAmount {
 	_, qa := powerForSectors(h.sectorSize, sectors)
-	return miner.PledgePenaltyForDeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa)
+	return miner.PledgePenaltyForDeclaredFault(h.epochRewardSmooth, h.epochQAPowerSmooth, qa, nv)
 }
 
 func (h *actorHarness) undeclaredFaultPenalty(sectors []*miner.SectorOnChainInfo, nv network.Version) abi.TokenAmount {
