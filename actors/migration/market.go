@@ -16,7 +16,7 @@ import (
 type marketMigrator struct {
 }
 
-func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	var inState market0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err
@@ -49,7 +49,7 @@ func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 
 	dealOpsRoot, err := m.migrateDealOps(ctx, store, inState.DealOpsByEpoch)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("deal ops by epoch: %w", err)
+		return cid.Undef, big.Zero(), xerrors.Errorf("deal ops by priorEpoch: %w", err)
 	}
 
 	outState := market2.State{

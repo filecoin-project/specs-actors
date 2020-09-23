@@ -23,18 +23,28 @@ type powerMigrator struct {
 	actorsIn *states0.Tree
 }
 
-func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	var inState power0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err
 	}
 
-	cronEventsRoot, err := m.migrateCronEvents(ctx, store, inState.CronEventQueue)
+	cronEventsRoot, err := m.updateCronEvents(ctx, store, inState.CronEventQueue, info.powerUpdates)
+	if err != nil {
+		return cid.Undef, big.Zero(), xerrors.Errorf("could not update cron events: %w", err)
+	}
+
+	cronEventsRoot, err = m.migrateCronEvents(ctx, store, cronEventsRoot)
 	if err != nil {
 		return cid.Undef, big.Zero(), xerrors.Errorf("cron events: %w", err)
 	}
 
-	claimsRoot, err := m.migrateClaims(ctx, store, inState.Claims)
+	claimsRoot, err := m.updateClaims(ctx, store, inState.Claims, info.powerUpdates)
+	if err != nil {
+		return cid.Undef, big.Zero(), xerrors.Errorf("claims: %w", err)
+	}
+
+	claimsRoot, err = m.migrateClaims(ctx, store, claimsRoot)
 	if err != nil {
 		return cid.Undef, big.Zero(), xerrors.Errorf("claims: %w", err)
 	}
@@ -61,6 +71,23 @@ func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	return newHead, big.Zero(), err
 }
 
+func (m *powerMigrator) updateCronEvents(ctx context.Context, store cbor.IpldStore, cronRoot cid.Cid, powerUpdates *PowerUpdates) (cid.Cid, error) {
+	crons, err := adt0.AsMultimap(adt0.WrapStore(ctx, store), cronRoot)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	for epoch, cronEvents := range powerUpdates.crons { // nolint:nomaprange
+		for _, event := range cronEvents {
+			if err := crons.Add(abi.IntKey(int64(epoch)), &event); err != nil {
+				return cid.Undef, err
+			}
+		}
+	}
+
+	return crons.Root()
+}
+
 func (m *powerMigrator) migrateCronEvents(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	// The HAMT has changed, but the value (an AMT[CronEvent] root) is identical.
 	// The AMT queues may contain miner0.CronEventWorkerKeyChange, but these will be ignored by the miner
@@ -68,6 +95,21 @@ func (m *powerMigrator) migrateCronEvents(ctx context.Context, store cbor.IpldSt
 	var _ = power0.CronEvent(power2.CronEvent{})
 
 	return migrateHAMTRaw(ctx, store, root)
+}
+
+func (m *powerMigrator) updateClaims(ctx context.Context, store cbor.IpldStore, root cid.Cid, updates *PowerUpdates) (cid.Cid, error) {
+	claims, err := adt0.AsMap(adt0.WrapStore(ctx, store), root)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	for addr, claim := range updates.claims { // nolint:nomaprange
+		if err := claims.Put(adt0.AddrKey(addr), &claim); err != nil {
+			return cid.Undef, err
+		}
+	}
+
+	return claims.Root()
 }
 
 func (m *powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

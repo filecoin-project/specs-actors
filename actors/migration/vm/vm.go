@@ -3,9 +3,10 @@ package vm_test
 import (
 	"context"
 	"fmt"
+	"github.com/filecoin-project/specs-actors/actors/states"
 
 	"github.com/filecoin-project/go-address"
-	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
+	hamt "github.com/filecoin-project/go-hamt-ipld"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -15,11 +16,11 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
+	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 )
 
 // VM is a simplified message execution framework for the purposes of testing inter-actor communication.
@@ -47,7 +48,14 @@ type VM struct {
 
 // VM types
 
-type ActorImplLookup map[cid.Cid]runtime.VMActor
+// Simplifed actor implementation that does not contain message nonce.
+type TestActor struct {
+	Head    cid.Cid
+	Code    cid.Cid
+	Balance abi.TokenAmount
+}
+
+type ActorImplLookup map[cid.Cid]exported.BuiltinActor
 
 type InternalMessage struct {
 	from   address.Address
@@ -66,6 +74,8 @@ type Invocation struct {
 
 // NewVM creates a new runtime for executing messages.
 func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM {
+	// Note: this uses the most recent HAMT implementation.
+	// To test across chain state upgrades, factor out this initial state tree construction.
 	actors := adt.MakeEmptyMap(store)
 	actorRoot, err := actors.Root()
 	if err != nil {
@@ -87,30 +97,6 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
 	}
-}
-
-// NewVM creates a new runtime for executing messages.
-func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Store, stateRoot cid.Cid, epoch abi.ChainEpoch) (*VM, error) {
-	actors, err := adt.AsMap(store, stateRoot)
-	if err != nil {
-		return nil, err
-	}
-
-	emptyObject, err := store.Put(context.TODO(), []struct{}{})
-	if err != nil {
-		panic(err)
-	}
-
-	return &VM{
-		ctx:            ctx,
-		actorImpls:     actorImpls,
-		store:          store,
-		actors:         actors,
-		stateRoot:      stateRoot,
-		actorsDirty:    false,
-		emptyObject:    emptyObject,
-		networkVersion: network.VersionMax,
-	}, nil
 }
 
 func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
@@ -135,6 +121,27 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		currentEpoch:   epoch,
 		networkVersion: vm.networkVersion,
 	}, nil
+}
+
+func (vm *VM) WithRoot(root cid.Cid) (*VM, error) {
+	newVM := &VM{
+		ctx:            vm.ctx,
+		actorImpls:     vm.actorImpls,
+		store:          vm.store,
+		stateRoot:      root,
+		actorsDirty:    false,
+		emptyObject:    vm.emptyObject,
+		currentEpoch:   vm.currentEpoch,
+		networkVersion: vm.networkVersion,
+	}
+
+	actors, err := adt.AsMap(newVM.store, newVM.stateRoot)
+	if err != nil {
+		return nil, err
+	}
+	newVM.actors = actors
+
+	return newVM, nil
 }
 
 func (vm *VM) rollback(root cid.Cid) error {
@@ -309,6 +316,10 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	return ret.inner, exitCode
 }
 
+func (vm *VM) StateRoot() cid.Cid {
+	return vm.stateRoot
+}
+
 func (vm *VM) GetState(addr address.Address, out cbor.Unmarshaler) error {
 	act, found, err := vm.GetActor(addr)
 	if err != nil {
@@ -380,7 +391,7 @@ func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amou
 	return toActor, fromActor
 }
 
-func (vm *VM) getActorImpl(code cid.Cid) runtime.VMActor {
+func (vm *VM) getActorImpl(code cid.Cid) exported.BuiltinActor {
 	actorImpl, ok := vm.actorImpls[code]
 	if !ok {
 		vm.Abortf(exitcode.SysErrInvalidReceiver, "actor implementation not found for Exitcode %v", code)

@@ -16,7 +16,7 @@ import (
 type rewardMigrator struct {
 }
 
-func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	var inState reward0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err

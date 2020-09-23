@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/filecoin-project/specs-actors/actors/states"
 	"reflect"
 	"runtime/debug"
 
@@ -17,16 +18,16 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/support/testing"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
+	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
+	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/support/testing"
 )
 
 var EmptyObjectCid cid.Cid
@@ -325,12 +326,11 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 // CreateActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
-	act, ok := ic.rt.actorImpls[codeID]
-	if !ok {
+	if !builtin.IsBuiltinActor(codeID) {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only create built-in actors.")
 	}
 
-	if rt.IsSingletonActor(act) {
+	if builtin.IsSingletonActor(codeID) {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only have one instance of singleton actors.")
 	}
 
@@ -599,7 +599,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	return ret, exitcode.Ok
 }
 
-func (ic *invocationContext) dispatch(actor runtime.VMActor, method abi.MethodNum, arg interface{}) (interface{}, error) {
+func (ic *invocationContext) dispatch(actor exported.BuiltinActor, method abi.MethodNum, arg interface{}) (interface{}, error) {
 	// get method signature
 	exports := actor.Exports()
 
@@ -630,7 +630,7 @@ func (ic *invocationContext) dispatch(actor runtime.VMActor, method abi.MethodNu
 			return nil, err
 		}
 		args = append(args, reflect.ValueOf(obj))
-	} else if raw, ok := arg.(builtin.CBORBytes); ok {
+	} else if raw, ok := arg.(runtime.CBORBytes); ok {
 		obj, err := decodeBytes(t, raw)
 		if err != nil {
 			return nil, err
