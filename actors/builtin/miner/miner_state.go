@@ -992,9 +992,11 @@ func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (de
 }
 
 type AdvanceDeadlineResult struct {
-	PledgeDelta                           abi.TokenAmount
-	PowerDelta                            PowerPair
-	DetectedFaultyPower, TotalFaultyPower PowerPair
+	PledgeDelta           abi.TokenAmount
+	PowerDelta            PowerPair
+	PreviouslyFaultyPower PowerPair // Power that was faulty before this advance (including recovering)
+	DetectedFaultyPower   PowerPair // Power of new faults and failed recoveries
+	TotalFaultyPower      PowerPair // Total faulty power after detecting faults (before expiring sectors)
 }
 
 // AdvanceDeadline advances the deadline. It:
@@ -1029,11 +1031,14 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		return nil, xerrors.Errorf("failed to load deadline %d: %w", dlInfo.Index, err)
 	}
 
+	previouslyFaultyPower := deadline.FaultyPower
+
 	// No live sectors in this deadline, nothing to do.
 	if deadline.LiveSectors == 0 {
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,
+			previouslyFaultyPower,
 			detectedFaultyPower,
 			deadline.FaultyPower,
 		}, nil
@@ -1044,6 +1049,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		// Detect and penalize missing proofs.
 		faultExpiration := dlInfo.Last() + FaultMaxAge
 
+		// detectedFaultyPower is new faults and failed recoveries
 		powerDelta, detectedFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
@@ -1094,11 +1100,11 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	}
 
 	// Compute penalties all together.
-	// Be very careful when changing these as any changes can affect
-	// rounding.
+	// Be very careful when changing these as any changes can affect rounding.
 	return &AdvanceDeadlineResult{
 		pledgeDelta,
 		powerDelta,
+		previouslyFaultyPower,
 		detectedFaultyPower,
 		totalFaultyPower,
 	}, nil

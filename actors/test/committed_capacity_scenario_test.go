@@ -282,7 +282,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						// power is removed for old sector and pledge is burnt
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
-						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
 					}},
@@ -327,12 +326,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			To:     minerAddrs.IDAddress,
 			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 			Params: vm.ExpectObject(&submitParams),
-			SubInvocations: []vm.ExpectInvocation{
-				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-				// Skipped sector is penalized as undeclared fault
-				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
-			},
 		}.Matches(t, tv.LastInvocation())
 
 		// old sector power remains (until its proving deadline)
@@ -363,8 +356,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 		Params: vm.ExpectObject(&submitParams),
 		SubInvocations: []vm.ExpectInvocation{
-			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			// This call to the power actor indicates power has been added for the replaced sector
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
 		},

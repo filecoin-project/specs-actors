@@ -773,7 +773,7 @@ func (dl *Deadline) DeclareFaultsRecovered(
 
 // ProcessDeadlineEnd processes all PoSt submissions, marking unproven sectors as
 // faulty and clearing failed recoveries. It returns the power delta, and any
-// power that should be penalized.
+// power that should be penalized (new faults and failed recoveries).
 func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
 	powerDelta, penalizedPower PowerPair, err error,
 ) {

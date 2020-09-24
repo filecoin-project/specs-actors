@@ -32,22 +32,16 @@ var InitialPledgeLockTarget = builtin.BigFrac{
 	Denominator: big.NewInt(10),
 }
 
-// Projection period of expected daily sector block reward penalised when a fault is declared "on time".
+// Projection period of expected daily sector block reward penalised when a fault is continued after initial detection.
 // This guarantees that a miner pays back at least the expected block reward earned since the last successful PoSt.
 // The network conservatively assumes the sector was faulty since the last time it was proven.
 // This penalty is currently overly punitive for continued faults.
-// FF = BR(t, DeclaredFaultProjectionPeriod)
-var DeclaredFaultFactorNum = 214 // PARAM_SPEC
-var DeclaredFaultFactorDenom = 100
-var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNum) / DeclaredFaultFactorDenom)
+// FF = BR(t, ContinuedFaultProjectionPeriod)
+var ContinuedFaultFactorNum = 351 // PARAM_SPEC
+var ContinuedFaultFactorDenom = 100
+var ContinuedFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNum) / ContinuedFaultFactorDenom)
 
-// Projection period of expected daily sector block reward penalised when a fault is not declared in advance.
-// This fee is higher than the declared fault fee for two reasons:
-// (1) it incentivizes a miner to declare a fault early;
-// (2) when a miner stores less than (1-spacegap) of a sector, does not declare it as faulty,
-//     and hopes to be challenged on the stored parts, it means the miner would not be expected to earn positive rewards.
-// SP = BR(t, UndeclaredFaultProjectionPeriod)
-var UndeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
+var TerminationPenaltyLowerBoundProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
 
 // Fraction of assumed block reward penalized when a sector is terminated.
 var TerminationRewardFactor = builtin.BigFrac{ // PARAM_SPEC
@@ -77,18 +71,18 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.Fil
 	return big.Max(br, big.Zero()) // negative BR is clamped at 0
 }
 
-// The penalty for a sector declared faulty or continuing faulty for another proving period.
+// The penalty for a sector continuing faulty for another proving period.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "FF(t)"
-func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, DeclaredFaultProjectionPeriod)
+func PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, ContinuedFaultProjectionPeriod)
 }
 
-// The penalty for a newly faulty sector that was been declared in advance.
+// Lower bound on the penalty for a terminating sector.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "SP(t)"
-func PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, UndeclaredFaultProjectionPeriod)
+func PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, TerminationPenaltyLowerBoundProjectionPeriod)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
@@ -112,7 +106,7 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 	penalizedReward := big.Mul(expectedReward, TerminationRewardFactor.Numerator)
 
 	return big.Max(
-		PledgePenaltyForUndeclaredFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
+		PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
 		big.Add(
 			twentyDayRewardAtActivation,
 			big.Div(

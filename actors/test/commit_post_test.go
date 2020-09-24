@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -228,8 +229,6 @@ func TestCommitPoStFlow(t *testing.T) {
 			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 			Params: vm.ExpectObject(&submitParams),
 			SubInvocations: []vm.ExpectInvocation{
-				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				// This call to the power actor indicates power has been added for the sector
 				{
 					To:     builtin.StoragePowerActorAddr,
@@ -266,18 +265,15 @@ func TestCommitPoStFlow(t *testing.T) {
 			ChainCommitEpoch: dlInfo.Challenge,
 			ChainCommitRand:  []byte("not really random"),
 		}
-		vm.ApplyOk(t, tv, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		// PoSt is rejected for skipping all sectors.
+		_, code := tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		assert.Equal(t, exitcode.ErrIllegalArgument, code)
 
 		vm.ExpectInvocation{
 			To:     minerAddrs.IDAddress,
 			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 			Params: vm.ExpectObject(&submitParams),
-			SubInvocations: []vm.ExpectInvocation{
-				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-				// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
-				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
-			},
+			Exitcode: exitcode.ErrIllegalArgument,
 		}.Matches(t, tv.Invocations()[0])
 
 		// miner still has initial pledge
@@ -306,10 +302,6 @@ func TestCommitPoStFlow(t *testing.T) {
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-
-						// This call to the burnt funds actor indicates miner has been penalized for missing PoSt
-						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
-
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
 					}},
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},

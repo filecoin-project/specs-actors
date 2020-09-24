@@ -316,12 +316,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		rt.Abortf(exitcode.ErrIllegalArgument, "expected at most %d bytes of randomness, got %d", abi.RandomnessLength, len(params.ChainCommitRand))
 	}
 
-	// Get the total power/reward. We need these to compute penalties.
-	rewardStats := requestCurrentEpochBlockReward(rt)
-	pwrTotal := requestCurrentTotalPower(rt)
-
-	penaltyTotal := abi.NewTokenAmount(0)
-	pledgeDelta := abi.NewTokenAmount(0)
 	var postResult *PoStResult
 
 	var info *MinerInfo
@@ -398,6 +392,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
+		// Skipped sectors (including retracted recoveries) pay nothing at Window PoSt,
+		// but will incur the "ongoing" fault fee at deadline end.
+
 		// Validate proofs
 
 		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
@@ -406,49 +403,22 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		sectorInfos, err := sectors.LoadForProof(postResult.Sectors, postResult.IgnoredSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
-		// Skip verification if all sectors are faults.
-		// We still need to allow this call to succeed so the miner can declare a whole partition as skipped.
-		if len(sectorInfos) > 0 {
-			if len(params.Proofs) == 0 {
-				// The miner _was_ supposed to prove something, but didn't.
-				rt.Abortf(exitcode.ErrIllegalArgument, "no proofs submitted in window PoSt for %d sectors", len(sectorInfos))
-			}
-			// Verify the proof.
-			// A failed verification doesn't immediately cause a penalty; the miner can try again.
-			//
-			// This function aborts on failure.
-			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		if len(sectorInfos) == 0 {
+			// Abort verification if all sectors are (now) faults.
+			// It's not rational for a miner to submit a Window PoSt marking *all* non-faulty sectors as skipped,
+			// since that will just cause them to pay a penalty at deadline end that would otherwise be zero
+			// if they had *not* declared them.
+			rt.Abortf(exitcode.ErrIllegalArgument, "cannot prove partitions with no active sectors")
 		}
-
-		// Penalize new skipped faults and retracted recoveries as undeclared faults.
-		// These pay a higher fee than faults declared before the deadline challenge window opened.
-		undeclaredPenaltyPower := postResult.PenaltyPower()
-		undeclaredPenaltyTarget := PledgePenaltyForUndeclaredFault(
-			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA)
-		// Subtract the "ongoing" fault fee from the amount charged now, since it will be charged at
-		// the end-of-deadline cron.
-		undeclaredPenaltyTarget = big.Sub(undeclaredPenaltyTarget, PledgePenaltyForDeclaredFault(
-			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA,
-		))
-
-		// Penalize recoveries as declared faults (a lower fee than the undeclared, above).
-		// It sounds odd, but because faults are penalized in arrears, at the _end_ of the faulty period, we must
-		// penalize recovered sectors here because they won't be penalized by the end-of-deadline cron for the
-		// immediately-prior faulty period.
-		declaredPenaltyTarget := PledgePenaltyForDeclaredFault(
-			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, postResult.RecoveredPower.QA,
-		)
-
-		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
-		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
-		err = st.ApplyPenalty(totalPenaltyTarget)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-
-		// Pay penalty
-		vestingPenaltyTotal, balancePenaltyTotal, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty for %v", undeclaredPenaltyPower)
-		penaltyTotal = big.Add(vestingPenaltyTotal, balancePenaltyTotal)
-		pledgeDelta = big.Sub(pledgeDelta, vestingPenaltyTotal)
+		if len(params.Proofs) == 0 {
+			// The miner _was_ supposed to prove something, but didn't.
+			rt.Abortf(exitcode.ErrIllegalArgument, "no proofs submitted in window PoSt for %d sectors", len(sectorInfos))
+		}
+		// Verify the proof.
+		// A failed verification doesn't immediately cause a penalty; the miner can try again.
+		//
+		// This function aborts on failure.
+		verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 
 		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
@@ -462,9 +432,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	// additional accounting state.
 	// https://github.com/filecoin-project/specs-actors/issues/414
 	requestUpdatePower(rt, postResult.PowerDelta)
-	// Burn penalties.
-	burnFunds(rt, penaltyTotal)
-	notifyPledgeChanged(rt, pledgeDelta)
 
 	rt.StateReadonly(&st)
 	st.AssertBalanceInvariants(rt.CurrentBalance())
@@ -1823,23 +1790,16 @@ func handleProvingDeadline(rt Runtime) {
 			result, err := st.AdvanceDeadline(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to advance deadline")
 
-			// Charge detected faults as undeclared.
-			undeclaredPenalty := PledgePenaltyForUndeclaredFault(
+			// Faults detected by this missed PoSt pay no penalty, but sectors that were already faulty
+			// and remain faulty through this deadline pay the fault fee.
+			penaltyTarget := PledgePenaltyForContinuedFault(
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
-				result.DetectedFaultyPower.QA,
-			)
-			// Charge the rest as declared.
-			declaredPenalty := PledgePenaltyForDeclaredFault(
-				epochReward.ThisEpochRewardSmoothed,
-				pwrTotal.QualityAdjPowerSmoothed,
-				big.Sub(result.TotalFaultyPower.QA, result.DetectedFaultyPower.QA),
+				result.PreviouslyFaultyPower.QA,
 			)
 
 			powerDeltaTotal = powerDeltaTotal.Add(result.PowerDelta)
 			pledgeDeltaTotal = big.Add(pledgeDeltaTotal, result.PledgeDelta)
-
-			penaltyTarget := big.Add(declaredPenalty, undeclaredPenalty)
 
 			err = st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
