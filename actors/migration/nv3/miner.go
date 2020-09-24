@@ -274,9 +274,6 @@ type expirationQueueStats struct {
 	totalActivePower miner.PowerPair
 	// total of all faulty power in the expiration queue
 	totalFaultyPower miner.PowerPair
-	// sector numbers of all sectors believed to have already expired in the active state
-	// when they should have been faulty.
-	terminatedAsNonFaults bitfield.BitField
 }
 
 // Updates the expiration queue by correcting any duplicate entries and their fallout.
@@ -287,15 +284,19 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 ) (cid.Cid, expirationQueueStats, error) {
 	// processed expired sectors includes all terminated and all sectors seen in earlier expiration sets
 	processedExpiredSectors := allTerminated
-	terminatedAsNonFaults := bitfield.New()
 
 	alteredExpirationSets := make(map[abi.ChainEpoch]miner.ExpirationSet)
 	erasedFaults := bitfield.New()
 	var exs miner.ExpirationSet
 
-	// check for faults that need to be erased
+	// Check for faults that need to be erased.
+	// Erased faults will be removed from bitfields and the power will be recomputed
+	// in the subsequent loop.
 	err := exq.ForEach(&exs, func(epoch int64) error { //nolint:nomaprange
-		// handle faulty sector expirations that have already been processed
+		// Detect sectors that are present in this expiration set as "early", but that
+		// have already terminated or duplicate a prior entry in the queue, and thus will
+		// be terminated before this entry is processed. The sector was rescheduled here
+		// upon fault, but the entry is stale and should not exist.
 		earlyDuplicates, err := bitfield.IntersectBitField(exs.EarlySectors, processedExpiredSectors)
 		if err != nil {
 			return err
@@ -307,17 +308,11 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 			if err != nil {
 				return err
 			}
-
-			terminatedActive, err := bitfield.IntersectBitField(earlyDuplicates, allTerminated)
-			if err != nil {
-				return err
-			}
-			terminatedAsNonFaults, err = bitfield.MergeBitFields(terminatedAsNonFaults, terminatedActive)
-			if err != nil {
-				return err
-			}
 		}
 
+		// Detect sectors that are terminating on time, but have either already terminated or duplicate
+		// an entry in the queue. The sector might be faulty, but were expiring here anyway so not
+		// rescheduled as "early".
 		onTimeDuplicates, err := bitfield.IntersectBitField(exs.OnTimeSectors, processedExpiredSectors)
 		if err != nil {
 			return err
@@ -326,15 +321,6 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		} else if !empty {
 			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs
 			exs.OnTimeSectors, err = bitfield.SubtractBitField(exs.OnTimeSectors, onTimeDuplicates)
-			if err != nil {
-				return err
-			}
-
-			terminatedActive, err := bitfield.IntersectBitField(onTimeDuplicates, allTerminated)
-			if err != nil {
-				return err
-			}
-			terminatedAsNonFaults, err = bitfield.MergeBitFields(terminatedAsNonFaults, terminatedActive)
 			if err != nil {
 				return err
 			}
@@ -407,10 +393,18 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	return expirationQueueRoot, expirationQueueStats{
 		partitionActivePower,
 		partitionFaultyPower,
-		terminatedAsNonFaults,
 	}, nil
 }
 
+// Recompute active and faulty power for an expiration set.
+// The active power for an expiration set should be the sum of the power of all its active sectors,
+// where active means all sectors not labeled as a fault in the partition. Similarly, faulty power
+// is the sum of faulty sectors.
+// If a sector has been rescheduled from ES3 to both ES1 as active and ES2
+// as a fault, we expect it to be labeled as a fault in the partition. We have already
+// removed the sector from ES2, so this correction should move its active power to faulty power in ES1
+// because it is labeled as a fault, remove its power altogether from ES2 because its been removed from
+// ES2's bitfields, and correct the double subtraction of power from ES3.
 func correctExpirationSet(exs *miner.ExpirationSet, sectors miner.Sectors,
 	allFaults bitfield.BitField, sectorSize abi.SectorSize,
 ) (bool, miner.PowerPair, miner.PowerPair, error) {
