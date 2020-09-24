@@ -284,9 +284,8 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 ) (cid.Cid, expirationQueueStats, error) {
 	// processed expired sectors includes all terminated and all sectors seen in earlier expiration sets
 	processedExpiredSectors := allTerminated
+	expirationSetPowerSuspect := false
 
-	alteredExpirationSets := make(map[abi.ChainEpoch]miner.ExpirationSet)
-	erasedFaults := bitfield.New()
 	var exs miner.ExpirationSet
 
 	// Check for faults that need to be erased.
@@ -328,11 +327,14 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		}
 
 		if modified {
+			expirationSetPowerSuspect = true
 			exs2, err := copyES(exs)
 			if err != nil {
 				return err
 			}
-			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs2
+			if err := exq.Set(uint64(epoch), &exs2); err != nil {
+				return err
+			}
 		}
 
 		// Record all sectors that would be terminated after this queue entry is processed.
@@ -346,22 +348,14 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	}
 
 	// If we didn't find any duplicate sectors, we're done.
-	if len(alteredExpirationSets) == 0 {
+	if !expirationSetPowerSuspect {
 		return cid.Undef, expirationQueueStats{}, nil
 	}
 
-	// save expiration sets that have been altered
-	for epoch, set := range alteredExpirationSets { //nolint:nomaprange
-		if err := exq.Set(uint64(epoch), &set); err != nil {
-			return cid.Undef, expirationQueueStats{}, err
-		}
-	}
-
-	alteredExpirationSets = make(map[abi.ChainEpoch]miner.ExpirationSet)
 	partitionActivePower := miner.NewPowerPairZero()
 	partitionFaultyPower := miner.NewPowerPairZero()
 	err = exq.ForEach(&exs, func(epoch int64) error {
-		modified, activePower, faultyPower, err := correctExpirationSet(&exs, sectors, allFaults, sectorSize)
+		modified, activePower, faultyPower, err := correctExpirationSetPower(&exs, sectors, allFaults, sectorSize)
 		if err != nil {
 			return err
 		}
@@ -373,25 +367,15 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 			if err != nil {
 				return err
 			}
-			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs2
+			if err := exq.Set(uint64(epoch), &exs2); err != nil {
+				return err
+			}
 		}
 
 		return nil
 	})
 	if err != nil {
 		return cid.Undef, expirationQueueStats{}, err
-	}
-
-	/*
-		partition.Faults - foundFault = set of faults that have been deducted erroneously
-		= sectors cc upgraded and faulted for which cc upgrade expiration set has been processed
-	*/
-
-	// save expiration sets that have been altered
-	for epoch, set := range alteredExpirationSets { //nolint:nomaprange
-		if err := exq.Set(uint64(epoch), &set); err != nil {
-			return cid.Undef, expirationQueueStats{}, err
-		}
 	}
 
 	expirationQueueRoot, err := exq.Root()
@@ -414,7 +398,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 // removed the sector from ES2, so this correction should move its active power to faulty power in ES1
 // because it is labeled as a fault, remove its power altogether from ES2 because its been removed from
 // ES2's bitfields, and correct the double subtraction of power from ES3.
-func correctExpirationSet(exs *miner.ExpirationSet, sectors miner.Sectors,
+func correctExpirationSetPower(exs *miner.ExpirationSet, sectors miner.Sectors,
 	allFaults bitfield.BitField, sectorSize abi.SectorSize,
 ) (bool, miner.PowerPair, miner.PowerPair, error) {
 
