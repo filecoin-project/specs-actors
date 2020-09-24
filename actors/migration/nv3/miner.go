@@ -147,7 +147,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 			st.ProvingPeriodStart, epoch-miner.WPoStProvingPeriod, epoch)
 	}
 	dlInfo := st.DeadlineInfo(epoch)
-	if dlInfo.Open <= epoch || dlInfo.Close < epoch+miner.PreCommitChallengeDelay {
+	if dlInfo.Open <= epoch || dlInfo.Close < epoch {
 		return false, xerrors.Errorf("epoch is out of expected range of miner deadline (%d, %d] ∌ %d",
 			dlInfo.Open, dlInfo.Close, epoch)
 	}
