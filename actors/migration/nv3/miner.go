@@ -3,7 +3,6 @@ package nv3
 import (
 	"bytes"
 	"context"
-
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -52,10 +51,6 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		}
 	}
 
-	// TODO: https://github.com/filecoin-project/specs-actors/issues/1177
-	//  - repair broken partitions, deadline info:
-	//  - fix power actor claim with any power delta
-
 	newHead, err := store.Put(ctx, &st)
 	return newHead, err
 }
@@ -72,7 +67,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 		return false, err
 	}
 
-	dealinesModified := false
+	deadlinesModified := false
 	err = deadlines.ForEach(adt.WrapStore(ctx, store), func(dlIdx uint64, deadline *miner.Deadline) error {
 		partitions, err := adt.AsArray(adt.WrapStore(ctx, store), deadline.Partitions)
 		if err != nil {
@@ -120,7 +115,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 		}
 
 		if len(alteredPartitions) > 0 {
-			for partIdx, part := range alteredPartitions {
+			for partIdx, part := range alteredPartitions { // nolint:nomaprange
 				if err := partitions.Set(partIdx, &part); err != nil {
 					return err
 				}
@@ -132,18 +127,30 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 			}
 
 			deadline.FaultyPower = allFaultyPower
-			dealinesModified = true
+			deadlinesModified = true
 		}
 		return nil
 	})
 
-	if !dealinesModified {
+	if !deadlinesModified {
 		return false, nil
 	}
 
-	offset := st.ProvingPeriodStart % miner.WPoStProvingPeriod
-	st.ProvingPeriodStart = offset + ((epoch-offset)/miner.WPoStProvingPeriod)*miner.WPoStProvingPeriod
+	for st.ProvingPeriodStart+miner.WPoStProvingPeriod <= epoch {
+		st.ProvingPeriodStart += miner.WPoStProvingPeriod
+	}
 	st.CurrentDeadline = uint64((epoch - st.ProvingPeriodStart) / miner.WPoStChallengeWindow)
+
+	// assert ranges for new proving period and deadline
+	if st.ProvingPeriodStart <= epoch-miner.WPoStProvingPeriod || st.ProvingPeriodStart > epoch {
+		return false, xerrors.Errorf("miner proving period start, %d, is out of range (%d, %d]",
+			st.ProvingPeriodStart, epoch-miner.WPoStProvingPeriod, epoch)
+	}
+	dlInfo := st.DeadlineInfo(epoch)
+	if dlInfo.Open <= epoch || dlInfo.Close < epoch+miner.PreCommitChallengeDelay {
+		return false, xerrors.Errorf("epoch is out of expected range of miner deadline (%d, %d] ∌ %d",
+			dlInfo.Open, dlInfo.Close, epoch)
+	}
 
 	return true, err
 }
@@ -171,7 +178,7 @@ func (m *minerMigrator) recomputeClaim(ctx context.Context, store adt.Store, st 
 		return err
 	}
 
-	err = m.updateProvingPeriodCron(err, a, st, epoch, store, &powSt)
+	err = m.updateProvingPeriodCron(a, st, epoch, store, &powSt)
 	if err != nil {
 		return err
 	}
@@ -184,12 +191,12 @@ func (m *minerMigrator) recomputeClaim(ctx context.Context, store adt.Store, st 
 	return tree.SetActor(builtin.StoragePowerActorAddr, powerAct)
 }
 
-func (m *minerMigrator) updateProvingPeriodCron(err error, a addr.Address, st *miner.State, epoch abi.ChainEpoch, store adt.Store, powSt *power.State) error {
+func (m *minerMigrator) updateProvingPeriodCron(a addr.Address, st *miner.State, epoch abi.ChainEpoch, store adt.Store, powSt *power.State) error {
 	var buf bytes.Buffer
 	payload := &miner.CronEventPayload{
 		EventType: miner.CronEventProvingDeadline,
 	}
-	err = payload.MarshalCBOR(&buf)
+	err := payload.MarshalCBOR(&buf)
 	if err != nil {
 		return err
 	}
@@ -201,6 +208,9 @@ func (m *minerMigrator) updateProvingPeriodCron(err error, a addr.Address, st *m
 
 	dlInfo := st.DeadlineInfo(epoch)
 	crontMM, err := adt.AsMultimap(store, powSt.CronEventQueue)
+	if err != nil {
+		return err
+	}
 	err = crontMM.Add(abi.IntKey(int64(dlInfo.Last())), &event)
 	if err != nil {
 		return err
@@ -219,7 +229,7 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 		return err
 	}
 
-	deadlines.ForEach(store, func(dlIdx uint64, dl *miner.Deadline) error {
+	err = deadlines.ForEach(store, func(dlIdx uint64, dl *miner.Deadline) error {
 		partitions, err := dl.PartitionsArray(store)
 		if err != nil {
 			return err
@@ -231,6 +241,9 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 			return nil
 		})
 	})
+	if err != nil {
+		return err
+	}
 
 	claims, err := adt.AsMap(store, powSt.Claims)
 	if err != nil {
@@ -270,7 +283,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	var exs miner.ExpirationSet
 
 	// check for faults that need to be erased
-	err := exq.ForEach(&exs, func(epoch int64) error {
+	err := exq.ForEach(&exs, func(epoch int64) error { //nolint:nomaprange
 		// handle faulty sector expirations that have already been processed
 		earlyDuplicates, err := bitfield.IntersectBitField(exs.EarlySectors, processedExpiredSectors)
 		if err != nil {
@@ -326,6 +339,9 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		}
 		return nil
 	})
+	if err != nil {
+		return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
+	}
 
 	// if we didn't find any faults that needed to be erased, we're done
 	if len(alteredExpirationSets) == 0 {
@@ -333,7 +349,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	}
 
 	// save expiration sets that have been altered
-	for epoch, set := range alteredExpirationSets {
+	for epoch, set := range alteredExpirationSets { //nolint:nomaprange
 		if err := exq.Set(uint64(epoch), &set); err != nil {
 			return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
 		}
@@ -366,7 +382,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	*/
 
 	// save expiration sets that have been altered
-	for epoch, set := range alteredExpirationSets {
+	for epoch, set := range alteredExpirationSets { //nolint:nomaprange
 		if err := exq.Set(uint64(epoch), &set); err != nil {
 			return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
 		}
