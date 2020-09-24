@@ -108,7 +108,7 @@ func TestFaultFeeInvariants(t *testing.T) {
 	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
 		faultySectorPower := abi.NewStoragePower(1 << 50)
 
-		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
+		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower, nv)
 		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower, nv)
 		assert.True(t, sp.GreaterThan(ff))
 	})
@@ -163,11 +163,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)
 
 		// Declared faults
-		ffA := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower)
-		ffB := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower)
-		ffC := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower)
+		ffA := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower, nv)
+		ffB := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower, nv)
+		ffC := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower, nv)
 
-		ffAll := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, totalFaultPower)
+		ffAll := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, totalFaultPower, nv)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.

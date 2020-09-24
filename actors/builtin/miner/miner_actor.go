@@ -299,6 +299,7 @@ type SubmitWindowedPoStParams struct {
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *abi.EmptyValue {
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
+	networkVersion := rt.NetworkVersion()
 	var st State
 
 	if params.Deadline >= WPoStPeriodDeadlines {
@@ -394,23 +395,37 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Penalize new skipped faults and retracted recoveries as undeclared faults.
 		// These pay a higher fee than faults declared before the deadline challenge window opened.
 		undeclaredPenaltyPower := postResult.PenaltyPower()
-		undeclaredPenaltyTarget := PledgePenaltyForUndeclaredFault(
-			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA,
-			rt.NetworkVersion(),
-		)
-		// Subtract the "ongoing" fault fee from the amount charged now, since it will be charged at
-		// the end-of-deadline cron.
-		undeclaredPenaltyTarget = big.Sub(undeclaredPenaltyTarget, PledgePenaltyForDeclaredFault(
-			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA,
-		))
+		undeclaredPenaltyTarget := big.Zero()
+		if networkVersion >= network.Version3 {
+			// From version 3, skipped faults and retracted recoveries pay nothing at Window PoSt,
+			// but will incur the "ongoing" fault fee at deadline end.
+		} else {
+			undeclaredPenaltyTarget = PledgePenaltyForUndeclaredFault(
+				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA,
+				networkVersion,
+			)
+			// Subtract the "ongoing" fault fee from the amount charged now, since it will be charged at
+			// the end-of-deadline cron.
+			undeclaredPenaltyTarget = big.Sub(undeclaredPenaltyTarget, PledgePenaltyForDeclaredFault(
+				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, undeclaredPenaltyPower.QA,
+				networkVersion,
+			))
+		}
 
 		// Penalize recoveries as declared faults (a lower fee than the undeclared, above).
 		// It sounds odd, but because faults are penalized in arrears, at the _end_ of the faulty period, we must
 		// penalize recovered sectors here because they won't be penalized by the end-of-deadline cron for the
 		// immediately-prior faulty period.
-		declaredPenaltyTarget := PledgePenaltyForDeclaredFault(
-			rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, postResult.RecoveredPower.QA,
-		)
+		declaredPenaltyTarget := big.Zero()
+		if networkVersion >= network.Version3 {
+			// From version 3, recovered sectors pay no penalty.
+			// They won't pay anything at deadline end either, since they'll no longer be faulty.
+		} else {
+			declaredPenaltyTarget = PledgePenaltyForDeclaredFault(
+				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, postResult.RecoveredPower.QA,
+				networkVersion,
+			)
+		}
 
 		// Note: We could delay this charge until end of deadline, but that would require more accounting state.
 		totalPenaltyTarget := big.Add(undeclaredPenaltyTarget, declaredPenaltyTarget)
@@ -1570,6 +1585,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 func handleProvingDeadline(rt Runtime) {
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
+	networkVersion := rt.NetworkVersion()
 
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
@@ -1630,33 +1646,49 @@ func handleProvingDeadline(rt Runtime) {
 		quant := QuantSpecForDeadline(dlInfo)
 		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
 
+		// Remember power that was faulty before processing any missed PoSts.
+		previouslyFaultyPower := deadline.FaultyPower.QA
+
 		{
 			// Detect and penalize missing proofs.
 			faultExpiration := dlInfo.Last() + FaultMaxAge
-			penalizePowerTotal := big.Zero()
 
 			newFaultyPower, failedRecoveryPower, err := deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process end of deadline %d", dlInfo.Index)
 
 			powerDelta = powerDelta.Sub(newFaultyPower)
-			penalizePowerTotal = big.Sum(penalizePowerTotal, newFaultyPower.QA, failedRecoveryPower.QA)
 
-			// Unlock sector penalty for all undeclared faults.
-			penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed,
-				penalizePowerTotal, rt.NetworkVersion())
-			// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
-			penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal))
-			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance)
-			penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
-			pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
+			if networkVersion >= network.Version3 {
+				// From network version 3, faults detected from a missed PoSt pay nothing.
+				// Failed recoveries pay nothing here, but will pay the ongoing fault fee in the subsequent block.
+			} else {
+				penalizePowerTotal := big.Add(newFaultyPower.QA, failedRecoveryPower.QA)
 
+				// Unlock sector penalty for all undeclared faults.
+				penaltyTarget := PledgePenaltyForUndeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed,
+					penalizePowerTotal, rt.NetworkVersion())
+				// Subtract the "ongoing" fault fee from the amount charged now, since it will be added on just below.
+				penaltyTarget = big.Sub(penaltyTarget, PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed,
+					pwrTotal.QualityAdjPowerSmoothed, penalizePowerTotal, networkVersion))
+				penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
+				unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance)
+				penaltyTotal = big.Sum(penaltyTotal, penaltyFromVesting, penaltyFromBalance)
+				pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
+			}
 		}
 		{
 			// Record faulty power for penalisation of ongoing faults, before popping expirations.
 			// This includes any power that was just faulted from missing a PoSt.
-			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, deadline.FaultyPower.QA)
+			ongoingFaultyPower := deadline.FaultyPower.QA
+			if networkVersion >= network.Version3 {
+				// From network version 3, this *excludes* any power that was just faulted from missing a PoSt.
+				// It includes power that was previously declared, skipped, or detected faulty, whether or
+				// not it is also marked for recovery.
+				ongoingFaultyPower = previouslyFaultyPower
+			}
+			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed,
+				pwrTotal.QualityAdjPowerSmoothed, ongoingFaultyPower, networkVersion)
 			penaltyFromVesting, penaltyFromBalance, err := st.PenalizeFundsInPriorityOrder(store, currEpoch, penaltyTarget, unlockedBalance)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
 			unlockedBalance = big.Sub(unlockedBalance, penaltyFromBalance) //nolint:ineffassign
