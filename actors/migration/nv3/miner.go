@@ -158,8 +158,6 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 func (m *minerMigrator) recomputeClaim(ctx context.Context, store adt.Store, st *miner.State,
 	tree *states.Tree, a addr.Address, epoch abi.ChainEpoch,
 ) error {
-	activePower := miner.NewPowerPairZero()
-
 	powerAct, found, err := tree.GetActor(builtin.StoragePowerActorAddr)
 	if err != nil {
 		return err
@@ -173,7 +171,7 @@ func (m *minerMigrator) recomputeClaim(ctx context.Context, store adt.Store, st 
 		return err
 	}
 
-	err = m.updateClaim(ctx, store, st, &powSt, a, activePower)
+	err = m.updateClaim(ctx, store, st, &powSt, a)
 	if err != nil {
 		return err
 	}
@@ -223,12 +221,13 @@ func (m *minerMigrator) updateProvingPeriodCron(a addr.Address, st *miner.State,
 	return nil
 }
 
-func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *miner.State, powSt *power.State, a addr.Address, activePower miner.PowerPair) error {
+func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *miner.State, powSt *power.State, a addr.Address) error {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return err
 	}
 
+	activePower := miner.NewPowerPairZero()
 	err = deadlines.ForEach(store, func(dlIdx uint64, dl *miner.Deadline) error {
 		partitions, err := dl.PartitionsArray(store)
 		if err != nil {
@@ -251,14 +250,15 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 	}
 
 	var existing power.Claim
+	powerDelta := activePower
 	found, err := claims.Get(abi.AddrKey(a), &existing)
 	if err != nil {
 		return err
 	}
 	if found {
-		activePower = activePower.Sub(miner.NewPowerPair(existing.RawBytePower, existing.QualityAdjPower))
+		powerDelta = powerDelta.Sub(miner.NewPowerPair(existing.RawBytePower, existing.QualityAdjPower))
 	}
-	if err := powSt.AddToClaim(store, a, activePower.Raw, activePower.QA); err != nil {
+	if err := powSt.AddToClaim(store, a, powerDelta.Raw, powerDelta.QA); err != nil {
 		return err
 	}
 
