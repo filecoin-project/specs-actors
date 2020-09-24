@@ -83,7 +83,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 				return err
 			}
 
-			exqRoot, partitionActivePower, partitionFaultyPower, _, err := m.correctExpirationQueue(exq, sectors, part.Terminated, part.Faults, sectorSize)
+			exqRoot, stats, err := m.correctExpirationQueue(exq, sectors, part.Terminated, part.Faults, sectorSize)
 			if err != nil {
 				return err
 			}
@@ -98,12 +98,12 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 				alteredPartitions[uint64(partIdx)] = part
 			}
 
-			if !part.LivePower.Equals(partitionActivePower.Add(partitionFaultyPower)) {
-				part.LivePower = partitionActivePower.Add(partitionFaultyPower)
+			if !part.LivePower.Equals(stats.totalActivePower.Add(stats.totalFaultyPower)) {
+				part.LivePower = stats.totalActivePower.Add(stats.totalFaultyPower)
 				alteredPartitions[uint64(partIdx)] = part
 			}
-			if !part.FaultyPower.Equals(partitionFaultyPower) {
-				part.FaultyPower = partitionFaultyPower
+			if !part.FaultyPower.Equals(stats.totalFaultyPower) {
+				part.FaultyPower = stats.totalFaultyPower
 				alteredPartitions[uint64(partIdx)] = part
 			}
 			allFaultyPower = allFaultyPower.Add(part.FaultyPower)
@@ -269,11 +269,22 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 	return nil
 }
 
+type expirationQueueStats struct {
+	// total of all active power in the expiration queue
+	totalActivePower miner.PowerPair
+	// total of all faulty power in the expiration queue
+	totalFaultyPower miner.PowerPair
+	// sector numbers of all sectors believed to have already expired in the active state
+	// when they should have been faulty.
+	terminatedAsNonFaults bitfield.BitField
+}
+
 // Updates the expiration queue by correcting any duplicate entries and their fallout.
 // If no changes need to be made cid.Undef will be returned.
+// Returns the new root of the expiration queue
 func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sectors miner.Sectors,
 	allTerminated bitfield.BitField, allFaults bitfield.BitField, sectorSize abi.SectorSize,
-) (cid.Cid, miner.PowerPair, miner.PowerPair, bitfield.BitField, error) {
+) (cid.Cid, expirationQueueStats, error) {
 	// processed expired sectors includes all terminated and all sectors seen in earlier expiration sets
 	processedExpiredSectors := allTerminated
 	terminatedAsNonFaults := bitfield.New()
@@ -340,18 +351,18 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		return nil
 	})
 	if err != nil {
-		return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
+		return cid.Undef, expirationQueueStats{}, err
 	}
 
 	// if we didn't find any faults that needed to be erased, we're done
 	if len(alteredExpirationSets) == 0 {
-		return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, nil
+		return cid.Undef, expirationQueueStats{}, nil
 	}
 
 	// save expiration sets that have been altered
 	for epoch, set := range alteredExpirationSets { //nolint:nomaprange
 		if err := exq.Set(uint64(epoch), &set); err != nil {
-			return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
+			return cid.Undef, expirationQueueStats{}, err
 		}
 	}
 
@@ -373,7 +384,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		return nil
 	})
 	if err != nil {
-		return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
+		return cid.Undef, expirationQueueStats{}, err
 	}
 
 	/*
@@ -384,16 +395,20 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	// save expiration sets that have been altered
 	for epoch, set := range alteredExpirationSets { //nolint:nomaprange
 		if err := exq.Set(uint64(epoch), &set); err != nil {
-			return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
+			return cid.Undef, expirationQueueStats{}, err
 		}
 	}
 
 	expirationQueueRoot, err := exq.Root()
 	if err != nil {
-		return cid.Undef, miner.PowerPair{}, miner.PowerPair{}, bitfield.BitField{}, err
+		return cid.Undef, expirationQueueStats{}, err
 	}
 
-	return expirationQueueRoot, partitionActivePower, partitionFaultyPower, terminatedAsNonFaults, nil
+	return expirationQueueRoot, expirationQueueStats{
+		partitionActivePower,
+		partitionFaultyPower,
+		terminatedAsNonFaults,
+	}, nil
 }
 
 func correctExpirationSet(exs *miner.ExpirationSet, sectors miner.Sectors,
