@@ -35,9 +35,9 @@ func TestConstructor(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(0), st.Epoch)
 		assert.Equal(t, abi.NewStoragePower(0), st.CumsumRealized)
 		assert.Equal(t, big.MustFromString(EpochZeroReward), st.ThisEpochReward)
-		epochZeroBaseline := big.Sub(reward.BaselineInitialValue, big.NewInt(1)) // account for rounding error of one byte during construction
+		epochZeroBaseline := big.Sub(reward.BaselineInitialValueV0, big.NewInt(1)) // account for rounding error of one byte during construction
 		assert.Equal(t, epochZeroBaseline, st.ThisEpochBaselinePower)
-		assert.Equal(t, reward.BaselineInitialValue, st.EffectiveBaselinePower)
+		assert.Equal(t, reward.BaselineInitialValueV0, st.EffectiveBaselinePower)
 	})
 	t.Run("construct with less power than baseline", func(t *testing.T) {
 		rt := mock.NewBuilder(context.Background(), builtin.RewardActorAddr).

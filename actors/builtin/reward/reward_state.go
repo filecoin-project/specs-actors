@@ -3,6 +3,7 @@ package reward
 import (
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
@@ -59,7 +60,7 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		CumsumBaseline:         big.Zero(),
 		CumsumRealized:         big.Zero(),
 		EffectiveNetworkTime:   0,
-		EffectiveBaselinePower: BaselineInitialValue,
+		EffectiveBaselinePower: BaselineInitialValueV0,
 
 		ThisEpochReward:        big.Zero(),
 		ThisEpochBaselinePower: InitBaselinePower(),
@@ -69,31 +70,31 @@ func ConstructState(currRealizedPower abi.StoragePower) *State {
 		TotalMined:              big.Zero(),
 	}
 
-	st.updateToNextEpochWithReward(currRealizedPower)
+	st.updateToNextEpochWithReward(currRealizedPower, network.Version0)
 
 	return st
 }
 
 // Takes in current realized power and updates internal state
 // Used for update of internal state during null rounds
-func (st *State) updateToNextEpoch(currRealizedPower abi.StoragePower) {
+func (st *State) updateToNextEpoch(currRealizedPower abi.StoragePower, nv network.Version) {
 	st.Epoch++
-	st.ThisEpochBaselinePower = BaselinePowerFromPrev(st.ThisEpochBaselinePower)
+	st.ThisEpochBaselinePower = BaselinePowerFromPrev(st.ThisEpochBaselinePower, nv)
 	cappedRealizedPower := big.Min(st.ThisEpochBaselinePower, currRealizedPower)
 	st.CumsumRealized = big.Add(st.CumsumRealized, cappedRealizedPower)
 
 	for st.CumsumRealized.GreaterThan(st.CumsumBaseline) {
 		st.EffectiveNetworkTime++
-		st.EffectiveBaselinePower = BaselinePowerFromPrev(st.EffectiveBaselinePower)
+		st.EffectiveBaselinePower = BaselinePowerFromPrev(st.EffectiveBaselinePower, nv)
 		st.CumsumBaseline = big.Add(st.CumsumBaseline, st.EffectiveBaselinePower)
 	}
 }
 
 // Takes in a current realized power for a reward epoch and computes
 // and updates reward state to track reward for the next epoch
-func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower) {
+func (st *State) updateToNextEpochWithReward(currRealizedPower abi.StoragePower, nv network.Version) {
 	prevRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.EffectiveBaselinePower, st.CumsumRealized, st.CumsumBaseline)
-	st.updateToNextEpoch(currRealizedPower)
+	st.updateToNextEpoch(currRealizedPower, nv)
 	currRewardTheta := computeRTheta(st.EffectiveNetworkTime, st.EffectiveBaselinePower, st.CumsumRealized, st.CumsumBaseline)
 
 	st.ThisEpochReward = computeReward(st.Epoch, prevRewardTheta, currRewardTheta)
