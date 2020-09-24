@@ -297,13 +297,14 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		// have already terminated or duplicate a prior entry in the queue, and thus will
 		// be terminated before this entry is processed. The sector was rescheduled here
 		// upon fault, but the entry is stale and should not exist.
+		modified := false
 		earlyDuplicates, err := bitfield.IntersectBitField(exs.EarlySectors, processedExpiredSectors)
 		if err != nil {
 			return err
 		} else if empty, err := earlyDuplicates.IsEmpty(); err != nil {
 			return err
 		} else if !empty {
-			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs
+			modified = true
 			exs.EarlySectors, err = bitfield.SubtractBitField(exs.EarlySectors, earlyDuplicates)
 			if err != nil {
 				return err
@@ -319,18 +320,22 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		} else if empty, err := onTimeDuplicates.IsEmpty(); err != nil {
 			return err
 		} else if !empty {
-			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs
+			modified = true
 			exs.OnTimeSectors, err = bitfield.SubtractBitField(exs.OnTimeSectors, onTimeDuplicates)
 			if err != nil {
 				return err
 			}
 		}
 
-		if erasedFaults, err = bitfield.MultiMerge(erasedFaults, earlyDuplicates, onTimeDuplicates); err != nil {
-			return err
+		if modified {
+			exs2, err := copyES(exs)
+			if err != nil {
+				return err
+			}
+			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs2
 		}
 
-		// record on time sectors
+		// Record all sectors that would be terminated after this queue entry is processed.
 		if processedExpiredSectors, err = bitfield.MultiMerge(processedExpiredSectors, exs.EarlySectors, exs.OnTimeSectors); err != nil {
 			return err
 		}
@@ -340,7 +345,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		return cid.Undef, expirationQueueStats{}, err
 	}
 
-	// if we didn't find any faults that needed to be erased, we're done
+	// If we didn't find any duplicate sectors, we're done.
 	if len(alteredExpirationSets) == 0 {
 		return cid.Undef, expirationQueueStats{}, nil
 	}
@@ -364,7 +369,11 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		partitionFaultyPower = partitionFaultyPower.Add(faultyPower)
 
 		if modified {
-			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs
+			exs2, err := copyES(exs)
+			if err != nil {
+				return err
+			}
+			alteredExpirationSets[abi.ChainEpoch(epoch)] = exs2
 		}
 
 		return nil
@@ -449,4 +458,24 @@ func correctExpirationSet(exs *miner.ExpirationSet, sectors miner.Sectors,
 	}
 
 	return modified, activePower, faultyPower, nil
+}
+
+func copyES(in miner.ExpirationSet) (miner.ExpirationSet, error) {
+	ots, err := in.OnTimeSectors.Copy()
+	if err != nil {
+		return miner.ExpirationSet{}, err
+	}
+
+	es, err := in.EarlySectors.Copy()
+	if err != nil {
+		return miner.ExpirationSet{}, err
+	}
+
+	return miner.ExpirationSet{
+		OnTimeSectors: ots,
+		EarlySectors:  es,
+		OnTimePledge:  in.OnTimePledge,
+		ActivePower:   in.ActivePower,
+		FaultyPower:   in.FaultyPower,
+	}, nil
 }
