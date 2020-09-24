@@ -1683,6 +1683,8 @@ func handleProvingDeadline(rt Runtime) {
 			ongoingFaultyPower := deadline.FaultyPower.QA
 			if networkVersion >= network.Version3 {
 				// From network version 3, this *excludes* any power that was just faulted from missing a PoSt.
+				// It includes power that was previously declared, skipped, or detected faulty, whether or
+				// not it is also marked for recovery.
 				ongoingFaultyPower = previouslyFaultyPower
 			}
 			penaltyTarget := PledgePenaltyForDeclaredFault(epochReward.ThisEpochRewardSmoothed,
