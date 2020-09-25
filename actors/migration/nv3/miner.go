@@ -136,6 +136,10 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 		return false, nil
 	}
 
+	if err = st.SaveDeadlines(adt.WrapStore(ctx, store), deadlines); err != nil {
+		return false, err
+	}
+
 	for st.ProvingPeriodStart+miner.WPoStProvingPeriod <= epoch {
 		st.ProvingPeriodStart += miner.WPoStProvingPeriod
 	}
