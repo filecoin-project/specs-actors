@@ -45,7 +45,7 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	}
 
 	if powerClaimSuspect {
-		err := m.recomputeClaim(ctx, adtStore, &st, tree, a, epoch)
+		err := m.updatePowerState(ctx, adtStore, &st, tree, a, epoch)
 		if err != nil {
 			return cid.Undef, err
 		}
@@ -127,13 +127,24 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 			}
 
 			deadline.FaultyPower = allFaultyPower
+
+			if err := deadlines.UpdateDeadline(adt.WrapStore(ctx, store), dlIdx, deadline); err != nil {
+				return err
+			}
 			deadlinesModified = true
 		}
 		return nil
 	})
+	if err != nil {
+		return false, err
+	}
 
 	if !deadlinesModified {
 		return false, nil
+	}
+
+	if err = st.SaveDeadlines(adt.WrapStore(ctx, store), deadlines); err != nil {
+		return false, err
 	}
 
 	for st.ProvingPeriodStart+miner.WPoStProvingPeriod <= epoch {
@@ -155,7 +166,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 	return true, err
 }
 
-func (m *minerMigrator) recomputeClaim(ctx context.Context, store adt.Store, st *miner.State,
+func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, st *miner.State,
 	tree *states.Tree, a addr.Address, epoch abi.ChainEpoch,
 ) error {
 	powerAct, found, err := tree.GetActor(builtin.StoragePowerActorAddr)
@@ -262,10 +273,6 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 		return err
 	}
 
-	powSt.Claims, err = claims.Root()
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
