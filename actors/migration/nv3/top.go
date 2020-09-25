@@ -24,7 +24,7 @@ import (
 // Loads and migrates the Filecoin state tree from a root, writing the new state tree blocks into the
 // same store.
 // Returns the new root of the state tree.
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
+func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid, priorEpoch abi.ChainEpoch) (cid.Cid, error) {
 	// Setup input and output state tree helpers
 	adtStore := adt.WrapStore(ctx, store)
 	tree, err := states.LoadTree(adtStore, root)
@@ -39,7 +39,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid) (
 			return nil // No migration for this actor type
 		}
 
-		headOut, err := migration.MigrateState(ctx, store, actorIn.Head)
+		headOut, err := migration.MigrateState(ctx, store, actorIn.Head, priorEpoch, addr, tree)
 		if err != nil {
 			return xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(actorIn.Code), addr, err)
 		}
