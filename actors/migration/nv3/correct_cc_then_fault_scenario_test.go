@@ -2,6 +2,7 @@ package nv3_test
 
 import (
 	"context"
+	"fmt"
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
@@ -10,7 +11,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -25,10 +25,11 @@ import (
 func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
-	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), vm.FIL), 93837778)
+	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(100_000), vm.FIL), 93837778)
 	worker, unverifiedClient := addrs[0], addrs[1]
+	numSectors := 2349
 
-	minerBalance := big.Mul(big.NewInt(1_000), vm.FIL)
+	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
@@ -49,31 +50,45 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// Precommit, prove and PoSt empty sector (more fully tested in TestCommitPoStFlow)
 	//
 
-	// precommit sector
-	preCommitParams := miner.SectorPreCommitInfo{
-		SealProof:     sealProof,
-		SectorNumber:  sectorNumber,
-		SealedCID:     sealedCid,
-		SealRandEpoch: v.GetEpoch() - 1,
-		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + 200*builtin.EpochsInDay,
+	for i := 0; i < numSectors; i++ {
+		// precommit sector
+		preCommitParams := miner.SectorPreCommitInfo{
+			SealProof:     sealProof,
+			SectorNumber:  sectorNumber + abi.SectorNumber(i),
+			SealedCID:     sealedCid,
+			SealRandEpoch: v.GetEpoch() - 1,
+			DealIDs:       nil,
+			Expiration:    v.GetEpoch() + 200*builtin.EpochsInDay,
+		}
+		vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 	}
-	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to seal duration
 	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
 	// Prove commit sector after max seal duration
 	v, err := v.WithEpoch(proveTime)
 	require.NoError(t, err)
-	proveCommitParams := miner.ProveCommitSectorParams{
-		SectorNumber: sectorNumber,
-	}
-	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
-	// In the same epoch, trigger cron to validate prove commit
-	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	for i := 0; i < numSectors; i += 200 {
+		for j := 0; j < 200 && i+j < numSectors; j++ {
+			proveCommitParams := miner.ProveCommitSectorParams{
+				SectorNumber: sectorNumber + abi.SectorNumber(i+j),
+			}
+			vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
+		}
+
+		// In the same epoch, trigger cron to validate prove commits
+		vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+		v, err = v.WithEpoch(v.GetEpoch() + 1)
+		require.NoError(t, err)
+	}
+
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
 
 	// advance to proving period and submit post
 	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -92,6 +107,8 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	}
 
 	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
 
 	//
 	// publish verified and unverified deals
@@ -113,9 +130,9 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	//
 
 	// precommit capacity upgrade sector with deals
-	upgradeSectorNumber := abi.SectorNumber(101)
+	upgradeSectorNumber := abi.SectorNumber(3000)
 	upgradeSealedCid := tutil.MakeCID("101", &miner.SealedCIDPrefix)
-	preCommitParams = miner.SectorPreCommitInfo{
+	preCommitParams := miner.SectorPreCommitInfo{
 		SealProof:              sealProof,
 		SectorNumber:           upgradeSectorNumber,
 		SealedCID:              upgradeSealedCid,
@@ -133,10 +150,12 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	proveTime = v.GetEpoch() + miner.PreCommitChallengeDelay + 1
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
 	// Prove commit sector after max seal duration
 	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
-	proveCommitParams = miner.ProveCommitSectorParams{
+	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: upgradeSectorNumber,
 	}
 	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
@@ -144,37 +163,129 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// In the same epoch, trigger cron to validate prove commit
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
-	// advance to proving period and submit post
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
+	// advance into next deadline
+	v, err = v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
+
+	// now declare original sector as a fault
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.DeclareFaults, &miner.DeclareFaultsParams{
+		Faults: []miner.FaultDeclaration{{
+			Deadline:  dlInfo.Index,
+			Partition: pIdx,
+			Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+		}},
+	})
+
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
+	// advance to original sector's period and submit post
+	oDlInfo, oPIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &miner.SubmitWindowedPoStParams{
+		Deadline: oDlInfo.Index,
+		Partitions: []miner.PoStPartition{{
+			Index:   oPIdx,
+			Skipped: bitfield.New(),
+		}},
+		Proofs: []proof.PoStProof{{
+			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		}},
+		ChainCommitEpoch: oDlInfo.Challenge,
+		ChainCommitRand:  []byte("not really random"),
+	})
+
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
+	v, err = v.WithEpoch(oDlInfo.Last())
+	require.NoError(t, err)
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
+	// advance to upgrade period and submit post
 	dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
 
-	submitParams = miner.SubmitWindowedPoStParams{
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &miner.SubmitWindowedPoStParams{
 		Deadline: dlInfo.Index,
 		Partitions: []miner.PoStPartition{{
 			Index:   pIdx,
-			Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+			Skipped: bitfield.New(),
 		}},
 		Proofs: []proof.PoStProof{{
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte("not really random"),
-	}
-	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+	})
 
-	// power is upgraded for new sector
-	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
-	upgradeSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
 
-	// proving period cron removes sector reducing the miner's power to that of the new sector
 	v, err = v.WithEpoch(dlInfo.Last())
 	require.NoError(t, err)
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
-	// power is removed
-	// Until the old sector is terminated at its proving period, miner gets combined power for new and old sectors
-	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
-	assert.Equal(t, upgradeSectorPower.Raw, minerPower.Raw)
-	assert.Equal(t, upgradeSectorPower.QA, minerPower.QA)
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
+	// advance 14 proving periods submitting PoSts along the way
+	for i := 0; i < 14; i++ {
+		// advance to original sector's period and submit post
+		oDlInfo, oPIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber+1)
+
+		vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &miner.SubmitWindowedPoStParams{
+			Deadline: oDlInfo.Index,
+			Partitions: []miner.PoStPartition{{
+				Index:   oPIdx,
+				Skipped: bitfield.New(),
+			}},
+			Proofs: []proof.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitEpoch: oDlInfo.Challenge,
+			ChainCommitRand:  []byte("not really random"),
+		})
+
+		v, err = v.WithEpoch(oDlInfo.Last())
+		require.NoError(t, err)
+		vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+		// once miner is borked, our logic to advance through deadlines stops working, so exit now.
+		power := vm.MinerPower(t, v, minerAddrs.IDAddress)
+		if power.IsZero() {
+			break
+		}
+
+		// advance to upgrade period and submit post
+		dlInfo, pIdx, v = vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+		require.True(t, dlInfo.Last() > oDlInfo.Last())
+
+		vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &miner.SubmitWindowedPoStParams{
+			Deadline: dlInfo.Index,
+			Partitions: []miner.PoStPartition{{
+				Index:   pIdx,
+				Skipped: bitfield.New(),
+			}},
+			Proofs: []proof.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  []byte("not really random"),
+		})
+
+		v, err = v.WithEpoch(dlInfo.Last())
+		require.NoError(t, err)
+		vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+		fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+	}
+
+	fmt.Println(vm.MinerPower(t, v, minerAddrs.IDAddress))
+
+	// TODO:
+	// run migration
+	// show miner regains power
+	// show miner can continue to PoSt
 }
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
