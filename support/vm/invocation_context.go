@@ -365,7 +365,7 @@ func (ic *invocationContext) DeleteActor(beneficiary address.Address) {
 		panic(err)
 	}
 	if !found {
-		ic.Abortf(exitcode.SysErrorIllegalActor, "delete non-existent actor %s", receiverActor)
+		ic.Abortf(exitcode.SysErrorIllegalActor, "delete non-existent actor %v", receiverActor)
 	}
 
 	// Transfer any remaining balance to the beneficiary.

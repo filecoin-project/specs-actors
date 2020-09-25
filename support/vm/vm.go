@@ -123,6 +123,27 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 	}, nil
 }
 
+func (vm *VM) WithRoot(root cid.Cid) (*VM, error) {
+	newVM := &VM{
+		ctx:            vm.ctx,
+		actorImpls:     vm.actorImpls,
+		store:          vm.store,
+		stateRoot:      root,
+		actorsDirty:    false,
+		emptyObject:    vm.emptyObject,
+		currentEpoch:   vm.currentEpoch,
+		networkVersion: vm.networkVersion,
+	}
+
+	actors, err := adt.AsMap(newVM.store, newVM.stateRoot)
+	if err != nil {
+		return nil, err
+	}
+	newVM.actors = actors
+
+	return newVM, nil
+}
+
 func (vm *VM) rollback(root cid.Cid) error {
 	var err error
 	vm.actors, err = adt.AsMap(vm.store, root)
@@ -293,6 +314,10 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	}
 
 	return ret.inner, exitCode
+}
+
+func (vm *VM) StateRoot() cid.Cid {
+	return vm.stateRoot
 }
 
 func (vm *VM) GetState(addr address.Address, out cbor.Unmarshaler) error {
