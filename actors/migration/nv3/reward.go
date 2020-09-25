@@ -3,16 +3,19 @@ package nv3
 import (
 	"context"
 
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/actors/states"
 )
 
 type rewardMigrator struct {
 }
 
-func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid) (cid.Cid, error) {
+func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.ChainEpoch, _ address.Address, _ *states.Tree) (cid.Cid, error) {
 	var st reward.State
 	if err := store.Get(ctx, head, &st); err != nil {
 		return cid.Undef, err
