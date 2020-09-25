@@ -3,6 +3,8 @@ package nv3
 import (
 	"bytes"
 	"context"
+	"fmt"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -45,6 +47,7 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	}
 
 	if powerClaimSuspect {
+		fmt.Printf("CORRUPT MINER: %s\n", a)
 		err := m.updatePowerState(ctx, adtStore, &st, tree, a, epoch)
 		if err != nil {
 			return cid.Undef, err
@@ -269,6 +272,7 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 	if found {
 		powerDelta = powerDelta.Sub(miner.NewPowerPair(existing.RawBytePower, existing.QualityAdjPower))
 	}
+	fmt.Printf("Previous power: %v, Power delta: %v\n", existing, powerDelta)
 	if err := powSt.AddToClaim(store, a, powerDelta.Raw, powerDelta.QA); err != nil {
 		return err
 	}
@@ -310,6 +314,13 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		} else if empty, err := earlyDuplicates.IsEmpty(); err != nil {
 			return err
 		} else if !empty {
+			err := earlyDuplicates.ForEach(func(sectorNum uint64) error {
+				fmt.Printf("Early Duplicate: %d\n", sectorNum)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
 			modified = true
 			exs.EarlySectors, err = bitfield.SubtractBitField(exs.EarlySectors, earlyDuplicates)
 			if err != nil {
@@ -326,6 +337,13 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		} else if empty, err := onTimeDuplicates.IsEmpty(); err != nil {
 			return err
 		} else if !empty {
+			err := earlyDuplicates.ForEach(func(sectorNum uint64) error {
+				fmt.Printf("On time Duplicate: %d\n", sectorNum)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
 			modified = true
 			exs.OnTimeSectors, err = bitfield.SubtractBitField(exs.OnTimeSectors, onTimeDuplicates)
 			if err != nil {
@@ -428,6 +446,7 @@ func correctExpirationSetPower(exs *miner.ExpirationSet, sectors miner.Sectors,
 	activePower := miner.PowerForSectors(sectorSize, s)
 
 	if !activePower.Equals(exs.ActivePower) {
+		fmt.Printf("fixing up ES active power from %v to %v\n", exs.ActivePower, activePower)
 		exs.ActivePower = activePower
 		modified = true
 	}
@@ -444,6 +463,7 @@ func correctExpirationSetPower(exs *miner.ExpirationSet, sectors miner.Sectors,
 	faultyPower := miner.PowerForSectors(sectorSize, fs)
 
 	if !faultyPower.Equals(exs.FaultyPower) {
+		fmt.Printf("fixing up ES faulty power from %v to %v\n", exs.FaultyPower, faultyPower)
 		exs.FaultyPower = faultyPower
 		modified = true
 	}
