@@ -5,8 +5,10 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	"github.com/ipfs/go-cid"
 
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -41,7 +43,19 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ runtime.Invokee = Actor{}
+func (a Actor) Code() cid.Cid {
+	return builtin.StoragePowerActorCodeID
+}
+
+func (a Actor) IsSingleton() bool {
+	return true
+}
+
+func (a Actor) State() cbor.Er {
+	return new(State)
+}
+
+var _ runtime.VMActor = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
