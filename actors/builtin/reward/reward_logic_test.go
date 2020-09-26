@@ -152,3 +152,72 @@ func TestBaselineRewardGrowth(t *testing.T) {
 		assert.Less(t, perr, testCase.ErrBound)
 	}
 }
+
+func TestBaselineRewardGrowthV3(t *testing.T) {
+
+	baselineInYears := func(start StoragePower, x ChainEpoch) StoragePower {
+		baseline := start
+		for i := ChainEpoch(0); i < x*epochsInYear; i++ {
+			baseline = BaselinePowerFromPrev(baseline, network.Version3)
+		}
+		return baseline
+	}
+
+	// Baseline reward should have 100% growth rate
+	// This implies that for every year x, the baseline function should be:
+	// StartVal * 2^x.
+	type growthTestCase struct {
+		StartVal StoragePower
+		ErrBound float64
+	}
+	cases := []growthTestCase{
+		// 1 byte
+		{
+			NewStoragePower(1),
+			1,
+		},
+		// GiB
+		{
+			NewStoragePower(1 << 30),
+			1e-3,
+		},
+		// TiB
+		{
+			NewStoragePower(1 << 40),
+			1e-6,
+		},
+		// PiB
+		{
+			NewStoragePower(1 << 50),
+			1e-8,
+		},
+		// EiB
+		{
+			BaselineInitialValueV0,
+			1e-8,
+		},
+		// ZiB
+		{
+			big.Lsh(big.NewInt(1), 70),
+			1e-8,
+		},
+		// non power of 2 ~ 1 EiB
+		{
+			NewStoragePower(513633559722596517),
+			1e-8,
+		},
+	}
+	for _, testCase := range cases {
+		years := int64(1)
+		end := baselineInYears(testCase.StartVal, ChainEpoch(1))
+
+		multiplier := big.Exp(big.NewInt(2), big.NewInt(years)) // keeping this generalized in case we want to test more years
+		expected := big.Mul(testCase.StartVal, multiplier)
+		diff := big.Sub(expected, end)
+
+		perrFrac := gbig.NewRat(1, 1).SetFrac(diff.Int, expected.Int)
+		perr, _ := perrFrac.Float64()
+
+		assert.Less(t, perr, testCase.ErrBound)
+	}
+}
