@@ -66,6 +66,10 @@ func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.
 	if currBalance.LessThan(amountToSpend) {
 		return xerrors.Errorf("current balance %s less than amount to spend %s", currBalance.String(), amountToSpend.String())
 	}
+	if amountToSpend.IsZero() {
+		// Always permit a transaction that sends no value, even if the lockup exceeds the current balance.
+		return nil
+	}
 
 	remainingBalance := big.Sub(currBalance, amountToSpend)
 	amountLocked := st.AmountLocked(currEpoch - st.StartEpoch)
