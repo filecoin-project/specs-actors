@@ -315,7 +315,11 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 			return err
 		} else if !empty {
 			err := earlyDuplicates.ForEach(func(sectorNum uint64) error {
-				fmt.Printf("Early Duplicate: %d\n", sectorNum)
+				faulted, err := allFaults.IsSet(sectorNum)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Epoch: %d, Early Duplicate: %d, Faulted: %t\n", epoch, sectorNum, faulted)
 				return nil
 			})
 			if err != nil {
@@ -337,8 +341,12 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 		} else if empty, err := onTimeDuplicates.IsEmpty(); err != nil {
 			return err
 		} else if !empty {
-			err := earlyDuplicates.ForEach(func(sectorNum uint64) error {
-				fmt.Printf("On time Duplicate: %d\n", sectorNum)
+			err := onTimeDuplicates.ForEach(func(sectorNum uint64) error {
+				faulted, err := allFaults.IsSet(sectorNum)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Epoch %d: On time Duplicate: %d, Faulted: %t\n", epoch, sectorNum, faulted)
 				return nil
 			})
 			if err != nil {
@@ -380,6 +388,32 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 	partitionActivePower := miner.NewPowerPairZero()
 	partitionFaultyPower := miner.NewPowerPairZero()
 	err = exq.ForEach(&exs, func(epoch int64) error {
+		// earlyCount, err := exs.EarlySectors.Count()
+		// if err != nil {
+		// 	return err
+		// }
+		// onTimeCount, err := exs.OnTimeSectors.Count()
+		// if err != nil {
+		// 	return err
+		// }
+		// onTimeFaulted, err := bitfield.IntersectBitField(exs.OnTimeSectors, allFaults)
+		// if err != nil {
+		// 	return err
+		// }
+		// onTimeFaultedCount, err := onTimeFaulted.Count()
+		// if err != nil {
+		// 	return err
+		// }
+		// earlyFaulted, err := bitfield.IntersectBitField(exs.EarlySectors, allFaults)
+		// if err != nil {
+		// 	return err
+		// }
+		// earlyFaultedCount, err := earlyFaulted.Count()
+		// if err != nil {
+		// 	return err
+		// }
+		// fmt.Printf("Epoch: %d, OnTime: %d, Early: %d, OnTimeFaulted: %d, EarlyFaulted: %d\n", epoch, onTimeCount, earlyCount, onTimeFaultedCount, earlyFaultedCount)
+
 		modified, activePower, faultyPower, err := correctExpirationSetPower(&exs, sectors, allFaults, sectorSize)
 		if err != nil {
 			return err
