@@ -86,7 +86,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 				return err
 			}
 
-			exqRoot, stats, err := m.correctExpirationQueue(exq, sectors, part.Terminated, part.Faults, sectorSize)
+			exqRoot, stats, err := m.correctExpirationQueue(exq, sectors, part.Terminated, part.Faults, sectorSize, dlIdx, partIdx)
 			if err != nil {
 				return err
 			}
@@ -292,6 +292,7 @@ type expirationQueueStats struct {
 // Returns the new root of the expiration queue
 func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sectors miner.Sectors,
 	allTerminated bitfield.BitField, allFaults bitfield.BitField, sectorSize abi.SectorSize,
+	dlIdx uint64, partIdx int64,
 ) (cid.Cid, expirationQueueStats, error) {
 	// processed expired sectors includes all terminated and all sectors seen in earlier expiration sets
 	processedExpiredSectors := allTerminated
@@ -319,7 +320,7 @@ func (m *minerMigrator) correctExpirationQueue(exq miner.ExpirationQueue, sector
 				if err != nil {
 					return err
 				}
-				fmt.Printf("Epoch: %d, Early Duplicate: %d, Faulted: %t\n", epoch, sectorNum, faulted)
+				fmt.Printf("D: %d, P: %d, Epoch: %d, Early Duplicate: %d, Faulted: %t\n", dlIdx, partIdx, epoch, sectorNum, faulted)
 				return nil
 			})
 			if err != nil {
