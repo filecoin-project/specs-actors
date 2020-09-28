@@ -8,10 +8,12 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
@@ -42,7 +44,19 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ runtime.Invokee = Actor{}
+func (a Actor) Code() cid.Cid {
+	return builtin.StorageMarketActorCodeID
+}
+
+func (a Actor) IsSingleton() bool {
+	return true
+}
+
+func (a Actor) State() cbor.Er {
+	return new(State)
+}
+
+var _ runtime.VMActor = Actor{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods

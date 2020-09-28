@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/filecoin-project/go-state-types/rt"
 	runtime0 "github.com/filecoin-project/specs-actors/actors/runtime"
 )
 
@@ -25,3 +26,5 @@ const (
 	ConsensusFaultParentGrinding   = runtime0.ConsensusFaultParentGrinding
 	ConsensusFaultTimeOffsetMining = runtime0.ConsensusFaultTimeOffsetMining
 )
+
+type VMActor = rt.VMActor

@@ -16,7 +16,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/exported"
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
@@ -54,7 +53,7 @@ type TestActor struct {
 	Balance abi.TokenAmount
 }
 
-type ActorImplLookup map[cid.Cid]exported.BuiltinActor
+type ActorImplLookup map[cid.Cid]runtime.VMActor
 
 type InternalMessage struct {
 	from   address.Address
@@ -365,7 +364,7 @@ func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amou
 	return toActor, fromActor
 }
 
-func (vm *VM) getActorImpl(code cid.Cid) exported.BuiltinActor {
+func (vm *VM) getActorImpl(code cid.Cid) runtime.VMActor {
 	actorImpl, ok := vm.actorImpls[code]
 	if !ok {
 		vm.Abortf(exitcode.SysErrInvalidReceiver, "actor implementation not found for Exitcode %v", code)

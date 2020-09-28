@@ -3,6 +3,8 @@ package verifreg
 import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
@@ -27,7 +29,19 @@ func (a Actor) Exports() []interface{} {
 	}
 }
 
-var _ runtime.Invokee = Actor{}
+func (a Actor) Code() cid.Cid {
+	return builtin.VerifiedRegistryActorCodeID
+}
+
+func (a Actor) IsSingleton() bool {
+	return true
+}
+
+func (a Actor) State() cbor.Er {
+	return new(State)
+}
+
+var _ runtime.VMActor = Actor{}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
