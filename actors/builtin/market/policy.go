@@ -28,11 +28,11 @@ const DealMaxLabelSize = 256
 
 // Bounds (inclusive) on deal duration
 func DealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
-	return DealMinDuration, DealMaxDuration // PARAM_FINISH
+	return DealMinDuration, DealMaxDuration
 }
 
 func DealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
-	return abi.NewTokenAmount(0), builtin.TotalFilecoin // PARAM_FINISH
+	return abi.NewTokenAmount(0), builtin.TotalFilecoin
 }
 
 func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, networkRawPower, networkQAPower, baselinePower abi.StoragePower,
@@ -49,16 +49,16 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	num := big.Mul(lockTargetNum, powerShareNum)
 	denom := big.Mul(lockTargetDenom, powerShareDenom)
 	minCollateral := big.Div(num, denom)
-	return minCollateral, builtin.TotalFilecoin // PARAM_FINISH
+	return minCollateral, builtin.TotalFilecoin
 }
 
 func DealClientCollateralBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
-	return abi.NewTokenAmount(0), builtin.TotalFilecoin // PARAM_FINISH
+	return abi.NewTokenAmount(0), builtin.TotalFilecoin
 }
 
 // Penalty to provider deal collateral if the deadline expires before sector commitment.
 func CollateralPenaltyForDealActivationMissed(providerCollateral abi.TokenAmount) abi.TokenAmount {
-	return providerCollateral // PARAM_FINISH
+	return providerCollateral
 }
 
 // Computes the weight for a deal proposal, which is a function of its size and duration.
