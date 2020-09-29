@@ -8,18 +8,21 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
 func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*builtin.MessageAccumulator, error) {
-	msgs := &builtin.MessageAccumulator{}
+	acc := &builtin.MessageAccumulator{}
 	totalFIl := big.Zero()
 	var initSummary *init_.StateSummary
 	var verifregSummary *verifreg.StateSummary
+	var minerSummaries []*miner.StateSummary
 
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
+		acc := acc.WithPrefix("actor %v: ", key) // Intentional shadow
 		if key.Protocol() != addr.ID {
-			msgs.Addf("unexpected address protocol in state tree root: %v", key)
+			acc.Addf("unexpected address protocol in state tree root: %v", key)
 		}
 		totalFIl = big.Add(totalFIl, actor.Balance)
 
@@ -34,7 +37,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 			if summary, msgs, err := init_.CheckStateInvariants(&st, tree.Store); err != nil {
 				return err
 			} else {
-				msgs.AddAll(msgs)
+				acc.WithPrefix("init: ").AddAll(msgs)
 				initSummary = summary
 			}
 		case builtin.CronActorCodeID:
@@ -44,7 +47,16 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 		case builtin.StoragePowerActorCodeID:
 
 		case builtin.StorageMinerActorCodeID:
-
+			var st miner.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := miner.CheckStateInvariants(&st, tree.Store); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("miner: ").AddAll(msgs)
+				minerSummaries = append(minerSummaries, summary)
+			}
 		case builtin.StorageMarketActorCodeID:
 
 		case builtin.PaymentChannelActorCodeID:
@@ -61,7 +73,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 			if summary, msgs, err := verifreg.CheckStateInvariants(&st, tree.Store); err != nil {
 				return err
 			} else {
-				msgs.AddAll(msgs)
+				acc.WithPrefix("verifreg: ").AddAll(msgs)
 				verifregSummary = summary
 			}
 		default:
@@ -80,8 +92,8 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 	_ = verifregSummary
 
 	if !totalFIl.Equals(expectedBalanceTotal) {
-		msgs.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
+		acc.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
 	}
 
-	return msgs, nil
+	return acc, nil
 }
