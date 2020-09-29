@@ -12,12 +12,12 @@ import (
 
 // Projection period of expected sector block reward for deposit required to pre-commit a sector.
 // This deposit is lost if the pre-commitment is not timely followed up by a commitment proof.
-var PreCommitDepositFactor = 20 // PARAM_SPEC PARAM_FINISH
+var PreCommitDepositFactor = 20 // PARAM_SPEC
 var PreCommitDepositProjectionPeriod = abi.ChainEpoch(PreCommitDepositFactor) * builtin.EpochsInDay
 
 // Projection period of expected sector block rewards for storage pledge required to commit a sector.
 // This pledge is lost if a sector is terminated before its full committed lifetime.
-var InitialPledgeFactor = 20 // PARAM_SPEC PARAM_FINISH
+var InitialPledgeFactor = 20 // PARAM_SPEC
 var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builtin.EpochsInDay
 
 // Cap on initial pledge requirement for sectors.
@@ -28,7 +28,7 @@ var InitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32 << 30))
 // Multiplier of share of circulating money supply for consensus pledge required to commit a sector.
 // This pledge is lost if a sector is terminated before its full committed lifetime.
 var InitialPledgeLockTarget = builtin.BigFrac{
-	Numerator:   big.NewInt(3), // PARAM_SPEC PARAM_FINISH
+	Numerator:   big.NewInt(3), // PARAM_SPEC
 	Denominator: big.NewInt(10),
 }
 
