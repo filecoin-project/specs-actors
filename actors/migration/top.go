@@ -21,10 +21,21 @@ import (
 )
 
 var (
-	maxWorkers = 64 // TODO evaluate empirically
-	sem        *semaphore.Weighted
-	actOutMu   = &sync.Mutex{}
+	defaultMaxWorkers = 32
+	sem               *semaphore.Weighted
+	actOutMu          = &sync.Mutex{}
 )
+
+// Config parameterizes a state tree migration
+type Config struct {
+	MaxWorkers int
+}
+
+func DefaultConfig() Config {
+	return Config{
+		MaxWorkers: defaultMaxWorkers,
+	}
+}
 
 type StateMigration interface {
 	// Loads an actor's state from an input store and writes new state to an output store.
@@ -129,7 +140,7 @@ func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Add
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (cid.Cid, error) {
+func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid, cfg Config) (cid.Cid, error) {
 	// Setup input and output state tree helpers
 	adtStore := adt.WrapStore(ctx, store)
 	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
@@ -153,7 +164,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	transferFromBurnt := big.Zero()
 
 	// Setup synchronization
-	sem = semaphore.NewWeighted(int64(maxWorkers)) // reset global for each invocation
+	sem = semaphore.NewWeighted(int64(cfg.MaxWorkers)) // reset global for each invocation
 	errCh := make(chan error)
 	transferCh := make(chan big.Int)
 
@@ -186,7 +197,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return cid.Undef, err
 	}
 	// Wait on all jobs finishing
-	if err := sem.Acquire(ctx, int64(maxWorkers)); err != nil {
+	if err := sem.Acquire(ctx, int64(cfg.MaxWorkers)); err != nil {
 		return cid.Undef, xerrors.Errorf("failed to wait for all worker jobs: %w", err)
 	}
 	// Check for outstanding transfers and errors
