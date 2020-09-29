@@ -23,7 +23,6 @@ import (
 var (
 	maxWorkers = 64 // TODO evaluate empirically
 	sem        *semaphore.Weighted
-	migMu      = &sync.Mutex{}
 	actOutMu   = &sync.Mutex{}
 )
 
@@ -79,20 +78,10 @@ var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
 		OutCodeCID:     builtin.VerifiedRegistryActorCodeID,
 		StateMigration: &verifregMigrator{},
 	},
-}
-
-type MinerStateMigration interface {
-	MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, balance abi.TokenAmount) (cid.Cid, abi.TokenAmount, error)
-}
-
-type MinerMigration struct {
-	OutCodeCID          cid.Cid
-	MinerStateMigration MinerStateMigration
-}
-
-var minerMigration = MinerMigration{
-	OutCodeCID:          builtin.StorageMinerActorCodeID,
-	MinerStateMigration: &minerMigrator{},
+	builtin0.StorageMinerActorCodeID: ActorMigration{
+		OutCodeCID:     builtin.StorageMinerActorCodeID,
+		StateMigration: &minerMigrator{},
+	},
 }
 
 func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor, actorsOut *states.Tree, transferCh chan big.Int, errCh chan error) {
@@ -104,9 +93,7 @@ func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Add
 		sem.Release(1)
 		return
 	} else {
-		migMu.Lock()
 		migration := migrations[actorIn.Code]
-		migMu.Unlock()
 		codeOut = migration.OutCodeCID
 		headOut, transfer, err = migration.StateMigration.MigrateState(ctx, store, actorIn.Head, actorIn.Balance)
 	}
@@ -128,18 +115,17 @@ func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Add
 	actOutMu.Lock()
 	err = actorsOut.SetActor(addr, &actorOut)
 	actOutMu.Unlock()
+
+	// Release this worker goroutine before any channel sends to prevent deadlock
 	if err != nil {
 		sem.Release(1)
 		errCh <- err
-		return
-	}
-	if transfer.GreaterThan(big.Zero()) {
+	} else if transfer.GreaterThan(big.Zero()) {
 		sem.Release(1)
 		transferCh <- transfer
-		return
+	} else {
+		sem.Release(1)
 	}
-	sem.Release(1)
-	return // nolint:gosimple
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
@@ -161,9 +147,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 	// Extra actor setup
 	// power
-	migMu.Lock()
 	pm := migrations[builtin0.StoragePowerActorCodeID].StateMigration.(*powerMigrator)
-	migMu.Unlock()
 	pm.actorsIn = actorsIn
 	// miner
 	transferFromBurnt := big.Zero()
@@ -219,9 +203,7 @@ READEND:
 	}
 
 	// Migrate verified registry
-	migMu.Lock()
 	vm := migrations[builtin0.VerifiedRegistryActorCodeID].StateMigration.(*verifregMigrator)
-	migMu.Unlock()
 	vm.actorsOut = actorsOut
 	verifRegActorIn, found, err := actorsIn.GetActor(builtin0.VerifiedRegistryActorAddr)
 	if err != nil {
