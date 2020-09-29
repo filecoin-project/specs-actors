@@ -1,12 +1,20 @@
 package util
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/filecoin-project/go-state-types/exitcode"
+)
+
+type abort struct {
+	code exitcode.ExitCode
+	msg  string
+}
 
 // Indicates a condition that should never happen. If encountered, execution will halt and the
 // resulting state is undefined.
 func AssertMsg(b bool, format string, a ...interface{}) {
 	if !b {
-		panic(fmt.Sprintf(format, a...))
+		panic(abort{exitcode.ErrForbidden, fmt.Sprintf(format, a...)})
 	}
 }
 
@@ -16,6 +24,6 @@ func Assert(b bool) {
 
 func AssertNoError(e error) {
 	if e != nil {
-		panic(e.Error())
+		panic(abort{exitcode.ErrForbidden, e.Error()})
 	}
 }
