@@ -4,7 +4,6 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/specs-actors/actors/states"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -12,13 +11,13 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
-func CheckStateInvariants(tree states.Tree, expectedBalanceTotal abi.TokenAmount) (*builtin.MessageAccumulator, error) {
+func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*builtin.MessageAccumulator, error) {
 	msgs := &builtin.MessageAccumulator{}
 	totalFIl := big.Zero()
 	var initSummary *init_.StateSummary
 	var verifregSummary *verifreg.StateSummary
 
-	if err := tree.ForEach(func(key addr.Address, actor *states.Actor) error {
+	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
 		if key.Protocol() != addr.ID {
 			msgs.Addf("unexpected address protocol in state tree root: %v", key)
 		}

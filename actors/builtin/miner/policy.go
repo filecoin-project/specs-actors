@@ -99,7 +99,7 @@ var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
 // Maximum delay to allow between sector pre-commit and subsequent proof.
 // The allowable delay depends on seal proof algorithm.
 var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
-	abi.RegisteredSealProof_StackedDrg32GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC PARAM_FINISH
+	abi.RegisteredSealProof_StackedDrg32GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC
 	abi.RegisteredSealProof_StackedDrg2KiBV1:   builtin.EpochsInDay + PreCommitChallengeDelay,
 	abi.RegisteredSealProof_StackedDrg8MiBV1:   builtin.EpochsInDay + PreCommitChallengeDelay,
 	abi.RegisteredSealProof_StackedDrg512MiBV1: builtin.EpochsInDay + PreCommitChallengeDelay,
@@ -204,7 +204,7 @@ func SectorDealsMax(size abi.SectorSize) uint64 {
 
 // Initial share of consensus fault penalty allocated as reward to the reporter.
 var consensusFaultReporterInitialShare = builtin.BigFrac{
-	Numerator:   big.NewInt(1), // PARAM_FINISH PARAM_SPEC
+	Numerator:   big.NewInt(1), // PARAM_SPEC
 	Denominator: big.NewInt(1000),
 }
 
@@ -212,7 +212,7 @@ var consensusFaultReporterInitialShare = builtin.BigFrac{
 // consensusFaultReporterInitialShare*consensusFaultReporterShareGrowthRate^consensusFaultGrowthDuration ~= consensusFaultReporterMaxShare
 // consensusFaultGrowthDuration = 500 epochs
 var consensusFaultReporterShareGrowthRate = builtin.BigFrac{
-	Numerator:   big.NewInt(100785473384), // PARAM_FINISH PARAM_SPEC
+	Numerator:   big.NewInt(100785473384), // PARAM_SPEC
 	Denominator: big.NewInt(100000000000),
 }
 
@@ -232,10 +232,10 @@ type VestSpec struct {
 
 // The vesting schedule for block rewards earned by a block producer.
 var RewardVestingSpec = VestSpec{ // PARAM_SPEC
-	InitialDelay: abi.ChainEpoch(0),                         // PARAM_FINISH
-	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay), // PARAM_FINISH
-	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),   // PARAM_FINISH
-	Quantization: 12 * builtin.EpochsInHour,                 // PARAM_FINISH
+	InitialDelay: abi.ChainEpoch(0),
+	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay),
+	StepDuration: abi.ChainEpoch(1 * builtin.EpochsInDay),
+	Quantization: 12 * builtin.EpochsInHour,
 }
 
 // When an actor reports a consensus fault, they earn a share of the penalty paid by the miner.

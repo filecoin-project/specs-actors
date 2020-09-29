@@ -27,6 +27,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
@@ -52,7 +53,7 @@ func init() {
 func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	store := ipld.NewADTStore(ctx)
 
-	lookup := map[cid.Cid]exported.BuiltinActor{}
+	lookup := map[cid.Cid]runtime.VMActor{}
 	for _, ba := range exported.BuiltinActors() {
 		lookup[ba.Code()] = ba
 	}
