@@ -22,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/exported"
 	init_ "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
@@ -326,11 +325,12 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 // CreateActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
-	if !builtin.IsBuiltinActor(codeID) {
+	act, ok := ic.rt.actorImpls[codeID]
+	if !ok {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only create built-in actors.")
 	}
 
-	if builtin.IsSingletonActor(codeID) {
+	if rt.IsSingletonActor(act) {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only have one instance of singleton actors.")
 	}
 
@@ -599,7 +599,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	return ret, exitcode.Ok
 }
 
-func (ic *invocationContext) dispatch(actor exported.BuiltinActor, method abi.MethodNum, arg interface{}) (interface{}, error) {
+func (ic *invocationContext) dispatch(actor runtime.VMActor, method abi.MethodNum, arg interface{}) (interface{}, error) {
 	// get method signature
 	exports := actor.Exports()
 

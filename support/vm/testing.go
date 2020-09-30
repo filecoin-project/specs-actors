@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/filecoin-project/specs-actors/actors/runtime"
 	"github.com/filecoin-project/specs-actors/actors/states"
 	"testing"
 
@@ -53,7 +54,7 @@ func init() {
 func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 	store := ipld.NewADTStore(ctx)
 
-	lookup := map[cid.Cid]exported.BuiltinActor{}
+	lookup := map[cid.Cid]runtime.VMActor{}
 	for _, ba := range exported.BuiltinActors() {
 		lookup[ba.Code()] = ba
 	}
