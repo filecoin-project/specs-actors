@@ -104,7 +104,7 @@ func (m *powerMigrator) updateClaims(ctx context.Context, store cbor.IpldStore, 
 	}
 
 	for addr, claim := range updates.claims { // nolint:nomaprange
-		if err := claims.Put(adt0.AddrKey(addr), &claim); err != nil {
+		if err := claims.Put(abi.AddrKey(addr), &claim); err != nil {
 			return cid.Undef, err
 		}
 	}
