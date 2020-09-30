@@ -21,7 +21,7 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 	rewardEstimate := smoothing.TestingConstantEstimate(epochTargetReward)
 	powerEstimate := smoothing.TestingConstantEstimate(networkQAPower)
 
-	undeclaredPenalty := miner.PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, qaSectorPower)
+	undeclaredPenalty := miner.PledgePenaltyForTerminationLowerBound(rewardEstimate, powerEstimate, qaSectorPower)
 	bigInitialPledgeFactor := big.NewInt(int64(miner.InitialPledgeFactor))
 	bigLifetimeCap := big.NewInt(int64(miner.TerminationLifetimeCap))
 

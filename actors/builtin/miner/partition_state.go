@@ -683,7 +683,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 
 // Marks all non-faulty sectors in the partition as faulty and clears recoveries, updating power memos appropriately.
 // All sectors' expirations are rescheduled to the fault expiration, as "early" (if not expiring earlier)
-// Returns the power delta, power that should be penalized, and newly faulty power.
+// Returns the power delta, power that should be penalized (new faults + failed recoveries), and newly faulty power.
 func (p *Partition) RecordMissedPost(
 	store adt.Store, faultExpiration abi.ChainEpoch, quant QuantSpec,
 ) (powerDelta, penalizedPower, newFaultyPower PowerPair, err error) {

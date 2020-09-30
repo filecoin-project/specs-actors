@@ -104,14 +104,6 @@ func TestFaultFeeInvariants(t *testing.T) {
 	networkPower := abi.NewStoragePower(100 << 50)
 	powerEstimate := smoothing.TestingConstantEstimate(networkPower)
 
-	t.Run("Undeclared faults are more expensive than declared faults", func(t *testing.T) {
-		faultySectorPower := abi.NewStoragePower(1 << 50)
-
-		ff := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
-		sp := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorPower)
-		assert.True(t, sp.GreaterThan(ff))
-	})
-
 	// constant filter estimate cumsum ratio is just multiplication and division
 	// test that internal precision of BR calculation does not cost accuracy
 	// compared to simple multiplication in this case.
@@ -162,11 +154,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)
 
 		// Declared faults
-		ffA := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower)
-		ffB := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower)
-		ffC := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower)
+		ffA := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorAPower)
+		ffB := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorBPower)
+		ffC := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorCPower)
 
-		ffAll := PledgePenaltyForDeclaredFault(rewardEstimate, powerEstimate, totalFaultPower)
+		ffAll := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
@@ -175,11 +167,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		assert.True(t, diff.LessThan(big.NewInt(3)))
 
 		// Undeclared faults
-		spA := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorAPower)
-		spB := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorBPower)
-		spC := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, faultySectorCPower)
+		spA := PledgePenaltyForTerminationLowerBound(rewardEstimate, powerEstimate, faultySectorAPower)
+		spB := PledgePenaltyForTerminationLowerBound(rewardEstimate, powerEstimate, faultySectorBPower)
+		spC := PledgePenaltyForTerminationLowerBound(rewardEstimate, powerEstimate, faultySectorCPower)
 
-		spAll := PledgePenaltyForUndeclaredFault(rewardEstimate, powerEstimate, totalFaultPower)
+		spAll := PledgePenaltyForTerminationLowerBound(rewardEstimate, powerEstimate, totalFaultPower)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.
