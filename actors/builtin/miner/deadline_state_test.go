@@ -2,6 +2,7 @@ package miner_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -1020,7 +1021,9 @@ func checkDeadlineInvariants(
 		// 2. We are intentionally calling this and not
 		//    assertPartitionState. We'll check sector assignment to
 		//    deadline outside.
-		checkPartitionInvariants(t, store, &partition, quant, ssize, sectors)
+		_, msgs, err := miner.CheckPartitionStateInvariants(&partition, store, quant, ssize, sectorsAsMap(sectors))
+		require.NoError(t, err)
+		assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 
 		earlyTerminated, err := adt.AsArray(store, partition.EarlyTerminated)
 		require.NoError(t, err)

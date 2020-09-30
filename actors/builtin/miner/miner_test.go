@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -136,6 +137,10 @@ func TestConstruction(t *testing.T) {
 		}
 
 		assertEmptyBitfield(t, st.EarlyTerminations)
+
+		_, msgs, err := miner.CheckStateInvariants(&st, rt.AdtStore())
+		require.NoError(t, err)
+		assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 	})
 
 	t.Run("control addresses are resolved during construction", func(t *testing.T) {
@@ -290,6 +295,7 @@ func TestPeerInfo(t *testing.T) {
 		h.constructAndVerify(rt)
 
 		h.setPeerID(rt, abi.PeerID("new peer id"))
+		h.checkState(rt)
 	})
 
 	t.Run("can clear peer id", func(t *testing.T) {
@@ -297,6 +303,7 @@ func TestPeerInfo(t *testing.T) {
 		h.constructAndVerify(rt)
 
 		h.setPeerID(rt, nil)
+		h.checkState(rt)
 	})
 
 	t.Run("can't set large peer id", func(t *testing.T) {
@@ -307,6 +314,7 @@ func TestPeerInfo(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "peer ID size", func() {
 			h.setPeerID(rt, largePid[:])
 		})
+		h.checkState(rt)
 	})
 
 	t.Run("can set multiaddrs", func(t *testing.T) {
@@ -314,6 +322,7 @@ func TestPeerInfo(t *testing.T) {
 		h.constructAndVerify(rt)
 
 		h.setMultiaddrs(rt, abi.Multiaddrs("imanewminer"))
+		h.checkState(rt)
 	})
 
 	t.Run("can set multiple multiaddrs", func(t *testing.T) {
@@ -321,6 +330,7 @@ func TestPeerInfo(t *testing.T) {
 		h.constructAndVerify(rt)
 
 		h.setMultiaddrs(rt, abi.Multiaddrs("imanewminer"), abi.Multiaddrs("ihavemany"))
+		h.checkState(rt)
 	})
 
 	t.Run("can set clear the multiaddr", func(t *testing.T) {
@@ -328,6 +338,7 @@ func TestPeerInfo(t *testing.T) {
 		h.constructAndVerify(rt)
 
 		h.setMultiaddrs(rt)
+		h.checkState(rt)
 	})
 
 	t.Run("can't set empty multiaddrs", func(t *testing.T) {
@@ -337,6 +348,7 @@ func TestPeerInfo(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid empty multiaddr", func() {
 			h.setMultiaddrs(rt, nil)
 		})
+		h.checkState(rt)
 	})
 
 	t.Run("can't set large multiaddrs", func(t *testing.T) {
@@ -351,6 +363,7 @@ func TestPeerInfo(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "multiaddr size", func() {
 			h.setMultiaddrs(rt, maddrs...)
 		})
+		h.checkState(rt)
 	})
 }
 
@@ -368,6 +381,7 @@ func TestControlAddresses(t *testing.T) {
 		assert.Equal(t, actor.worker, w)
 		assert.NotEmpty(t, control)
 		assert.Equal(t, actor.controlAddrs, control)
+		actor.checkState(rt)
 	})
 
 }
@@ -506,6 +520,7 @@ func TestCommitments(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("deal space exceeds sector space", func(t *testing.T) {
@@ -526,6 +541,7 @@ func TestCommitments(t *testing.T) {
 				dealSpace: actor.sectorSize + 1,
 			})
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("precommit pays back fee debt", func(t *testing.T) {
@@ -548,6 +564,7 @@ func TestCommitments(t *testing.T) {
 		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{})
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
+		actor.checkState(rt)
 	})
 
 	t.Run("invalid pre-commit rejected", func(t *testing.T) {
@@ -663,6 +680,7 @@ func TestCommitments(t *testing.T) {
 		// reset state back to normal
 		rt.ReplaceState(st)
 		rt.Reset()
+		actor.checkState(rt)
 	})
 
 	t.Run("prove commit just after period start permits PoSt", func(t *testing.T) {
@@ -682,6 +700,7 @@ func TestCommitments(t *testing.T) {
 
 		// advance cron to activate power.
 		advanceAndSubmitPoSts(rt, actor, sector)
+		actor.checkState(rt)
 	})
 
 	t.Run("invalid proof rejected", func(t *testing.T) {
@@ -752,6 +771,7 @@ func TestCommitments(t *testing.T) {
 			actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
 		})
 		rt.Reset()
+		actor.checkState(rt)
 	})
 
 	t.Run("sector with non-positive lifetime is skipped in confirmation", func(t *testing.T) {
@@ -789,6 +809,7 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommit.Info.Expiration - miner.MinSectorExpiration + 1)
 		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
 		rt.ExpectLogsContain("less than minimum. ignoring")
+		actor.checkState(rt)
 	})
 
 	t.Run("fails with too many deals", func(t *testing.T) {
@@ -834,8 +855,8 @@ func TestCommitments(t *testing.T) {
 			rt, actor, _ = setup(proof)
 			precommit = actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit))
 			actor.preCommitSector(rt, precommit, preCommitConf{})
+			actor.checkState(rt)
 		}
-
 	})
 }
 
@@ -961,6 +982,7 @@ func TestCCUpgrade(t *testing.T) {
 
 		// Old sector gone from pledge requirement and deposit
 		assert.Equal(t, st.InitialPledge, newSector.InitialPledge)
+		actor.checkState(rt)
 	})
 
 	t.Run("invalid committed capacity upgrade rejected", func(t *testing.T) {
@@ -1099,6 +1121,7 @@ func TestCCUpgrade(t *testing.T) {
 		// Demonstrate that the params are otherwise ok
 		actor.preCommitSector(rt, upgradeParams, preCommitConf{})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("upgrade sector before it is proven", func(t *testing.T) {
@@ -1207,6 +1230,7 @@ func TestCCUpgrade(t *testing.T) {
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("declare fault for replaced cc upgrade sector doesn't double subtract power", func(t *testing.T) {
@@ -1277,6 +1301,7 @@ func TestCCUpgrade(t *testing.T) {
 			expiredSectorsPowerDelta:  &expectedPowerDelta,
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("skip replaced sector in its last PoSt", func(t *testing.T) {
@@ -1325,6 +1350,7 @@ func TestCCUpgrade(t *testing.T) {
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("skip PoSt altogether on replaced sector expiry", func(t *testing.T) {
@@ -1361,6 +1387,7 @@ func TestCCUpgrade(t *testing.T) {
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("terminate replaced sector early", func(t *testing.T) {
@@ -1412,6 +1439,7 @@ func TestCCUpgrade(t *testing.T) {
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("extend a replaced sector's expiration", func(t *testing.T) {
@@ -1459,6 +1487,7 @@ func TestCCUpgrade(t *testing.T) {
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fault and recover a replaced sector", func(t *testing.T) {
@@ -1514,6 +1543,7 @@ func TestCCUpgrade(t *testing.T) {
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
 			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("try to upgrade committed capacity sector twice", func(t *testing.T) {
@@ -1670,6 +1700,7 @@ func TestCCUpgrade(t *testing.T) {
 
 		// Old sector gone from pledge
 		assert.Equal(t, st.InitialPledge, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
+		actor.checkState(rt)
 	})
 }
 
@@ -1713,6 +1744,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
+		actor.checkState(rt)
 	})
 
 	t.Run("test duplicate proof ignored", func(t *testing.T) {
@@ -1769,6 +1801,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
+		actor.checkState(rt)
 	})
 
 	t.Run("successful recoveries recover power", func(t *testing.T) {
@@ -1826,6 +1859,7 @@ func TestWindowPost(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{})
 
 		assert.Equal(t, initialLocked, actor.getLockedFunds(rt))
+		actor.checkState(rt)
 	})
 
 	t.Run("skipped faults adjust power", func(t *testing.T) {
@@ -1893,6 +1927,7 @@ func TestWindowPost(t *testing.T) {
 			detectedFaultsPowerDelta: &pwrDelta,
 			continuedFaultsPenalty:   faultFee,
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("skipping all sectors in a partition rejected", func(t *testing.T) {
@@ -1929,6 +1964,7 @@ func TestWindowPost(t *testing.T) {
 
 		// These sectors are detected faulty and pay no penalty this time.
 		advanceDeadline(rt, actor, &cronConfig{continuedFaultsPenalty: big.Zero()})
+		actor.checkState(rt)
 	})
 
 	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
@@ -1977,7 +2013,7 @@ func TestWindowPost(t *testing.T) {
 		// sector will be charged ongoing fee at proving period cron
 		ongoingFee := actor.continuedFaultPenalty(infos[:1])
 		advanceDeadline(rt, actor, &cronConfig{continuedFaultsPenalty: ongoingFee})
-
+		actor.checkState(rt)
 	})
 
 	t.Run("skipping a fault from the wrong partition is an error", func(t *testing.T) {
@@ -2015,6 +2051,7 @@ func TestWindowPost(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition", func() {
 			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -2060,6 +2097,7 @@ func TestProveCommit(t *testing.T) {
 		// succeeds with enough free balance (enough to cover 2x IP)
 		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.InitialPledge, st.LockedFunds))
 		actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
+		actor.checkState(rt)
 	})
 
 	t.Run("drop invalid prove commit while processing valid one", func(t *testing.T) {
@@ -2091,6 +2129,7 @@ func TestProveCommit(t *testing.T) {
 			},
 		}
 		actor.confirmSectorProofsValid(rt, conf, preCommitA, preCommitB)
+		actor.checkState(rt)
 	})
 }
 
@@ -2124,6 +2163,7 @@ func TestDeadlineCron(t *testing.T) {
 		})
 		st = getState(rt)
 		assert.Equal(t, periodOffset+miner.WPoStProvingPeriod, st.ProvingPeriodStart)
+		actor.checkState(rt)
 	})
 
 	t.Run("sector expires", func(t *testing.T) {
@@ -2156,6 +2196,7 @@ func TestDeadlineCron(t *testing.T) {
 			expiredSectorsPowerDelta:  &powerDelta,
 			expiredSectorsPledgeDelta: initialPledge.Neg(),
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("sector expires and repays fee debt", func(t *testing.T) {
@@ -2199,6 +2240,7 @@ func TestDeadlineCron(t *testing.T) {
 			expiredSectorsPledgeDelta: initialPledge.Neg(),
 			repaidFeeDebt:             initialPledge, // We repay unlocked IP as fees
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("detects and penalizes faults", func(t *testing.T) {
@@ -2264,6 +2306,7 @@ func TestDeadlineCron(t *testing.T) {
 		deadline = actor.getDeadline(rt, dlIdx)
 		assert.True(t, totalPower.Equals(deadline.FaultyPower))
 		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantSpecForDeadline(dlIdx), actor.sectorSize, uint64(4), allSectors)
+		actor.checkState(rt)
 	})
 
 	t.Run("test cron run late", func(t *testing.T) {
@@ -2306,6 +2349,7 @@ func TestDeadlineCron(t *testing.T) {
 			expectedEnrollment:       nextCron,
 			detectedFaultsPowerDelta: &powerDeltaClaim,
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -2354,6 +2398,7 @@ func TestDeclareFaults(t *testing.T) {
 		advanceDeadline(rt, actor, &cronConfig{
 			continuedFaultsPenalty: ongoingPenalty,
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -2384,6 +2429,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		p, err := dl.LoadPartition(rt.AdtStore(), pIdx)
 		require.NoError(t, err)
 		assert.Equal(t, p.Faults, p.Recoveries)
+		actor.checkState(rt)
 	})
 
 	t.Run("recovery must pay back fee debt", func(t *testing.T) {
@@ -2435,6 +2481,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		assert.Equal(t, p.Faults, p.Recoveries)
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
+		actor.checkState(rt)
 	})
 
 	t.Run("recovery fails during active consensus fault", func(t *testing.T) {
@@ -2457,6 +2504,7 @@ func TestDeclareRecoveries(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "recovery not allowed during active consensus fault", func() {
 			actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), big.Zero())
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -2498,6 +2546,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, fmt.Sprintf("cannot reduce sector %d's expiration", sector.SectorNumber), func() {
 			actor.extendSectors(rt, params)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("rejects extension too far in future", func(t *testing.T) {
@@ -2527,6 +2576,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, expectedMessage, func() {
 			actor.extendSectors(rt, params)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("rejects extension past max for seal proof", func(t *testing.T) {
@@ -2574,6 +2624,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "total sector lifetime", func() {
 			actor.extendSectors(rt, params)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("updates expiration with valid params", func(t *testing.T) {
@@ -2617,6 +2668,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		empty, err = expirationSet.IsEmpty()
 		require.NoError(t, err)
 		assert.False(t, empty)
+		actor.checkState(rt)
 	})
 
 	t.Run("updates many sectors", func(t *testing.T) {
@@ -2704,6 +2756,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}))
 			assert.EqualValues(t, sectorCount/2, extendedTotal)
 		}
+		actor.checkState(rt)
 	})
 
 	t.Run("supports extensions off deadline boundary", func(t *testing.T) {
@@ -2757,6 +2810,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 			expiredSectorsPowerDelta:  &pwr,
 			expiredSectorsPledgeDelta: newSector.InitialPledge.Neg(),
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -2809,6 +2863,7 @@ func TestTerminateSectors(t *testing.T) {
 			// expect pledge requirement to have been decremented
 			assert.Equal(t, big.Zero(), st.InitialPledge)
 		}
+		actor.checkState(rt)
 	})
 
 	t.Run("charges correct fee for young termination of committed capacity upgrade", func(t *testing.T) {
@@ -2864,6 +2919,7 @@ func TestTerminateSectors(t *testing.T) {
 
 		sectors := bf(uint64(newSector.SectorNumber))
 		actor.terminateSectors(rt, sectors, expectedFee)
+		actor.checkState(rt)
 	})
 }
 
@@ -2879,6 +2935,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		// withdraw 1% of balance
 		actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if miner can't repay fee debt", func(t *testing.T) {
@@ -2891,6 +2948,7 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
 			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("withdraw only what we can after fee debt", func(t *testing.T) {
@@ -2905,6 +2963,7 @@ func TestWithdrawBalance(t *testing.T) {
 		requested := rt.Balance()
 		expectedWithdraw := big.Sub(requested, feeDebt)
 		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
+		actor.checkState(rt)
 	})
 }
 
@@ -2927,6 +2986,7 @@ func TestRepayDebts(t *testing.T) {
 
 		st = getState(rt)
 		assert.Equal(t, feeDebt, st.FeeDebt)
+		actor.checkState(rt)
 	})
 
 	t.Run("pay debt entirely from balance", func(t *testing.T) {
@@ -2944,6 +3004,7 @@ func TestRepayDebts(t *testing.T) {
 
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
+		actor.checkState(rt)
 	})
 
 	t.Run("partially repay debt", func(t *testing.T) {
@@ -2961,6 +3022,7 @@ func TestRepayDebts(t *testing.T) {
 
 		st = getState(rt)
 		assert.Equal(t, big.Div(feeDebt, big.NewInt(4)), st.FeeDebt)
+		actor.checkState(rt)
 	})
 
 	t.Run("pay debt partially from vested funds", func(t *testing.T) {
@@ -2985,6 +3047,7 @@ func TestRepayDebts(t *testing.T) {
 
 		st = getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
+		actor.checkState(rt)
 	})
 }
 
@@ -3000,6 +3063,7 @@ func TestChangePeerID(t *testing.T) {
 
 		newPID := tutil.MakePID("test-change-peer-id")
 		actor.changePeerID(rt, newPID)
+		actor.checkState(rt)
 	})
 }
 
@@ -3073,6 +3137,7 @@ func TestCompactPartitions(t *testing.T) {
 		assertSectorExists(rt.AdtStore(), st, sector4, partId, deadlineId)
 
 		assertSectorNotFound(rt.AdtStore(), st, sector1)
+		actor.checkState(rt)
 	})
 
 	t.Run("fail to compact partitions with faults", func(T *testing.T) {
@@ -3093,6 +3158,7 @@ func TestCompactPartitions(t *testing.T) {
 			partitions := bitfield.NewFromSet([]uint64{partId})
 			actor.compactPartitions(rt, deadlineId, partitions)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fails to compact partitions with unproven sectors", func(T *testing.T) {
@@ -3109,6 +3175,7 @@ func TestCompactPartitions(t *testing.T) {
 			partitions := bitfield.NewFromSet([]uint64{partId})
 			actor.compactPartitions(rt, deadlineId, partitions)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if deadline is equal to WPoStPeriodDeadlines", func(t *testing.T) {
@@ -3118,6 +3185,7 @@ func TestCompactPartitions(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.compactPartitions(rt, miner.WPoStPeriodDeadlines, bitfield.New())
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if deadline is not mutable", func(t *testing.T) {
@@ -3129,6 +3197,7 @@ func TestCompactPartitions(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.compactPartitions(rt, 1, bitfield.New())
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if partition count is above limit", func(t *testing.T) {
@@ -3141,6 +3210,7 @@ func TestCompactPartitions(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.compactPartitions(rt, 1, bf)
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -3157,6 +3227,7 @@ func TestCheckSectorProven(t *testing.T) {
 		sectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, [][]abi.DealID{{10}})
 
 		actor.checkSectorProven(rt, sectors[0].SectorNumber)
+		actor.checkState(rt)
 	})
 
 	t.Run("fails is sector is not found", func(t *testing.T) {
@@ -3169,6 +3240,7 @@ func TestCheckSectorProven(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.checkSectorProven(rt, abi.SectorNumber(1))
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -3186,6 +3258,7 @@ func TestChangeMultiAddrs(t *testing.T) {
 		addr2 := abi.Multiaddrs([]byte("addr2"))
 
 		actor.changeMultiAddrs(rt, []abi.Multiaddrs{addr1, addr2})
+		actor.checkState(rt)
 	})
 
 	t.Run("clear multiaddrs by passing in empty slice", func(t *testing.T) {
@@ -3196,6 +3269,7 @@ func TestChangeMultiAddrs(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		actor.changeMultiAddrs(rt, nil)
+		actor.checkState(rt)
 	})
 }
 
@@ -3250,6 +3324,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		// assert control addresses are unchanged
 		require.NotEmpty(t, info.ControlAddresses)
 		require.Equal(t, originalControlAddrs, info.ControlAddresses)
+		actor.checkState(rt)
 	})
 
 	t.Run("change cannot be overridden", func(t *testing.T) {
@@ -3284,6 +3359,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		// assert original change is effected
 		info = actor.getInfo(rt)
 		assert.Equal(t, newWorker1, info.Worker)
+		actor.checkState(rt)
 	})
 
 	t.Run("successfully resolve AND change ONLY control addresses", func(t *testing.T) {
@@ -3307,6 +3383,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, actor.worker, info.Worker)
 		require.Nil(t, info.PendingWorkerKey)
+		actor.checkState(rt)
 	})
 
 	t.Run("successfully change both worker AND control addresses", func(t *testing.T) {
@@ -3337,6 +3414,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		require.NotEmpty(t, info.ControlAddresses)
 		require.Equal(t, []addr.Address{c1, c2}, info.ControlAddresses)
 		require.Equal(t, newWorker, info.Worker)
+		actor.checkState(rt)
 	})
 
 	t.Run("successfully clear all control addresses", func(t *testing.T) {
@@ -3350,6 +3428,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		info, err := st.GetInfo(adt.AsStore(rt))
 		require.NoError(t, err)
 		require.Empty(t, info.ControlAddresses)
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if control addresses length exceeds maximum limit", func(t *testing.T) {
@@ -3364,6 +3443,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "control addresses length", func() {
 			actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), controlAddrs)
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if unable to resolve control address", func(t *testing.T) {
@@ -3377,6 +3457,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if unable to resolve worker address", func(t *testing.T) {
@@ -3391,6 +3472,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if worker public key is not BLS", func(t *testing.T) {
@@ -3408,6 +3490,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if new worker address does not have a code", func(t *testing.T) {
@@ -3421,6 +3504,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("fails if new worker is not an account actor", func(t *testing.T) {
@@ -3435,6 +3519,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("fails when caller is not the owner", func(t *testing.T) {
@@ -3452,6 +3537,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 			rt.Call(actor.a.ChangeWorkerAddress, param)
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 }
 
@@ -3480,6 +3566,7 @@ func TestConfirmUpdateWorkerKey(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, info.Worker, newWorker)
 		require.Nil(t, info.PendingWorkerKey)
+		actor.checkState(rt)
 	})
 
 	t.Run("does nothing before the effective date", func(t *testing.T) {
@@ -3499,6 +3586,7 @@ func TestConfirmUpdateWorkerKey(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, actor.worker, info.Worker)
 		require.NotNil(t, info.PendingWorkerKey)
+		actor.checkState(rt)
 	})
 
 	t.Run("does nothing when no update is set", func(t *testing.T) {
@@ -3513,6 +3601,7 @@ func TestConfirmUpdateWorkerKey(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, actor.worker, info.Worker)
 		require.Nil(t, info.PendingWorkerKey)
+		actor.checkState(rt)
 	})
 }
 
@@ -3532,6 +3621,7 @@ func TestReportConsensusFault(t *testing.T) {
 		_ = sectorInfo
 
 		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
+		actor.checkState(rt)
 	})
 
 	t.Run("Report consensus fault updates consensus fault reported field", func(t *testing.T) {
@@ -3552,6 +3642,7 @@ func TestReportConsensusFault(t *testing.T) {
 		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
+		actor.checkState(rt)
 	})
 
 	t.Run("Double report of consensus fault fails", func(t *testing.T) {
@@ -3600,6 +3691,7 @@ func TestReportConsensusFault(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
 			actor.reportConsensusFault(rt, addr.TestAddress, fault4)
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -3640,6 +3732,7 @@ func TestApplyRewards(t *testing.T) {
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)
+		actor.checkState(rt)
 	})
 
 	t.Run("penalty is burnt", func(t *testing.T) {
@@ -3651,6 +3744,7 @@ func TestApplyRewards(t *testing.T) {
 		rt.SetBalance(big.Add(rt.Balance(), reward))
 
 		actor.applyRewards(rt, reward, penalty)
+		actor.checkState(rt)
 	})
 
 	t.Run("penalty is partially burnt and stored as fee debt", func(t *testing.T) {
@@ -3684,6 +3778,7 @@ func TestApplyRewards(t *testing.T) {
 		st = getState(rt)
 		// fee debt =  penalty - reward - initial balance = 3*amt - 2*amt = amt
 		assert.Equal(t, amt, st.FeeDebt)
+		actor.checkState(rt)
 	})
 
 	// The system should not reach this state since fee debt removes mining eligibility
@@ -3740,8 +3835,8 @@ func TestApplyRewards(t *testing.T) {
 		assert.True(t, st.IsDebtFree())
 		// remaining funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
+		actor.checkState(rt)
 	})
-
 }
 
 func TestCompactSectorNumbers(t *testing.T) {
@@ -3775,6 +3870,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 			precommit := actor.makePreCommit(targetSno+2, precommitEpoch-1, expiration, nil)
 			actor.preCommitSector(rt, precommit, preCommitConf{})
 		}
+		actor.checkState(rt)
 	})
 
 	t.Run("owner can also compact sectors", func(t *testing.T) {
@@ -3791,6 +3887,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("one of the control addresses can also compact sectors", func(t *testing.T) {
@@ -3807,6 +3904,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 			MaskSectorNumbers: bf(uint64(targetSno), uint64(targetSno)+1),
 		})
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("fail if caller is not among caller worker or control addresses", func(t *testing.T) {
@@ -3827,6 +3925,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("compacting no sector numbers aborts", func(t *testing.T) {
@@ -3837,6 +3936,7 @@ func TestCompactSectorNumbers(t *testing.T) {
 			// compact nothing
 			actor.compactSectorNumbers(rt, bf())
 		})
+		actor.checkState(rt)
 	})
 }
 
@@ -4054,6 +4154,13 @@ func (h *actorHarness) collectPartitionExpirations(rt *mock.Runtime, partition *
 func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
 	st := getState(rt)
 	return st.LockedFunds
+}
+
+func (h *actorHarness) checkState(rt *mock.Runtime) {
+	st := getState(rt)
+	_, msgs, err := miner.CheckStateInvariants(st, rt.AdtStore())
+	assert.NoError(h.t, err)
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 //

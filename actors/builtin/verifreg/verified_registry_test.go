@@ -2,6 +2,7 @@ package verifreg_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -807,7 +808,7 @@ func (h *verifRegActorTestHarness) checkState(rt *mock.Runtime) {
 	st := h.state(rt)
 	_, msgs, err := verifreg.CheckStateInvariants(st, rt.AdtStore())
 	assert.NoError(h.t, err)
-	assert.True(h.t, msgs.IsEmpty())
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func (h *verifRegActorTestHarness) addNewVerifier(rt *mock.Runtime, a address.Address, allowance verifreg.DataCap) *verifreg.AddVerifierParams {

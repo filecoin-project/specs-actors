@@ -5,18 +5,17 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/util"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 )
@@ -876,168 +875,6 @@ func assertPartitionExpirationQueue(t *testing.T, store adt.Store, partition *mi
 	}
 }
 
-func checkPartitionInvariants(t *testing.T,
-	store adt.Store,
-	partition *miner.Partition,
-	quant miner.QuantSpec,
-	sectorSize abi.SectorSize,
-	sectors []*miner.SectorOnChainInfo,
-) {
-	live, err := partition.LiveSectors()
-	require.NoError(t, err)
-
-	active, err := partition.ActiveSectors()
-	require.NoError(t, err)
-
-	liveSectors := selectSectors(t, sectors, live)
-	unprovenSectors := selectSectors(t, sectors, partition.Unproven)
-
-	// Validate power
-	faultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, partition.Faults))
-	assert.True(t, partition.FaultyPower.Equals(faultyPower), "faulty power was %v, expected %v", partition.FaultyPower, faultyPower)
-	recoveringPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, partition.Recoveries))
-	assert.True(t, partition.RecoveringPower.Equals(recoveringPower), "recovering power was %v, expected %v", partition.RecoveringPower, recoveringPower)
-	livePower := miner.PowerForSectors(sectorSize, liveSectors)
-	assert.True(t, partition.LivePower.Equals(livePower), "live power was %v, expected %v", partition.LivePower, livePower)
-	unprovenPower := miner.PowerForSectors(sectorSize, unprovenSectors)
-	assert.True(t, partition.UnprovenPower.Equals(unprovenPower), "unproven power was %v, expected %v", partition.UnprovenPower, unprovenPower)
-	activePower := livePower.Sub(faultyPower).Sub(unprovenPower)
-	partitionActivePower := partition.ActivePower()
-	assert.True(t, partitionActivePower.Equals(activePower), "active power was %v, expected %v", partitionActivePower, activePower)
-
-	// All recoveries are faults.
-	contains, err := util.BitFieldContainsAll(partition.Faults, partition.Recoveries)
-	require.NoError(t, err)
-	assert.True(t, contains)
-
-	// All faults are live.
-	contains, err = util.BitFieldContainsAll(live, partition.Faults)
-	require.NoError(t, err)
-	assert.True(t, contains)
-
-	// All unproven are live
-	contains, err = util.BitFieldContainsAll(live, partition.Unproven)
-	require.NoError(t, err)
-	assert.True(t, contains)
-
-	// All terminated sectors are part of the partition.
-	contains, err = util.BitFieldContainsAll(partition.Sectors, partition.Terminated)
-	require.NoError(t, err)
-	assert.True(t, contains)
-
-	// Live has no terminated sectors
-	contains, err = util.BitFieldContainsAny(live, partition.Terminated)
-	require.NoError(t, err)
-	assert.False(t, contains)
-
-	// Live contains active sectors
-	contains, err = util.BitFieldContainsAll(live, active)
-	require.NoError(t, err)
-	assert.True(t, contains)
-
-	// Active contains no faults
-	contains, err = util.BitFieldContainsAny(active, partition.Faults)
-	require.NoError(t, err)
-	assert.False(t, contains)
-
-	// Active contains no unproven
-	contains, err = util.BitFieldContainsAny(active, partition.Unproven)
-	require.NoError(t, err)
-	assert.False(t, contains)
-
-	// Ok, now validate that the expiration queue makes sense.
-	{
-		seenSectors := make(map[abi.SectorNumber]bool)
-
-		expQ, err := miner.LoadExpirationQueue(store, partition.ExpirationsEpochs, quant)
-		require.NoError(t, err)
-
-		var exp miner.ExpirationSet
-		err = expQ.ForEach(&exp, func(epoch int64) error {
-			require.Equal(t, quant.QuantizeUp(abi.ChainEpoch(epoch)), abi.ChainEpoch(epoch))
-
-			all, err := bitfield.MergeBitFields(exp.OnTimeSectors, exp.EarlySectors)
-			require.NoError(t, err)
-			active, err := bitfield.SubtractBitField(all, partition.Faults)
-			require.NoError(t, err)
-			faulty, err := bitfield.IntersectBitField(all, partition.Faults)
-			require.NoError(t, err)
-
-			activeSectors := selectSectors(t, liveSectors, active)
-			faultySectors := selectSectors(t, liveSectors, faulty)
-			onTimeSectors := selectSectors(t, liveSectors, exp.OnTimeSectors)
-			earlySectors := selectSectors(t, liveSectors, exp.EarlySectors)
-
-			// Validate that expiration only contains valid sectors.
-			contains, err := util.BitFieldContainsAll(partition.Faults, exp.EarlySectors)
-			require.NoError(t, err)
-			assert.True(t, contains, "all early expirations must be faulty")
-
-			contains, err = util.BitFieldContainsAll(live, exp.OnTimeSectors)
-			require.NoError(t, err)
-			assert.True(t, contains, "all expirations must be live")
-
-			// Validate that sectors are only contained in one
-			// epoch, and that they're contained in a valid epoch.
-			for _, sector := range onTimeSectors {
-				assert.False(t, seenSectors[sector.SectorNumber], "sector already seen")
-				seenSectors[sector.SectorNumber] = true
-				actualEpoch := quant.QuantizeUp(sector.Expiration)
-				assert.Equal(t, actualEpoch, abi.ChainEpoch(epoch))
-			}
-
-			for _, sector := range earlySectors {
-				assert.False(t, seenSectors[sector.SectorNumber], "sector already seen")
-				seenSectors[sector.SectorNumber] = true
-				actualEpoch := quant.QuantizeUp(sector.Expiration)
-				assert.Less(t, epoch, int64(actualEpoch))
-			}
-
-			// Validate power and pledge.
-			activePower := miner.PowerForSectors(sectorSize, activeSectors)
-			assert.True(t, exp.ActivePower.Equals(activePower))
-
-			faultyPower := miner.PowerForSectors(sectorSize, faultySectors)
-			assert.True(t, exp.FaultyPower.Equals(faultyPower))
-
-			onTimePledge := big.Zero()
-			for _, sector := range onTimeSectors {
-				onTimePledge = big.Add(onTimePledge, sector.InitialPledge)
-			}
-			assert.Equal(t, onTimePledge, exp.OnTimePledge)
-
-			return nil
-		})
-		require.NoError(t, err)
-	}
-
-	// Now make sure the early termination queue makes sense.
-	{
-		seenSectors := make(map[uint64]bool)
-
-		earlyQ, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization)
-		require.NoError(t, err)
-
-		err = earlyQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
-			return bf.ForEach(func(i uint64) error {
-				assert.False(t, seenSectors[i], "sector already seen")
-				seenSectors[i] = true
-				return nil
-			})
-		})
-		require.NoError(t, err)
-
-		earlyTerms := bf()
-		for bit := range seenSectors {
-			earlyTerms.Set(bit)
-		}
-
-		contains, err := util.BitFieldContainsAll(partition.Terminated, earlyTerms)
-		require.NoError(t, err)
-		require.True(t, contains)
-	}
-}
-
 func assertPartitionState(t *testing.T,
 	store adt.Store,
 	partition *miner.Partition,
@@ -1057,7 +894,9 @@ func assertPartitionState(t *testing.T,
 	assertBitfieldsEqual(t, unproven, partition.Unproven)
 	assertBitfieldsEqual(t, allSectorIds, partition.Sectors)
 
-	checkPartitionInvariants(t, store, partition, quant, sectorSize, sectors)
+	_, acc, err := miner.CheckPartitionStateInvariants(partition, store, quant, sectorSize, sectorsAsMap(sectors))
+	require.NoError(t, err)
+	assert.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 }
 
 func bf(secNos ...uint64) bitfield.BitField {
@@ -1099,4 +938,12 @@ func rescheduleSectors(t *testing.T, target abi.ChainEpoch, sectors []*miner.Sec
 		output[i] = &cpy
 	}
 	return output
+}
+
+func sectorsAsMap(sectors []*miner.SectorOnChainInfo) map[abi.SectorNumber]*miner.SectorOnChainInfo {
+	m := map[abi.SectorNumber]*miner.SectorOnChainInfo{}
+	for _, s := range sectors {
+		m[s.SectorNumber] = s
+	}
+	return m
 }

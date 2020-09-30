@@ -2,6 +2,7 @@ package init_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -227,7 +228,7 @@ func (h *initHarness) checkState(rt *mock.Runtime) {
 	st := h.state(rt)
 	_, msgs, err := init_.CheckStateInvariants(st, rt.AdtStore())
 	assert.NoError(h.t, err)
-	assert.True(h.t, msgs.IsEmpty())
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func (h *initHarness) constructAndVerify(rt *mock.Runtime) {
