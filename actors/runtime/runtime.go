@@ -262,3 +262,5 @@ func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
 	*b = c.Bytes()
 	return err
 }
+
+type VMActor = rt.VMActor

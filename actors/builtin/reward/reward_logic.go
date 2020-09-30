@@ -3,6 +3,7 @@ package reward
 import (
 	abi "github.com/filecoin-project/go-state-types/abi"
 	big "github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/util/math"
@@ -25,24 +26,35 @@ const (
 // Floor(e^(ln[1 + 200%] / epochsInYear) * 2^128
 // Q.128 formatted number such that f(epoch) = baseExponent^epoch grows 200% in one year of epochs
 // Calculation here: https://www.wolframalpha.com/input/?i=IntegerPart%5BExp%5BLog%5B1%2B200%25%5D%2F%28%28365+days%29%2F%2830+seconds%29%29%5D*2%5E128%5D
-var BaselineExponent = big.MustFromString("340282722551251692435795578557183609728") // Q.128
+var BaselineExponentV0 = big.MustFromString("340282722551251692435795578557183609728") // Q.128
+// Floor(e^(ln[1 + 100%] / epochsInYear) * 2^128
+// Q.128 formatted number such that f(epoch) = baseExponent^epoch grows 100% in one year of epochs
+// Calculation here: https://www.wolframalpha.com/input/?i=IntegerPart%5BExp%5BLog%5B1%2B100%25%5D%2F%28%28365+days%29%2F%2830+seconds%29%29%5D*2%5E128%5D
+var BaselineExponentV3 = big.MustFromString("340282591298641078465964189926313473653") // Q.128
 
 // 1EiB
-var BaselineInitialValue = big.Lsh(big.NewInt(1), 60) // Q.0
+var BaselineInitialValueV0 = big.Lsh(big.NewInt(1), 60) // Q.0
+// 2.5057116798121726 EiB
+var BaselineInitialValueV3 = big.NewInt(2_888_888_880_000_000_000) // Q.0
+
 
 // Initialize baseline power for epoch -1 so that baseline power at epoch 0 is
 // BaselineInitialValue.
 func InitBaselinePower() abi.StoragePower {
-	baselineInitialValue256 := big.Lsh(BaselineInitialValue, 2*math.Precision) // Q.0 => Q.256
-	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent)   // Q.256 / Q.128 => Q.128
-	return big.Rsh(baselineAtMinusOne, math.Precision)                         // Q.128 => Q.0
+	baselineInitialValue256 := big.Lsh(BaselineInitialValueV0, 2*math.Precision) // Q.0 => Q.256
+	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponentV0)   // Q.256 / Q.128 => Q.128
+	return big.Rsh(baselineAtMinusOne, math.Precision)                           // Q.128 => Q.0
 }
 
 // Compute BaselinePower(t) from BaselinePower(t-1) with an additional multiplication
 // of the base exponent.
-func BaselinePowerFromPrev(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
-	thisEpochBaselinePower := big.Mul(prevEpochBaselinePower, BaselineExponent) // Q.0 * Q.128 => Q.128
-	return big.Rsh(thisEpochBaselinePower, math.Precision)                      // Q.128 => Q.0
+func BaselinePowerFromPrev(prevEpochBaselinePower abi.StoragePower, nv network.Version) abi.StoragePower {
+	exponent := BaselineExponentV0
+	if nv >= network.Version3 {
+		exponent = BaselineExponentV3
+	}
+	thisEpochBaselinePower := big.Mul(prevEpochBaselinePower, exponent) // Q.0 * Q.128 => Q.128
+	return big.Rsh(thisEpochBaselinePower, math.Precision)        // Q.128 => Q.0
 }
 
 // These numbers are placeholders, but should be in units of attoFIL, 10^-18 FIL
@@ -117,11 +129,11 @@ func computeBaselineSupply(theta big.Int) big.Int {
 // by calculating the value of ThisEpochBaselinePower that shows up in block at t - 1
 // It multiplies ~t times so it should not be used in actor code directly.  It is exported as
 // convenience for consuming node.
-func SlowConvenientBaselineForEpoch(targetEpoch abi.ChainEpoch) abi.StoragePower {
+func SlowConvenientBaselineForEpoch(targetEpoch abi.ChainEpoch, nv network.Version) abi.StoragePower {
 	baseline := InitBaselinePower()
-	baseline = BaselinePowerFromPrev(baseline) // value in genesis block (for epoch 1)
+	baseline = BaselinePowerFromPrev(baseline, nv) // value in genesis block (for epoch 1)
 	for i := abi.ChainEpoch(1); i < targetEpoch; i++ {
-		baseline = BaselinePowerFromPrev(baseline) // value in block i (for epoch i+1)
+		baseline = BaselinePowerFromPrev(baseline, nv) // value in block i (for epoch i+1)
 	}
 	return baseline
 }

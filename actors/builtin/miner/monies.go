@@ -29,9 +29,11 @@ var SpaceRaceInitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32 <
 
 // FF = BR(t, DeclaredFaultProjectionPeriod)
 // projection period of 2.14 days:  2880 * 2.14 = 6163.2.  Rounded to nearest epoch 6163
-var DeclaredFaultFactorNum = 214
+var DeclaredFaultFactorNumV0 = 214
+var DeclaredFaultFactorNumV3 = 351
 var DeclaredFaultFactorDenom = 100
-var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNum) / DeclaredFaultFactorDenom)
+var DeclaredFaultProjectionPeriodV0 = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNumV0) / DeclaredFaultFactorDenom)
+var DeclaredFaultProjectionPeriodV3 = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNumV3) / DeclaredFaultFactorDenom)
 
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
 var UndeclaredFaultFactorNumV0 = 50
@@ -60,8 +62,13 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate *smoothing.Fi
 // This is the FF(t) penalty for a sector expected to be in the fault state either because the fault was declared or because
 // it has been previously detected by the network.
 // FF(t) = DeclaredFaultFactor * BR(t)
-func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, DeclaredFaultProjectionPeriod)
+func PledgePenaltyForDeclaredFault(rewardEstimate, networkQAPowerEstimate *smoothing.FilterEstimate, qaSectorPower abi.StoragePower,
+	networkVersion network.Version) abi.TokenAmount {
+	projectionPeriod := DeclaredFaultProjectionPeriodV0
+	if networkVersion >= network.Version3 {
+		projectionPeriod = DeclaredFaultProjectionPeriodV3
+	}
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, projectionPeriod)
 }
 
 // This is the SP(t) penalty for a newly faulty sector that has not been declared.

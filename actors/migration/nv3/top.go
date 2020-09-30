@@ -24,8 +24,8 @@ import (
 // Loads and migrates the Filecoin state tree from a root, writing the new state tree blocks into the
 // same store.
 // Returns the new root of the state tree.
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
-	// Setup input and output state tree helpers
+func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid, priorEpoch abi.ChainEpoch) (cid.Cid, error) {
+	// Set up store and state tree.
 	adtStore := adt.WrapStore(ctx, store)
 	tree, err := states.LoadTree(adtStore, root)
 	if err != nil {
@@ -39,7 +39,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid) (
 			return nil // No migration for this actor type
 		}
 
-		headOut, err := migration.MigrateState(ctx, store, actorIn.Head)
+		headOut, err := migration.MigrateState(ctx, store, actorIn.Head, priorEpoch, addr, tree)
 		if err != nil {
 			return xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(actorIn.Code), addr, err)
 		}
@@ -62,9 +62,15 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid) (
 
 // Checks that a state tree is internally consistent.
 // This performs only very basic checks. Versions in v2 will be much more thorough.
-func CheckStateTree(tree states.Tree, expectedBalanceTotal abi.TokenAmount) error {
+func CheckStateTree(ctx context.Context, store cbor.IpldStore, root cid.Cid, priorEpoch abi.ChainEpoch, expectedBalanceTotal abi.TokenAmount) error {
+	adtStore := adt.WrapStore(ctx, store)
+	tree, err := states.LoadTree(adtStore, root)
+	if err != nil {
+		return err
+	}
+
 	balanceTotal := big.Zero()
-	if err := tree.ForEach(func(addr address.Address, actor *states.Actor) error {
+	if err = tree.ForEach(func(addr address.Address, actor *states.Actor) error {
 		balanceTotal = big.Add(balanceTotal, actor.Balance)
 		return nil
 	}); err != nil {
