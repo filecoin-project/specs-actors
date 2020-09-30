@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/util"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 )
@@ -942,8 +941,8 @@ func (s expectedDeadlineState) withPartitions(partitions ...bitfield.BitField) e
 
 // Assert that the deadline's state matches the expected state.
 func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.Deadline) {
-	_, faults, recoveries, terminations, unproven, partitions := checkDeadlineInvariants(
-		t, store, dl, s.quant, s.sectorSize, s.partitionSize, s.sectors,
+	_, faults, recoveries, terminations, unproven := checkDeadlineInvariants(
+		t, store, dl, s.quant, s.sectorSize, s.sectors,
 	)
 
 	assertBitfieldsEqual(t, s.faults, faults)
@@ -952,10 +951,15 @@ func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.D
 	assertBitfieldsEqual(t, s.unproven, unproven)
 	assertBitfieldsEqual(t, s.posts, dl.PostSubmissions)
 
-	require.Equal(t, len(s.partitionSectors), len(partitions), "unexpected number of partitions")
-
+	partitions, err := dl.PartitionsArray(store)
+	require.NoError(t, err)
+	require.Equal(t, uint64(len(s.partitionSectors)), partitions.Length(), "unexpected number of partitions")
 	for i, partSectors := range s.partitionSectors {
-		assertBitfieldsEqual(t, partSectors, partitions[i])
+		var partition miner.Partition
+		found, err := partitions.Get(uint64(i), &partition)
+		require.NoError(t, err)
+		require.True(t, found)
+		assertBitfieldsEqual(t, partSectors, partition.Sectors)
 	}
 }
 
@@ -963,7 +967,7 @@ func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.D
 // recoveries, terminations, and partition/sector assignments.
 func checkDeadlineInvariants(
 	t *testing.T, store adt.Store, dl *miner.Deadline,
-	quant miner.QuantSpec, ssize abi.SectorSize, partitionSize uint64,
+	quant miner.QuantSpec, ssize abi.SectorSize,
 	sectors []*miner.SectorOnChainInfo,
 ) (
 	allSectors bitfield.BitField,
@@ -971,118 +975,15 @@ func checkDeadlineInvariants(
 	allRecoveries bitfield.BitField,
 	allTerminations bitfield.BitField,
 	allUnproven bitfield.BitField,
-	partitionSectors []bitfield.BitField,
 ) {
-	partitions, err := dl.PartitionsArray(store)
+	summary, msgs, err := miner.CheckDeadlineStateInvariants(dl, store, quant, ssize, sectorsAsMap(sectors))
 	require.NoError(t, err)
+	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 
-	expectedDeadlineExpQueue := make(map[abi.ChainEpoch][]uint64)
-	var partitionsWithEarlyTerminations []uint64
-
-	allSectors = bitfield.NewFromSet(nil)
-	allFaults = bitfield.NewFromSet(nil)
-	allRecoveries = bitfield.NewFromSet(nil)
-	allTerminations = bitfield.NewFromSet(nil)
-	allUnproven = bitfield.NewFromSet(nil)
-	allFaultyPower := miner.NewPowerPairZero()
-
-	expectPartIndex := int64(0)
-	var partition miner.Partition
-	err = partitions.ForEach(&partition, func(partIdx int64) error {
-		// Assert sequential partitions.
-		require.Equal(t, expectPartIndex, partIdx)
-		expectPartIndex++
-
-		partitionSectors = append(partitionSectors, partition.Sectors)
-
-		contains, err := util.BitFieldContainsAny(allSectors, partition.Sectors)
-		require.NoError(t, err)
-		require.False(t, contains, "duplicate sectors in deadline")
-
-		allSectors, err = bitfield.MergeBitFields(allSectors, partition.Sectors)
-		require.NoError(t, err)
-
-		allFaults, err = bitfield.MergeBitFields(allFaults, partition.Faults)
-		require.NoError(t, err)
-
-		allRecoveries, err = bitfield.MergeBitFields(allRecoveries, partition.Recoveries)
-		require.NoError(t, err)
-
-		allTerminations, err = bitfield.MergeBitFields(allTerminations, partition.Terminated)
-		require.NoError(t, err)
-
-		allUnproven, err = bitfield.MergeBitFields(allUnproven, partition.Unproven)
-		require.NoError(t, err)
-
-		allFaultyPower = allFaultyPower.Add(partition.FaultyPower)
-
-		// 1. This will check things like "recoveries is a subset of
-		//    sectors" so we don't need to check that here.
-		// 2. We are intentionally calling this and not
-		//    assertPartitionState. We'll check sector assignment to
-		//    deadline outside.
-		_, msgs, err := miner.CheckPartitionStateInvariants(&partition, store, quant, ssize, sectorsAsMap(sectors))
-		require.NoError(t, err)
-		assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
-
-		earlyTerminated, err := adt.AsArray(store, partition.EarlyTerminated)
-		require.NoError(t, err)
-		if earlyTerminated.Length() > 0 {
-			partitionsWithEarlyTerminations = append(partitionsWithEarlyTerminations, uint64(partIdx))
-		}
-
-		// The partition's expiration queue is already tested by the
-		// partition tests.
-		//
-		// Here, we're making sure it's consistent with the deadline's queue.
-		q, err := adt.AsArray(store, partition.ExpirationsEpochs)
-		require.NoError(t, err)
-		err = q.ForEach(nil, func(epoch int64) error {
-			require.Equal(t, quant.QuantizeUp(abi.ChainEpoch(epoch)), abi.ChainEpoch(epoch))
-			expectedDeadlineExpQueue[abi.ChainEpoch(epoch)] = append(
-				expectedDeadlineExpQueue[abi.ChainEpoch(epoch)],
-				uint64(partIdx),
-			)
-			return nil
-		})
-		require.NoError(t, err)
-
-		return nil
-	})
-	require.NoError(t, err)
-
-	allSectorsCount, err := allSectors.Count()
-	require.NoError(t, err)
-
-	deadSectorsCount, err := allTerminations.Count()
-	require.NoError(t, err)
-
-	require.Equal(t, dl.LiveSectors, allSectorsCount-deadSectorsCount)
-	require.Equal(t, dl.TotalSectors, allSectorsCount)
-	require.True(t, allFaultyPower.Equals(dl.FaultyPower))
-
-	// Validate expiration queue. The deadline expiration queue is a
-	// superset of the partition expiration queues because we never remove
-	// from it.
-	{
-		expirationEpochs, err := adt.AsArray(store, dl.ExpirationsEpochs)
-		require.NoError(t, err)
-		for epoch, partitions := range expectedDeadlineExpQueue {
-			var bf bitfield.BitField
-			found, err := expirationEpochs.Get(uint64(epoch), &bf)
-			require.NoError(t, err)
-			require.True(t, found, "expected to find partitions with expirations at epoch %d", epoch)
-			for _, p := range partitions {
-				present, err := bf.IsSet(p)
-				require.NoError(t, err)
-				assert.True(t, present, "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
-			}
-		}
-	}
-
-	// Validate early terminations.
-	assertBitfieldEquals(t, dl.EarlyTerminations, partitionsWithEarlyTerminations...)
-
-	// returns named values.
+	allSectors = summary.AllSectors
+	allFaults = summary.FaultySectors
+	allRecoveries = summary.RecoveringSectors
+	allTerminations = summary.TerminatedSectors
+	allUnproven = summary.UnprovenSectors
 	return
 }

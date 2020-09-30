@@ -2305,7 +2305,7 @@ func TestDeadlineCron(t *testing.T) {
 		// recorded faulty power is unchanged
 		deadline = actor.getDeadline(rt, dlIdx)
 		assert.True(t, totalPower.Equals(deadline.FaultyPower))
-		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantSpecForDeadline(dlIdx), actor.sectorSize, uint64(4), allSectors)
+		checkDeadlineInvariants(t, rt.AdtStore(), deadline, st.QuantSpecForDeadline(dlIdx), actor.sectorSize, allSectors)
 		actor.checkState(rt)
 	})
 
