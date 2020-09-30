@@ -331,9 +331,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// just skipping all sectors.
 		windowPoStProofType, err := info.SealProofType.RegisteredWindowPoStProof()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine window PoSt type")
-		if len(params.Proofs) > 1 {
-			rt.Abortf(exitcode.ErrIllegalArgument, "expected at most one proof, got %d", len(params.Proofs))
-		} else if len(params.Proofs) == 1 && params.Proofs[0].PoStProof != windowPoStProofType {
+		if len(params.Proofs) != 1 {
+			rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
+		} else if params.Proofs[0].PoStProof != windowPoStProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %s, got proof of type %s", params.Proofs[0], windowPoStProofType)
 		}
 
@@ -404,16 +404,13 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
 
 		if len(sectorInfos) == 0 {
-			// Abort verification if all sectors are (now) faults.
+			// Abort verification if all sectors are (now) faults. There's nothing to prove.
 			// It's not rational for a miner to submit a Window PoSt marking *all* non-faulty sectors as skipped,
 			// since that will just cause them to pay a penalty at deadline end that would otherwise be zero
 			// if they had *not* declared them.
 			rt.Abortf(exitcode.ErrIllegalArgument, "cannot prove partitions with no active sectors")
 		}
-		if len(params.Proofs) == 0 {
-			// The miner _was_ supposed to prove something, but didn't.
-			rt.Abortf(exitcode.ErrIllegalArgument, "no proofs submitted in window PoSt for %d sectors", len(sectorInfos))
-		}
+
 		// Verify the proof.
 		// A failed verification doesn't immediately cause a penalty; the miner can try again.
 		//

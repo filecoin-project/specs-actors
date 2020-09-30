@@ -997,6 +997,8 @@ type AdvanceDeadlineResult struct {
 	PreviouslyFaultyPower PowerPair // Power that was faulty before this advance (including recovering)
 	DetectedFaultyPower   PowerPair // Power of new faults and failed recoveries
 	TotalFaultyPower      PowerPair // Total faulty power after detecting faults (before expiring sectors)
+	// Note that failed recovery power is included in both PreviouslyFaultyPower and DetectedFaultyPower,
+	// so TotalFaultyPower is not simply their sum.
 }
 
 // AdvanceDeadline advances the deadline. It:
@@ -1102,11 +1104,11 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	// Compute penalties all together.
 	// Be very careful when changing these as any changes can affect rounding.
 	return &AdvanceDeadlineResult{
-		pledgeDelta,
-		powerDelta,
-		previouslyFaultyPower,
-		detectedFaultyPower,
-		totalFaultyPower,
+		PledgeDelta:           pledgeDelta,
+		PowerDelta:            powerDelta,
+		PreviouslyFaultyPower: previouslyFaultyPower,
+		DetectedFaultyPower:   detectedFaultyPower,
+		TotalFaultyPower:      totalFaultyPower,
 	}, nil
 }
 

@@ -1334,8 +1334,7 @@ func TestCCUpgrade(t *testing.T) {
 			Build(t)
 		actor.constructAndVerify(rt)
 
-		oldSector, newSector := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
-		_ = newSector
+		oldSector, _ := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
 
 		st := getState(rt)
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
@@ -1759,7 +1758,7 @@ func TestWindowPost(t *testing.T) {
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
 		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
 			rt.Call(actor.a.SubmitWindowedPoSt, &params)
 		})
 		rt.Reset()
@@ -1881,7 +1880,7 @@ func TestWindowPost(t *testing.T) {
 			{Index: pIdx2, Skipped: bf(uint64(infos[1].SectorNumber))},
 		}
 		// Now all sectors are faulty so there's nothing to prove.
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
 			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 		})
 		rt.Reset()
@@ -1919,15 +1918,12 @@ func TestWindowPost(t *testing.T) {
 			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
 		}
 
-		// Now submit PoSt with all sectors skipped. Unproven power won't be activated.
-		cfg := &poStConfig{
-			expectedPowerDelta: miner.NewPowerPairZero(),
-		}
+		// PoSt with all sectors skipped fails to validate, leaving power un-activated.
 		partitions := []miner.PoStPartition{
 			{Index: pIdx, Skipped: bf(uint64(infos[0].SectorNumber), uint64(infos[1].SectorNumber))},
 		}
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
+			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, nil)
 		})
 		rt.Reset()
 
@@ -2192,7 +2188,7 @@ func TestDeadlineCron(t *testing.T) {
 		feeDebt := big.Mul(big.NewInt(400), big.NewInt(1e18))
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
-		// Miner balance = IP, debt repayment covered by IP
+		// Miner balance = IP, debt repayment covered by unlocked funds
 		rt.SetBalance(st.InitialPledge)
 
 		// because we skip forward in state and don't check post, there's no penalty.
