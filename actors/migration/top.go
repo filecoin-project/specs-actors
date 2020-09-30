@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	defaultMaxWorkers = 32
+	defaultMaxWorkers = 16
 	sem               *semaphore.Weighted
 	actOutMu          = &sync.Mutex{}
 )
@@ -93,50 +93,6 @@ var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
 		OutCodeCID:     builtin.StorageMinerActorCodeID,
 		StateMigration: &minerMigrator{},
 	},
-}
-
-func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor, actorsOut *states.Tree, transferCh chan big.Int, errCh chan error) {
-	var headOut, codeOut cid.Cid
-	var err error
-	transfer := big.Zero()
-	// This will be migrated at the end
-	if actorIn.Code == builtin0.VerifiedRegistryActorCodeID {
-		sem.Release(1)
-		return
-	} else {
-		migration := migrations[actorIn.Code]
-		codeOut = migration.OutCodeCID
-		headOut, transfer, err = migration.StateMigration.MigrateState(ctx, store, actorIn.Head, actorIn.Balance)
-	}
-
-	if err != nil {
-		err = xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(codeOut), addr, err)
-		sem.Release(1)
-		errCh <- err
-		return
-	}
-
-	// set up new state root with the migrated state
-	actorOut := states.Actor{
-		Code:       codeOut,
-		Head:       headOut,
-		CallSeqNum: actorIn.CallSeqNum,
-		Balance:    big.Add(actorIn.Balance, transfer),
-	}
-	actOutMu.Lock()
-	err = actorsOut.SetActor(addr, &actorOut)
-	actOutMu.Unlock()
-
-	// Release this worker goroutine before any channel sends to prevent deadlock
-	if err != nil {
-		sem.Release(1)
-		errCh <- err
-	} else if transfer.GreaterThan(big.Zero()) {
-		sem.Release(1)
-		transferCh <- transfer
-	} else {
-		sem.Release(1)
-	}
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
@@ -256,6 +212,50 @@ READEND:
 	}
 
 	return actorsOut.Flush()
+}
+
+func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor, actorsOut *states.Tree, transferCh chan big.Int, errCh chan error) {
+	var headOut, codeOut cid.Cid
+	var err error
+	transfer := big.Zero()
+	// This will be migrated at the end
+	if actorIn.Code == builtin0.VerifiedRegistryActorCodeID {
+		sem.Release(1)
+		return
+	} else {
+		migration := migrations[actorIn.Code]
+		codeOut = migration.OutCodeCID
+		headOut, transfer, err = migration.StateMigration.MigrateState(ctx, store, actorIn.Head, actorIn.Balance)
+	}
+
+	if err != nil {
+		err = xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(codeOut), addr, err)
+		// Release this worker goroutine before any channel sends to prevent deadlock in the rare
+		// case all worker goroutines send an error or transfer and the main thread blocks on the semaphore.
+		sem.Release(1)
+		errCh <- err
+		return
+	}
+
+	// set up new state root with the migrated state
+	actorOut := states.Actor{
+		Code:       codeOut,
+		Head:       headOut,
+		CallSeqNum: actorIn.CallSeqNum,
+		Balance:    big.Add(actorIn.Balance, transfer),
+	}
+	actOutMu.Lock()
+	err = actorsOut.SetActor(addr, &actorOut)
+	actOutMu.Unlock()
+
+	// Release this worker goroutine before any channel sends to prevent deadlock in the rare
+	// case all worker goroutines send an error or transfer and the main thread blocks on the semaphore.
+	sem.Release(1)
+	if err != nil {
+		errCh <- err
+	} else if transfer.GreaterThan(big.Zero()) {
+		transferCh <- transfer
+	}
 }
 
 func InputTreeBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (abi.TokenAmount, error) {
