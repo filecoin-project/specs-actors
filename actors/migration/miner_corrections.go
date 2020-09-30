@@ -3,6 +3,7 @@ package migration
 import (
 	"bytes"
 	"context"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -167,6 +168,8 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, st *miner.State,
 	powerUpdates *PowerUpdates, a addr.Address, epoch abi.ChainEpoch,
 ) error {
+	powerUpdateMu.Lock()
+	defer powerUpdateMu.Unlock()
 	err := m.updateClaim(ctx, store, st, powerUpdates, a)
 	if err != nil {
 		return err

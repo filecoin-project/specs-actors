@@ -307,7 +307,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// migrate miner
 	//
 
-	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch())
+	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.DefaultConfig())
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]runtime.VMActor{}

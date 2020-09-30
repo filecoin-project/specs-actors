@@ -25,6 +25,7 @@ var (
 	defaultMaxWorkers = 16
 	sem               *semaphore.Weighted
 	actOutMu          = &sync.Mutex{}
+	powerUpdateMu     = &sync.Mutex{}
 )
 
 // Config parameterizes a state tree migration
