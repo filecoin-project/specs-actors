@@ -318,6 +318,21 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	v2, err := vm2.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
 	require.NoError(t, err)
 
+	// miner state invariants hold
+	var st1 miner2.State
+	err = v2.GetState(minerAddrs.IDAddress, &st1)
+	require.NoError(t, err)
+
+	_, acc, err := miner2.CheckStateInvariants(&st1, v2.Store())
+	require.NoError(t, err)
+
+	assert.True(t, acc.IsEmpty())
+	if !acc.IsEmpty() {
+		for _, m := range acc.Messages() {
+			fmt.Println(m)
+		}
+	}
+
 	//
 	// Test correction
 	//
@@ -377,12 +392,17 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// miner state invariants hold
 	var st2 miner2.State
 	err = v2.GetState(minerAddrs.IDAddress, &st2)
+	require.NoError(t, err)
 
-	summary, acc, err := miner2.CheckStateInvariants(&st2, v2.Store())
+	_, acc, err = miner2.CheckStateInvariants(&st2, v2.Store())
 	require.NoError(t, err)
 
 	assert.True(t, acc.IsEmpty())
-	fmt.Printf("state summary: %v\n", summary)
+	if !acc.IsEmpty() {
+		for _, m := range acc.Messages() {
+			fmt.Println(m)
+		}
+	}
 }
 
 func publishDeal(t *testing.T, v *vm0.VM, provider, dealClient, minerID addr.Address, dealLabel string,

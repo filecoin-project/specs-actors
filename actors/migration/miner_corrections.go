@@ -3,17 +3,15 @@ package migration
 import (
 	"bytes"
 	"context"
-
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
-	cid "github.com/ipfs/go-cid"
-	cbor "github.com/ipfs/go-ipld-cbor"
-	"golang.org/x/xerrors"
-
+	"github.com/filecoin-project/go-state-types/big"
 	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
+	cid "github.com/ipfs/go-cid"
+	cbor "github.com/ipfs/go-ipld-cbor"
 )
 
 func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, head cid.Cid,
@@ -66,6 +64,28 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 		return false, err
 	}
 
+	missedProvingPeriodCron := false
+	for st.ProvingPeriodStart+miner.WPoStProvingPeriod <= epoch {
+		st.ProvingPeriodStart += miner.WPoStProvingPeriod
+		missedProvingPeriodCron = true
+	}
+	expectedDeadlline := uint64((epoch - st.ProvingPeriodStart) / miner.WPoStChallengeWindow)
+	if expectedDeadlline != st.CurrentDeadline {
+		st.CurrentDeadline = expectedDeadlline
+		missedProvingPeriodCron = true
+	}
+
+	// assert ranges for new proving period and deadline
+	if st.ProvingPeriodStart <= epoch-miner.WPoStProvingPeriod || st.ProvingPeriodStart > epoch {
+		return false, xerrors.Errorf("miner proving period start, %d, is out of range (%d, %d]",
+			st.ProvingPeriodStart, epoch-miner.WPoStProvingPeriod, epoch)
+	}
+	dlInfo := st.DeadlineInfo(epoch)
+	if dlInfo.Open > epoch || dlInfo.Close <= epoch {
+		return false, xerrors.Errorf("priorEpoch is out of expected range of miner deadline [%d, %d) ∌ %d",
+			dlInfo.Open, dlInfo.Close, epoch)
+	}
+
 	deadlinesModified := false
 	err = deadlines.ForEach(adt.WrapStore(ctx, store), func(dlIdx uint64, deadline *miner.Deadline) error {
 		partitions, err := adt.AsArray(adt.WrapStore(ctx, store), deadline.Partitions)
@@ -105,6 +125,10 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 				part.FaultyPower = stats.totalFaultyPower
 				alteredPartitions[uint64(partIdx)] = part
 			}
+			if missedProvingPeriodCron {
+				part.Recoveries = bitfield.New()
+				alteredPartitions[uint64(partIdx)] = part
+			}
 			allFaultyPower = allFaultyPower.Add(part.FaultyPower)
 
 			return nil
@@ -113,6 +137,16 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 			return err
 		}
 
+		// if we've failed to update at last proving period, expect post submissions to contain bits it shouldn't
+		if missedProvingPeriodCron {
+			deadline.PostSubmissions = bitfield.New()
+			if err := deadlines.UpdateDeadline(adt.WrapStore(ctx, store), dlIdx, deadline); err != nil {
+				return err
+			}
+			deadlinesModified = true
+		}
+
+		// if partitions have been updates, record that in deadline
 		if len(alteredPartitions) > 0 {
 			for partIdx, part := range alteredPartitions { // nolint:nomaprange
 				if err := partitions.Set(partIdx, &part); err != nil {
@@ -144,22 +178,6 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 
 	if err = st.SaveDeadlines(adt.WrapStore(ctx, store), deadlines); err != nil {
 		return false, err
-	}
-
-	for st.ProvingPeriodStart+miner.WPoStProvingPeriod <= epoch {
-		st.ProvingPeriodStart += miner.WPoStProvingPeriod
-	}
-	st.CurrentDeadline = uint64((epoch - st.ProvingPeriodStart) / miner.WPoStChallengeWindow)
-
-	// assert ranges for new proving period and deadline
-	if st.ProvingPeriodStart <= epoch-miner.WPoStProvingPeriod || st.ProvingPeriodStart > epoch {
-		return false, xerrors.Errorf("miner proving period start, %d, is out of range (%d, %d]",
-			st.ProvingPeriodStart, epoch-miner.WPoStProvingPeriod, epoch)
-	}
-	dlInfo := st.DeadlineInfo(epoch)
-	if dlInfo.Open > epoch || dlInfo.Close <= epoch {
-		return false, xerrors.Errorf("priorEpoch is out of expected range of miner deadline [%d, %d) ∌ %d",
-			dlInfo.Open, dlInfo.Close, epoch)
 	}
 
 	return true, err
@@ -405,18 +423,18 @@ func correctExpirationSetPowerAndPledge(exs *miner.ExpirationSet, sectors miner.
 	}
 
 	// correct errors in pledge
-	//expectedPledge := big.Zero()
-	//ots, err := sectors.Load(exs.OnTimeSectors)
-	//if err != nil {
-	//	return false, miner.PowerPair{}, miner.PowerPair{}, err
-	//}
-	//for _, sector := range ots {
-	//	expectedPledge = big.Add(expectedPledge, sector.InitialPledge)
-	//}
-	//if !expectedPledge.Equals(exs.OnTimePledge) {
-	//	exs.OnTimePledge = expectedPledge
-	//	modified = true
-	//}
+	expectedPledge := big.Zero()
+	ots, err := sectors.Load(exs.OnTimeSectors)
+	if err != nil {
+		return false, miner.PowerPair{}, miner.PowerPair{}, err
+	}
+	for _, sector := range ots {
+		expectedPledge = big.Add(expectedPledge, sector.InitialPledge)
+	}
+	if !expectedPledge.Equals(exs.OnTimePledge) {
+		exs.OnTimePledge = expectedPledge
+		modified = true
+	}
 
 	return modified, activePower, faultyPower, nil
 }
