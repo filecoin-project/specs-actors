@@ -34,6 +34,9 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	v := vm0.NewVMWithSingletons(ctx, t)
 	addrs := vm0.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(100_000), vm0.FIL), 93837778)
 	worker, unverifiedClient := addrs[0], addrs[1]
+
+	// 2349 sectors is the exact number of sectors we need to fill a deadline, forcing the next sector into
+	// the next deadline.
 	numSectors := uint64(2349)
 
 	minerBalance := big.Mul(big.NewInt(10_000), vm0.FIL)
@@ -81,6 +84,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	v, err := v.WithEpoch(proveTime)
 	require.NoError(t, err)
 
+	// A miner is limited to 200 prove commits per epoch. Prove 200 sectors per epoch until they are all proven.
 	for i := uint64(0); i < numSectors; i += 200 {
 		for j := uint64(0); j < 200 && i+j < numSectors; j++ {
 			proveCommitParams := miner0.ProveCommitSectorParams{
@@ -226,13 +230,9 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 		ChainCommitRand:  []byte("not really random"),
 	})
 
-	fmt.Println(vm0.MinerPower(t, v, minerAddrs.IDAddress))
-
 	v, err = v.WithEpoch(dlInfo.Last())
 	require.NoError(t, err)
 	vm0.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-
-	fmt.Println(vm0.MinerPower(t, v, minerAddrs.IDAddress))
 
 	// advance 14 proving periods submitting PoSts along the way
 	for i := 0; i < 14; i++ {
@@ -282,8 +282,6 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 		v, err = v.WithEpoch(dlInfo.Last())
 		require.NoError(t, err)
 		vm0.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-
-		fmt.Println(vm0.MinerPower(t, v, minerAddrs.IDAddress))
 	}
 
 	// advance a few proving periods and deadlines before running the migration
@@ -382,8 +380,6 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 		v, err = v.WithEpoch(dlInfo.Last())
 		require.NoError(t, err)
 		vm2.ApplyOk(t, v2, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-
-		fmt.Println(vm2.MinerPower(t, v2, minerAddrs.IDAddress))
 	}
 
 	// miner still has power
