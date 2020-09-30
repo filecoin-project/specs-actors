@@ -23,9 +23,9 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
+	vm0 "github.com/filecoin-project/specs-actors/support/vm"
 	exported2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/exported"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	vm0 "github.com/filecoin-project/specs-actors/v2/actors/migration/vm"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
