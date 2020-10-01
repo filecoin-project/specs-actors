@@ -305,7 +305,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// migrate miner
 	//
 
-	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.Config{MaxWorkers: 1}) // this will break with more workers because v.Store is not threadsafe
+	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.DefaultConfig()) 
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]runtime.VMActor{}
