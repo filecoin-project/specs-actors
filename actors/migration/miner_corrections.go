@@ -118,6 +118,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 			}
 			if missedProvingPeriodCron {
 				part.Recoveries = bitfield.New()
+				part.RecoveringPower = miner.NewPowerPairZero()
 				alteredPartitions[uint64(partIdx)] = part
 			}
 			allFaultyPower = allFaultyPower.Add(part.FaultyPower)
