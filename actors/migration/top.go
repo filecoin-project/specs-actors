@@ -186,15 +186,15 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 	// Iterate all actors in old state root
 	// Set new state root actors as we go
-	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
+	err = actorsIn.ForEach(func(addr address.Address, actorIn *states0.Actor) error {
 		// Hand off migration of one actor, blocking if we are out of worker goroutines
 		if err := sem.Acquire(ctx, 1); err != nil {
 			return err
 		}
-		go func() {
-			migrateOneActor(ctx, store, addr, *actorIn, actorsOut, priorEpoch, powerUpdates, syncCtx)
+		go func(actorIn states0.Actor) {
+			migrateOneActor(ctx, store, addr, actorIn, priorEpoch, syncCtx)
 			sem.Release(1)
-		}()
+		}(*actorIn) // race conditions appear unless we dereference outside the closure
 
 		// Read from err and transfer channels without blocking.
 		// Terminate on the first error.
@@ -298,8 +298,8 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	return actorsOut.Flush()
 }
 
-func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor,
-	actorsOut *states.Tree, priorEpoch abi.ChainEpoch, powerUpdates *PowerUpdates, syncCtx *SyncContext,
+func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states0.Actor,
+	priorEpoch abi.ChainEpoch, syncCtx *SyncContext,
 ) {
 	// This will be migrated at the end
 	if _, found := deferredMigrations[actorIn.Code]; found {
