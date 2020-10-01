@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
-	xerrors "golang.org/x/xerrors"
 
 	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
@@ -76,17 +75,6 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 	if expectedDeadlline != st.CurrentDeadline {
 		st.CurrentDeadline = expectedDeadlline
 		missedProvingPeriodCron = true
-	}
-
-	// assert ranges for new proving period and deadline
-	if st.ProvingPeriodStart <= epoch-miner.WPoStProvingPeriod || st.ProvingPeriodStart > epoch {
-		return false, xerrors.Errorf("miner proving period start, %d, is out of range (%d, %d]",
-			st.ProvingPeriodStart, epoch-miner.WPoStProvingPeriod, epoch)
-	}
-	dlInfo := st.DeadlineInfo(epoch)
-	if dlInfo.Open > epoch || dlInfo.Close <= epoch {
-		return false, xerrors.Errorf("priorEpoch is out of expected range of miner deadline [%d, %d) ∌ %d",
-			dlInfo.Open, dlInfo.Close, epoch)
 	}
 
 	deadlinesModified := false
