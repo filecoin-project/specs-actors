@@ -20,7 +20,8 @@ import (
 )
 
 type powerMigrator struct {
-	actorsIn *states0.Tree
+	actorsIn     *states0.Tree
+	powerUpdates *PowerUpdates
 }
 
 func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
@@ -29,7 +30,7 @@ func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		return cid.Undef, big.Zero(), err
 	}
 
-	cronEventsRoot, err := m.updateCronEvents(ctx, store, inState.CronEventQueue, info.powerUpdates)
+	cronEventsRoot, err := m.updateCronEvents(ctx, store, inState.CronEventQueue, m.powerUpdates)
 	if err != nil {
 		return cid.Undef, big.Zero(), xerrors.Errorf("could not update cron events: %w", err)
 	}
@@ -39,7 +40,7 @@ func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		return cid.Undef, big.Zero(), xerrors.Errorf("cron events: %w", err)
 	}
 
-	claimsRoot, err := m.updateClaims(ctx, store, inState.Claims, info.powerUpdates)
+	claimsRoot, err := m.updateClaims(ctx, store, inState.Claims, m.powerUpdates)
 	if err != nil {
 		return cid.Undef, big.Zero(), xerrors.Errorf("claims: %w", err)
 	}

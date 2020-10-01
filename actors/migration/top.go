@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/xerrors"
 
 	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -19,12 +20,28 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 )
 
+var (
+	defaultMaxWorkers = 16
+)
+
+// SyncCtx traverses the migration to coordinate safe multithreaded state processing
+type SyncContext struct {
+	sem           semaphore.Weighted
+	actorsOutCh   chan actorUpdate
+	powerUpdateCh chan PowerUpdater
+	transferCh    chan big.Int
+	errCh         chan error
+}
+
 // Config parameterizes a state tree migration
 type Config struct {
+	MaxWorkers int
 }
 
 func DefaultConfig() Config {
-	return Config{}
+	return Config{
+		MaxWorkers: defaultMaxWorkers,
+	}
 }
 
 type PowerUpdates struct {
@@ -32,11 +49,40 @@ type PowerUpdates struct {
 	crons  map[abi.ChainEpoch][]power0.CronEvent
 }
 
+type PowerUpdater interface {
+	Apply(*PowerUpdates)
+}
+
+type claimUpdate struct {
+	addr  address.Address
+	claim power0.Claim
+}
+
+// Overwrite claim
+func (c claimUpdate) Apply(p *PowerUpdates) {
+	p.claims[c.addr] = c.claim
+}
+
+type cronUpdate struct {
+	epoch abi.ChainEpoch
+	event power0.CronEvent
+}
+
+type actorUpdate struct {
+	addr     address.Address
+	actorOut states.Actor
+}
+
+// Append cron event
+func (c cronUpdate) Apply(p *PowerUpdates) {
+	p.crons[c.epoch] = append(p.crons[c.epoch], c.event)
+}
+
 type MigrationInfo struct {
-	address      address.Address // actor's address
-	balance      abi.TokenAmount // actor's balance
-	priorEpoch   abi.ChainEpoch  // epoch of last state transition prior to migration
-	powerUpdates *PowerUpdates   // used to update power and add cron tasks to power actor state
+	address    address.Address // actor's address
+	balance    abi.TokenAmount // actor's balance
+	priorEpoch abi.ChainEpoch  // epoch of last state transition prior to migration
+	syncCtx    *SyncContext    // used to coordinate safe multithreading
 }
 
 type StateMigration interface {
@@ -128,24 +174,51 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		crons:  make(map[abi.ChainEpoch][]power0.CronEvent),
 	}
 
+	// Setup synchronization
+	syncCtx := &SyncContext{
+		sem: *semaphore.NewWeighted(int64(cfg.MaxWorkers)),
+		// For a channel sent on by at most n threads at most k times, a buffer
+		// size of n*k ensures that all threads run to completion once started.
+		actorsOutCh:   make(chan actorUpdate, cfg.MaxWorkers),
+		powerUpdateCh: make(chan PowerUpdater, 2*cfg.MaxWorkers),
+		transferCh:    make(chan big.Int, cfg.MaxWorkers),
+		errCh:         make(chan error, cfg.MaxWorkers),
+	}
+
 	// Iterate all actors in old state root
 	// Set new state root actors as we go
 	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
-		transfer, err := migrateOneActor(ctx, store, addr, *actorIn, actorsOut, priorEpoch, powerUpdates)
-		if err != nil {
+		// Hand off migration of one actor, blocking if we are out of worker goroutines
+		if err := syncCtx.sem.Acquire(ctx, 1); err != nil {
 			return err
 		}
+		go migrateOneActor(ctx, store, addr, *actorIn, actorsOut, priorEpoch, powerUpdates, syncCtx)
+
+		// Read from err and transfer channels without blocking.
+		// Terminate on the first error.
 		// Accumulate funds transfered from burnt to miners.
-		transferFromBurnt = big.Add(transferFromBurnt, transfer)
+		if err := accumulateResults(syncCtx, transferFromBurnt, powerUpdates, actorsOut); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
+		return cid.Undef, err
+	}
+	// Wait on all jobs finishing
+	if err := syncCtx.sem.Acquire(ctx, int64(cfg.MaxWorkers)); err != nil {
+		return cid.Undef, xerrors.Errorf("failed to wait for all worker jobs: %w", err)
+	}
+	// Check for outstanding transfers and errors
+	if err := accumulateResults(syncCtx, transferFromBurnt, powerUpdates, actorsOut); err != nil {
 		return cid.Undef, err
 	}
 
 	// Migrate Power actor
 	pm := migrations[builtin0.StoragePowerActorCodeID].StateMigration.(*powerMigrator)
 	pm.actorsIn = actorsIn
+	pm.powerUpdates = powerUpdates
 	powerActorIn, found, err := actorsIn.GetActor(builtin0.StoragePowerActorAddr)
 	if err != nil {
 		return cid.Undef, err
@@ -154,10 +227,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return cid.Undef, xerrors.Errorf("could not find power actor in state")
 	}
 	powerActorHeadOut, transfer, err := pm.MigrateState(ctx, store, powerActorIn.Head, MigrationInfo{
-		address:      builtin0.StoragePowerActorAddr,
-		balance:      powerActorIn.Balance,
-		priorEpoch:   priorEpoch,
-		powerUpdates: powerUpdates,
+		address:    builtin0.StoragePowerActorAddr,
+		balance:    powerActorIn.Balance,
+		priorEpoch: priorEpoch,
+		syncCtx:    syncCtx,
 	})
 	if err != nil {
 		return cid.Undef, err
@@ -184,10 +257,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return cid.Undef, xerrors.Errorf("could not find verifreg actor in state")
 	}
 	verifRegHeadOut, transfer, err := vm.MigrateState(ctx, store, verifRegActorIn.Head, MigrationInfo{
-		address:      builtin0.VerifiedRegistryActorAddr,
-		balance:      verifRegActorIn.Balance,
-		priorEpoch:   priorEpoch,
-		powerUpdates: powerUpdates,
+		address:    builtin0.VerifiedRegistryActorAddr,
+		balance:    verifRegActorIn.Balance,
+		priorEpoch: priorEpoch,
+		syncCtx:    syncCtx,
 	})
 	if err != nil {
 		return cid.Undef, err
@@ -223,23 +296,28 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	return actorsOut.Flush()
 }
 
-func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor, actorsOut *states.Tree,
-	priorEpoch abi.ChainEpoch, powerUpdates *PowerUpdates,
-) (big.Int, error) {
+func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor,
+	actorsOut *states.Tree, priorEpoch abi.ChainEpoch, powerUpdates *PowerUpdates, syncCtx *SyncContext,
+) {
+	defer syncCtx.sem.Release(1)
 	// This will be migrated at the end
 	if _, found := deferredMigrations[actorIn.Code]; found {
-		return big.Zero(), nil
+		return
 	}
+
 	migration := migrations[actorIn.Code]
 	codeOut := migration.OutCodeCID
 	headOut, transfer, err := migration.StateMigration.MigrateState(ctx, store, actorIn.Head, MigrationInfo{
-		address:      addr,
-		balance:      actorIn.Balance,
-		priorEpoch:   priorEpoch,
-		powerUpdates: powerUpdates,
+		address:    addr,
+		balance:    actorIn.Balance,
+		priorEpoch: priorEpoch,
+		syncCtx:    syncCtx,
 	})
+
 	if err != nil {
-		return big.Zero(), xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(codeOut), addr, err)
+		err = xerrors.Errorf("state migration error on %s actor at addr %s: %w", builtin.ActorNameByCode(codeOut), addr, err)
+		syncCtx.errCh <- err
+		return
 	}
 
 	// set up new state root with the migrated state
@@ -249,11 +327,32 @@ func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Add
 		CallSeqNum: actorIn.CallSeqNum,
 		Balance:    big.Add(actorIn.Balance, transfer),
 	}
-	err = actorsOut.SetActor(addr, &actorOut)
-	if err != nil {
-		return big.Zero(), err
+	syncCtx.actorsOutCh <- actorUpdate{addr: addr, actorOut: actorOut}
+	if transfer.GreaterThan(big.Zero()) {
+		syncCtx.transferCh <- transfer
 	}
-	return transfer, nil
+}
+
+func accumulateResults(syncCtx *SyncContext, transferAcc big.Int, powerUpdatesAcc *PowerUpdates, actorsOut *states.Tree) error {
+	// Read and process worker results from all channels
+READLOOP:
+	for {
+		select {
+		case err := <-syncCtx.errCh:
+			return err
+		case transfer := <-syncCtx.transferCh:
+			transferAcc = big.Add(transferAcc, transfer)
+		case pwrUpdate := <-syncCtx.powerUpdateCh:
+			pwrUpdate.Apply(powerUpdatesAcc)
+		case actorUpdate := <-syncCtx.actorsOutCh:
+			if err := actorsOut.SetActor(actorUpdate.addr, &actorUpdate.actorOut); err != nil {
+				return err
+			}
+		default:
+			break READLOOP
+		}
+	}
+	return nil
 }
 
 func InputTreeBalance(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid) (abi.TokenAmount, error) {

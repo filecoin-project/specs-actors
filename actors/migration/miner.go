@@ -22,7 +22,7 @@ type minerMigrator struct {
 func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	transfer := big.Zero()
 	// first correct issues with miners due problems in old code
-	head, err := m.CorrectState(ctx, store, head, info.priorEpoch, info.address, info.powerUpdates)
+	head, err := m.CorrectState(ctx, store, head, info.priorEpoch, info.address, info.syncCtx)
 	if err != nil {
 		return cid.Undef, big.Zero(), err
 	}

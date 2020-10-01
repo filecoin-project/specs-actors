@@ -17,7 +17,7 @@ import (
 )
 
 func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, head cid.Cid,
-	priorEpoch abi.ChainEpoch, a addr.Address, powerUpdates *PowerUpdates,
+	priorEpoch abi.ChainEpoch, a addr.Address, syncCtx *SyncContext,
 ) (cid.Cid, error) {
 
 	epoch := priorEpoch + 1
@@ -54,7 +54,7 @@ func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, 
 	}
 
 	if powerClaimSuspect {
-		err := m.updatePowerState(ctx, adtStore, &st, powerUpdates, a, epoch)
+		err := m.updatePowerState(ctx, adtStore, syncCtx, &st, a, epoch)
 		if err != nil {
 			return cid.Undef, err
 		}
@@ -185,15 +185,15 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 	return true, err
 }
 
-func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, st *miner.State,
-	powerUpdates *PowerUpdates, a addr.Address, epoch abi.ChainEpoch,
+func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, syncCtx *SyncContext, st *miner.State,
+	a addr.Address, epoch abi.ChainEpoch,
 ) error {
-	err := m.updateClaim(ctx, store, st, powerUpdates, a)
+	err := m.updateClaim(ctx, store, st, syncCtx, a)
 	if err != nil {
 		return err
 	}
 
-	err = m.updateProvingPeriodCron(a, st, epoch, store, powerUpdates)
+	err = m.updateProvingPeriodCron(a, st, epoch, store, syncCtx)
 	if err != nil {
 		return err
 	}
@@ -201,7 +201,7 @@ func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, s
 	return nil
 }
 
-func (m *minerMigrator) updateProvingPeriodCron(a addr.Address, st *miner.State, epoch abi.ChainEpoch, store adt.Store, powerUpdates *PowerUpdates) error {
+func (m *minerMigrator) updateProvingPeriodCron(a addr.Address, st *miner.State, epoch abi.ChainEpoch, store adt.Store, syncCtx *SyncContext) error {
 	var buf bytes.Buffer
 	payload := &miner.CronEventPayload{
 		EventType: miner.CronEventProvingDeadline,
@@ -212,15 +212,19 @@ func (m *minerMigrator) updateProvingPeriodCron(a addr.Address, st *miner.State,
 	}
 
 	dlInfo := st.DeadlineInfo(epoch)
-	powerUpdates.crons[dlInfo.Last()] = append(powerUpdates.crons[dlInfo.Last()], power0.CronEvent{
-		MinerAddr:       a,
-		CallbackPayload: buf.Bytes(),
-	})
+	u := cronUpdate{
+		epoch: dlInfo.Last(),
+		event: power0.CronEvent{
+			MinerAddr:       a,
+			CallbackPayload: buf.Bytes(),
+		},
+	}
+	syncCtx.powerUpdateCh <- u
 
 	return nil
 }
 
-func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *miner.State, powerUpdates *PowerUpdates, a addr.Address) error {
+func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *miner.State, syncCtx *SyncContext, a addr.Address) error {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return err
@@ -242,11 +246,14 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 	if err != nil {
 		return err
 	}
-
-	powerUpdates.claims[a] = power0.Claim{
-		RawBytePower:    activePower.Raw,
-		QualityAdjPower: activePower.QA,
+	u := claimUpdate{
+		addr: a,
+		claim: power0.Claim{
+			RawBytePower:    activePower.Raw,
+			QualityAdjPower: activePower.QA,
+		},
 	}
+	syncCtx.powerUpdateCh <- u
 	return nil
 }
 
