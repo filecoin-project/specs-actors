@@ -26,7 +26,6 @@ var (
 
 // SyncCtx traverses the migration to coordinate safe multithreaded state processing
 type SyncContext struct {
-	sem           semaphore.Weighted
 	actorsOutCh   chan actorUpdate
 	powerUpdateCh chan PowerUpdater
 	transferCh    chan big.Int
@@ -175,8 +174,8 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	}
 
 	// Setup synchronization
+	sem := *semaphore.NewWeighted(int64(cfg.MaxWorkers))
 	syncCtx := &SyncContext{
-		sem: *semaphore.NewWeighted(int64(cfg.MaxWorkers)),
 		// For a channel sent on by at most n threads at most k times, a buffer
 		// size of n*k ensures that all threads run to completion once started.
 		actorsOutCh:   make(chan actorUpdate, cfg.MaxWorkers),
@@ -189,10 +188,13 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	// Set new state root actors as we go
 	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
 		// Hand off migration of one actor, blocking if we are out of worker goroutines
-		if err := syncCtx.sem.Acquire(ctx, 1); err != nil {
+		if err := sem.Acquire(ctx, 1); err != nil {
 			return err
 		}
-		go migrateOneActor(ctx, store, addr, *actorIn, actorsOut, priorEpoch, powerUpdates, syncCtx)
+		go func() {
+			migrateOneActor(ctx, store, addr, *actorIn, actorsOut, priorEpoch, powerUpdates, syncCtx)
+			sem.Release(1)
+		}()
 
 		// Read from err and transfer channels without blocking.
 		// Terminate on the first error.
@@ -207,7 +209,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		return cid.Undef, err
 	}
 	// Wait on all jobs finishing
-	if err := syncCtx.sem.Acquire(ctx, int64(cfg.MaxWorkers)); err != nil {
+	if err := sem.Acquire(ctx, int64(cfg.MaxWorkers)); err != nil {
 		return cid.Undef, xerrors.Errorf("failed to wait for all worker jobs: %w", err)
 	}
 	// Check for outstanding transfers and errors
@@ -299,7 +301,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Address, actorIn states.Actor,
 	actorsOut *states.Tree, priorEpoch abi.ChainEpoch, powerUpdates *PowerUpdates, syncCtx *SyncContext,
 ) {
-	defer syncCtx.sem.Release(1)
 	// This will be migrated at the end
 	if _, found := deferredMigrations[actorIn.Code]; found {
 		return
