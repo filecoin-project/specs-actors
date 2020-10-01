@@ -25,7 +25,7 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of market state.
-func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, currEpoch abi.ChainEpoch) (*StateSummary, *builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 
 	acc.Require(
@@ -48,6 +48,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	proposalCids := make(map[cid.Cid]struct{})
 	maxDealID := int64(-1)
 	var proposalIDs []abi.DealID
+	expectedDealOps := make(map[abi.DealID]struct{})
 
 	proposals, err := adt.AsArray(store, st.Proposals)
 	if err != nil {
@@ -60,6 +61,10 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		pcid, err := proposal.Cid()
 		if err != nil {
 			return err
+		}
+
+		if proposal.StartEpoch >= currEpoch {
+			expectedDealOps[abi.DealID(dealID)] = struct{}{}
 		}
 
 		// keep some state
@@ -221,6 +226,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		return dealOps.ForEach(abi.ChainEpoch(epoch), func(id abi.DealID) error {
 			_, found := allIDs[id]
 			acc.Require(found, "deal op found for deal id %d with missing proposal at epoch %d", id, epoch)
+			delete(expectedDealOps, id)
 			dealOpCount++
 			return nil
 		})
@@ -228,6 +234,8 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	if err != nil {
 		return nil, acc, err
 	}
+
+	acc.Require(len(expectedDealOps) == 0, "missing deal ops for proposals: %v", expectedDealOps)
 
 	return &StateSummary{
 		ProposalIDs:          proposalIDs,

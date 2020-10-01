@@ -3152,7 +3152,7 @@ func (h *marketActorTestHarness) generateDealWithCollateralAndAddFunds(rt *mock.
 func (h *marketActorTestHarness) checkState(rt *mock.Runtime) {
 	var st market.State
 	rt.GetState(&st)
-	_, msgs, err := market.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
+	_, msgs, err := market.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance(), rt.Epoch())
 	assert.NoError(h.t, err)
 	for _, msg := range msgs.Messages() {
 		assert.Fail(h.t, msg)
