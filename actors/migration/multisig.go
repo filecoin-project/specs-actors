@@ -17,7 +17,7 @@ import (
 type multisigMigrator struct {
 }
 
-func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	var inState multisig0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err

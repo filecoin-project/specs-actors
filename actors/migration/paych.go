@@ -17,7 +17,7 @@ import (
 type paychMigrator struct {
 }
 
-func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+func (m *paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	var inState paych0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err

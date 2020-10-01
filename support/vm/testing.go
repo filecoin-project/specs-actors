@@ -28,6 +28,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
@@ -487,7 +488,7 @@ func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmoun
 func initializeActor(ctx context.Context, t *testing.T, vm *VM, state cbor.Marshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
 	stateCID, err := vm.store.Put(ctx, state)
 	require.NoError(t, err)
-	actor := &TestActor{
+	actor := &states.Actor{
 		Head:    stateCID,
 		Code:    code,
 		Balance: balance,

@@ -17,6 +17,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -35,8 +36,8 @@ type invocationContext struct {
 	rt                *VM
 	topLevel          *topLevelContext
 	msg               InternalMessage // The message being processed
-	fromActor         *TestActor      // The immediate calling actor
-	toActor           *TestActor      // The actor to which message is addressed
+	fromActor         *states.Actor   // The immediate calling actor
+	toActor           *states.Actor   // The actor to which message is addressed
 	emptyObject       cid.Cid
 	isCallerValidated bool
 	allowSideEffects  bool
@@ -50,7 +51,7 @@ type topLevelContext struct {
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
 }
 
-func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *TestActor, emptyObject cid.Cid) invocationContext {
+func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid) invocationContext {
 	// Note: the toActor and stateHandle are loaded during the `invoke()`
 	return invocationContext{
 		rt:                rt,
@@ -81,7 +82,7 @@ func (ic *invocationContext) loadState(obj cbor.Unmarshaler) cid.Cid {
 	return c
 }
 
-func (ic *invocationContext) loadActor() *TestActor {
+func (ic *invocationContext) loadActor() *states.Actor {
 	actr, found, err := ic.rt.GetActor(ic.msg.to)
 	if err != nil {
 		panic(err)
@@ -92,7 +93,7 @@ func (ic *invocationContext) loadActor() *TestActor {
 	return actr
 }
 
-func (ic *invocationContext) storeActor(actr *TestActor) {
+func (ic *invocationContext) storeActor(actr *states.Actor) {
 	err := ic.rt.setActor(ic.rt.ctx, ic.msg.to, actr)
 	if err != nil {
 		panic(err)
@@ -346,7 +347,7 @@ func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Actor address already exists")
 	}
 
-	newActor := &TestActor{
+	newActor := &states.Actor{
 		Head:    ic.emptyObject,
 		Code:    codeID,
 		Balance: abi.NewTokenAmount(0),
@@ -364,7 +365,7 @@ func (ic *invocationContext) DeleteActor(beneficiary address.Address) {
 		panic(err)
 	}
 	if !found {
-		ic.Abortf(exitcode.SysErrorIllegalActor, "delete non-existent actor %s", receiverActor)
+		ic.Abortf(exitcode.SysErrorIllegalActor, "delete non-existent actor %v", receiverActor)
 	}
 
 	// Transfer any remaining balance to the beneficiary.
@@ -662,7 +663,7 @@ func (ic *invocationContext) dispatch(actor runtime.VMActor, method abi.MethodNu
 // If the target actor does not exist, and the target address is a pub-key address,
 // a new account actor will be created.
 // Otherwise, this method will abort execution.
-func (ic *invocationContext) resolveTarget(target address.Address) (*TestActor, address.Address) {
+func (ic *invocationContext) resolveTarget(target address.Address) (*states.Actor, address.Address) {
 	// resolve the target address via the InitActor, and attempt to load state.
 	initActorEntry, found, err := ic.rt.GetActor(builtin.InitActorAddr)
 	if err != nil {

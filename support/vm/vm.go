@@ -18,6 +18,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
@@ -46,13 +47,6 @@ type VM struct {
 
 // VM types
 
-// Simplifed actor implementation that does not contain message nonce.
-type TestActor struct {
-	Head    cid.Cid
-	Code    cid.Cid
-	Balance abi.TokenAmount
-}
-
 type ActorImplLookup map[cid.Cid]runtime.VMActor
 
 type InternalMessage struct {
@@ -72,8 +66,6 @@ type Invocation struct {
 
 // NewVM creates a new runtime for executing messages.
 func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM {
-	// Note: this uses the most recent HAMT implementation.
-	// To test across chain state upgrades, factor out this initial state tree construction.
 	actors := adt.MakeEmptyMap(store)
 	actorRoot, err := actors.Root()
 	if err != nil {
@@ -95,6 +87,30 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
 	}
+}
+
+// NewVM creates a new runtime for executing messages.
+func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Store, stateRoot cid.Cid, epoch abi.ChainEpoch) (*VM, error) {
+	actors, err := adt.AsMap(store, stateRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	emptyObject, err := store.Put(context.TODO(), []struct{}{})
+	if err != nil {
+		panic(err)
+	}
+
+	return &VM{
+		ctx:            ctx,
+		actorImpls:     actorImpls,
+		store:          store,
+		actors:         actors,
+		stateRoot:      stateRoot,
+		actorsDirty:    false,
+		emptyObject:    emptyObject,
+		networkVersion: network.VersionMax,
+	}, nil
 }
 
 func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
@@ -134,12 +150,12 @@ func (vm *VM) rollback(root cid.Cid) error {
 	return nil
 }
 
-func (vm *VM) GetActor(a address.Address) (*TestActor, bool, error) {
+func (vm *VM) GetActor(a address.Address) (*states.Actor, bool, error) {
 	na, found := vm.NormalizeAddress(a)
 	if !found {
 		return nil, false, nil
 	}
-	var act TestActor
+	var act states.Actor
 	found, err := vm.actors.Get(abi.AddrKey(na), &act)
 	return &act, found, err
 }
@@ -147,7 +163,7 @@ func (vm *VM) GetActor(a address.Address) (*TestActor, bool, error) {
 // SetActor sets the the actor to the given value whether it previously existed or not.
 //
 // This method will not check if the actor previously existed, it will blindly overwrite it.
-func (vm *VM) setActor(ctx context.Context, key address.Address, a *TestActor) error {
+func (vm *VM) setActor(ctx context.Context, key address.Address, a *states.Actor) error {
 	if err := vm.actors.Put(abi.AddrKey(key), a); err != nil {
 		return errors.Wrap(err, "setting actor in state tree failed")
 	}
@@ -319,7 +335,7 @@ func (vm *VM) GetEpoch() abi.ChainEpoch {
 // WARNING: this method will panic if the the amount is negative, accounts dont exist, or have inssuficient funds.
 //
 // Note: this is not idiomatic, it follows the Spec expectations for this method.
-func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amount abi.TokenAmount) (*TestActor, *TestActor) {
+func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amount abi.TokenAmount) (*states.Actor, *states.Actor) {
 	// allow only for positive amounts
 	if amount.LessThan(abi.NewTokenAmount(0)) {
 		panic("unreachable: negative funds transfer not allowed")
