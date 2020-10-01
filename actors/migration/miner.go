@@ -19,8 +19,14 @@ import (
 type minerMigrator struct {
 }
 
-func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, balance abi.TokenAmount) (cid.Cid, abi.TokenAmount, error) {
+func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
 	transfer := big.Zero()
+	// first correct issues with miners due problems in old code
+	head, err := m.CorrectState(ctx, store, head, info.priorEpoch, info.address, info.powerUpdates)
+	if err != nil {
+		return cid.Undef, big.Zero(), err
+	}
+
 	var inState miner0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return cid.Undef, big.Zero(), err
@@ -68,7 +74,7 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	// We need to calculate this explicitly without using miner state functions because
 	// miner state invariants are violated in v1 chain state so state functions panic
 	minerLiabilities := big.Sum(inState.LockedFunds, inState.PreCommitDeposits, inState.InitialPledgeRequirement)
-	availableBalance := big.Sub(balance, minerLiabilities)
+	availableBalance := big.Sub(info.balance, minerLiabilities)
 	if availableBalance.LessThan(big.Zero()) {
 		debt = availableBalance.Neg() // debt must always be positive
 		transfer = debt
