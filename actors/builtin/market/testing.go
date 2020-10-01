@@ -109,8 +109,16 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 			"deal state last updated before sector start %d: %v", dealID, dealState)
 
 		acc.Require(
+			dealState.LastUpdatedEpoch == epochUndefined || dealState.LastUpdatedEpoch <= currEpoch,
+			"last updated epoch after current epoch %d: %v > %v", dealID, dealState.LastUpdatedEpoch, currEpoch)
+
+		acc.Require(
 			dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch >= dealState.SectorStartEpoch,
 			"deal state slashed before sector start %d: %v", dealID, dealState)
+
+		acc.Require(
+			dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch <= currEpoch,
+			"deal state slashed after current epoch %d: %v", dealID, currEpoch)
 
 		_, found := allIDs[abi.DealID(dealID)]
 		acc.Require(found, "deal state references deal %d not found in proposals", dealID)

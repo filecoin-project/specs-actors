@@ -1443,8 +1443,6 @@ func TestCronTick(t *testing.T) {
 		rt.ExpectAssertionFailure("assertion failed", func() {
 			actor.cronTick(rt)
 		})
-
-		actor.checkState(rt)
 	})
 
 	t.Run("crontick for a deal at it's start epoch results in zero payment and no slashing", func(t *testing.T) {
