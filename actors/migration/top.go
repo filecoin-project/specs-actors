@@ -196,7 +196,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 			sem.Release(1)
 		}(*actorIn) // race conditions appear unless we dereference outside the closure
 
-		// Read from err and transfer channels without blocking.
+		// Read from err, actorsOut and transfer channels without blocking.
 		// Terminate on the first error.
 		// Accumulate funds transfered from burnt to miners.
 		if err := accumulateResults(syncCtx, transferFromBurnt, powerUpdates, actorsOut); err != nil {
@@ -212,7 +212,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	if err := sem.Acquire(ctx, int64(cfg.MaxWorkers)); err != nil {
 		return cid.Undef, xerrors.Errorf("failed to wait for all worker jobs: %w", err)
 	}
-	// Check for outstanding transfers and errors
+	// Check for outstanding output actors, transfers and errors
 	if err := accumulateResults(syncCtx, transferFromBurnt, powerUpdates, actorsOut); err != nil {
 		return cid.Undef, err
 	}
