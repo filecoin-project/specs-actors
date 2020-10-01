@@ -55,6 +55,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 		return nil, acc, err
 	}
 	var proposal DealProposal
+	totalProposalCollateral := abi.NewTokenAmount(0)
 	err = proposals.ForEach(&proposal, func(dealID int64) error {
 		allIDs[abi.DealID(dealID)] = struct{}{}
 
@@ -73,6 +74,8 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 			maxDealID = dealID
 		}
 		proposalIDs = append(proposalIDs, abi.DealID(dealID))
+
+		totalProposalCollateral = big.Sum(totalProposalCollateral, proposal.ClientCollateral, proposal.ProviderCollateral)
 
 		acc.Require(proposal.Client.Protocol() == address.ID, "client address for deal %d is not an ID address", dealID)
 		acc.Require(proposal.Provider.Protocol() == address.ID, "provider address for deal %d is not an ID address", dealID)
@@ -202,6 +205,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 		return nil, acc, err
 	}
 	acc.Require(escrowTotal.LessThanEqual(balance), "escrow total, %v, greater than actor balance, %v", escrowTotal, balance)
+	acc.Require(escrowTotal.GreaterThanEqual(totalProposalCollateral), "escrow total, %v, lset than sum of proposal collateral, %v", escrowTotal, totalProposalCollateral)
 
 	//
 	// Deal Ops by Epoch
