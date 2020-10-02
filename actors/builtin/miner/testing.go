@@ -1,6 +1,7 @@
 package miner
 
 import (
+	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -24,6 +25,11 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	info, err := st.GetInfo(store)
 	if err != nil {
 		return nil, nil, err
+	}
+	msgs, err := CheckMinerInfo(info)
+	acc.AddAll(msgs)
+	if err != nil {
+		return nil, acc, err
 	}
 
 	allSectors := map[abi.SectorNumber]*SectorOnChainInfo{}
@@ -66,8 +72,6 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	}); err != nil {
 		return nil, nil, err
 	}
-
-	// TODO: check state invariants beyond deadlines.
 
 	return &StateSummary{
 		LivePower:   livePower,
@@ -568,6 +572,45 @@ func CheckEarlyTerminationQueue(earlyQ BitfieldQueue, terminated bitfield.BitFie
 		return 0, err
 	}
 	return len(seenMap), nil
+}
+
+func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
+	acc := &builtin.MessageAccumulator{}
+
+	acc.Require(info.Owner.Protocol() == addr.ID, "owner address %v is not an ID address", info.Owner)
+	acc.Require(info.Worker.Protocol() == addr.ID, "worker address %v is not an ID address", info.Worker)
+	for _, a := range info.ControlAddresses {
+		acc.Require(a.Protocol() == addr.ID, "control address %v is not an ID address", a)
+	}
+
+	if info.PendingWorkerKey != nil {
+		acc.Require(info.PendingWorkerKey.NewWorker.Protocol() == addr.ID,
+			"pending worker address %v is not an ID address", info.PendingWorkerKey.NewWorker)
+		acc.Require(info.PendingWorkerKey.NewWorker != info.Worker,
+			"pending worker key %v is same as existing worker %v", info.PendingWorkerKey.NewWorker, info.Worker)
+	}
+
+	if info.PendingOwnerAddress != nil {
+		acc.Require(*info.PendingOwnerAddress != info.Owner,
+			"pending owner address %v is same as existing owner %v", info.PendingOwnerAddress, info.Owner)
+	}
+
+	sealProofInfo, found := abi.SealProofInfos[info.SealProofType]
+	acc.Require(found, "miner has unrecognized seal proof type %d", info.SealProofType)
+	if found {
+		acc.Require(sealProofInfo.SectorSize == info.SectorSize,
+			"sector size %d is wrong for seal proof type %d: %d", info.SectorSize, info.SealProofType, sealProofInfo.SectorSize)
+		acc.Require(sealProofInfo.SectorSize == info.SectorSize,
+			"sector size %d is wrong for seal proof type %d: %d", info.SectorSize, info.SealProofType, sealProofInfo.SectorSize)
+	}
+	sealProofPolicy, found := builtin.SealProofPolicies[info.SealProofType]
+	if found {
+		acc.Require(sealProofPolicy.WindowPoStPartitionSectors == info.WindowPoStPartitionSectors,
+			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
+			info.WindowPoStPartitionSectors, sealProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
+	}
+
+	return acc, nil
 }
 
 // Selects a subset of sectors from a map by sector number.
