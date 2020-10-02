@@ -332,9 +332,44 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		minerPower = vm.MinerPower(t, tv, minerAddrs.IDAddress)
 		networkStats = vm.GetNetworkStats(t, tv)
 		assert.Equal(t, sectorPower.Raw, minerPower.Raw)
-		assert.Equal(t, sectorPower.QA, minerPower.Raw)
+		assert.Equal(t, sectorPower.QA, minerPower.QA)
 		assert.Equal(t, sectorPower.Raw, networkStats.TotalBytesCommitted)
 		assert.Equal(t, sectorPower.QA, networkStats.TotalQABytesCommitted)
+	})
+
+	t.Run("miner skips replaced sector in its last PoSt", func(t *testing.T) {
+		tv, err := v.WithEpoch(v.GetEpoch()) // create vm copy
+		require.NoError(t, err)
+
+		submitParams = miner.SubmitWindowedPoStParams{
+			Deadline: dlInfo.Index,
+			Partitions: []miner.PoStPartition{{
+				Index: pIdx,
+				// skip cc upgrade
+				Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+			}},
+			Proofs: []proof.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  []byte("not really random"),
+		}
+		vm.ApplyOk(t, tv, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+
+		vm.ExpectInvocation{
+			To:     minerAddrs.IDAddress,
+			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
+			Params: vm.ExpectObject(&submitParams),
+		}.Matches(t, tv.LastInvocation())
+
+		// old sector power is immediately removed
+		upgradeSectorPower := vm.PowerForMinerSector(t, v, minerAddrs.IDAddress, upgradeSectorNumber)
+		minerPower = vm.MinerPower(t, tv, minerAddrs.IDAddress)
+		networkStats = vm.GetNetworkStats(t, tv)
+		assert.Equal(t, upgradeSectorPower.Raw, minerPower.Raw)
+		assert.Equal(t, upgradeSectorPower.QA, minerPower.QA)
+		assert.Equal(t, upgradeSectorPower.Raw, networkStats.TotalBytesCommitted)
+		assert.Equal(t, upgradeSectorPower.QA, networkStats.TotalQABytesCommitted)
 	})
 
 	submitParams = miner.SubmitWindowedPoStParams{
