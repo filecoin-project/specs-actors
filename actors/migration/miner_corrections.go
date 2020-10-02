@@ -32,7 +32,7 @@ func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, 
 	// 2. We definitely don't want to reschedule the proving period
 	//    start/deadlines.
 	if st.ProvingPeriodStart > epoch {
-		return head, nil
+		return result, nil
 	}
 
 	adtStore := adt.WrapStore(ctx, store)
