@@ -34,6 +34,8 @@ func TestConstructor(t *testing.T) {
 		rt.GetState(&st)
 		var nilCronEntries = []cron.Entry(nil)
 		assert.Equal(t, nilCronEntries, st.Entries)
+
+		actor.checkState(rt)
 	})
 
 	t.Run("construct with non-empty entries", func(t *testing.T) {
@@ -49,11 +51,13 @@ func TestConstructor(t *testing.T) {
 
 		var st cron.State
 		rt.GetState(&st)
-		 expectedEntries := make([]cron.Entry, len(entryParams))
-		 for i, e := range entryParams {
-		 	expectedEntries[i] = cron.Entry(e)
-		 }
+		expectedEntries := make([]cron.Entry, len(entryParams))
+		for i, e := range entryParams {
+			expectedEntries[i] = cron.Entry(e)
+		}
 		assert.Equal(t, expectedEntries, st.Entries)
+
+		actor.checkState(rt)
 	})
 }
 
@@ -69,6 +73,7 @@ func TestEpochTick(t *testing.T) {
 		var nilCronEntries = []cron.EntryParam(nil)
 		actor.constructAndVerify(rt, nilCronEntries...)
 		actor.epochTickAndVerify(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("epoch tick with non-empty entries", func(t *testing.T) {
@@ -86,6 +91,8 @@ func TestEpochTick(t *testing.T) {
 		rt.ExpectSend(entry3.Receiver, entry3.MethodNum, nil, big.Zero(), nil, exitcode.ErrInsufficientFunds)
 		rt.ExpectSend(entry4.Receiver, entry4.MethodNum, nil, big.Zero(), nil, exitcode.ErrForbidden)
 		actor.epochTickAndVerify(rt)
+
+		actor.checkState(rt)
 	})
 
 	t.Run("built-in entries", func(t *testing.T) {
@@ -112,4 +119,12 @@ func (h *cronHarness) epochTickAndVerify(rt *mock.Runtime) {
 	ret := rt.Call(h.EpochTick, nil)
 	assert.Nil(h.t, ret)
 	rt.Verify()
+}
+
+func (h *cronHarness) checkState(rt *mock.Runtime) {
+	var st cron.State
+	rt.GetState(&st)
+	_, msgs, err := cron.CheckStateInvariants(&st, rt.AdtStore())
+	assert.NoError(h.t, err)
+	assert.True(h.t, msgs.IsEmpty())
 }

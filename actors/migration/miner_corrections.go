@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
-	xerrors "golang.org/x/xerrors"
 
 	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
@@ -78,17 +77,6 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 		missedProvingPeriodCron = true
 	}
 
-	// assert ranges for new proving period and deadline
-	if st.ProvingPeriodStart <= epoch-miner.WPoStProvingPeriod || st.ProvingPeriodStart > epoch {
-		return false, xerrors.Errorf("miner proving period start, %d, is out of range (%d, %d]",
-			st.ProvingPeriodStart, epoch-miner.WPoStProvingPeriod, epoch)
-	}
-	dlInfo := st.DeadlineInfo(epoch)
-	if dlInfo.Open > epoch || dlInfo.Close <= epoch {
-		return false, xerrors.Errorf("priorEpoch is out of expected range of miner deadline [%d, %d) ∌ %d",
-			dlInfo.Open, dlInfo.Close, epoch)
-	}
-
 	deadlinesModified := false
 	err = deadlines.ForEach(adt.WrapStore(ctx, store), func(dlIdx uint64, deadline *miner.Deadline) error {
 		partitions, err := adt.AsArray(adt.WrapStore(ctx, store), deadline.Partitions)
@@ -130,6 +118,7 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 			}
 			if missedProvingPeriodCron {
 				part.Recoveries = bitfield.New()
+				part.RecoveringPower = miner.NewPowerPairZero()
 				alteredPartitions[uint64(partIdx)] = part
 			}
 			allFaultyPower = allFaultyPower.Add(part.FaultyPower)
@@ -189,8 +178,6 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, st *miner.State,
 	powerUpdates *PowerUpdates, a addr.Address, epoch abi.ChainEpoch,
 ) error {
-	powerUpdateMu.Lock()
-	defer powerUpdateMu.Unlock()
 	err := m.updateClaim(ctx, store, st, powerUpdates, a)
 	if err != nil {
 		return err
