@@ -2,7 +2,6 @@ package migration
 
 import (
 	"context"
-	"fmt"
 
 	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -321,7 +320,6 @@ func migrateOneActor(ctx context.Context, store cbor.IpldStore, addr address.Add
 	}
 
 	// set up new state root with the migrated state
-	fmt.Printf("actor type: %s\n", builtin.ActorNameByCode(codeOut))
 	return &migrationResult{
 		addr,
 		states.Actor{
