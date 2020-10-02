@@ -338,6 +338,7 @@ func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi
 	resolvedOldSigner, err := builtin.ResolveToIDAddr(rt, params.Signer)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve address %v", params.Signer)
 
+	store := adt.AsStore(rt)
 	var st State
 	rt.StateTransaction(&st, func() {
 		isSigner := isSigner(resolvedOldSigner, st.Signers)
@@ -370,6 +371,10 @@ func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi
 			}
 			st.NumApprovalsThreshold = st.NumApprovalsThreshold - 1
 		}
+
+		err := st.PurgeApprovals(store, resolvedOldSigner)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to purge approvals of removed signer")
+
 		st.Signers = newSigners
 	})
 
@@ -392,6 +397,7 @@ func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.Emp
 	toResolved, err := builtin.ResolveToIDAddr(rt, params.To)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve to address %v", params.To)
 
+	store := adt.AsStore(rt)
 	var st State
 	rt.StateTransaction(&st, func() {
 		fromIsSigner := isSigner(fromResolved, st.Signers)
@@ -412,6 +418,9 @@ func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.Emp
 		}
 		newSigners = append(newSigners, toResolved)
 		st.Signers = newSigners
+
+		err := st.PurgeApprovals(store, fromResolved)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to purge approvals of removed signer")
 	})
 
 	return nil
