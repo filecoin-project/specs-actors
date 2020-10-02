@@ -20,7 +20,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 	var minerSummaries []*miner.StateSummary
 
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
-		acc := acc.WithPrefix("actor %v: ", key) // Intentional shadow
+		acc := acc.WithPrefix("%v ", key) // Intentional shadow
 		if key.Protocol() != addr.ID {
 			acc.Addf("unexpected address protocol in state tree root: %v", key)
 		}
