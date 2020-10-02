@@ -32,7 +32,7 @@ import (
 func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	ctx := context.Background()
 	v := vm0.NewVMWithSingletons(ctx, t)
-	addrs := vm0.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(100_000), vm0.FIL), 93837778)
+	addrs := vm0.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(100_000_000), vm0.FIL), 93837778)
 	worker, unverifiedClient := addrs[0], addrs[1]
 
 	// 2349 sectors is the exact number of sectors we need to fill a deadline, forcing the next sector into
@@ -234,6 +234,12 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	require.NoError(t, err)
 	vm0.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
+	// skip every sector but original in PoSt. This should cause original expiration set to be deleted
+	skippedSectors := bitfield.New()
+	for i := uint64(sectorNumber) + 1; i < numSectors; i++ {
+		skippedSectors.Set(i)
+	}
+
 	// advance 14 proving periods submitting PoSts along the way
 	for i := 0; i < 14; i++ {
 		// advance to original sector's period and submit post
@@ -243,7 +249,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 			Deadline: oDlInfo.Index,
 			Partitions: []miner0.PoStPartition{{
 				Index:   oPIdx,
-				Skipped: bitfield.New(),
+				Skipped: skippedSectors,
 			}},
 			Proofs: []proof.PoStProof{{
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
@@ -305,7 +311,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// migrate miner
 	//
 
-	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.DefaultConfig()) 
+	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.DefaultConfig())
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]runtime.VMActor{}
