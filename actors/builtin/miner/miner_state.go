@@ -113,6 +113,10 @@ type MinerInfo struct {
 	// The next epoch this miner is eligible for certain permissioned actor methods
 	// and winning block elections as a result of being reported for a consensus fault.
 	ConsensusFaultElapsed abi.ChainEpoch
+
+	// A proposed new owner account for this miner.
+	// Must be confirmed by a message from the pending address itself.
+	PendingOwnerAddress *addr.Address
 }
 
 type WorkerKeyChange struct {
@@ -209,6 +213,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
+		PendingOwnerAddress:        nil,
 	}, nil
 }
 

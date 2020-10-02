@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"testing"
 
 	address "github.com/filecoin-project/go-address"
@@ -2033,7 +2034,6 @@ func TestCronTickDealSlashing(t *testing.T) {
 			terminationEpoch abi.ChainEpoch
 			cronTickEpoch    abi.ChainEpoch
 			payment          abi.TokenAmount
-			assertionMsg     string
 		}{
 			"deal is slashed after the startepoch and then the first crontick happens": {
 				dealStart:        abi.ChainEpoch(10),
@@ -2075,15 +2075,6 @@ func TestCronTickDealSlashing(t *testing.T) {
 				cronTickEpoch:    abi.ChainEpoch(25), // deal has expired
 				payment:          abi.NewTokenAmount(50),
 			},
-			"deal slash epoch must NOT be greater than current epoch": {
-				dealStart:        abi.ChainEpoch(10),
-				dealEnd:          abi.ChainEpoch(10 + 200*builtin.EpochsInDay),
-				activationEpoch:  abi.ChainEpoch(5),
-				terminationEpoch: abi.ChainEpoch(15),
-				cronTickEpoch:    abi.ChainEpoch(10), // deal has expired
-				payment:          abi.NewTokenAmount(50),
-				assertionMsg:     "current epoch less than slash epoch",
-			},
 			"deal is slashed just BEFORE the end epoch": {
 				dealStart:        abi.ChainEpoch(10),
 				dealEnd:          abi.ChainEpoch(10 + 200*builtin.EpochsInDay),
@@ -2096,7 +2087,6 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 		for n, tc := range tcs {
 			t.Run(n, func(t *testing.T) {
-				t.Parallel()
 				rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 				// publish and activate
@@ -2111,33 +2101,23 @@ func TestCronTickDealSlashing(t *testing.T) {
 				//  cron tick
 				rt.SetEpoch(tc.cronTickEpoch)
 
-				if len(tc.assertionMsg) == 0 {
-					pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, tc.cronTickEpoch, dealId)
-					require.EqualValues(t, tc.payment, pay)
-					require.EqualValues(t, d.ProviderCollateral, slashed)
-					actor.assertDealDeleted(rt, dealId, d)
+				pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, tc.cronTickEpoch, dealId)
+				require.EqualValues(t, tc.payment, pay)
+				require.EqualValues(t, d.ProviderCollateral, slashed)
+				actor.assertDealDeleted(rt, dealId, d)
 
-					// if there has been no payment, provider will have zero balance and hence should be slashed
-					if tc.payment.Equals(big.Zero()) {
-						actor.assertAccountZero(rt, provider)
-						// client balances should not change
-						cLocked := actor.getLockedBalance(rt, client)
-						cEscrow := actor.getEscrowBalance(rt, client)
-						actor.cronTick(rt)
-						require.EqualValues(t, cEscrow, actor.getEscrowBalance(rt, client))
-						require.EqualValues(t, cLocked, actor.getLockedBalance(rt, client))
-					} else {
-						// running cron tick again dosen't do anything
-						actor.cronTickNoChange(rt, client, provider)
-					}
+				// if there has been no payment, provider will have zero balance and hence should be slashed
+				if tc.payment.Equals(big.Zero()) {
+					actor.assertAccountZero(rt, provider)
+					// client balances should not change
+					cLocked := actor.getLockedBalance(rt, client)
+					cEscrow := actor.getEscrowBalance(rt, client)
+					actor.cronTick(rt)
+					require.EqualValues(t, cEscrow, actor.getEscrowBalance(rt, client))
+					require.EqualValues(t, cLocked, actor.getLockedBalance(rt, client))
 				} else {
-					rt.ExpectAssertionFailure(tc.assertionMsg, func() {
-						rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
-						rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-						param := abi.EmptyValue{}
-						rt.Call(actor.CronTick, &param)
-						rt.Verify()
-					})
+					// running cron tick again dosen't do anything
+					actor.cronTickNoChange(rt, client, provider)
 				}
 				actor.checkState(rt)
 			})
@@ -3152,9 +3132,7 @@ func (h *marketActorTestHarness) checkState(rt *mock.Runtime) {
 	rt.GetState(&st)
 	_, msgs, err := market.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance(), rt.Epoch())
 	assert.NoError(h.t, err)
-	for _, msg := range msgs.Messages() {
-		assert.Fail(h.t, msg)
-	}
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func generateDealProposalWithCollateral(client, provider address.Address, providerCollateral, clientCollateral abi.TokenAmount, startEpoch, endEpoch abi.ChainEpoch) market.DealProposal {

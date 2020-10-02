@@ -3605,6 +3605,160 @@ func TestConfirmUpdateWorkerKey(t *testing.T) {
 	})
 }
 
+func TestChangeOwnerAddress(t *testing.T) {
+	actor := newHarness(t, 0)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+	newAddr := tutil.NewIDAddr(t, 1001)
+	otherAddr := tutil.NewIDAddr(t, 1002)
+
+	t.Run("successful change", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+
+		info := actor.getInfo(rt)
+		assert.Equal(t, actor.owner, info.Owner)
+		assert.Equal(t, newAddr, *info.PendingOwnerAddress)
+
+		rt.SetCaller(newAddr, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+
+		info = actor.getInfo(rt)
+		assert.Equal(t, newAddr, info.Owner)
+		assert.Nil(t, info.PendingOwnerAddress)
+	})
+
+	t.Run("proposed must be valid", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		nominees := []addr.Address{
+			addr.Undef,
+			tutil.NewSECP256K1Addr(t, "asd"),
+			tutil.NewBLSAddr(t, 1234),
+			tutil.NewActorAddr(t, "asd"),
+		}
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		for _, a := range nominees {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+				actor.changeOwnerAddress(rt, a)
+			})
+		}
+	})
+
+	t.Run("withdraw proposal", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+
+		// Revert it
+		actor.changeOwnerAddress(rt, actor.owner)
+
+		info := actor.getInfo(rt)
+		assert.Equal(t, actor.owner, info.Owner)
+		assert.Nil(t, info.PendingOwnerAddress)
+
+		// New address cannot confirm.
+		rt.SetCaller(newAddr, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, newAddr)
+		})
+	})
+
+	t.Run("only owner can propose", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, newAddr)
+		})
+		rt.SetCaller(otherAddr, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, newAddr)
+		})
+	})
+
+	t.Run("only owner can change proposal", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// Make a proposal
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, otherAddr)
+		})
+		rt.SetCaller(otherAddr, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, otherAddr)
+		})
+
+		// Owner can change it
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, otherAddr)
+		info := actor.getInfo(rt)
+		assert.Equal(t, actor.owner, info.Owner)
+		assert.Equal(t, otherAddr, *info.PendingOwnerAddress)
+
+	})
+
+	t.Run("only nominee can confirm", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// Make a proposal
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+
+		// Owner re-proposing same address doesn't confirm it.
+		actor.changeOwnerAddress(rt, newAddr)
+		info := actor.getInfo(rt)
+		assert.Equal(t, actor.owner, info.Owner)
+		assert.Equal(t, newAddr, *info.PendingOwnerAddress) // Still staged
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, otherAddr)
+		})
+		rt.SetCaller(otherAddr, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
+			actor.changeOwnerAddress(rt, otherAddr)
+		})
+
+		// New addr can confirm itself
+		rt.SetCaller(newAddr, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+		info = actor.getInfo(rt)
+		assert.Equal(t, newAddr, info.Owner)
+		assert.Nil(t, info.PendingOwnerAddress)
+	})
+
+	t.Run("nominee must confirm self explicitly", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// Make a proposal
+		rt.SetCaller(actor.owner, builtin.MultisigActorCodeID)
+		actor.changeOwnerAddress(rt, newAddr)
+
+		rt.SetCaller(newAddr, builtin.MultisigActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.changeOwnerAddress(rt, actor.owner) // Not own address
+		})
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.changeOwnerAddress(rt, otherAddr) // Not own address
+		})
+	})
+}
+
 func TestReportConsensusFault(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
@@ -4198,6 +4352,21 @@ func (h *actorHarness) confirmUpdateWorkerKey(rt *mock.Runtime) {
 	rt.ExpectValidateCallerAddr(h.owner)
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.Call(h.a.ConfirmUpdateWorkerKey, nil)
+	rt.Verify()
+}
+
+func (h *actorHarness) changeOwnerAddress(rt *mock.Runtime, newAddr addr.Address) {
+	if rt.Caller() == h.owner {
+		rt.ExpectValidateCallerAddr(h.owner)
+	} else {
+		info := h.getInfo(rt)
+		if info.PendingOwnerAddress != nil {
+			rt.ExpectValidateCallerAddr(*info.PendingOwnerAddress)
+		} else {
+			rt.ExpectValidateCallerAddr(h.owner)
+		}
+	}
+	rt.Call(h.a.ChangeOwnerAddress, &newAddr)
 	rt.Verify()
 }
 

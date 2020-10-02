@@ -303,7 +303,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufMinerInfo = []byte{138}
+var lengthBufMinerInfo = []byte{139}
 
 func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -413,6 +413,11 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
+
+	// t.PendingOwnerAddress (address.Address) (struct)
+	if err := t.PendingOwnerAddress.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -430,7 +435,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -645,6 +650,25 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.ConsensusFaultElapsed = abi.ChainEpoch(extraI)
+	}
+	// t.PendingOwnerAddress (address.Address) (struct)
+
+	{
+
+		b, err := br.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+			t.PendingOwnerAddress = new(address.Address)
+			if err := t.PendingOwnerAddress.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.PendingOwnerAddress pointer: %w", err)
+			}
+		}
+
 	}
 	return nil
 }
