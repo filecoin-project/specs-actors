@@ -59,6 +59,7 @@ func (a Actor) Exports() []interface{} {
 		20:                        a.CompactSectorNumbers,
 		21:                        a.ConfirmUpdateWorkerKey,
 		22:                        a.RepayDebt,
+		23:                        a.ChangeOwnerAddress,
 	}
 }
 
@@ -225,6 +226,47 @@ func (a Actor) ConfirmUpdateWorkerKey(rt Runtime, params *abi.EmptyValue) *abi.E
 		processPendingWorker(info, rt, &st)
 	})
 
+	return nil
+}
+
+// Proposes or confirms a change of owner address.
+// If invoked by the current owner, proposes a new owner address for confirmation. If the proposed address is the
+// current owner address, revokes any existing proposal.
+// If invoked by the previously proposed address, with the same proposal, changes the current owner address to be
+// that proposed address.
+func (a Actor) ChangeOwnerAddress(rt Runtime, newAddress *addr.Address) *abi.EmptyValue {
+	if newAddress.Empty() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "empty address")
+	}
+	if newAddress.Protocol() != addr.ID {
+		rt.Abortf(exitcode.ErrIllegalArgument, "owner address must be an ID address")
+	}
+	var st State
+	rt.StateTransaction(&st, func() {
+		info := getMinerInfo(rt, &st)
+		if rt.Caller() == info.Owner || info.PendingOwnerAddress == nil {
+			// Propose new address.
+			rt.ValidateImmediateCallerIs(info.Owner)
+			info.PendingOwnerAddress = newAddress
+		} else { // info.PendingOwnerAddress != nil
+			// Confirm the proposal.
+			// This validates that the operator can in fact use the proposed new address to sign messages.
+			rt.ValidateImmediateCallerIs(*info.PendingOwnerAddress)
+			if *newAddress != *info.PendingOwnerAddress {
+				rt.Abortf(exitcode.ErrIllegalArgument, "expected confirmation of %v, got %v",
+					info.PendingOwnerAddress, newAddress)
+			}
+			info.Owner = *info.PendingOwnerAddress
+		}
+
+		// Clear any resulting no-op change.
+		if info.PendingOwnerAddress != nil && *info.PendingOwnerAddress == info.Owner {
+			info.PendingOwnerAddress = nil
+		}
+
+		err := st.SaveInfo(adt.AsStore(rt), info)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save miner info")
+	})
 	return nil
 }
 
@@ -2120,12 +2162,12 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	}
 	Assert(resolved.Protocol() == addr.ID)
 
-	ownerCode, ok := rt.GetActorCodeCID(resolved)
+	workerCode, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
 	}
-	if ownerCode != builtin.AccountActorCodeID {
-		rt.Abortf(exitcode.ErrIllegalArgument, "worker actor type must be an account, was %v", ownerCode)
+	if workerCode != builtin.AccountActorCodeID {
+		rt.Abortf(exitcode.ErrIllegalArgument, "worker actor type must be an account, was %v", workerCode)
 	}
 
 	if raw.Protocol() != addr.BLS {
