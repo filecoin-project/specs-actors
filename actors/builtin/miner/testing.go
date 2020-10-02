@@ -51,6 +51,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 
 	// Check deadlines
 	if err := deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
+		acc := acc.WithPrefix("deadline %d: ", dlIdx) // Shadow
 		quant := st.QuantSpecForDeadline(dlIdx)
 		summary, msgs, err := CheckDeadlineStateInvariants(dl, store, quant, info.SectorSize, allSectors)
 		if err != nil {
@@ -76,9 +77,15 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 }
 
 type DeadlineStateSummary struct {
-	LivePower   PowerPair
-	ActivePower PowerPair
-	FaultyPower PowerPair
+	AllSectors        bitfield.BitField
+	LiveSectors       bitfield.BitField
+	FaultySectors     bitfield.BitField
+	RecoveringSectors bitfield.BitField
+	UnprovenSectors   bitfield.BitField
+	TerminatedSectors bitfield.BitField
+	LivePower         PowerPair
+	ActivePower       PowerPair
+	FaultyPower       PowerPair
 }
 
 func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant QuantSpec, ssize abi.SectorSize, sectors map[abi.SectorNumber]*SectorOnChainInfo) (*DeadlineStateSummary, *builtin.MessageAccumulator, error) {
@@ -90,35 +97,160 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		return nil, nil, err
 	}
 
-	livePower := NewPowerPairZero()
-	activePower := NewPowerPairZero()
-	faultyPower := NewPowerPairZero()
+	allSectors := bitfield.New()
+	var allLiveSectors []bitfield.BitField
+	var allFaultySectors []bitfield.BitField
+	var allRecoveringSectors []bitfield.BitField
+	var allUnprovenSectors []bitfield.BitField
+	var allTerminatedSectors []bitfield.BitField
+	allLivePower := NewPowerPairZero()
+	allActivePower := NewPowerPairZero()
+	allFaultyPower := NewPowerPairZero()
+
+	// Check partitions.
+	partitionsWithExpirations := map[abi.ChainEpoch][]uint64{}
+	var partitionsWithEarlyTerminations []uint64
+	partitionCount := uint64(0)
 	var partition Partition
 	if err = partitions.ForEach(&partition, func(i int64) error {
+		pIdx := uint64(i)
+		// Check sequential partitions.
+		acc.Require(pIdx == partitionCount, "Non-sequential partitions, expected index %d, found %d", partitionCount, pIdx)
+		partitionCount++
+
+		acc := acc.WithPrefix("partition %d: ", pIdx) // Shadow
 		summary, msgs, err := CheckPartitionStateInvariants(&partition, store, quant, ssize, sectors)
 		if err != nil {
 			return err
 		}
 		acc.AddAll(msgs)
 
-		livePower = livePower.Add(summary.LivePower)
-		activePower = activePower.Add(summary.ActivePower)
-		faultyPower = faultyPower.Add(summary.FaultyPower)
+		if contains, err := util.BitFieldContainsAny(allSectors, summary.AllSectors); err != nil {
+			return err
+		} else {
+			acc.Require(!contains, "duplicate sector in partition %d", pIdx)
+		}
+
+		for _, e := range summary.ExpirationEpochs {
+			partitionsWithExpirations[e] = append(partitionsWithExpirations[e], pIdx)
+		}
+		if summary.EarlyTerminationCount > 0 {
+			partitionsWithEarlyTerminations = append(partitionsWithEarlyTerminations, pIdx)
+		}
+
+		allSectors, err = bitfield.MergeBitFields(allSectors, summary.AllSectors)
+		if err != nil {
+			return err
+		}
+		allLiveSectors = append(allLiveSectors, summary.LiveSectors)
+		allFaultySectors = append(allFaultySectors, summary.FaultySectors)
+		allRecoveringSectors = append(allRecoveringSectors, summary.RecoveringSectors)
+		allUnprovenSectors = append(allUnprovenSectors, summary.UnprovenSectors)
+		allTerminatedSectors = append(allTerminatedSectors, summary.TerminatedSectors)
+		allLivePower = allLivePower.Add(summary.LivePower)
+		allActivePower = allActivePower.Add(summary.ActivePower)
+		allFaultyPower = allFaultyPower.Add(summary.FaultyPower)
 		return nil
 	}); err != nil {
 		return nil, nil, err
 	}
 
-	// TODO: check deadline state invariants beyond partitions.
+	// Check PoSt submissions
+	postSubmissions, err := deadline.PostSubmissions.All(1 << 20)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, p := range postSubmissions {
+		acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
+	}
+
+	// Check memoized sector and power values.
+	live, err := bitfield.MultiMerge(allLiveSectors...)
+	if err != nil {
+		return nil, nil, err
+	}
+	if liveCount, err := live.Count(); err != nil {
+		return nil, nil, err
+	} else {
+		acc.Require(deadline.LiveSectors == liveCount, "deadline live sectors %d != partitions count %d", deadline.LiveSectors, liveCount)
+	}
+
+	if allCount, err := allSectors.Count(); err != nil {
+		return nil, nil, err
+	} else {
+		acc.Require(deadline.TotalSectors == allCount, "deadline total sectors %d != partitions count %d", deadline.TotalSectors, allCount)
+	}
+
+	faulty, err := bitfield.MultiMerge(allFaultySectors...)
+	if err != nil {
+		return nil, nil, err
+	}
+	recovering, err := bitfield.MultiMerge(allRecoveringSectors...)
+	if err != nil {
+		return nil, nil, err
+	}
+	unproven, err := bitfield.MultiMerge(allUnprovenSectors...)
+	if err != nil {
+		return nil, nil, err
+	}
+	terminated, err := bitfield.MultiMerge(allTerminatedSectors...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	acc.Require(deadline.FaultyPower.Equals(allFaultyPower), "deadline faulty power %v != partitions total %v", deadline.FaultyPower, allFaultyPower)
+
+	{
+		// Validate partition expiration queue contains an entry for each partition and epoch with an expiration.
+		// The queue may be a superset of the partitions that have expirations because we never remove from it.
+		expirationEpochs, err := adt.AsArray(store, deadline.ExpirationsEpochs)
+		if err != nil {
+			return nil, nil, err
+		}
+		for epoch, pidxs := range partitionsWithExpirations { // nolint:nomaprange
+			var bf bitfield.BitField
+			found, err := expirationEpochs.Get(uint64(epoch), &bf)
+			if err != nil {
+				return nil, nil, err
+			}
+			acc.Require(found, "expected to find partitions with expirations at epoch %d", epoch)
+			for _, p := range pidxs {
+				present, err := bf.IsSet(p)
+				if err != nil {
+					return nil, nil, err
+				}
+				acc.Require(present, "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
+			}
+		}
+	}
+	{
+		// Validate the early termination queue contains exactly the partitions with early terminations.
+		expected := bitfield.NewFromSet(partitionsWithEarlyTerminations)
+		if err = requireEqual(expected, deadline.EarlyTerminations, acc, "deadline early terminations doesn't match expected partitions"); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	return &DeadlineStateSummary{
-		LivePower:   livePower,
-		ActivePower: activePower,
-		FaultyPower: faultyPower,
+		AllSectors:        allSectors,
+		LiveSectors:       live,
+		FaultySectors:     faulty,
+		RecoveringSectors: recovering,
+		UnprovenSectors:   unproven,
+		TerminatedSectors: terminated,
+		LivePower:         allLivePower,
+		ActivePower:       allActivePower,
+		FaultyPower:       allFaultyPower,
 	}, acc, nil
 }
 
 type PartitionStateSummary struct {
+	AllSectors            bitfield.BitField
+	LiveSectors           bitfield.BitField
+	FaultySectors         bitfield.BitField
+	RecoveringSectors     bitfield.BitField
+	UnprovenSectors       bitfield.BitField
+	TerminatedSectors     bitfield.BitField
 	LivePower             PowerPair
 	ActivePower           PowerPair
 	FaultyPower           PowerPair
@@ -141,6 +273,51 @@ func CheckPartitionStateInvariants(
 	}
 	active, err := partition.ActiveSectors()
 	if err != nil {
+		return nil, nil, err
+	}
+
+	// Live contains all active sectors.
+	if err = requireContainsAll(live, active, acc, "live does not contain active"); err != nil {
+		return nil, nil, err
+	}
+
+	// Live contains all faults.
+	if err = requireContainsAll(live, partition.Faults, acc, "live does not contain faults"); err != nil {
+		return nil, nil, err
+	}
+
+	// Live contains all unproven.
+	if err = requireContainsAll(live, partition.Unproven, acc, "live does not contain unproven"); err != nil {
+		return nil, nil, err
+	}
+
+	// Active contains no faults
+	if err = requireContainsNone(active, partition.Faults, acc, "active includes faults"); err != nil {
+		return nil, nil, err
+	}
+
+	// Active contains no unproven
+	if err = requireContainsNone(active, partition.Unproven, acc, "active includes unproven"); err != nil {
+		return nil, nil, err
+	}
+
+	// Faults contains all recoveries.
+	if err = requireContainsAll(partition.Faults, partition.Recoveries, acc, "faults do not contain recoveries"); err != nil {
+		return nil, nil, err
+	}
+
+	// Live contains no terminated sectors
+	if err = requireContainsNone(live, partition.Terminated, acc, "live includes terminations"); err != nil {
+		return nil, nil, err
+	}
+
+	// Unproven contains no faults
+	if err = requireContainsNone(partition.Faults, partition.Unproven, acc, "unproven includes faults"); err != nil {
+		return nil, nil, err
+	}
+
+	// All terminated sectors are part of the partition.
+	if err = requireContainsAll(partition.Sectors, partition.Terminated, acc, "sectors do not contain terminations"); err != nil {
 		return nil, nil, err
 	}
 
@@ -186,52 +363,22 @@ func CheckPartitionStateInvariants(
 	partitionActivePower := partition.ActivePower()
 	acc.Require(partitionActivePower.Equals(activePower), "active power was %v, expected %v", partitionActivePower, activePower)
 
-	// All recoveries are faults.
-	if err = requireContainsAll(partition.Faults, partition.Recoveries, acc, "faults do not contain recoveries"); err != nil {
-		return nil, nil, err
-	}
-
-	// All faults are live.
-	if err = requireContainsAll(live, partition.Faults, acc, "live does not contain faults"); err != nil {
-		return nil, nil, err
-	}
-
-	// All unproven are live
-	if err = requireContainsAll(live, partition.Unproven, acc, "live does not contain unproven"); err != nil {
-		return nil, nil, err
-	}
-
-	// All terminated sectors are part of the partition.
-	if err = requireContainsAll(partition.Sectors, partition.Terminated, acc, "sectors do not contain terminations"); err != nil {
-		return nil, nil, err
-	}
-
-	// Live has no terminated sectors
-	if err = requireContainsNone(live, partition.Terminated, acc, "live includes terminations"); err != nil {
-		return nil, nil, err
-	}
-
-	// Live contains active sectors
-	if err = requireContainsAll(live, active, acc, "live does not contain active"); err != nil {
-		return nil, nil, err
-	}
-
-	// Active contains no faults
-	if err = requireContainsNone(active, partition.Faults, acc, "active includes faults"); err != nil {
-		return nil, nil, err
-	}
-
-	// Active contains no unproven
-	if err = requireContainsNone(active, partition.Unproven, acc, "active includes unproven"); err != nil {
-		return nil, nil, err
-	}
-
 	// Validate the expiration queue.
 	expQ, err := LoadExpirationQueue(store, partition.ExpirationsEpochs, quant)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err = CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, sectorSize, acc); err != nil {
+	qsummary, err := CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, sectorSize, acc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Check the queue is compatible with partition fields
+	qSectors, err := bitfield.MergeBitFields(qsummary.OnTimeSectors, qsummary.EarlySectors)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err = requireEqual(live, qSectors, acc, "live does not equal all expirations"); err != nil {
 		return nil, nil, err
 	}
 
@@ -246,6 +393,12 @@ func CheckPartitionStateInvariants(
 	}
 
 	return &PartitionStateSummary{
+		AllSectors:            partition.Sectors,
+		LiveSectors:           live,
+		FaultySectors:         partition.Faults,
+		RecoveringSectors:     partition.Recoveries,
+		UnprovenSectors:       partition.Unproven,
+		TerminatedSectors:     partition.Terminated,
 		LivePower:             livePower,
 		ActivePower:           activePower,
 		FaultyPower:           partition.FaultyPower,
@@ -253,10 +406,23 @@ func CheckPartitionStateInvariants(
 	}, acc, nil
 }
 
+type ExpirationQueueStateSummary struct {
+	OnTimeSectors bitfield.BitField
+	EarlySectors  bitfield.BitField
+	ActivePower   PowerPair
+	FaultyPower   PowerPair
+	OnTimePledge  abi.TokenAmount
+}
+
 // Checks the expiration queue for consistency.
 func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber]*SectorOnChainInfo,
-	partitionFaults bitfield.BitField, quant QuantSpec, sectorSize abi.SectorSize, acc *builtin.MessageAccumulator) error {
+	partitionFaults bitfield.BitField, quant QuantSpec, sectorSize abi.SectorSize, acc *builtin.MessageAccumulator) (*ExpirationQueueStateSummary, error) {
 	seenSectors := make(map[abi.SectorNumber]bool)
+	var allOnTime []bitfield.BitField
+	var allEarly []bitfield.BitField
+	allActivePower := NewPowerPairZero()
+	allFaultyPower := NewPowerPairZero()
+	allOnTimePledge := big.Zero()
 	firstQueueEpoch := abi.ChainEpoch(-1)
 	var exp ExpirationSet
 	err := expQ.ForEach(&exp, func(e int64) error {
@@ -352,12 +518,33 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		acc.Require(exp.FaultyPower.Equals(faultySectorsPower), "faulty power recorded %v doesn't match computed %v", exp.FaultyPower, faultySectorsPower)
 
 		acc.Require(exp.OnTimePledge.Equals(onTimeSectorsPledge), "on time pledge recorded %v doesn't match computed %v", exp.OnTimePledge, onTimeSectorsPledge)
+
+		allOnTime = append(allOnTime, exp.OnTimeSectors)
+		allEarly = append(allEarly, exp.EarlySectors)
+		allActivePower = allActivePower.Add(exp.ActivePower)
+		allFaultyPower = allFaultyPower.Add(exp.FaultyPower)
+		allOnTimePledge = big.Add(allOnTimePledge, exp.OnTimePledge)
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	unionOnTime, err := bitfield.MultiMerge(allOnTime...)
+	if err != nil {
+		return nil, err
+	}
+	unionEarly, err := bitfield.MultiMerge(allEarly...)
+	if err != nil {
+		return nil, err
+	}
+	return &ExpirationQueueStateSummary{
+		OnTimeSectors: unionOnTime,
+		EarlySectors:  unionEarly,
+		ActivePower:   allActivePower,
+		FaultyPower:   allFaultyPower,
+		OnTimePledge:  allOnTimePledge,
+	}, nil
 }
 
 // Checks the early termination queue for consistency.
@@ -418,7 +605,19 @@ func requireContainsAll(superset, subset bitfield.BitField, acc *builtin.Message
 	if err != nil {
 		return err
 	}
-	acc.Require(contains, msg+":%v, %v", superset, subset)
+	if !contains {
+		acc.Addf(msg+": %v, %v", superset, subset)
+		// Verbose output for debugging
+		//sup, err := superset.All(1 << 20)
+		//if err != nil {
+		//	return err
+		//}
+		//sub, err := subset.All(1 << 20)
+		//if err != nil {
+		//	return err
+		//}
+		//acc.Addf(msg+": %v, %v", sup, sub)
+	}
 	return nil
 }
 
@@ -427,6 +626,28 @@ func requireContainsNone(superset, subset bitfield.BitField, acc *builtin.Messag
 	if err != nil {
 		return err
 	}
-	acc.Require(!contains, msg+":%v, %v", superset, subset)
+	if contains {
+		acc.Addf(msg+": %v, %v", superset, subset)
+		// Verbose output for debugging
+		//sup, err := superset.All(1 << 20)
+		//if err != nil {
+		//	return err
+		//}
+		//sub, err := subset.All(1 << 20)
+		//if err != nil {
+		//	return err
+		//}
+		//acc.Addf(msg+": %v, %v", sup, sub)
+	}
+	return nil
+}
+
+func requireEqual(a, b bitfield.BitField, acc *builtin.MessageAccumulator, msg string) error {
+	if err := requireContainsAll(a, b, acc, msg); err != nil {
+		return err
+	}
+	if err := requireContainsAll(b, a, acc, msg); err != nil {
+		return err
+	}
 	return nil
 }

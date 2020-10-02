@@ -58,6 +58,62 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 	return locked
 }
 
+// Iterates all pending transactions and removes an address from each list of approvals, if present.
+// If an approval list becomes empty, the pending transaction is deleted.
+func (st *State) PurgeApprovals(store adt.Store, addr address.Address) error {
+	txns, err := adt.AsMap(store, st.PendingTxns)
+	if err != nil {
+		return xerrors.Errorf("failed to load transactions: %w", err)
+	}
+
+	// Identify the transactions that need updating.
+	var txnIdsToPurge []string // For stable iteration
+	txnsToPurge := map[string]Transaction{} // Values are not pointers, we need copies
+	var txn Transaction
+	if err = txns.ForEach(&txn, func(txid string) error {
+		for _, approver := range txn.Approved {
+			if approver == addr {
+				txnIdsToPurge = append(txnIdsToPurge, txid)
+				txnsToPurge[txid] = txn
+				break
+			}
+		}
+		return nil
+	}); err != nil {
+		return xerrors.Errorf("failed to traverse transactions: %w", err)
+	}
+
+	// Update or remove those transactions.
+	for _, txid := range txnIdsToPurge {
+		txn := txnsToPurge[txid]
+		// The right length is almost certainly len-1, but let's not be too clever.
+		newApprovers := make([]address.Address, 0, len(txn.Approved))
+		for _, approver := range txn.Approved {
+			if approver != addr {
+				newApprovers = append(newApprovers, approver)
+			}
+		}
+
+		if len(newApprovers) > 0 {
+			txn.Approved = newApprovers
+			if err := txns.Put(StringKey(txid), &txn); err != nil {
+				return xerrors.Errorf("failed to update transaction approvers: %w", err)
+			}
+		} else {
+			if err := txns.Delete(StringKey(txid)); err != nil {
+				return xerrors.Errorf("failed to delete transaction with no approvers: %w", err)
+			}
+		}
+	}
+
+	if newTxns, err := txns.Root(); err != nil {
+		return xerrors.Errorf("failed to persist transactions: %w", err)
+	} else {
+		st.PendingTxns = newTxns
+	}
+	return nil
+}
+
 // return nil if MultiSig maintains required locked balance after spending the amount, else return an error.
 func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.TokenAmount, currEpoch abi.ChainEpoch) error {
 	if amountToSpend.LessThan(big.Zero()) {
@@ -91,4 +147,11 @@ func getPendingTransaction(ptx *adt.Map, txnID TxnID) (Transaction, error) {
 		return Transaction{}, exitcode.ErrNotFound.Wrapf("failed to find transaction %v", txnID)
 	}
 	return out, nil
+}
+
+// An adt.Map key that just preserves the underlying string.
+type StringKey string
+
+func (k StringKey) Key() string {
+	return string(k)
 }
