@@ -26,6 +26,16 @@ func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, 
 		return cid.Undef, err
 	}
 
+	// If the miner's proving period hasn't started yet, it's a new v0
+	// miner.
+	//
+	// 1. There's no need to fix any state.
+	// 2. We definitely don't want to reschedule the proving period
+	//    start/deadlines.
+	if st.ProvingPeriodStart > epoch {
+		return head, nil
+	}
+
 	adtStore := adt.WrapStore(ctx, store)
 
 	sectors, err := miner.LoadSectors(adtStore, st.Sectors)
