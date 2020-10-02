@@ -102,26 +102,26 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	err = dealStates.ForEach(&dealState, func(dealID int64) error {
 		acc.Require(
 			dealState.SectorStartEpoch >= 0,
-			"deal state start epoch undefined %d: %v", dealID, dealState)
+			"deal %d state start epoch undefined: %v", dealID, dealState)
 
 		acc.Require(
 			dealState.LastUpdatedEpoch == epochUndefined || dealState.LastUpdatedEpoch >= dealState.SectorStartEpoch,
-			"deal state last updated before sector start %d: %v", dealID, dealState)
+			"deal %d state last updated before sector start: %v", dealID, dealState)
 
 		acc.Require(
 			dealState.LastUpdatedEpoch == epochUndefined || dealState.LastUpdatedEpoch <= currEpoch,
-			"last updated epoch after current epoch %d: %v > %v", dealID, dealState.LastUpdatedEpoch, currEpoch)
+			"deal %d last updated epoch %d after current %d", dealID, dealState.LastUpdatedEpoch, currEpoch)
 
 		acc.Require(
 			dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch >= dealState.SectorStartEpoch,
-			"deal state slashed before sector start %d: %v", dealID, dealState)
+			"deal %d state slashed before sector start: %v", dealID, dealState)
 
 		acc.Require(
 			dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch <= currEpoch,
-			"deal state slashed after current epoch %d: %v", dealID, currEpoch)
+			"deal %d state slashed after current epoch %d: %v", dealID, currEpoch, dealState)
 
 		_, found := allIDs[abi.DealID(dealID)]
-		acc.Require(found, "deal state references deal %d not found in proposals", dealID)
+		acc.Require(found, "deal proposal %d for deal state not found", dealID)
 
 		dealStateCount++
 		return nil
