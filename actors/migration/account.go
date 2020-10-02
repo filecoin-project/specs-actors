@@ -3,7 +3,6 @@ package migration
 import (
 	"context"
 
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	account0 "github.com/filecoin-project/specs-actors/actors/builtin/account"
 	cid "github.com/ipfs/go-cid"
@@ -15,13 +14,16 @@ import (
 type accountMigrator struct {
 }
 
-func (m *accountMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
+func (m *accountMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState account0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
 
 	outState := account2.State(inState) // Identical
 	newHead, err := store.Put(ctx, &outState)
-	return newHead, big.Zero(), err
+	return &StateMigrationResult{
+		NewHead:  newHead,
+		Transfer: big.Zero(),
+	}, err
 }

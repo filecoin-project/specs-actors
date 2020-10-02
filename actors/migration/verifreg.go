@@ -24,24 +24,24 @@ type verifregMigrator struct {
 	actorsOut *states.Tree
 }
 
-func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
+func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState verifreg0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
 
 	verifiersRoot, err := m.migrateCapTable(ctx, store, inState.Verifiers)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("verifiers cap table: %w", err)
+		return nil, xerrors.Errorf("verifiers cap table: %w", err)
 	}
 
 	clientsRoot, err := m.migrateCapTable(ctx, store, inState.VerifiedClients)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("clients cap table: %w", err)
+		return nil, xerrors.Errorf("clients cap table: %w", err)
 	}
 
 	if inState.RootKey.Protocol() != addr.ID {
-		return cid.Undef, big.Zero(), xerrors.Errorf("unexpected non-ID root key address %v", inState.RootKey)
+		return nil, xerrors.Errorf("unexpected non-ID root key address %v", inState.RootKey)
 	}
 
 	outState := verifreg2.State{
@@ -50,7 +50,10 @@ func (m *verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStor
 		VerifiedClients: clientsRoot,
 	}
 	newHead, err := store.Put(ctx, &outState)
-	return newHead, big.Zero(), err
+	return &StateMigrationResult{
+		NewHead:  newHead,
+		Transfer: big.Zero(),
+	}, err
 }
 
 func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

@@ -24,30 +24,30 @@ type powerMigrator struct {
 	powerUpdates *PowerUpdates
 }
 
-func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
+func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
 	var inState power0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
 
 	cronEventsRoot, err := m.updateCronEvents(ctx, store, inState.CronEventQueue, m.powerUpdates)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("could not update cron events: %w", err)
+		return nil, xerrors.Errorf("could not update cron events: %w", err)
 	}
 
 	cronEventsRoot, err = m.migrateCronEvents(ctx, store, cronEventsRoot)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("cron events: %w", err)
+		return nil, xerrors.Errorf("cron events: %w", err)
 	}
 
 	claimsRoot, err := m.updateClaims(ctx, store, inState.Claims, m.powerUpdates)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("claims: %w", err)
+		return nil, xerrors.Errorf("claims: %w", err)
 	}
 
 	claimsRoot, err = m.migrateClaims(ctx, store, claimsRoot)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("claims: %w", err)
+		return nil, xerrors.Errorf("claims: %w", err)
 	}
 
 	outState := power2.State{
@@ -69,7 +69,10 @@ func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	}
 
 	newHead, err := store.Put(ctx, &outState)
-	return newHead, big.Zero(), err
+	return &StateMigrationResult{
+		NewHead:  newHead,
+		Transfer: big.Zero(),
+	}, err
 }
 
 func (m *powerMigrator) updateCronEvents(ctx context.Context, store cbor.IpldStore, cronRoot cid.Cid, powerUpdates *PowerUpdates) (cid.Cid, error) {

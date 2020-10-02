@@ -3,7 +3,6 @@ package migration
 import (
 	"context"
 
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	cid "github.com/ipfs/go-cid"
@@ -16,10 +15,10 @@ import (
 type rewardMigrator struct {
 }
 
-func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
+func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState reward0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
 
 	outState := reward2.State{
@@ -34,5 +33,8 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		TotalStoragePowerReward: inState.TotalMined,
 	}
 	newHead, err := store.Put(ctx, &outState)
-	return newHead, big.Zero(), err
+	return &StateMigrationResult{
+		NewHead:  newHead,
+		Transfer: big.Zero(),
+	}, err
 }
