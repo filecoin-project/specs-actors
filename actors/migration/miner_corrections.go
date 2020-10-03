@@ -18,7 +18,10 @@ import (
 
 func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, head cid.Cid,
 	priorEpoch abi.ChainEpoch, a addr.Address) (*StateMigrationResult, error) {
-	result := new(StateMigrationResult)
+	result := &StateMigrationResult{
+		NewHead:  head,
+		Transfer: big.Zero(),
+	}
 	epoch := priorEpoch + 1
 	var st miner.State
 	if err := store.Get(ctx, head, &st); err != nil {
