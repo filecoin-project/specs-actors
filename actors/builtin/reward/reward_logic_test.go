@@ -16,7 +16,7 @@ import (
 
 func q128ToF(x big.Int) float64 {
 	q128 := new(gbig.Int).SetInt64(1)
-	q128 = q128.Lsh(q128, math.Precision)
+	q128 = q128.Lsh(q128, math.Precision128)
 	res, _ := new(gbig.Rat).SetFrac(x.Int, q128).Float64()
 	return res
 }
@@ -26,14 +26,14 @@ func TestComputeRTeta(t *testing.T) {
 		return big.Mul(big.NewInt(int64(epoch+1)), big.NewInt(2048))
 	}
 
-	assert.Equal(t, 0.5, q128ToF(computeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.5), big.NewInt(2048+2*2048))))
-	assert.Equal(t, 0.25, q128ToF(computeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.25), big.NewInt(2048+2*2048))))
+	assert.Equal(t, 0.5, q128ToF(ComputeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.5), big.NewInt(2048+2*2048))))
+	assert.Equal(t, 0.25, q128ToF(ComputeRTheta(1, baselinePowerAt(1), big.NewInt(2048+2*2048*0.25), big.NewInt(2048+2*2048))))
 
 	cumsum15 := big.NewInt(0)
 	for i := abi.ChainEpoch(0); i < 16; i++ {
 		cumsum15 = big.Add(cumsum15, baselinePowerAt(i))
 	}
-	assert.Equal(t, 15.25, q128ToF(computeRTheta(16,
+	assert.Equal(t, 15.25, q128ToF(ComputeRTheta(16,
 		baselinePowerAt(16),
 		big.Add(cumsum15, big.Div(baselinePowerAt(16), big.NewInt(4))),
 		big.Add(cumsum15, baselinePowerAt(16)))))
@@ -41,11 +41,11 @@ func TestComputeRTeta(t *testing.T) {
 
 func TestBaselineReward(t *testing.T) {
 	step := gbig.NewInt(5000)
-	step = step.Lsh(step, math.Precision)
+	step = step.Lsh(step, math.Precision128)
 	step = step.Sub(step, gbig.NewInt(77777777777)) // offset from full integers
 
 	delta := gbig.NewInt(1)
-	delta = delta.Lsh(delta, math.Precision)
+	delta = delta.Lsh(delta, math.Precision128)
 	delta = delta.Sub(delta, gbig.NewInt(33333333333)) // offset from full integers
 
 	prevTheta := new(gbig.Int)
@@ -53,10 +53,10 @@ func TestBaselineReward(t *testing.T) {
 
 	b := &bytes.Buffer{}
 	b.WriteString("t0, t1, y\n")
-	simple := computeReward(0, big.Zero(), big.Zero())
+	simple := computeReward(0, big.Zero(), big.Zero(), DefaultSimpleTotal, DefaultBaselineTotal)
 
 	for i := 0; i < 512; i++ {
-		reward := computeReward(0, big.NewFromGo(prevTheta), big.NewFromGo(theta))
+		reward := computeReward(0, big.NewFromGo(prevTheta), big.NewFromGo(theta), DefaultSimpleTotal, DefaultBaselineTotal)
 		reward = big.Sub(reward, simple)
 		fmt.Fprintf(b, "%s,%s,%s\n", prevTheta, theta, reward.Int)
 		prevTheta = prevTheta.Add(prevTheta, step)
@@ -71,7 +71,7 @@ func TestSimpleReward(t *testing.T) {
 	b.WriteString("x, y\n")
 	for i := int64(0); i < 512; i++ {
 		x := i * 5000
-		reward := computeReward(abi.ChainEpoch(x), big.Zero(), big.Zero())
+		reward := computeReward(abi.ChainEpoch(x), big.Zero(), big.Zero(), DefaultSimpleTotal, DefaultBaselineTotal)
 		fmt.Fprintf(b, "%d,%s\n", x, reward.Int)
 	}
 

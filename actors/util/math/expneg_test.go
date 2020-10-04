@@ -1,4 +1,4 @@
-package reward
+package math_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ var Res big.Word
 
 func BenchmarkExpneg(b *testing.B) {
 	x := new(big.Int).SetUint64(14)
-	x = x.Lsh(x, math.Precision-3) // set x to 1.75
+	x = x.Lsh(x, math.Precision128-3) // set x to 1.75
 	dec := new(big.Int)
 	dec = dec.Div(x, big.NewInt(int64(b.N)))
 	b.ResetTimer()
@@ -23,7 +23,7 @@ func BenchmarkExpneg(b *testing.B) {
 	var res big.Word
 
 	for i := 0; i < b.N; i++ {
-		r := expneg(x)
+		r := math.ExpNeg(x)
 		res += r.Bits()[0]
 		x.Sub(x, dec)
 	}
@@ -34,7 +34,7 @@ func TestExpFunction(t *testing.T) {
 	const N = 256
 
 	step := big.NewInt(5)
-	step = step.Lsh(step, math.Precision) // Q.128
+	step = step.Lsh(step, math.Precision128) // Q.128
 	step = step.Div(step, big.NewInt(N-1))
 
 	x := big.NewInt(0)
@@ -42,7 +42,7 @@ func TestExpFunction(t *testing.T) {
 
 	b.WriteString("x, y\n")
 	for i := 0; i < N; i++ {
-		y := expneg(x)
+		y := math.ExpNeg(x)
 		fmt.Fprintf(b, "%s,%s\n", x, y)
 		x = x.Add(x, step)
 	}
