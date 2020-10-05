@@ -77,13 +77,13 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 	}
 
 	missedProvingPeriodCron := false
-	for st.ProvingPeriodStart+miner.WPoStProvingPeriod <= epoch {
+	for st.ProvingPeriodStart <= epoch {
 		st.ProvingPeriodStart += miner.WPoStProvingPeriod
 		missedProvingPeriodCron = true
 	}
-	expectedDeadlline := uint64((epoch - st.ProvingPeriodStart) / miner.WPoStChallengeWindow)
-	if expectedDeadlline != st.CurrentDeadline {
-		st.CurrentDeadline = expectedDeadlline
+	expectedDeadline := uint64((epoch - st.ProvingPeriodStart) / miner.WPoStChallengeWindow)
+	if expectedDeadline != st.CurrentDeadline {
+		st.CurrentDeadline = expectedDeadline
 		missedProvingPeriodCron = true
 	}
 
