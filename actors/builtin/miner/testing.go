@@ -591,6 +591,8 @@ func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
 	}
 
 	if info.PendingOwnerAddress != nil {
+		acc.Require(info.PendingOwnerAddress.Protocol() == addr.ID,
+			"pending owner address %v is not an ID address", info.PendingOwnerAddress)
 		acc.Require(*info.PendingOwnerAddress != info.Owner,
 			"pending owner address %v is same as existing owner %v", info.PendingOwnerAddress, info.Owner)
 	}
@@ -600,10 +602,9 @@ func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
 	if found {
 		acc.Require(sealProofInfo.SectorSize == info.SectorSize,
 			"sector size %d is wrong for seal proof type %d: %d", info.SectorSize, info.SealProofType, sealProofInfo.SectorSize)
-		acc.Require(sealProofInfo.SectorSize == info.SectorSize,
-			"sector size %d is wrong for seal proof type %d: %d", info.SectorSize, info.SealProofType, sealProofInfo.SectorSize)
 	}
 	sealProofPolicy, found := builtin.SealProofPolicies[info.SealProofType]
+	acc.Require(found, "no seal proof policy exists for proof type %d", info.SealProofType)
 	if found {
 		acc.Require(sealProofPolicy.WindowPoStPartitionSectors == info.WindowPoStPartitionSectors,
 			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
