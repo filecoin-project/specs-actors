@@ -17,7 +17,7 @@ func ExpBySquaring(base big.Int, n int64) big.Int {
 	// Recurse
 	if n < 0 {
 		inverseBase := big.Div(big.Lsh(one, Precision128), base) // Q.256 / Q.128 => Q.128
-		return ExpBySquaring(inverseBase, n)
+		return ExpBySquaring(inverseBase, -n)
 	}
 	baseSquared := big.Mul(base, base)               // Q.128 * Q.128 => Q.256
 	baseSquared = big.Rsh(baseSquared, Precision128) // Q.256 => Q.128

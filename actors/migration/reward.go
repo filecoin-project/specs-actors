@@ -29,7 +29,7 @@ var (
 func init() {
 	constStrs := []string{
 		"77669179383316",
-		"16058975841646949912583456815941211282956743",
+		"516058975841646949912583456815941211282956743",
 	}
 	constBigs := math2.Parse(constStrs)
 	gTauOverB0 = big.NewFromGo(constBigs[0]) // Q.128
@@ -94,6 +94,15 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 	outCumSumBaseline = big.Mul(outCumSumBaseline, oneOverGTau)                                                           // Q.128 * Q.128 => Q.256
 	outCumSumBaseline = big.Rsh(outCumSumBaseline, 2*math2.Precision128)                                                  // Q.256 => Q.0
 
+	// Reduce baseline total so that the amount of tokens remaining to be minted is held fixed across the upgrade
+	preUpgradeTheta := reward2.ComputeRTheta(inState.EffectiveNetworkTime, inState.EffectiveBaselinePower, inState.CumsumRealized, inState.CumsumBaseline) // Q.128
+	thetaDiff := big.Sub(preUpgradeTheta, postUpgradeTheta)
+	baselineAdjustmentExp := big.Mul(reward2.Lambda, thetaDiff)                // Q.128 * Q.128 => Q.256
+	baselineAdjustmentExp = big.Rsh(baselineAdjustmentExp, math2.Precision128) // Q.256 => Q.128
+	baselineAdjustment := big.NewFromGo(math2.ExpNeg(baselineAdjustmentExp.Int))
+	outBaselineTotal := big.Mul(reward0.BaselineTotal, baselineAdjustment) // Q.0 * Q.128 => Q.128
+	outBaselineTotal = big.Rsh(outBaselineTotal, math2.Precision128)       // Q.128 => Q.0
+
 	// Set reward filter postiion and velocity values
 
 	// Filter position is set by evaluating the closed form expression for expected
@@ -114,7 +123,7 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 	acc2 = big.NewFromGo(math2.ExpNeg(acc2.Int))
 	acc1 = big.Mul(acc1, acc2)                                             //Q.128 * Q.128 => Q.256
 	acc1 = big.Rsh(acc1, math2.Precision128)                               // Q.256 => Q.128
-	acc1 = big.Mul(acc1, reward0.BaselineTotal)                            // Q.128 * Q.0 => Q.128
+	acc1 = big.Mul(acc1, outBaselineTotal)                                 // Q.128 * Q.0 => Q.128
 	acc3 := big.Mul(big.NewInt(int64(migInfo.priorEpoch)), reward2.Lambda) // Q.0 * Q.128 => Q.128
 	acc3 = big.NewFromGo(math2.ExpNeg(acc3.Int))
 	acc3 = big.Mul(acc3, reward0.SimpleTotal)  // Q.128 * Q.0 => Q.128
@@ -128,15 +137,6 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		big.Exp(big.NewInt(10), big.NewInt(51)),
 	) // Q.128
 	outThisEpochRewardSmoothed := smoothing2.NewEstimate(outRewardSmoothedPosition, outRewardSmoothedVelocity)
-
-	// Reduce baseline total so that the amount of tokens remaining to be minted is held fixed across the upgrade
-	preUpgradeTheta := reward2.ComputeRTheta(inState.EffectiveNetworkTime, inState.EffectiveBaselinePower, inState.CumsumRealized, inState.CumsumBaseline) // Q.128
-	thetaDiff := big.Sub(preUpgradeTheta, postUpgradeTheta)
-	baselineAdjustmentExp := big.Mul(reward2.Lambda, thetaDiff)                // Q.128 * Q.128 => Q.256
-	baselineAdjustmentExp = big.Rsh(baselineAdjustmentExp, math2.Precision128) // Q.256 => Q.128
-	baselineAdjustment := big.NewFromGo(math2.ExpNeg(baselineAdjustmentExp.Int))
-	outBaselineTotal := big.Mul(reward0.BaselineTotal, baselineAdjustment) // Q.0 * Q.128 => Q.128
-	outBaselineTotal = big.Rsh(outBaselineTotal, math2.Precision128)       // Q.128 => Q.0
 
 	outState := reward2.State{
 		CumsumBaseline:          outCumSumBaseline,
