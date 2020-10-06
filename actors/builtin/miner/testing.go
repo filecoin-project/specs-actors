@@ -5,7 +5,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/util"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
@@ -33,6 +32,12 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	}
 
 	msgs, err = CheckMinerBalances(st, store, balance)
+	acc.AddAll(msgs)
+	if err != nil {
+		return nil, acc, err
+	}
+
+	msgs, err = CheckPreCommits(st, store)
 	acc.AddAll(msgs)
 	if err != nil {
 		return nil, acc, err
@@ -651,6 +656,63 @@ func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount) (*b
 
 	acc.Require(st.LockedFunds.Equals(vestingSum),
 		"locked funds %d is not sum of vesting table entries %d", st.LockedFunds, vestingSum)
+
+	return acc, nil
+}
+
+func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, error) {
+	acc := &builtin.MessageAccumulator{}
+
+	// expire pre-committed sectors
+	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
+	if err != nil {
+		return acc, err
+	}
+
+	// invert bitfield queue into a lookup by sector number
+	expireEpochs := make(map[uint64]abi.ChainEpoch)
+	err = expiryQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
+		return bf.ForEach(func(secNum uint64) error {
+			expireEpochs[secNum] = epoch
+			return nil
+		})
+	})
+	if err != nil {
+		return acc, err
+	}
+
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	if err != nil {
+		return nil, err
+	}
+
+	var precommit SectorPreCommitOnChainInfo
+	precommitTotal := big.Zero()
+	err = precommitted.ForEach(&precommit, func(key string) error {
+		secNum, err := abi.ParseUIntKey(key)
+		if err != nil {
+			return err
+		}
+
+		allocated, err := st.HasSectorNo(store, abi.SectorNumber(secNum))
+		if err != nil {
+			return err
+		}
+		acc.Require(!allocated, "precommited sector number has not been allocated %d", secNum)
+
+		_, found := expireEpochs[secNum]
+		acc.Require(found, "no expiry epoch for precommit at %d", precommit.PreCommitEpoch)
+
+		precommitTotal = big.Add(precommitTotal, precommit.PreCommitDeposit)
+
+		return nil
+	})
+	if err != nil {
+		return acc, err
+	}
+
+	acc.Require(st.PreCommitDeposits.Equals(precommitTotal),
+		"sum of precommit deposits %v does not equal recorded precommit deposit %v", precommitTotal, st.PreCommitDeposits)
 
 	return acc, nil
 }
