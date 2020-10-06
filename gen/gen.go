@@ -185,7 +185,7 @@ func main() {
 		//miner.ChangePeerIDParams{}, // Aliased from v0
 		//miner.ChangeMultiaddrsParams{}, // Aliased from v0
 		//miner.ProveCommitSectorParams{}, // Aliased from v0
-		miner.ChangeWorkerAddressParams{},
+		//miner.ChangeWorkerAddressParams{},  // Aliased from v0
 		//miner.ExtendSectorExpirationParams{}, // Aliased from v0
 		//miner.DeclareFaultsParams{}, // Aliased from v0
 		//miner.DeclareFaultsRecoveredParams{}, // Aliased from v0
