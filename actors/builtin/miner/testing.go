@@ -43,6 +43,11 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		return nil, acc, err
 	}
 
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
+		return nil, acc, err
+	}
+
 	allSectors := map[abi.SectorNumber]*SectorOnChainInfo{}
 	if sectorsArr, err := adt.AsArray(store, st.Sectors); err != nil {
 		return nil, nil, err
@@ -51,6 +56,13 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		if err = sectorsArr.ForEach(&sector, func(sno int64) error {
 			cpy := sector
 			allSectors[abi.SectorNumber(sno)] = &cpy
+
+			allocated, err := allocatedSectors.IsSet(uint64(sno))
+			if err != nil {
+				return err
+			}
+			acc.Require(allocated, "on chain sector's sector number has not been allocated %d", sno)
+
 			return nil
 		}); err != nil {
 			return nil, nil, err
@@ -67,6 +79,9 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	faultyPower := NewPowerPairZero()
 
 	// Check deadlines
+	acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
+		"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
+
 	if err := deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
 		acc := acc.WithPrefix("deadline %d: ", dlIdx) // Shadow
 		quant := st.QuantSpecForDeadline(dlIdx)
@@ -669,15 +684,26 @@ func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, e
 		return acc, err
 	}
 
+	quant := st.QuantSpecEveryDeadline()
+
 	// invert bitfield queue into a lookup by sector number
 	expireEpochs := make(map[uint64]abi.ChainEpoch)
 	err = expiryQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
+		quantized := quant.QuantizeUp(epoch)
+		acc.Require(quantized == epoch, "precommit expiration %d is not quantized", epoch)
+
 		return bf.ForEach(func(secNum uint64) error {
 			expireEpochs[secNum] = epoch
 			return nil
 		})
 	})
 	if err != nil {
+		return acc, err
+	}
+
+	// load sector numer allocation
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
 		return acc, err
 	}
 
@@ -694,11 +720,11 @@ func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, e
 			return err
 		}
 
-		allocated, err := st.HasSectorNo(store, abi.SectorNumber(secNum))
+		allocated, err := allocatedSectors.IsSet(secNum)
 		if err != nil {
 			return err
 		}
-		acc.Require(!allocated, "precommited sector number has not been allocated %d", secNum)
+		acc.Require(allocated, "precommited sector number has not been allocated %d", secNum)
 
 		_, found := expireEpochs[secNum]
 		acc.Require(found, "no expiry epoch for precommit at %d", precommit.PreCommitEpoch)
