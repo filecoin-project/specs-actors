@@ -9,7 +9,6 @@ import (
 	mh "github.com/multiformats/go-multihash"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	. "github.com/filecoin-project/specs-actors/v2/actors/util"
 )
 
 // The period over which a miner's active sectors are expected to be proven via WindowPoSt.
@@ -164,7 +163,6 @@ func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, 
 	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
 	// totalDealSpaceTime = dealWeight + verifiedWeight
 	totalDealSpaceTime := big.Add(dealWeight, verifiedWeight)
-	Assert(sectorSpaceTime.GreaterThanEqual(totalDealSpaceTime))
 
 	// Base - all size * duration of non-deals
 	// weightedBaseSpaceTime = (sectorSpaceTime - totalDealSpaceTime) * QualityBaseMultiplier

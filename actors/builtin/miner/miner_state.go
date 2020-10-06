@@ -778,7 +778,10 @@ func (st *State) ApplyPenalty(penalty abi.TokenAmount) error {
 // current balance. If the fee debt exceeds the total amount available for repayment
 // the fee debt field is updated to track the remaining debt.  Otherwise it is set to zero.
 func (st *State) RepayPartialDebtInPriorityOrder(store adt.Store, currEpoch abi.ChainEpoch, currBalance abi.TokenAmount) (fromVesting abi.TokenAmount, fromBalance abi.TokenAmount, err error) {
-	unlockedBalance := st.GetUnlockedBalance(currBalance)
+	unlockedBalance, err := st.GetUnlockedBalance(currBalance)
+	if err != nil {
+		return big.Zero(), big.Zero(), err
+	}
 
 	// Pay fee debt with locked funds first
 	fromVesting, err = st.UnlockUnvestedFunds(store, currEpoch, st.FeeDebt)
@@ -799,10 +802,13 @@ func (st *State) RepayPartialDebtInPriorityOrder(store adt.Store, currEpoch abi.
 
 // Repays the full miner actor fee debt.  Returns the amount that must be
 // burnt and an error if there are not sufficient funds to cover repayment.
-// Miner state repays from unlocked funds, potentially violating IP requirements
-// and bringing actor into IP debt.  FeeDebt should be zero after calling.
+// Miner state repays from unlocked funds and fails if unlocked funds are insufficient to cover fee debt.
+// FeeDebt will be zero after a successful call.
 func (st *State) repayDebts(currBalance abi.TokenAmount) (abi.TokenAmount, error) {
-	unlockedBalance := st.GetUnlockedBalance(currBalance)
+	unlockedBalance, err := st.GetUnlockedBalance(currBalance)
+	if err != nil {
+		return big.Zero(), err
+	}
 	if unlockedBalance.LessThan(st.FeeDebt) {
 		return big.Zero(), xc.ErrInsufficientFunds.Wrapf("unlocked balance can not repay fee debt (%v < %v)", unlockedBalance, st.FeeDebt)
 	}
@@ -852,7 +858,9 @@ func (st *State) UnlockVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (a
 
 	amountUnlocked := vestingFunds.unlockVestedFunds(currEpoch)
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
-	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	if st.LockedFunds.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("vesting cause locked funds negative %v", st.LockedFunds)
+	}
 
 	err = st.SaveVestingFunds(store, vestingFunds)
 	if err != nil {
@@ -888,25 +896,42 @@ func (st *State) CheckVestedFunds(store adt.Store, currEpoch abi.ChainEpoch) (ab
 
 // Unclaimed funds that are not locked -- includes free funds and does not
 // account for fee debt.  Always greater than or equal to zero
-func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
+func (st *State) GetUnlockedBalance(actorBalance abi.TokenAmount) (abi.TokenAmount, error) {
 	unlockedBalance := big.Subtract(actorBalance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledge)
-	Assert(unlockedBalance.GreaterThanEqual(big.Zero()))
-	return unlockedBalance
+	if unlockedBalance.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative unlocked balance %v", unlockedBalance)
+	}
+	return unlockedBalance, nil
 }
 
 // Unclaimed funds.  Actor balance - (locked funds, precommit deposit, initial pledge, fee debt)
 // Can go negative if the miner is in IP debt
-func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) abi.TokenAmount {
-	unlockedBalance := st.GetUnlockedBalance(actorBalance)
-	return big.Subtract(unlockedBalance, st.FeeDebt)
+func (st *State) GetAvailableBalance(actorBalance abi.TokenAmount) (abi.TokenAmount, error) {
+	unlockedBalance, err := st.GetUnlockedBalance(actorBalance)
+	if err != nil {
+		return big.Zero(), err
+	}
+	return big.Subtract(unlockedBalance, st.FeeDebt), nil
 }
 
-func (st *State) AssertBalanceInvariants(balance abi.TokenAmount) {
-	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
-	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
-	Assert(st.InitialPledge.GreaterThanEqual(big.Zero()))
-	Assert(st.FeeDebt.GreaterThanEqual(big.Zero()))
-	Assert(balance.GreaterThanEqual(big.Sum(st.PreCommitDeposits, st.LockedFunds, st.InitialPledge)))
+func (st *State) CheckBalanceInvariants(balance abi.TokenAmount) error {
+	if st.PreCommitDeposits.LessThan(big.Zero()) {
+		return xerrors.Errorf("pre-commit deposit is negative: %v", st.PreCommitDeposits)
+	}
+	if st.LockedFunds.LessThan(big.Zero()) {
+		return xerrors.Errorf("locked funds is negative: %v", st.LockedFunds)
+	}
+	if st.InitialPledge.LessThan(big.Zero()) {
+		return xerrors.Errorf("initial pledge is negative: %v", st.InitialPledge)
+	}
+	if st.FeeDebt.LessThan(big.Zero()) {
+		return xerrors.Errorf("fee debt is negative: %v", st.InitialPledge)
+	}
+	minBalance := big.Sum(st.PreCommitDeposits, st.LockedFunds, st.InitialPledge)
+	if balance.LessThan(minBalance) {
+		return xerrors.Errorf("balance %v below required %v", balance, minBalance)
+	}
+	return nil
 }
 
 func (st *State) IsDebtFree() bool {
@@ -990,7 +1015,9 @@ func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (de
 	}
 
 	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
-	Assert(st.PreCommitDeposits.GreaterThanEqual(big.Zero()))
+	if st.PreCommitDeposits.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("pre-commit expiry caused negative deposits: %v", st.PreCommitDeposits)
+	}
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.
 	return depositToBurn, nil

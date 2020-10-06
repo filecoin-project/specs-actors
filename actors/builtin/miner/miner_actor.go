@@ -33,6 +33,17 @@ import (
 
 type Runtime = runtime.Runtime
 
+const (
+	// The first 1000 actor-specific codes are left open for user error, i.e. things that might
+	// actually happen without programming error in the actor code.
+	//ErrToBeDetermined = exitcode.FirstActorSpecificExitCode + iota
+
+	// The following errors are particular cases of illegal state.
+	// They're not expected to ever happen, but if they do, distinguished codes can help us
+	// diagnose the problem.
+	ErrBalanceInvariantBroken = 1000
+)
+
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
@@ -472,7 +483,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	requestUpdatePower(rt, postResult.PowerDelta)
 
 	rt.StateReadonly(&st)
-	st.AssertBalanceInvariants(rt.CurrentBalance())
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
+
 	return nil
 }
 
@@ -538,7 +551,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
-		availableBalance := st.GetAvailableBalance(rt.CurrentBalance())
+		availableBalance, err := st.GetAvailableBalance(rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate available balance")
 		feeToBurn = RepayDebtsOrAbort(rt, &st)
 
 		info := getMinerInfo(rt, &st)
@@ -618,7 +632,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
-	st.AssertBalanceInvariants(rt.CurrentBalance())
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
@@ -851,13 +866,15 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
 		st.AddPreCommitDeposit(depositToUnlock.Neg())
 
-		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
 		if unlockedBalance.LessThan(totalPledge) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, unlockedBalance)
 		}
 
 		st.AddInitialPledge(totalPledge)
-		st.AssertBalanceInvariants(rt.CurrentBalance())
+		err = st.CheckBalanceInvariants(rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	})
 
 	// Request power and pledge update for activated sector.
@@ -1333,7 +1350,8 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
-	st.AssertBalanceInvariants(rt.CurrentBalance())
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	// Power is not restored yet, but when the recovered sectors are successfully PoSted.
 	return nil
@@ -1468,7 +1486,8 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 
 		// This ensures the miner has sufficient funds to lock up amountToLock.
 		// This should always be true if reward actor sends reward funds with the message.
-		unlockedBalance := st.GetUnlockedBalance(rt.CurrentBalance())
+		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
 		if unlockedBalance.LessThan(params.Reward) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, params.Reward)
 		}
@@ -1568,7 +1587,8 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	notifyPledgeChanged(rt, pledgeDelta)
 
 	rt.StateReadonly(&st)
-	st.AssertBalanceInvariants(rt.CurrentBalance())
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	return nil
 }
@@ -1612,7 +1632,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
-		availableBalance = st.GetAvailableBalance(rt.CurrentBalance())
+		availableBalance, err = st.GetAvailableBalance(rt.CurrentBalance())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate available balance")
 
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
@@ -1633,7 +1654,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
 
-	st.AssertBalanceInvariants(rt.CurrentBalance())
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
+
 	return nil
 }
 
@@ -1652,7 +1675,9 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 
 	notifyPledgeChanged(rt, fromVesting.Neg())
 	burnFunds(rt, big.Sum(fromVesting, fromBalance))
-	st.AssertBalanceInvariants(rt.CurrentBalance())
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
+
 	return nil
 }
 
@@ -2002,7 +2027,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 	var addrBuf bytes.Buffer
 	receiver := rt.Receiver()
 	err = receiver.MarshalCBOR(&addrBuf)
-	AssertNoError(err)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to marshal address for window post challenge")
 	postRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, challengeEpoch, addrBuf.Bytes())
 
 	sectorProofInfo := make([]proof.SectorInfo, len(sectors))
@@ -2055,7 +2080,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 	buf := new(bytes.Buffer)
 	receiver := rt.Receiver()
 	err = receiver.MarshalCBOR(buf)
-	AssertNoError(err)
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to marshal address for seal verification challenge")
 
 	svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, params.SealRandEpoch, buf.Bytes())
 	svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, params.InteractiveEpoch, buf.Bytes())

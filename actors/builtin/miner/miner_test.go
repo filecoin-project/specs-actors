@@ -3945,10 +3945,13 @@ func TestApplyRewards(t *testing.T) {
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
 		amt := rt.Balance()
-		availableBefore := st.GetAvailableBalance(amt)
+		availableBefore, err := st.GetAvailableBalance(amt)
+		require.NoError(t, err)
 		assert.True(t, availableBefore.GreaterThan(big.Zero()))
 		st.FeeDebt = big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
-		assert.True(t, st.GetAvailableBalance(amt).LessThan(big.Zero()))
+		availableAfter, err := st.GetAvailableBalance(amt)
+		require.NoError(t, err)
+		assert.True(t, availableAfter.LessThan(big.Zero()))
 
 		rt.ReplaceState(st)
 
@@ -3985,7 +3988,9 @@ func TestApplyRewards(t *testing.T) {
 		st = getState(rt)
 		// balance funds used to pay off fee debt
 		// available balance should be 2
-		assert.Equal(t, availableBefore, st.GetAvailableBalance(finalBalance))
+		availableBalance, err := st.GetAvailableBalance(finalBalance)
+		require.NoError(t, err)
+		assert.Equal(t, availableBefore, availableBalance)
 		assert.True(t, st.IsDebtFree())
 		// remaining funds locked in vesting table
 		assert.Equal(t, amt, st.LockedFunds)
