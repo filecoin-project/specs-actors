@@ -13,7 +13,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{137}
+var lengthBufState = []byte{139}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -82,6 +82,16 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 	if err := t.TotalStoragePowerReward.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.SimpleTotal (big.Int) (struct)
+	if err := t.SimpleTotal.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.BaselineTotal (big.Int) (struct)
+	if err := t.BaselineTotal.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -99,7 +109,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 9 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -213,6 +223,24 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.TotalStoragePowerReward.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.TotalStoragePowerReward: %w", err)
+		}
+
+	}
+	// t.SimpleTotal (big.Int) (struct)
+
+	{
+
+		if err := t.SimpleTotal.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.SimpleTotal: %w", err)
+		}
+
+	}
+	// t.BaselineTotal (big.Int) (struct)
+
+	{
+
+		if err := t.BaselineTotal.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.BaselineTotal: %w", err)
 		}
 
 	}

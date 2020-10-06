@@ -23,7 +23,7 @@ var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builti
 // Cap on initial pledge requirement for sectors.
 // The target is 1 FIL (10**18 attoFIL) per 32GiB.
 // This does not divide evenly, so the result is fractionally smaller.
-var InitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32 << 30))
+var InitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32<<30))
 
 // Multiplier of share of circulating money supply for consensus pledge required to commit a sector.
 // This pledge is lost if a sector is terminated before its full committed lifetime.
@@ -67,7 +67,7 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.Fil
 	}
 	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkQAPowerEstimate)
 	br128 := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
-	br := big.Rsh(br128, math.Precision)
+	br := big.Rsh(br128, math.Precision128)
 	return big.Max(br, big.Zero()) // negative BR is clamped at 0
 }
 

@@ -139,6 +139,7 @@ var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
 var deferredMigrations = map[cid.Cid]bool{
 	builtin0.VerifiedRegistryActorCodeID: true,
 	builtin0.StoragePowerActorCodeID:     true,
+	builtin0.RewardActorCodeID:           true,
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
@@ -264,6 +265,35 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		Balance:    big.Add(powerActorIn.Balance, powerResult.Transfer),
 	}
 	err = actorsOut.SetActor(builtin.StoragePowerActorAddr, &powerActorOut)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	// Migrate reward actor
+	rm := migrations[builtin0.RewardActorCodeID].StateMigration.(*rewardMigrator)
+	rm.actorsOut = actorsOut
+	rewardActorIn, found, err := actorsIn.GetActor(builtin0.RewardActorAddr)
+	if err != nil {
+		return cid.Undef, err
+	}
+	if !found {
+		return cid.Undef, xerrors.Errorf("could not find reward actor in state")
+	}
+	rewardResult, err := rm.MigrateState(ctx, store, rewardActorIn.Head, MigrationInfo{
+		address:    builtin0.RewardActorAddr,
+		balance:    rewardActorIn.Balance,
+		priorEpoch: priorEpoch,
+	})
+	if err != nil {
+		return cid.Undef, err
+	}
+	rewardActorOut := states.Actor{
+		Code:       builtin.RewardActorCodeID,
+		Head:       rewardResult.NewHead,
+		CallSeqNum: rewardActorIn.CallSeqNum,
+		Balance:    big.Add(rewardActorIn.Balance, rewardResult.Transfer),
+	}
+	err = actorsOut.SetActor(builtin.RewardActorAddr, &rewardActorOut)
 	if err != nil {
 		return cid.Undef, err
 	}
