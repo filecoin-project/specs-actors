@@ -43,7 +43,7 @@ type PowerUpdates struct {
 }
 
 type PowerUpdater interface {
-	Apply(*PowerUpdates)
+	ApplyTo(*PowerUpdates)
 }
 
 type claimUpdate struct {
@@ -52,7 +52,7 @@ type claimUpdate struct {
 }
 
 // Overwrite claim
-func (c claimUpdate) Apply(p *PowerUpdates) {
+func (c claimUpdate) ApplyTo(p *PowerUpdates) {
 	p.claims[c.addr] = c.claim
 }
 
@@ -62,7 +62,7 @@ type cronUpdate struct {
 }
 
 // Append cron event
-func (c cronUpdate) Apply(p *PowerUpdates) {
+func (c cronUpdate) ApplyTo(p *PowerUpdates) {
 	p.crons[c.epoch] = append(p.crons[c.epoch], c.event)
 }
 
@@ -169,7 +169,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	grp, ctx := errgroup.WithContext(ctx)
 	inputCh := make(chan *migrationInput)
 	resultCh := make(chan *migrationResult)
-	var workerWg sync.WaitGroup
 
 	// Iterate all actors in old state root to generate one migration inputs per actor
 	grp.Go(func() error {
@@ -190,6 +189,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	})
 
 	// Worker threads run migrations on inputs
+	var workerWg sync.WaitGroup
 	for i := 0; i < cfg.MaxWorkers; i++ {
 		workerWg.Add(1)
 		grp.Go(func() error {
@@ -225,7 +225,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		for result := range resultCh {
 			transferFromBurnt = big.Add(transferFromBurnt, result.StateMigrationResult.Transfer)
 			for _, pwrUpdate := range result.StateMigrationResult.PowerUpdates {
-				pwrUpdate.Apply(powerUpdates)
+				pwrUpdate.ApplyTo(powerUpdates)
 			}
 			if err := actorsOut.SetActor(result.Address, &result.Actor); err != nil {
 				return err
