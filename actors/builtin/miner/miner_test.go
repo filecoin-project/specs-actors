@@ -138,7 +138,7 @@ func TestConstruction(t *testing.T) {
 
 		assertEmptyBitfield(t, st.EarlyTerminations)
 
-		_, msgs, err := miner.CheckStateInvariants(&st, rt.AdtStore())
+		_, msgs, err := miner.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
 		require.NoError(t, err)
 		assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 	})
@@ -4317,7 +4317,7 @@ func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
 
 func (h *actorHarness) checkState(rt *mock.Runtime) {
 	st := getState(rt)
-	_, msgs, err := miner.CheckStateInvariants(st, rt.AdtStore())
+	_, msgs, err := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
 	assert.NoError(h.t, err)
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }

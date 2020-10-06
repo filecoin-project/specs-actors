@@ -51,7 +51,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
 				return err
 			}
-			if summary, msgs, err := miner.CheckStateInvariants(&st, tree.Store); err != nil {
+			if summary, msgs, err := miner.CheckStateInvariants(&st, tree.Store, actor.Balance); err != nil {
 				return err
 			} else {
 				acc.WithPrefix("miner: ").AddAll(msgs)

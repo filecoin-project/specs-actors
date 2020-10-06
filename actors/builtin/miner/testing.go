@@ -18,7 +18,7 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of init state.
-func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 
 	// Load data from linked structures.
@@ -27,6 +27,12 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		return nil, nil, err
 	}
 	msgs, err := CheckMinerInfo(info)
+	acc.AddAll(msgs)
+	if err != nil {
+		return nil, acc, err
+	}
+
+	msgs, err = CheckMinerBalances(st, store, balance)
 	acc.AddAll(msgs)
 	if err != nil {
 		return nil, acc, err
@@ -610,6 +616,41 @@ func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
 			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
 			info.WindowPoStPartitionSectors, sealProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
 	}
+
+	return acc, nil
+}
+
+func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount) (*builtin.MessageAccumulator, error) {
+	acc := &builtin.MessageAccumulator{}
+
+	acc.Require(balance.GreaterThanEqual(big.Zero()), "miner actor balance is less than zero: %v", balance)
+	acc.Require(st.LockedFunds.GreaterThanEqual(big.Zero()), "miner locked funds is less than zero: %v", st.LockedFunds)
+	acc.Require(st.PreCommitDeposits.GreaterThanEqual(big.Zero()), "miner precommit deposit is less than zero: %v", st.PreCommitDeposits)
+	acc.Require(st.InitialPledge.GreaterThanEqual(big.Zero()), "miner initial pledge is less than zero: %v", st.InitialPledge)
+	acc.Require(st.FeeDebt.GreaterThanEqual(big.Zero()), "miner fee debt is less than zero: %v", st.FeeDebt)
+
+	acc.Require(big.Subtract(balance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledge).GreaterThanEqual(big.Zero()),
+		"miner balance (%v) is less than sum of locked funds (%v), precommit deposit (%v), and initial pledge (%v)",
+		balance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledge)
+
+	// locked funds must be sum of vesting table and vesting table payments must be quantized
+	funds, err := st.LoadVestingFunds(store)
+	if err != nil {
+		return acc, err
+	}
+
+	vestingSum := big.Zero()
+	quant := st.QuantSpecEveryDeadline()
+	for _, entry := range funds.Funds {
+		acc.Require(entry.Amount.GreaterThan(big.Zero()), "non-positive amount in miner vesting table entry %v", entry)
+		vestingSum = big.Add(vestingSum, entry.Amount)
+
+		quantized := quant.QuantizeUp(entry.Epoch)
+		acc.Require(entry.Epoch == quantized, "vesting table entry has non-quantized epoch %d (should be %d)", entry.Epoch, quantized)
+	}
+
+	acc.Require(st.LockedFunds.Equals(vestingSum),
+		"locked funds %d is not sum of vesting table entries %d", st.LockedFunds, vestingSum)
 
 	return acc, nil
 }

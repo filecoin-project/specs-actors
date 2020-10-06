@@ -321,7 +321,11 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	err = v2.GetState(minerAddrs.IDAddress, &st1)
 	require.NoError(t, err)
 
-	_, acc, err := miner2.CheckStateInvariants(&st1, v2.Store())
+	act, found, err := v2.GetActor(minerAddrs.IDAddress)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	_, acc, err := miner2.CheckStateInvariants(&st1, v2.Store(), act.Balance)
 	require.NoError(t, err)
 
 	assert.True(t, acc.IsEmpty())
@@ -390,7 +394,11 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	err = v2.GetState(minerAddrs.IDAddress, &st2)
 	require.NoError(t, err)
 
-	_, acc, err = miner2.CheckStateInvariants(&st2, v2.Store())
+	act, found, err = v2.GetActor(minerAddrs.IDAddress)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	_, acc, err = miner2.CheckStateInvariants(&st2, v2.Store(), act.Balance)
 	require.NoError(t, err)
 
 	assert.True(t, acc.IsEmpty())
