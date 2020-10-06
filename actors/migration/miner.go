@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/filecoin-project/go-bitfield"
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	adt0 "github.com/filecoin-project/specs-actors/actors/util/adt"
@@ -19,52 +18,52 @@ import (
 type minerMigrator struct {
 }
 
-func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
-	transfer := big.Zero()
+func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
 	// first correct issues with miners due problems in old code
-	head, err := m.CorrectState(ctx, store, head, info.priorEpoch, info.address, info.powerUpdates)
+	result, err := m.CorrectState(ctx, store, head, info.priorEpoch, info.address)
 	if err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
+	result.Transfer = big.Zero()
 
 	var inState miner0.State
-	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+	if err := store.Get(ctx, result.NewHead, &inState); err != nil {
+		return nil, err
 	}
 
 	infoCid, err := m.migrateInfo(ctx, store, inState.Info)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("info: %w", err)
+		return nil, xerrors.Errorf("info: %w", err)
 	}
 
 	vestingFunds, err := m.migrateVestingFunds(ctx, store, inState.VestingFunds)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("vesting funds: %w", err)
+		return nil, xerrors.Errorf("vesting funds: %w", err)
 	}
 
 	precommitsRoot, err := m.migratePreCommittedSectors(ctx, store, inState.PreCommittedSectors)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("precommitted sectors: %w", err)
+		return nil, xerrors.Errorf("precommitted sectors: %w", err)
 	}
 
 	precommitExpiryRoot, err := m.migrateBitfieldQueue(ctx, store, inState.PreCommittedSectorsExpiry)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("precommit expiry queue: %w", err)
+		return nil, xerrors.Errorf("precommit expiry queue: %w", err)
 	}
 
 	allocatedSectors, err := m.migrateAllocatedSectors(ctx, store, inState.AllocatedSectors)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("allocated sectors: %w", err)
+		return nil, xerrors.Errorf("allocated sectors: %w", err)
 	}
 
 	sectorsRoot, err := m.migrateSectors(ctx, store, inState.Sectors)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("sectors: %w", err)
+		return nil, xerrors.Errorf("sectors: %w", err)
 	}
 
 	deadlinesRoot, err := m.migrateDeadlines(ctx, store, inState.Deadlines)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("deadlines: %w", err)
+		return nil, xerrors.Errorf("deadlines: %w", err)
 	}
 
 	// To preserve v2 Balance Invariant that actor balance > initial pledge + pre commit deposit + locked funds
@@ -77,7 +76,7 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	availableBalance := big.Sub(info.balance, minerLiabilities)
 	if availableBalance.LessThan(big.Zero()) {
 		debt = availableBalance.Neg() // debt must always be positive
-		transfer = debt
+		result.Transfer = debt
 	}
 
 	outState := miner2.State{
@@ -97,8 +96,9 @@ func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		EarlyTerminations:         inState.EarlyTerminations,
 	}
 
-	c, err := store.Put(ctx, &outState)
-	return c, transfer, err
+	newHead, err := store.Put(ctx, &outState)
+	result.NewHead = newHead
+	return result, err
 }
 
 func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c cid.Cid) (cid.Cid, error) {

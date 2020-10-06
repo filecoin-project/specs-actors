@@ -17,13 +17,15 @@ import (
 )
 
 func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, head cid.Cid,
-	priorEpoch abi.ChainEpoch, a addr.Address, powerUpdates *PowerUpdates,
-) (cid.Cid, error) {
-
+	priorEpoch abi.ChainEpoch, a addr.Address) (*StateMigrationResult, error) {
+	result := &StateMigrationResult{
+		NewHead:  head,
+		Transfer: big.Zero(),
+	}
 	epoch := priorEpoch + 1
 	var st miner.State
 	if err := store.Get(ctx, head, &st); err != nil {
-		return cid.Undef, err
+		return nil, err
 	}
 
 	// If the miner's proving period hasn't started yet, it's a new v0
@@ -33,35 +35,47 @@ func (m *minerMigrator) CorrectState(ctx context.Context, store cbor.IpldStore, 
 	// 2. We definitely don't want to reschedule the proving period
 	//    start/deadlines.
 	if st.ProvingPeriodStart > epoch {
-		return head, nil
+		return result, nil
 	}
 
 	adtStore := adt.WrapStore(ctx, store)
 
 	sectors, err := miner.LoadSectors(adtStore, st.Sectors)
 	if err != nil {
-		return cid.Undef, err
+		return nil, err
 	}
 
 	info, err := st.GetInfo(adtStore)
 	if err != nil {
-		return cid.Undef, err
+		return nil, err
 	}
 
 	powerClaimSuspect, err := m.correctForCCUpgradeThenFaultIssue(ctx, store, &st, sectors, epoch, info.SectorSize)
 	if err != nil {
-		return cid.Undef, err
+		return nil, err
 	}
 
 	if powerClaimSuspect {
-		err := m.updatePowerState(ctx, adtStore, &st, powerUpdates, a, epoch)
+		claimUpdate, err := m.computeClaim(ctx, adtStore, &st, a)
 		if err != nil {
-			return cid.Undef, err
+			return nil, err
+		}
+		if claimUpdate != nil {
+			result.PowerUpdates = append(result.PowerUpdates, claimUpdate)
+		}
+
+		cronUpdate, err := m.computeProvingPeriodCron(a, &st, epoch, adtStore)
+		if err != nil {
+			return nil, err
+		}
+		if cronUpdate != nil {
+			result.PowerUpdates = append(result.PowerUpdates, cronUpdate)
 		}
 	}
 
 	newHead, err := store.Put(ctx, &st)
-	return newHead, err
+	result.NewHead = newHead
+	return result, err
 }
 
 func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
@@ -185,45 +199,30 @@ func (m *minerMigrator) correctForCCUpgradeThenFaultIssue(
 	return true, err
 }
 
-func (m *minerMigrator) updatePowerState(ctx context.Context, store adt.Store, st *miner.State,
-	powerUpdates *PowerUpdates, a addr.Address, epoch abi.ChainEpoch,
-) error {
-	err := m.updateClaim(ctx, store, st, powerUpdates, a)
-	if err != nil {
-		return err
-	}
-
-	err = m.updateProvingPeriodCron(a, st, epoch, store, powerUpdates)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (m *minerMigrator) updateProvingPeriodCron(a addr.Address, st *miner.State, epoch abi.ChainEpoch, store adt.Store, powerUpdates *PowerUpdates) error {
+func (m *minerMigrator) computeProvingPeriodCron(a addr.Address, st *miner.State, epoch abi.ChainEpoch, store adt.Store) (*cronUpdate, error) {
 	var buf bytes.Buffer
 	payload := &miner.CronEventPayload{
 		EventType: miner.CronEventProvingDeadline,
 	}
 	err := payload.MarshalCBOR(&buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dlInfo := st.DeadlineInfo(epoch)
-	powerUpdates.crons[dlInfo.Last()] = append(powerUpdates.crons[dlInfo.Last()], power0.CronEvent{
-		MinerAddr:       a,
-		CallbackPayload: buf.Bytes(),
-	})
-
-	return nil
+	return &cronUpdate{
+		epoch: dlInfo.Last(),
+		event: power0.CronEvent{
+			MinerAddr:       a,
+			CallbackPayload: buf.Bytes(),
+		},
+	}, nil
 }
 
-func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *miner.State, powerUpdates *PowerUpdates, a addr.Address) error {
+func (m *minerMigrator) computeClaim(ctx context.Context, store adt.Store, st *miner.State, a addr.Address) (*claimUpdate, error) {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	activePower := miner.NewPowerPairZero()
@@ -240,14 +239,15 @@ func (m *minerMigrator) updateClaim(ctx context.Context, store adt.Store, st *mi
 		})
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	powerUpdates.claims[a] = power0.Claim{
-		RawBytePower:    activePower.Raw,
-		QualityAdjPower: activePower.QA,
-	}
-	return nil
+	return &claimUpdate{
+		addr: a,
+		claim: power0.Claim{
+			RawBytePower:    activePower.Raw,
+			QualityAdjPower: activePower.QA,
+		},
+	}, nil
 }
 
 type expirationQueueStats struct {

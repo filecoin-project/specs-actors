@@ -3,7 +3,6 @@ package migration
 import (
 	"context"
 
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
 	cid "github.com/ipfs/go-cid"
@@ -16,40 +15,40 @@ import (
 type marketMigrator struct {
 }
 
-func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
+func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState market0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
 
 	proposalsRoot, err := m.migrateProposals(ctx, store, inState.Proposals)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("proposals: %w", err)
+		return nil, xerrors.Errorf("proposals: %w", err)
 	}
 
 	statesRoot, err := m.migrateStates(ctx, store, inState.States)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("states: %w", err)
+		return nil, xerrors.Errorf("states: %w", err)
 	}
 
 	pendingRoot, err := m.migratePendingProposals(ctx, store, inState.PendingProposals)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("pending proposals: %w", err)
+		return nil, xerrors.Errorf("pending proposals: %w", err)
 	}
 
 	escrowRoot, err := m.migrateBalanceTable(ctx, store, inState.EscrowTable)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("escrow table: %w", err)
+		return nil, xerrors.Errorf("escrow table: %w", err)
 	}
 
 	lockedRoot, err := m.migrateBalanceTable(ctx, store, inState.LockedTable)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("locked table: %w", err)
+		return nil, xerrors.Errorf("locked table: %w", err)
 	}
 
 	dealOpsRoot, err := m.migrateDealOps(ctx, store, inState.DealOpsByEpoch)
 	if err != nil {
-		return cid.Undef, big.Zero(), xerrors.Errorf("deal ops by priorEpoch: %w", err)
+		return nil, xerrors.Errorf("deal ops by priorEpoch: %w", err)
 	}
 
 	outState := market2.State{
@@ -66,7 +65,10 @@ func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		TotalClientStorageFee:         inState.TotalClientStorageFee,
 	}
 	newHead, err := store.Put(ctx, &outState)
-	return newHead, big.Zero(), err
+	return &StateMigrationResult{
+		NewHead:  newHead,
+		Transfer: big.Zero(),
+	}, err
 }
 
 func (m *marketMigrator) migrateProposals(_ context.Context, _ cbor.IpldStore, root cid.Cid) (cid.Cid, error) {

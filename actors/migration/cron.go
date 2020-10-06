@@ -3,7 +3,6 @@ package migration
 import (
 	"context"
 
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	cron0 "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	cid "github.com/ipfs/go-cid"
@@ -15,10 +14,10 @@ import (
 type cronMigrator struct {
 }
 
-func (m *cronMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (cid.Cid, abi.TokenAmount, error) {
+func (m *cronMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState cron0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
-		return cid.Undef, big.Zero(), err
+		return nil, err
 	}
 
 	outState := cron2.State{Entries: make([]cron2.Entry, len(inState.Entries))}
@@ -26,5 +25,8 @@ func (m *cronMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		outState.Entries[i] = cron2.Entry(e) // Identical
 	}
 	newHead, err := store.Put(ctx, &outState)
-	return newHead, big.Zero(), err
+	return &StateMigrationResult{
+		NewHead:  newHead,
+		Transfer: big.Zero(),
+	}, err
 }
