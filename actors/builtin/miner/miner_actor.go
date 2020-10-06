@@ -168,12 +168,11 @@ func (a Actor) ControlAddresses(rt Runtime, _ *abi.EmptyValue) *GetControlAddres
 	}
 }
 
-// Changed since v0:
-// - Add NewControlAddrs
-type ChangeWorkerAddressParams struct {
-	NewWorker       addr.Address
-	NewControlAddrs []addr.Address
-}
+//type ChangeWorkerAddressParams struct {
+//	NewWorker       addr.Address
+//	NewControlAddrs []addr.Address
+//}
+type ChangeWorkerAddressParams = miner0.ChangeWorkerAddressParams
 
 // ChangeWorkerAddress will ALWAYS overwrite the existing control addresses with the control addresses passed in the params.
 // If a nil addresses slice is passed, the control addresses will be cleared.
