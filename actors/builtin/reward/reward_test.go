@@ -149,7 +149,8 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.SetBalance(smallReward)
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
-		expectedParams := builtin.ApplyRewardParams{Reward: smallReward, Penalty: penalty}
+		minerPenalty := big.Mul(big.NewInt(reward.PenaltyMultiplier), penalty)
+		expectedParams := builtin.ApplyRewardParams{Reward: smallReward, Penalty: minerPenalty}
 		rt.ExpectSend(winner, builtin.MethodsMiner.ApplyRewards, &expectedParams, smallReward, nil, 0)
 		rt.Call(actor.AwardBlockReward, &reward.AwardBlockRewardParams{
 			Miner:     winner,
@@ -275,7 +276,9 @@ func (h *rewardHarness) updateNetworkKPI(rt *mock.Runtime, currRawPower *abi.Sto
 
 func (h *rewardHarness) awardBlockReward(rt *mock.Runtime, miner address.Address, penalty, gasReward abi.TokenAmount, winCount int64, expectedPayment abi.TokenAmount) {
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
-	expectedParams := builtin.ApplyRewardParams{Reward: expectedPayment, Penalty: penalty}
+	// expect penalty multiplier
+	minerPenalty := big.Mul(big.NewInt(reward.PenaltyMultiplier), penalty)
+	expectedParams := builtin.ApplyRewardParams{Reward: expectedPayment, Penalty: minerPenalty}
 	rt.ExpectSend(miner, builtin.MethodsMiner.ApplyRewards, &expectedParams, expectedPayment, nil, 0)
 
 	rt.Call(h.AwardBlockReward, &reward.AwardBlockRewardParams{

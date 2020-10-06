@@ -15,6 +15,9 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
 )
 
+// PenaltyMultiplier is the factor miner penaltys are scaled up by
+const PenaltyMultiplier = 3
+
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
@@ -91,8 +94,8 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 	if !ok {
 		rt.Abortf(exitcode.ErrNotFound, "failed to resolve given owner address")
 	}
-
-	penalty := params.Penalty
+	// The miner penalty is scaled up by a factor of PenaltyMultiplier
+	penalty := big.Mul(big.NewInt(PenaltyMultiplier), params.Penalty)
 	totalReward := big.Zero()
 	var st State
 	rt.StateTransaction(&st, func() {
