@@ -8,31 +8,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
-/*
-len(Signers) > 0
-NumApprovals >= len(Signers)
-NextTxnID > max(key(PendingTxns))
-
-//
-InitialBalance >= 0
-UnlockDuration >= 0
-
-type Transaction struct {
-	To     addr.Address
-	Value  abi.TokenAmount
-	Method abi.MethodNum
-	Params []byte
-
-	// This address at index 0 is the transaction proposer, order of this slice must be preserved.
-	Approved []addr.Address
-}
-
-To is ID address? NOPE
-Value is non-negative? NOPE
-len(approved) <= numapprovalsthreshold ??? (do we send transactions when we lower threshold?) NOPE
-approved subset of signers (because we purge)
-*/
-
 type StateSummary struct {
 	PendingTxns  uint64
 	NumApprovals uint64
