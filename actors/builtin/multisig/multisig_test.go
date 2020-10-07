@@ -3,6 +3,7 @@ package multisig_test
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -71,6 +72,8 @@ func TestConstruction(t *testing.T) {
 		keys, err := txns.CollectKeys()
 		require.NoError(t, err)
 		assert.Empty(t, keys)
+
+		assertStateInvariants(t, rt, &st)
 	})
 
 	t.Run("construction by resolving signers to ID addresses", func(t *testing.T) {
@@ -91,6 +94,8 @@ func TestConstruction(t *testing.T) {
 		var st multisig.State
 		rt.GetState(&st)
 		require.Equal(t, []addr.Address{anne, bob, charlie}, st.Signers)
+
+		assertStateInvariants(t, rt, &st)
 	})
 
 	t.Run("construction with vesting", func(t *testing.T) {
@@ -113,7 +118,13 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.NewTokenAmount(0), st.InitialBalance)
 		assert.Equal(t, abi.ChainEpoch(100), st.UnlockDuration)
 		assert.Equal(t, abi.ChainEpoch(1234), st.StartEpoch)
+
 		// assert no transactions
+		empty, err := adt.MakeEmptyMap(rt.AdtStore()).Root()
+		require.NoError(t, err)
+		assert.Equal(t, empty, st.PendingTxns)
+
+		assertStateInvariants(t, rt, &st)
 	})
 
 	t.Run("fail to construct multisig actor with 0 signers", func(t *testing.T) {
@@ -143,7 +154,6 @@ func TestConstruction(t *testing.T) {
 			rt.Call(actor.Constructor, &params)
 		})
 		rt.Verify()
-
 	})
 
 	t.Run("fail to construct multisig with more approvals than signers", func(t *testing.T) {
@@ -253,6 +263,7 @@ func TestVesting(t *testing.T) {
 		// expect darlene to receive the transaction proposed by anne.
 		rt.ExpectSend(darlene, builtin.MethodSend, nil, multisigInitialBalance, nil, exitcode.Ok)
 		actor.approveOK(rt, 0, proposalHashData, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("partial vesting propose to send half the actor balance when the epoch is half the unlock duration", func(t *testing.T) {
@@ -269,6 +280,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(darlene, builtin.MethodSend, nil, big.Div(multisigInitialBalance, big.NewInt(2)), nil, exitcode.Ok)
 		actor.approveOK(rt, 0, proposalHashData, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("propose and autoapprove transaction above locked amount fails", func(t *testing.T) {
@@ -289,6 +301,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectSend(darlene, builtin.MethodSend, nil, abi.NewTokenAmount(10), nil, 0)
 		actor.proposeOK(rt, darlene, abi.NewTokenAmount(10), builtin.MethodSend, nil, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("fail to vest more than locked amount", func(t *testing.T) {
@@ -354,6 +367,7 @@ func TestVesting(t *testing.T) {
 		rt.SetEpoch(unlockDuration)
 		rt.ExpectSend(anne, builtin.MethodSend, nil, lockedBalance, nil, exitcode.Ok)
 		actor.proposeOK(rt, anne, lockedBalance, builtin.MethodSend, nil, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("sending zero ok when nothing vested", func(t *testing.T) {
@@ -365,6 +379,7 @@ func TestVesting(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectSend(bob, builtin.MethodSend, nil, sendAmount, nil, 0)
 		actor.proposeOK(rt, bob, sendAmount, builtin.MethodSend, nil, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("sending zero ok when lockup exceeds balance", func(t *testing.T) {
@@ -423,6 +438,7 @@ func TestPropose(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("propose with threshold met", func(t *testing.T) {
@@ -439,6 +455,7 @@ func TestPropose(t *testing.T) {
 
 		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("propose with threshold and non-empty return value", func(t *testing.T) {
@@ -463,7 +480,7 @@ func TestPropose(t *testing.T) {
 
 		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
-
+		actor.checkState(rt)
 	})
 
 	t.Run("fail propose with threshold met and insufficient balance", func(t *testing.T) {
@@ -479,6 +496,7 @@ func TestPropose(t *testing.T) {
 
 		// proposal failed since it should have but failed to immediately execute.
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("fail propose from non-signer", func(t *testing.T) {
@@ -498,6 +516,7 @@ func TestPropose(t *testing.T) {
 
 		// the transaction is not persisted
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 }
 
@@ -545,6 +564,7 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("approve with non-empty return value", func(t *testing.T) {
@@ -571,6 +591,7 @@ func TestApprove(t *testing.T) {
 
 		// the transaction has been sent and cleaned up
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("approval works if enough funds have been unlocked for the transaction", func(t *testing.T) {
@@ -600,6 +621,7 @@ func TestApprove(t *testing.T) {
 
 		// as the (current epoch - startepoch) = 20 is  equal to unlock duration, all initial funds must have been vested and available to spend
 		actor.approveOK(rt, txnID, proposalHash, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("fail approval if current balance is less than the transaction value", func(t *testing.T) {
@@ -700,6 +722,7 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 	t.Run("fail approve transaction more than once", func(t *testing.T) {
 		const numApprovals = uint64(2)
@@ -724,6 +747,7 @@ func TestApprove(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail approve transaction that does not exist", func(t *testing.T) {
@@ -750,6 +774,7 @@ func TestApprove(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail to approve transaction by non-signer", func(t *testing.T) {
@@ -777,6 +802,7 @@ func TestApprove(t *testing.T) {
 			Params:   fakeParams,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("proposed transaction is approved by proposer if number of approvers has already crossed threshold", func(t *testing.T) {
@@ -801,6 +827,7 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("approve transaction if number of approvers has already crossed threshold even if we attempt a duplicate approval", func(t *testing.T) {
@@ -830,6 +857,7 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("approve transaction if number of approvers has already crossed threshold and ensure non-signatory cannot approve a transaction", func(t *testing.T) {
@@ -863,6 +891,7 @@ func TestApprove(t *testing.T) {
 
 		// Transaction should be removed from actor state after send
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 }
 
@@ -902,6 +931,7 @@ func TestCancel(t *testing.T) {
 
 		// Transaction should be removed from actor state after cancel
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("fail cancel with bad proposal hash", func(t *testing.T) {
@@ -951,6 +981,7 @@ func TestCancel(t *testing.T) {
 			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail to cancel transaction when not signer", func(t *testing.T) {
@@ -977,6 +1008,7 @@ func TestCancel(t *testing.T) {
 			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("fail to cancel a transaction that does not exist", func(t *testing.T) {
@@ -1003,6 +1035,7 @@ func TestCancel(t *testing.T) {
 			Params:   nil,
 			Approved: []addr.Address{anne},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("subsequent approver replaces removed proposer as owner", func(t *testing.T) {
@@ -1051,6 +1084,7 @@ func TestCancel(t *testing.T) {
 		// bob can cancel the transaction
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		actor.cancel(rt, txnID, nil)
+		actor.checkState(rt)
 	})
 }
 
@@ -1171,6 +1205,7 @@ func TestAddSigner(t *testing.T) {
 				rt.StateReadonly(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
+				actor.checkState(rt)
 			}
 			rt.Verify()
 		})
@@ -1353,6 +1388,7 @@ func TestRemoveSigner(t *testing.T) {
 				rt.StateReadonly(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
+				actor.checkState(rt)
 			}
 			rt.Verify()
 		})
@@ -1395,6 +1431,7 @@ func TestRemoveSigner(t *testing.T) {
 			Params:   nil,
 			Approved: []addr.Address{bob},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("remove signer deletes solo proposals", func(t *testing.T) {
@@ -1414,6 +1451,7 @@ func TestRemoveSigner(t *testing.T) {
 
 		// Transaction is gone.
 		actor.assertTransactions(rt)
+		actor.checkState(rt)
 	})
 }
 
@@ -1536,11 +1574,11 @@ func TestSwapSigners(t *testing.T) {
 				var st multisig.State
 				rt.StateReadonly(&st)
 				assert.Equal(t, tc.expect, st.Signers)
+				actor.checkState(rt)
 			}
 			rt.Verify()
 		})
 	}
-
 
 	t.Run("swap signer removes approvals", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -1579,6 +1617,7 @@ func TestSwapSigners(t *testing.T) {
 			Params:   nil,
 			Approved: []addr.Address{bob},
 		})
+		actor.checkState(rt)
 	})
 
 	t.Run("swap signer deletes solo proposals", func(t *testing.T) {
@@ -1597,7 +1636,9 @@ func TestSwapSigners(t *testing.T) {
 
 		// Transaction is gone.
 		actor.assertTransactions(rt)
-	})}
+		actor.checkState(rt)
+	})
+}
 
 type thresholdTestCase struct {
 	desc             string
@@ -1643,8 +1684,6 @@ func TestChangeThreshold(t *testing.T) {
 			setThreshold:     uint64(len(initialSigner) + 1),
 			code:             exitcode.ErrIllegalArgument,
 		},
-		// TODO missing test case that needs definition: https://github.com/filecoin-project/specs-actors/issues/71
-		// what happens when threshold is reduced below the number of approvers an existing transaction already ha
 	}
 
 	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
@@ -1664,10 +1703,38 @@ func TestChangeThreshold(t *testing.T) {
 				var st multisig.State
 				rt.StateReadonly(&st)
 				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
+				actor.checkState(rt)
 			}
 			rt.Verify()
 		})
 	}
+
+	t.Run("transaction can be re-approved and executed after threshold lowered", func(t *testing.T) {
+		fakeMethod := abi.MethodNum(42)
+		numApprovals := uint64(2)
+
+		var sendValue = abi.NewTokenAmount(10)
+		receiver := tutil.NewIDAddr(t, 100)
+		rt := builder.Build(t)
+		signers := []addr.Address{anne, bob, chuck}
+
+		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
+
+		// anne proposes a transaction ID: 0
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		actor.proposeOK(rt, chuck, sendValue, fakeMethod, nil, nil)
+
+		// lower approver threshold. transaction is technically approved, but will not be executed yet.
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+		actor.changeNumApprovalsThreshold(rt, 1)
+
+		// anne may re-approve causing transaction to be executed
+		rt.ExpectSend(chuck, fakeMethod, nil, sendValue, nil, 0)
+		rt.SetBalance(sendValue)
+		rt.SetCaller(anne, builtin.AccountActorCodeID)
+		actor.approveOK(rt, 0, nil, nil)
+		actor.checkState(rt)
+	})
 }
 
 func TestLockBalance(t *testing.T) {
@@ -1730,6 +1797,7 @@ func TestLockBalance(t *testing.T) {
 		rested := big.NewInt(70_000)
 		rt.ExpectSend(bob, builtin.MethodSend, nil, rested, nil, exitcode.Ok)
 		actor.proposeOK(rt, bob, rested, builtin.MethodSend, nil, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("prospective vesting", func(t *testing.T) {
@@ -1781,6 +1849,7 @@ func TestLockBalance(t *testing.T) {
 		rested := big.NewInt(80_000)
 		rt.ExpectSend(bob, builtin.MethodSend, nil, rested, nil, exitcode.Ok)
 		actor.proposeOK(rt, bob, rested, builtin.MethodSend, nil, nil)
+		actor.checkState(rt)
 	})
 
 	t.Run("can't alter vesting", func(t *testing.T) {
@@ -1998,6 +2067,18 @@ func (h *msActorHarness) assertTransactions(rt *mock.Runtime, expected ...multis
 		assert.True(h.t, found)
 		assert.Equal(h.t, expected[i], actual)
 	}
+}
+
+func (h *msActorHarness) checkState(rt *mock.Runtime) {
+	var st multisig.State
+	rt.GetState(&st)
+	assertStateInvariants(h.t, rt, &st)
+}
+
+func assertStateInvariants(t testing.TB, rt *mock.Runtime, st *multisig.State) {
+	_, msgs, err := multisig.CheckStateInvariants(st, rt.AdtStore())
+	assert.NoError(t, err)
+	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func makeProposalHash(t *testing.T, txn *multisig.Transaction) []byte {

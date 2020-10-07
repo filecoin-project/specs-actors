@@ -25,7 +25,7 @@ type State struct {
 	StartEpoch     abi.ChainEpoch
 	UnlockDuration abi.ChainEpoch
 
-	PendingTxns cid.Cid
+	PendingTxns cid.Cid // HAMT[TxnID]Transaction
 }
 
 func (st *State) SetLocked(startEpoch abi.ChainEpoch, unlockDuration abi.ChainEpoch, lockedAmount abi.TokenAmount) {
@@ -67,7 +67,7 @@ func (st *State) PurgeApprovals(store adt.Store, addr address.Address) error {
 	}
 
 	// Identify the transactions that need updating.
-	var txnIdsToPurge []string // For stable iteration
+	var txnIdsToPurge []string              // For stable iteration
 	txnsToPurge := map[string]Transaction{} // Values are not pointers, we need copies
 	var txn Transaction
 	if err = txns.ForEach(&txn, func(txid string) error {
