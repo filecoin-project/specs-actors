@@ -136,7 +136,10 @@ func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore,
 		big.NewInt(31),
 		big.Exp(big.NewInt(10), big.NewInt(51)),
 	) // Q.128
-	outThisEpochRewardSmoothed := smoothing2.NewEstimate(outRewardSmoothedPosition, outRewardSmoothedVelocity)
+	outThisEpochRewardSmoothed := smoothing2.FilterEstimate{
+		PositionEstimate: outRewardSmoothedPosition,
+		VelocityEstimate: outRewardSmoothedVelocity,
+	}
 
 	outState := reward2.State{
 		CumsumBaseline:          outCumSumBaseline,
