@@ -5,7 +5,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/util"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
@@ -18,7 +17,7 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of init state.
-func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 
 	// Load data from linked structures.
@@ -32,6 +31,23 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		return nil, acc, err
 	}
 
+	msgs, err = CheckMinerBalances(st, store, balance)
+	acc.AddAll(msgs)
+	if err != nil {
+		return nil, acc, err
+	}
+
+	msgs, err = CheckPreCommits(st, store)
+	acc.AddAll(msgs)
+	if err != nil {
+		return nil, acc, err
+	}
+
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
+		return nil, acc, err
+	}
+
 	allSectors := map[abi.SectorNumber]*SectorOnChainInfo{}
 	if sectorsArr, err := adt.AsArray(store, st.Sectors); err != nil {
 		return nil, nil, err
@@ -40,6 +56,13 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		if err = sectorsArr.ForEach(&sector, func(sno int64) error {
 			cpy := sector
 			allSectors[abi.SectorNumber(sno)] = &cpy
+
+			allocated, err := allocatedSectors.IsSet(uint64(sno))
+			if err != nil {
+				return err
+			}
+			acc.Require(allocated, "on chain sector's sector number has not been allocated %d", sno)
+
 			return nil
 		}); err != nil {
 			return nil, nil, err
@@ -56,6 +79,9 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	faultyPower := NewPowerPairZero()
 
 	// Check deadlines
+	acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
+		"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
+
 	if err := deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
 		acc := acc.WithPrefix("deadline %d: ", dlIdx) // Shadow
 		quant := st.QuantSpecForDeadline(dlIdx)
@@ -610,6 +636,109 @@ func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
 			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
 			info.WindowPoStPartitionSectors, sealProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
 	}
+
+	return acc, nil
+}
+
+func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount) (*builtin.MessageAccumulator, error) {
+	acc := &builtin.MessageAccumulator{}
+
+	acc.Require(balance.GreaterThanEqual(big.Zero()), "miner actor balance is less than zero: %v", balance)
+	acc.Require(st.LockedFunds.GreaterThanEqual(big.Zero()), "miner locked funds is less than zero: %v", st.LockedFunds)
+	acc.Require(st.PreCommitDeposits.GreaterThanEqual(big.Zero()), "miner precommit deposit is less than zero: %v", st.PreCommitDeposits)
+	acc.Require(st.InitialPledge.GreaterThanEqual(big.Zero()), "miner initial pledge is less than zero: %v", st.InitialPledge)
+	acc.Require(st.FeeDebt.GreaterThanEqual(big.Zero()), "miner fee debt is less than zero: %v", st.FeeDebt)
+
+	acc.Require(big.Subtract(balance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledge).GreaterThanEqual(big.Zero()),
+		"miner balance (%v) is less than sum of locked funds (%v), precommit deposit (%v), and initial pledge (%v)",
+		balance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledge)
+
+	// locked funds must be sum of vesting table and vesting table payments must be quantized
+	funds, err := st.LoadVestingFunds(store)
+	if err != nil {
+		return acc, err
+	}
+
+	vestingSum := big.Zero()
+	quant := st.QuantSpecEveryDeadline()
+	for _, entry := range funds.Funds {
+		acc.Require(entry.Amount.GreaterThan(big.Zero()), "non-positive amount in miner vesting table entry %v", entry)
+		vestingSum = big.Add(vestingSum, entry.Amount)
+
+		quantized := quant.QuantizeUp(entry.Epoch)
+		acc.Require(entry.Epoch == quantized, "vesting table entry has non-quantized epoch %d (should be %d)", entry.Epoch, quantized)
+	}
+
+	acc.Require(st.LockedFunds.Equals(vestingSum),
+		"locked funds %d is not sum of vesting table entries %d", st.LockedFunds, vestingSum)
+
+	return acc, nil
+}
+
+func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, error) {
+	acc := &builtin.MessageAccumulator{}
+
+	// expire pre-committed sectors
+	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
+	if err != nil {
+		return acc, err
+	}
+
+	quant := st.QuantSpecEveryDeadline()
+
+	// invert bitfield queue into a lookup by sector number
+	expireEpochs := make(map[uint64]abi.ChainEpoch)
+	err = expiryQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
+		quantized := quant.QuantizeUp(epoch)
+		acc.Require(quantized == epoch, "precommit expiration %d is not quantized", epoch)
+
+		return bf.ForEach(func(secNum uint64) error {
+			expireEpochs[secNum] = epoch
+			return nil
+		})
+	})
+	if err != nil {
+		return acc, err
+	}
+
+	// load sector numer allocation
+	var allocatedSectors bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
+		return acc, err
+	}
+
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	if err != nil {
+		return nil, err
+	}
+
+	var precommit SectorPreCommitOnChainInfo
+	precommitTotal := big.Zero()
+	err = precommitted.ForEach(&precommit, func(key string) error {
+		secNum, err := abi.ParseUIntKey(key)
+		if err != nil {
+			return err
+		}
+
+		allocated, err := allocatedSectors.IsSet(secNum)
+		if err != nil {
+			return err
+		}
+		acc.Require(allocated, "precommited sector number has not been allocated %d", secNum)
+
+		_, found := expireEpochs[secNum]
+		acc.Require(found, "no expiry epoch for precommit at %d", precommit.PreCommitEpoch)
+
+		precommitTotal = big.Add(precommitTotal, precommit.PreCommitDeposit)
+
+		return nil
+	})
+	if err != nil {
+		return acc, err
+	}
+
+	acc.Require(st.PreCommitDeposits.Equals(precommitTotal),
+		"sum of precommit deposits %v does not equal recorded precommit deposit %v", precommitTotal, st.PreCommitDeposits)
 
 	return acc, nil
 }
