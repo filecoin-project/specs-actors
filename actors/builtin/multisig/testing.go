@@ -9,9 +9,9 @@ import (
 )
 
 type StateSummary struct {
-	PendingTxns  uint64
-	NumApprovals uint64
-	Signers      int
+	PendingTxnCount  uint64
+	NumApprovalsThreshold uint64
+	SignerCount      int
 }
 
 // Checks internal invariants of multisig state.
