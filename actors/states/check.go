@@ -12,6 +12,8 @@ import (
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
@@ -24,6 +26,8 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	var marketSummary *market.StateSummary
 	var accountSummaries []*account.StateSummary
 	var minerSummaries []*miner.StateSummary
+	var paychSummaries []*paych.StateSummary
+	var multisigSummaries []*multisig.StateSummary
 
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
 		acc := acc.WithPrefix("%v ", key) // Intentional shadow
@@ -95,8 +99,28 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			}
 
 		case builtin.PaymentChannelActorCodeID:
+			var st paych.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := paych.CheckStateInvariants(&st, tree.Store, actor.Balance); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("paych: ").AddAll(msgs)
+				paychSummaries = append(paychSummaries, summary)
+			}
 
 		case builtin.MultisigActorCodeID:
+			var st multisig.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := multisig.CheckStateInvariants(&st, tree.Store); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("multisig: ").AddAll(msgs)
+				multisigSummaries = append(multisigSummaries, summary)
+			}
 
 		case builtin.RewardActorCodeID:
 
