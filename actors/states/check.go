@@ -70,7 +70,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			if summary, msgs, err := account.CheckStateInvariants(&st, tree.Store); err != nil {
 				return err
 			} else {
-				acc.WithPrefix("account ").AddAll(msgs)
+				acc.WithPrefix("account: ").AddAll(msgs)
 				accountSummaries = append(accountSummaries, summary)
 			}
 		case builtin.StoragePowerActorCodeID:
