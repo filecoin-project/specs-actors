@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -44,6 +45,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			WithActorType(payeeAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
 		actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
+		actor.checkState(rt)
 	})
 
 	t.Run("creates a payment channel actor after resolving non-ID addresses to ID addresses", func(t *testing.T) {
@@ -62,6 +64,7 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		rt.AddIDAddress(payeeNonId, payeeAddr)
 
 		actor.constructAndVerify(t, rt, payerNonId, payeeNonId)
+		actor.checkState(rt)
 	})
 
 	nonAccountCodeID := builtin.MultisigActorCodeID
@@ -279,6 +282,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 				assert.Equal(t, sv.Amount, ls.Redeemed)
 				assert.Equal(t, sv.Nonce, ls.Nonce)
+				actor.checkState(rt)
 			} else {
 				rt.ExpectAbort(tc.expExitCode, func() {
 					rt.Call(actor.UpdateChannelState, ucp)
@@ -358,6 +362,7 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 			LaneStates:      constructLaneStateAMT(t, rt, []*LaneState{&expLs}),
 		}
 		verifyState(t, rt, 1, expState)
+		actor.checkState(rt)
 	})
 
 	t.Run("redeems voucher for correct lane", func(t *testing.T) {
@@ -390,6 +395,7 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		assert.Equal(t, expToSend, st2.ToSend)
 		assert.Equal(t, ucp.Sv.Amount, lUpdated.Redeemed)
 		assert.Equal(t, ucp.Sv.Nonce, lUpdated.Nonce)
+		actor.checkState(rt)
 	})
 
 	t.Run("redeeming voucher fails on nonce reuse", func(t *testing.T) {
@@ -412,6 +418,7 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
 	})
 }
 
@@ -429,7 +436,7 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	mergeFromID := uint64(1)
 	mergeFrom := getLaneState(t, rt, st1.LaneStates, mergeFromID)
 
-	// Note sv.Amount = 4
+	// Note sv.Amount = 3
 	sv.Lane = mergeToID
 	mergeNonce := mergeTo.Nonce + 10
 
@@ -456,6 +463,7 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	expState.ToSend = expSendAmt
 	expState.LaneStates = constructLaneStateAMT(t, rt, []*LaneState{&expMergeTo, &expMergeFrom, getLaneState(t, rt, st1.LaneStates, 2)})
 	verifyState(t, rt, numLanes, expState)
+	actor.checkState(rt)
 }
 
 func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
@@ -565,7 +573,7 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 	ex := &ModVerifyParams{
 		Actor:  otherAddr,
 		Method: mnum,
-		Data: fakeParams,
+		Data:   fakeParams,
 	}
 
 	t.Run("Succeeds if extra call succeeds", func(t *testing.T) {
@@ -582,6 +590,7 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 		rt.ExpectSend(otherAddr, mnum, expSendParams, big.Zero(), nil, exitcode.Ok)
 		rt.Call(actor1.UpdateChannelState, ucp)
 		rt.Verify()
+		actor1.checkState(rt)
 	})
 	t.Run("If Extra call fails, fails with: spend voucher verification failed", func(t *testing.T) {
 		rt, actor1, sv1 := requireCreateChannelWithLanes(t, context.Background(), 1)
@@ -650,6 +659,7 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 			assert.Equal(t, tc.expSettlingAt, newSt.SettlingAt)
 			assert.Equal(t, tc.expMinSettleHeight, newSt.MinSettleHeight)
 			ucp.Sv.Nonce = ucp.Sv.Nonce + 1
+			actor.checkState(rt)
 		})
 	}
 }
@@ -676,6 +686,7 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		rt.ExpectVerifySignature(*ucp.Sv.Signature, st.To, voucherBytes(t, &ucp.Sv), nil)
 		rt.Call(actor.UpdateChannelState, ucp)
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("If bad secret preimage, fails with: incorrect secret!", func(t *testing.T) {
@@ -713,6 +724,7 @@ func TestActor_Settle(t *testing.T) {
 		rt.GetState(&st)
 		assert.Equal(t, expSettlingAt, st.SettlingAt)
 		assert.Equal(t, abi.ChainEpoch(0), st.MinSettleHeight)
+		actor.checkState(rt)
 	})
 
 	t.Run("settle fails if called twice: channel already settling", func(t *testing.T) {
@@ -759,6 +771,7 @@ func TestActor_Settle(t *testing.T) {
 		// SettlingAt should = MinSettleHeight, not epoch + SettleDelay.
 		rt.GetState(&newSt)
 		assert.Equal(t, ucp.Sv.MinSettleHeight, newSt.SettlingAt)
+		actor.checkState(rt)
 	})
 
 	t.Run("Voucher invalid after settling", func(t *testing.T) {
@@ -811,6 +824,7 @@ func TestActor_Collect(t *testing.T) {
 		rt.ExpectDeleteActor(st.From)
 		res := rt.Call(actor.Collect, nil)
 		assert.Nil(t, res)
+		actor.checkState(rt)
 	})
 
 	testCases := []struct {
@@ -866,6 +880,7 @@ type laneParams struct {
 	from, to    addr.Address
 	amt         big.Int
 	lane, nonce uint64
+	merges      []Merge
 }
 
 func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes int) (*mock.Runtime, *pcActorHarness, *SignedVoucher) {
@@ -909,7 +924,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, params laneParams) *SignedVoucher {
 	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte{0, 1, 2, 3, 4, 5, 6, 7}}
 	tl := abi.ChainEpoch(params.epochNum)
-	sv := SignedVoucher{ChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
+	sv := SignedVoucher{ChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig, Merges: params.merges}
 	ucp := &UpdateChannelStateParams{Sv: sv}
 
 	rt.SetCaller(params.from, builtin.AccountActorCodeID)
@@ -937,6 +952,14 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 	require.True(h.t, ok)
 
 	verifyInitialState(t, rt, senderId, receiverId)
+}
+
+func (h *pcActorHarness) checkState(rt *mock.Runtime) {
+	var st State
+	rt.GetState(&st)
+	_, msgs, err := CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
+	require.NoError(h.t, err)
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
