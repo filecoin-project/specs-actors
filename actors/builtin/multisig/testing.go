@@ -9,9 +9,9 @@ import (
 )
 
 type StateSummary struct {
-	PendingTxnCount  uint64
+	PendingTxnCount       uint64
 	NumApprovalsThreshold uint64
-	SignerCount      int
+	SignerCount           int
 }
 
 // Checks internal invariants of multisig state.
@@ -47,9 +47,15 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 			maxTxnID = txnID
 		}
 
+		seenApprovals := make(map[address.Address]struct{})
 		for _, approval := range txn.Approved {
 			_, found := signers[approval]
 			acc.Require(found, "approval %v for transaction %d is not in signers list", approval, txnID)
+
+			_, seen := seenApprovals[approval]
+			acc.Require(!seen, "duplicate approval %v for transaction %d", approval, txnID)
+
+			seenApprovals[approval] = struct{}{}
 		}
 
 		numPending++
@@ -61,9 +67,9 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 
 	acc.Require(st.NextTxnID > maxTxnID, "next transaction id %d is not greater than pending ids", st.NextTxnID)
 	return &StateSummary{
-		PendingTxns:  numPending,
-		NumApprovals: st.NumApprovalsThreshold,
-		Signers:      len(st.Signers),
+		PendingTxnCount:       numPending,
+		NumApprovalsThreshold: st.NumApprovalsThreshold,
+		SignerCount:           len(st.Signers),
 	}, acc, nil
 }
 
