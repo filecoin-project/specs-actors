@@ -1,21 +1,27 @@
 package power
 
 import (
-	"bytes"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
-type CronEventsByAddress map[address.Address][]miner.CronEventPayload
+type MinerCronEvent struct {
+	Epoch   abi.ChainEpoch
+	Payload []byte
+}
+
+type CronEventsByAddress map[address.Address][]MinerCronEvent
 type ClaimsByAddress map[address.Address]Claim
+type ProofsByAddress map[address.Address][]proof.SealVerifyInfo
 
 type StateSummary struct {
 	Crons  CronEventsByAddress
 	Claims ClaimsByAddress
+	Proofs ProofsByAddress
 }
 
 /*
@@ -60,6 +66,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(st.TotalQualityAdjPower.GreaterThanEqual(big.Zero()), "total qa power is negative %v", st.TotalQualityAdjPower)
 	acc.Require(st.TotalBytesCommitted.GreaterThanEqual(big.Zero()), "total raw power committed is negative %v", st.TotalBytesCommitted)
 	acc.Require(st.TotalQABytesCommitted.GreaterThanEqual(big.Zero()), "total qa power committed is negative %v", st.TotalQABytesCommitted)
+
 	acc.Require(st.TotalRawBytePower.LessThanEqual(st.TotalQualityAdjPower),
 		"total raw power %v is greater than total quality adjusted power %v", st.TotalRawBytePower, st.TotalQualityAdjPower)
 	acc.Require(st.TotalBytesCommitted.LessThanEqual(st.TotalQABytesCommitted),
@@ -79,9 +86,15 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		return nil, acc, err
 	}
 
+	proofs, err := CheckProofValidationInvariants(st, store, claims, acc)
+	if err != nil {
+		return nil, acc, err
+	}
+
 	return &StateSummary{
 		Crons:  crons,
 		Claims: claims,
+		Proofs: proofs,
 	}, acc, nil
 }
 
@@ -104,21 +117,10 @@ func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumul
 
 		var event CronEvent
 		return arr.ForEach(&event, func(i int64) error {
-
-			var payload miner.CronEventPayload
-			err := payload.UnmarshalCBOR(bytes.NewReader(event.CallbackPayload))
-			acc.Require(err == nil, "error unmarshalling miner cron event payload (might not be miner.CronEventPayload): %v", err)
-			if err != nil {
-				return nil // error noted above
-			}
-
-			existingPayloads, found := byAddress[event.MinerAddr]
-			if found && payload.EventType == miner.CronEventProvingDeadline {
-				for _, p := range existingPayloads {
-					acc.Require(p.EventType != miner.CronEventProvingDeadline, "found duplicate miner proving cron for miner %v", event.MinerAddr)
-				}
-			}
-			byAddress[event.MinerAddr] = append(existingPayloads, payload)
+			byAddress[event.MinerAddr] = append(byAddress[event.MinerAddr], MinerCronEvent{
+				Epoch:   abi.ChainEpoch(epoch),
+				Payload: event.CallbackPayload,
+			})
 
 			return nil
 		})
@@ -151,7 +153,7 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		committedQAPower = big.Add(committedQAPower, claim.QualityAdjPower)
 
 		minPower, err := builtin.ConsensusMinerMinPower(claim.SealProofType)
-		acc.Require(err != nil, "could not get consensus miner min power for miner %v: %w", addr, err)
+		acc.Require(err != nil, "could not get consensus miner min power for miner %v: %v", addr, err)
 		if err != nil {
 			return nil // noted above
 		}
@@ -193,4 +195,47 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 	}
 
 	return byAddress, nil
+}
+
+func CheckProofValidationInvariants(st *State, store adt.Store, claims ClaimsByAddress, acc *builtin.MessageAccumulator) (ProofsByAddress, error) {
+	if st.ProofValidationBatch == nil {
+		return nil, nil
+	}
+
+	queue, err := adt.AsMultimap(store, *st.ProofValidationBatch)
+	if err != nil {
+		return nil, err
+	}
+
+	proofs := make(ProofsByAddress)
+	err = queue.ForAll(func(key string, arr *adt.Array) error {
+		addr, err := address.NewFromBytes([]byte(key))
+		if err != nil {
+			return err
+		}
+
+		claim, found := claims[addr]
+		acc.Require(found, "miner %v has proofs awaiting validation but no claim", addr)
+		if !found {
+			return nil
+		}
+
+		var info proof.SealVerifyInfo
+		err = arr.ForEach(&info, func(i int64) error {
+			acc.Require(claim.SealProofType == info.SealProof, "miner submitted proof with proof type %d different from claim %d",
+				info.SealProof, claim.SealProofType)
+			proofs[addr] = append(proofs[addr], info)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		acc.Require(len(proofs[addr]) <= MaxMinerProveCommitsPerEpoch,
+			"miner %v has submitted too many proofs (%d) for batch verification", addr, len(proofs[addr]))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proofs, nil
 }
