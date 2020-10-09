@@ -5,6 +5,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/util"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
@@ -37,14 +38,18 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		return nil, acc, err
 	}
 
-	msgs, err = CheckPreCommits(st, store)
-	acc.AddAll(msgs)
-	if err != nil {
-		return nil, acc, err
-	}
-
 	var allocatedSectors bitfield.BitField
 	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
+		return nil, acc, err
+	}
+	allocatedSectorsMap, err := allocatedSectors.AllMap(1 << 30)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	msgs, err = CheckPreCommits(st, store, allocatedSectorsMap)
+	acc.AddAll(msgs)
+	if err != nil {
 		return nil, acc, err
 	}
 
@@ -56,13 +61,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		if err = sectorsArr.ForEach(&sector, func(sno int64) error {
 			cpy := sector
 			allSectors[abi.SectorNumber(sno)] = &cpy
-
-			allocated, err := allocatedSectors.IsSet(uint64(sno))
-			if err != nil {
-				return err
-			}
-			acc.Require(allocated, "on chain sector's sector number has not been allocated %d", sno)
-
+			acc.Require(allocatedSectorsMap[uint64(sno)], "on chain sector's sector number has not been allocated %d", sno)
 			return nil
 		}); err != nil {
 			return nil, nil, err
@@ -237,19 +236,21 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		if err != nil {
 			return nil, nil, err
 		}
-		for epoch, pidxs := range partitionsWithExpirations { // nolint:nomaprange
+		for epoch, expiringPIdxs := range partitionsWithExpirations { // nolint:nomaprange
 			var bf bitfield.BitField
 			found, err := expirationEpochs.Get(uint64(epoch), &bf)
 			if err != nil {
 				return nil, nil, err
 			}
 			acc.Require(found, "expected to find partitions with expirations at epoch %d", epoch)
-			for _, p := range pidxs {
-				present, err := bf.IsSet(p)
-				if err != nil {
-					return nil, nil, err
-				}
-				acc.Require(present, "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
+
+			queuedPIdxs, err := bf.AllMap(1 << 20)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			for _, p := range expiringPIdxs {
+				acc.Require(queuedPIdxs[p], "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
 			}
 		}
 	}
@@ -447,6 +448,11 @@ type ExpirationQueueStateSummary struct {
 // Checks the expiration queue for consistency.
 func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber]*SectorOnChainInfo,
 	partitionFaults bitfield.BitField, quant QuantSpec, sectorSize abi.SectorSize, acc *builtin.MessageAccumulator) (*ExpirationQueueStateSummary, error) {
+	partitionFaultsMap, err := partitionFaults.AllMap(1 << 30)
+	if err != nil {
+		return nil, err
+	}
+
 	seenSectors := make(map[abi.SectorNumber]bool)
 	var allOnTime []bitfield.BitField
 	var allEarly []bitfield.BitField
@@ -455,7 +461,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 	allOnTimePledge := big.Zero()
 	firstQueueEpoch := abi.ChainEpoch(-1)
 	var exp ExpirationSet
-	err := expQ.ForEach(&exp, func(e int64) error {
+	err = expQ.ForEach(&exp, func(e int64) error {
 		epoch := abi.ChainEpoch(e)
 		acc := acc.WithPrefix("expiration epoch %d: ", epoch)
 		acc.Require(quant.QuantizeUp(epoch) == epoch,
@@ -496,11 +502,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 			seenSectors[sno] = true
 
 			// Check early sectors are faulty
-			if isFaulty, err := partitionFaults.IsSet(n); err != nil {
-				return err
-			} else if !isFaulty {
-				acc.Addf("sector %d expiring early but not faulty", sno)
-			}
+			acc.Require(partitionFaultsMap[n], "sector %d expiring early but not faulty", sno)
 
 			// Check expiring sectors are still alive.
 			if sector, ok := liveSectors[sno]; ok {
@@ -675,7 +677,7 @@ func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount) (*b
 	return acc, nil
 }
 
-func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, error) {
+func CheckPreCommits(st *State, store adt.Store, allocatedSectors map[uint64]bool) (*builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 
 	// expire pre-committed sectors
@@ -701,12 +703,6 @@ func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, e
 		return acc, err
 	}
 
-	// load sector numer allocation
-	var allocatedSectors bitfield.BitField
-	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
-		return acc, err
-	}
-
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
 	if err != nil {
 		return nil, err
@@ -720,11 +716,7 @@ func CheckPreCommits(st *State, store adt.Store) (*builtin.MessageAccumulator, e
 			return err
 		}
 
-		allocated, err := allocatedSectors.IsSet(secNum)
-		if err != nil {
-			return err
-		}
-		acc.Require(allocated, "precommited sector number has not been allocated %d", secNum)
+		acc.Require(allocatedSectors[secNum], "precommited sector number has not been allocated %d", secNum)
 
 		_, found := expireEpochs[secNum]
 		acc.Require(found, "no expiry epoch for precommit at %d", precommit.PreCommitEpoch)
