@@ -1,6 +1,7 @@
 package states
 
 import (
+	"bytes"
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -26,10 +27,10 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	var verifregSummary *verifreg.StateSummary
 	var marketSummary *market.StateSummary
 	var accountSummaries []*account.StateSummary
-	var minerSummaries []*miner.StateSummary
 	var powerSummary *power.StateSummary
 	var paychSummaries []*paych.StateSummary
 	var multisigSummaries []*multisig.StateSummary
+	minerSummaries := make(map[addr.Address]*miner.StateSummary)
 
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
 		acc := acc.WithPrefix("%v ", key) // Intentional shadow
@@ -95,7 +96,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 				return err
 			} else {
 				acc.WithPrefix("miner: ").AddAll(msgs)
-				minerSummaries = append(minerSummaries, summary)
+				minerSummaries[key] = summary
 			}
 		case builtin.StorageMarketActorCodeID:
 			var st market.State
@@ -158,15 +159,55 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	//
 	// Perform cross-actor checks from state summaries here.
 	//
+
+	CheckMinersAgainstPower(acc, minerSummaries, powerSummary)
+
 	_ = initSummary
 	_ = verifregSummary
 	_ = cronSummary
 	_ = marketSummary
-	_ = powerSummary
 
 	if !totalFIl.Equals(expectedBalanceTotal) {
 		acc.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
 	}
 
 	return acc, nil
+}
+
+func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map[addr.Address]*miner.StateSummary, powerSummary *power.StateSummary) {
+	for addr, minerSummary := range minerSummaries { // nolint:nomaprange
+
+		// check claim
+		claim, ok := powerSummary.Claims[addr]
+		acc.Require(ok, "miner %v has no power claim", addr)
+		if ok {
+			claimPower := miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
+			acc.Require(minerSummary.ActivePower.Equals(claimPower),
+				"miner %v computed active power %v does not match claim %v", addr, minerSummary.ActivePower, claimPower)
+			acc.Require(minerSummary.SealProofType == claim.SealProofType,
+				"miner seal proof type %d does not match claim proof type %d", minerSummary.SealProofType, claim.SealProofType)
+		}
+
+		// check crons
+		crons, ok := powerSummary.Crons[addr]
+		if !ok {
+			continue
+		}
+
+		var payload miner.CronEventPayload
+		hasProvingPeriodCron := false
+		for _, event := range crons {
+			err := payload.UnmarshalCBOR(bytes.NewReader(event.Payload))
+			acc.Require(err == nil, "miner %v registered cron at epoch %d with wrong or corrupt payload",
+				addr, event.Epoch)
+
+			if payload.EventType == miner.CronEventProvingDeadline {
+				acc.Require(!hasProvingPeriodCron, "miner %v has duplicate proving period cron at epoch %d",
+					addr, event.Epoch)
+				hasProvingPeriodCron = true
+			}
+		}
+
+		acc.Require(hasProvingPeriodCron, "miner %v has no proving period cron", addr)
+	}
 }

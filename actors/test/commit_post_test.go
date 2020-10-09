@@ -2,6 +2,8 @@ package test_test
 
 import (
 	"context"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -246,6 +248,14 @@ func TestCommitPoStFlow(t *testing.T) {
 		networkStats := vm.GetNetworkStats(t, tv)
 		assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
 		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
+
+		stateTree, err := tv.GetStateTree()
+		require.NoError(t, err)
+		totalBalance, err := tv.GetTotalActorBalance()
+		require.NoError(t, err)
+		acc, err := states.CheckStateInvariants(stateTree, totalBalance)
+		require.NoError(t, err)
+		assert.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 	})
 
 	t.Run("skip sector", func(t *testing.T) {
@@ -270,9 +280,9 @@ func TestCommitPoStFlow(t *testing.T) {
 		assert.Equal(t, exitcode.ErrIllegalArgument, code)
 
 		vm.ExpectInvocation{
-			To:     minerAddrs.IDAddress,
-			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
-			Params: vm.ExpectObject(&submitParams),
+			To:       minerAddrs.IDAddress,
+			Method:   builtin.MethodsMiner.SubmitWindowedPoSt,
+			Params:   vm.ExpectObject(&submitParams),
 			Exitcode: exitcode.ErrIllegalArgument,
 		}.Matches(t, tv.Invocations()[0])
 

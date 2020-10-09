@@ -320,6 +320,31 @@ func (vm *VM) GetState(addr address.Address, out cbor.Unmarshaler) error {
 	return vm.store.Get(vm.ctx, act.Head, out)
 }
 
+func (vm *VM) GetStateTree() (*states.Tree, error) {
+	root, err := vm.checkpoint()
+	if err != nil {
+		return nil, err
+	}
+
+	return states.LoadTree(vm.store, root)
+}
+
+func (vm *VM) GetTotalActorBalance() (abi.TokenAmount, error) {
+	tree, err := vm.GetStateTree()
+	if err != nil {
+		return big.Zero(), err
+	}
+	total := big.Zero()
+	err = tree.ForEach(func(_ address.Address, actor *states.Actor) error {
+		total = big.Add(total, actor.Balance)
+		return nil
+	})
+	if err != nil {
+		return big.Zero(), err
+	}
+	return total, nil
+}
+
 func (vm *VM) Store() adt.Store {
 	return vm.store
 }
