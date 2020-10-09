@@ -7,17 +7,27 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/cron"
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
-func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*builtin.MessageAccumulator, error) {
+func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, priorEpoch abi.ChainEpoch) (*builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 	totalFIl := big.Zero()
 	var initSummary *init_.StateSummary
+	var cronSummary *cron.StateSummary
 	var verifregSummary *verifreg.StateSummary
+	var marketSummary *market.StateSummary
+	var accountSummaries []*account.StateSummary
 	var minerSummaries []*miner.StateSummary
+	var paychSummaries []*paych.StateSummary
+	var multisigSummaries []*multisig.StateSummary
 
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
 		acc := acc.WithPrefix("%v ", key) // Intentional shadow
@@ -41,9 +51,28 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 				initSummary = summary
 			}
 		case builtin.CronActorCodeID:
+			var st cron.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := cron.CheckStateInvariants(&st, tree.Store); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("cron: ").AddAll(msgs)
+				cronSummary = summary
+			}
 
 		case builtin.AccountActorCodeID:
-
+			var st account.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := account.CheckStateInvariants(&st, tree.Store); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("account: ").AddAll(msgs)
+				accountSummaries = append(accountSummaries, summary)
+			}
 		case builtin.StoragePowerActorCodeID:
 
 		case builtin.StorageMinerActorCodeID:
@@ -58,10 +87,40 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 				minerSummaries = append(minerSummaries, summary)
 			}
 		case builtin.StorageMarketActorCodeID:
+			var st market.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := market.CheckStateInvariants(&st, tree.Store, actor.Balance, priorEpoch); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("market: ").AddAll(msgs)
+				marketSummary = summary
+			}
 
 		case builtin.PaymentChannelActorCodeID:
+			var st paych.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := paych.CheckStateInvariants(&st, tree.Store, actor.Balance); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("paych: ").AddAll(msgs)
+				paychSummaries = append(paychSummaries, summary)
+			}
 
 		case builtin.MultisigActorCodeID:
+			var st multisig.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := multisig.CheckStateInvariants(&st, tree.Store); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("multisig: ").AddAll(msgs)
+				multisigSummaries = append(multisigSummaries, summary)
+			}
 
 		case builtin.RewardActorCodeID:
 
@@ -90,6 +149,8 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount) (*bu
 	//
 	_ = initSummary
 	_ = verifregSummary
+	_ = cronSummary
+	_ = marketSummary
 
 	if !totalFIl.Equals(expectedBalanceTotal) {
 		acc.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
