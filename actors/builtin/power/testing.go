@@ -125,7 +125,7 @@ func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumul
 			return nil
 		})
 	})
-	acc.Require(err != nil, "error attempting to read through power actor cron tasks: %v", err)
+	acc.Require(err == nil, "error attempting to read through power actor cron tasks: %v", err)
 
 	return byAddress, nil
 }
@@ -153,7 +153,7 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		committedQAPower = big.Add(committedQAPower, claim.QualityAdjPower)
 
 		minPower, err := builtin.ConsensusMinerMinPower(claim.SealProofType)
-		acc.Require(err != nil, "could not get consensus miner min power for miner %v: %v", addr, err)
+		acc.Require(err == nil, "could not get consensus miner min power for miner %v: %v", addr, err)
 		if err != nil {
 			return nil // noted above
 		}
@@ -180,19 +180,10 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		"claims with sufficient power %d does not match MinerAboveMinPowerCount %d",
 		claimsWithSufficientPowerCount, st.MinerAboveMinPowerCount)
 
-	if claimsWithSufficientPowerCount >= ConsensusMinerMinMiners {
-		acc.Require(st.TotalRawBytePower.Equals(rawPower),
-			"recorded raw power %v does not match raw power in claims %v", st.TotalRawBytePower, rawPower)
-		acc.Require(st.TotalQualityAdjPower.Equals(qaPower),
-			"recorded qa power %v does not match qa power in claims %v", st.TotalQualityAdjPower, qaPower)
-	} else {
-		acc.Require(st.TotalRawBytePower.Equals(st.TotalBytesCommitted),
-			"below consensus min recorded raw power %v does not match committed bytes %v",
-			st.TotalRawBytePower, st.TotalBytesCommitted)
-		acc.Require(st.TotalQualityAdjPower.Equals(st.TotalQABytesCommitted),
-			"below consensus min recorded qa power %v does not match qa committed bytes %v",
-			st.TotalQualityAdjPower, st.TotalQABytesCommitted)
-	}
+	acc.Require(st.TotalRawBytePower.Equals(rawPower),
+		"recorded raw power %v does not match raw power in claims %v", st.TotalRawBytePower, rawPower)
+	acc.Require(st.TotalQualityAdjPower.Equals(qaPower),
+		"recorded qa power %v does not match qa power in claims %v", st.TotalQualityAdjPower, qaPower)
 
 	return byAddress, nil
 }
