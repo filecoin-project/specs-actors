@@ -400,7 +400,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	require.NoError(t, err)
 	totalBalance, err := v2.GetTotalActorBalance()
 	require.NoError(t, err)
-	acc, err = states.CheckStateInvariants(stateTree, totalBalance)
+	acc, err = states.CheckStateInvariants(stateTree, totalBalance, v2.GetEpoch())
 	require.NoError(t, err)
 	assert.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/account"
@@ -80,9 +81,11 @@ func TestAccountactor(t *testing.T) {
 }
 
 func checkState(t *testing.T, rt *mock.Runtime) {
+	testAddress, err := address.NewIDAddress(1000)
+	require.NoError(t, err)
 	var st account.State
 	rt.GetState(&st)
-	_, msgs, err := account.CheckStateInvariants(&st, rt.AdtStore())
+	_, msgs, err := account.CheckStateInvariants(&st, testAddress)
 	assert.NoError(t, err)
 	assert.True(t, msgs.IsEmpty())
 }

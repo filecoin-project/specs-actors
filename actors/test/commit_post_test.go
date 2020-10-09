@@ -253,7 +253,7 @@ func TestCommitPoStFlow(t *testing.T) {
 		require.NoError(t, err)
 		totalBalance, err := tv.GetTotalActorBalance()
 		require.NoError(t, err)
-		acc, err := states.CheckStateInvariants(stateTree, totalBalance)
+		acc, err := states.CheckStateInvariants(stateTree, totalBalance, tv.GetEpoch())
 		require.NoError(t, err)
 		assert.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 	})

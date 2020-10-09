@@ -70,7 +70,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
 				return err
 			}
-			if summary, msgs, err := account.CheckStateInvariants(&st, tree.Store); err != nil {
+			if summary, msgs, err := account.CheckStateInvariants(&st, key); err != nil {
 				return err
 			} else {
 				acc.WithPrefix("account: ").AddAll(msgs)
