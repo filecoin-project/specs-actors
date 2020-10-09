@@ -60,7 +60,6 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(st.TotalQualityAdjPower.GreaterThanEqual(big.Zero()), "total qa power is negative %v", st.TotalQualityAdjPower)
 	acc.Require(st.TotalBytesCommitted.GreaterThanEqual(big.Zero()), "total raw power committed is negative %v", st.TotalBytesCommitted)
 	acc.Require(st.TotalQABytesCommitted.GreaterThanEqual(big.Zero()), "total qa power committed is negative %v", st.TotalQABytesCommitted)
-	acc.Require(st.TotalRawBytePower.GreaterThanEqual(big.Zero()), "total raw power is negative %v", st.TotalRawBytePower)
 	acc.Require(st.TotalRawBytePower.LessThanEqual(st.TotalQualityAdjPower),
 		"total raw power %v is greater than total quality adjusted power %v", st.TotalRawBytePower, st.TotalQualityAdjPower)
 	acc.Require(st.TotalBytesCommitted.LessThanEqual(st.TotalQABytesCommitted),
@@ -70,13 +69,15 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(st.TotalQualityAdjPower.LessThanEqual(st.TotalQABytesCommitted),
 		"total qua power %v is greater than qa power committed %v", st.TotalQualityAdjPower, st.TotalQABytesCommitted)
 
-	crons, msgs, err := CheckCronInvariants(st, store)
-	acc.AddAll(msgs)
+	crons, err := CheckCronInvariants(st, store, acc)
 	if err != nil {
 		return nil, acc, err
 	}
 
-	claims, msgs, err := CheckClaimInvariants(st, store)
+	claims, err := CheckClaimInvariants(st, store, acc)
+	if err != nil {
+		return nil, acc, err
+	}
 
 	return &StateSummary{
 		Crons:  crons,
@@ -84,12 +85,10 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	}, acc, nil
 }
 
-func CheckCronInvariants(st *State, store adt.Store) (CronEventsByAddress, *builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
-
+func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumulator) (CronEventsByAddress, error) {
 	queue, err := adt.AsMultimap(store, st.CronEventQueue)
 	if err != nil {
-		return nil, acc, err
+		return nil, err
 	}
 
 	byAddress := make(CronEventsByAddress)
@@ -126,22 +125,19 @@ func CheckCronInvariants(st *State, store adt.Store) (CronEventsByAddress, *buil
 	})
 	acc.Require(err != nil, "error attempting to read through power actor cron tasks: %v", err)
 
-	return byAddress, acc, nil
+	return byAddress, nil
 }
 
-func CheckClaimInvariants(st *State, store adt.Store) (ClaimsByAddress, *builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
-
+func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumulator) (ClaimsByAddress, error) {
 	claims, err := adt.AsMap(store, st.Claims)
 	if err != nil {
-		return nil, acc, err
+		return nil, err
 	}
 
 	committedRawPower := abi.NewStoragePower(0)
 	committedQAPower := abi.NewStoragePower(0)
 	rawPower := abi.NewStoragePower(0)
 	qaPower := abi.NewStoragePower(0)
-	claimCount := int64(0)
 	claimsWithSufficientPowerCount := int64(0)
 	byAddress := make(ClaimsByAddress)
 	var claim Claim
@@ -151,7 +147,6 @@ func CheckClaimInvariants(st *State, store adt.Store) (ClaimsByAddress, *builtin
 			return err
 		}
 		byAddress[addr] = claim
-		claimCount += 1
 		committedRawPower = big.Add(committedRawPower, claim.RawBytePower)
 		committedQAPower = big.Add(committedQAPower, claim.QualityAdjPower)
 
@@ -169,7 +164,7 @@ func CheckClaimInvariants(st *State, store adt.Store) (ClaimsByAddress, *builtin
 		return nil
 	})
 	if err != nil {
-		return nil, acc, err
+		return nil, err
 	}
 
 	acc.Require(committedRawPower.Equals(st.TotalBytesCommitted),
@@ -197,5 +192,5 @@ func CheckClaimInvariants(st *State, store adt.Store) (ClaimsByAddress, *builtin
 			st.TotalQualityAdjPower, st.TotalQABytesCommitted)
 	}
 
-	return byAddress, acc, nil
+	return byAddress, nil
 }
