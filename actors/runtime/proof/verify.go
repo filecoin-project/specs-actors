@@ -49,7 +49,7 @@ type PoStProof = proof0.PoStProof
 //	ChallengedSectors []SectorInfo
 //	Prover            abi.ActorID // used to derive 32-byte prover ID
 //}
-type WinningPoStVerifyInfo = proof0.WindowPoStVerifyInfo
+type WinningPoStVerifyInfo = proof0.WinningPoStVerifyInfo
 
 // Information needed to verify a Window PoSt submitted directly to a miner actor.
 //type WindowPoStVerifyInfo struct {
