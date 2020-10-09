@@ -120,10 +120,10 @@ func (m *powerMigrator) updateClaims(ctx context.Context, store cbor.IpldStore, 
 		if found {
 			rawPower = big.Sub(rawPower, oldClaim.RawBytePower)
 			qaPower = big.Sub(qaPower, oldClaim.QualityAdjPower)
-		}
 
-		if err := st.AddToClaim(adt0.WrapStore(ctx, store), addr, rawPower, qaPower); err != nil {
-			return err
+			if err := st.AddToClaim(adt0.WrapStore(ctx, store), addr, rawPower, qaPower); err != nil {
+				return err
+			}
 		}
 	}
 
