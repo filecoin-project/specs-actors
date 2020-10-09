@@ -23,6 +23,11 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(uint64(len(st.Signers)) >= st.NumApprovalsThreshold,
 		"multisig has insufficient signers to meet threshold (%d < %d)", len(st.Signers), st.NumApprovalsThreshold)
 
+	if st.UnlockDuration == 0 { // See https://github.com/filecoin-project/specs-actors/issues/1185
+		acc.Require(st.StartEpoch == 0, "non-zero start epoch %d with zero unlock duration", st.StartEpoch)
+		acc.Require(st.InitialBalance.IsZero(), "non-zero locked balance %v with zero unlock duration", st.InitialBalance)
+	}
+
 	// create lookup to test transaction approvals are multisig signers.
 	signers := make(map[address.Address]struct{})
 	for _, a := range st.Signers {
