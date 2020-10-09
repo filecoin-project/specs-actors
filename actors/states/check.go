@@ -17,7 +17,23 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
-func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, priorEpoch abi.ChainEpoch) (*builtin.MessageAccumulator, error) {
+func CheckStateInvariantsPostMigration(tree *Tree, expectedBalanceTotal abi.TokenAmount, priorEpoch abi.ChainEpoch) (*builtin.MessageAccumulator, error) {
+	acc, totalFIl, err := checkStateInvariants(tree, priorEpoch)
+	if err != nil {
+		return nil, err
+	}
+	if !totalFIl.Equals(expectedBalanceTotal) {
+		acc.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
+	}
+	return acc, nil
+}
+
+func CheckStateInvariants(tree *Tree, priorEpoch abi.ChainEpoch) (*builtin.MessageAccumulator, error) {
+	acc, _, err := checkStateInvariants(tree, priorEpoch)
+	return acc, err
+}
+
+func checkStateInvariants(tree *Tree, priorEpoch abi.ChainEpoch) (*builtin.MessageAccumulator, abi.TokenAmount, error) {
 	acc := &builtin.MessageAccumulator{}
 	totalFIl := big.Zero()
 	var initSummary *init_.StateSummary
@@ -141,7 +157,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 		}
 		return nil
 	}); err != nil {
-		return nil, err
+		return nil, big.Zero(), err
 	}
 
 	//
@@ -152,9 +168,5 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	_ = cronSummary
 	_ = marketSummary
 
-	if !totalFIl.Equals(expectedBalanceTotal) {
-		acc.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
-	}
-
-	return acc, nil
+	return acc, totalFIl, nil
 }
