@@ -101,47 +101,47 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
 		builtin0.AccountActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.AccountActorCodeID,
-			StateMigration: &accountMigrator{},
+			StateMigration: accountMigrator{},
 		},
 		builtin0.CronActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.CronActorCodeID,
-			StateMigration: &cronMigrator{},
+			StateMigration: cronMigrator{},
 		},
 		builtin0.InitActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.InitActorCodeID,
-			StateMigration: &initMigrator{},
+			StateMigration: initMigrator{},
 		},
 		builtin0.StorageMarketActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.StorageMarketActorCodeID,
-			StateMigration: &marketMigrator{},
+			StateMigration: marketMigrator{},
 		},
 		builtin0.MultisigActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.MultisigActorCodeID,
-			StateMigration: &multisigMigrator{},
+			StateMigration: multisigMigrator{},
 		},
 		builtin0.PaymentChannelActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.PaymentChannelActorCodeID,
-			StateMigration: &paychMigrator{},
+			StateMigration: paychMigrator{},
 		},
 		builtin0.StoragePowerActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.StoragePowerActorCodeID,
-			StateMigration: &powerMigrator{},
+			StateMigration: powerMigrator{},
 		},
 		builtin0.RewardActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.RewardActorCodeID,
-			StateMigration: &rewardMigrator{},
+			StateMigration: rewardMigrator{},
 		},
 		builtin0.SystemActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.SystemActorCodeID,
-			StateMigration: &systemMigrator{},
+			StateMigration: systemMigrator{},
 		},
 		builtin0.VerifiedRegistryActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.VerifiedRegistryActorCodeID,
-			StateMigration: &verifregMigrator{},
+			StateMigration: verifregMigrator{},
 		},
 		builtin0.StorageMinerActorCodeID: ActorMigration{
 			OutCodeCID:     builtin.StorageMinerActorCodeID,
-			StateMigration: &minerMigrator{},
+			StateMigration: minerMigrator{},
 		},
 	}
 
@@ -241,7 +241,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	}
 
 	// Migrate Power actor
-	pm := migrations[builtin0.StoragePowerActorCodeID].StateMigration.(*powerMigrator)
+	pm := migrations[builtin0.StoragePowerActorCodeID].StateMigration.(powerMigrator)
 	pm.actorsIn = actorsIn
 	pm.powerUpdates = powerUpdates
 	powerActorIn, found, err := actorsIn.GetActor(builtin0.StoragePowerActorAddr)
@@ -271,7 +271,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	}
 
 	// Migrate reward actor
-	rm := migrations[builtin0.RewardActorCodeID].StateMigration.(*rewardMigrator)
+	rm := migrations[builtin0.RewardActorCodeID].StateMigration.(rewardMigrator)
 	rm.actorsOut = actorsOut
 	rewardActorIn, found, err := actorsIn.GetActor(builtin0.RewardActorAddr)
 	if err != nil {
@@ -300,7 +300,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	}
 
 	// Migrate verified registry
-	vm := migrations[builtin0.VerifiedRegistryActorCodeID].StateMigration.(*verifregMigrator)
+	vm := migrations[builtin0.VerifiedRegistryActorCodeID].StateMigration.(verifregMigrator)
 	vm.actorsOut = actorsOut
 	verifRegActorIn, found, err := actorsIn.GetActor(builtin0.VerifiedRegistryActorAddr)
 	if err != nil {

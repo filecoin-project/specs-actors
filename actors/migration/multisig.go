@@ -16,7 +16,7 @@ import (
 type multisigMigrator struct {
 }
 
-func (m *multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
+func (m multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState multisig0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err

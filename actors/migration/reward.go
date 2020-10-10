@@ -40,7 +40,7 @@ type rewardMigrator struct {
 	actorsOut *states.Tree
 }
 
-func (m *rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, migInfo MigrationInfo) (*StateMigrationResult, error) {
+func (m rewardMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, migInfo MigrationInfo) (*StateMigrationResult, error) {
 	var inState reward0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err

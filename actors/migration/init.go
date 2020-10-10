@@ -15,7 +15,7 @@ import (
 type initMigrator struct {
 }
 
-func (m *initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
+func (m initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState init0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err

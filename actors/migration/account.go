@@ -14,7 +14,7 @@ import (
 type accountMigrator struct {
 }
 
-func (m *accountMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
+func (m accountMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState account0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err
