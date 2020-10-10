@@ -18,7 +18,7 @@ import (
 type minerMigrator struct {
 }
 
-func (m *minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
+func (m minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
 	// first correct issues with miners due problems in old code
 	result, err := m.CorrectState(ctx, store, head, info.priorEpoch, info.address)
 	if err != nil {

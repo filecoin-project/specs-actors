@@ -24,7 +24,7 @@ type powerMigrator struct {
 	powerUpdates *PowerUpdates
 }
 
-func (m *powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
+func (m powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
 	var inState power0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err

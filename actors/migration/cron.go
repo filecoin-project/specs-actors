@@ -14,7 +14,7 @@ import (
 type cronMigrator struct {
 }
 
-func (m *cronMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
+func (m cronMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState cron0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err

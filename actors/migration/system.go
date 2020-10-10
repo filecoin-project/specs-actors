@@ -14,7 +14,7 @@ import (
 type systemMigrator struct {
 }
 
-func (m *systemMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
+func (m systemMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	// No change
 	var _ = system2.State(system0.State{})
 	return &StateMigrationResult{

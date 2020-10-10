@@ -15,7 +15,7 @@ import (
 type marketMigrator struct {
 }
 
-func (m *marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
+func (m marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, _ MigrationInfo) (*StateMigrationResult, error) {
 	var inState market0.State
 	if err := store.Get(ctx, head, &inState); err != nil {
 		return nil, err
