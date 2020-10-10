@@ -89,53 +89,6 @@ type ActorMigration struct {
 	StateMigration StateMigration
 }
 
-var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
-	builtin0.AccountActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.AccountActorCodeID,
-		StateMigration: &accountMigrator{},
-	},
-	builtin0.CronActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.CronActorCodeID,
-		StateMigration: &cronMigrator{},
-	},
-	builtin0.InitActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.InitActorCodeID,
-		StateMigration: &initMigrator{},
-	},
-	builtin0.StorageMarketActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.StorageMarketActorCodeID,
-		StateMigration: &marketMigrator{},
-	},
-	builtin0.MultisigActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.MultisigActorCodeID,
-		StateMigration: &multisigMigrator{},
-	},
-	builtin0.PaymentChannelActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.PaymentChannelActorCodeID,
-		StateMigration: &paychMigrator{},
-	},
-	builtin0.StoragePowerActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.StoragePowerActorCodeID,
-		StateMigration: &powerMigrator{},
-	},
-	builtin0.RewardActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.RewardActorCodeID,
-		StateMigration: &rewardMigrator{},
-	},
-	builtin0.SystemActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.SystemActorCodeID,
-		StateMigration: &systemMigrator{},
-	},
-	builtin0.VerifiedRegistryActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.VerifiedRegistryActorCodeID,
-		StateMigration: &verifregMigrator{},
-	},
-	builtin0.StorageMinerActorCodeID: ActorMigration{
-		OutCodeCID:     builtin.StorageMinerActorCodeID,
-		StateMigration: &minerMigrator{},
-	},
-}
-
 var deferredMigrations = map[cid.Cid]bool{
 	builtin0.VerifiedRegistryActorCodeID: true,
 	builtin0.StoragePowerActorCodeID:     true,
@@ -144,6 +97,54 @@ var deferredMigrations = map[cid.Cid]bool{
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
 func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config) (cid.Cid, error) {
+
+	var migrations = map[cid.Cid]ActorMigration{ // nolint:varcheck,deadcode,unused
+		builtin0.AccountActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.AccountActorCodeID,
+			StateMigration: &accountMigrator{},
+		},
+		builtin0.CronActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.CronActorCodeID,
+			StateMigration: &cronMigrator{},
+		},
+		builtin0.InitActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.InitActorCodeID,
+			StateMigration: &initMigrator{},
+		},
+		builtin0.StorageMarketActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.StorageMarketActorCodeID,
+			StateMigration: &marketMigrator{},
+		},
+		builtin0.MultisigActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.MultisigActorCodeID,
+			StateMigration: &multisigMigrator{},
+		},
+		builtin0.PaymentChannelActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.PaymentChannelActorCodeID,
+			StateMigration: &paychMigrator{},
+		},
+		builtin0.StoragePowerActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.StoragePowerActorCodeID,
+			StateMigration: &powerMigrator{},
+		},
+		builtin0.RewardActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.RewardActorCodeID,
+			StateMigration: &rewardMigrator{},
+		},
+		builtin0.SystemActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.SystemActorCodeID,
+			StateMigration: &systemMigrator{},
+		},
+		builtin0.VerifiedRegistryActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.VerifiedRegistryActorCodeID,
+			StateMigration: &verifregMigrator{},
+		},
+		builtin0.StorageMinerActorCodeID: ActorMigration{
+			OutCodeCID:     builtin.StorageMinerActorCodeID,
+			StateMigration: &minerMigrator{},
+		},
+	}
+
 	// Setup input and output state tree helpers
 	adtStore := adt.WrapStore(ctx, store)
 	actorsIn, err := states0.LoadTree(adtStore, stateRootIn)
@@ -196,7 +197,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		grp.Go(func() error {
 			defer workerWg.Done()
 			for input := range inputCh {
-				result, err := migrateOneActor(ctx, store, input, priorEpoch)
+				result, err := migrateOneActor(ctx, store, input, priorEpoch, migrations)
 				if err != nil {
 					return err
 				}
@@ -359,7 +360,7 @@ type migrationResult struct {
 }
 
 func migrateOneActor(ctx context.Context, store cbor.IpldStore, input *migrationInput,
-	priorEpoch abi.ChainEpoch) (*migrationResult, error) {
+	priorEpoch abi.ChainEpoch, migrations map[cid.Cid]ActorMigration) (*migrationResult, error) {
 	actorIn := input.Actor
 	addr := input.Address
 	// This will be migrated at the end
