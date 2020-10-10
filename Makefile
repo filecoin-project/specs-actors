@@ -8,7 +8,12 @@ build:
 
 test:
 	$(GO_BIN) test ./...
+	$(GO_BIN) test -race ./actors/migration/test
 .PHONY: test
+
+test-migration:
+	$(GO_BIN) test -race ./actors/migration/test
+.PHONY: test-migration
 
 test-coverage:
 	$(GO_BIN) test -coverprofile=coverage.out ./...

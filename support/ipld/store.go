@@ -3,6 +3,7 @@ package ipld
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	block "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -36,4 +37,32 @@ func (mb *BlockStoreInMemory) Put(b block.Block) error {
 func NewADTStore(ctx context.Context) adt.Store {
 	return adt.WrapStore(ctx, cbor.NewCborStore(NewBlockStoreInMemory()))
 
+}
+
+type SyncBlockStoreInMemory struct {
+	bs *BlockStoreInMemory
+	mu sync.Mutex
+}
+
+func NewSyncBlockStoreInMemory() *SyncBlockStoreInMemory {
+	return &SyncBlockStoreInMemory{
+		bs: NewBlockStoreInMemory(),
+	}
+}
+
+func (ss *SyncBlockStoreInMemory) Get(c cid.Cid) (block.Block, error) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.bs.Get(c)
+}
+
+func (ss *SyncBlockStoreInMemory) Put(b block.Block) error {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.bs.Put(b)
+}
+
+// Creates a new, threadsafe, empty IPLD store in memory
+func NewSyncADTStore(ctx context.Context) adt.Store {
+	return adt.WrapStore(ctx, cbor.NewCborStore(NewSyncBlockStoreInMemory()))
 }
