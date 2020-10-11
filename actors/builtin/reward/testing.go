@@ -16,7 +16,7 @@ var StorageMiningAllocationCheck = big.Mul(big.NewInt(1_100_000_000), FIL)
 func CheckStateInvariants(st *State, store adt.Store, priorEpoch abi.ChainEpoch, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 
-	acc.Require(big.Add(st.TotalStoragePowerReward, balance).Equals(StorageMiningAllocationCheck), "reward given + reward left != storage mining allocation")
+	acc.Require(big.Add(st.TotalStoragePowerReward, balance).Equals(StorageMiningAllocationCheck), "reward given %v + reward left %v != storage mining allocation %v", st.TotalStoragePowerReward, balance, StorageMiningAllocationCheck)
 
 	acc.Require(st.Epoch == priorEpoch, "reward state epoch %d does not match priorEpoch %d", st.Epoch, priorEpoch)
 	acc.Require(st.EffectiveNetworkTime <= st.Epoch, "effective network time greater than state epoch")
@@ -25,8 +25,9 @@ func CheckStateInvariants(st *State, store adt.Store, priorEpoch abi.ChainEpoch,
 	acc.Require(st.CumsumRealized.GreaterThanEqual(big.Zero()), "cumsum realized < 0")
 	acc.Require(st.EffectiveBaselinePower.LessThanEqual(st.ThisEpochBaselinePower), "effective baseline power > baseline power")
 
-	computedBaseline := math.ExpBySquaring(BaselineExponent, int64(st.Epoch))
-	acc.Require(st.ThisEpochBaselinePower.Equals(computedBaseline), "state baseline power does not match computed")
+	computedBaseline := big.Mul(BaselineInitialValue, math.ExpBySquaring(BaselineExponent, int64(st.Epoch)))
+	computedBaseline = big.Rsh(computedBaseline, math.Precision128)
+	acc.Require(st.ThisEpochBaselinePower.Equals(computedBaseline), "state baseline power %v does not match computed %v", st.ThisEpochBaselinePower, computedBaseline)
 
 	return &StateSummary{}, acc, nil
 }
