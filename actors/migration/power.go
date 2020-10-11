@@ -40,12 +40,12 @@ func (m powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		return nil, xerrors.Errorf("cron events: %w", err)
 	}
 
-	// operates directly on inState
-	if err := m.updateClaims(ctx, store, inState.Claims, m.powerUpdates, &inState); err != nil {
+	claimsRoot, err := m.updateClaims(ctx, store, inState.Claims, m.powerUpdates)
+	if err != nil {
 		return nil, xerrors.Errorf("claims: %w", err)
 	}
 
-	claimsRoot, err := m.migrateClaims(ctx, store, inState.Claims)
+	claimsRoot, err = m.migrateClaims(ctx, store, claimsRoot)
 	if err != nil {
 		return nil, xerrors.Errorf("claims: %w", err)
 	}
@@ -101,33 +101,19 @@ func (m *powerMigrator) migrateCronEvents(ctx context.Context, store cbor.IpldSt
 	return migrateHAMTRaw(ctx, store, root)
 }
 
-func (m *powerMigrator) updateClaims(ctx context.Context, store cbor.IpldStore, root cid.Cid, updates *PowerUpdates, st *power0.State) error {
+func (m *powerMigrator) updateClaims(ctx context.Context, store cbor.IpldStore, root cid.Cid, updates *PowerUpdates) (cid.Cid, error) {
 	claims, err := adt0.AsMap(adt0.WrapStore(ctx, store), root)
 	if err != nil {
-		return err
+		return cid.Undef, err
 	}
 
 	for addr, claim := range updates.claims { // nolint:nomaprange
-		rawPower := claim.RawBytePower
-		qaPower := claim.QualityAdjPower
-
-		var oldClaim power0.Claim
-		found, err := claims.Get(abi.AddrKey(addr), &oldClaim)
-		if err != nil {
-			return nil
-		}
-
-		if found {
-			rawPower = big.Sub(rawPower, oldClaim.RawBytePower)
-			qaPower = big.Sub(qaPower, oldClaim.QualityAdjPower)
-		}
-
-		if err := st.AddToClaim(adt0.WrapStore(ctx, store), addr, rawPower, qaPower); err != nil {
-			return err
+		if err := claims.Put(abi.AddrKey(addr), &claim); err != nil {
+			return cid.Undef, err
 		}
 	}
 
-	return nil
+	return claims.Root()
 }
 
 func (m *powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
