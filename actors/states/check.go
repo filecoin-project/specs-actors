@@ -195,19 +195,21 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 		}
 
 		var payload miner.CronEventPayload
-		hasProvingPeriodCron := false
+		var provingPeriodCron *power.MinerCronEvent
 		for _, event := range crons {
 			err := payload.UnmarshalCBOR(bytes.NewReader(event.Payload))
 			acc.Require(err == nil, "miner %v registered cron at epoch %d with wrong or corrupt payload",
 				addr, event.Epoch)
 
 			if payload.EventType == miner.CronEventProvingDeadline {
-				acc.Require(!hasProvingPeriodCron, "miner %v has duplicate proving period cron at epoch %d",
-					addr, event.Epoch)
-				hasProvingPeriodCron = true
+				if provingPeriodCron != nil {
+					acc.Require(false, "miner %v has duplicate proving period crons at epoch %d and %d",
+						addr, provingPeriodCron.Epoch, event.Epoch)
+				}
+				provingPeriodCron = &event
 			}
 		}
 
-		acc.Require(hasProvingPeriodCron, "miner %v has no proving period cron", addr)
+		acc.Require(provingPeriodCron != nil, "miner %v has no proving period cron", addr)
 	}
 }
