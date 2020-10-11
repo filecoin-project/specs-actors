@@ -12,9 +12,10 @@ import (
 )
 
 type StateSummary struct {
-	LivePower   PowerPair
-	ActivePower PowerPair
-	FaultyPower PowerPair
+	LivePower     PowerPair
+	ActivePower   PowerPair
+	FaultyPower   PowerPair
+	SealProofType abi.RegisteredSealProof
 }
 
 // Checks internal invariants of init state.
@@ -99,9 +100,10 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	}
 
 	return &StateSummary{
-		LivePower:   livePower,
-		ActivePower: activePower,
-		FaultyPower: faultyPower,
+		LivePower:     livePower,
+		ActivePower:   activePower,
+		FaultyPower:   faultyPower,
+		SealProofType: info.SealProofType,
 	}, acc, nil
 }
 

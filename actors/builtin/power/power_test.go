@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -42,13 +43,14 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 
 		actor.constructAndVerify(rt)
+		actor.checkState(rt)
 	})
 
 	t.Run("create miner", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}}, abi.RegisteredSealProof_StackedDrg2KiBV1, abi.NewTokenAmount(10))
+		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}}, abi.RegisteredSealProof_StackedDrg32GiBV1, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -66,9 +68,10 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{abi.RegisteredSealProof_StackedDrg2KiBV1, big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
+		assert.Equal(t, power.Claim{abi.RegisteredSealProof_StackedDrg32GiBV1, big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.CronEventQueue)
+		actor.checkState(rt)
 	})
 }
 
@@ -202,6 +205,7 @@ func TestEnrollCronEpoch(t *testing.T) {
 		evt = events[0]
 		require.EqualValues(t, p3, evt.CallbackPayload)
 		require.EqualValues(t, miner2, evt.MinerAddr)
+		ac.checkState(rt)
 	})
 
 	t.Run("enroll for an epoch before the current epoch", func(t *testing.T) {
@@ -232,6 +236,7 @@ func TestEnrollCronEpoch(t *testing.T) {
 		require.EqualValues(t, p2, evt.CallbackPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 		require.EqualValues(t, abi.ChainEpoch(0), st.FirstCronEpoch)
+		ac.checkState(rt)
 	})
 
 	t.Run("fails if epoch is negative", func(t *testing.T) {
@@ -317,6 +322,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		claim2 = actor.getClaim(rt, miner2)
 		require.Equal(t, big.Zero(), claim2.RawBytePower)
 		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
+		actor.checkState(rt)
 	})
 
 	t.Run("power accounting crossing threshold", func(t *testing.T) {
@@ -353,6 +359,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// Less than 4 miners above threshold again small miner power is counted again
 		actor.updateClaimedPower(rt, miner4, delta.Neg(), mul(delta.Neg(), 10))
 		actor.expectTotalPowerEager(rt, expectedTotalBelow, mul(expectedTotalBelow, 10))
+		actor.checkState(rt)
 	})
 
 	t.Run("all of one miner's power disappears when that miner dips below min power threshold", func(t *testing.T) {
@@ -380,6 +387,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		expectedTotal = mul(powerUnit, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
+		actor.checkState(rt)
 	})
 
 	t.Run("consensus minimum power depends on proof type", func(t *testing.T) {
@@ -426,6 +434,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.expectMinersAboveMinPower(rt, 5)
 		newExpectedTotal := big.Add(expectedTotal, power64Unit)
 		actor.expectTotalPowerEager(rt, newExpectedTotal, newExpectedTotal)
+		actor.checkState(rt)
 	})
 
 	t.Run("threshold only depends on raw power, not qa power", func(t *testing.T) {
@@ -448,6 +457,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.updateClaimedPower(rt, miner3, div(powerUnit, 2), powerUnit)
 		st = getState(rt)
 		assert.Equal(t, int64(3), st.MinerAboveMinPowerCount)
+		actor.checkState(rt)
 	})
 
 	t.Run("qa power is above threshold before and after update", func(t *testing.T) {
@@ -466,6 +476,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		st = getState(rt)
 		require.EqualValues(t, mul(powerUnit, 4), st.TotalQualityAdjPower)
 		require.EqualValues(t, mul(powerUnit, 4), st.TotalRawBytePower)
+		actor.checkState(rt)
 	})
 
 	t.Run("claimed power is externally available", func(t *testing.T) {
@@ -482,6 +493,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		assert.Equal(t, powerUnit, claim.RawBytePower)
 		assert.Equal(t, powerUnit, claim.QualityAdjPower)
+		actor.checkState(rt)
 	})
 }
 
@@ -529,6 +541,7 @@ func TestCron(t *testing.T) {
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("test amount sent to reward actor and state change", func(t *testing.T) {
@@ -560,6 +573,7 @@ func TestCron(t *testing.T) {
 		require.EqualValues(t, delta, st.ThisEpochPledgeCollateral)
 		require.EqualValues(t, expectedPower, st.ThisEpochQualityAdjPower)
 		require.EqualValues(t, expectedPower, st.ThisEpochRawBytePower)
+		actor.checkState(rt)
 	})
 
 	t.Run("event scheduled in null round called next round", func(t *testing.T) {
@@ -589,6 +603,7 @@ func TestCron(t *testing.T) {
 
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("event scheduled in past called next round", func(t *testing.T) {
@@ -634,6 +649,7 @@ func TestCron(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err)
+		actor.checkState(rt)
 	})
 
 	t.Run("fails to enroll if epoch is negative", func(t *testing.T) {
@@ -678,6 +694,7 @@ func TestCron(t *testing.T) {
 
 		// expect cron skip was logged
 		rt.ExpectLogsContain("skipping cron event for unknown miner t0101")
+		actor.checkState(rt)
 	})
 
 	t.Run("handles failed call", func(t *testing.T) {
@@ -739,6 +756,7 @@ func TestCron(t *testing.T) {
 
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
+		actor.checkState(rt)
 	})
 }
 
@@ -755,6 +773,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
 		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
 		sealInfo := &proof.SealVerifyInfo{
+			SealProof:   actor.sealProof,
 			SealedCID:   commR,
 			UnsealedCID: commD,
 		}
@@ -774,6 +793,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, commR, storedSealInfo.SealedCID)
+		actor.checkState(rt)
 	})
 
 	t.Run("aborts when too many poreps", func(t *testing.T) {
@@ -852,6 +872,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+		ac.checkState(rt)
 	})
 
 	t.Run("success with one miner and multiple confirmed sectors", func(t *testing.T) {
@@ -866,6 +887,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number, info3.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+		ac.checkState(rt)
 	})
 
 	t.Run("duplicate sector numbers are ignored for a miner", func(t *testing.T) {
@@ -883,6 +905,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info2.Number}}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+		ac.checkState(rt)
 	})
 
 	t.Run("skips verify if miner has no claim", func(t *testing.T) {
@@ -904,6 +927,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 		// expect cron failure was logged
 		rt.ExpectLogsContain("skipping batch verifies for unknown miner t0101")
+		ac.checkState(rt)
 	})
 
 	t.Run("success with multiple miners and multiple confirmed sectors and assert expected power", func(t *testing.T) {
@@ -942,11 +966,13 @@ func TestCronBatchProofVerifies(t *testing.T) {
 			miner4: {*info7, *info8}}
 
 		ac.onEpochTickEnd(rt, 0, big.Zero(), cs, infos)
+		ac.checkState(rt)
 	})
 
 	t.Run("success when no confirmed sector", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.onEpochTickEnd(rt, 0, big.Zero(), nil, nil)
+		ac.checkState(rt)
 	})
 
 	t.Run("verification for one sector fails but others succeeds for a miner", func(t *testing.T) {
@@ -983,6 +1009,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 		rt.Call(ac.OnEpochTickEnd, nil)
 		rt.Verify()
+		ac.checkState(rt)
 	})
 
 	t.Run("fails if batch verify seals fails", func(t *testing.T) {
@@ -1028,14 +1055,16 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 
 type spActorHarness struct {
 	power.Actor
-	t        *testing.T
-	minerSeq int
+	t         *testing.T
+	minerSeq  int
+	sealProof abi.RegisteredSealProof
 }
 
 func newHarness(t *testing.T) *spActorHarness {
 	return &spActorHarness{
-		Actor: power.Actor{},
-		t:     t,
+		Actor:     power.Actor{},
+		t:         t,
+		sealProof: abi.RegisteredSealProof_StackedDrg32GiBV1,
 	}
 }
 
@@ -1194,7 +1223,7 @@ func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner
 	label := strconv.Itoa(h.minerSeq)
 	actrAddr := tutil.NewActorAddr(h.t, label)
 	h.minerSeq += 1
-	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, abi.RegisteredSealProof_StackedDrg32GiBV1, big.Zero())
+	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, h.sealProof, big.Zero())
 }
 
 func (h *spActorHarness) updateClaimedPower(rt *mock.Runtime, miner addr.Address, rawDelta, qaDelta abi.StoragePower) {
@@ -1280,6 +1309,13 @@ func (h *spActorHarness) expectMinersAboveMinPower(rt *mock.Runtime, count int64
 func (h *spActorHarness) expectTotalPledgeEager(rt *mock.Runtime, expectedPledge abi.TokenAmount) {
 	st := getState(rt)
 	assert.Equal(h.t, expectedPledge, st.TotalPledgeCollateral)
+}
+
+func (h *spActorHarness) checkState(rt *mock.Runtime) {
+	st := getState(rt)
+	_, msgs, err := power.CheckStateInvariants(st, rt.AdtStore())
+	require.NoError(h.t, err)
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, sealProofType abi.RegisteredSealProof) []byte {

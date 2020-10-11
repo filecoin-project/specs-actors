@@ -45,7 +45,7 @@ type State struct {
 	MinerAboveMinPowerCount int64
 
 	// A queue of events to be triggered by cron, indexed by epoch.
-	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent]
+	CronEventQueue cid.Cid // Multimap, (HAMT[ChainEpoch]AMT[CronEvent])
 
 	// First epoch in which a cron task may be stored.
 	// Cron will iterate every epoch between this and the current epoch inclusively to find tasks to execute.
@@ -54,7 +54,7 @@ type State struct {
 	// Claimed power for each miner.
 	Claims cid.Cid // Map, HAMT[address]Claim
 
-	ProofValidationBatch *cid.Cid // HAMT[Address]AMT[SealVerifyInfo]
+	ProofValidationBatch *cid.Cid // Multimap, (HAMT[Address]AMT[SealVerifyInfo])
 }
 
 type Claim struct {

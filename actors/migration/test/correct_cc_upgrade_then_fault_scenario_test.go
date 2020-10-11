@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/filecoin-project/specs-actors/v2/actors/migration"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/ipfs/go-cid"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -394,18 +396,17 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	err = v2.GetState(minerAddrs.IDAddress, &st2)
 	require.NoError(t, err)
 
-	act, found, err = v2.GetActor(minerAddrs.IDAddress)
+	stateTree, err := v2.GetStateTree()
 	require.NoError(t, err)
-	require.True(t, found)
-
-	_, acc, err = miner2.CheckStateInvariants(&st2, v2.Store(), act.Balance)
+	totalBalance, err := v2.GetTotalActorBalance()
+	require.NoError(t, err)
+	acc, err = states.CheckStateInvariants(stateTree, totalBalance, v2.GetEpoch())
 	require.NoError(t, err)
 
-	assert.True(t, acc.IsEmpty())
-	if !acc.IsEmpty() {
-		for _, m := range acc.Messages() {
-			fmt.Println(m)
-		}
+	// The v2 migration will not correctly update power totals. Expect 5 invariant violations all related to power
+	assert.Equal(t, 5, len(acc.Messages()))
+	for _, msg := range acc.Messages() {
+		assert.True(t, strings.Contains(msg, "t04 power:"))
 	}
 }
 
