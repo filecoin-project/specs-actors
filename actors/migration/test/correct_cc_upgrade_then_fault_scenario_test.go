@@ -2,13 +2,14 @@ package test_test
 
 import (
 	"context"
-	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/ipfs/go-cid"
+
 	"github.com/filecoin-project/specs-actors/v2/actors/migration"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
-	"github.com/ipfs/go-cid"
-	"strings"
-	"testing"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -26,6 +27,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 	vm0 "github.com/filecoin-project/specs-actors/support/vm"
+
 	exported2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/exported"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
@@ -327,15 +329,8 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 
-	_, acc, err := miner2.CheckStateInvariants(&st1, v2.Store(), act.Balance)
-	require.NoError(t, err)
-
-	assert.True(t, acc.IsEmpty())
-	if !acc.IsEmpty() {
-		for _, m := range acc.Messages() {
-			fmt.Println(m)
-		}
-	}
+	_, msgs := miner2.CheckStateInvariants(&st1, v2.Store(), act.Balance)
+	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 
 	//
 	// Test correction
@@ -400,12 +395,12 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	require.NoError(t, err)
 	totalBalance, err := v2.GetTotalActorBalance()
 	require.NoError(t, err)
-	acc, err = states.CheckStateInvariants(stateTree, totalBalance, v2.GetEpoch())
+	msgs, err = states.CheckStateInvariants(stateTree, totalBalance, v2.GetEpoch())
 	require.NoError(t, err)
 
 	// The v2 migration will not correctly update power totals. Expect 5 invariant violations all related to power
-	assert.Equal(t, 5, len(acc.Messages()))
-	for _, msg := range acc.Messages() {
+	assert.Equal(t, 5, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
+	for _, msg := range msgs.Messages() {
 		assert.True(t, strings.Contains(msg, "t04 power:"))
 	}
 }

@@ -19,92 +19,84 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of init state.
-func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
+	sectorSize := abi.SectorSize(0)
+	minerSummary := &StateSummary{
+		LivePower:     NewPowerPairZero(),
+		ActivePower:   NewPowerPairZero(),
+		FaultyPower:   NewPowerPairZero(),
+		SealProofType: 0,
+	}
 
 	// Load data from linked structures.
-	info, err := st.GetInfo(store)
-	if err != nil {
-		return nil, nil, err
-	}
-	msgs, err := CheckMinerInfo(info)
-	acc.AddAll(msgs)
-	if err != nil {
-		return nil, acc, err
+	if info, err := st.GetInfo(store); err != nil {
+		acc.Addf("error loading miner info: %v", err)
+		// Stop here, it's too hard to make other useful checks.
+		return minerSummary, acc
+	} else {
+		minerSummary.SealProofType = info.SealProofType
+		sectorSize = info.SectorSize
+		CheckMinerInfo(info, acc)
 	}
 
-	msgs, err = CheckMinerBalances(st, store, balance)
-	acc.AddAll(msgs)
-	if err != nil {
-		return nil, acc, err
-	}
+	CheckMinerBalances(st, store, balance, acc)
 
 	var allocatedSectors bitfield.BitField
+	var allocatedSectorsMap map[uint64]bool
 	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
-		return nil, acc, err
-	}
-	allocatedSectorsMap, err := allocatedSectors.AllMap(1 << 30)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	msgs, err = CheckPreCommits(st, store, allocatedSectorsMap)
-	acc.AddAll(msgs)
-	if err != nil {
-		return nil, acc, err
-	}
-
-	allSectors := map[abi.SectorNumber]*SectorOnChainInfo{}
-	if sectorsArr, err := adt.AsArray(store, st.Sectors); err != nil {
-		return nil, nil, err
+		acc.Addf("error loading allocated sector bitfield: %v", err)
 	} else {
+		allocatedSectorsMap, err = allocatedSectors.AllMap(1 << 30)
+		if err != nil {
+			acc.Addf("error expanding allocated sector bitfield: %v", err)
+			allocatedSectorsMap = nil
+		}
+	}
+
+	CheckPreCommits(st, store, allocatedSectorsMap, acc)
+
+	var allSectors map[abi.SectorNumber]*SectorOnChainInfo
+	if sectorsArr, err := adt.AsArray(store, st.Sectors); err != nil {
+		acc.Addf("error loading sectors")
+	} else {
+		allSectors = map[abi.SectorNumber]*SectorOnChainInfo{}
 		var sector SectorOnChainInfo
-		if err = sectorsArr.ForEach(&sector, func(sno int64) error {
+		err = sectorsArr.ForEach(&sector, func(sno int64) error {
 			cpy := sector
 			allSectors[abi.SectorNumber(sno)] = &cpy
-			acc.Require(allocatedSectorsMap[uint64(sno)], "on chain sector's sector number has not been allocated %d", sno)
+			acc.Require(allocatedSectorsMap != nil && allocatedSectorsMap[uint64(sno)],
+				"on chain sector's sector number has not been allocated %d", sno)
 			return nil
-		}); err != nil {
-			return nil, nil, err
-		}
+		})
+		acc.RequireNoError(err, "error iterating sectors")
 	}
 
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error loading deadlines: %v", err)
+		deadlines = nil
+	} else {
+		// Check deadlines
+		acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
+			"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
 	}
 
-	livePower := NewPowerPairZero()
-	activePower := NewPowerPairZero()
-	faultyPower := NewPowerPairZero()
+	if allSectors != nil && deadlines != nil {
+		err = deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
+			acc := acc.WithPrefix("deadline %d: ", dlIdx) // Shadow
+			quant := st.QuantSpecForDeadline(dlIdx)
+			dlSummary := CheckDeadlineStateInvariants(dl, store, quant, sectorSize, allSectors, acc)
 
-	// Check deadlines
-	acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
-		"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
-
-	if err := deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
-		acc := acc.WithPrefix("deadline %d: ", dlIdx) // Shadow
-		quant := st.QuantSpecForDeadline(dlIdx)
-		summary, msgs, err := CheckDeadlineStateInvariants(dl, store, quant, info.SectorSize, allSectors)
-		if err != nil {
-			return err
-		}
-		acc.AddAll(msgs)
-
-		livePower = livePower.Add(summary.LivePower)
-		activePower = activePower.Add(summary.ActivePower)
-		faultyPower = faultyPower.Add(summary.FaultyPower)
-		return nil
-	}); err != nil {
-		return nil, nil, err
+			minerSummary.LivePower = minerSummary.LivePower.Add(dlSummary.LivePower)
+			minerSummary.ActivePower = minerSummary.ActivePower.Add(dlSummary.ActivePower)
+			minerSummary.FaultyPower = minerSummary.FaultyPower.Add(dlSummary.FaultyPower)
+			return nil
+		})
+		acc.RequireNoError(err, "error iterating deadlines")
 	}
 
-	return &StateSummary{
-		LivePower:     livePower,
-		ActivePower:   activePower,
-		FaultyPower:   faultyPower,
-		SealProofType: info.SealProofType,
-	}, acc, nil
+	return minerSummary, acc
 }
 
 type DeadlineStateSummary struct {
@@ -119,13 +111,25 @@ type DeadlineStateSummary struct {
 	FaultyPower       PowerPair
 }
 
-func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant QuantSpec, ssize abi.SectorSize, sectors map[abi.SectorNumber]*SectorOnChainInfo) (*DeadlineStateSummary, *builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
+func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant QuantSpec, ssize abi.SectorSize,
+	sectors map[abi.SectorNumber]*SectorOnChainInfo, acc *builtin.MessageAccumulator) *DeadlineStateSummary {
 
 	// Load linked structures.
 	partitions, err := deadline.PartitionsArray(store)
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error loading partitions: %v", err)
+		// Hard to do any useful checks.
+		return &DeadlineStateSummary{
+			AllSectors:        bitfield.New(),
+			LiveSectors:       bitfield.New(),
+			FaultySectors:     bitfield.New(),
+			RecoveringSectors: bitfield.New(),
+			UnprovenSectors:   bitfield.New(),
+			TerminatedSectors: bitfield.New(),
+			LivePower:         NewPowerPairZero(),
+			ActivePower:       NewPowerPairZero(),
+			FaultyPower:       NewPowerPairZero(),
+		}
 	}
 
 	allSectors := bitfield.New()
@@ -143,21 +147,17 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	var partitionsWithEarlyTerminations []uint64
 	partitionCount := uint64(0)
 	var partition Partition
-	if err = partitions.ForEach(&partition, func(i int64) error {
+	err = partitions.ForEach(&partition, func(i int64) error {
 		pIdx := uint64(i)
 		// Check sequential partitions.
 		acc.Require(pIdx == partitionCount, "Non-sequential partitions, expected index %d, found %d", partitionCount, pIdx)
 		partitionCount++
 
 		acc := acc.WithPrefix("partition %d: ", pIdx) // Shadow
-		summary, msgs, err := CheckPartitionStateInvariants(&partition, store, quant, ssize, sectors)
-		if err != nil {
-			return err
-		}
-		acc.AddAll(msgs)
+		summary := CheckPartitionStateInvariants(&partition, store, quant, ssize, sectors, acc)
 
 		if contains, err := util.BitFieldContainsAny(allSectors, summary.AllSectors); err != nil {
-			return err
+			acc.Addf("error checking bitfield contains: %v", err)
 		} else {
 			acc.Require(!contains, "duplicate sector in partition %d", pIdx)
 		}
@@ -171,7 +171,8 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 
 		allSectors, err = bitfield.MergeBitFields(allSectors, summary.AllSectors)
 		if err != nil {
-			return err
+			acc.Addf("error merging partition sector numbers with all: %v", err)
+			allSectors = bitfield.New()
 		}
 		allLiveSectors = append(allLiveSectors, summary.LiveSectors)
 		allFaultySectors = append(allFaultySectors, summary.FaultySectors)
@@ -182,51 +183,56 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		allActivePower = allActivePower.Add(summary.ActivePower)
 		allFaultyPower = allFaultyPower.Add(summary.FaultyPower)
 		return nil
-	}); err != nil {
-		return nil, nil, err
-	}
+	})
+	acc.RequireNoError(err, "error iterating partitions")
 
 	// Check PoSt submissions
-	postSubmissions, err := deadline.PostSubmissions.All(1 << 20)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, p := range postSubmissions {
-		acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
+	if postSubmissions, err := deadline.PostSubmissions.All(1 << 20); err != nil {
+		acc.Addf("error expanding post submissions: %v", err)
+	} else {
+		for _, p := range postSubmissions {
+			acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
+		}
 	}
 
 	// Check memoized sector and power values.
 	live, err := bitfield.MultiMerge(allLiveSectors...)
 	if err != nil {
-		return nil, nil, err
-	}
-	if liveCount, err := live.Count(); err != nil {
-		return nil, nil, err
+		acc.Addf("error merging live sector numbers: %v", err)
+		live = bitfield.New()
 	} else {
-		acc.Require(deadline.LiveSectors == liveCount, "deadline live sectors %d != partitions count %d", deadline.LiveSectors, liveCount)
+		if liveCount, err := live.Count(); err != nil {
+			acc.Addf("error counting live sectors: %v", err)
+		} else {
+			acc.Require(deadline.LiveSectors == liveCount, "deadline live sectors %d != partitions count %d", deadline.LiveSectors, liveCount)
+		}
 	}
 
 	if allCount, err := allSectors.Count(); err != nil {
-		return nil, nil, err
+		acc.Addf("error counting all sectors: %v", err)
 	} else {
 		acc.Require(deadline.TotalSectors == allCount, "deadline total sectors %d != partitions count %d", deadline.TotalSectors, allCount)
 	}
 
 	faulty, err := bitfield.MultiMerge(allFaultySectors...)
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error merging faulty sector numbers: %v", err)
+		faulty = bitfield.New()
 	}
 	recovering, err := bitfield.MultiMerge(allRecoveringSectors...)
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error merging recovering sector numbers: %v", err)
+		recovering = bitfield.New()
 	}
 	unproven, err := bitfield.MultiMerge(allUnprovenSectors...)
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error merging unproven sector numbers: %v", err)
+		unproven = bitfield.New()
 	}
 	terminated, err := bitfield.MultiMerge(allTerminatedSectors...)
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error merging terminated sector numbers: %v", err)
+		terminated = bitfield.New()
 	}
 
 	acc.Require(deadline.FaultyPower.Equals(allFaultyPower), "deadline faulty power %v != partitions total %v", deadline.FaultyPower, allFaultyPower)
@@ -234,34 +240,31 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	{
 		// Validate partition expiration queue contains an entry for each partition and epoch with an expiration.
 		// The queue may be a superset of the partitions that have expirations because we never remove from it.
-		expirationEpochs, err := adt.AsArray(store, deadline.ExpirationsEpochs)
-		if err != nil {
-			return nil, nil, err
-		}
-		for epoch, expiringPIdxs := range partitionsWithExpirations { // nolint:nomaprange
-			var bf bitfield.BitField
-			found, err := expirationEpochs.Get(uint64(epoch), &bf)
-			if err != nil {
-				return nil, nil, err
-			}
-			acc.Require(found, "expected to find partitions with expirations at epoch %d", epoch)
+		if expirationEpochs, err := adt.AsArray(store, deadline.ExpirationsEpochs); err != nil {
+			acc.Addf("error loading expiration queue: %v", err)
+		} else {
+			for epoch, expiringPIdxs := range partitionsWithExpirations { // nolint:nomaprange
+				var bf bitfield.BitField
+				if found, err := expirationEpochs.Get(uint64(epoch), &bf); err != nil {
+					acc.Addf("error fetching expiration bitfield: %v", err)
+				} else {
+					acc.Require(found, "expected to find partitions with expirations at epoch %d", epoch)
+				}
 
-			queuedPIdxs, err := bf.AllMap(1 << 20)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			for _, p := range expiringPIdxs {
-				acc.Require(queuedPIdxs[p], "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
+				if queuedPIdxs, err := bf.AllMap(1 << 20); err != nil {
+					acc.Addf("error expanding expirating partitions: %v", err)
+				} else {
+					for _, p := range expiringPIdxs {
+						acc.Require(queuedPIdxs[p], "expected partition %d to be present in deadline expiration queue at epoch %d", p, epoch)
+					}
+				}
 			}
 		}
 	}
 	{
 		// Validate the early termination queue contains exactly the partitions with early terminations.
 		expected := bitfield.NewFromSet(partitionsWithEarlyTerminations)
-		if err = requireEqual(expected, deadline.EarlyTerminations, acc, "deadline early terminations doesn't match expected partitions"); err != nil {
-			return nil, nil, err
-		}
+		requireEqual(expected, deadline.EarlyTerminations, acc, "deadline early terminations doesn't match expected partitions")
 	}
 
 	return &DeadlineStateSummary{
@@ -274,7 +277,7 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		LivePower:         allLivePower,
 		ActivePower:       allActivePower,
 		FaultyPower:       allFaultyPower,
-	}, acc, nil
+	}
 }
 
 type PartitionStateSummary struct {
@@ -297,132 +300,131 @@ func CheckPartitionStateInvariants(
 	quant QuantSpec,
 	sectorSize abi.SectorSize,
 	sectors map[abi.SectorNumber]*SectorOnChainInfo,
-) (*PartitionStateSummary, *builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
-
+	acc *builtin.MessageAccumulator,
+) *PartitionStateSummary {
+	irrecoverable := false // State is so broken we can't make useful checks.
 	live, err := partition.LiveSectors()
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error computing live sectors: %v", err)
+		irrecoverable = true
 	}
 	active, err := partition.ActiveSectors()
 	if err != nil {
-		return nil, nil, err
+		acc.Addf("error computing active sectors: %v", err)
+		irrecoverable = true
+	}
+
+	if irrecoverable {
+		return &PartitionStateSummary{
+			AllSectors:            partition.Sectors,
+			LiveSectors:           bitfield.New(),
+			FaultySectors:         partition.Faults,
+			RecoveringSectors:     partition.Recoveries,
+			UnprovenSectors:       partition.Unproven,
+			TerminatedSectors:     partition.Terminated,
+			LivePower:             partition.LivePower,
+			ActivePower:           partition.ActivePower(),
+			FaultyPower:           partition.FaultyPower,
+			ExpirationEpochs:      nil,
+			EarlyTerminationCount: 0,
+		}
 	}
 
 	// Live contains all active sectors.
-	if err = requireContainsAll(live, active, acc, "live does not contain active"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsAll(live, active, acc, "live does not contain active")
 
 	// Live contains all faults.
-	if err = requireContainsAll(live, partition.Faults, acc, "live does not contain faults"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsAll(live, partition.Faults, acc, "live does not contain faults")
 
 	// Live contains all unproven.
-	if err = requireContainsAll(live, partition.Unproven, acc, "live does not contain unproven"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsAll(live, partition.Unproven, acc, "live does not contain unproven")
 
 	// Active contains no faults
-	if err = requireContainsNone(active, partition.Faults, acc, "active includes faults"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsNone(active, partition.Faults, acc, "active includes faults")
 
 	// Active contains no unproven
-	if err = requireContainsNone(active, partition.Unproven, acc, "active includes unproven"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsNone(active, partition.Unproven, acc, "active includes unproven")
 
 	// Faults contains all recoveries.
-	if err = requireContainsAll(partition.Faults, partition.Recoveries, acc, "faults do not contain recoveries"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsAll(partition.Faults, partition.Recoveries, acc, "faults do not contain recoveries")
 
 	// Live contains no terminated sectors
-	if err = requireContainsNone(live, partition.Terminated, acc, "live includes terminations"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsNone(live, partition.Terminated, acc, "live includes terminations")
 
 	// Unproven contains no faults
-	if err = requireContainsNone(partition.Faults, partition.Unproven, acc, "unproven includes faults"); err != nil {
-		return nil, nil, err
-	}
+	requireContainsNone(partition.Faults, partition.Unproven, acc, "unproven includes faults")
 
 	// All terminated sectors are part of the partition.
-	if err = requireContainsAll(partition.Sectors, partition.Terminated, acc, "sectors do not contain terminations"); err != nil {
-		return nil, nil, err
-	}
-
-	liveSectors, missing, err := selectSectorsMap(sectors, live)
-	if err != nil {
-		return nil, nil, err
-	} else if len(missing) > 0 {
-		acc.Addf("live sectors missing from all sectors: %v", missing)
-	}
-	unprovenSectors, missing, err := selectSectorsMap(sectors, partition.Unproven)
-	if err != nil {
-		return nil, nil, err
-	} else if len(missing) > 0 {
-		acc.Addf("unproven sectors missing from all sectors: %v", missing)
-	}
+	requireContainsAll(partition.Sectors, partition.Terminated, acc, "sectors do not contain terminations")
 
 	// Validate power
-	faultySectors, missing, err := selectSectorsMap(sectors, partition.Faults)
-	if err != nil {
-		return nil, nil, err
+	var liveSectors map[abi.SectorNumber]*SectorOnChainInfo
+	var missing []abi.SectorNumber
+	livePower := NewPowerPairZero()
+	faultyPower := NewPowerPairZero()
+	recoveringPower := NewPowerPairZero()
+	unprovenPower := NewPowerPairZero()
+
+	if liveSectors, missing, err = selectSectorsMap(sectors, live); err != nil {
+		acc.Addf("error selecting live sectors: %v", err)
+	} else if len(missing) > 0 {
+		acc.Addf("live sectors missing from all sectors: %v", missing)
+	} else {
+		livePower = powerForSectors(liveSectors, sectorSize)
+		acc.Require(partition.LivePower.Equals(livePower), "live power was %v, expected %v", partition.LivePower, livePower)
+	}
+
+	if unprovenSectors, missing, err := selectSectorsMap(sectors, partition.Unproven); err != nil {
+		acc.Addf("error selecting unproven sectors: %v", err)
+	} else if len(missing) > 0 {
+		acc.Addf("unproven sectors missing from all sectors: %v", missing)
+	} else {
+		unprovenPower = powerForSectors(unprovenSectors, sectorSize)
+		acc.Require(partition.UnprovenPower.Equals(unprovenPower), "unproven power was %v, expected %v", partition.UnprovenPower, unprovenPower)
+	}
+
+	if faultySectors, missing, err := selectSectorsMap(sectors, partition.Faults); err != nil {
+		acc.Addf("error selecting faulty sectors: %v", err)
 	} else if len(missing) > 0 {
 		acc.Addf("faulty sectors missing from all sectors: %v", missing)
+	} else {
+		faultyPower = powerForSectors(faultySectors, sectorSize)
+		acc.Require(partition.FaultyPower.Equals(faultyPower), "faulty power was %v, expected %v", partition.FaultyPower, faultyPower)
 	}
-	faultyPower := powerForSectors(faultySectors, sectorSize)
-	acc.Require(partition.FaultyPower.Equals(faultyPower), "faulty power was %v, expected %v", partition.FaultyPower, faultyPower)
 
-	recoveringSectors, missing, err := selectSectorsMap(sectors, partition.Recoveries)
-	if err != nil {
-		return nil, nil, err
+	if recoveringSectors, missing, err := selectSectorsMap(sectors, partition.Recoveries); err != nil {
+		acc.Addf("error selecting recovering sectors: %v", err)
 	} else if len(missing) > 0 {
 		acc.Addf("recovering sectors missing from all sectors: %v", missing)
+	} else {
+		recoveringPower = powerForSectors(recoveringSectors, sectorSize)
+		acc.Require(partition.RecoveringPower.Equals(recoveringPower), "recovering power was %v, expected %v", partition.RecoveringPower, recoveringPower)
 	}
-	recoveringPower := powerForSectors(recoveringSectors, sectorSize)
-	acc.Require(partition.RecoveringPower.Equals(recoveringPower), "recovering power was %v, expected %v", partition.RecoveringPower, recoveringPower)
-
-	livePower := powerForSectors(liveSectors, sectorSize)
-	acc.Require(partition.LivePower.Equals(livePower), "live power was %v, expected %v", partition.LivePower, livePower)
-
-	unprovenPower := powerForSectors(unprovenSectors, sectorSize)
-	acc.Require(partition.UnprovenPower.Equals(unprovenPower), "unproven power was %v, expected %v", partition.UnprovenPower, unprovenPower)
 
 	activePower := livePower.Sub(faultyPower).Sub(unprovenPower)
 	partitionActivePower := partition.ActivePower()
 	acc.Require(partitionActivePower.Equals(activePower), "active power was %v, expected %v", partitionActivePower, activePower)
 
 	// Validate the expiration queue.
-	expQ, err := LoadExpirationQueue(store, partition.ExpirationsEpochs, quant)
-	if err != nil {
-		return nil, nil, err
-	}
-	qsummary, err := CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, sectorSize, acc)
-	if err != nil {
-		return nil, nil, err
-	}
+	if expQ, err := LoadExpirationQueue(store, partition.ExpirationsEpochs, quant); err != nil {
+		acc.Addf("error loading expiration queue: %v", err)
+	} else if liveSectors != nil {
+		qsummary := CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, sectorSize, acc)
 
-	// Check the queue is compatible with partition fields
-	qSectors, err := bitfield.MergeBitFields(qsummary.OnTimeSectors, qsummary.EarlySectors)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err = requireEqual(live, qSectors, acc, "live does not equal all expirations"); err != nil {
-		return nil, nil, err
+		// Check the queue is compatible with partition fields
+		if qSectors, err := bitfield.MergeBitFields(qsummary.OnTimeSectors, qsummary.EarlySectors); err != nil {
+			acc.Addf("error merging summary on-time and early sectors: %v", err)
+		} else {
+			requireEqual(live, qSectors, acc, "live does not equal all expirations")
+		}
 	}
 
 	// Validate the early termination queue.
-	earlyQ, err := LoadBitfieldQueue(store, partition.EarlyTerminated, NoQuantization)
-	if err != nil {
-		return nil, nil, err
-	}
-	earlyTerminationCount, err := CheckEarlyTerminationQueue(earlyQ, partition.Terminated, acc)
-	if err != nil {
-		return nil, nil, err
+	earlyTerminationCount := 0
+	if earlyQ, err := LoadBitfieldQueue(store, partition.EarlyTerminated, NoQuantization); err != nil {
+		acc.Addf("error loading early termination queue: %v", err)
+	} else {
+		earlyTerminationCount = CheckEarlyTerminationQueue(earlyQ, partition.Terminated, acc)
 	}
 
 	return &PartitionStateSummary{
@@ -436,7 +438,7 @@ func CheckPartitionStateInvariants(
 		ActivePower:           activePower,
 		FaultyPower:           partition.FaultyPower,
 		EarlyTerminationCount: earlyTerminationCount,
-	}, acc, nil
+	}
 }
 
 type ExpirationQueueStateSummary struct {
@@ -449,10 +451,11 @@ type ExpirationQueueStateSummary struct {
 
 // Checks the expiration queue for consistency.
 func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber]*SectorOnChainInfo,
-	partitionFaults bitfield.BitField, quant QuantSpec, sectorSize abi.SectorSize, acc *builtin.MessageAccumulator) (*ExpirationQueueStateSummary, error) {
+	partitionFaults bitfield.BitField, quant QuantSpec, sectorSize abi.SectorSize, acc *builtin.MessageAccumulator) *ExpirationQueueStateSummary {
 	partitionFaultsMap, err := partitionFaults.AllMap(1 << 30)
 	if err != nil {
-		return nil, err
+		acc.Addf("error loading partition faults map: %v", err)
+		partitionFaultsMap = nil
 	}
 
 	seenSectors := make(map[abi.SectorNumber]bool)
@@ -473,7 +476,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		}
 
 		onTimeSectorsPledge := big.Zero()
-		if err := exp.OnTimeSectors.ForEach(func(n uint64) error {
+		err := exp.OnTimeSectors.ForEach(func(n uint64) error {
 			sno := abi.SectorNumber(n)
 			// Check sectors are present only once.
 			acc.Require(!seenSectors[sno], "sector %d in expiration queue twice", sno)
@@ -491,20 +494,18 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 			} else {
 				acc.Addf("on-time expiration sector %d isn't live", n)
 			}
-
 			return nil
-		}); err != nil {
-			return err
-		}
+		})
+		acc.RequireNoError(err, "error iterating on-time sectors")
 
-		if err := exp.EarlySectors.ForEach(func(n uint64) error {
+		err = exp.EarlySectors.ForEach(func(n uint64) error {
 			sno := abi.SectorNumber(n)
 			// Check sectors are present only once.
 			acc.Require(!seenSectors[sno], "sector %d in expiration queue twice", sno)
 			seenSectors[sno] = true
 
 			// Check early sectors are faulty
-			acc.Require(partitionFaultsMap[n], "sector %d expiring early but not faulty", sno)
+			acc.Require(partitionFaultsMap != nil && partitionFaultsMap[n], "sector %d expiring early but not faulty", sno)
 
 			// Check expiring sectors are still alive.
 			if sector, ok := liveSectors[sno]; ok {
@@ -514,42 +515,50 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 			} else {
 				acc.Addf("on-time expiration sector %d isn't live", n)
 			}
-
 			return nil
-		}); err != nil {
-			return err
-		}
+		})
+		acc.RequireNoError(err, "error iterating early sectors")
 
 		// Validate power and pledge.
+		var activeSectors, faultySectors map[abi.SectorNumber]*SectorOnChainInfo
+		var missing []abi.SectorNumber
+
 		all, err := bitfield.MergeBitFields(exp.OnTimeSectors, exp.EarlySectors)
 		if err != nil {
-			return err
-		}
-		allActive, err := bitfield.SubtractBitField(all, partitionFaults)
-		if err != nil {
-			return err
-		}
-		allFaulty, err := bitfield.IntersectBitField(all, partitionFaults)
-		if err != nil {
-			return err
-		}
-		activeSectors, missing, err := selectSectorsMap(liveSectors, allActive)
-		if err != nil {
-			return err
-		} else if len(missing) > 0 {
-			acc.Addf("active sectors missing from live: %v", missing)
-		}
-		faultySectors, missing, err := selectSectorsMap(liveSectors, allFaulty)
-		if err != nil {
-			return err
-		} else if len(missing) > 0 {
-			acc.Addf("faulty sectors missing from live: %v", missing)
-		}
-		activeSectorsPower := powerForSectors(activeSectors, sectorSize)
-		acc.Require(exp.ActivePower.Equals(activeSectorsPower), "active power recorded %v doesn't match computed %v", exp.ActivePower, activeSectorsPower)
+			acc.Addf("error merging all on-time and early bitfields: %v", err)
+		} else {
+			if allActive, err := bitfield.SubtractBitField(all, partitionFaults); err != nil {
+				acc.Addf("error computing active sectors: %v", err)
+			} else {
+				activeSectors, missing, err = selectSectorsMap(liveSectors, allActive)
+				if err != nil {
+					acc.Addf("error selecting active sectors: %v", err)
+					activeSectors = nil
+				} else if len(missing) > 0 {
+					acc.Addf("active sectors missing from live: %v", missing)
+				}
+			}
 
-		faultySectorsPower := powerForSectors(faultySectors, sectorSize)
-		acc.Require(exp.FaultyPower.Equals(faultySectorsPower), "faulty power recorded %v doesn't match computed %v", exp.FaultyPower, faultySectorsPower)
+			if allFaulty, err := bitfield.IntersectBitField(all, partitionFaults); err != nil {
+				acc.Addf("error computing faulty sectors: %v", err)
+			} else {
+				faultySectors, missing, err = selectSectorsMap(liveSectors, allFaulty)
+				if err != nil {
+					acc.Addf("error selecting faulty sectors: %v", err)
+					faultySectors = nil
+				} else if len(missing) > 0 {
+					acc.Addf("faulty sectors missing from live: %v", missing)
+				}
+			}
+		}
+
+		if activeSectors != nil && faultySectors != nil {
+			activeSectorsPower := powerForSectors(activeSectors, sectorSize)
+			acc.Require(exp.ActivePower.Equals(activeSectorsPower), "active power recorded %v doesn't match computed %v", exp.ActivePower, activeSectorsPower)
+
+			faultySectorsPower := powerForSectors(faultySectors, sectorSize)
+			acc.Require(exp.FaultyPower.Equals(faultySectorsPower), "faulty power recorded %v doesn't match computed %v", exp.FaultyPower, faultySectorsPower)
+		}
 
 		acc.Require(exp.OnTimePledge.Equals(onTimeSectorsPledge), "on time pledge recorded %v doesn't match computed %v", exp.OnTimePledge, onTimeSectorsPledge)
 
@@ -560,17 +569,17 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		allOnTimePledge = big.Add(allOnTimePledge, exp.OnTimePledge)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
+	acc.RequireNoError(err, "error iterating expiration queue")
 
 	unionOnTime, err := bitfield.MultiMerge(allOnTime...)
 	if err != nil {
-		return nil, err
+		acc.Addf("error merging on-time sector numbers: %v", err)
+		unionOnTime = bitfield.New()
 	}
 	unionEarly, err := bitfield.MultiMerge(allEarly...)
 	if err != nil {
-		return nil, err
+		acc.Addf("error merging early sector numbers: %v", err)
+		unionEarly = bitfield.New()
 	}
 	return &ExpirationQueueStateSummary{
 		OnTimeSectors: unionOnTime,
@@ -578,35 +587,32 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		ActivePower:   allActivePower,
 		FaultyPower:   allFaultyPower,
 		OnTimePledge:  allOnTimePledge,
-	}, nil
+	}
 }
 
 // Checks the early termination queue for consistency.
 // Returns the number of sectors in the queue.
-func CheckEarlyTerminationQueue(earlyQ BitfieldQueue, terminated bitfield.BitField, acc *builtin.MessageAccumulator) (int, error) {
+func CheckEarlyTerminationQueue(earlyQ BitfieldQueue, terminated bitfield.BitField, acc *builtin.MessageAccumulator) int {
 	seenMap := make(map[uint64]bool)
 	seenBf := bitfield.New()
-	if err := earlyQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
+	err := earlyQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		acc := acc.WithPrefix("early termination epoch %d: ", epoch)
-		return bf.ForEach(func(i uint64) error {
+		err := bf.ForEach(func(i uint64) error {
 			acc.Require(!seenMap[i], "sector %v in early termination queue twice", i)
 			seenMap[i] = true
 			seenBf.Set(i)
 			return nil
 		})
-	}); err != nil {
-		return 0, err
-	}
+		acc.RequireNoError(err, "error iterating early termination bitfield")
+		return nil
+	})
+	acc.RequireNoError(err, "error iterating early termination queue")
 
-	if err := requireContainsAll(terminated, seenBf, acc, "terminated sectors missing early termination entry"); err != nil {
-		return 0, err
-	}
-	return len(seenMap), nil
+	requireContainsAll(terminated, seenBf, acc, "terminated sectors missing early termination entry")
+	return len(seenMap)
 }
 
-func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
-
+func CheckMinerInfo(info *MinerInfo, acc *builtin.MessageAccumulator) {
 	acc.Require(info.Owner.Protocol() == addr.ID, "owner address %v is not an ID address", info.Owner)
 	acc.Require(info.Worker.Protocol() == addr.ID, "worker address %v is not an ID address", info.Worker)
 	for _, a := range info.ControlAddresses {
@@ -640,13 +646,9 @@ func CheckMinerInfo(info *MinerInfo) (*builtin.MessageAccumulator, error) {
 			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
 			info.WindowPoStPartitionSectors, sealProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
 	}
-
-	return acc, nil
 }
 
-func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount) (*builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
-
+func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount, acc *builtin.MessageAccumulator) {
 	acc.Require(balance.GreaterThanEqual(big.Zero()), "miner actor balance is less than zero: %v", balance)
 	acc.Require(st.LockedFunds.GreaterThanEqual(big.Zero()), "miner locked funds is less than zero: %v", st.LockedFunds)
 	acc.Require(st.PreCommitDeposits.GreaterThanEqual(big.Zero()), "miner precommit deposit is less than zero: %v", st.PreCommitDeposits)
@@ -658,83 +660,71 @@ func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount) (*b
 		balance, st.LockedFunds, st.PreCommitDeposits, st.InitialPledge)
 
 	// locked funds must be sum of vesting table and vesting table payments must be quantized
-	funds, err := st.LoadVestingFunds(store)
-	if err != nil {
-		return acc, err
-	}
-
 	vestingSum := big.Zero()
-	quant := st.QuantSpecEveryDeadline()
-	for _, entry := range funds.Funds {
-		acc.Require(entry.Amount.GreaterThan(big.Zero()), "non-positive amount in miner vesting table entry %v", entry)
-		vestingSum = big.Add(vestingSum, entry.Amount)
+	if funds, err := st.LoadVestingFunds(store); err != nil {
+		acc.Addf("error loading vesting funds: %v", err)
+	} else {
+		quant := st.QuantSpecEveryDeadline()
+		for _, entry := range funds.Funds {
+			acc.Require(entry.Amount.GreaterThan(big.Zero()), "non-positive amount in miner vesting table entry %v", entry)
+			vestingSum = big.Add(vestingSum, entry.Amount)
 
-		quantized := quant.QuantizeUp(entry.Epoch)
-		acc.Require(entry.Epoch == quantized, "vesting table entry has non-quantized epoch %d (should be %d)", entry.Epoch, quantized)
+			quantized := quant.QuantizeUp(entry.Epoch)
+			acc.Require(entry.Epoch == quantized, "vesting table entry has non-quantized epoch %d (should be %d)", entry.Epoch, quantized)
+		}
 	}
 
 	acc.Require(st.LockedFunds.Equals(vestingSum),
 		"locked funds %d is not sum of vesting table entries %d", st.LockedFunds, vestingSum)
-
-	return acc, nil
 }
 
-func CheckPreCommits(st *State, store adt.Store, allocatedSectors map[uint64]bool) (*builtin.MessageAccumulator, error) {
-	acc := &builtin.MessageAccumulator{}
-
-	// expire pre-committed sectors
-	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
-	if err != nil {
-		return acc, err
-	}
-
+func CheckPreCommits(st *State, store adt.Store, allocatedSectors map[uint64]bool, acc *builtin.MessageAccumulator) {
 	quant := st.QuantSpecEveryDeadline()
 
-	// invert bitfield queue into a lookup by sector number
+	// invert pre-commit expiry queue into a lookup by sector number
 	expireEpochs := make(map[uint64]abi.ChainEpoch)
-	err = expiryQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
-		quantized := quant.QuantizeUp(epoch)
-		acc.Require(quantized == epoch, "precommit expiration %d is not quantized", epoch)
-
-		return bf.ForEach(func(secNum uint64) error {
-			expireEpochs[secNum] = epoch
+	if expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline()); err != nil {
+		acc.Addf("error loading pre-commit expiry queue: %v", err)
+	} else {
+		err = expiryQ.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
+			quantized := quant.QuantizeUp(epoch)
+			acc.Require(quantized == epoch, "precommit expiration %d is not quantized", epoch)
+			if err = bf.ForEach(func(secNum uint64) error {
+				expireEpochs[secNum] = epoch
+				return nil
+			}); err != nil {
+				acc.Addf("error iteration pre-commit expiration bitfield: %v", err)
+			}
 			return nil
 		})
-	})
-	if err != nil {
-		return acc, err
+		acc.RequireNoError(err, "error iterating pre-commit expiry queue")
 	}
 
-	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
-	if err != nil {
-		return nil, err
-	}
-
-	var precommit SectorPreCommitOnChainInfo
 	precommitTotal := big.Zero()
-	err = precommitted.ForEach(&precommit, func(key string) error {
-		secNum, err := abi.ParseUIntKey(key)
-		if err != nil {
-			return err
-		}
+	if precommitted, err := adt.AsMap(store, st.PreCommittedSectors); err != nil {
+		acc.Addf("error loading precommitted sectors: %v", err)
+	} else {
+		var precommit SectorPreCommitOnChainInfo
+		err = precommitted.ForEach(&precommit, func(key string) error {
+			secNum, err := abi.ParseUIntKey(key)
+			if err != nil {
+				acc.Addf("error parsing pre-commit key as uint: %v", err)
+				return nil
+			}
 
-		acc.Require(allocatedSectors[secNum], "precommited sector number has not been allocated %d", secNum)
+			acc.Require(allocatedSectors[secNum], "pre-committed sector number has not been allocated %d", secNum)
 
-		_, found := expireEpochs[secNum]
-		acc.Require(found, "no expiry epoch for precommit at %d", precommit.PreCommitEpoch)
+			_, found := expireEpochs[secNum]
+			acc.Require(found, "no expiry epoch for pre-commit at %d", precommit.PreCommitEpoch)
 
-		precommitTotal = big.Add(precommitTotal, precommit.PreCommitDeposit)
-
-		return nil
-	})
-	if err != nil {
-		return acc, err
+			precommitTotal = big.Add(precommitTotal, precommit.PreCommitDeposit)
+			return nil
+		})
+		acc.RequireNoError(err, "error iterating pre-committed sectors")
 	}
 
 	acc.Require(st.PreCommitDeposits.Equals(precommitTotal),
 		"sum of precommit deposits %v does not equal recorded precommit deposit %v", precommitTotal, st.PreCommitDeposits)
-
-	return acc, nil
 }
 
 // Selects a subset of sectors from a map by sector number.
@@ -767,54 +757,47 @@ func powerForSectors(sectors map[abi.SectorNumber]*SectorOnChainInfo, ssize abi.
 	}
 }
 
-func requireContainsAll(superset, subset bitfield.BitField, acc *builtin.MessageAccumulator, msg string) error {
-	contains, err := util.BitFieldContainsAll(superset, subset)
-	if err != nil {
-		return err
-	}
-	if !contains {
+func requireContainsAll(superset, subset bitfield.BitField, acc *builtin.MessageAccumulator, msg string) {
+	if contains, err := util.BitFieldContainsAll(superset, subset); err != nil {
+		acc.Addf("error in BitfieldContainsAll(): %v", err)
+	} else if !contains {
 		acc.Addf(msg+": %v, %v", superset, subset)
 		// Verbose output for debugging
 		//sup, err := superset.All(1 << 20)
 		//if err != nil {
-		//	return err
+		//	acc.Addf("error in Bitfield.All(): %v", err)
+		//	return
 		//}
 		//sub, err := subset.All(1 << 20)
 		//if err != nil {
-		//	return err
+		//	acc.Addf("error in Bitfield.All(): %v", err)
+		//	return
 		//}
 		//acc.Addf(msg+": %v, %v", sup, sub)
 	}
-	return nil
 }
 
-func requireContainsNone(superset, subset bitfield.BitField, acc *builtin.MessageAccumulator, msg string) error {
-	contains, err := util.BitFieldContainsAny(superset, subset)
-	if err != nil {
-		return err
-	}
-	if contains {
+func requireContainsNone(superset, subset bitfield.BitField, acc *builtin.MessageAccumulator, msg string) {
+	if contains, err := util.BitFieldContainsAny(superset, subset); err != nil {
+		acc.Addf("error in BitfieldContainsAny(): %v", err)
+	} else if contains {
 		acc.Addf(msg+": %v, %v", superset, subset)
 		// Verbose output for debugging
 		//sup, err := superset.All(1 << 20)
 		//if err != nil {
-		//	return err
+		//	acc.Addf("error in Bitfield.All(): %v", err)
+		//	return
 		//}
 		//sub, err := subset.All(1 << 20)
 		//if err != nil {
-		//	return err
+		//	acc.Addf("error in Bitfield.All(): %v", err)
+		//	return
 		//}
 		//acc.Addf(msg+": %v, %v", sup, sub)
 	}
-	return nil
 }
 
-func requireEqual(a, b bitfield.BitField, acc *builtin.MessageAccumulator, msg string) error {
-	if err := requireContainsAll(a, b, acc, msg); err != nil {
-		return err
-	}
-	if err := requireContainsAll(b, a, acc, msg); err != nil {
-		return err
-	}
-	return nil
+func requireEqual(a, b bitfield.BitField, acc *builtin.MessageAccumulator, msg string) {
+	requireContainsAll(a, b, acc, msg)
+	requireContainsAll(b, a, acc, msg)
 }
