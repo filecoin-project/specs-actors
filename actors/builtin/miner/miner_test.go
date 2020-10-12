@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
@@ -753,10 +754,22 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
-		// Good proof
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
-		actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
+
+		// Too big at version 4
+		proveCommit := makeProveCommit(sectorNo)
+		proveCommit.Proof = make([]byte, 1920)
+		rt.SetNetworkVersion(network.Version4)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{})
+		})
+		rt.Reset()
+
+		// Good proof at version 5
+		rt.SetNetworkVersion(network.Version5)
+		actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{})
 		st := getState(rt)
+
 		// Verify new sectors
 		// TODO minerstate
 		//newSectors, err := st.NewSectors.All(miner.SectorsMax)

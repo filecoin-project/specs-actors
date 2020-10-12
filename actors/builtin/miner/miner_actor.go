@@ -14,6 +14,7 @@ import (
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	cid "github.com/ipfs/go-cid"
@@ -651,13 +652,19 @@ type ProveCommitSectorParams = miner0.ProveCommitSectorParams
 // If valid, the power actor will call ConfirmSectorProofsValid at the end of the same epoch as this message.
 func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
+	nv := rt.NetworkVersion()
 
 	if params.SectorNumber > abi.MaxSectorNumber {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector number greater than maximum")
 	}
 
-	if len(params.Proof) > MaxProveCommitSize {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d", len(params.Proof), MaxProveCommitSize)
+	maxProofSize := MaxProveCommitSizeV4
+	if nv >= network.Version5 {
+		maxProofSize = MaxProveCommitSizeV5
+	}
+	if len(params.Proof) > maxProofSize {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d",
+			len(params.Proof), maxProofSize)
 	}
 
 	store := adt.AsStore(rt)
