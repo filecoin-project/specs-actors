@@ -151,3 +151,18 @@ func TestBaselineRewardGrowth(t *testing.T) {
 		assert.Less(t, perr, testCase.ErrBound)
 	}
 }
+
+func TestExpError(t *testing.T) {
+	// Multiplications linear in exponent
+	for j := 100; j < 10000; j += 100 {
+		acc1 := big.Lsh(big.NewInt(1), math.Precision128) // Q.128
+		for i := 0; i < j; i++ {
+			acc1 = big.Mul(BaselineExponent, acc1)  // Q.128 * Q.128 => Q.256
+			acc1 = big.Rsh(acc1, math.Precision128) // Q.256 => Q.128
+		}
+		// Multiplications log in exponent
+		acc2 := math.ExpBySquaring(BaselineExponent, int64(j))
+		fmt.Printf("%v\n", big.Sub(acc1, acc2))
+	}
+
+}
