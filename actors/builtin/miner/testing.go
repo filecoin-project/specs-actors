@@ -248,7 +248,7 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 				if found, err := expirationEpochs.Get(uint64(epoch), &bf); err != nil {
 					acc.Addf("error fetching expiration bitfield: %v", err)
 				} else {
-					acc.Require(found, "expected to find partitions with expirations at epoch %d", epoch)
+					acc.Require(found, "expected to find partition expiration entry at epoch %d", epoch)
 				}
 
 				if queuedPIdxs, err := bf.AllMap(1 << 20); err != nil {
@@ -290,6 +290,7 @@ type PartitionStateSummary struct {
 	LivePower             PowerPair
 	ActivePower           PowerPair
 	FaultyPower           PowerPair
+	RecoveringPower       PowerPair
 	ExpirationEpochs      []abi.ChainEpoch // Epochs at which some sector is scheduled to expire.
 	EarlyTerminationCount int
 }
@@ -325,6 +326,7 @@ func CheckPartitionStateInvariants(
 			LivePower:             partition.LivePower,
 			ActivePower:           partition.ActivePower(),
 			FaultyPower:           partition.FaultyPower,
+			RecoveringPower:       partition.RecoveringPower,
 			ExpirationEpochs:      nil,
 			EarlyTerminationCount: 0,
 		}
@@ -362,7 +364,6 @@ func CheckPartitionStateInvariants(
 	var missing []abi.SectorNumber
 	livePower := NewPowerPairZero()
 	faultyPower := NewPowerPairZero()
-	recoveringPower := NewPowerPairZero()
 	unprovenPower := NewPowerPairZero()
 
 	if liveSectors, missing, err = selectSectorsMap(sectors, live); err != nil {
@@ -397,7 +398,7 @@ func CheckPartitionStateInvariants(
 	} else if len(missing) > 0 {
 		acc.Addf("recovering sectors missing from all sectors: %v", missing)
 	} else {
-		recoveringPower = powerForSectors(recoveringSectors, sectorSize)
+		recoveringPower := powerForSectors(recoveringSectors, sectorSize)
 		acc.Require(partition.RecoveringPower.Equals(recoveringPower), "recovering power was %v, expected %v", partition.RecoveringPower, recoveringPower)
 	}
 
@@ -406,10 +407,12 @@ func CheckPartitionStateInvariants(
 	acc.Require(partitionActivePower.Equals(activePower), "active power was %v, expected %v", partitionActivePower, activePower)
 
 	// Validate the expiration queue.
+	var expirationEpochs []abi.ChainEpoch
 	if expQ, err := LoadExpirationQueue(store, partition.ExpirationsEpochs, quant); err != nil {
 		acc.Addf("error loading expiration queue: %v", err)
 	} else if liveSectors != nil {
 		qsummary := CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, sectorSize, acc)
+		expirationEpochs = qsummary.ExpirationEpochs
 
 		// Check the queue is compatible with partition fields
 		if qSectors, err := bitfield.MergeBitFields(qsummary.OnTimeSectors, qsummary.EarlySectors); err != nil {
@@ -437,16 +440,19 @@ func CheckPartitionStateInvariants(
 		LivePower:             livePower,
 		ActivePower:           activePower,
 		FaultyPower:           partition.FaultyPower,
+		RecoveringPower:       partition.RecoveringPower,
+		ExpirationEpochs:      expirationEpochs,
 		EarlyTerminationCount: earlyTerminationCount,
 	}
 }
 
 type ExpirationQueueStateSummary struct {
-	OnTimeSectors bitfield.BitField
-	EarlySectors  bitfield.BitField
-	ActivePower   PowerPair
-	FaultyPower   PowerPair
-	OnTimePledge  abi.TokenAmount
+	OnTimeSectors    bitfield.BitField
+	EarlySectors     bitfield.BitField
+	ActivePower      PowerPair
+	FaultyPower      PowerPair
+	OnTimePledge     abi.TokenAmount
+	ExpirationEpochs []abi.ChainEpoch
 }
 
 // Checks the expiration queue for consistency.
@@ -461,6 +467,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 	seenSectors := make(map[abi.SectorNumber]bool)
 	var allOnTime []bitfield.BitField
 	var allEarly []bitfield.BitField
+	var expirationEpochs []abi.ChainEpoch
 	allActivePower := NewPowerPairZero()
 	allFaultyPower := NewPowerPairZero()
 	allOnTimePledge := big.Zero()
@@ -474,6 +481,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		if firstQueueEpoch == abi.ChainEpoch(-1) {
 			firstQueueEpoch = epoch
 		}
+		expirationEpochs = append(expirationEpochs, epoch)
 
 		onTimeSectorsPledge := big.Zero()
 		err := exp.OnTimeSectors.ForEach(func(n uint64) error {
@@ -587,6 +595,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		ActivePower:   allActivePower,
 		FaultyPower:   allFaultyPower,
 		OnTimePledge:  allOnTimePledge,
+		ExpirationEpochs: expirationEpochs,
 	}
 }
 

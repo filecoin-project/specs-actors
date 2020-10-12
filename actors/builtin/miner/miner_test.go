@@ -1499,7 +1499,15 @@ func TestCCUpgrade(t *testing.T) {
 		actor.onDeadlineCron(rt, &cronConfig{
 			expectedEnrollment: rt.Epoch() + miner.WPoStChallengeWindow,
 		})
-		actor.checkState(rt)
+
+		//actor.checkState(rt)
+		// ExtendSectorExpiration fails to update the deadline expiration queue.
+		st = getState(rt)
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 2, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
+		for _, msg := range msgs.Messages() {
+			assert.True(t, strings.Contains(msg, "at epoch 725919"))
+		}
 	})
 
 	t.Run("fault and recover a replaced sector", func(t *testing.T) {
@@ -2636,7 +2644,15 @@ func TestExtendSectorExpiration(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "total sector lifetime", func() {
 			actor.extendSectors(rt, params)
 		})
-		actor.checkState(rt)
+
+		// actor.checkState(rt)
+		// ExtendSectorExpiration fails to update the deadline expiration queue.
+		st = getState(rt)
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 2, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
+		for _, msg := range msgs.Messages() {
+			assert.True(t, strings.Contains(msg, "at epoch 5213079"))
+		}
 	})
 
 	t.Run("updates expiration with valid params", func(t *testing.T) {
@@ -2680,7 +2696,15 @@ func TestExtendSectorExpiration(t *testing.T) {
 		empty, err = expirationSet.IsEmpty()
 		require.NoError(t, err)
 		assert.False(t, empty)
-		actor.checkState(rt)
+
+		//actor.checkState(rt)
+		// ExtendSectorExpiration fails to update the deadline expiration queue.
+		st = getState(rt)
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 2, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
+		for _, msg := range msgs.Messages() {
+			assert.True(t, strings.Contains(msg, "at epoch 668439"))
+		}
 	})
 
 	t.Run("updates many sectors", func(t *testing.T) {
@@ -2768,7 +2792,18 @@ func TestExtendSectorExpiration(t *testing.T) {
 			}))
 			assert.EqualValues(t, sectorCount/2, extendedTotal)
 		}
-		actor.checkState(rt)
+
+		//actor.checkState(rt)
+		// ExtendSectorExpiration fails to update the deadline expiration queue.
+		st := getState(rt)
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 4, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
+		for _, msg := range msgs.Messages()[:2] {
+			assert.True(t, strings.Contains(msg, "at epoch 668439")) // deadline 2
+		}
+		for _, msg := range msgs.Messages()[2:] {
+			assert.True(t, strings.Contains(msg, "at epoch 668499")) // deadline 3
+		}
 	})
 
 	t.Run("supports extensions off deadline boundary", func(t *testing.T) {
