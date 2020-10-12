@@ -65,7 +65,9 @@ const (
 )
 
 // Maximum size of a single prove-commit proof, in bytes.
-const MaxProveCommitSize = 1024
+// The 1024 maximum at network version 4 was an error (the expected size is 1920).
+const MaxProveCommitSizeV4 = 1024
+const MaxProveCommitSizeV5 = 10240
 
 // Maximum number of control addresses a miner may register.
 const MaxControlAddresses = 10
