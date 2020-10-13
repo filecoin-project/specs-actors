@@ -3074,8 +3074,9 @@ func TestRepayDebts(t *testing.T) {
 
 		amountToLock := big.Mul(big.NewInt(3), big.NewInt(1e18))
 		rt.SetBalance(amountToLock)
+		rt.SetNetworkVersion(network.Version5)
 		actor.applyRewards(rt, amountToLock, big.Zero())
-
+		rt.SetNetworkVersion(network.VersionMax)
 		// introduce fee debt
 		st := getState(rt)
 		feeDebt := big.Mul(big.NewInt(4), big.NewInt(1e18))
@@ -3921,11 +3922,11 @@ func TestApplyRewards(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpecV5.Quantization
 
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpecV5.Quantization))
 		}
 
 		assert.Equal(t, amt, st.LockedFunds)

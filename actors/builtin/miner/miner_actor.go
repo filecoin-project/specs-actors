@@ -1482,6 +1482,7 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 	if params.Penalty.Sign() < 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot penalize a negative amount of funds")
 	}
+	nv := rt.NetworkVersion()
 
 	var st State
 	pledgeDeltaTotal := big.Zero()
@@ -1491,18 +1492,28 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 		store := adt.AsStore(rt)
 		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
 
+		rewardToLock := params.Reward
+		lockedRewardVestingSpec := &RewardVestingSpecV5
+		if nv >= network.Version6 {
+			// rewardToLock is 75% of params.Reward
+			rewardToLock = LockedRewardFromRewardV6(params.Reward)
+
+			// vesting spec adds back in delay
+			lockedRewardVestingSpec = &RewardVestingSpecV6
+		}
+
 		// This ensures the miner has sufficient funds to lock up amountToLock.
 		// This should always be true if reward actor sends reward funds with the message.
 		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
-		if unlockedBalance.LessThan(params.Reward) {
+		if unlockedBalance.LessThan(rewardToLock) {
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, params.Reward)
 		}
 
-		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), params.Reward, &RewardVestingSpec)
+		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), rewardToLock, lockedRewardVestingSpec)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, newlyVested)
-		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, params.Reward)
+		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, rewardToLock)
 
 		// If the miner incurred block mining penalties charge these to miner's fee debt
 		err = st.ApplyPenalty(params.Penalty)
