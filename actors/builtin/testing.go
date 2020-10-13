@@ -63,6 +63,14 @@ func (ma *MessageAccumulator) Require(predicate bool, msg string, args ...interf
 	}
 }
 
+func (ma *MessageAccumulator) RequireNoError(err error, msg string, args ...interface{}) {
+	if err != nil {
+		msg = msg + ": %v"
+		args = append(args, err)
+		ma.Addf(msg, args...)
+	}
+}
+
 func (ma *MessageAccumulator) initialize() {
 	if ma.msgs == nil {
 		ma.msgs = &[]string{}
