@@ -1507,7 +1507,7 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
 		if unlockedBalance.LessThan(rewardToLock) {
-			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, params.Reward)
+			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds to lock, available: %v, requested: %v", unlockedBalance, rewardToLock)
 		}
 
 		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), rewardToLock, lockedRewardVestingSpec)
