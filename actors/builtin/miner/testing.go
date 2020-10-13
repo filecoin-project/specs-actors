@@ -65,21 +65,21 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		err = sectorsArr.ForEach(&sector, func(sno int64) error {
 			cpy := sector
 			allSectors[abi.SectorNumber(sno)] = &cpy
-			acc.Require(allocatedSectorsMap != nil && allocatedSectorsMap[uint64(sno)],
+			acc.Require(allocatedSectorsMap == nil || allocatedSectorsMap[uint64(sno)],
 				"on chain sector's sector number has not been allocated %d", sno)
 			return nil
 		})
 		acc.RequireNoError(err, "error iterating sectors")
 	}
 
+	// Check deadlines
+	acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
+		"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
+
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		acc.Addf("error loading deadlines: %v", err)
 		deadlines = nil
-	} else {
-		// Check deadlines
-		acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
-			"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
 	}
 
 	if allSectors != nil && deadlines != nil {
@@ -513,7 +513,7 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 			seenSectors[sno] = true
 
 			// Check early sectors are faulty
-			acc.Require(partitionFaultsMap != nil && partitionFaultsMap[n], "sector %d expiring early but not faulty", sno)
+			acc.Require(partitionFaultsMap == nil || partitionFaultsMap[n], "sector %d expiring early but not faulty", sno)
 
 			// Check expiring sectors are still alive.
 			if sector, ok := liveSectors[sno]; ok {
