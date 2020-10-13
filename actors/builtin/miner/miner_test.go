@@ -3922,14 +3922,15 @@ func TestApplyRewards(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.RewardVestingSpecV5.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpecV6.Quantization
 
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpecV5.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpecV6.Quantization))
 		}
 
-		assert.Equal(t, amt, st.LockedFunds)
+		lockedAmt := miner.LockedRewardFromRewardV6(amt)
+		assert.Equal(t, lockedAmt, st.LockedFunds)
 		actor.checkState(rt)
 	})
 
@@ -3992,7 +3993,8 @@ func TestApplyRewards(t *testing.T) {
 		availableBefore, err := st.GetAvailableBalance(amt)
 		require.NoError(t, err)
 		assert.True(t, availableBefore.GreaterThan(big.Zero()))
-		st.FeeDebt = big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
+		initFeeDebt := big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
+		st.FeeDebt = initFeeDebt
 		availableAfter, err := st.GetAvailableBalance(amt)
 		require.NoError(t, err)
 		assert.True(t, availableAfter.LessThan(big.Zero()))
@@ -4006,8 +4008,10 @@ func TestApplyRewards(t *testing.T) {
 		rt.SetBalance(newBalance)
 
 		// pledge change is new reward - reward taken for fee debt
-		// 3*amt - 2*amt = amt
-		pledgeDelta := big.Sub(reward, st.FeeDebt)
+		// 3*LockedRewardFactor*amt - 2*amt = remainingLocked
+		lockedReward := miner.LockedRewardFromRewardV6(reward)
+		remainingLocked := big.Sub(lockedReward, st.FeeDebt) // note that this would be clamped at 0 if difference above is < 0
+		pledgeDelta := remainingLocked
 		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
 		// expect pledge update
@@ -4034,10 +4038,10 @@ func TestApplyRewards(t *testing.T) {
 		// available balance should be 2
 		availableBalance, err := st.GetAvailableBalance(finalBalance)
 		require.NoError(t, err)
-		assert.Equal(t, availableBefore, availableBalance)
+		assert.Equal(t, big.Sum(availableBefore, reward, initFeeDebt.Neg(), remainingLocked.Neg()), availableBalance)
 		assert.True(t, st.IsDebtFree())
 		// remaining funds locked in vesting table
-		assert.Equal(t, amt, st.LockedFunds)
+		assert.Equal(t, remainingLocked, st.LockedFunds)
 		actor.checkState(rt)
 	})
 }
@@ -5061,7 +5065,11 @@ func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmou
 	// We further assume the miner can pay the penalty.  If the miner
 	// goes into debt we can't rely on the harness call
 	// TODO unify those cases
+	nv := rt.NetworkVersion()
 	pledgeDelta := big.Subtract(amt, penalty)
+	if nv >= network.Version6 {
+		pledgeDelta = big.Sub(miner.LockedRewardFromRewardV6(amt), penalty)
+	}
 
 	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
