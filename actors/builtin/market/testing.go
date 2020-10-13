@@ -15,8 +15,17 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
+type DealStats struct {
+	Provider         address.Address
+	StartEpoch       abi.ChainEpoch
+	EndEpoch         abi.ChainEpoch
+	SectorStartEpoch abi.ChainEpoch
+	LastUpdatedEpoch abi.ChainEpoch
+	SlashEpoch       abi.ChainEpoch
+}
+
 type StateSummary struct {
-	ProposalIDs          []abi.DealID
+	Deals                map[abi.DealID]*DealStats
 	PendingProposalCount uint64
 	DealStateCount       uint64
 	LockTableCount       uint64
@@ -44,10 +53,9 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	// Proposals
 	//
 
-	allIDs := make(map[abi.DealID]struct{})
 	proposalCids := make(map[cid.Cid]struct{})
 	maxDealID := int64(-1)
-	var proposalIDs []abi.DealID
+	proposalStats := make(map[abi.DealID]*DealStats)
 	expectedDealOps := make(map[abi.DealID]struct{})
 
 	proposals, err := adt.AsArray(store, st.Proposals)
@@ -57,8 +65,6 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	var proposal DealProposal
 	totalProposalCollateral := abi.NewTokenAmount(0)
 	err = proposals.ForEach(&proposal, func(dealID int64) error {
-		allIDs[abi.DealID(dealID)] = struct{}{}
-
 		pcid, err := proposal.Cid()
 		if err != nil {
 			return err
@@ -73,7 +79,14 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 		if dealID > maxDealID {
 			maxDealID = dealID
 		}
-		proposalIDs = append(proposalIDs, abi.DealID(dealID))
+		proposalStats[abi.DealID(dealID)] = &DealStats{
+			Provider:         proposal.Provider,
+			StartEpoch:       proposal.StartEpoch,
+			EndEpoch:         proposal.EndEpoch,
+			SectorStartEpoch: abi.ChainEpoch(-1),
+			LastUpdatedEpoch: abi.ChainEpoch(-1),
+			SlashEpoch:       abi.ChainEpoch(-1),
+		}
 
 		totalProposalCollateral = big.Sum(totalProposalCollateral, proposal.ClientCollateral, proposal.ProviderCollateral)
 
@@ -120,8 +133,14 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 			dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch <= currEpoch,
 			"deal %d state slashed after current epoch %d: %v", dealID, currEpoch, dealState)
 
-		_, found := allIDs[abi.DealID(dealID)]
-		acc.Require(found, "deal proposal %d for deal state not found", dealID)
+		stats, found := proposalStats[abi.DealID(dealID)]
+		if !found {
+			acc.Addf("deal proposal %d for deal state not found", dealID)
+		} else {
+			stats.SectorStartEpoch = dealState.SectorStartEpoch
+			stats.LastUpdatedEpoch = dealState.LastUpdatedEpoch
+			stats.SlashEpoch = dealState.SlashEpoch
+		}
 
 		dealStateCount++
 		return nil
@@ -236,7 +255,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 
 		dealOpEpochCount++
 		return dealOps.ForEach(abi.ChainEpoch(epoch), func(id abi.DealID) error {
-			_, found := allIDs[id]
+			_, found := proposalStats[id]
 			acc.Require(found, "deal op found for deal id %d with missing proposal at epoch %d", id, epoch)
 			delete(expectedDealOps, id)
 			dealOpCount++
@@ -250,7 +269,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	acc.Require(len(expectedDealOps) == 0, "missing deal ops for proposals: %v", expectedDealOps)
 
 	return &StateSummary{
-		ProposalIDs:          proposalIDs,
+		Deals:                proposalStats,
 		PendingProposalCount: pendingProposalCount,
 		DealStateCount:       dealStateCount,
 		LockTableCount:       lockTableCount,
