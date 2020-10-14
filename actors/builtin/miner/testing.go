@@ -11,10 +11,16 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
+type DealSummary struct {
+	SectorStart      abi.ChainEpoch
+	SectorExpiration abi.ChainEpoch
+}
+
 type StateSummary struct {
 	LivePower     PowerPair
 	ActivePower   PowerPair
 	FaultyPower   PowerPair
+	Deals         map[abi.DealID]DealSummary
 	SealProofType abi.RegisteredSealProof
 }
 
@@ -56,6 +62,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 
 	CheckPreCommits(st, store, allocatedSectorsMap, acc)
 
+	minerSummary.Deals = map[abi.DealID]DealSummary{}
 	var allSectors map[abi.SectorNumber]*SectorOnChainInfo
 	if sectorsArr, err := adt.AsArray(store, st.Sectors); err != nil {
 		acc.Addf("error loading sectors")
@@ -67,6 +74,14 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 			allSectors[abi.SectorNumber(sno)] = &cpy
 			acc.Require(allocatedSectorsMap == nil || allocatedSectorsMap[uint64(sno)],
 				"on chain sector's sector number has not been allocated %d", sno)
+
+			for _, dealID := range sector.DealIDs {
+				minerSummary.Deals[dealID] = DealSummary{
+					SectorStart:      sector.Activation,
+					SectorExpiration: sector.Expiration,
+				}
+			}
+
 			return nil
 		})
 		acc.RequireNoError(err, "error iterating sectors")
@@ -590,11 +605,11 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		unionEarly = bitfield.New()
 	}
 	return &ExpirationQueueStateSummary{
-		OnTimeSectors: unionOnTime,
-		EarlySectors:  unionEarly,
-		ActivePower:   allActivePower,
-		FaultyPower:   allFaultyPower,
-		OnTimePledge:  allOnTimePledge,
+		OnTimeSectors:    unionOnTime,
+		EarlySectors:     unionEarly,
+		ActivePower:      allActivePower,
+		FaultyPower:      allFaultyPower,
+		OnTimePledge:     allOnTimePledge,
 		ExpirationEpochs: expirationEpochs,
 	}
 }

@@ -161,6 +161,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	//
 
 	CheckMinersAgainstPower(acc, minerSummaries, powerSummary)
+	CheckDealStatesAgainstSectors(acc, minerSummaries, marketSummary)
 
 	_ = initSummary
 	_ = verifregSummary
@@ -211,5 +212,45 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 		}
 
 		acc.Require(provingPeriodCron != nil, "miner %v has no proving period cron", addr)
+	}
+}
+
+func CheckDealStatesAgainstSectors(acc *builtin.MessageAccumulator, minerSummaries map[addr.Address]*miner.StateSummary, marketSummary *market.StateSummary) {
+	// Check that all active deals are included within a non-terminated sector.
+	// We cannot check that all deals referenced within a sector are in the market, because deals
+	// can be terminated independently of the sector in which they are included.
+	for dealID, deal := range marketSummary.Deals { // nolint:nomaprange
+		if deal.SectorStartEpoch == abi.ChainEpoch(-1) {
+			// deal hasn't been activated yet, make no assertions about sector state
+			continue
+		}
+
+		minerSummary, found := minerSummaries[deal.Provider]
+		if !found {
+			acc.Addf("provider %v for deal %d not found among miners", deal.Provider, dealID)
+			continue
+		}
+
+		sectorDeal, found := minerSummary.Deals[dealID]
+		if !found {
+			acc.Require(deal.SlashEpoch >= 0, "un-slashed deal %d not referenced in active sectors of miner %v", dealID, deal.Provider)
+			continue
+		}
+
+		acc.Require(deal.SectorStartEpoch == sectorDeal.SectorStart,
+			"deal state start %d does not match sector start %d for miner %v",
+			deal.SectorStartEpoch, sectorDeal.SectorStart, deal.Provider)
+
+		acc.Require(deal.SectorStartEpoch <= sectorDeal.SectorExpiration,
+			"deal state start %d activated after sector expiration %d for miner %v",
+			deal.SectorStartEpoch, sectorDeal.SectorExpiration, deal.Provider)
+
+		acc.Require(deal.LastUpdatedEpoch <= sectorDeal.SectorExpiration,
+			"deal state update at %d after sector expiration %d for miner %v",
+			deal.LastUpdatedEpoch, sectorDeal.SectorExpiration, deal.Provider)
+
+		acc.Require(deal.SlashEpoch <= sectorDeal.SectorExpiration,
+			"deal state slashed at %d after sector expiration %d for miner %v",
+			deal.SlashEpoch, sectorDeal.SectorExpiration, deal.Provider)
 	}
 }
