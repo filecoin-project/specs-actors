@@ -3073,7 +3073,7 @@ func TestRepayDebts(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		rewardAmount := big.Mul(big.NewInt(4), big.NewInt(1e18))
-		amountLocked := miner.LockedRewardFromRewardV6(rewardAmount)
+		amountLocked, _ := miner.LockedRewardFromReward(rewardAmount, rt.NetworkVersion())
 		rt.SetBalance(amountLocked)
 		actor.applyRewards(rt, rewardAmount, big.Zero())
 		require.Equal(t, amountLocked, actor.getLockedFunds(rt))
@@ -3939,7 +3939,7 @@ func TestApplyRewards(t *testing.T) {
 			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
-		lockedAmt := miner.LockedRewardFromRewardV6(amt)
+		lockedAmt, _ := miner.LockedRewardFromReward(amt, rt.NetworkVersion())
 		assert.Equal(t, lockedAmt, st.LockedFunds)
 		actor.checkState(rt)
 	})
@@ -4019,7 +4019,7 @@ func TestApplyRewards(t *testing.T) {
 
 		// pledge change is new reward - reward taken for fee debt
 		// 3*LockedRewardFactor*amt - 2*amt = remainingLocked
-		lockedReward := miner.LockedRewardFromRewardV6(reward)
+		lockedReward, _ := miner.LockedRewardFromReward(reward, rt.NetworkVersion())
 		remainingLocked := big.Sub(lockedReward, st.FeeDebt) // note that this would be clamped at 0 if difference above is < 0
 		pledgeDelta := remainingLocked
 		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
@@ -5075,11 +5075,8 @@ func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmou
 	// We further assume the miner can pay the penalty.  If the miner
 	// goes into debt we can't rely on the harness call
 	// TODO unify those cases
-	nv := rt.NetworkVersion()
-	pledgeDelta := big.Subtract(amt, penalty)
-	if nv >= network.Version6 {
-		pledgeDelta = big.Sub(miner.LockedRewardFromRewardV6(amt), penalty)
-	}
+	lockAmt, _ := miner.LockedRewardFromReward(amt, rt.NetworkVersion())
+	pledgeDelta := big.Sub(lockAmt, penalty)
 
 	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)

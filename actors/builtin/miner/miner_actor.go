@@ -1492,12 +1492,7 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 		store := adt.AsStore(rt)
 		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
 
-		rewardToLock := params.Reward
-		lockedRewardVestingSpec := &RewardVestingSpec
-		if nv >= network.Version6 {
-			// rewardToLock is 75% of params.Reward
-			rewardToLock = LockedRewardFromRewardV6(params.Reward)
-		}
+		rewardToLock, lockedRewardVestingSpec := LockedRewardFromReward(params.Reward, nv)
 
 		// This ensures the miner has sufficient funds to lock up amountToLock.
 		// This should always be true if reward actor sends reward funds with the message.
