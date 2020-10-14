@@ -558,9 +558,7 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 			// by the swapped/removed signer to go through without an illegal state error
 			if nv >= network.Version6 {
 				txnExists, err := ptx.Has(txnID)
-				if err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to check existance of transaction for cleanup: %v", err)
-				}
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check existance of transaction %v for cleanup", txnID)
 				shouldDelete = txnExists
 			}
 
