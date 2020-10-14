@@ -233,9 +233,7 @@ func CheckDealStatesAgainstSectors(acc *builtin.MessageAccumulator, minerSummari
 
 		sectorDeal, found := minerSummary.Deals[dealID]
 		if !found {
-			if deal.SlashEpoch < 0 {
-				acc.Addf("un-slashed deal %d not referenced in active sectors of miner %v", dealID, deal.Provider)
-			}
+			acc.Require(deal.SlashEpoch >= 0, "un-slashed deal %d not referenced in active sectors of miner %v", dealID, deal.Provider)
 			continue
 		}
 
