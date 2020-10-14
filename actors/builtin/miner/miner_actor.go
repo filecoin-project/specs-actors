@@ -1493,13 +1493,10 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 		rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
 
 		rewardToLock := params.Reward
-		lockedRewardVestingSpec := &RewardVestingSpecV5
+		lockedRewardVestingSpec := &RewardVestingSpec
 		if nv >= network.Version6 {
 			// rewardToLock is 75% of params.Reward
 			rewardToLock = LockedRewardFromRewardV6(params.Reward)
-
-			// vesting spec adds back in delay
-			lockedRewardVestingSpec = &RewardVestingSpecV6
 		}
 
 		// This ensures the miner has sufficient funds to lock up amountToLock.

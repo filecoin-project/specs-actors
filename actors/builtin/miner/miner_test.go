@@ -3923,20 +3923,20 @@ func TestApplyRewards(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		quantSpecV6 := miner.NewQuantSpec(miner.RewardVestingSpecV6.Quantization, periodOffset)
+		quantSpecV6 := miner.NewQuantSpec(miner.RewardVestingSpec.Quantization, periodOffset)
 
 		currEpoch := rt.Epoch()
 		for i := range vestingFunds.Funds {
-			step := miner.RewardVestingSpecV6.InitialDelay + abi.ChainEpoch(i+1)*miner.RewardVestingSpecV6.StepDuration
+			step := miner.RewardVestingSpec.InitialDelay + abi.ChainEpoch(i+1)*miner.RewardVestingSpec.StepDuration
 			expectedEpoch := quantSpecV6.QuantizeUp(currEpoch + step)
 			vf := vestingFunds.Funds[i]
 			assert.Equal(t, expectedEpoch, vf.Epoch)
 		}
 
-		expectedOffset := periodOffset % miner.RewardVestingSpecV6.Quantization
+		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
-			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpecV6.Quantization))
+			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
 		lockedAmt := miner.LockedRewardFromRewardV6(amt)
