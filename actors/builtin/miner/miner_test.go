@@ -3901,6 +3901,30 @@ func TestApplyRewards(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
+	t.Run("funds are locked", func(t *testing.T) {
+		{
+			rt := builder.Build(t)
+			rt.SetNetworkVersion(network.Version5)
+			actor.constructAndVerify(rt)
+
+			rwd := abi.NewTokenAmount(1_000_000)
+			actor.applyRewards(rt, rwd, big.Zero())
+
+			assert.Equal(t, rwd, actor.getLockedFunds(rt))
+		}
+		{
+			rt := builder.Build(t)
+			rt.SetNetworkVersion(network.Version6)
+			actor.constructAndVerify(rt)
+
+			rwd := abi.NewTokenAmount(1_000_000)
+			actor.applyRewards(rt, rwd, big.Zero())
+
+			expected := abi.NewTokenAmount(750_000)
+			assert.Equal(t, expected, actor.getLockedFunds(rt))
+		}
+	})
+
 	t.Run("funds vest", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -3923,12 +3947,12 @@ func TestApplyRewards(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		quantSpecV6 := miner.NewQuantSpec(miner.RewardVestingSpec.Quantization, periodOffset)
+		quantSpec := miner.NewQuantSpec(miner.RewardVestingSpec.Quantization, periodOffset)
 
 		currEpoch := rt.Epoch()
 		for i := range vestingFunds.Funds {
 			step := miner.RewardVestingSpec.InitialDelay + abi.ChainEpoch(i+1)*miner.RewardVestingSpec.StepDuration
-			expectedEpoch := quantSpecV6.QuantizeUp(currEpoch + step)
+			expectedEpoch := quantSpec.QuantizeUp(currEpoch + step)
 			vf := vestingFunds.Funds[i]
 			assert.Equal(t, expectedEpoch, vf.Epoch)
 		}
@@ -3948,11 +3972,15 @@ func TestApplyRewards(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		reward := abi.NewTokenAmount(600_000)
+		rwd := abi.NewTokenAmount(600_000)
 		penalty := abi.NewTokenAmount(300_000)
-		rt.SetBalance(big.Add(rt.Balance(), reward))
+		rt.SetBalance(big.Add(rt.Balance(), rwd))
+		actor.applyRewards(rt, rwd, penalty)
 
-		actor.applyRewards(rt, reward, penalty)
+		expectedLockAmt, _ := miner.LockedRewardFromReward(rwd, rt.NetworkVersion())
+		expectedLockAmt = big.Sub(expectedLockAmt, penalty)
+		assert.Equal(t, expectedLockAmt, actor.getLockedFunds(rt))
+
 		actor.checkState(rt)
 	})
 
