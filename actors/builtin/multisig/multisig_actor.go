@@ -548,17 +548,8 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
-			// It is possible for the send to result in deleting the transaction (e.g. if a signer removes themself)
-			// which would cause Delete to fail. Check first to prevent that.
-			txnExists, err := ptx.Has(txnID)
-			if err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to find transaction for cleanup: %v", err)
-			}
-
-			if txnExists {
-				if err := ptx.Delete(txnID); err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
-				}
+			if err := ptx.Delete(txnID); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
 
 			st.PendingTxns, err = ptx.Root()
