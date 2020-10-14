@@ -3072,9 +3072,11 @@ func TestRepayDebts(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		amountToLock := big.Mul(big.NewInt(3), big.NewInt(1e18))
-		rt.SetBalance(amountToLock)
-		actor.applyRewards(rt, amountToLock, big.Zero())
+		rewardAmount := big.Mul(big.NewInt(4), big.NewInt(1e18))
+		amountLocked, _ := miner.LockedRewardFromReward(rewardAmount, rt.NetworkVersion())
+		rt.SetBalance(amountLocked)
+		actor.applyRewards(rt, rewardAmount, big.Zero())
+		require.Equal(t, amountLocked, actor.getLockedFunds(rt))
 
 		// introduce fee debt
 		st := getState(rt)
@@ -3085,7 +3087,7 @@ func TestRepayDebts(t *testing.T) {
 		// send 1 FIL and repay all debt from vesting funds and balance
 		actor.repayDebt(rt,
 			big.NewInt(1e18), // send 1 FIL
-			amountToLock,     // 3 FIL comes from vesting funds
+			amountLocked,     // 3 FIL comes from vesting funds
 			big.NewInt(1e18)) // 1 FIL sent from balance
 
 		st = getState(rt)
@@ -3899,6 +3901,30 @@ func TestApplyRewards(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
+	t.Run("funds are locked", func(t *testing.T) {
+		{
+			rt := builder.Build(t)
+			rt.SetNetworkVersion(network.Version5)
+			actor.constructAndVerify(rt)
+
+			rwd := abi.NewTokenAmount(1_000_000)
+			actor.applyRewards(rt, rwd, big.Zero())
+
+			assert.Equal(t, rwd, actor.getLockedFunds(rt))
+		}
+		{
+			rt := builder.Build(t)
+			rt.SetNetworkVersion(network.Version6)
+			actor.constructAndVerify(rt)
+
+			rwd := abi.NewTokenAmount(1_000_000)
+			actor.applyRewards(rt, rwd, big.Zero())
+
+			expected := abi.NewTokenAmount(750_000)
+			assert.Equal(t, expected, actor.getLockedFunds(rt))
+		}
+	})
+
 	t.Run("funds vest", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -3921,14 +3947,24 @@ func TestApplyRewards(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
+		quantSpec := miner.NewQuantSpec(miner.RewardVestingSpec.Quantization, periodOffset)
 
+		currEpoch := rt.Epoch()
+		for i := range vestingFunds.Funds {
+			step := miner.RewardVestingSpec.InitialDelay + abi.ChainEpoch(i+1)*miner.RewardVestingSpec.StepDuration
+			expectedEpoch := quantSpec.QuantizeUp(currEpoch + step)
+			vf := vestingFunds.Funds[i]
+			assert.Equal(t, expectedEpoch, vf.Epoch)
+		}
+
+		expectedOffset := periodOffset % miner.RewardVestingSpec.Quantization
 		for i := range vestingFunds.Funds {
 			vf := vestingFunds.Funds[i]
 			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
-		assert.Equal(t, amt, st.LockedFunds)
+		lockedAmt, _ := miner.LockedRewardFromReward(amt, rt.NetworkVersion())
+		assert.Equal(t, lockedAmt, st.LockedFunds)
 		actor.checkState(rt)
 	})
 
@@ -3936,11 +3972,15 @@ func TestApplyRewards(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		reward := abi.NewTokenAmount(600_000)
+		rwd := abi.NewTokenAmount(600_000)
 		penalty := abi.NewTokenAmount(300_000)
-		rt.SetBalance(big.Add(rt.Balance(), reward))
+		rt.SetBalance(big.Add(rt.Balance(), rwd))
+		actor.applyRewards(rt, rwd, penalty)
 
-		actor.applyRewards(rt, reward, penalty)
+		expectedLockAmt, _ := miner.LockedRewardFromReward(rwd, rt.NetworkVersion())
+		expectedLockAmt = big.Sub(expectedLockAmt, penalty)
+		assert.Equal(t, expectedLockAmt, actor.getLockedFunds(rt))
+
 		actor.checkState(rt)
 	})
 
@@ -3991,7 +4031,8 @@ func TestApplyRewards(t *testing.T) {
 		availableBefore, err := st.GetAvailableBalance(amt)
 		require.NoError(t, err)
 		assert.True(t, availableBefore.GreaterThan(big.Zero()))
-		st.FeeDebt = big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
+		initFeeDebt := big.Mul(big.NewInt(2), amt) // FeeDebt twice total balance
+		st.FeeDebt = initFeeDebt
 		availableAfter, err := st.GetAvailableBalance(amt)
 		require.NoError(t, err)
 		assert.True(t, availableAfter.LessThan(big.Zero()))
@@ -4005,8 +4046,10 @@ func TestApplyRewards(t *testing.T) {
 		rt.SetBalance(newBalance)
 
 		// pledge change is new reward - reward taken for fee debt
-		// 3*amt - 2*amt = amt
-		pledgeDelta := big.Sub(reward, st.FeeDebt)
+		// 3*LockedRewardFactor*amt - 2*amt = remainingLocked
+		lockedReward, _ := miner.LockedRewardFromReward(reward, rt.NetworkVersion())
+		remainingLocked := big.Sub(lockedReward, st.FeeDebt) // note that this would be clamped at 0 if difference above is < 0
+		pledgeDelta := remainingLocked
 		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
 		// expect pledge update
@@ -4033,10 +4076,10 @@ func TestApplyRewards(t *testing.T) {
 		// available balance should be 2
 		availableBalance, err := st.GetAvailableBalance(finalBalance)
 		require.NoError(t, err)
-		assert.Equal(t, availableBefore, availableBalance)
+		assert.Equal(t, big.Sum(availableBefore, reward, initFeeDebt.Neg(), remainingLocked.Neg()), availableBalance)
 		assert.True(t, st.IsDebtFree())
 		// remaining funds locked in vesting table
-		assert.Equal(t, amt, st.LockedFunds)
+		assert.Equal(t, remainingLocked, st.LockedFunds)
 		actor.checkState(rt)
 	})
 }
@@ -5060,7 +5103,8 @@ func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmou
 	// We further assume the miner can pay the penalty.  If the miner
 	// goes into debt we can't rely on the harness call
 	// TODO unify those cases
-	pledgeDelta := big.Subtract(amt, penalty)
+	lockAmt, _ := miner.LockedRewardFromReward(amt, rt.NetworkVersion())
+	pledgeDelta := big.Sub(lockAmt, penalty)
 
 	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)

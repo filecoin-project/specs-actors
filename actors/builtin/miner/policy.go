@@ -230,7 +230,7 @@ type VestSpec struct {
 	Quantization abi.ChainEpoch // Maximum precision of vesting table (limits cardinality of table).
 }
 
-// The vesting schedule for block rewards earned by a block producer.
+// The vesting schedule for total rewards (block reward + gas reward) earned by a block producer.
 var RewardVestingSpec = VestSpec{ // PARAM_SPEC
 	InitialDelay: abi.ChainEpoch(0),
 	VestPeriod:   abi.ChainEpoch(180 * builtin.EpochsInDay),
