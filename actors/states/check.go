@@ -216,6 +216,9 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 }
 
 func CheckDealStatesAgainstSectors(acc *builtin.MessageAccumulator, minerSummaries map[addr.Address]*miner.StateSummary, marketSummary *market.StateSummary) {
+	// Check that all active deals are included within a non-terminated sector.
+	// We cannot check that all deals referenced within a sector are in the market, because deals
+	// can be terminated independently of the sector in which they are included.
 	for dealID, deal := range marketSummary.Deals { // nolint:nomaprange
 		if deal.SectorStartEpoch == abi.ChainEpoch(-1) {
 			// deal hasn't been activated yet, make no assertions about sector state
@@ -229,8 +232,8 @@ func CheckDealStatesAgainstSectors(acc *builtin.MessageAccumulator, minerSummari
 		}
 
 		sectorDeal, found := minerSummary.Deals[dealID]
-		if !found {
-			acc.Addf("deal %d not referenced in active sectors of miner %v", dealID, deal.Provider)
+		if deal.SlashEpoch < 0 && !found {
+			acc.Addf("un-slashed deal %d not referenced in active sectors of miner %v", dealID, deal.Provider)
 			continue
 		}
 

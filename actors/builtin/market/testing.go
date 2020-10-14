@@ -15,7 +15,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
-type DealStats struct {
+type DealSummary struct {
 	Provider         address.Address
 	StartEpoch       abi.ChainEpoch
 	EndEpoch         abi.ChainEpoch
@@ -25,7 +25,7 @@ type DealStats struct {
 }
 
 type StateSummary struct {
-	Deals                map[abi.DealID]*DealStats
+	Deals                map[abi.DealID]*DealSummary
 	PendingProposalCount uint64
 	DealStateCount       uint64
 	LockTableCount       uint64
@@ -55,7 +55,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 
 	proposalCids := make(map[cid.Cid]struct{})
 	maxDealID := int64(-1)
-	proposalStats := make(map[abi.DealID]*DealStats)
+	proposalStats := make(map[abi.DealID]*DealSummary)
 	expectedDealOps := make(map[abi.DealID]struct{})
 
 	proposals, err := adt.AsArray(store, st.Proposals)
@@ -79,7 +79,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 		if dealID > maxDealID {
 			maxDealID = dealID
 		}
-		proposalStats[abi.DealID(dealID)] = &DealStats{
+		proposalStats[abi.DealID(dealID)] = &DealSummary{
 			Provider:         proposal.Provider,
 			StartEpoch:       proposal.StartEpoch,
 			EndEpoch:         proposal.EndEpoch,
@@ -232,7 +232,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 		return nil, acc, err
 	}
 	acc.Require(escrowTotal.LessThanEqual(balance), "escrow total, %v, greater than actor balance, %v", escrowTotal, balance)
-	acc.Require(escrowTotal.GreaterThanEqual(totalProposalCollateral), "escrow total, %v, lset than sum of proposal collateral, %v", escrowTotal, totalProposalCollateral)
+	acc.Require(escrowTotal.GreaterThanEqual(totalProposalCollateral), "escrow total, %v, less than sum of proposal collateral, %v", escrowTotal, totalProposalCollateral)
 
 	//
 	// Deal Ops by Epoch
