@@ -41,7 +41,8 @@ var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
 var bigBalance = big.Mul(big.NewInt(1_000_000), big.NewInt(1e18))
-var onePercentBigBalance = big.Div(bigBalance, big.NewInt(100))
+// A reward amount for use in tests where the vesting amount wants to be large enough to cover penalties.
+var bigRewards = big.Mul(big.NewInt(1_000), big.NewInt(1e18))
 
 // an expriration 1 greater than min expiration
 const defaultSectorExpiration = 190
@@ -1307,7 +1308,7 @@ func TestCCUpgrade(t *testing.T) {
 		oldPower := miner.QAPowerForSector(actor.sectorSize, oldSector)
 		expectedFee := miner.PledgePenaltyForContinuedFault(actor.epochRewardSmooth, actor.epochQAPowerSmooth, oldPower)
 		expectedPowerDelta := miner.NewPowerPairZero()
-		actor.applyRewards(rt, expectedFee, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 		actor.onDeadlineCron(rt, &cronConfig{
 			continuedFaultsPenalty:    expectedFee,
 			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
@@ -1323,7 +1324,7 @@ func TestCCUpgrade(t *testing.T) {
 			WithBalance(bigBalance, big.Zero()).
 			Build(t)
 		actor.constructAndVerify(rt)
-		actor.applyRewards(rt, big.NewInt(1e18), big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		oldSector, newSector := actor.commitProveAndUpgradeSector(rt, 100, 200, defaultSectorExpiration, []abi.DealID{1})
 
@@ -1422,7 +1423,7 @@ func TestCCUpgrade(t *testing.T) {
 		expectedFee := miner.PledgePenaltyForTermination(oldSector.ExpectedDayReward, rt.Epoch()-oldSector.Activation,
 			oldSector.ExpectedStoragePledge, actor.epochQAPowerSmooth, sectorPower, actor.epochRewardSmooth,
 			oldSector.ReplacedDayReward, oldSector.ReplacedSectorAge)
-		actor.applyRewards(rt, expectedFee, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 		powerDelta, pledgeDelta := actor.terminateSectors(rt, bf(uint64(oldSector.SectorNumber)), expectedFee)
 
 		// power and pledge should have been removed
@@ -1824,9 +1825,8 @@ func TestWindowPost(t *testing.T) {
 		infos := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
 
-		// add lots of funds so we can pay penalties without going into debt
-		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.applyRewards(rt, initialLocked, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
+		initialLocked := actor.getLockedFunds(rt)
 
 		// Submit first PoSt to ensure we are sufficiently early to add a fault
 		// advance to next proving period
@@ -1881,8 +1881,7 @@ func TestWindowPost(t *testing.T) {
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
-		// add lots of funds so we can pay penalties without going into debt
-		actor.applyRewards(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)), big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		st := getState(rt)
@@ -1949,8 +1948,7 @@ func TestWindowPost(t *testing.T) {
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
-		// add lots of funds so we can pay penalties without going into debt
-		actor.applyRewards(rt, big.Mul(big.NewInt(200), big.NewInt(1e18)), big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		// advance to epoch when submitPoSt is due
 		st := getState(rt)
@@ -1986,9 +1984,7 @@ func TestWindowPost(t *testing.T) {
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil)
 
-		// add lots of funds so we can pay penalties without going into debt
-		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.applyRewards(rt, initialLocked, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		// Submit first PoSt to ensure we are sufficiently early to add a fault
 		// advance to next proving period
@@ -2272,8 +2268,7 @@ func TestDeadlineCron(t *testing.T) {
 		allSectors := append(activeSectors, unprovenSectors...)
 
 		// add lots of funds so penalties come from vesting funds
-		initialLocked := big.Mul(big.NewInt(400), big.NewInt(1e18))
-		actor.applyRewards(rt, initialLocked, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), activeSectors[0].SectorNumber)
@@ -2327,8 +2322,7 @@ func TestDeadlineCron(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// add lots of funds so we can pay penalties without going into debt
-		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.applyRewards(rt, initialLocked, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		// create enough sectors that one will be in a different partition
 		allSectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
@@ -2380,8 +2374,7 @@ func TestDeclareFaults(t *testing.T) {
 		pwr := miner.PowerForSectors(actor.sectorSize, allSectors)
 
 		// add lots of funds so penalties come from vesting funds
-		initialLocked := big.Mul(big.NewInt(200), big.NewInt(1e18))
-		actor.applyRewards(rt, initialLocked, big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 
 		// find deadline for sector
 		st := getState(rt)
@@ -2843,7 +2836,7 @@ func TestTerminateSectors(t *testing.T) {
 
 		// A miner will pay the minimum of termination fee and locked funds. Add some locked funds to ensure
 		// correct fee calculation is used.
-		actor.applyRewards(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)), big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 		st := getState(rt)
 		initialLockedFunds := st.LockedFunds
 
@@ -2886,9 +2879,6 @@ func TestTerminateSectors(t *testing.T) {
 			Build(t)
 		actor.constructAndVerify(rt)
 
-		// Add some locked funds to ensure full termination fee appears as pledge change.
-		actor.applyRewards(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)), big.Zero())
-
 		// Move the current epoch forward so that the first deadline is a stable candidate for both sectors
 		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
 
@@ -2923,6 +2913,10 @@ func TestTerminateSectors(t *testing.T) {
 
 		// advance clock a little and terminate new sector
 		rt.SetEpoch(rt.Epoch() + 5_000)
+
+		// Add some locked funds to ensure full termination fee appears as pledge change.
+		actor.applyRewards(rt, bigRewards, big.Zero())
+
 		sectorPower := miner.QAPowerForSector(actor.sectorSize, newSector)
 		twentyDayReward := miner.ExpectedRewardForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, sectorPower, miner.InitialPledgeProjectionPeriod)
 		newSectorAge := rt.Epoch() - newSector.Activation
@@ -2942,12 +2936,14 @@ func TestWithdrawBalance(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
+	 onePercentBalance := big.Div(bigBalance, big.NewInt(100))
+
 	t.Run("happy path withdraws funds", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
 		// withdraw 1% of balance
-		actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
+		actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
 		actor.checkState(rt)
 	})
 
@@ -2959,7 +2955,7 @@ func TestWithdrawBalance(t *testing.T) {
 		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
-			actor.withdrawFunds(rt, onePercentBigBalance, onePercentBigBalance, big.Zero())
+			actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
 		})
 		actor.checkState(rt)
 	})
@@ -2969,7 +2965,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		st := getState(rt)
-		feeDebt := big.Sub(bigBalance, onePercentBigBalance)
+		feeDebt := big.Sub(bigBalance, onePercentBalance)
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
 
@@ -3124,7 +3120,7 @@ func TestCompactPartitions(t *testing.T) {
 
 		// terminate sector1
 		rt.SetEpoch(rt.Epoch() + 100)
-		actor.applyRewards(rt, big.Mul(big.NewInt(1e18), big.NewInt(20000)), big.Zero())
+		actor.applyRewards(rt, bigRewards, big.Zero())
 		tsector := info[0]
 		sectorSize, err := tsector.SealProof.SectorSize()
 		require.NoError(t, err)
@@ -5055,12 +5051,12 @@ func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmou
 
 type cronConfig struct {
 	expectedEnrollment        abi.ChainEpoch
-	vestingPledgeDelta        abi.TokenAmount // nolint:structcheck,unused
 	detectedFaultsPowerDelta  *miner.PowerPair
 	expiredSectorsPowerDelta  *miner.PowerPair
 	expiredSectorsPledgeDelta abi.TokenAmount
-	continuedFaultsPenalty    abi.TokenAmount
-	repaidFeeDebt             abi.TokenAmount
+	continuedFaultsPenalty    abi.TokenAmount // Expected amount burnt to pay continued fault penalties.
+	repaidFeeDebt             abi.TokenAmount // Expected amount burnt to repay fee debt.
+	penaltyFromUnlocked       abi.TokenAmount // Expected reduction in unlocked balance from penalties exceeding vesting funds.
 }
 
 func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
@@ -5110,13 +5106,16 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	}
 	if !penaltyTotal.IsZero() {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penaltyTotal, nil, exitcode.Ok)
-		// TODO this forces tests to take funds from locked funds instead of balance.
-		// We should make other cases possible by pushing complexity to the config
-		penaltyFromUnlocked := penaltyTotal
+		penaltyFromVesting := penaltyTotal
+		// Outstanding fee debt is only repaid from unlocked balance, not vesting funds.
 		if !config.repaidFeeDebt.NilOrZero() {
-			penaltyFromUnlocked = big.Sub(penaltyFromUnlocked, config.repaidFeeDebt)
+			penaltyFromVesting = big.Sub(penaltyFromVesting, config.repaidFeeDebt)
 		}
-		pledgeDelta = big.Sub(pledgeDelta, penaltyFromUnlocked)
+		// New penalties are paid first from vesting funds but, if exhausted, overflow to unlocked balance.
+		if !config.penaltyFromUnlocked.NilOrZero() {
+			penaltyFromVesting = big.Sub(penaltyFromVesting, config.penaltyFromUnlocked)
+		}
+		pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
 	}
 
 	if !config.expiredSectorsPledgeDelta.NilOrZero() {
