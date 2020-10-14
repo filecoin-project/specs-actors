@@ -137,6 +137,30 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 	}, nil
 }
 
+func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
+	_, err := vm.checkpoint()
+	if err != nil {
+		return nil, err
+	}
+
+	actors, err := adt.AsMap(vm.store, vm.stateRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	return &VM{
+		ctx:            vm.ctx,
+		actorImpls:     vm.actorImpls,
+		store:          vm.store,
+		actors:         actors,
+		stateRoot:      vm.stateRoot,
+		actorsDirty:    false,
+		emptyObject:    vm.emptyObject,
+		currentEpoch:   vm.currentEpoch,
+		networkVersion: nv,
+	}, nil
+}
+
 func (vm *VM) rollback(root cid.Cid) error {
 	var err error
 	vm.actors, err = adt.AsMap(vm.store, root)

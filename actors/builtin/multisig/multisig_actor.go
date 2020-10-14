@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	multisig0 "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	"github.com/ipfs/go-cid"
 
@@ -526,6 +527,7 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 	var out builtin.CBORBytes
 	var code exitcode.ExitCode
 	applied := false
+	nv := rt.NetworkVersion()
 
 	thresholdMet := uint64(len(txn.Approved)) >= st.NumApprovalsThreshold
 	if thresholdMet {
@@ -548,8 +550,24 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
-			if err := ptx.Delete(txnID); err != nil {
-				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
+			// Prior to version 6 we attempt to delete all transactions, even those
+			// no longer in the pending txns map because they have been purged.
+			shouldDelete := true
+			// Starting at version 6 we first check if the transaction exists before
+			// deleting. This allows 1 out of n multisig swaps and removes initiated
+			// by the swapped/removed signer to go through without an illegal state error
+			if nv >= network.Version6 {
+				txnExists, err := ptx.Has(txnID)
+				if err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to check existance of transaction for cleanup: %v", err)
+				}
+				shouldDelete = txnExists
+			}
+
+			if shouldDelete {
+				if err := ptx.Delete(txnID); err != nil {
+					rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
+				}
 			}
 
 			st.PendingTxns, err = ptx.Root()
