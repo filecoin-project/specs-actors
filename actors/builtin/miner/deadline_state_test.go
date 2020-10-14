@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
@@ -976,8 +977,8 @@ func checkDeadlineInvariants(
 	allTerminations bitfield.BitField,
 	allUnproven bitfield.BitField,
 ) {
-	summary, msgs, err := miner.CheckDeadlineStateInvariants(dl, store, quant, ssize, sectorsAsMap(sectors))
-	require.NoError(t, err)
+	msgs := &builtin.MessageAccumulator{}
+	summary := miner.CheckDeadlineStateInvariants(dl, store, quant, ssize, sectorsAsMap(sectors), msgs)
 	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 
 	allSectors = summary.AllSectors

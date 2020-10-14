@@ -19,6 +19,9 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
+// Within this code, Go errors are not expected, but are often converted to messages so that execution
+// can continue to find more errors rather than fail with no insight.
+// Only errors thar are particularly troublesome to recover from should propagate as Go errors.
 func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, priorEpoch abi.ChainEpoch) (*builtin.MessageAccumulator, error) {
 	acc := &builtin.MessageAccumulator{}
 	totalFIl := big.Zero()
@@ -92,12 +95,9 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
 				return err
 			}
-			if summary, msgs, err := miner.CheckStateInvariants(&st, tree.Store, actor.Balance); err != nil {
-				return err
-			} else {
-				acc.WithPrefix("miner: ").AddAll(msgs)
-				minerSummaries[key] = summary
-			}
+			summary, msgs := miner.CheckStateInvariants(&st, tree.Store, actor.Balance)
+			acc.WithPrefix("miner: ").AddAll(msgs)
+			minerSummaries[key] = summary
 		case builtin.StorageMarketActorCodeID:
 			var st market.State
 			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {

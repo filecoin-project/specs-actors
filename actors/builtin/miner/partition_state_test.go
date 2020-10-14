@@ -894,9 +894,9 @@ func assertPartitionState(t *testing.T,
 	assertBitfieldsEqual(t, unproven, partition.Unproven)
 	assertBitfieldsEqual(t, allSectorIds, partition.Sectors)
 
-	_, acc, err := miner.CheckPartitionStateInvariants(partition, store, quant, sectorSize, sectorsAsMap(sectors))
-	require.NoError(t, err)
-	assert.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
+	msgs := &builtin.MessageAccumulator{}
+	_ = miner.CheckPartitionStateInvariants(partition, store, quant, sectorSize, sectorsAsMap(sectors), msgs)
+	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func bf(secNos ...uint64) bitfield.BitField {
