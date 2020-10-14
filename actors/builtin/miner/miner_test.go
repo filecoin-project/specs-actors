@@ -3072,11 +3072,12 @@ func TestRepayDebts(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		amountToLock := big.Mul(big.NewInt(3), big.NewInt(1e18))
-		rt.SetBalance(amountToLock)
-		rt.SetNetworkVersion(network.Version5)
-		actor.applyRewards(rt, amountToLock, big.Zero())
-		rt.SetNetworkVersion(network.VersionMax)
+		rewardAmount := big.Mul(big.NewInt(4), big.NewInt(1e18))
+		amountLocked := miner.LockedRewardFromRewardV6(rewardAmount)
+		rt.SetBalance(amountLocked)
+		actor.applyRewards(rt, rewardAmount, big.Zero())
+		require.Equal(t, amountLocked, actor.getLockedFunds(rt))
+
 		// introduce fee debt
 		st := getState(rt)
 		feeDebt := big.Mul(big.NewInt(4), big.NewInt(1e18))
@@ -3086,7 +3087,7 @@ func TestRepayDebts(t *testing.T) {
 		// send 1 FIL and repay all debt from vesting funds and balance
 		actor.repayDebt(rt,
 			big.NewInt(1e18), // send 1 FIL
-			amountToLock,     // 3 FIL comes from vesting funds
+			amountLocked,     // 3 FIL comes from vesting funds
 			big.NewInt(1e18)) // 1 FIL sent from balance
 
 		st = getState(rt)
