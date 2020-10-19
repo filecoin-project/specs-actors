@@ -13,7 +13,7 @@ type SealProofPolicy struct {
 }
 
 // For all Stacked DRG sectors, the max is 5 years
-const epochsPerYear = 1_051_200
+const epochsPerYear = 365 * EpochsInDay
 const fiveYears = stabi.ChainEpoch(5 * epochsPerYear)
 
 // Partition sizes must match those used by the proofs library.
