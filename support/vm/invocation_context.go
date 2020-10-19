@@ -605,7 +605,7 @@ func (ic *invocationContext) dispatch(actor runtime.VMActor, method abi.MethodNu
 
 	// get method entry
 	methodIdx := (uint64)(method)
-	if len(exports) < (int)(methodIdx) {
+	if len(exports) <= (int)(methodIdx) {
 		return nil, fmt.Errorf("method undefined. method: %d, Exitcode: %s", method, actor.Code())
 	}
 	entry := exports[methodIdx]
