@@ -14,10 +14,10 @@ import (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		1: a.Constructor,
-		2: a.PubkeyAddress,
-	}
+	methods := make([]interface{}, builtin.MethodsAccount.PubkeyAddress+1)
+	methods[builtin.MethodsAccount.Constructor] = a.Constructor
+	methods[builtin.MethodsAccount.PubkeyAddress] = a.PubkeyAddress
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

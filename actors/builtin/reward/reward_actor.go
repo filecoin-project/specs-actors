@@ -21,12 +21,12 @@ const PenaltyMultiplier = 3
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.AwardBlockReward,
-		3:                         a.ThisEpochReward,
-		4:                         a.UpdateNetworkKPI,
-	}
+	methods := make([]interface{}, builtin.MethodsReward.UpdateNetworkKPI+1)
+	methods[builtin.MethodsReward.Constructor] = a.Constructor
+	methods[builtin.MethodsReward.AwardBlockReward] = a.AwardBlockReward
+	methods[builtin.MethodsReward.ThisEpochReward] = a.ThisEpochReward
+	methods[builtin.MethodsReward.UpdateNetworkKPI] = a.UpdateNetworkKPI
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

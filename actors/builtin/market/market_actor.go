@@ -31,17 +31,17 @@ type Actor struct{}
 type Runtime = runtime.Runtime
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.AddBalance,
-		3:                         a.WithdrawBalance,
-		4:                         a.PublishStorageDeals,
-		5:                         a.VerifyDealsForActivation,
-		6:                         a.ActivateDeals,
-		7:                         a.OnMinerSectorsTerminate,
-		8:                         a.ComputeDataCommitment,
-		9:                         a.CronTick,
-	}
+	methods := make([]interface{}, builtin.MethodsMarket.CronTick+1)
+	methods[builtin.MethodsMarket.Constructor] = a.Constructor
+	methods[builtin.MethodsMarket.AddBalance] = a.AddBalance
+	methods[builtin.MethodsMarket.WithdrawBalance] = a.WithdrawBalance
+	methods[builtin.MethodsMarket.PublishStorageDeals] = a.PublishStorageDeals
+	methods[builtin.MethodsMarket.VerifyDealsForActivation] = a.VerifyDealsForActivation
+	methods[builtin.MethodsMarket.ActivateDeals] = a.ActivateDeals
+	methods[builtin.MethodsMarket.OnMinerSectorsTerminate] = a.OnMinerSectorsTerminate
+	methods[builtin.MethodsMarket.ComputeDataCommitment] = a.ComputeDataCommitment
+	methods[builtin.MethodsMarket.CronTick] = a.CronTick
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

@@ -30,17 +30,16 @@ const (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.CreateMiner,
-		3:                         a.UpdateClaimedPower,
-		4:                         a.EnrollCronEvent,
-		5:                         a.OnEpochTickEnd,
-		6:                         a.UpdatePledgeTotal,
-		7:                         nil, // deprecated
-		8:                         a.SubmitPoRepForBulkVerify,
-		9:                         a.CurrentTotalPower,
-	}
+	methods := make([]interface{}, builtin.MethodsPower.CurrentTotalPower+1)
+	methods[builtin.MethodsPower.Constructor] = a.Constructor
+	methods[builtin.MethodsPower.CreateMiner] = a.CreateMiner
+	methods[builtin.MethodsPower.UpdateClaimedPower] = a.UpdateClaimedPower
+	methods[builtin.MethodsPower.EnrollCronEvent] = a.EnrollCronEvent
+	methods[builtin.MethodsPower.OnEpochTickEnd] = a.OnEpochTickEnd
+	methods[builtin.MethodsPower.UpdatePledgeTotal] = a.UpdatePledgeTotal
+	methods[builtin.MethodsPower.SubmitPoRepForBulkVerify] = a.SubmitPoRepForBulkVerify
+	methods[builtin.MethodsPower.CurrentTotalPower] = a.CurrentTotalPower
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

@@ -19,14 +19,14 @@ import (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.AddVerifier,
-		3:                         a.RemoveVerifier,
-		4:                         a.AddVerifiedClient,
-		5:                         a.UseBytes,
-		6:                         a.RestoreBytes,
-	}
+	methods := make([]interface{}, builtin.MethodsVerifiedRegistry.RestoreBytes+1)
+	methods[builtin.MethodsVerifiedRegistry.Constructor] = a.Constructor
+	methods[builtin.MethodsVerifiedRegistry.AddVerifier] = a.AddVerifier
+	methods[builtin.MethodsVerifiedRegistry.RemoveVerifier] = a.RemoveVerifier
+	methods[builtin.MethodsVerifiedRegistry.AddVerifiedClient] = a.AddVerifiedClient
+	methods[builtin.MethodsVerifiedRegistry.UseBytes] = a.UseBytes
+	methods[builtin.MethodsVerifiedRegistry.RestoreBytes] = a.RestoreBytes
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

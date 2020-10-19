@@ -14,10 +14,10 @@ import (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.EpochTick,
-	}
+	methods := make([]interface{}, builtin.MethodsCron.EpochTick+1)
+	methods[builtin.MethodsCron.Constructor] = a.Constructor
+	methods[builtin.MethodsCron.EpochTick] = a.EpochTick
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

@@ -49,17 +49,17 @@ type ProposalHashData = multisig0.ProposalHashData
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.Propose,
-		3:                         a.Approve,
-		4:                         a.Cancel,
-		5:                         a.AddSigner,
-		6:                         a.RemoveSigner,
-		7:                         a.SwapSigner,
-		8:                         a.ChangeNumApprovalsThreshold,
-		9:                         a.LockBalance,
-	}
+	methods := make([]interface{}, builtin.MethodsMultisig.LockBalance+1)
+	methods[builtin.MethodsMultisig.Constructor] = a.Constructor
+	methods[builtin.MethodsMultisig.Propose] = a.Propose
+	methods[builtin.MethodsMultisig.Approve] = a.Approve
+	methods[builtin.MethodsMultisig.Cancel] = a.Cancel
+	methods[builtin.MethodsMultisig.AddSigner] = a.AddSigner
+	methods[builtin.MethodsMultisig.RemoveSigner] = a.RemoveSigner
+	methods[builtin.MethodsMultisig.SwapSigner] = a.SwapSigner
+	methods[builtin.MethodsMultisig.ChangeNumApprovalsThreshold] = a.ChangeNumApprovalsThreshold
+	methods[builtin.MethodsMultisig.LockBalance] = a.LockBalance
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

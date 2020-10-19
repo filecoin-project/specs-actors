@@ -19,10 +19,11 @@ import (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.Exec,
-	}
+	methods := make([]interface{}, builtin.MethodsInit.Exec+1)
+	methods[builtin.MethodsInit.Constructor] = a.Constructor
+	methods[builtin.MethodsInit.Exec] = a.Exec
+	return methods
+
 }
 
 func (a Actor) Code() cid.Cid {

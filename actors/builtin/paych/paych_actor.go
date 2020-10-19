@@ -23,12 +23,12 @@ const (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.UpdateChannelState,
-		3:                         a.Settle,
-		4:                         a.Collect,
-	}
+	methods := make([]interface{}, builtin.MethodsPaych.Collect+1)
+	methods[builtin.MethodsPaych.Constructor] = a.Constructor
+	methods[builtin.MethodsPaych.UpdateChannelState] = a.UpdateChannelState
+	methods[builtin.MethodsPaych.Settle] = a.Settle
+	methods[builtin.MethodsPaych.Collect] = a.Collect
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {

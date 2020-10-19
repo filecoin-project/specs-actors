@@ -48,31 +48,31 @@ const (
 type Actor struct{}
 
 func (a Actor) Exports() []interface{} {
-	return []interface{}{
-		builtin.MethodConstructor: a.Constructor,
-		2:                         a.ControlAddresses,
-		3:                         a.ChangeWorkerAddress,
-		4:                         a.ChangePeerID,
-		5:                         a.SubmitWindowedPoSt,
-		6:                         a.PreCommitSector,
-		7:                         a.ProveCommitSector,
-		8:                         a.ExtendSectorExpiration,
-		9:                         a.TerminateSectors,
-		10:                        a.DeclareFaults,
-		11:                        a.DeclareFaultsRecovered,
-		12:                        a.OnDeferredCronEvent,
-		13:                        a.CheckSectorProven,
-		14:                        a.ApplyRewards,
-		15:                        a.ReportConsensusFault,
-		16:                        a.WithdrawBalance,
-		17:                        a.ConfirmSectorProofsValid,
-		18:                        a.ChangeMultiaddrs,
-		19:                        a.CompactPartitions,
-		20:                        a.CompactSectorNumbers,
-		21:                        a.ConfirmUpdateWorkerKey,
-		22:                        a.RepayDebt,
-		23:                        a.ChangeOwnerAddress,
-	}
+	methods := make([]interface{}, builtin.MethodsMiner.ChangeOwnerAddress+1)
+	methods[builtin.MethodsMiner.Constructor] = a.Constructor
+	methods[builtin.MethodsMiner.ControlAddresses] = a.ControlAddresses
+	methods[builtin.MethodsMiner.ChangeWorkerAddress] = a.ChangeWorkerAddress
+	methods[builtin.MethodsMiner.ChangePeerID] = a.ChangePeerID
+	methods[builtin.MethodsMiner.SubmitWindowedPoSt] = a.SubmitWindowedPoSt
+	methods[builtin.MethodsMiner.PreCommitSector] = a.PreCommitSector
+	methods[builtin.MethodsMiner.ProveCommitSector] = a.ProveCommitSector
+	methods[builtin.MethodsMiner.ExtendSectorExpiration] = a.ExtendSectorExpiration
+	methods[builtin.MethodsMiner.TerminateSectors] = a.TerminateSectors
+	methods[builtin.MethodsMiner.DeclareFaults] = a.DeclareFaults
+	methods[builtin.MethodsMiner.DeclareFaultsRecovered] = a.DeclareFaultsRecovered
+	methods[builtin.MethodsMiner.OnDeferredCronEvent] = a.OnDeferredCronEvent
+	methods[builtin.MethodsMiner.CheckSectorProven] = a.CheckSectorProven
+	methods[builtin.MethodsMiner.ApplyRewards] = a.ApplyRewards
+	methods[builtin.MethodsMiner.ReportConsensusFault] = a.ReportConsensusFault
+	methods[builtin.MethodsMiner.WithdrawBalance] = a.WithdrawBalance
+	methods[builtin.MethodsMiner.ConfirmSectorProofsValid] = a.ConfirmSectorProofsValid
+	methods[builtin.MethodsMiner.ChangeMultiaddrs] = a.ChangeMultiaddrs
+	methods[builtin.MethodsMiner.CompactPartitions] = a.CompactPartitions
+	methods[builtin.MethodsMiner.CompactSectorNumbers] = a.CompactSectorNumbers
+	methods[builtin.MethodsMiner.ConfirmUpdateWorkerKey] = a.ConfirmUpdateWorkerKey
+	methods[builtin.MethodsMiner.RepayDebt] = a.RepayDebt
+	methods[builtin.MethodsMiner.ChangeOwnerAddress] = a.ChangeOwnerAddress
+	return methods
 }
 
 func (a Actor) Code() cid.Cid {
