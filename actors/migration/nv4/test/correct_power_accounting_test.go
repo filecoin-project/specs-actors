@@ -418,6 +418,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	totalBalance, err = v2nv4.GetTotalActorBalance()
 	require.NoError(t, err)
 	msgs, err = states.CheckStateInvariants(stateTree, totalBalance, v2nv4.GetEpoch())
+	require.NoError(t, err)
 	assert.Equal(t, 0, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
 }
 
