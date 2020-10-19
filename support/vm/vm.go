@@ -104,6 +104,7 @@ func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Sto
 	return &VM{
 		ctx:            ctx,
 		actorImpls:     actorImpls,
+		currentEpoch:   epoch,
 		store:          store,
 		actors:         actors,
 		stateRoot:      stateRoot,
@@ -331,6 +332,10 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	}
 
 	return ret.inner, exitCode
+}
+
+func (vm *VM) StateRoot() cid.Cid {
+	return vm.stateRoot
 }
 
 func (vm *VM) GetState(addr address.Address, out cbor.Unmarshaler) error {
