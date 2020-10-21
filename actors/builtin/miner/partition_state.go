@@ -870,10 +870,6 @@ func (p *Partition) RecordSkippedFaults(
 		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to load sectors: %w", err)
 	}
 
-	if len(newFaultSectors) <= 0 {
-		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, nil
-	}
-
 	// Record new faults
 	powerDelta, newFaultPower, err = p.addFaults(store, newFaults, newFaultSectors, faultExpiration, ssize, quant)
 	if err != nil {
@@ -891,7 +887,7 @@ func (p *Partition) RecordSkippedFaults(
 		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, err
 	}
 
-	return powerDelta, newFaultPower, retractedRecoveryPower, true, nil
+	return powerDelta, newFaultPower, retractedRecoveryPower, len(newFaultSectors) > 0, nil
 }
 
 // Test that invariants about partition power hold
