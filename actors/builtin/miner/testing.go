@@ -663,12 +663,13 @@ func CheckMinerInfo(info *MinerInfo, acc *builtin.MessageAccumulator) {
 		acc.Require(sealProofInfo.SectorSize == info.SectorSize,
 			"sector size %d is wrong for seal proof type %d: %d", info.SectorSize, info.SealProofType, sealProofInfo.SectorSize)
 	}
-	sealProofPolicy, found := builtin.SealProofPolicies[info.SealProofType]
+	windowPoStProof := sealProofInfo.WindowPoStProof
+	poStProofPolicy, found := builtin.PoStProofPolicies[windowPoStProof]
 	acc.Require(found, "no seal proof policy exists for proof type %d", info.SealProofType)
 	if found {
-		acc.Require(sealProofPolicy.WindowPoStPartitionSectors == info.WindowPoStPartitionSectors,
+		acc.Require(poStProofPolicy.WindowPoStPartitionSectors == info.WindowPoStPartitionSectors,
 			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
-			info.WindowPoStPartitionSectors, sealProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
+			info.WindowPoStPartitionSectors, poStProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
 	}
 }
 
