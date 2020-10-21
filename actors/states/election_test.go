@@ -23,7 +23,7 @@ import (
 func TestMinerEligibleForElection(t *testing.T) {
 	ctx := context.Background()
 	store := ipld.NewADTStore(ctx)
-	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
+	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	pwr := abi.NewStoragePower(1)
 
 	owner := tutil.NewIDAddr(t, 100)
@@ -81,14 +81,14 @@ func TestMinerEligibleForElection(t *testing.T) {
 func TestMinerEligibleAtLookback(t *testing.T) {
 	ctx := context.Background()
 	store := ipld.NewADTStore(ctx)
-	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
+	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	maddr := tutil.NewIDAddr(t, 101)
 
 	t.Run("power does not meet minimum", func(t *testing.T) {
 		// get minimums
 		pow32GiBMin, err := builtin.ConsensusMinerMinPower(proofType)
 		require.NoError(t, err)
-		pow64GiBMin, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
+		pow64GiBMin, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1_1)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {
@@ -121,13 +121,13 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 		}, {
 			// bigger sector size requires higher minimum
 			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1,
+			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1_1,
 			power:           pow32GiBMin,
 			eligible:        false,
 		}, {
 			// bigger sector size requires higher minimum
 			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1,
+			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1_1,
 			power:           pow64GiBMin,
 			eligible:        true,
 		}} {
@@ -141,7 +141,7 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 }
 
 func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, owner address.Address) *miner.State {
-	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
+	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	ssize, err := proofType.SectorSize()
 	require.NoError(t, err)
 	psize, err := builtin.SealProofWindowPoStPartitionSectors(proofType)

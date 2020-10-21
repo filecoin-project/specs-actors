@@ -178,6 +178,7 @@ type Syscalls interface {
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
+	// Deprecated and un-used.
 	VerifySeal(vi proof.SealVerifyInfo) error
 
 	BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo) (map[addr.Address][]bool, error)

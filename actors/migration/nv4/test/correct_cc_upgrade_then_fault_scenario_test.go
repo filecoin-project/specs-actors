@@ -48,7 +48,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	minerBalance := big.Mul(big.NewInt(10_000), vm0.FIL)
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner0.SealedCIDPrefix)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1 // Old seal proof type to match v0 expectations.
 
 	// create miner
 	params := power.CreateMinerParams{

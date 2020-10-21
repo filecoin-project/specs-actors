@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,9 @@ import (
 
 func TestMigrationPowerAccountingIssue(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v, err := vm.NewVMWithSingletons(ctx, t).WithNetworkVersion(network.Version6)
+	require.NoError(t, err)
+
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), vm.FIL), 93837778)
 	worker := addrs[0]
 	numSectors := uint64(400) // Enough power to meet consensus min
@@ -72,7 +75,7 @@ func TestMigrationPowerAccountingIssue(t *testing.T) {
 	assert.Equal(t, uint64(0), vm.MinerPower(t, v, minerAddrs.IDAddress).Raw.Uint64())
 
 	// Prove commit sector after max seal duration
-	v, err := v.WithEpoch(proveTime)
+	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
 
 	// A miner is limited to 200 prove commits per epoch. Prove 200 sectors per epoch until they are all proven.
@@ -170,6 +173,8 @@ func TestMigrationPowerAccountingIssue(t *testing.T) {
 	// Trigger cron to keep reward accounting correct
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
+	v, err = v.WithNetworkVersion(network.Version6)
+	require.NoError(t, err)
 	//
 	// Confirm miner has power and invariants hold
 	//

@@ -8,8 +8,8 @@ require (
 	github.com/filecoin-project/go-bitfield v0.2.0
 	github.com/filecoin-project/go-hamt-ipld v0.1.5
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0
-	github.com/filecoin-project/go-state-types v0.0.0-20201021025442-0ac4de847f4f
-	github.com/filecoin-project/specs-actors v0.9.12
+	github.com/filecoin-project/go-state-types v0.0.0-20201013222834-41ea465f274f
+	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/ipfs/go-block-format v0.0.2
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-ipld-cbor v0.0.4

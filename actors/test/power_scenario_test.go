@@ -22,7 +22,7 @@ func TestCreateMiner(t *testing.T) {
 	params := power.CreateMinerParams{
 		Owner:         addrs[0],
 		Worker:        addrs[0],
-		SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
@@ -71,7 +71,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	// create a miner
-	params := power.CreateMinerParams{Owner: addrs[0], Worker: addrs[0], SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1, Peer: abi.PeerID("pid")}
+	params := power.CreateMinerParams{Owner: addrs[0], Worker: addrs[0], SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1_1, Peer: abi.PeerID("pid")}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
 
 	ret, ok := ret.(*power.CreateMinerReturn)

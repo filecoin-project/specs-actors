@@ -687,7 +687,7 @@ func TestPartitions(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		partition := emptyPartition(t, store)
 
-		proofType := abi.RegisteredSealProof_StackedDrg32GiBV1
+		proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 		sectorSize, err := proofType.SectorSize()
 		require.NoError(t, err)
 		partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(proofType)
