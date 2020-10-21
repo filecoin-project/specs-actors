@@ -206,6 +206,18 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 	return setClaim(claims, miner, &newClaim)
 }
 
+func (st *State) updateStatsForNewMiner(sealProof abi.RegisteredSealProof) error {
+	minPower, err := builtin.ConsensusMinerMinPower(sealProof)
+	if err != nil {
+		return fmt.Errorf("could not get consensus miner min power: %w", err)
+	}
+
+	if minPower.LessThanEqual(big.Zero()) {
+		st.MinerAboveMinPowerCount++
+	}
+	return nil
+}
+
 func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) error {
 	oldClaim, ok, err := getClaim(claims, miner)
 	if err != nil {
