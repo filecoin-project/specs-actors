@@ -852,8 +852,12 @@ func (p *Partition) RecordSkippedFaults(
 	}
 	retractedRecoveryPower = PowerForSectors(ssize, retractedRecoverySectors)
 
-	// Ignore skipped faults that are already faults or terminated.
-	newFaults, err := bitfield.SubtractBitField(skipped, p.Terminated)
+	// Ignore skipped faults that are already faults or terminated or recovered
+	newFaults, err := bitfield.SubtractBitField(skipped, retractedRecoveries)
+	if err != nil {
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to subtract recoveries from skipped: %w", err)
+	}
+	newFaults, err = bitfield.SubtractBitField(newFaults, p.Terminated)
 	if err != nil {
 		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to subtract terminations from skipped: %w", err)
 	}
@@ -864,6 +868,10 @@ func (p *Partition) RecordSkippedFaults(
 	newFaultSectors, err := sectors.Load(newFaults)
 	if err != nil {
 		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, xerrors.Errorf("failed to load sectors: %w", err)
+	}
+
+	if len(newFaultSectors) <= 0 {
+		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, nil
 	}
 
 	// Record new faults
@@ -883,7 +891,7 @@ func (p *Partition) RecordSkippedFaults(
 		return NewPowerPairZero(), NewPowerPairZero(), NewPowerPairZero(), false, err
 	}
 
-	return powerDelta, newFaultPower, retractedRecoveryPower, len(newFaultSectors) > 0, nil
+	return powerDelta, newFaultPower, retractedRecoveryPower, true, nil
 }
 
 // Test that invariants about partition power hold
