@@ -5,9 +5,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Metadata about a seal proof type.
+// Policy values associated with a seal proof type.
 type SealProofPolicy struct {
-	WindowPoStPartitionSectors uint64
 	SectorMaxLifetime          stabi.ChainEpoch
 	ConsensusMinerMinPower     stabi.StoragePower
 }
@@ -16,45 +15,37 @@ type SealProofPolicy struct {
 const epochsPerYear = 1_051_200
 const fiveYears = stabi.ChainEpoch(5 * epochsPerYear)
 
-// Partition sizes must match those used by the proofs library.
-// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
 var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
 	stabi.RegisteredSealProof_StackedDrg2KiBV1: {
-		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
 		ConsensusMinerMinPower:     stabi.NewStoragePower(0),
 	},
 	stabi.RegisteredSealProof_StackedDrg8MiBV1: {
-		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
 		ConsensusMinerMinPower:     stabi.NewStoragePower(16 << 20),
 	},
 	stabi.RegisteredSealProof_StackedDrg512MiBV1: {
-		WindowPoStPartitionSectors: 2,
 		SectorMaxLifetime:          fiveYears,
 		ConsensusMinerMinPower:     stabi.NewStoragePower(1 << 30),
 	},
 	stabi.RegisteredSealProof_StackedDrg32GiBV1: {
-
-		WindowPoStPartitionSectors: 2349,
 		SectorMaxLifetime:          fiveYears,
 		ConsensusMinerMinPower:     stabi.NewStoragePower(100 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg64GiBV1: {
-		WindowPoStPartitionSectors: 2300,
 		SectorMaxLifetime:          fiveYears,
 		ConsensusMinerMinPower:     stabi.NewStoragePower(200 << 40),
 	},
 }
 
-// Returns the partition size, in sectors, associated with a proof type.
+// Returns the partition size, in sectors, associated with a seal proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
 func SealProofWindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, error) {
-	info, ok := SealProofPolicies[p]
-	if !ok {
-		return 0, errors.Errorf("unsupported proof type: %v", p)
+	wPoStProofType, err := p.RegisteredWindowPoStProof()
+	if err != nil {
+		return 0, err
 	}
-	return info.WindowPoStPartitionSectors, nil
+	return PoStProofWindowPoStPartitionSectors(wPoStProofType)
 }
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
@@ -82,12 +73,39 @@ func ConsensusMinerMinPower(p stabi.RegisteredSealProof) (stabi.StoragePower, er
 	return info.ConsensusMinerMinPower, nil
 }
 
-// Returns the partition size, in sectors, associated with a proof type.
+// Policy values associated with a PoSt proof type.
+type PoStProofPolicy struct {
+	WindowPoStPartitionSectors uint64
+}
+
+// Partition sizes must match those used by the proofs library.
+// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
+var PoStProofPolicies = map[stabi.RegisteredPoStProof]*PoStProofPolicy{
+	stabi.RegisteredPoStProof_StackedDrgWindow2KiBV1: {
+		WindowPoStPartitionSectors: 2,
+	},
+	stabi.RegisteredPoStProof_StackedDrgWindow8MiBV1: {
+		WindowPoStPartitionSectors: 2,
+	},
+	stabi.RegisteredPoStProof_StackedDrgWindow512MiBV1: {
+		WindowPoStPartitionSectors: 2,
+	},
+	stabi.RegisteredPoStProof_StackedDrgWindow32GiBV1: {
+		WindowPoStPartitionSectors: 2349,
+	},
+	stabi.RegisteredPoStProof_StackedDrgWindow64GiBV1: {
+		WindowPoStPartitionSectors: 2300,
+	},
+	// Winning PoSt proof types omitted.
+}
+
+
+// Returns the partition size, in sectors, associated with a Window PoSt proof type.
 // The partition size is the number of sectors proved in a single PoSt proof.
 func PoStProofWindowPoStPartitionSectors(p stabi.RegisteredPoStProof) (uint64, error) {
-	sp, err := p.RegisteredSealProof()
-	if err != nil {
-		return 0, err
+	info, ok := PoStProofPolicies[p]
+	if !ok {
+		return 0, errors.Errorf("unsupported proof type: %v", p)
 	}
-	return SealProofWindowPoStPartitionSectors(sp)
+	return info.WindowPoStPartitionSectors, nil
 }
