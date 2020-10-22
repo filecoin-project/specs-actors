@@ -196,8 +196,8 @@ func (vm *VM) setActor(ctx context.Context, key address.Address, a *states.Actor
 	return nil
 }
 
-// setActorState stores the state and updates the addressed actor
-func (vm *VM) setActorState(ctx context.Context, key address.Address, state cbor.Marshaler) error {
+// SetActorState stores the state and updates the addressed actor
+func (vm *VM) SetActorState(ctx context.Context, key address.Address, state cbor.Marshaler) error {
 	stateCid, err := vm.store.Put(ctx, state)
 	if err != nil {
 		return err
