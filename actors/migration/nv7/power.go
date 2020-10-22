@@ -1,4 +1,4 @@
-package nv4
+package nv7
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 )
 
 type claimsSummary struct {
-	committedRawPower              abi.StoragePower
+	committedRawBytes              abi.StoragePower
 	committedQAPower               abi.StoragePower
 	rawPower                       abi.StoragePower
 	qaPower                        abi.StoragePower
@@ -36,7 +36,7 @@ func (m PowerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 
 	outState := power.State{
 		TotalRawBytePower:         claimsSummary.rawPower,
-		TotalBytesCommitted:       claimsSummary.committedRawPower,
+		TotalBytesCommitted:       claimsSummary.committedRawBytes,
 		TotalQualityAdjPower:      claimsSummary.qaPower,
 		TotalQABytesCommitted:     claimsSummary.committedQAPower,
 		TotalPledgeCollateral:     inState.TotalPledgeCollateral,
@@ -49,7 +49,7 @@ func (m PowerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		CronEventQueue:            inState.CronEventQueue,
 		FirstCronEpoch:            inState.FirstCronEpoch,
 		Claims:                    inState.Claims,
-		ProofValidationBatch:      nil, // Set nil at the end of every epoch in cron handler
+		ProofValidationBatch:      inState.ProofValidationBatch,
 	}
 
 	newHead, err := store.Put(ctx, &outState)
@@ -65,25 +65,27 @@ func (a PowerMigrator) ComputeClaimsStats(ctx context.Context, store cbor.IpldSt
 		return nil, err
 	}
 
-	committedRawPower := abi.NewStoragePower(0)
-	committedQAPower := abi.NewStoragePower(0)
-	rawPower := abi.NewStoragePower(0)
-	qaPower := abi.NewStoragePower(0)
-	claimsWithSufficientPowerCount := int64(0)
+	summary := &claimsSummary{
+		committedRawBytes:              abi.NewStoragePower(0),
+		committedQAPower:               abi.NewStoragePower(0),
+		rawPower:                       abi.NewStoragePower(0),
+		qaPower:                        abi.NewStoragePower(0),
+		claimsWithSufficientPowerCount: 0,
+	}
 	var claim power.Claim
 	err = claims.ForEach(&claim, func(key string) error {
-		committedRawPower = big.Add(committedRawPower, claim.RawBytePower)
-		committedQAPower = big.Add(committedQAPower, claim.QualityAdjPower)
+		summary.committedRawBytes = big.Add(summary.committedRawBytes, claim.RawBytePower)
+		summary.committedQAPower = big.Add(summary.committedQAPower, claim.QualityAdjPower)
 
 		minPower, err := builtin.ConsensusMinerMinPower(claim.SealProofType)
 		if err != nil {
-			return nil // noted above
+			return err
 		}
 
 		if claim.RawBytePower.GreaterThanEqual(minPower) {
-			claimsWithSufficientPowerCount += 1
-			rawPower = big.Add(rawPower, claim.RawBytePower)
-			qaPower = big.Add(qaPower, claim.QualityAdjPower)
+			summary.claimsWithSufficientPowerCount += 1
+			summary.rawPower = big.Add(summary.rawPower, claim.RawBytePower)
+			summary.qaPower = big.Add(summary.qaPower, claim.QualityAdjPower)
 		}
 		return nil
 	})
@@ -91,11 +93,5 @@ func (a PowerMigrator) ComputeClaimsStats(ctx context.Context, store cbor.IpldSt
 		return nil, err
 	}
 
-	return &claimsSummary{
-		committedRawPower:              committedRawPower,
-		committedQAPower:               committedQAPower,
-		rawPower:                       rawPower,
-		qaPower:                        qaPower,
-		claimsWithSufficientPowerCount: claimsWithSufficientPowerCount,
-	}, nil
+	return summary, nil
 }

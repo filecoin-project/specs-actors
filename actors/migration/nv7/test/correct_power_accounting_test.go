@@ -2,15 +2,8 @@ package test_test
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/v2/actors/migration/nv4"
 	"strings"
 	"testing"
-
-	"github.com/ipfs/go-cid"
-
-	"github.com/filecoin-project/specs-actors/v2/actors/migration"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -18,6 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,9 +22,12 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	tutil "github.com/filecoin-project/specs-actors/support/testing"
 	vm0 "github.com/filecoin-project/specs-actors/support/vm"
-
 	exported2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/exported"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v2/actors/migration"
+	"github.com/filecoin-project/specs-actors/v2/actors/migration/nv7"
+	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
@@ -406,7 +403,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	}
 
 	// Run nv4 migration to fix totals
-	nextRoot, err = nv4.MigrateStateTree(ctx, v.Store(), v2.StateRoot(), v2.GetEpoch(), nv4.Config{}) // v.Store() is not threadsafe
+	nextRoot, err = nv7.MigrateStateTree(ctx, v.Store(), v2.StateRoot(), v2.GetEpoch(), nv7.Config{}) // v.Store() is not threadsafe
 	require.NoError(t, err)
 
 	v2nv4, err := vm2.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v2.GetEpoch()+1)
