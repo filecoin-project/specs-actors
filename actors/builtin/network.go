@@ -21,6 +21,7 @@ const SecondsInHour = 60 * 60
 const SecondsInDay = 24 * SecondsInHour
 const EpochsInHour = SecondsInHour / EpochDurationSeconds
 const EpochsInDay = 24 * EpochsInHour
+const EpochsInYear = 365 * EpochsInDay
 
 // PARAM_SPEC
 // Expected number of block quality in an epoch (e.g. 1 block with block quality 5, or 5 blocks with quality 1)
