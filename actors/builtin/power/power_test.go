@@ -838,7 +838,7 @@ func TestCron(t *testing.T) {
 			// expect cron failure was logged
 			rt.ExpectLogsContain("OnDeferredCronEvent failed for miner")
 
-			// miner count is still one
+			// miner count has been changed or not depending on version
 			st = getState(rt)
 			assert.Equal(t, test.expectedMinerCount, st.MinerCount)
 		}
