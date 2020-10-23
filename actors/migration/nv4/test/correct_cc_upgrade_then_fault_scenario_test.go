@@ -7,7 +7,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/migration"
+	"github.com/filecoin-project/specs-actors/v2/actors/migration/nv4"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 
@@ -309,7 +309,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// migrate miner
 	//
 
-	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.Config{MaxWorkers: 1}) // v.Store() is not threadsafe
+	nextRoot, err := nv4.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv4.Config{MaxWorkers: 1}) // v.Store() is not threadsafe
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]runtime.VMActor{}

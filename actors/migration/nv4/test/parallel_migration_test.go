@@ -19,7 +19,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/actors/migration"
+	"github.com/filecoin-project/specs-actors/v2/actors/migration/nv4"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
@@ -84,7 +84,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 
 	// Migrate to v2
 
-	endRootSerial, err := migration.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), migration.Config{MaxWorkers: 1})
+	endRootSerial, err := nv4.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv4.Config{MaxWorkers: 1})
 	require.NoError(t, err)
 
 	// Migrate in parallel
@@ -92,12 +92,12 @@ func TestParallelMigrationCalls(t *testing.T) {
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {
 		var err1 error
-		endRootParallel1, err1 = migration.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), migration.Config{MaxWorkers: 2})
+		endRootParallel1, err1 = nv4.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv4.Config{MaxWorkers: 2})
 		return err1
 	})
 	grp.Go(func() error {
 		var err2 error
-		endRootParallel2, err2 = migration.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), migration.Config{MaxWorkers: 2})
+		endRootParallel2, err2 = nv4.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv4.Config{MaxWorkers: 2})
 		return err2
 	})
 	require.NoError(t, grp.Wait())
