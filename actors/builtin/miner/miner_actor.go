@@ -547,8 +547,12 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 	newlyVested := big.Zero()
 	feeToBurn := abi.NewTokenAmount(0)
 	rt.StateTransaction(&st, func() {
-		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+		// Stop vesting funds as of version 7. Its computationally expensive and unlikely to release any funds.
+		if rt.NetworkVersion() < network.Version7 {
+			newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
+		}
+
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
@@ -864,10 +868,12 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
-		// Add sector and pledge lock-up to miner state
-		newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
-		if err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
+		// Stop unlocking funds as of version 7. It's computationally expensive and unlikely to actually unlock anything.
+		if rt.NetworkVersion() < network.Version7 {
+			newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
+			if err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to vest new funds: %s", err)
+			}
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
