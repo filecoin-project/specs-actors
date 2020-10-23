@@ -550,9 +550,9 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 		// Stop vesting funds as of version 7. Its computationally expensive and unlikely to release any funds.
 		if rt.NetworkVersion() < network.Version7 {
 			newlyVested, err = st.UnlockVestedFunds(store, rt.CurrEpoch())
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		}
 
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to vest funds")
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
