@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/filecoin-project/go-state-types/network"
 	"strconv"
 	"strings"
 	"testing"
@@ -323,6 +324,38 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		require.Equal(t, big.Zero(), claim2.RawBytePower)
 		require.Equal(t, big.Zero(), claim2.QualityAdjPower)
 		actor.checkState(rt)
+	})
+
+	t.Run("after version 7, new miner updates MinerAboveMinPowerCount", func(t *testing.T) {
+		for _, test := range []struct {
+			version        network.Version
+			proof          abi.RegisteredSealProof
+			expectedMiners int64
+		}{{
+			version:        network.Version6,
+			proof:          abi.RegisteredSealProof_StackedDrg2KiBV1, // 2K sectors have zero consensus minimum
+			expectedMiners: 0,
+		}, {
+			version:        network.Version6,
+			proof:          abi.RegisteredSealProof_StackedDrg32GiBV1,
+			expectedMiners: 0,
+		}, {
+			version:        network.Version7,
+			proof:          abi.RegisteredSealProof_StackedDrg2KiBV1, // 2K sectors have zero consensus minimum
+			expectedMiners: 1,
+		}, {
+			version:        network.Version7,
+			proof:          abi.RegisteredSealProof_StackedDrg32GiBV1,
+			expectedMiners: 0,
+		}} {
+			rt := builder.WithNetworkVersion(test.version).Build(t)
+			actor.constructAndVerify(rt)
+			actor.sealProof = test.proof
+			actor.createMinerBasic(rt, owner, owner, miner1)
+
+			st := getState(rt)
+			assert.Equal(t, test.expectedMiners, st.MinerAboveMinPowerCount)
+		}
 	})
 
 	t.Run("power accounting crossing threshold", func(t *testing.T) {
@@ -757,6 +790,58 @@ func TestCron(t *testing.T) {
 		rt.Call(actor.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
 		actor.checkState(rt)
+	})
+
+	t.Run("failed call decrements miner count at network version 7", func(t *testing.T) {
+		for _, test := range []struct {
+			version            network.Version
+			versionLabel       string
+			expectedMinerCount int64
+		}{{
+			version:            network.Version6,
+			versionLabel:       "Version6",
+			expectedMinerCount: 1,
+		}, {
+			version:            network.Version7,
+			versionLabel:       "Version7",
+			expectedMinerCount: 0,
+		}} {
+			rt := builder.WithNetworkVersion(test.version).Build(t)
+			rt.NetworkVersion()
+			actor.constructAndVerify(rt)
+
+			rt.SetEpoch(1)
+			actor.createMinerBasic(rt, owner, owner, miner1)
+
+			// expect one miner
+			st := getState(rt)
+			assert.Equal(t, int64(1), st.MinerCount)
+
+			actor.enrollCronEvent(rt, miner1, 1, []byte{})
+
+			rt.SetEpoch(2)
+			rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+			// process batch verifies first
+			rt.ExpectBatchVerifySeals(nil, nil, nil)
+
+			// send fails
+			rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.ErrIllegalState)
+
+			// Reward actor still invoked
+			power := abi.NewStoragePower(0)
+			rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &power, big.Zero(), nil, exitcode.Ok)
+			rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+			rt.Call(actor.Actor.OnEpochTickEnd, nil)
+			rt.Verify()
+
+			// expect cron failure was logged
+			rt.ExpectLogsContain("OnDeferredCronEvent failed for miner")
+
+			// miner count has been changed or not depending on version
+			st = getState(rt)
+			assert.Equal(t, test.expectedMinerCount, st.MinerCount)
+		}
 	})
 }
 
