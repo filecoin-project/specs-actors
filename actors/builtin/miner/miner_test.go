@@ -41,6 +41,7 @@ var testMultiaddrs []abi.Multiaddrs
 
 // A balance for use in tests where the miner's low balance is not interesting.
 var bigBalance = big.Mul(big.NewInt(1_000_000), big.NewInt(1e18))
+
 // A reward amount for use in tests where the vesting amount wants to be large enough to cover penalties.
 var bigRewards = big.Mul(big.NewInt(1_000), big.NewInt(1e18))
 
@@ -2970,7 +2971,7 @@ func TestWithdrawBalance(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
-	 onePercentBalance := big.Div(bigBalance, big.NewInt(100))
+	onePercentBalance := big.Div(bigBalance, big.NewInt(100))
 
 	t.Run("happy path withdraws funds", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -4543,9 +4544,11 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 	}
 	st := getState(rt)
 
-	pledgeDelta := immediatelyVestingFunds(rt, st).Neg()
-	if !pledgeDelta.IsZero() {
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+	if rt.NetworkVersion() < network.Version7 {
+		pledgeDelta := immediatelyVestingFunds(rt, st).Neg()
+		if !pledgeDelta.IsZero() {
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
+		}
 	}
 
 	if st.FeeDebt.GreaterThan(big.Zero()) {
