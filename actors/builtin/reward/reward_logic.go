@@ -22,8 +22,8 @@ const (
 // Caller of baseline power function is responsible for keeping track of intermediate,
 // state e(n-1), the baseline power function just does the next multiplication
 
-// Floor(e^(ln[1 + 200%] / epochsInYear) * 2^128
-// Q.128 formatted number such that f(epoch) = baseExponent^epoch grows 200% in one year of epochs
+// Floor(e^(ln[1 + 100%] / epochsInYear) * 2^128
+// Q.128 formatted number such that f(epoch) = baseExponent^epoch grows 100% in one year of epochs
 // Calculation here: https://www.wolframalpha.com/input/?i=IntegerPart%5BExp%5BLog%5B1%2B100%25%5D%2F%28%28365+days%29%2F%2830+seconds%29%29%5D*2%5E128%5D
 var BaselineExponent = big.MustFromString("340282591298641078465964189926313473653") // Q.128
 
