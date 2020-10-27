@@ -6,6 +6,7 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
@@ -461,6 +462,11 @@ func (a Actor) LockBalance(rt runtime.Runtime, params *LockBalanceParams) *abi.E
 	if params.UnlockDuration <= 0 {
 		// Note: Unlock duration of zero is workable, but rejected as ineffective, probably an error.
 		rt.Abortf(exitcode.ErrIllegalArgument, "unlock duration must be positive")
+	}
+
+	nv := rt.NetworkVersion()
+	if nv >= network.Version7 && params.Amount.LessThan(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "amount to lock must be positive")
 	}
 
 	var st State
