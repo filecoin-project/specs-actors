@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
 )
 
@@ -29,6 +30,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	var cronSummary *cron.StateSummary
 	var verifregSummary *verifreg.StateSummary
 	var marketSummary *market.StateSummary
+	var rewardSummary *reward.StateSummary
 	var accountSummaries []*account.StateSummary
 	var powerSummary *power.StateSummary
 	var paychSummaries []*paych.StateSummary
@@ -135,6 +137,16 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			}
 
 		case builtin.RewardActorCodeID:
+			var st reward.State
+			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
+				return err
+			}
+			if summary, msgs, err := reward.CheckStateInvariants(&st, tree.Store, priorEpoch, actor.Balance); err != nil {
+				return err
+			} else {
+				acc.WithPrefix("reward: ").AddAll(msgs)
+				rewardSummary = summary
+			}
 
 		case builtin.VerifiedRegistryActorCodeID:
 			var st verifreg.State
@@ -149,7 +161,6 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			}
 		default:
 			return xerrors.Errorf("unexpected actor code CID %v for address %v", actor.Code, key)
-
 		}
 		return nil
 	}); err != nil {
@@ -167,6 +178,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	_ = verifregSummary
 	_ = cronSummary
 	_ = marketSummary
+	_ = rewardSummary
 
 	if !totalFIl.Equals(expectedBalanceTotal) {
 		acc.Addf("total token balance is %v, expected %v", totalFIl, expectedBalanceTotal)
