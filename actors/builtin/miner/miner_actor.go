@@ -972,6 +972,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	}
 
 	currEpoch := rt.CurrEpoch()
+	nv := rt.NetworkVersion()
 
 	powerDelta := NewPowerPairZero()
 	pledgeDelta := big.Zero()
@@ -986,6 +987,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		// Group declarations by deadline, and remember iteration order.
+		// This should be merged with the iteration outside the state transaction.
 		declsByDeadline := map[uint64][]*ExpirationExtension{}
 		var deadlinesToLoad []uint64
 		for i := range params.Extensions {
@@ -1010,6 +1012,11 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
 
 			quant := st.QuantSpecForDeadline(dlIdx)
+
+			// Group modified partitions by epoch to which they are extended. Duplicates are ok.
+			partitionsByNewEpoch := map[abi.ChainEpoch][]uint64{}
+			// Remember iteration order of epochs.
+			var epochsToReschedule []abi.ChainEpoch
 
 			for _, decl := range declsByDeadline[dlIdx] {
 				var partition Partition
@@ -1057,10 +1064,29 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 				err = partitions.Set(decl.Partition, &partition)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %v partition %v", dlIdx, decl.Partition)
+
+				// Record the new partition expiration epoch for setting outside this loop over declarations.
+				if nv >= network.Version7 {
+					prevEpochPartitions, ok := partitionsByNewEpoch[decl.NewExpiration]
+					partitionsByNewEpoch[decl.NewExpiration] = append(prevEpochPartitions, decl.Partition)
+					if !ok {
+						epochsToReschedule = append(epochsToReschedule, decl.NewExpiration)
+					}
+				}
 			}
 
 			deadline.Partitions, err = partitions.Root()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions for deadline %d", dlIdx)
+
+			// Record partitions in deadline expiration queue
+			if nv >= network.Version7 {
+				for _, epoch := range epochsToReschedule {
+					pIdxs := partitionsByNewEpoch[epoch]
+					err := deadline.AddExpirationPartitions(store, epoch, pIdxs, quant)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add expiration partitions to deadline %v epoch %v: %v",
+						dlIdx, epoch, pIdxs)
+				}
+			}
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", dlIdx)
