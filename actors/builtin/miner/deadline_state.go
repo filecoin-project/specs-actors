@@ -902,6 +902,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 	// Accumulate sectors info for proof verification.
 	for _, post := range postPartitions {
+		// Note: After network version 7 we can remove this check
 		alreadyProven, err := dl.PostSubmissions.IsSet(post.Index)
 		if err != nil {
 			return nil, xc.ErrIllegalState.Wrapf("failed to check if partition %d already posted: %w", post.Index, err)

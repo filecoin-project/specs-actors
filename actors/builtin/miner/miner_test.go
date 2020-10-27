@@ -1873,7 +1873,7 @@ func TestWindowPost(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("test duplicate proof ignored", func(t *testing.T) {
+	t.Run("test duplicate proof rejected", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
@@ -1898,6 +1898,10 @@ func TestWindowPost(t *testing.T) {
 			expectedPowerDelta: pwr,
 		})
 
+		// Verify proof recorded
+		deadline := actor.getDeadline(rt, dlIdx)
+		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+
 		// Submit a duplicate proof for the same partition. This will be rejected because after ignoring the
 		// already-proven partition, there are no sectors remaining.
 		// The skipped fault declared here has no effect.
@@ -1914,16 +1918,29 @@ func TestWindowPost(t *testing.T) {
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
-		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
-		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
-			rt.Call(actor.a.SubmitWindowedPoSt, &params)
-		})
-		rt.Reset()
 
-		// Verify proof recorded
-		deadline := actor.getDeadline(rt, dlIdx)
-		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+		{
+			// Before version 7, the rejection is a side-effect of there being no active sectors after
+			// the duplicate is ignored.
+			rt.SetNetworkVersion(network.Version6)
+			rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
+				rt.Call(actor.a.SubmitWindowedPoSt, &params)
+			})
+			rt.Reset()
+		}
+
+		{
+			// From version 7, a duplicate is actively rejected.
+			rt.SetNetworkVersion(network.Version7)
+			rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "partition already proven", func() {
+				rt.Call(actor.a.SubmitWindowedPoSt, &params)
+			})
+			rt.Reset()
+		}
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
