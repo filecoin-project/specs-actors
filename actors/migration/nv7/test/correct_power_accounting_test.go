@@ -24,7 +24,7 @@ import (
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
-func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
+func TestMigrationPowerAccountingIssue(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), vm.FIL), 93837778)
@@ -118,6 +118,9 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// miner should have power
 	assert.Equal(t, numSectors*uint64(32<<30), vm.MinerPower(t, v, minerAddrs.IDAddress).Raw.Uint64())
 
+	// Trigger cron to keep reward accounting correct
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
 	//
 	// Damage power actors stats
 	// This simulates zeroing out a miner claim by updating stats and then adding a new claim without updating the stats
@@ -163,6 +166,9 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 
 	v, err = vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
 	require.NoError(t, err)
+
+	// Trigger cron to keep reward accounting correct
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	//
 	// Confirm miner has power and invariants hold

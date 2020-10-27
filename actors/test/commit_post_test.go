@@ -2,9 +2,10 @@ package test_test
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"strings"
 	"testing"
+
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -248,6 +249,9 @@ func TestCommitPoStFlow(t *testing.T) {
 		networkStats := vm.GetNetworkStats(t, tv)
 		assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
 		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
+
+		// Trigger cron to keep reward accounting correct
+		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		stateTree, err := tv.GetStateTree()
 		require.NoError(t, err)
