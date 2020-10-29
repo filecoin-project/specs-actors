@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/minio/blake2b-simd"
 	"reflect"
 	"runtime/debug"
 
