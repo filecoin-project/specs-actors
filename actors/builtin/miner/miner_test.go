@@ -1873,7 +1873,7 @@ func TestWindowPost(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("test duplicate proof ignored", func(t *testing.T) {
+	t.Run("test duplicate proof rejected", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
@@ -1898,6 +1898,10 @@ func TestWindowPost(t *testing.T) {
 			expectedPowerDelta: pwr,
 		})
 
+		// Verify proof recorded
+		deadline := actor.getDeadline(rt, dlIdx)
+		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+
 		// Submit a duplicate proof for the same partition. This will be rejected because after ignoring the
 		// already-proven partition, there are no sectors remaining.
 		// The skipped fault declared here has no effect.
@@ -1914,16 +1918,115 @@ func TestWindowPost(t *testing.T) {
 		}
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
-		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
-		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
-		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
-			rt.Call(actor.a.SubmitWindowedPoSt, &params)
-		})
-		rt.Reset()
 
-		// Verify proof recorded
-		deadline := actor.getDeadline(rt, dlIdx)
-		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+		{
+			// Before version 7, the rejection is a side-effect of there being no active sectors after
+			// the duplicate is ignored.
+			rt.SetNetworkVersion(network.Version6)
+			rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
+				rt.Call(actor.a.SubmitWindowedPoSt, &params)
+			})
+			rt.Reset()
+		}
+
+		{
+			// From version 7, a duplicate is explicitly rejected.
+			rt.SetNetworkVersion(network.Version7)
+			rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "partition already proven", func() {
+				rt.Call(actor.a.SubmitWindowedPoSt, &params)
+			})
+			rt.Reset()
+		}
+
+		// Advance to end-of-deadline cron to verify no penalties.
+		advanceDeadline(rt, actor, &cronConfig{})
+		actor.checkState(rt)
+	})
+
+	t.Run("test duplicate proof rejected with many partitions", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		// Commit more sectors than fit in one partition in every eligible deadline, overflowing to a second partition.
+		sectorsToCommit := ((miner.WPoStPeriodDeadlines - 2) * actor.partitionSize) + 1
+		sectors := actor.commitAndProveSectors(rt, int(sectorsToCommit), defaultSectorExpiration, nil)
+		lastSector := sectors[len(sectors)-1]
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(store, lastSector.SectorNumber)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), dlIdx) // Deadlines 0 and 1 are empty (no PoSt needed) because excluded by proximity
+		require.Equal(t, uint64(1), pIdx)  // Overflowed from partition 0 to partition 1
+
+		// Skip over deadlines until the beginning of the one with two partitions
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		{
+			// Submit PoSt for partition 0 on its own.
+			partitions := []miner.PoStPartition{
+				{Index: 0, Skipped: bitfield.New()},
+			}
+			sectorsToProve := sectors[:actor.partitionSize]
+			pwr := miner.PowerForSectors(actor.sectorSize, sectorsToProve)
+			actor.submitWindowPoSt(rt, dlinfo, partitions, sectorsToProve, &poStConfig{
+				expectedPowerDelta: pwr,
+			})
+			// Verify proof recorded
+			deadline := actor.getDeadline(rt, dlIdx)
+			assertBitfieldEquals(t, deadline.PostSubmissions, 0)
+		}
+		{
+			// Attempt PoSt for both partitions, thus duplicating proof for partition 0, so rejected
+			partitions := []miner.PoStPartition{
+				{Index: 0, Skipped: bitfield.New()},
+				{Index: 1, Skipped: bitfield.New()},
+			}
+			sectorsToProve := append(sectors[:actor.partitionSize], lastSector)
+			pwr := miner.PowerForSectors(actor.sectorSize, sectorsToProve)
+
+			// Before network version 6, the miner would silently drop the sector infos for the partition already
+			// proven. This means that the sectors provided for verification would not match the sectors from
+			// which the proof was constructed by the miner worker, so will be rejected.
+			rt.SetNetworkVersion(network.Version6)
+			sectorsSubmitted := []*miner.SectorOnChainInfo{lastSector} // Doesn't match partitions
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid PoSt", func() {
+				actor.submitWindowPoSt(rt, dlinfo, partitions, sectorsSubmitted, &poStConfig{
+					expectedPowerDelta: miner.NewPowerPairZero(),
+					verificationError: fmt.Errorf("wrong sectors"),
+				})
+			})
+			rt.Reset()
+
+			// From network version 7, the miner outright rejects attempts to prove a partition twice.
+			rt.SetNetworkVersion(network.Version7)
+			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "partition already proven", func() {
+				actor.submitWindowPoSt(rt, dlinfo, partitions, sectorsToProve, &poStConfig{
+					expectedPowerDelta: pwr,
+				})
+			})
+			rt.Reset()
+		}
+		{
+			// Submit PoSt for partition 1 on its own is ok.
+			partitions := []miner.PoStPartition{
+				{Index: 1, Skipped: bitfield.New()},
+			}
+			sectorsToProve := []*miner.SectorOnChainInfo{lastSector}
+			pwr := miner.PowerForSectors(actor.sectorSize, sectorsToProve)
+			actor.submitWindowPoSt(rt, dlinfo, partitions, sectorsToProve, &poStConfig{
+				expectedPowerDelta: pwr,
+			})
+			// Verify both proofs now recorded
+			deadline := actor.getDeadline(rt, dlIdx)
+			assertBitfieldEquals(t, deadline.PostSubmissions, 0, 1)
+		}
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
@@ -4929,6 +5032,7 @@ func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
 
 type poStConfig struct {
 	expectedPowerDelta miner.PowerPair
+	verificationError  error
 }
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
@@ -4997,7 +5101,11 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, 
 			ChallengedSectors: proofInfos,
 			Prover:            abi.ActorID(actorId),
 		}
-		rt.ExpectVerifyPoSt(vi, nil)
+		var verifResult error
+		if poStCfg != nil {
+			verifResult = poStCfg.verificationError
+		}
+		rt.ExpectVerifyPoSt(vi, verifResult)
 	}
 	if poStCfg != nil {
 		// expect power update
