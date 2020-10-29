@@ -38,7 +38,8 @@ type VM struct {
 	actors      *adt.Map // The current (not necessarily committed) root node.
 	actorsDirty bool
 
-	emptyObject cid.Cid
+	emptyObject  cid.Cid
+	callSequence uint64
 
 	logs            []string
 	invocationStack []*Invocation
@@ -274,12 +275,12 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// (see: `invocationContext.invoke()` for the dispatch and execution)
 
 	// load actor from global state
-	var ok bool
-	if from, ok = vm.NormalizeAddress(from); !ok {
+	fromID, ok := vm.NormalizeAddress(from)
+	if !ok {
 		return nil, exitcode.SysErrSenderInvalid
 	}
 
-	fromActor, found, err := vm.GetActor(from)
+	fromActor, found, err := vm.GetActor(fromID)
 	if err != nil {
 		panic(err)
 	}
@@ -303,12 +304,16 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// 3. process the msg
 
 	topLevel := topLevelContext{
+		originatorStableAddress: from,
+		// this should be nonce, but we only care that it creates a unique stable address
+		originatorCallSeq:    vm.callSequence,
 		newActorAddressCount: 0,
 	}
+	vm.callSequence++
 
 	// build internal msg
 	imsg := InternalMessage{
-		from:   from,
+		from:   fromID,
 		to:     to,
 		value:  value,
 		method: method,
@@ -480,6 +485,10 @@ func (vm *VM) LastInvocation() *Invocation {
 
 func (vm *VM) Log(level rt.LogLevel, msg string, args ...interface{}) {
 	vm.logs = append(vm.logs, fmt.Sprintf(msg, args...))
+}
+
+func (vm *VM) GetLogs() []string {
+	return vm.logs
 }
 
 type abort struct {

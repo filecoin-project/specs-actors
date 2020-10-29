@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/minio/blake2b-simd"
 	"reflect"
 	"runtime/debug"
 
@@ -435,8 +436,8 @@ func (s fakeSyscalls) VerifySignature(_ crypto.Signature, _ address.Address, _ [
 	return nil
 }
 
-func (s fakeSyscalls) HashBlake2b(_ []byte) [32]byte {
-	return [32]byte{}
+func (s fakeSyscalls) HashBlake2b(b []byte) [32]byte {
+	return blake2b.Sum256(b)
 }
 
 func (s fakeSyscalls) ComputeUnsealedSectorCID(_ abi.RegisteredSealProof, _ []abi.PieceInfo) (cid.Cid, error) {

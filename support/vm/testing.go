@@ -51,7 +51,7 @@ func init() {
 //
 
 // Creates a new VM and initializes all singleton actors plus a root verifier account.
-func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
+func NewVMWithSingletons(ctx context.Context, t require.TestingT) *VM {
 	store := ipld.NewADTStore(ctx)
 
 	lookup := map[cid.Cid]runtime.VMActor{}
@@ -100,7 +100,7 @@ func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
 }
 
 // Creates n account actors in the VM with the given balance
-func CreateAccounts(ctx context.Context, t *testing.T, vm *VM, n int, balance abi.TokenAmount, seed int64) []address.Address {
+func CreateAccounts(ctx context.Context, t require.TestingT, vm *VM, n int, balance abi.TokenAmount, seed int64) []address.Address {
 	var initState initactor.State
 	err := vm.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
@@ -485,7 +485,7 @@ func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmoun
 //  internal stuff
 //
 
-func initializeActor(ctx context.Context, t *testing.T, vm *VM, state cbor.Marshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
+func initializeActor(ctx context.Context, t require.TestingT, vm *VM, state cbor.Marshaler, code cid.Cid, a address.Address, balance abi.TokenAmount) {
 	stateCID, err := vm.store.Put(ctx, state)
 	require.NoError(t, err)
 	actor := &states.Actor{
