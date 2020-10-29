@@ -5,21 +5,20 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/minio/blake2b-simd"
 	"reflect"
 	"runtime/debug"
-
-	"github.com/filecoin-project/go-state-types/cbor"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/ipfs/go-cid"
+	"github.com/minio/blake2b-simd"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"

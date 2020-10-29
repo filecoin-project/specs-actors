@@ -196,8 +196,8 @@ func TestTerminateSectors(t *testing.T) {
 
 	}
 
-	// advance and run cron to complete processing of termination
-	v, err = v.WithEpoch(v.GetEpoch() + 1000)
+	// advance a proving period and run cron to complete processing of termination
+	v, err = v.WithEpoch(v.GetEpoch() + 2880)
 	require.NoError(t, err)
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
