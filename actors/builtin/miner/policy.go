@@ -5,6 +5,7 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
@@ -90,11 +91,56 @@ var SealedCIDPrefix = cid.Prefix{
 	MhLength: 32,
 }
 
-// List of proof types which may be used when creating a new miner actor.
+// List of proof types which may be used when creating a new miner actor or pre-committing a new sector.
 // This is mutable to allow configuration of testing and development networks.
-var SupportedProofTypes = map[abi.RegisteredSealProof]struct{}{
+var PreCommitSealProofTypesV0 = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg32GiBV1: {},
 	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
+}
+var PreCommitSealProofTypesV7 = map[abi.RegisteredSealProof]struct{}{
+	abi.RegisteredSealProof_StackedDrg32GiBV1:   {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1:   {},
+	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
+}
+
+// From network version 8, sectors sealed with the V1 seal proof types cannot be committed.
+var PreCommitSealProofTypesV8 = map[abi.RegisteredSealProof]struct{}{
+	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
+}
+
+// Checks whether a seal proof type is supported for new miners and sectors.
+func CanPreCommitSealProof(s abi.RegisteredSealProof, nv network.Version) bool {
+	_, ok := PreCommitSealProofTypesV0[s]
+	if nv >= network.Version7 {
+		_, ok = PreCommitSealProofTypesV7[s]
+	}
+	if nv >= network.Version8 {
+		_, ok = PreCommitSealProofTypesV8[s]
+	}
+	return ok
+}
+
+// List of proof types for which sector lifetime may be extended.
+var ExtensibleProofTypesV0 = map[abi.RegisteredSealProof]struct{}{
+	abi.RegisteredSealProof_StackedDrg32GiBV1: {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
+}
+
+// From network version 7, sectors sealed with the V1 seal proof types cannot be extended.
+var ExtensibleProofTypesV7 = map[abi.RegisteredSealProof]struct{}{
+	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
+}
+
+// Checks whether a seal proof type is supported for new miners and sectors.
+func CanExtendSealProofType(s abi.RegisteredSealProof, nv network.Version) bool {
+	_, ok := ExtensibleProofTypesV0[s]
+	if nv >= network.Version7 {
+		_, ok = ExtensibleProofTypesV7[s]
+	}
+	return ok
 }
 
 // Maximum delay to allow between sector pre-commit and subsequent proof.
@@ -105,6 +151,12 @@ var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg8MiBV1:   builtin.EpochsInDay + PreCommitChallengeDelay,
 	abi.RegisteredSealProof_StackedDrg512MiBV1: builtin.EpochsInDay + PreCommitChallengeDelay,
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay,
+
+	abi.RegisteredSealProof_StackedDrg32GiBV1_1:  builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC
+	abi.RegisteredSealProof_StackedDrg2KiBV1_1:   builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg8MiBV1_1:   builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg512MiBV1_1: builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg64GiBV1_1:  builtin.EpochsInDay + PreCommitChallengeDelay,
 }
 
 // Maximum delay between challenge and pre-commitment.

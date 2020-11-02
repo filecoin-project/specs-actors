@@ -36,6 +36,27 @@ var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
 		SectorMaxLifetime:          fiveYears,
 		ConsensusMinerMinPower:     stabi.NewStoragePower(20 << 40),
 	},
+
+	stabi.RegisteredSealProof_StackedDrg2KiBV1_1: {
+		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(0),
+	},
+	stabi.RegisteredSealProof_StackedDrg8MiBV1_1: {
+		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(16 << 20),
+	},
+	stabi.RegisteredSealProof_StackedDrg512MiBV1_1: {
+		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(1 << 30),
+	},
+	stabi.RegisteredSealProof_StackedDrg32GiBV1_1: {
+		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
+	},
+	stabi.RegisteredSealProof_StackedDrg64GiBV1_1: {
+		SectorMaxLifetime:          fiveYears,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(20 << 40),
+	},
 }
 
 // Returns the partition size, in sectors, associated with a seal proof type.

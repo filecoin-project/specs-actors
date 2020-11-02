@@ -99,8 +99,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	checkControlAddresses(rt, params.ControlAddrs)
 	checkPeerInfo(rt, params.PeerId, params.Multiaddrs)
 
-	_, ok := SupportedProofTypes[params.SealProofType]
-	if !ok {
+	if !CanPreCommitSealProof(params.SealProofType, rt.NetworkVersion()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
 	}
 
@@ -511,13 +510,27 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 // Sector Commitment //
 ///////////////////////
 
+//type SectorPreCommitInfo struct {
+//	SealProof       abi.RegisteredSealProof
+//	SectorNumber    abi.SectorNumber
+//	SealedCID       cid.Cid `checked:"true"` // CommR
+//	SealRandEpoch   abi.ChainEpoch
+//	DealIDs         []abi.DealID
+//	Expiration      abi.ChainEpoch
+//	ReplaceCapacity bool // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
+//	// The committed capacity sector to replace, and it's deadline/partition location
+//	ReplaceSectorDeadline  uint64
+//	ReplaceSectorPartition uint64
+//	ReplaceSectorNumber    abi.SectorNumber
+//}
 type PreCommitSectorParams = miner0.SectorPreCommitInfo
 
 // Proposals must be posted on chain via sma.PublishStorageDeals before PreCommitSector.
 // Optimization: PreCommitSector could contain a list of deals that are not published yet.
 func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.EmptyValue {
-	if _, ok := SupportedProofTypes[params.SealProof]; !ok {
-		rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type: %s", params.SealProof)
+	nv := rt.NetworkVersion()
+	if !CanPreCommitSealProof(params.SealProof, nv) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type %v at network version %v", params.SealProof, nv)
 	}
 	if params.SectorNumber > abi.MaxSectorNumber {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector number %d out of range 0..(2^63-1)", params.SectorNumber)
@@ -584,8 +597,22 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 			rt.Abortf(exitcode.ErrForbidden, "precommit not allowed during active consensus fault")
 		}
 
-		if params.SealProof != info.SealProofType {
-			rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
+		if nv < network.Version7 {
+			if params.SealProof != info.SealProofType {
+				rt.Abortf(exitcode.ErrIllegalArgument, "sector seal proof %v must match miner seal proof type %d", params.SealProof, info.SealProofType)
+			}
+		} else {
+			// From network version 7, the pre-commit seal type must have the same Window PoSt proof type as the miner's
+			// recorded seal type has, rather than be exactly the same seal type.
+			// This permits a transition window from V1 to V1_1 seal types (which share Window PoSt proof type).
+			minerWPoStProof, err := info.SealProofType.RegisteredWindowPoStProof()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lookup Window PoSt proof type for miner seal proof %d", info.SealProofType)
+			sectorWPoStProof, err := params.SealProof.RegisteredWindowPoStProof()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to lookup Window PoSt proof type for sector seal proof %d", params.SealProof)
+			if sectorWPoStProof != minerWPoStProof {
+				rt.Abortf(exitcode.ErrIllegalArgument, "sector Window PoSt proof type %d must match miner Window PoSt proof type %d (seal proof type %d)",
+					sectorWPoStProof, minerWPoStProof, params.SealProof)
+			}
 		}
 
 		dealCountMax := SectorDealsMax(info.SectorSize)
@@ -960,6 +987,7 @@ type ExpirationExtension = miner0.ExpirationExtension
 // The sector must not be terminated or faulty.
 // The sector's power is recomputed for the new expiration.
 func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpirationParams) *abi.EmptyValue {
+	nv := rt.NetworkVersion()
 	if uint64(len(params.Extensions)) > DeclarationsMax {
 		rt.Abortf(exitcode.ErrIllegalArgument, "too many declarations %d, max %d", len(params.Extensions), DeclarationsMax)
 	}
@@ -989,7 +1017,6 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 	}
 
 	currEpoch := rt.CurrEpoch()
-	nv := rt.NetworkVersion()
 
 	powerDelta := NewPowerPairZero()
 	pledgeDelta := big.Zero()
@@ -1047,6 +1074,10 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in deadline %v partition %v", dlIdx, decl.Partition)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
+					if !CanExtendSealProofType(sector.SealProof, nv) {
+						rt.Abortf(exitcode.ErrForbidden, "cannot extend expiration for sector %v with unsupported seal type %v",
+							sector.SectorNumber, sector.SealProof)
+					}
 					// This can happen if the sector should have already expired, but hasn't
 					// because the end of its deadline hasn't passed yet.
 					if sector.Expiration < currEpoch {
@@ -1989,6 +2020,7 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 }
 
 func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *PreCommitSectorParams) {
+	nv := rt.NetworkVersion()
 	replaceSector, found, err := st.GetSector(store, params.ReplaceSectorNumber)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
 	if !found {
@@ -1998,9 +2030,23 @@ func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *PreCo
 	if len(replaceSector.DealIDs) > 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v which has deals", params.ReplaceSectorNumber)
 	}
-	if params.SealProof != replaceSector.SealProof {
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v seal proof %v with seal proof %v",
-			params.ReplaceSectorNumber, replaceSector.SealProof, params.SealProof)
+	if nv < network.Version7 {
+		if params.SealProof != replaceSector.SealProof {
+			rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v seal proof %v with seal proof %v",
+				params.ReplaceSectorNumber, replaceSector.SealProof, params.SealProof)
+		}
+	} else {
+		// From network version 7, the new sector's seal type must have the same Window PoSt proof type as the one
+		// being replaced, rather than be exactly the same seal type.
+		// This permits replacing sectors with V1 seal types with V1_1 seal types.
+		replaceWPoStProof, err := replaceSector.SealProof.RegisteredWindowPoStProof()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lookup Window PoSt proof type for sector seal proof %d", replaceSector.SealProof)
+		newWPoStProof, err := params.SealProof.RegisteredWindowPoStProof()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to lookup Window PoSt proof type for new seal proof %d", params.SealProof)
+		if newWPoStProof != replaceWPoStProof {
+			rt.Abortf(exitcode.ErrIllegalArgument, "new sector window PoSt proof type %d must match replaced proof type %d (seal proof type %d)",
+				newWPoStProof, replaceWPoStProof, params.SealProof)
+		}
 	}
 	if params.Expiration < replaceSector.Expiration {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v expiration %v with sooner expiration %v",

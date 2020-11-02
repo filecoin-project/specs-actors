@@ -28,7 +28,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 	// create miner
 	params := power.CreateMinerParams{

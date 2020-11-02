@@ -31,7 +31,7 @@ func TestTerminateSectors(t *testing.T) {
 	minerBalance := big.Mul(big.NewInt(1_000), vm.FIL)
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 	// create miner
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &power.CreateMinerParams{

@@ -51,7 +51,7 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}}, abi.RegisteredSealProof_StackedDrg32GiBV1, abi.NewTokenAmount(10))
+		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}}, abi.RegisteredSealProof_StackedDrg32GiBV1_1, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -69,7 +69,7 @@ func TestConstruction(t *testing.T) {
 		found, err_ := claim.Get(asKey(keys[0]), &actualClaim)
 		require.NoError(t, err_)
 		assert.True(t, found)
-		assert.Equal(t, power.Claim{abi.RegisteredSealProof_StackedDrg32GiBV1, big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
+		assert.Equal(t, power.Claim{abi.RegisteredSealProof_StackedDrg32GiBV1_1, big.Zero(), big.Zero()}, actualClaim) // miner has not proven anything
 
 		verifyEmptyMap(t, rt, st.CronEventQueue)
 		actor.checkState(rt)
@@ -80,7 +80,7 @@ func TestCreateMinerFailures(t *testing.T) {
 	owner := tutil.NewIDAddr(t, 101)
 	peer := abi.PeerID("miner")
 	mAddr := []abi.Multiaddrs{{1}}
-	sealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1
+	sealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1_1
 
 	t.Run("fails when caller is not of signable type", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
@@ -259,7 +259,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	miner5 := tutil.NewIDAddr(t, 115)
 
 	// These tests use the min power for consensus to check the accounting above and below that value.
-	powerUnit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	powerUnit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
 	require.NoError(t, err)
 
 	mul := func(a big.Int, b int64) big.Int {
@@ -445,9 +445,9 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		// miner 5 uses 64GiB sectors and has a higher minimum
 		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
-			nil, abi.RegisteredSealProof_StackedDrg64GiBV1, big.Zero())
+			nil, abi.RegisteredSealProof_StackedDrg64GiBV1_1, big.Zero())
 
-		power64Unit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1)
+		power64Unit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1_1)
 		require.NoError(t, err)
 		assert.True(t, power64Unit.GreaterThan(powerUnit))
 
@@ -578,7 +578,7 @@ func TestCron(t *testing.T) {
 	})
 
 	t.Run("test amount sent to reward actor and state change", func(t *testing.T) {
-		powerUnit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg2KiBV1)
+		powerUnit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
 		require.NoError(t, err)
 
 		miner3 := tutil.NewIDAddr(t, 103)
@@ -741,7 +741,7 @@ func TestCron(t *testing.T) {
 		actor.enrollCronEvent(rt, miner1, 2, []byte{})
 		actor.enrollCronEvent(rt, miner2, 2, []byte{})
 
-		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1)
+		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
 		require.NoError(t, err)
 
 		qaPow := rawPow
@@ -1149,7 +1149,7 @@ func newHarness(t *testing.T) *spActorHarness {
 	return &spActorHarness{
 		Actor:     power.Actor{},
 		t:         t,
-		sealProof: abi.RegisteredSealProof_StackedDrg32GiBV1,
+		sealProof: abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 	}
 }
 
