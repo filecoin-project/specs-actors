@@ -66,3 +66,31 @@ func (ss *SyncBlockStoreInMemory) Put(b block.Block) error {
 func NewSyncADTStore(ctx context.Context) adt.Store {
 	return adt.WrapStore(ctx, cbor.NewCborStore(NewSyncBlockStoreInMemory()))
 }
+
+type MetricsStore struct {
+	bs    cbor.IpldBlockstore
+	Puts  uint64
+	Reads uint64
+}
+
+func NewMetricsStore(underlying cbor.IpldBlockstore) *MetricsStore {
+	return &MetricsStore{bs: underlying}
+}
+
+func (ms *MetricsStore) Get(c cid.Cid) (block.Block, error) {
+	ms.Reads++
+	return ms.bs.Get(c)
+}
+
+func (ms *MetricsStore) Put(b block.Block) error {
+	ms.Puts++
+	return ms.bs.Put(b)
+}
+
+func (ms *MetricsStore) ReadCount() uint64 {
+	return ms.Reads
+}
+
+func (ms *MetricsStore) PutCount() uint64 {
+	return ms.Puts
+}

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"math"
 	big2 "math/big"
 	"math/rand"
@@ -22,11 +23,12 @@ import (
 )
 
 type Sim struct {
-	Config   SimConfig
-	Accounts []address.Address
-	Miners   []*MinerAgent
-	v        *vm.VM
-	rnd      *rand.Rand
+	Config        SimConfig
+	Accounts      []address.Address
+	Miners        []*MinerAgent
+	v             *vm.VM
+	rnd           *rand.Rand
+	statsByMethod map[vm.MethodKey]*vm.CallStats
 }
 
 type SimConfig struct {
@@ -58,8 +60,8 @@ type PowerTable struct {
 	minerPower   []MinerPowerTable
 }
 
-func NewSim(ctx context.Context, t require.TestingT, config SimConfig) *Sim {
-	v := vm.NewVMWithSingletons(ctx, t)
+func NewSim(ctx context.Context, t require.TestingT, store adt.Store, config SimConfig) *Sim {
+	v := vm.NewCustomStoreVMWithSingletons(ctx, store, t)
 	return &Sim{
 		Config:   config,
 		Accounts: vm.CreateAccounts(ctx, t, v, config.AccountCount, config.AccountInitialBalance, config.Seed),
@@ -124,7 +126,7 @@ func (s *Sim) Tick() error {
 	for _, miner := range powerTable.minerPower {
 		if powerTable.totalQAPower.GreaterThan(big.Zero()) {
 			wins := s.WinCount(miner.qaPower, powerTable.totalQAPower)
-			err := s.rewardMiner(miner.addr, big.Mul(powerTable.blockReward, big.NewInt(int64(wins))))
+			err := s.rewardMiner(miner.addr, wins)
 			if err != nil {
 				return err
 			}
@@ -137,20 +139,29 @@ func (s *Sim) Tick() error {
 		return errors.Errorf("exitcode %d: cron message failed:\n%s\n", code, strings.Join(s.v.GetLogs(), "\n"))
 	}
 
+	// store last stats
+	s.statsByMethod = s.v.GetCallStats()
+
 	s.v, err = s.v.WithEpoch(s.v.GetEpoch() + 1)
 	return err
 }
 
-func (s *Sim) rewardMiner(addr address.Address, amt abi.TokenAmount) error {
-	if amt.LessThanEqual(big.Zero()) {
+func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
+	return s.statsByMethod
+}
+
+func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
+	if wins < 1 {
 		return nil
 	}
 
-	rewardParams := builtin.ApplyRewardParams{
-		Reward:  amt,
-		Penalty: big.Zero(),
+	rewardParams := reward.AwardBlockRewardParams{
+		Miner:     addr,
+		Penalty:   big.Zero(),
+		GasReward: big.Zero(),
+		WinCount:  int64(wins),
 	}
-	_, code := s.v.ApplyMessage(builtin.RewardActorAddr, addr, amt, builtin.MethodsMiner.ApplyRewards, &rewardParams)
+	_, code := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.AwardBlockReward, &rewardParams)
 	if code != exitcode.Ok {
 		return errors.Errorf("exitcode %d: reward message failed:\n%s\n", code, strings.Join(s.v.GetLogs(), "\n"))
 	}

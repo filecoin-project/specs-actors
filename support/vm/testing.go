@@ -53,7 +53,11 @@ func init() {
 // Creates a new VM and initializes all singleton actors plus a root verifier account.
 func NewVMWithSingletons(ctx context.Context, t require.TestingT) *VM {
 	store := ipld.NewADTStore(ctx)
+	return NewCustomStoreVMWithSingletons(ctx, store, t)
+}
 
+// Creates a new VM and initializes all singleton actors plus a root verifier account.
+func NewCustomStoreVMWithSingletons(ctx context.Context, store adt.Store, t require.TestingT) *VM {
 	lookup := map[cid.Cid]runtime.VMActor{}
 	for _, ba := range exported.BuiltinActors() {
 		lookup[ba.Code()] = ba

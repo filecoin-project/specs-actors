@@ -22,6 +22,11 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
+type StatsSource interface {
+	PutCount() uint64
+	ReadCount() uint64
+}
+
 // VM is a simplified message execution framework for the purposes of testing inter-actor communication.
 // The VM maintains actor state and can be used to simulate message validation for a single block or tipset.
 // The VM does not track gas charges, provide working syscalls, validate message nonces and many other things
@@ -44,6 +49,9 @@ type VM struct {
 	logs            []string
 	invocationStack []*Invocation
 	invocations     []*Invocation
+
+	statsSource   StatsSource
+	statsByMethod StatsByCall
 }
 
 // VM types
@@ -136,6 +144,7 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		emptyObject:    vm.emptyObject,
 		currentEpoch:   epoch,
 		networkVersion: vm.networkVersion,
+		statsSource:    vm.statsSource,
 	}, nil
 }
 
@@ -160,7 +169,12 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 		emptyObject:    vm.emptyObject,
 		currentEpoch:   vm.currentEpoch,
 		networkVersion: nv,
+		statsSource:    vm.statsSource,
 	}, nil
+}
+
+func (vm *VM) SetStatsSource(s StatsSource) {
+	vm.statsSource = s
 }
 
 func (vm *VM) rollback(root cid.Cid) error {
@@ -308,6 +322,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		// this should be nonce, but we only care that it creates a unique stable address
 		originatorCallSeq:    vm.callSequence,
 		newActorAddressCount: 0,
+		statsSource:          vm.statsSource,
 	}
 	vm.callSequence++
 
@@ -325,6 +340,9 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 
 	// 3. invoke
 	ret, exitCode := ctx.invoke()
+
+	// record stats
+	vm.mergeStat(ctx.toActor.Code, imsg.method, ctx.stats)
 
 	// Roll back all state if the receipt's exit code is not ok.
 	// This is required in addition to rollback within the invocation context since top level messages can fail for
@@ -386,6 +404,11 @@ func (vm *VM) Store() adt.Store {
 // Get the chain epoch for this vm
 func (vm *VM) GetEpoch() abi.ChainEpoch {
 	return vm.currentEpoch
+}
+
+// Get call stats
+func (vm *VM) GetCallStats() map[MethodKey]*CallStats {
+	return vm.statsByMethod
 }
 
 // transfer debits money from one account and credits it to another.
@@ -498,6 +521,17 @@ type abort struct {
 
 func (vm *VM) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
 	panic(abort{errExitCode, fmt.Sprintf(msg, args...)})
+}
+
+//
+// Stats
+//
+
+func (v *VM) mergeStat(code cid.Cid, methodNum abi.MethodNum, newStats *CallStats) {
+	if v.statsByMethod == nil {
+		v.statsByMethod = make(StatsByCall)
+	}
+	v.statsByMethod.MergeStats(code, methodNum, newStats)
 }
 
 //

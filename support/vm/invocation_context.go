@@ -32,6 +32,23 @@ import (
 
 var EmptyObjectCid cid.Cid
 
+type StatsByCall map[MethodKey]*CallStats
+
+type MethodKey struct {
+	Code   cid.Cid
+	Method abi.MethodNum
+}
+
+type CallStats struct {
+	Reads    uint64
+	Puts     uint64
+	Calls    uint64
+	SubStats StatsByCall
+
+	startReads uint64
+	startPuts  uint64
+}
+
 // Context for an individual message invocation, including inter-actor sends.
 type invocationContext struct {
 	rt                *VM
@@ -43,6 +60,7 @@ type invocationContext struct {
 	isCallerValidated bool
 	allowSideEffects  bool
 	callerValidated   bool
+	stats             *CallStats
 }
 
 // Context for a top-level invocation sequence
@@ -50,9 +68,16 @@ type topLevelContext struct {
 	originatorStableAddress address.Address // Stable (public key) address of the top-level message sender.
 	originatorCallSeq       uint64          // Call sequence number of the top-level message.
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
+	statsSource             StatsSource     // optional source of external statistics that can be used to profile calls
 }
 
 func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid) invocationContext {
+	var startReads, startPuts uint64
+	if topLevel.statsSource != nil {
+		startReads = topLevel.statsSource.ReadCount()
+		startPuts = topLevel.statsSource.PutCount()
+	}
+
 	// Note: the toActor and stateHandle are loaded during the `invoke()`
 	return invocationContext{
 		rt:                rt,
@@ -63,6 +88,7 @@ func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage
 		isCallerValidated: false,
 		allowSideEffects:  true,
 		toActor:           nil,
+		stats:             &CallStats{Calls: 1, startReads: startReads, startPuts: startPuts},
 	}
 }
 
@@ -317,11 +343,63 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 	newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, fromActor, ic.emptyObject)
 	ret, code := newCtx.invoke()
+
+	ic.mergeSubStat(newCtx.toActor.Code, newMsg.method, newCtx.stats)
+
 	err := ret.Into(out)
 	if err != nil {
 		ic.Abortf(exitcode.ErrSerialization, "failed to serialize send return value into output parameter")
 	}
 	return code
+}
+
+func (ic *invocationContext) mergeSubStat(code cid.Cid, methodNum abi.MethodNum, newStats *CallStats) {
+	if ic.stats.SubStats == nil {
+		ic.stats.SubStats = make(StatsByCall)
+	}
+	ic.stats.SubStats.MergeStats(code, methodNum, newStats)
+}
+
+// assume stats have same method type and that other will be discarded after this call
+func (m *CallStats) MergeStats(other *CallStats) {
+	m.Calls += other.Calls
+	m.Reads += other.Reads
+	m.Puts += other.Puts
+
+	if other.SubStats == nil {
+		return
+	}
+
+	if m.SubStats == nil {
+		m.SubStats = other.SubStats
+		return
+	}
+
+	for method, stats := range other.SubStats { // nolint:nomaprange
+		ss, ok := m.SubStats[method]
+		if !ok {
+			m.SubStats[method] = stats
+		} else {
+			ss.MergeStats(stats)
+		}
+	}
+}
+
+func (sbc StatsByCall) MergeStats(code cid.Cid, methodNum abi.MethodNum, newStats *CallStats) {
+	key := MethodKey{code, methodNum}
+	stats, ok := sbc[key]
+	if !ok {
+		sbc[key] = newStats
+	} else {
+		stats.MergeStats(newStats)
+	}
+
+}
+
+func (sbc StatsByCall) MergeAllStats(other StatsByCall) {
+	for key, stats := range other { // nolint:nomaprange
+		sbc.MergeStats(key.Code, key.Method, stats)
+	}
 }
 
 // CreateActor implements runtime.ExtendedInvocationContext.
@@ -521,6 +599,11 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	// Install handler for abort, which rolls back all state changes from this and any nested invocations.
 	// This is the only path by which a non-OK exit code may be returned.
 	defer func() {
+		if ic.topLevel.statsSource != nil {
+			ic.stats.Puts = ic.topLevel.statsSource.PutCount() - ic.stats.startPuts
+			ic.stats.Reads = ic.topLevel.statsSource.ReadCount() - ic.stats.startReads
+		}
+
 		if r := recover(); r != nil {
 			if err := ic.rt.rollback(priorRoot); err != nil {
 				panic(err)
@@ -725,6 +808,9 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*states.Acto
 
 		newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, nil, ic.emptyObject)
 		_, code := newCtx.invoke()
+
+		ic.mergeSubStat(builtin.InitActorCodeID, builtin.MethodsAccount.Constructor, newCtx.stats)
+
 		if code.IsError() {
 			// we failed to construct an account actor..
 			ic.Abortf(code, "failed to construct account actor")
