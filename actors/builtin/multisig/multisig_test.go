@@ -2096,8 +2096,7 @@ func (h *msActorHarness) checkState(rt *mock.Runtime) {
 }
 
 func assertStateInvariants(t testing.TB, rt *mock.Runtime, st *multisig.State) {
-	_, msgs, err := multisig.CheckStateInvariants(st, rt.AdtStore())
-	assert.NoError(t, err)
+	_, msgs := multisig.CheckStateInvariants(st, rt.AdtStore())
 	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

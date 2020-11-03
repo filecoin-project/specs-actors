@@ -1398,8 +1398,7 @@ func (h *spActorHarness) expectTotalPledgeEager(rt *mock.Runtime, expectedPledge
 
 func (h *spActorHarness) checkState(rt *mock.Runtime) {
 	st := getState(rt)
-	_, msgs, err := power.CheckStateInvariants(st, rt.AdtStore())
-	require.NoError(h.t, err)
+	_, msgs := power.CheckStateInvariants(st, rt.AdtStore())
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

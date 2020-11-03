@@ -12,7 +12,7 @@ type StateSummary struct{}
 var FIL = big.NewInt(1e18)
 var StorageMiningAllocationCheck = big.Mul(big.NewInt(1_100_000_000), FIL)
 
-func CheckStateInvariants(st *State, store adt.Store, priorEpoch abi.ChainEpoch, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store, priorEpoch abi.ChainEpoch, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
 
 	// Can't assert equality because anyone can send funds to reward actor (and already have on mainnet)
@@ -25,5 +25,5 @@ func CheckStateInvariants(st *State, store adt.Store, priorEpoch abi.ChainEpoch,
 	acc.Require(st.CumsumRealized.GreaterThanEqual(big.Zero()), "cumsum realized < 0")
 	acc.Require(st.EffectiveBaselinePower.LessThanEqual(st.ThisEpochBaselinePower), "effective baseline power > baseline power")
 
-	return &StateSummary{}, acc, nil
+	return &StateSummary{}, acc
 }
