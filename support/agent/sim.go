@@ -102,7 +102,7 @@ func (s *Sim) Tick() error {
 		addr := s.Accounts[len(s.Miners)]
 		blockMessages = append(blockMessages, s.createMiner(addr, MinerAgentConfig{
 			PrecommitRate:   2.5,
-			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1,
+			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: s.Config.AccountInitialBalance, // miner gets all account funds
 		}))
 	}
