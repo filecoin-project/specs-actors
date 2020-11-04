@@ -51,9 +51,12 @@ type Runtime struct {
 	balance abi.TokenAmount
 
 	// VM implementation
-	inCall        bool
 	store         map[cid.Cid][]byte
+	inCall        bool
 	inTransaction bool
+	// Maps (references to) loaded state objs to their expected cid.
+	// Used for detecting modifications to state outside of transactions.
+	stateUsedObjs map[cbor.Marshaler]cid.Cid
 	// Syscalls
 	hashfunc func(data []byte) [32]byte
 
@@ -484,6 +487,13 @@ func (rt *Runtime) StoreGet(c cid.Cid, o cbor.Unmarshaler) bool {
 
 func (rt *Runtime) StorePut(o cbor.Marshaler) cid.Cid {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
+	key, data := rt.marshalState(o)
+	rt.put(key, data)
+	return key
+}
+
+// Marshals an object to bytes for storing in state.
+func (rt *Runtime) marshalState(o cbor.Marshaler) (cid.Cid, []byte) {
 	r := bytes.Buffer{}
 	err := o.MarshalCBOR(&r)
 	if err != nil {
@@ -494,8 +504,7 @@ func (rt *Runtime) StorePut(o cbor.Marshaler) cid.Cid {
 	if err != nil {
 		rt.Abortf(exitcode.ErrSerialization, err.Error())
 	}
-	rt.put(key, data)
-	return key
+	return key, data
 }
 
 ///// Message implementation /////
@@ -523,6 +532,8 @@ func (rt *Runtime) StateCreate(obj cbor.Marshaler) {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "state already constructed")
 	}
 	rt.state = rt.StorePut(obj)
+	// Track the expected CID of the object.
+	rt.stateUsedObjs[obj] = rt.state
 }
 
 func (rt *Runtime) StateReadonly(st cbor.Unmarshaler) {
@@ -530,17 +541,22 @@ func (rt *Runtime) StateReadonly(st cbor.Unmarshaler) {
 	if !found {
 		panic(fmt.Sprintf("actor state not found: %v", rt.state))
 	}
+	// Track the expected CID of the object.
+	rt.stateUsedObjs[st.(cbor.Marshaler)] = rt.state
 }
 
 func (rt *Runtime) StateTransaction(st cbor.Er, f func()) {
 	if rt.inTransaction {
 		rt.Abortf(exitcode.SysErrorIllegalActor, "nested transaction")
 	}
+	rt.checkStateObjectsUnmodified()
 	rt.StateReadonly(st)
 	rt.inTransaction = true
 	defer func() { rt.inTransaction = false }()
 	f()
 	rt.state = rt.StorePut(st)
+	// Track the expected CID of the object.
+	rt.stateUsedObjs[st] = rt.state
 }
 
 ///// Syscalls implementation /////
@@ -1052,7 +1068,11 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 	// If not expected, the panic will escape and cause the test to fail.
 
 	rt.inCall = true
-	defer func() { rt.inCall = false }()
+	rt.stateUsedObjs = map[cbor.Marshaler]cid.Cid{}
+	defer func() {
+		rt.inCall = false
+		rt.stateUsedObjs = nil
+	}()
 	var arg reflect.Value
 	if params != nil {
 		arg = reflect.ValueOf(params)
@@ -1060,7 +1080,20 @@ func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
 		arg = reflect.ValueOf(abi.Empty)
 	}
 	ret := meth.Call([]reflect.Value{reflect.ValueOf(rt), arg})
+	rt.checkStateObjectsUnmodified()
 	return ret[0].Interface()
+}
+
+// Checks that state objects weren't modified outside of transaction.
+func (rt *Runtime) checkStateObjectsUnmodified() {
+	for obj, expectedKey := range rt.stateUsedObjs { // nolint:nomaprange
+		// Recompute the CID of the object and check it's the same as was recorded
+		// when the object was loaded.
+		finalKey, _ := rt.marshalState(obj)
+		if finalKey != expectedKey {
+			rt.Abortf(exitcode.SysErrorIllegalActor, "State mutated outside of transaction scope")
+		}
+	}
 }
 
 func (rt *Runtime) verifyExportedMethodType(meth reflect.Value) {

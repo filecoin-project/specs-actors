@@ -1202,7 +1202,7 @@ func TestAddSigner(t *testing.T) {
 			} else {
 				actor.addSigner(rt, tc.addSigner, tc.increase)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
 				actor.checkState(rt)
@@ -1385,7 +1385,7 @@ func TestRemoveSigner(t *testing.T) {
 			} else {
 				actor.removeSigner(rt, tc.removeSigner, tc.decrease)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
 				actor.checkState(rt)
@@ -1572,7 +1572,7 @@ func TestSwapSigners(t *testing.T) {
 			} else {
 				actor.swapSigners(rt, tc.from, tc.to)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.expect, st.Signers)
 				actor.checkState(rt)
 			}
@@ -1701,7 +1701,7 @@ func TestChangeThreshold(t *testing.T) {
 			} else {
 				actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
 				actor.checkState(rt)
 			}

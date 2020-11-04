@@ -3074,30 +3074,30 @@ func (h *marketActorTestHarness) publishAndActivateDeal(rt *mock.Runtime, client
 
 func (h *marketActorTestHarness) updateLastUpdated(rt *mock.Runtime, dealId abi.DealID, newLastUpdated abi.ChainEpoch) {
 	var st market.State
-	rt.StateTransaction(&st, func() {
-		states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
-		require.NoError(h.t, err)
-		s, found, err := states.Get(dealId)
-		require.True(h.t, found)
-		require.NoError(h.t, err)
-		require.NotNil(h.t, s)
+	rt.GetState(&st)
 
-		require.NoError(h.t, states.Set(dealId, &market.DealState{s.SectorStartEpoch, newLastUpdated, s.SlashEpoch}))
-		st.States, err = states.Root()
-		require.NoError(h.t, err)
-	})
+	states, err := market.AsDealStateArray(adt.AsStore(rt), st.States)
+	require.NoError(h.t, err)
+	s, found, err := states.Get(dealId)
+	require.True(h.t, found)
+	require.NoError(h.t, err)
+	require.NotNil(h.t, s)
+
+	require.NoError(h.t, states.Set(dealId, &market.DealState{s.SectorStartEpoch, newLastUpdated, s.SlashEpoch}))
+	st.States, err = states.Root()
+	require.NoError(h.t, err)
+	rt.ReplaceState(&st)
 }
 
 func (h *marketActorTestHarness) deleteDealProposal(rt *mock.Runtime, dealId abi.DealID) {
 	var st market.State
-
-	rt.StateTransaction(&st, func() {
-		deals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
-		require.NoError(h.t, err)
-		require.NoError(h.t, deals.Delete(uint64(dealId)))
-		st.Proposals, err = deals.Root()
-		require.NoError(h.t, err)
-	})
+	rt.GetState(&st)
+	deals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
+	require.NoError(h.t, err)
+	require.NoError(h.t, deals.Delete(uint64(dealId)))
+	st.Proposals, err = deals.Root()
+	require.NoError(h.t, err)
+	rt.ReplaceState(&st)
 }
 
 func (h *marketActorTestHarness) generateAndPublishDeal(rt *mock.Runtime, client address.Address, minerAddrs *minerAddrs,
