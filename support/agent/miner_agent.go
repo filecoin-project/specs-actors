@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
@@ -72,6 +71,9 @@ func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
 
 		messages = append(messages, ma.createPrecommit(v.GetEpoch(), sectorNumber, sectorActivation))
 
+		// assume precommit succeeds and schedule prove commit
+		ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
+
 		ma.nextPrecommit += precommitDelay(ma.Config.PrecommitRate, ma.rnd)
 		ma.nextSectorNumber++
 	}
@@ -80,14 +82,18 @@ func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
 	for _, op := range ma.operationSchedule.PopOpsUntil(v.GetEpoch()) {
 		switch o := op.action.(type) {
 		case proveCommitAction:
-			messages = append(messages, ma.createProveCommit(o.sectorNumber))
+			messages = append(messages, ma.createProveCommit(v.GetEpoch(), o.sectorNumber))
 		case registerSectorAction:
 			err := ma.registerSector(v, o.sectorNumber)
 			if err != nil {
 				return nil, err
 			}
 		case proveDeadlineAction:
-			messages = append(messages, ma.proveDeadline(v, o.dlIdx))
+			msg, err := ma.proveDeadline(v, o.dlIdx)
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, msg)
 		}
 	}
 
@@ -95,11 +101,11 @@ func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
 }
 
 // proove sectors in deadline
-func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) Message {
+func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (Message, error) {
 	var partitions []miner.PoStPartition
 	for pIdx, bf := range ma.deadlines[dlIdx] {
 		if empty, err := bf.IsEmpty(); err != nil {
-			panic(err)
+			return Message{}, err
 		} else if !empty {
 			partitions = append(partitions, miner.PoStPartition{
 				Index:   uint64(pIdx),
@@ -123,16 +129,19 @@ func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) Message {
 		ChainCommitEpoch: v.GetEpoch() - 1,
 		ChainCommitRand:  []byte("not really random"),
 	}
+
+	// assume prove sectors succeeds and schedule its first PoSt (if necessary)
+	if err := ma.scheduleNextProof(v, dlIdx); err != nil {
+		return Message{}, err
+	}
+
 	return Message{
 		From:   ma.Worker,
 		To:     ma.RobustAddress,
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 		Params: &params,
-		ReturnHandler: func(v VMState, _ Message, _ cbor.Marshaler) error {
-			return ma.scheduleNextProof(v, dlIdx)
-		},
-	}
+	}, nil
 }
 
 // looks up sector deadline and partition so we can start adding it to PoSts
@@ -183,26 +192,21 @@ func (ma *MinerAgent) scheduleNextProof(v VMState, dlIdx uint64) error {
 }
 
 // create prove commit message
-func (ma *MinerAgent) createProveCommit(sectorNumber abi.SectorNumber) Message {
+func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber) Message {
 	params := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
 
-	return Message{
-		From:          ma.Worker,
-		To:            ma.RobustAddress,
-		Value:         big.Zero(),
-		Method:        builtin.MethodsMiner.ProveCommitSector,
-		Params:        &params,
-		ReturnHandler: ma.handleProveCommit,
-	}
-}
+	// register an op for next epoch (after batch prove) to schedule a post for the sector
+	ma.operationSchedule.ScheduleOp(epoch, registerSectorAction{sectorNumber: sectorNumber})
 
-// register an op for next epoch (after batch prove) to schedule a post for the sector
-func (ma *MinerAgent) handleProveCommit(v VMState, msg Message, _ cbor.Marshaler) error {
-	sn := msg.Params.(*miner.ProveCommitSectorParams).SectorNumber
-	ma.operationSchedule.ScheduleOp(v.GetEpoch(), registerSectorAction{sectorNumber: sn})
-	return nil
+	return Message{
+		From:   ma.Worker,
+		To:     ma.RobustAddress,
+		Value:  big.Zero(),
+		Method: builtin.MethodsMiner.ProveCommitSector,
+		Params: &params,
+	}
 }
 
 // create precommit message and activation trigger
@@ -214,16 +218,13 @@ func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber 
 		SealRandEpoch: currentEpoch - 1,
 		Expiration:    ma.sectorExpiration(currentEpoch),
 	}
+
 	return Message{
 		From:   ma.Worker,
 		To:     ma.RobustAddress,
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.PreCommitSector,
 		Params: &params,
-		ReturnHandler: func(_ VMState, _ Message, _ cbor.Marshaler) error {
-			ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
-			return nil
-		},
 	}
 }
 
