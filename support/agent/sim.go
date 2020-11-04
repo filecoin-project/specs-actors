@@ -22,6 +22,15 @@ import (
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
+// Sim is a simulation framework to exercise actor code in a network-like environment.
+// It's goal is to simulate realistic call sequences and interactions to perform invariant analysis
+// and test performance assumptions prior to shipping actor code out to implementations.
+// The model is that the simulation will "Tick" once per epoch. Within this tick:
+// * It will first compute winning tickets from previous state for miners to simulate block mining.
+// * It will create any agents it is configured to create and generate messages to create their associated actors.
+// * It will call tick on all it agents. This call will return messages that will get added to the simulated "tipset".
+// * Messages will be shuffled to simulate network entropy.
+// * Messages will be applied and an new VM will be created from the resulting state tree for the next tick.
 type Sim struct {
 	Config        SimConfig
 	Accounts      []address.Address
