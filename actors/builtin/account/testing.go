@@ -2,6 +2,7 @@ package account
 
 import (
 	"github.com/filecoin-project/go-address"
+
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 )
 
@@ -10,20 +11,18 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of account state.
-func CheckStateInvariants(st *State, idAddr address.Address) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, idAddr address.Address) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
-
-	id, err := address.IDFromAddress(idAddr)
-	if err != nil {
-		return nil, acc, err
+	accountSummary := &StateSummary{
+		PubKeyAddr: st.Address,
 	}
-	if id >= builtin.FirstNonSingletonActorId {
-		acc.Require(
-			st.Address.Protocol() == address.BLS || st.Address.Protocol() == address.SECP256K1,
+
+	if id, err := address.IDFromAddress(idAddr); err != nil {
+		acc.Addf("error extracting actor ID from address: %v", err)
+	} else if id >= builtin.FirstNonSingletonActorId {
+		acc.Require(st.Address.Protocol() == address.BLS || st.Address.Protocol() == address.SECP256K1,
 			"actor address %v must be BLS or SECP256K1 protocol", st.Address)
 	}
 
-	return &StateSummary{
-		PubKeyAddr: st.Address,
-	}, acc, nil
+	return accountSummary, acc
 }

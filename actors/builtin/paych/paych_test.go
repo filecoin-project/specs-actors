@@ -957,8 +957,7 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 func (h *pcActorHarness) checkState(rt *mock.Runtime) {
 	var st State
 	rt.GetState(&st)
-	_, msgs, err := CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
-	require.NoError(h.t, err)
+	_, msgs := CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

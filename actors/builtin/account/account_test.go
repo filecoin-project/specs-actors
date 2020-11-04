@@ -2,6 +2,7 @@ package account_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -85,7 +86,6 @@ func checkState(t *testing.T, rt *mock.Runtime) {
 	require.NoError(t, err)
 	var st account.State
 	rt.GetState(&st)
-	_, msgs, err := account.CheckStateInvariants(&st, testAddress)
-	assert.NoError(t, err)
-	assert.True(t, msgs.IsEmpty())
+	_, msgs := account.CheckStateInvariants(&st, testAddress)
+	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }

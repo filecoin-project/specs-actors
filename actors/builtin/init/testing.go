@@ -15,21 +15,28 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of init state.
-func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
 
 	acc.Require(len(st.NetworkName) > 0, "network name is empty")
 	acc.Require(st.NextID >= builtin.FirstNonSingletonActorId, "next id %d is too low", st.NextID)
 
-	lut, err := adt.AsMap(store, st.AddressMap)
-	if err != nil {
-		return nil, nil, err
+	initSummary := &StateSummary{
+		AddrIDs: nil,
+		NextID:  st.NextID,
 	}
 
-	addrs := map[addr.Address]abi.ActorID{}
+	lut, err := adt.AsMap(store, st.AddressMap)
+	if err != nil {
+		acc.Addf("error loading address map: %v", err)
+		// Stop here, it's hard to make other useful checks.
+		return initSummary, acc
+	}
+
+	initSummary.AddrIDs = map[addr.Address]abi.ActorID{}
 	reverse := map[abi.ActorID]addr.Address{}
 	var value cbg.CborInt
-	if err = lut.ForEach(&value, func(key string) error {
+	err = lut.ForEach(&value, func(key string) error {
 		actorId := abi.ActorID(value)
 		keyAddr, err := addr.NewFromBytes([]byte(key))
 		if err != nil {
@@ -44,14 +51,9 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		acc.Require(!found, "duplicate mapping to ID %v: %v, %v", actorId, keyAddr, foundAddr)
 		reverse[actorId] = keyAddr
 
-		addrs[keyAddr] = actorId
+		initSummary.AddrIDs[keyAddr] = actorId
 		return nil
-	}); err != nil {
-		return nil, nil, err
-	}
-
-	return &StateSummary{
-		AddrIDs: addrs,
-		NextID:  st.NextID,
-	}, acc, nil
+	})
+	acc.RequireNoError(err, "error iterating address map")
+	return initSummary, acc
 }
